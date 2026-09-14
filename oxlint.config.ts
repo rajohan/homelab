@@ -151,6 +151,8 @@ export default defineConfig({
                 ...reactEffectStrictRules,
                 "tailwindcss/consistent-variant-order": "error",
                 "tailwindcss/enforce-canonical": "error",
+                // Match IntelliSense's numeric scale suggestions without unsafe autofixes.
+                "tailwindcss/prefer-scale-token": ["error", { step: 0.25 }],
                 "tailwindcss/enforce-consistent-important-position": "error",
                 "tailwindcss/enforce-consistent-variable-syntax": "error",
                 "tailwindcss/enforce-negative-arbitrary-values": "error",
