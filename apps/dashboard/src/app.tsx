@@ -16,73 +16,104 @@ import { systemStatusQuery } from "./client";
 
 export function Shell() {
     return (
-        <div className="app-shell">
-            <a className="skip-link" href="#main-content">
+        <div className="grid min-h-screen grid-cols-[250px_minmax(0,1fr)] max-[1050px]:grid-cols-[210px_minmax(0,1fr)] max-[640px]:block">
+            <a
+                className="absolute -top-20 left-3.75 z-10 rounded-md border border-[#ccdbee] bg-white px-4.5 py-3 focus:top-3"
+                href="#main-content"
+            >
                 Skip to content
             </a>
-            <aside className="sidebar">
-                <Link to="/" className="brand" aria-label="Homelab overview">
-                    <span className="brand-mark">
+            <aside className="flex flex-col border-r border-[#e0e6ee] bg-white px-5 pt-8.5 pb-6.25 max-[640px]:border-r-0 max-[640px]:border-b max-[640px]:px-4 max-[640px]:pt-5 max-[640px]:pb-3">
+                <Link
+                    to="/"
+                    className="mx-1.5 mb-10.5 flex items-center gap-2.75 text-[1.2rem] font-bold tracking-[-0.04em] max-[640px]:mx-0 max-[640px]:mb-5"
+                    aria-label="Homelab overview"
+                >
+                    <span className="grid size-10.5 shrink-0 place-items-center rounded-[11px] bg-[#254b8b] text-white">
                         <Blocks size={23} aria-hidden="true" />
                     </span>
                     <span>
                         Homelab
-                        <span className="brand-subtitle">
+                        <span className="mt-0.75 block text-[0.65rem] font-normal tracking-normal text-[#64738a] max-[1050px]:text-[0.57rem] max-[640px]:text-[0.65rem]">
                             One place. Your infrastructure.
                         </span>
                     </span>
                 </Link>
-                <nav aria-label="Main navigation">
+                <nav
+                    className="grid gap-1.75 max-[640px]:grid-cols-3 max-[640px]:gap-1.25"
+                    aria-label="Main navigation"
+                >
                     <Link
                         to="/"
                         activeOptions={{ exact: true }}
                         activeProps={{
-                            className: "nav-link active",
                             "aria-current": "page",
                         }}
-                        className="nav-link"
+                        className="flex items-center gap-3 rounded-lg px-3.5 py-3 text-sm font-[550] text-[#526176] hover:bg-[#f1f4f8] aria-[current=page]:bg-[#edf2fc] aria-[current=page]:text-[#234e91] max-[640px]:justify-center max-[640px]:gap-1.5 max-[640px]:px-1.75 max-[640px]:py-2.75 max-[640px]:text-xs"
                     >
-                        <LayoutDashboard size={19} aria-hidden="true" />
+                        <LayoutDashboard
+                            className="max-[640px]:w-4"
+                            size={19}
+                            aria-hidden="true"
+                        />
                         Overview
                     </Link>
                     <Link
                         to="/identity"
                         activeProps={{
-                            className: "nav-link active",
                             "aria-current": "page",
                         }}
-                        className="nav-link"
+                        className="flex items-center gap-3 rounded-lg px-3.5 py-3 text-sm font-[550] text-[#526176] hover:bg-[#f1f4f8] aria-[current=page]:bg-[#edf2fc] aria-[current=page]:text-[#234e91] max-[640px]:justify-center max-[640px]:gap-1.5 max-[640px]:px-1.75 max-[640px]:py-2.75 max-[640px]:text-xs"
                     >
-                        <ShieldCheck size={19} aria-hidden="true" />
+                        <ShieldCheck
+                            className="max-[640px]:w-4"
+                            size={19}
+                            aria-hidden="true"
+                        />
                         Identity
                     </Link>
                     <Link
                         to="/infrastructure"
                         activeProps={{
-                            className: "nav-link active",
                             "aria-current": "page",
                         }}
-                        className="nav-link"
+                        className="flex items-center gap-3 rounded-lg px-3.5 py-3 text-sm font-[550] text-[#526176] hover:bg-[#f1f4f8] aria-[current=page]:bg-[#edf2fc] aria-[current=page]:text-[#234e91] max-[640px]:justify-center max-[640px]:gap-1.5 max-[640px]:px-1.75 max-[640px]:py-2.75 max-[640px]:text-xs"
                     >
-                        <Server size={19} aria-hidden="true" />
+                        <Server
+                            className="max-[640px]:w-4"
+                            size={19}
+                            aria-hidden="true"
+                        />
                         Infrastructure
                     </Link>
                 </nav>
-                <div className="sidebar-note">
-                    <span className="eyebrow">Project status</span>
-                    <p>Foundation</p>
-                    <span>Authentication and integrations are the next milestones.</span>
+                <div className="mt-auto px-3.25 pt-10 max-[640px]:hidden">
+                    <span className="text-[0.65rem] font-[650] tracking-[0.12em] text-[#68798e] uppercase">
+                        Project status
+                    </span>
+                    <p className="my-1.25 text-[0.925rem] leading-[1.7] font-semibold text-[#33465c]">
+                        Foundation
+                    </p>
+                    <span className="block text-xs leading-[1.6] text-[#6d7989]">
+                        Authentication and integrations are the next milestones.
+                    </span>
                 </div>
             </aside>
-            <div className="main-column">
-                <header className="topbar">
+            <div className="flex min-w-0 flex-col">
+                <header className="flex min-h-19.25 items-center justify-between gap-4 border-b border-[#e0e6ee] px-10.5 py-4.5 text-xs text-[#64738a] max-[1050px]:px-6.25 max-[640px]:min-h-15 max-[640px]:px-5 max-[640px]:py-3">
                     <span>Workspace / Homelab</span>
                     <Badge>Foundation preview</Badge>
                 </header>
-                <main id="main-content" tabIndex={-1}>
+                <main
+                    className="mx-auto w-full max-w-312.5 flex-1 px-10.5 pt-12.25 pb-15 max-[1050px]:px-6.25 max-[1050px]:py-8 max-[640px]:px-4.5 max-[640px]:py-7.5 min-[1500px]:pt-16.25"
+                    id="main-content"
+                    tabIndex={-1}
+                >
                     <Outlet />
                 </main>
-                <footer>Independent services. Shared foundation.</footer>
+                <footer className="px-10.5 pb-6.25 text-[0.7rem] text-[#8490a0] max-[1050px]:px-6.25 max-[640px]:pl-5">
+                    Independent services. Shared foundation.
+                </footer>
             </div>
         </div>
     );
@@ -103,8 +134,13 @@ export function ConnectionStatus({
     const connectionLabel = data ? "Connected" : "Checking";
     return (
         <Card aria-labelledby="connection-heading">
-            <div className="card-heading">
-                <h2 id="connection-heading">Application connection</h2>
+            <div className="mb-4.5 flex items-start justify-between gap-3">
+                <h2
+                    className="text-[1.05rem] leading-[1.45] font-[650] tracking-[-0.015em]"
+                    id="connection-heading"
+                >
+                    Application connection
+                </h2>
                 <Badge tone={failed ? "warning" : connectionTone}>
                     {failed ? "Unavailable" : connectionLabel}
                 </Badge>
@@ -112,25 +148,37 @@ export function ConnectionStatus({
             <div aria-live="polite">
                 {failed && (
                     <>
-                        <p>
+                        <p className="text-[0.925rem] leading-[1.7] text-[#536174]">
                             The dashboard API could not be reached. No infrastructure
                             status can be inferred from this check.
                         </p>
-                        <Button onClick={onRetry}>Try again</Button>
+                        <Button className="mt-3.75" onClick={onRetry}>
+                            Try again
+                        </Button>
                     </>
                 )}
-                {!failed && pending && <p>Checking this application&apos;s API…</p>}
+                {!failed && pending && (
+                    <p className="text-[0.925rem] leading-[1.7] text-[#536174]">
+                        Checking this application&apos;s API…
+                    </p>
+                )}
                 {!failed && !pending && (
                     <>
-                        <p>The dashboard can reach its own API.</p>
-                        <dl className="details">
-                            <div>
-                                <dt>Service</dt>
-                                <dd>{data?.service}</dd>
+                        <p className="text-[0.925rem] leading-[1.7] text-[#536174]">
+                            The dashboard can reach its own API.
+                        </p>
+                        <dl className="mt-5 grid gap-2.75 border-t border-[#edf0f4] pt-3.5 text-[0.8rem]">
+                            <div className="flex justify-between gap-4">
+                                <dt className="text-[#718095]">Service</dt>
+                                <dd className="font-mono text-[#33465c]">
+                                    {data?.service}
+                                </dd>
                             </div>
-                            <div>
-                                <dt>Phase</dt>
-                                <dd>{data?.phase}</dd>
+                            <div className="flex justify-between gap-4">
+                                <dt className="text-[#718095]">Phase</dt>
+                                <dd className="font-mono text-[#33465c]">
+                                    {data?.phase}
+                                </dd>
                             </div>
                         </dl>
                     </>
@@ -144,22 +192,30 @@ export function Overview() {
     const status = useQuery(systemStatusQuery);
     return (
         <>
-            <div className="page-heading">
-                <span className="eyebrow">Overview</span>
-                <h1>A clear home for your homelab.</h1>
-                <p>A modular dashboard, starting with a small, independent foundation.</p>
+            <div className="mb-7.25 max-[640px]:mb-5.75">
+                <span className="text-[0.65rem] font-[650] tracking-[0.12em] text-[#68798e] uppercase">
+                    Overview
+                </span>
+                <h1 className="mt-2.5 mb-3.25 text-[clamp(1.8rem,3vw,2.5rem)] leading-[1.2] font-[650] tracking-[-0.045em]">
+                    A clear home for your homelab.
+                </h1>
+                <p className="text-[0.925rem] leading-[1.7] text-[#536174]">
+                    A modular dashboard, starting with a small, independent foundation.
+                </p>
             </div>
-            <div className="notice">
-                <ShieldCheck size={21} aria-hidden="true" />
+            <div className="mb-6.25 flex items-start gap-3.25 rounded-[11px] border border-[#ccdbee] bg-[#eef4fd] px-5 py-4.5 text-[#2b538d] max-[640px]:p-4">
+                <ShieldCheck className="mt-0.5 shrink-0" size={21} aria-hidden="true" />
                 <div>
-                    <strong>Authelia remains in place.</strong>
-                    <p>
+                    <strong className="text-[0.85rem] font-[650]">
+                        Authelia remains in place.
+                    </strong>
+                    <p className="mt-0.75 text-[0.8rem] leading-[1.7] text-[#496280]">
                         This preview has not replaced authentication or changed access to
                         your services.
                     </p>
                 </div>
             </div>
-            <div className="card-grid">
+            <div className="grid grid-cols-2 gap-5.5 max-[1050px]:grid-cols-1">
                 <ConnectionStatus
                     pending={status.isPending}
                     failed={status.isError}
@@ -169,40 +225,74 @@ export function Overview() {
                     }}
                 />
                 <Card aria-labelledby="foundation-heading">
-                    <div className="card-heading">
-                        <h2 id="foundation-heading">A focused starting point</h2>
-                        <Blocks size={20} aria-hidden="true" />
+                    <div className="mb-4.5 flex items-start justify-between gap-3">
+                        <h2
+                            className="text-[1.05rem] leading-[1.45] font-[650] tracking-[-0.015em]"
+                            id="foundation-heading"
+                        >
+                            A focused starting point
+                        </h2>
+                        <Blocks
+                            className="shrink-0 text-[#75869b]"
+                            size={20}
+                            aria-hidden="true"
+                        />
                     </div>
-                    <p>
+                    <p className="text-[0.925rem] leading-[1.7] text-[#536174]">
                         Dashboard and identity are separate applications in one workspace.
                         Shared code stays small and explicit.
                     </p>
-                    <ul className="check-list">
-                        <li>
-                            <Check size={17} aria-hidden="true" />
+                    <ul className="mt-5 grid list-none gap-2.75 p-0 text-[0.8rem] text-[#526176]">
+                        <li className="flex items-center gap-2.25">
+                            <Check
+                                className="shrink-0 text-[#548068]"
+                                size={17}
+                                aria-hidden="true"
+                            />
                             Independent application entry points
                         </li>
-                        <li>
-                            <Check size={17} aria-hidden="true" />
+                        <li className="flex items-center gap-2.25">
+                            <Check
+                                className="shrink-0 text-[#548068]"
+                                size={17}
+                                aria-hidden="true"
+                            />
                             Typed API and shared UI primitives
                         </li>
-                        <li>
-                            <Check size={17} aria-hidden="true" />
+                        <li className="flex items-center gap-2.25">
+                            <Check
+                                className="shrink-0 text-[#548068]"
+                                size={17}
+                                aria-hidden="true"
+                            />
                             No production credentials required
                         </li>
                     </ul>
                 </Card>
             </div>
-            <Card className="next-step" aria-labelledby="next-step-heading">
+            <Card
+                className="mt-5.5 flex items-center justify-between gap-6.25 max-[1050px]:flex-col max-[1050px]:items-start"
+                aria-labelledby="next-step-heading"
+            >
                 <div>
-                    <span className="eyebrow">Next milestone</span>
-                    <h2 id="next-step-heading">Build identity before integrations.</h2>
-                    <p>
+                    <span className="text-[0.65rem] font-[650] tracking-[0.12em] text-[#68798e] uppercase">
+                        Next milestone
+                    </span>
+                    <h2
+                        className="my-2 text-[1.05rem] leading-[1.45] font-[650] tracking-[-0.015em]"
+                        id="next-step-heading"
+                    >
+                        Build identity before integrations.
+                    </h2>
+                    <p className="max-w-147.5 text-[0.85rem] leading-[1.7] text-[#536174]">
                         Implement and verify authentication alongside Authelia before
                         considering a cutover.
                     </p>
                 </div>
-                <Link to="/identity" className="text-link">
+                <Link
+                    to="/identity"
+                    className="inline-flex items-center gap-2 text-[0.8rem] font-semibold whitespace-nowrap text-[#2c568f] hover:underline"
+                >
                     View the boundary
                     <ArrowRight size={17} aria-hidden="true" />
                 </Link>
@@ -214,25 +304,34 @@ export function Overview() {
 export function Identity() {
     return (
         <>
-            <div className="page-heading">
-                <span className="eyebrow">Identity</span>
-                <h1>One identity. Clear boundaries.</h1>
-                <p>
+            <div className="mb-7.25 max-[640px]:mb-5.75">
+                <span className="text-[0.65rem] font-[650] tracking-[0.12em] text-[#68798e] uppercase">
+                    Identity
+                </span>
+                <h1 className="mt-2.5 mb-3.25 text-[clamp(1.8rem,3vw,2.5rem)] leading-[1.2] font-[650] tracking-[-0.045em]">
+                    One identity. Clear boundaries.
+                </h1>
+                <p className="text-[0.925rem] leading-[1.7] text-[#536174]">
                     A separate identity application will serve the dashboard and other
                     approved clients.
                 </p>
             </div>
             <Card aria-labelledby="identity-heading">
-                <div className="card-heading">
-                    <h2 id="identity-heading">Authentication is not implemented yet</h2>
+                <div className="mb-4.5 flex items-start justify-between gap-3">
+                    <h2
+                        className="text-[1.05rem] leading-[1.45] font-[650] tracking-[-0.015em]"
+                        id="identity-heading"
+                    >
+                        Authentication is not implemented yet
+                    </h2>
                     <Badge>Planned</Badge>
                 </div>
-                <p>
+                <p className="text-[0.925rem] leading-[1.7] text-[#536174]">
                     Authelia continues to handle existing sign-ins. This application does
                     not accept passwords, issue sessions, or provide OIDC or ForwardAuth
                     endpoints.
                 </p>
-                <ul className="plain-list">
+                <ul className="mt-4.5 list-disc pl-5.25 text-[0.925rem] leading-[1.8] text-[#536174]">
                     <li>
                         Implement standards-based sign-in and explicit access policies.
                     </li>
@@ -250,27 +349,34 @@ export function Identity() {
 export function Infrastructure() {
     return (
         <>
-            <div className="page-heading">
-                <span className="eyebrow">Infrastructure</span>
-                <h1>Your systems, together.</h1>
-                <p>
+            <div className="mb-7.25 max-[640px]:mb-5.75">
+                <span className="text-[0.65rem] font-[650] tracking-[0.12em] text-[#68798e] uppercase">
+                    Infrastructure
+                </span>
+                <h1 className="mt-2.5 mb-3.25 text-[clamp(1.8rem,3vw,2.5rem)] leading-[1.2] font-[650] tracking-[-0.045em]">
+                    Your systems, together.
+                </h1>
+                <p className="text-[0.925rem] leading-[1.7] text-[#536174]">
                     Infrastructure modules will be added after the identity foundation is
                     ready.
                 </p>
             </div>
             <Card aria-labelledby="infrastructure-heading">
-                <div className="card-heading">
-                    <h2 id="infrastructure-heading">
+                <div className="mb-4.5 flex items-start justify-between gap-3">
+                    <h2
+                        className="text-[1.05rem] leading-[1.45] font-[650] tracking-[-0.015em]"
+                        id="infrastructure-heading"
+                    >
                         No infrastructure integrations connected
                     </h2>
                     <Badge>Planned</Badge>
                 </div>
-                <p>
+                <p className="text-[0.925rem] leading-[1.7] text-[#536174]">
                     This preview does not query servers, monitoring, backups, or OpenClaw.
                     It displays no synthetic health metrics and exposes no administrative
                     actions.
                 </p>
-                <p>
+                <p className="mt-3.5 text-[0.925rem] leading-[1.7] text-[#536174]">
                     Future modules will own their API contracts and access permissions
                     without becoming dependencies of the identity service.
                 </p>
@@ -296,8 +402,10 @@ export function DashboardApp({
 export function NotFound() {
     return (
         <>
-            <h1>Page not found</h1>
-            <p>
+            <h1 className="text-[clamp(1.8rem,3vw,2.5rem)] leading-[1.2] font-[650] tracking-[-0.045em]">
+                Page not found
+            </h1>
+            <p className="text-[0.925rem] leading-[1.7] text-[#536174]">
                 <Link to="/">Return to overview</Link>
             </p>
         </>

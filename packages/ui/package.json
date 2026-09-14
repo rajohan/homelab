@@ -3,10 +3,14 @@
     "private": true,
     "type": "module",
     "exports": {
-        ".": "./src/index.tsx",
-        "./styles.css": "./src/styles.css"
+        ".": "./src/index.tsx"
+    },
+    "dependencies": {
+        "@headlessui/react": "2.2.10",
+        "tailwind-merge": "3.7.0"
     },
     "peerDependencies": {
-        "react": "19.3.0"
+        "react": "19.3.0",
+        "react-dom": "19.3.0"
     }
 }
