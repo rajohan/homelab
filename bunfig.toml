@@ -1,0 +1,15 @@
+[install]
+exact = true
+auto = "disable"
+
+[run]
+bun = true
+shell = "bun"
+
+[serve.static]
+plugins = ["bun-plugin-tailwind"]
+env = "disable"
+
+[test]
+coverageSkipTestFiles = true
+coveragePathIgnorePatterns = ["**/dist/**", "**/node_modules/**", "tests/**"]

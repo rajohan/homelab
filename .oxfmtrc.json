@@ -1,0 +1,19 @@
+{
+    "printWidth": 90,
+    "tabWidth": 4,
+    "useTabs": false,
+    "semi": true,
+    "singleQuote": false,
+    "jsxSingleQuote": false,
+    "trailingComma": "es5",
+    "endOfLine": "lf",
+    "ignorePatterns": ["**/node_modules/**", "**/dist/**", "coverage/**", "bun.lock"],
+    "overrides": [
+        {
+            "files": ["*.yaml", "*.yml"],
+            "options": {
+                "tabWidth": 2
+            }
+        }
+    ]
+}

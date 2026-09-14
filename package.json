@@ -1,0 +1,50 @@
+{
+    "name": "homelab",
+    "version": "0.1.0",
+    "private": true,
+    "workspaces": [
+        "apps/*",
+        "packages/*"
+    ],
+    "type": "module",
+    "scripts": {
+        "setup": "bun scripts/setup.ts",
+        "dev": "bun scripts/dev.ts",
+        "dev:auth": "bun scripts/dev.ts auth",
+        "dev:dashboard": "bun scripts/dev.ts dashboard",
+        "start:auth": "NODE_ENV=production bun --cwd apps/auth/dist --no-env-file server.js",
+        "start:dashboard": "NODE_ENV=production bun --cwd apps/dashboard/dist --no-env-file server.js",
+        "format": "bun node_modules/oxfmt/bin/oxfmt --write .",
+        "format:check": "bun node_modules/oxfmt/bin/oxfmt --check .",
+        "lint": "bun node_modules/oxlint/bin/oxlint --deny-warnings .",
+        "typecheck": "bun node_modules/typescript/bin/tsc --noEmit",
+        "check": "bun scripts/check.ts",
+        "test": "bun scripts/test.ts",
+        "test:coverage": "bun scripts/test.ts coverage",
+        "test:integration": "bun scripts/test.ts integration",
+        "test:smoke": "bun scripts/smoke.ts",
+        "build": "bun scripts/build.ts",
+        "build:auth": "bun scripts/build.ts auth",
+        "build:dashboard": "bun scripts/build.ts dashboard"
+    },
+    "devDependencies": {
+        "@happy-dom/global-registrator": "20.14.5",
+        "@testing-library/dom": "10.4.2",
+        "@testing-library/react": "16.3.3",
+        "@types/bun": "1.4.2",
+        "@types/react": "19.3.0",
+        "@types/react-dom": "19.3.0",
+        "bun-plugin-tailwind": "0.1.2",
+        "happy-dom": "20.14.5",
+        "lefthook": "2.1.14",
+        "oxfmt": "0.68.0",
+        "oxlint": "1.83.0",
+        "tailwindcss": "4.3.3",
+        "typescript": "7.0.2"
+    },
+    "engines": {
+        "bun": "1.4.2"
+    },
+    "packageManager": "bun@1.4.2",
+    "trustedDependencies": []
+}

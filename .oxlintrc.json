@@ -1,0 +1,80 @@
+{
+    "$schema": "./node_modules/oxlint/configuration_schema.json",
+    "plugins": ["typescript", "react", "jsx-a11y", "import"],
+    "categories": {
+        "correctness": "error"
+    },
+    "rules": {
+        "eqeqeq": "error",
+        "typescript/no-explicit-any": "error",
+        "typescript/consistent-type-imports": "error",
+        "import/no-cycle": "error"
+    },
+    "ignorePatterns": ["**/node_modules/**", "**/dist/**", "coverage/**"],
+    "overrides": [
+        {
+            "files": ["packages/**/*.{ts,tsx}"],
+            "rules": {
+                "no-restricted-imports": [
+                    "error",
+                    {
+                        "patterns": [
+                            {
+                                "group": [
+                                    "**/apps/**",
+                                    "@homelab/auth",
+                                    "@homelab/dashboard"
+                                ],
+                                "message": "Shared packages must not depend on application internals."
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "files": ["packages/contracts/**/*.{ts,tsx}", "packages/ui/**/*.{ts,tsx}"],
+            "rules": {
+                "no-restricted-imports": [
+                    "error",
+                    {
+                        "patterns": [
+                            {
+                                "group": [
+                                    "node:*",
+                                    "bun",
+                                    "bun:*",
+                                    "effect",
+                                    "**/apps/**",
+                                    "@homelab/auth",
+                                    "@homelab/dashboard"
+                                ],
+                                "message": "Shared UI and contracts must remain browser-safe and independent of application internals."
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "files": ["packages/**/*.test.{ts,tsx}"],
+            "rules": {
+                "no-restricted-imports": [
+                    "error",
+                    {
+                        "patterns": [
+                            {
+                                "group": [
+                                    "**/apps/**",
+                                    "@homelab/auth",
+                                    "@homelab/dashboard"
+                                ],
+                                "message": "Shared package tests must not depend on application internals."
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+    ]
+}

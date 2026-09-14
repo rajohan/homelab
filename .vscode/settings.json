@@ -1,0 +1,25 @@
+{
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "oxc.oxc-vscode",
+    "editor.tabSize": 4,
+    "editor.insertSpaces": true,
+    "files.eol": "\n",
+    "files.insertFinalNewline": true,
+    "files.trimTrailingWhitespace": true,
+    "search.exclude": {
+        "**/node_modules": true,
+        "**/dist": true,
+        "**/coverage": true
+    },
+    "files.watcherExclude": {
+        "**/node_modules/**": true,
+        "**/dist/**": true,
+        "**/.git/objects/**": true
+    },
+    "[markdown]": {
+        "files.trimTrailingWhitespace": false
+    },
+    "[yaml]": {
+        "editor.tabSize": 2
+    }
+}

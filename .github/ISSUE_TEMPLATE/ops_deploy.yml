@@ -1,0 +1,46 @@
+name: Operations or deployment
+description: Plan a deployment, configuration change or recovery operation
+title: "ops: "
+labels: ["area: ops", "status: needs-review"]
+body:
+  - type: markdown
+    attributes:
+      value: Keep operational details sanitized. Creating this issue does not authorize a production change, interruption or destructive action.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Operation and target
+      description: Identify the application, environment, release and intended result.
+    validations:
+      required: true
+  - type: dropdown
+    id: risk
+    attributes:
+      label: Risk
+      options:
+        - Low - reversible with no expected interruption
+        - Medium - restart or brief interruption possible
+        - High - production data, authentication or destructive changes
+    validations:
+      required: true
+  - type: textarea
+    id: plan
+    attributes:
+      label: Plan and rollback
+      description: Describe the bounded change, ordering, expected interruption and recovery path.
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety checks
+      options:
+        - label: Target environment and artifact identity verified
+        - label: Secrets and data impact identified without exposing secret values
+        - label: Recovery path and health checks defined
+        - label: Required production changes or interruptions explicitly approved
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Completion evidence
+      description: Record the deployed commit/image, health checks and outcome after execution.

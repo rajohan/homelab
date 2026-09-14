@@ -1,0 +1,6 @@
+name: Homelab security analysis
+
+paths-ignore:
+  - "**/node_modules/**"
+  - "**/dist/**"
+  - "**/coverage/**"

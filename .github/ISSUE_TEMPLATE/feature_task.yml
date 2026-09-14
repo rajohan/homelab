@@ -1,0 +1,42 @@
+name: Feature or task
+description: Propose a feature, refactor, test or maintenance task
+title: "task: "
+labels: ["type: feature", "status: needs-review"]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What outcome should this work provide?
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and non-goals
+      description: Include module boundaries and anything that must remain unchanged.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: State observable conditions for completion, including relevant tests.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Primary area
+      options:
+        - "area: frontend"
+        - "area: backend"
+        - "area: auth"
+        - "area: database"
+        - "area: ops"
+        - "area: ci"
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility and rollout
+      description: Note data migrations, security boundaries, existing consumers and any approval needed.

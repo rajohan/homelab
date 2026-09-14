@@ -1,0 +1,32 @@
+{
+    "compilerOptions": {
+        "target": "ESNext",
+        "lib": ["ESNext", "DOM", "DOM.Iterable"],
+        "module": "Preserve",
+        "moduleResolution": "Bundler",
+        "jsx": "react-jsx",
+        "types": ["bun"],
+        "strict": true,
+        "noEmit": true,
+        "verbatimModuleSyntax": true,
+        "allowImportingTsExtensions": true,
+        "resolveJsonModule": true,
+        "noUncheckedIndexedAccess": true,
+        "exactOptionalPropertyTypes": true,
+        "noFallthroughCasesInSwitch": true,
+        "noImplicitOverride": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "skipLibCheck": true,
+        "forceConsistentCasingInFileNames": true
+    },
+    "include": [
+        "apps/**/*.ts",
+        "apps/**/*.tsx",
+        "packages/**/*.ts",
+        "packages/**/*.tsx",
+        "scripts/**/*.ts",
+        "tests/**/*.ts"
+    ],
+    "exclude": ["**/node_modules", "**/dist"]
+}

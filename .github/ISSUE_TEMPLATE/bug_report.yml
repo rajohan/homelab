@@ -1,0 +1,48 @@
+name: Bug report
+description: Report incorrect dashboard, authentication or development behavior
+title: "bug: "
+labels: ["type: bugfix", "status: needs-review"]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include secrets, tokens, private keys, database dumps or raw runtime logs. Report suspected vulnerabilities privately to the repository owner.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What is broken?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include the relevant route, actions and expected versus actual behavior.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Include the affected application and its release or commit, if known.
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Browser/device, development or production, and relevant connection conditions.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Primary area
+      options:
+        - "area: frontend"
+        - "area: backend"
+        - "area: auth"
+        - "area: database"
+        - "area: ops"
+        - "area: ci"
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized evidence
+      description: Screenshots, redacted errors, regression range or checks already performed.
