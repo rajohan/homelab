@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { dashboardBindOptions } from "./http";
+import { dashboardBindOptions } from "./environment";
 
 describe("dashboard listener configuration", () => {
     test("defaults to loopback", () => {

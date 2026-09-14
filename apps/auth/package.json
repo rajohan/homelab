@@ -5,5 +5,8 @@
     "scripts": {
         "dev": "bun --hot src/server.ts",
         "start": "NODE_ENV=production bun --cwd dist --no-env-file server.js"
+    },
+    "dependencies": {
+        "drizzle-orm": "1.0.0-rc.4"
     }
 }

@@ -27,5 +27,3 @@ const result = await Promise.race(children.map((child) => child.exited));
 stop();
 await Promise.all(children.map((child) => child.exited));
 process.exitCode = result;
-
-export {};

@@ -17,10 +17,10 @@ or let optional integrations become prerequisites for startup.
 
 - Bun: package installation, scripts, application runtime, bundling and tests.
 - React, Tailwind and shared UI: presentation.
-- TanStack Router, Query and Form: navigation, remote state and forms respectively.
+- TanStack Router and Query: navigation and remote state. TanStack Form is planned for the first real forms, not installed solely as an unused foundation dependency.
 - tRPC with SuperJSON: the private dashboard API; Valibot validates public contracts.
 - Effect: server-side service composition and bounded workflows, not ordinary UI state.
-- PostgreSQL/Drizzle: planned durable persistence, introduced with actual stateful features.
+- PostgreSQL/Drizzle: schema tooling is prepared for auth; the runtime connection and durable state will be introduced with actual stateful features.
 
 OIDC endpoints and JWTs must use their standard encodings, not SuperJSON. A protocol engine
 and its runtime compatibility will be qualified separately. No OIDC library is selected or

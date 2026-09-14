@@ -55,6 +55,18 @@ To run one built application manually, use `bun run start:dashboard` or `bun run
 These commands select the correct artifact working directory; do not launch a built dashboard
 entrypoint from the repository root directly. See [deployment](deploy/README.md).
 
+## Shared configuration
+
+`oxlint.config.ts` and `oxfmt.config.ts` own the strict lint/format setup; TypeScript
+checks browser, Bun and DOM-test code separately. `tailwind.config.ts` provides shared
+theme tokens and typography. Auth's PostgreSQL tooling lives in
+`apps/auth/drizzle.config.ts`, with no database credentials or startup migration.
+
+Use `bun run test:timings` to refresh native Bun timing maps deliberately, and
+`bun run db:check:auth` to validate migration metadata without a database. See
+[foundation configuration](docs/foundation-configuration.md) for generation commands
+and the distinction between prepared tooling and active persistence.
+
 ## Layout
 
 ```text
@@ -85,6 +97,9 @@ dashboard must not restart auth. See [architecture](docs/architecture.md) and
   `HOMELAB_DASHBOARD_*` names. GitHub credentials belong to tooling, never to these applications.
 
 ## Contributing
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), and
+[SECURITY.md](SECURITY.md) for the development, review and private reporting workflows.
 
 All code, documentation and application text are English. Use a feature branch and a pull
 request, keep checks green, and deploy a tested build deliberately. `setup` does not deploy,

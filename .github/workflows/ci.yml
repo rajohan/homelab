@@ -29,6 +29,8 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Check formatting, lint and types
         run: bun run check
+      - name: Check auth migration metadata without a database
+        run: bun run db:check:auth
       - name: Run unit and component tests with coverage
         run: bun run test:coverage
       - name: Run HTTP integration tests

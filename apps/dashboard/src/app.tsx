@@ -1,15 +1,7 @@
 import type { SystemStatus } from "@homelab/contracts";
 import { Badge, Button, Card } from "@homelab/ui";
 import { type QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
-import {
-    createRootRoute,
-    createRoute,
-    createRouter,
-    Link,
-    Outlet,
-    RouterProvider,
-    type RouterHistory,
-} from "@tanstack/react-router";
+import { Link, Outlet, RouterProvider } from "@tanstack/react-router";
 import {
     ArrowRight,
     Blocks,
@@ -18,9 +10,11 @@ import {
     Server,
     ShieldCheck,
 } from "lucide-react";
+
+import type { createDashboardRouter } from "./browser/router";
 import { systemStatusQuery } from "./client";
 
-function Shell() {
+export function Shell() {
     return (
         <div className="app-shell">
             <a className="skip-link" href="#main-content">
@@ -105,16 +99,18 @@ export function ConnectionStatus({
     data?: SystemStatus | undefined;
     onRetry: () => void;
 }) {
+    const connectionTone = data ? "positive" : "neutral";
+    const connectionLabel = data ? "Connected" : "Checking";
     return (
         <Card aria-labelledby="connection-heading">
             <div className="card-heading">
                 <h2 id="connection-heading">Application connection</h2>
-                <Badge tone={failed ? "warning" : data ? "positive" : "neutral"}>
-                    {failed ? "Unavailable" : data ? "Connected" : "Checking"}
+                <Badge tone={failed ? "warning" : connectionTone}>
+                    {failed ? "Unavailable" : connectionLabel}
                 </Badge>
             </div>
             <div aria-live="polite">
-                {failed ? (
+                {failed && (
                     <>
                         <p>
                             The dashboard API could not be reached. No infrastructure
@@ -122,9 +118,9 @@ export function ConnectionStatus({
                         </p>
                         <Button onClick={onRetry}>Try again</Button>
                     </>
-                ) : pending ? (
-                    <p>Checking this application's API…</p>
-                ) : (
+                )}
+                {!failed && pending && <p>Checking this application&apos;s API…</p>}
+                {!failed && !pending && (
                     <>
                         <p>The dashboard can reach its own API.</p>
                         <dl className="details">
@@ -144,7 +140,7 @@ export function ConnectionStatus({
     );
 }
 
-function Overview() {
+export function Overview() {
     const status = useQuery(systemStatusQuery);
     return (
         <>
@@ -215,7 +211,7 @@ function Overview() {
     );
 }
 
-function Identity() {
+export function Identity() {
     return (
         <>
             <div className="page-heading">
@@ -251,7 +247,7 @@ function Identity() {
     );
 }
 
-function Infrastructure() {
+export function Infrastructure() {
     return (
         <>
             <div className="page-heading">
@@ -283,45 +279,6 @@ function Infrastructure() {
     );
 }
 
-export function createDashboardRouter(history?: RouterHistory) {
-    const root = createRootRoute({
-        component: Shell,
-        notFoundComponent: () => (
-            <>
-                <h1>Page not found</h1>
-                <p>
-                    <Link to="/">Return to overview</Link>
-                </p>
-            </>
-        ),
-    });
-    const overview = createRoute({
-        getParentRoute: () => root,
-        path: "/",
-        component: Overview,
-    });
-    const identity = createRoute({
-        getParentRoute: () => root,
-        path: "/identity",
-        component: Identity,
-    });
-    const infrastructure = createRoute({
-        getParentRoute: () => root,
-        path: "/infrastructure",
-        component: Infrastructure,
-    });
-    return createRouter({
-        routeTree: root.addChildren([overview, identity, infrastructure]),
-        ...(history ? { history } : {}),
-    });
-}
-
-declare module "@tanstack/react-router" {
-    interface Register {
-        router: ReturnType<typeof createDashboardRouter>;
-    }
-}
-
 export function DashboardApp({
     router,
     queryClient,
@@ -333,5 +290,16 @@ export function DashboardApp({
         <QueryClientProvider client={queryClient}>
             <RouterProvider router={router} />
         </QueryClientProvider>
+    );
+}
+
+export function NotFound() {
+    return (
+        <>
+            <h1>Page not found</h1>
+            <p>
+                <Link to="/">Return to overview</Link>
+            </p>
+        </>
     );
 }

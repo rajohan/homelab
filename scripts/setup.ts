@@ -2,9 +2,8 @@ import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = realpathSync(fileURLToPath(new URL("..", import.meta.url)));
-const expected = (
-    await Bun.file(new URL("../.bun-version", import.meta.url)).text()
-).trim();
+const versionFile = await Bun.file(new URL("../.bun-version", import.meta.url)).text();
+const expected = versionFile.trim();
 
 if (Bun.version !== expected) {
     throw new Error(`Use Bun ${expected}; this process is running Bun ${Bun.version}.`);

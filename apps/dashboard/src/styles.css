@@ -1,5 +1,9 @@
-@import "tailwindcss";
+@import "tailwindcss" source(none);
 @import "@homelab/ui/styles.css";
+@config "../../../tailwind.config.ts";
+@source "./";
+@source "../../../packages/ui/src";
+@source not "./**/*.test.tsx";
 
 :root {
     font-family:

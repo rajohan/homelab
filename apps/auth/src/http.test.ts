@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-import { authBindOptions, authRequest } from "./http";
+import { authBindOptions } from "./environment";
+import { authRequest } from "./http";
 
 describe("auth foundation", () => {
     test("uses a separate loopback listener by default", () => {

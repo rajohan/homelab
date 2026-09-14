@@ -11,7 +11,12 @@ export function Badge({
     children: ReactNode;
     tone?: "neutral" | "positive" | "warning";
 }) {
-    return <span className={`badge badge-${tone}`}>{children}</span>;
+    const classes = {
+        neutral: "badge",
+        positive: "badge badge-positive",
+        warning: "badge badge-warning",
+    } as const;
+    return <span className={classes[tone]}>{children}</span>;
 }
 
 export function Button({
