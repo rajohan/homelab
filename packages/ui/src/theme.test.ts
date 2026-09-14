@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import theme from "../../../tailwind.config";
+import theme from "../../../tailwind.config.ts";
 
 describe("shared Tailwind configuration", () => {
     test("preserves the reusable palettes and loading keyframes", () => {

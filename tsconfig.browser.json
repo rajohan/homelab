@@ -7,16 +7,13 @@
         "jsx": "react-jsx"
     },
     "include": [
-        "apps/dashboard/src/app.tsx",
-        "apps/dashboard/src/main.tsx",
-        "apps/dashboard/src/client.ts",
-        "apps/dashboard/src/assets.d.ts",
+        "apps/dashboard/src/browser/main.tsx",
+        "apps/dashboard/src/browser/api/client.ts",
+        "apps/dashboard/src/browser/assets.d.ts",
         "apps/dashboard/src/browser/**/*.ts",
         "apps/dashboard/src/browser/**/*.tsx",
         "apps/auth/src/browser/**/*.ts",
         "apps/auth/src/browser/**/*.tsx",
-        "packages/identity-ui/src/**/*.ts",
-        "packages/identity-ui/src/**/*.tsx",
         "packages/ui/src/**/*.ts",
         "packages/ui/src/**/*.tsx",
         "packages/contracts/src/**/*.ts"

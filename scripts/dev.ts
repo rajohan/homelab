@@ -6,7 +6,7 @@ if (apps.some((app) => app !== "auth" && app !== "dashboard")) {
 }
 
 const children = apps.map((app) =>
-    Bun.spawn([process.execPath, "--hot", `apps/${app}/src/server.ts`], {
+    Bun.spawn([process.execPath, "--hot", `apps/${app}/src/server/index.ts`], {
         env: { ...process.env, NODE_ENV: "development" },
         stdin: "inherit",
         stdout: "inherit",

@@ -1,16 +1,16 @@
 {
   "version": 1,
   "files": {
-    "apps/auth/src/security/crypto.test.ts": 349,
-    "apps/dashboard/src/api.test.ts": 54,
+    "apps/auth/src/server/security/crypto.test.ts": 355,
+    "apps/dashboard/src/server/api/router.test.ts": 45,
     "packages/ui/src/theme.test.ts": 11,
-    "apps/auth/src/configuration.test.ts": 6,
-    "packages/ui/src/classNames.test.ts": 6,
-    "apps/dashboard/src/http.test.ts": 5,
-    "apps/auth/src/http.test.ts": 4,
-    "packages/identity-ui/src/client.test.ts": 4,
-    "apps/dashboard/src/authConfiguration.test.ts": 2,
+    "apps/auth/src/server/config/configuration.test.ts": 7,
+    "packages/ui/src/features/identity/api/IdentityClient.test.ts": 5,
+    "apps/auth/src/server/http/responses.test.ts": 4,
+    "apps/dashboard/src/server/http/responses.test.ts": 4,
+    "packages/ui/src/lib/classNames.test.ts": 4,
+    "apps/dashboard/src/server/config/auth.test.ts": 1,
     "packages/contracts/src/index.test.ts": 1,
-    "packages/identity-ui/src/verificationCoordinator.test.ts": 1
+    "packages/ui/src/features/identity/api/verificationCoordinator.test.ts": 0
   }
 }

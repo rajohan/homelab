@@ -24,13 +24,11 @@ const reactEffectStrictRules = (reactEffectPlugin as unknown as ReactEffectPlugi
     .strict.rules;
 const testFiles = ["**/*.test.{ts,tsx}", "tests/**/*.ts"];
 const browserFiles = [
-    "apps/dashboard/src/app.tsx",
-    "apps/dashboard/src/main.tsx",
-    "apps/dashboard/src/client.ts",
+    "apps/dashboard/src/browser/main.tsx",
+    "apps/dashboard/src/browser/api/client.ts",
     "apps/dashboard/src/browser/**/*.{ts,tsx}",
     "apps/auth/src/browser/**/*.{ts,tsx}",
     "packages/ui/src/**/*.{ts,tsx}",
-    "packages/identity-ui/src/**/*.{ts,tsx}",
 ];
 const serverFiles = ["apps/auth/src/**/*.{ts,tsx}", "apps/dashboard/src/**/*.{ts,tsx}"];
 const appImports = ["**/apps/**", "@homelab/auth", "@homelab/dashboard"];
@@ -118,6 +116,7 @@ export default defineConfig({
         "jsdoc/require-throws-description": "error",
         "jsdoc/require-yields-description": "error",
         "react/unsupported-syntax": "error",
+        "react/no-multi-comp": "error",
         "require-await": "off",
         "typescript/require-await": "error",
         "unicorn/no-null": "off",
@@ -184,6 +183,7 @@ export default defineConfig({
                                     ...serverImports,
                                     "**/scripts/**",
                                     "**/server/**",
+                                    "!**/server/api/router",
                                     "**/http",
                                     "**/http.ts",
                                     "**/system",
@@ -193,7 +193,7 @@ export default defineConfig({
                                     "Browser code must not import server runtime or repository scripts.",
                             },
                             {
-                                group: ["**/api", "**/api.ts"],
+                                group: ["**/api", "**/api.ts", "**/server/api/router"],
                                 allowTypeImports: true,
                                 message:
                                     "Only erased tRPC router types may cross from server API to browser code.",
@@ -204,10 +204,7 @@ export default defineConfig({
             },
         },
         {
-            files: [
-                "packages/ui/src/**/*.{ts,tsx}",
-                "packages/identity-ui/src/**/*.{ts,tsx}",
-            ],
+            files: ["packages/ui/src/**/*.{ts,tsx}"],
             excludeFiles: testFiles,
             rules: {
                 "no-restricted-imports": [
@@ -218,6 +215,30 @@ export default defineConfig({
                                 group: [...appImports, ...serverImports],
                                 message:
                                     "Shared UI must remain browser-safe and independent of applications.",
+                            },
+                        ],
+                    },
+                ],
+            },
+        },
+        {
+            files: ["packages/ui/src/components/**/*.{ts,tsx}"],
+            excludeFiles: testFiles,
+            rules: {
+                "no-restricted-imports": [
+                    "error",
+                    {
+                        patterns: [
+                            {
+                                group: [
+                                    ...appImports,
+                                    ...serverImports,
+                                    "**/features/**",
+                                    "@homelab/ui/identity",
+                                    "@homelab/ui/identity/*",
+                                ],
+                                message:
+                                    "Generic UI primitives must not depend on identity features, applications or server modules.",
                             },
                         ],
                     },
@@ -311,7 +332,11 @@ export default defineConfig({
         },
         {
             files: serverFiles,
-            excludeFiles: [...browserFiles, ...testFiles, "apps/*/src/environment.ts"],
+            excludeFiles: [
+                ...browserFiles,
+                ...testFiles,
+                "apps/*/src/server/config/environment.ts",
+            ],
             rules: {
                 "no-restricted-properties": [
                     "error",

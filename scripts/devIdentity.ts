@@ -2,13 +2,13 @@ import { generateKeyPairSync } from "node:crypto";
 
 import { migrate } from "drizzle-orm/bun-sql/migrator";
 
-import { parseAuthConfiguration } from "../apps/auth/src/configuration";
-import { connectAuthDatabase } from "../apps/auth/src/database/connection";
-import { users } from "../apps/auth/src/database/schema";
-import { hashPassword, randomToken } from "../apps/auth/src/security/crypto";
-import { startAuthServer } from "../apps/auth/src/server";
-import { parseDashboardAuthConfiguration } from "../apps/dashboard/src/authConfiguration";
-import { startDashboardServer } from "../apps/dashboard/src/server";
+import { parseAuthConfiguration } from "../apps/auth/src/server/config/configuration";
+import { connectAuthDatabase } from "../apps/auth/src/server/database/connection";
+import { users } from "../apps/auth/src/server/database/schema";
+import { startAuthServer } from "../apps/auth/src/server/index";
+import { hashPassword, randomToken } from "../apps/auth/src/server/security/crypto";
+import { parseDashboardAuthConfiguration } from "../apps/dashboard/src/server/config/auth";
+import { startDashboardServer } from "../apps/dashboard/src/server/index";
 
 // Disposable developer identities only. No production environment is passed to Docker
 // or used as an identity source. Ctrl+C removes this run's exact temporary container.

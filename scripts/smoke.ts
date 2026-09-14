@@ -61,7 +61,7 @@ async function start(app: "auth" | "dashboard"): Promise<string> {
             process.execPath,
             "--no-env-file",
             "-e",
-            `const { ${exportName} } = await import('./server.js');
+            `const { ${exportName} } = await import('./index.js');
 const server = await ${exportName}({ configuration: null, authentication: null, hostname: '127.0.0.1', port: 0, development: false });
 console.log('SMOKE_PORT:' + server.port);`,
         ],

@@ -22,7 +22,7 @@ No Docker daemon, development package installation or source tree is needed insi
 ## Built artifact
 
 Each application's complete `dist` directory is its runtime artifact. Start from that directory
-with `bun --no-env-file server.js` and `NODE_ENV=production`, or use the repository's
+with `bun --no-env-file index.js` and `NODE_ENV=production`, or use the repository's
 `start:auth` / `start:dashboard` scripts. HTML assets resolve relative to the working directory.
 Auth also contains `admin.js` and reviewed `migrations/`.
 

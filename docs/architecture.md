@@ -15,13 +15,14 @@ RP ID; arbitrary sibling origins are not accepted.
 
 ## Ownership
 
-- `apps/auth/src/security`: accounts, proofs, protected mutations, encrypted email outbox.
-- `apps/auth/src/database`: auth-only schema and native Bun SQL/Drizzle persistence.
-- `apps/auth/src/oidc`: maintained protocol engine, encrypted durable adapter, central grant binding.
-- `apps/auth/src/forwardAuth.ts`: explicit resource policies and short-lived handoff tickets.
-- `apps/dashboard/src/authentication.ts`: confidential OIDC client and token-free browser boundary.
-- `packages/identity-ui`: shared forms, API validation and automatic step-up coordination.
-- `packages/contracts` and `packages/ui`: small browser-safe shared contracts/presentation.
+- `apps/auth/src/server/security`: accounts, proofs, protected mutations, encrypted email outbox.
+- `apps/auth/src/server/database`: auth-only schema and native Bun SQL/Drizzle persistence.
+- `apps/auth/src/server/oidc`: maintained protocol engine, encrypted durable adapter, central grant binding.
+- `apps/auth/src/server/http/forwardAuth.ts`: explicit resource policies and short-lived handoff tickets.
+- `apps/dashboard/src/server/identity/authentication.ts`: confidential OIDC client and token-free browser boundary.
+- `packages/ui/src/components`: reusable presentation, forms, fields, dialogs and status primitives.
+- `packages/ui/src/features/identity`: account panels/dialogs, API schemas and verification coordination.
+- `packages/contracts`: browser-safe, environment-neutral shared contracts.
 
 Effect wraps the auth request workflow and dashboard system service. Valibot validates public
 input. SuperJSON belongs only to private tRPC; OAuth/JWT responses use standard encodings.
@@ -40,6 +41,16 @@ forms and dialogs. A shared coordinator resumes only explicitly rejected stale-p
 It binds replay to the current user/session, keeps original form input, and cancels on unmount,
 logout, user change or cancellation. It never retries an ambiguous network outcome.
 
+Generic UI never imports identity features or app internals. Apps import presentation from
+`@homelab/ui` and account behavior from `@homelab/ui/identity`; this is one package with explicit
+entry points, not two overlapping UI packages. The shared `PasswordForm` owns confirmation
+validation; the generic `FieldsForm` accepts validation without knowing about passwords.
+
+Each React component lives in its own named file; `react/no-multi-comp` enforces this. Related
+components sit together in `layout/`, `pages/`, `components/panels/` or `components/dialogs/`.
+Hooks and API clients are separate from presentation. Server modules are grouped into
+`config/`, `http/`, `security/`, `database/` and `oidc/`, with tests beside the appropriate layer.
+
 Infrastructure screens remain clearly marked as unconnected. This milestone does not invent
 monitoring data or give the dashboard administrative host access.
 
@@ -55,7 +66,7 @@ Bun syntax/identifier minification is disabled for the runtime bundle: the OIDC 
 class names for TTL/model lookup, and syntax folding broke the built token endpoint. Whitespace
 minification remains enabled. A configured built-runtime OIDC smoke test prevents regression.
 
-Drizzle 1.0.0-rc.4 and Effect 4.0.0-rc.115 are intentional prerelease dependencies.
+Drizzle ORM/Kit 1.0.0-rc.5-5935859 and Effect 4.0.0-rc.115 are intentional prerelease dependencies.
 Review upgrades together with their integration tests, not only the package manager's output.
 
 See [security](identity-security.md) and [operations](identity-operations.md).

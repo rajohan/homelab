@@ -18,9 +18,13 @@ Use the sender already verified in Resend and store its address as `HOMELAB_AUTH
 Production sender delivery must be tested once before email verification/recovery is enabled
 for real accounts. Fake test delivery is not proof that Resend accepts the real domain.
 
-At this PR's preparation, runtime Doppler writes were not performed because the temporary
-write login had expired. The code and inventory are ready; the external rename/reference work
-requires a renewed authorized login. Do not treat this document as evidence that it was done.
+The Resend rename/reference step was completed and verified on 2026-09-15 with the operator's
+new temporary Doppler login. `prd.HOMELAB_AUTH_RESEND_API_KEY` owns the value;
+`apps_homelab_auth.HOMELAB_AUTH_RESEND_API_KEY` references it. The legacy `prd.RESEND_API_KEY`
+is only a reference for old consumers, not a duplicate secret. The separate
+`apps_homelab_dashboard` config exists without Resend access. Remaining runtime database,
+client and signing keys, sender qualification and actual deployment are still production gates.
+The earlier missing local CLI login was not evidence of a known token-expiration period.
 
 ## Database and keys
 
@@ -36,7 +40,11 @@ silently change the project's SQL driver options to accommodate an unqualified p
 Generate independent random material with `bun run auth:admin generate-keys` **only in a private
 operator terminal or a protected pipe to the secret manager**. Its JSON output contains private
 keys; never paste it into an issue, chat or CI log. It generates the data key, cookie key, proxy
-key, RSA JWKS and dashboard session key. Each OIDC client also needs its own random secret
+key, RSA JWKS and dashboard session key. Set `HOMELAB_DASHBOARD_OIDC_AUTH_METHOD` to match the dashboard client's
+`token_endpoint_auth_method` in `HOMELAB_AUTH_CLIENTS`: `client_secret_post` (default) or
+`client_secret_basic`. Both are exercised through the complete BFF login tests.
+
+Each OIDC client also needs its own random secret
 (at least 32 characters). Do not reuse the shared human web password.
 
 Apply reviewed migrations explicitly:

@@ -81,13 +81,17 @@ apps/
   auth/             Identity API, OIDC, persistence, migrations and sign-in UI
   dashboard/        Dashboard shell, Settings, OIDC BFF and private tRPC API
 packages/
-  identity-ui/      Shared account forms, modal coordination and API client
-  ui/               Browser-safe presentation primitives
+  ui/               Reusable components and shared identity features
   contracts/        Browser-safe shared schemas and types
 scripts/            Repository-owned setup, development, build and test commands
 deploy/             Independent application images and routing examples
 docs/               Architecture, security, configuration and operational boundaries
 ```
+
+Both applications separate `src/browser/` from `src/server/`. Within `ui`, generic
+`components/` do not depend on `features/identity/`; account panels, dialogs, API validation
+and verification coordination live in that feature. Each React component has its own file,
+enforced by lint. See [architecture](docs/architecture.md) for the folder conventions.
 
 Auth can run on Edge and dashboard on Main. Shared packages compile into each build;
 neither app needs the other's source tree or process at runtime. Auth has no Docker socket,

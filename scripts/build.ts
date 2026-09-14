@@ -28,10 +28,13 @@ for (const app of apps) {
 
     const result = await Bun.build({
         entrypoints: [
-            path.resolve(applicationRoot, "src/server.ts"),
-            ...(app === "auth" ? [path.resolve(applicationRoot, "src/admin.ts")] : []),
+            path.resolve(applicationRoot, "src/server/index.ts"),
+            ...(app === "auth"
+                ? [path.resolve(applicationRoot, "src/server/cli/admin.ts")]
+                : []),
         ],
         outdir: outputDirectory,
+        naming: { entry: "[name].[ext]" },
         target: "bun",
         // Protocol libraries use class names as durable model identifiers.
         minify: { whitespace: true, syntax: false, identifiers: false, keepNames: true },

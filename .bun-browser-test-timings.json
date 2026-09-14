@@ -1,8 +1,10 @@
 {
   "version": 1,
   "files": {
-    "packages/identity-ui/src/AccountSettings.test.tsx": 466,
-    "apps/dashboard/src/app.test.tsx": 274,
-    "packages/ui/src/index.test.tsx": 85
+    "packages/ui/src/features/identity/components/forms/PasswordForm.test.tsx": 370,
+    "packages/ui/src/features/identity/components/AccountSettings.test.tsx": 344,
+    "apps/dashboard/src/browser/identity/IdentityBoundary.test.tsx": 280,
+    "apps/dashboard/src/browser/pages/pages.test.tsx": 165,
+    "packages/ui/src/index.test.tsx": 81
   }
 }

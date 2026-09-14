@@ -19,12 +19,10 @@
         "**/dist",
         "**/*.test.tsx",
         "tests/dom.ts",
-        "apps/dashboard/src/app.tsx",
-        "apps/dashboard/src/main.tsx",
-        "apps/dashboard/src/client.ts",
+        "apps/dashboard/src/browser/main.tsx",
+        "apps/dashboard/src/browser/api/client.ts",
         "apps/dashboard/src/browser/**",
         "apps/auth/src/browser/**",
-        "packages/ui/src/**",
-        "packages/identity-ui/src/**"
+        "packages/ui/src/**"
     ]
 }

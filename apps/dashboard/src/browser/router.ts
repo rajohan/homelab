@@ -5,8 +5,12 @@ import {
     type RouterHistory,
 } from "@tanstack/react-router";
 
-import { Shell, Overview, Identity, Infrastructure, NotFound } from "../app";
-import { Settings } from "./Settings";
+import { Shell } from "./layout/Shell";
+import { Identity } from "./pages/Identity";
+import { Infrastructure } from "./pages/Infrastructure";
+import { NotFound } from "./pages/NotFound";
+import { Overview } from "./pages/Overview";
+import { Settings } from "./pages/Settings";
 
 export function createDashboardRouter(history?: RouterHistory) {
     const root = createRootRoute({

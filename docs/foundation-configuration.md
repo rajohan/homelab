@@ -14,7 +14,7 @@ compose both app entrypoints; production apps remain independent.
 
 ## PostgreSQL
 
-Drizzle ORM and Kit are pinned together to `1.0.0-rc.4`. Schema and reviewed migration artifacts
+Drizzle ORM and Kit are pinned together to `1.0.0-rc.5-5935859`. Schema and reviewed migration artifacts
 belong to auth. Schema generation does not connect to a database:
 
 ```sh

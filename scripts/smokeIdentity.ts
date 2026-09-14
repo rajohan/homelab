@@ -103,7 +103,7 @@ async function admin(action: string, input?: unknown) {
     );
 }
 function start(app: string, environment: Record<string, string>) {
-    const child = Bun.spawn([process.execPath, "--no-env-file", "server.js"], {
+    const child = Bun.spawn([process.execPath, "--no-env-file", "index.js"], {
         cwd: cwd(app),
         env: environment,
         stdin: "ignore",

@@ -2,7 +2,6 @@
 @config "../../../tailwind.config.ts";
 @source "./browser";
 @source "../../../packages/ui/src";
-@source "../../../packages/identity-ui/src";
 @source not "./**/*.test.tsx";
 @source not "../../../packages/**/src/**/*.test.tsx";
 
