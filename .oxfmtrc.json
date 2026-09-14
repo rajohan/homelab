@@ -7,7 +7,13 @@
     "jsxSingleQuote": false,
     "trailingComma": "es5",
     "endOfLine": "lf",
-    "ignorePatterns": ["**/node_modules/**", "**/dist/**", "coverage/**", "bun.lock"],
+    "ignorePatterns": [
+        "**/node_modules/**",
+        "**/dist/**",
+        "coverage/**",
+        "bun.lock",
+        "CHANGELOG.md"
+    ],
     "overrides": [
         {
             "files": ["*.yaml", "*.yml"],

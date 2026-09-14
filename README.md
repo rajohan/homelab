@@ -99,3 +99,5 @@ credentials are needed for that scan.
 The initial foundation was developed with AI assistance. Its selected technology conventions
 originate from [Mira-Dashboard](https://github.com/rajohan/Mira-Dashboard), without importing its
 old operational integrations or production data. Licensed under [MIT](LICENSE).
+
+Dependency-update behavior and the current hosted Bun updater limitation are documented in [docs/dependencies.md](docs/dependencies.md).

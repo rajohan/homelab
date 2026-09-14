@@ -1,17 +1,5 @@
 version: 2
 updates:
-  - package-ecosystem: bun
-    directory: /
-    schedule:
-      interval: weekly
-    groups:
-      trpc:
-        patterns: ["@trpc/*"]
-      react:
-        patterns: [react, react-dom, "@types/react", "@types/react-dom"]
-      formatting:
-        patterns: [oxfmt, oxlint]
-    open-pull-requests-limit: 5
   - package-ecosystem: github-actions
     directory: /
     schedule:
