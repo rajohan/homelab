@@ -1,0 +1,23 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "useDefineForClassFields": true,
+        "lib": ["ESNext", "DOM", "DOM.Iterable"],
+        "types": [],
+        "jsx": "react-jsx"
+    },
+    "include": [
+        "apps/dashboard/src/app.tsx",
+        "apps/dashboard/src/main.tsx",
+        "apps/dashboard/src/client.ts",
+        "apps/dashboard/src/assets.d.ts",
+        "apps/dashboard/src/browser/**/*.ts",
+        "apps/dashboard/src/browser/**/*.tsx",
+        "apps/auth/src/browser/**/*.ts",
+        "apps/auth/src/browser/**/*.tsx",
+        "packages/ui/src/**/*.ts",
+        "packages/ui/src/**/*.tsx",
+        "packages/contracts/src/**/*.ts"
+    ],
+    "exclude": ["**/node_modules", "**/dist", "**/*.test.ts", "**/*.test.tsx"]
+}

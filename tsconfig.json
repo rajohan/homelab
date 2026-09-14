@@ -1,32 +1,37 @@
 {
     "compilerOptions": {
         "target": "ESNext",
-        "lib": ["ESNext", "DOM", "DOM.Iterable"],
         "module": "Preserve",
         "moduleResolution": "Bundler",
-        "jsx": "react-jsx",
-        "types": ["bun"],
-        "strict": true,
-        "noEmit": true,
-        "verbatimModuleSyntax": true,
+        "moduleDetection": "force",
         "allowImportingTsExtensions": true,
+        "verbatimModuleSyntax": true,
         "resolveJsonModule": true,
+        "noEmit": true,
+        "strict": true,
+        "skipLibCheck": true,
+        "forceConsistentCasingInFileNames": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "noImplicitAny": true,
+        "noImplicitReturns": true,
         "noUncheckedIndexedAccess": true,
+        "noUncheckedSideEffectImports": true,
         "exactOptionalPropertyTypes": true,
         "noFallthroughCasesInSwitch": true,
         "noImplicitOverride": true,
-        "noUnusedLocals": true,
-        "noUnusedParameters": true,
-        "skipLibCheck": true,
-        "forceConsistentCasingInFileNames": true
+        "erasableSyntaxOnly": true
     },
-    "include": [
-        "apps/**/*.ts",
-        "apps/**/*.tsx",
-        "packages/**/*.ts",
-        "packages/**/*.tsx",
-        "scripts/**/*.ts",
-        "tests/**/*.ts"
-    ],
-    "exclude": ["**/node_modules", "**/dist"]
+    "files": [],
+    "references": [
+        {
+            "path": "./tsconfig.browser.json"
+        },
+        {
+            "path": "./tsconfig.bun.json"
+        },
+        {
+            "path": "./tsconfig.test.json"
+        }
+    ]
 }

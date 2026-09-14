@@ -4,10 +4,10 @@ import * as v from "valibot";
 
 import packageInformation from "../../../package.json";
 
-export class SystemStatusService extends Context.Tag("homelab/SystemStatusService")<
+export class SystemStatusService extends Context.Service<
     SystemStatusService,
     { readonly read: Effect.Effect<SystemStatus> }
->() {}
+>()("homelab/SystemStatusService") {}
 
 export const SystemStatusLive = Layer.succeed(SystemStatusService, {
     read: Effect.sync(() =>

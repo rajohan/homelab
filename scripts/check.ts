@@ -6,8 +6,7 @@ for (const command of ["format:check", "lint", "typecheck"]) {
     });
     const result = await child.exited;
     if (result !== 0) {
-        process.exit(result);
+        process.exitCode = result;
+        break;
     }
 }
-
-export {};

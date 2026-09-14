@@ -4,9 +4,15 @@
     "type": "module",
     "exports": {
         ".": "./src/index.tsx",
-        "./styles.css": "./src/styles.css"
+        "./classNames": "./src/classNames.ts"
+    },
+    "dependencies": {
+        "@headlessui/react": "2.2.10",
+        "clsx": "2.1.1",
+        "tailwind-merge": "3.7.0"
     },
     "peerDependencies": {
-        "react": "19.3.0"
+        "react": "19.3.0",
+        "react-dom": "19.3.0"
     }
 }

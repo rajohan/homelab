@@ -1,19 +1,55 @@
 version: 2
+
 updates:
   - package-ecosystem: bun
     directory: /
     schedule:
       interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Oslo
+    # Pause version PRs until the hosted updater supports bun.lock v2.
+    # Restore to 5 after a compatible updater is verified; see docs/dependencies.md.
+    open-pull-requests-limit: 0
+    labels:
+      - "type: dependencies"
+    commit-message:
+      prefix: chore(deps)
     groups:
-      trpc:
-        patterns: ["@trpc/*"]
-      react:
-        patterns: [react, react-dom, "@types/react", "@types/react-dom"]
-      formatting:
-        patterns: [oxfmt, oxlint]
-    open-pull-requests-limit: 5
+      application-major:
+        patterns:
+          - "*"
+        update-types:
+          - major
+      application-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 3
+      day: monday
+      time: "06:30"
+      timezone: Europe/Oslo
+    open-pull-requests-limit: 4
+    labels:
+      - "type: dependencies"
+      - "area: ci"
+    commit-message:
+      prefix: ci(deps)
+    groups:
+      github-actions-major:
+        patterns:
+          - "*"
+        update-types:
+          - major
+      github-actions-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch

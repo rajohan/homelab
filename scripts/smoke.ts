@@ -12,7 +12,7 @@ async function bounded<T>(
     try {
         return await Promise.race([
             promise,
-            new Promise<never>((_, reject) => {
+            new Promise<never>((_resolve, reject) => {
                 timer = setTimeout(
                     () => reject(new Error(`${label} timed out.`)),
                     timeoutMs
@@ -36,7 +36,7 @@ async function readPort(stream: ReadableStream<Uint8Array>): Promise<number> {
                     "The built application closed before announcing its port."
                 );
             pending += decoder.decode(chunk.value, { stream: true });
-            assert(pending.length < 16_384, "Unexpected application startup output.");
+            assert.ok(pending.length < 16_384, "Unexpected application startup output.");
             const newline = pending.indexOf("\n");
             if (newline === -1) continue;
             const line = pending.slice(0, newline).trim();
@@ -46,7 +46,7 @@ async function readPort(stream: ReadableStream<Uint8Array>): Promise<number> {
                 "Unexpected application startup response."
             );
             const port = Number(line.slice("SMOKE_PORT:".length));
-            assert(port > 0 && port <= 65_535, "Invalid application listening port.");
+            assert.ok(port > 0 && port <= 65_535, "Invalid application listening port.");
             return port;
         }
     } finally {
@@ -90,7 +90,7 @@ console.log('SMOKE_PORT:' + server.port);`,
 async function get(origin: string, path: string): Promise<Response> {
     const url = new URL(path, origin);
     assert.equal(url.origin, origin, "Smoke checks must not contact external services.");
-    return fetch(url, { signal: AbortSignal.timeout(5_000), redirect: "error" });
+    return fetch(url, { signal: AbortSignal.timeout(5000), redirect: "error" });
 }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -111,7 +111,7 @@ async function checkDashboard(origin: string) {
     const styles = [...html.matchAll(/<link\b[^>]*>/gi)]
         .filter((match) => /\brel=["']stylesheet["']/i.test(match[0]))
         .map((match) => /\bhref=["']([^"']+)["']/i.exec(match[0])?.[1]);
-    assert(
+    assert.ok(
         scripts.length > 0 && styles.length > 0,
         "The built document must link JavaScript and CSS assets."
     );
@@ -120,14 +120,15 @@ async function checkDashboard(origin: string) {
         ["css", styles],
     ] as const) {
         for (const path of paths) {
-            assert(path, "A built asset URL is missing.");
+            assert.ok(path, "A built asset URL is missing.");
             const asset = await get(origin, path);
             assert.equal(asset.status, 200, `The built ${kind} asset must be served.`);
             assert.match(
                 asset.headers.get("Content-Type") ?? "",
                 kind === "css" ? /text\/css/i : /javascript|ecmascript/i
             );
-            assert((await asset.text()).length > 0, "The built asset must not be empty.");
+            const body = await asset.text();
+            assert.ok(body.length > 0, "The built asset must not be empty.");
         }
     }
 
@@ -138,14 +139,15 @@ async function checkDashboard(origin: string) {
     const apiResponse = await get(origin, "/api/trpc/system.status");
     assert.equal(apiResponse.status, 200);
     const payload: unknown = await apiResponse.json();
-    assert(record(payload) && record(payload.result) && record(payload.result.data));
+    assert.ok(record(payload) && record(payload.result) && record(payload.result.data));
     const status = payload.result.data.json;
-    assert(record(status) && record(status.auth));
+    assert.ok(record(status) && record(status.auth));
     assert.equal(status.service, "dashboard");
     assert.equal(status.phase, "foundation");
     assert.equal(status.authenticationImplemented, false);
     assert.equal(status.auth.replacementEnabled, false);
-    assert.equal((await get(origin, "/api/missing")).status, 404);
+    const missingApi = await get(origin, "/api/missing");
+    assert.equal(missingApi.status, 404);
     console.info(
         "PASS: built dashboard HTML, linked assets, deep link and typed status transport."
     );
@@ -155,7 +157,7 @@ async function checkAuth(origin: string) {
     const response = await get(origin, "/health/live");
     assert.equal(response.status, 200);
     const status: unknown = await response.json();
-    assert(record(status));
+    assert.ok(record(status));
     assert.equal(status.service, "auth");
     assert.equal(status.authenticationImplemented, false);
     for (const path of [
@@ -180,10 +182,10 @@ try {
     await Promise.all(
         children.map(async (child) => {
             try {
-                await bounded(child.exited, 3_000, "Application shutdown");
+                await bounded(child.exited, 3000, "Application shutdown");
             } catch {
                 child.kill("SIGKILL");
-                await bounded(child.exited, 3_000, "Application forced shutdown");
+                await bounded(child.exited, 3000, "Application forced shutdown");
             }
         })
     );

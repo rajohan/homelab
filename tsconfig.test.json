@@ -1,0 +1,16 @@
+{
+    "extends": "./tsconfig.browser.json",
+    "compilerOptions": {
+        "types": ["bun"]
+    },
+    "include": [
+        "apps/**/*.test.tsx",
+        "packages/**/*.test.tsx",
+        "tests/dom.ts",
+        "apps/dashboard/src/assets.d.ts",
+        "packages/ui/src/**/*.test.ts",
+        "apps/*/src/browser/**/*.test.ts"
+    ],
+    "exclude": ["**/node_modules", "**/dist"],
+    "files": ["node_modules/@testing-library/jest-dom/types/bun.d.ts"]
+}

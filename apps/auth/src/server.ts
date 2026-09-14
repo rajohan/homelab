@@ -1,7 +1,8 @@
-import { authBindOptions, authRequest, type AuthServerOptions } from "./http";
+import { authBindOptions } from "./environment";
+import { authRequest, type AuthServerOptions } from "./http";
 
 export function startAuthServer(options: AuthServerOptions = {}) {
-    const bindOptions = authBindOptions(process.env);
+    const bindOptions = authBindOptions();
     return Bun.serve({
         hostname: options.hostname ?? bindOptions.hostname,
         port: options.port ?? bindOptions.port,

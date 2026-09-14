@@ -6,4 +6,4 @@ pre-commit:
       run: bun node_modules/oxfmt/bin/oxfmt --check {staged_files}
     lint:
       glob: "*.{ts,tsx,js,jsx}"
-      run: bun node_modules/oxlint/bin/oxlint --deny-warnings {staged_files}
+      run: bun scripts/lint.ts {staged_files}

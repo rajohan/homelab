@@ -1,18 +1,18 @@
-import index from "./index.html";
+import { dashboardBindOptions, dashboardDevelopment } from "./environment";
 import {
     dashboardApiRequest,
-    dashboardBindOptions,
     dashboardHealthResponse,
     dashboardNotFound,
     type DashboardServerOptions,
 } from "./http";
+import index from "./index.html";
 
 export function startDashboardServer(options: DashboardServerOptions = {}) {
-    const bindOptions = dashboardBindOptions(process.env);
+    const bindOptions = dashboardBindOptions();
     return Bun.serve({
         hostname: options.hostname ?? bindOptions.hostname,
         port: options.port ?? bindOptions.port,
-        development: options.development ?? process.env.NODE_ENV !== "production",
+        development: options.development ?? dashboardDevelopment(),
         routes: {
             "/health/live": { GET: dashboardHealthResponse },
             "/health/ready": { GET: dashboardHealthResponse },

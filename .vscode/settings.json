@@ -21,5 +21,6 @@
     },
     "[yaml]": {
         "editor.tabSize": 2
-    }
+    },
+    "oxc.useExecPath": true
 }
