@@ -16,5 +16,5 @@ comment:
   require_changes: true
 
 flags:
-  unit-component:
+  unit-component-integration:
     paths: [apps/, packages/]
