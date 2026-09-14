@@ -61,6 +61,7 @@
       "name": "@homelab/ui",
       "dependencies": {
         "@headlessui/react": "2.2.10",
+        "clsx": "2.1.1",
         "tailwind-merge": "3.7.0",
       },
       "peerDependencies": {

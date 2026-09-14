@@ -1,9 +1,10 @@
 {
   "version": 1,
   "files": {
-    "apps/dashboard/src/api.test.ts": 59,
-    "packages/ui/src/theme.test.ts": 12,
+    "apps/dashboard/src/api.test.ts": 47,
+    "packages/ui/src/theme.test.ts": 10,
     "apps/dashboard/src/http.test.ts": 6,
+    "packages/ui/src/classNames.test.ts": 6,
     "apps/auth/src/http.test.ts": 5,
     "packages/contracts/src/index.test.ts": 3
   }
