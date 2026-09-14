@@ -1,0 +1,121 @@
+# Identity operations and cutover
+
+## Scoped configuration
+
+The nonsecret `.env.example` lists every runtime key. Empty secret placeholders intentionally
+prevent production startup. Use Doppler injection or the existing root-protected RAM delivery,
+not committed env files, Docker build arguments or machine-specific project helpers.
+
+Use separate least-privilege runtime configs: `apps_homelab_auth` on Edge and
+`apps_homelab_dashboard` on Main. A single canonical value may be referenced by consumers;
+do not copy the same credential into unrelated configs. Neither scope needs host access.
+
+Resend naming: `RESEND_API_KEY` becomes `HOMELAB_AUTH_RESEND_API_KEY`. Inventory live consumers
+before deleting the old name. If an old application remains active, temporarily make its old
+name a Doppler reference to the canonical new name; remove that alias only after updating the
+consumer. The application intentionally has **no fallback** to the legacy name.
+Use the sender already verified in Resend and store its address as `HOMELAB_AUTH_EMAIL_FROM`.
+Production sender delivery must be tested once before email verification/recovery is enabled
+for real accounts. Fake test delivery is not proof that Resend accepts the real domain.
+
+At this PR's preparation, runtime Doppler writes were not performed because the temporary
+write login had expired. The code and inventory are ready; the external rename/reference work
+requires a renewed authorized login. Do not treat this document as evidence that it was done.
+
+## Database and keys
+
+Provision a dedicated auth database and owner, not PostgreSQL superuser access or an app's
+existing database. Production requires `sslmode=verify-full`, trusted CA roots and matching
+server name. Native Bun SQL uses up to eight connections. Prepared statements remain enabled:
+`prepare:false` with this Drizzle RC failed JSONB array writes in a real test.
+
+Prefer direct PostgreSQL for this small identity pool. If using PgBouncer, separately test
+prepared-statement support/session pooling, ownership, migrations and reconnection. Do not
+silently change the project's SQL driver options to accommodate an unqualified pool.
+
+Generate independent random material with `bun run auth:admin generate-keys` **only in a private
+operator terminal or a protected pipe to the secret manager**. Its JSON output contains private
+keys; never paste it into an issue, chat or CI log. It generates the data key, cookie key, proxy
+key, RSA JWKS and dashboard session key. Each OIDC client also needs its own random secret
+(at least 32 characters). Do not reuse the shared human web password.
+
+Apply reviewed migrations explicitly:
+
+```sh
+bun run auth:admin migrate
+```
+
+Inside the auth image, the equivalent is `bun --no-env-file admin.js migrate`. The image includes
+its migration artifacts. Web startup never applies schema changes. Create the first operator
+with `auth:admin create-user`, supplying private JSON on stdin:
+
+```json
+{
+    "username": "operator",
+    "email": "operator@example.test",
+    "password": "<private password>",
+    "groups": ["admins"]
+}
+```
+
+Replace placeholders privately. Passwords do not belong in shell arguments/history. This is
+not an example to copy into a shared terminal log. The optional `id` field is a UUID reserved
+for an approved account-linking migration. Email starts unverified.
+
+Recovery uses the same private-stdin pattern with `username` and `password`:
+`auth:admin recover-user`; add `--reset-mfa` only when approved. It revokes sessions and pending
+proofs and records an operator recovery event. It does not silently disable MFA.
+
+## Backup, recovery and rotation
+
+Use the existing PostgreSQL/PBS backup system. Include the auth schema, migrations/release
+reference and independently recoverable encryption/signing keys from Doppler. Database files
+alone cannot decrypt factors or protocol state without the data key. Do not add one-off
+production dumps, Kopia or another parallel backup job.
+
+Restore into an isolated database first, with the matching keys and no outbound email/client
+traffic. Verify account records, factor payload readability and a synthetic login. Decide
+explicitly whether restored sessions are revoked before service resumes. Never restore an old
+identity database over a live one as a casual application rollback.
+
+The data-encryption key currently has one active version. Its rotation needs a reviewed,
+transactional re-encryption migration; changing the environment variable is not rotation.
+Cookie/JWE-key replacement logs out affected browsers. For signing rotation, publish old and
+new identified public JWKs through the overlap period; qualify which key is selected for new
+signatures and do not remove a key while valid tokens still reference it.
+
+## Monitoring
+
+Add private `/health/live` and `/health/ready` probes to the existing VictoriaMetrics/blackbox
+setup at deployment. Auth readiness queries its schema; dashboard readiness checks configured
+identity wiring, not every downstream dependency. Also probe a synthetic unauthenticated
+protected endpoint for denial, OIDC discovery/JWKS and actual Resend delivery status separately.
+
+Forward bounded stdout/stderr to the existing Loki pipeline. Alert on persistent readiness
+failure, `maintenance_failed`, repeated `request_failed` / `identity_request_failed`, `email_delivery_failed`, unexpected
+OIDC rejection spikes and failed deployment/migrations. Never ingest credentials or callback
+tokens. The existing external Healthchecks/Sentinel arrangement remains unchanged.
+
+## Production gates (not executed by this PR)
+
+1. Review this PR, then qualify Bun/library compatibility and the built images.
+2. Finish scoped Doppler references, verified sender, private database/TLS, migration and PBS
+   restore test. Build from the reviewed commit; no floating production tag.
+3. Use private staging origins and synthetic accounts. Verify password, email, TOTP,
+   recovery codes, USB YubiKey, iPhone NFC, cancellation/PIN errors, Settings replay and session
+   revocation. A real-browser screenshot is not a replacement for these behavior checks.
+4. Inventory existing Authelia clients, exact callbacks, subject/account links, claims/groups,
+   ForwardAuth consumers and all public media/mobile/API exceptions. Preserve app UUIDs.
+   Re-enroll WebAuthn if the RP ID changes; do not copy encrypted records blindly.
+5. Verify client-secret-post and client-secret-basic consumers, refresh/logout behavior,
+   expired sessions, proxy header spoofing and deliberate unauthenticated API access.
+6. Obtain explicit approval for the actual issuer/routing/account switch. Keep Authelia and
+   its normal PBS recovery path available. Switch a test route/client first, then the reviewed
+   inventory; no silent DNS-wide replacement.
+7. Verify Nextcloud desktop/iOS, AIO clients, CrossWatch, pgAdmin/OpenClaw identity headers,
+   video playback, public manifests and local/Mesh access. Confirm monitoring and real email.
+8. Roll back route/client configuration to Authelia if acceptance fails. Do not merge two live
+   identity stores or promise sessions survive switching providers.
+
+This PR creates no production account, sends no real email, installs no new DNS/certificate
+job and does not change current Authelia, Traefik, firewall or OIDC client settings.

@@ -1,0 +1,20 @@
+@import "tailwindcss" source(none);
+@config "../../../tailwind.config.ts";
+@source "./browser";
+@source "../../../packages/ui/src";
+@source "../../../packages/identity-ui/src";
+@source not "./**/*.test.tsx";
+@source not "../../../packages/**/src/**/*.test.tsx";
+
+@layer base {
+    :root {
+        font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+        color: #172535;
+        background: #f5f7fa;
+        font-synthesis: none;
+    }
+    :focus-visible {
+        outline: 3px solid #547cda;
+        outline-offset: 4px;
+    }
+}

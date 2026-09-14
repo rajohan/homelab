@@ -15,6 +15,8 @@
         "apps/dashboard/src/browser/**/*.tsx",
         "apps/auth/src/browser/**/*.ts",
         "apps/auth/src/browser/**/*.tsx",
+        "packages/identity-ui/src/**/*.ts",
+        "packages/identity-ui/src/**/*.tsx",
         "packages/ui/src/**/*.ts",
         "packages/ui/src/**/*.tsx",
         "packages/contracts/src/**/*.ts"

@@ -6,10 +6,11 @@ The runner keeps native unit tests and Happy DOM component tests in separate Bun
 
 - `coverage/unit/lcov.info`
 - `coverage/component/lcov.info`
+- `coverage/integration/lcov.info` (from `bun run test:integration:coverage`)
 
-The reports cannot overwrite each other. CI uploads these two exact files together with the `unit-component` Codecov flag. Codecov combines their coverage for the same commit, including shared source files; no repository-specific LCOV merger is needed. Generated coverage reports are Git-ignored.
+The reports cannot overwrite each other. CI uploads these three exact files together with the `unit-component-integration` Codecov flag. Codecov combines their coverage for the same commit, including shared source files; no repository-specific LCOV merger is needed. Generated coverage reports are Git-ignored.
 
-`bun run test:integration` separately tests real HTTP behavior with native Bun networking. After `bun run build`, `bun run test:smoke` runs the built services and checks their HTTP responses and browser assets. These checks are not counted in the current unit/component coverage report.
+`bun run test:integration` tests real HTTP behavior with native Bun networking and a disposable PostgreSQL database. Set `HOMELAB_TEST_DATABASE_URL` to a loopback database named exactly `homelab_auth_test`; the fixture setup deletes existing test rows. CI creates PostgreSQL 18 as an isolated service. Never point these tests at production. After `bun run build`, `bun run test:smoke` runs the built services and checks their HTTP responses and browser assets. It also requires the isolated test database and exercises the built migration/user CLI and two separate configured processes through real OIDC login, account access and logout. Integration coverage is uploaded alongside unit/component coverage. Built smoke checks are deliberately outside source coverage.
 
 ## Component assertions and interaction
 
@@ -41,7 +42,7 @@ Do not add a replacement green CI job to conceal a missing Codecov notification.
 
 Bun reports coverage of loaded source modules. A high percentage is not proof that every source file has tests, and test/preload/generated files are excluded. Review missing test scenarios and the file list, not only the overall number.
 
-Happy DOM checks our DOM and component behavior, not a real browser's security enforcement or physical authenticators. Actual cookie/redirect behavior, YubiKey and iPhone NFC remain targeted manual acceptance checks when authentication is implemented. Coverage does not replace those tests.
+Happy DOM checks our DOM and component behavior, not a real browser's security enforcement or physical authenticators. Actual cookie/redirect behavior, YubiKey and iPhone NFC remain targeted manual acceptance checks before the identity preview replaces production. Coverage does not replace those tests.
 
 ## References
 
@@ -49,3 +50,18 @@ Happy DOM checks our DOM and component behavior, not a real browser's security e
 - [Codecov GitHub Action](https://github.com/codecov/codecov-action)
 - [Codecov report merging](https://docs.codecov.com/docs/merging-reports)
 - [Codecov flags](https://docs.codecov.com/docs/flags)
+
+## Identity coverage
+
+The integration suite exercises Argon2id sign-in, CSRF/origin rejection, stale-proof mutation
+replay, TOTP replay protection, simultaneous recovery-code consumption, signed WebAuthn
+registration/assertions with wrong-origin and missing-UV rejection, NFC transport retention,
+ownership checks, idle expiry, email verification and password recovery. It also runs actual
+OIDC code/S256 exchange, code reuse rejection, refresh rotation, RP logout, central revocation,
+ForwardAuth host/nonce binding and the independent dashboard BFF.
+
+Happy DOM tests the nested modal workflow and preservation/cancellation of the original
+operation. It does not emulate a hardware security key or assert Safari's NFC support.
+
+The disposable `bun run dev:identity` flow is also suitable for manual acceptance using
+synthetic accounts. Browser/device testing must not use the production account database.

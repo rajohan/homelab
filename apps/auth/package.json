@@ -7,6 +7,20 @@
         "start": "NODE_ENV=production bun --cwd dist --no-env-file server.js"
     },
     "dependencies": {
-        "drizzle-orm": "1.0.0-rc.4"
+        "@homelab/contracts": "workspace:*",
+        "@homelab/identity-ui": "workspace:*",
+        "@homelab/ui": "workspace:*",
+        "@simplewebauthn/server": "14.0.2",
+        "@tanstack/react-query": "5.102.8",
+        "drizzle-orm": "1.0.0-rc.4",
+        "effect": "4.0.0-rc.115",
+        "oidc-provider": "9.12.2",
+        "otpauth": "9.5.2",
+        "react": "19.3.0",
+        "react-dom": "19.3.0",
+        "valibot": "1.5.0"
+    },
+    "devDependencies": {
+        "@types/oidc-provider": "9.12.1"
     }
 }

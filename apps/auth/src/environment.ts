@@ -1,5 +1,7 @@
 import { isIP } from "node:net";
 
+import { parseAuthConfiguration } from "./configuration";
+
 export function authBindOptions(
     environment: Readonly<Record<string, string | undefined>> = process.env
 ): { hostname: string; port: number } {
@@ -10,4 +12,11 @@ export function authBindOptions(
         throw new Error("HOMELAB_AUTH_PORT must be between 1 and 65535");
     }
     return { hostname, port: Number(rawPort) };
+}
+
+export function authConfiguration() {
+    return parseAuthConfiguration(process.env);
+}
+export function authDevelopment(): boolean {
+    return process.env.NODE_ENV !== "production";
 }

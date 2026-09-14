@@ -1,14 +1,14 @@
 const mode = process.argv[2];
-const integration = mode === "integration";
-const coverage = mode === "coverage";
+const integration = mode === "integration" || mode === "integration-coverage";
+const coverage = mode === "coverage" || mode === "integration-coverage";
 const timings = mode === "timings";
 if (process.argv.length > 3 || (mode && !integration && !coverage && !timings)) {
     throw new Error(
-        "Use bun run test, bun run test:coverage, bun run test:integration or bun run test:timings."
+        "Use bun run test, bun run test:coverage, bun run test:integration, bun run test:integration:coverage or bun run test:timings."
     );
 }
 
-const files = [...new Bun.Glob("{apps,packages}/**/*.test.{ts,tsx}").scanSync(".")]
+const files = [...new Bun.Glob("{apps,packages,tests}/**/*.test.{ts,tsx}").scanSync(".")]
     .filter((file) => !file.includes("node_modules/") && !file.includes("/dist/"))
     .filter((file) => file.includes(".integration.test.") === integration)
     .toSorted();

@@ -5,11 +5,11 @@ export const systemStatusSchema = v.strictObject({
     service: v.literal("dashboard"),
     status: v.literal("ok"),
     version: v.string(),
-    phase: v.literal("foundation"),
-    authenticationImplemented: v.literal(false),
+    phase: v.literal("identity"),
+    authenticationImplemented: v.literal(true),
     integrationsImplemented: v.literal(false),
     auth: v.strictObject({
-        provider: v.literal("authelia"),
+        provider: v.literal("homelab"),
         replacementEnabled: v.literal(false),
     }),
 });

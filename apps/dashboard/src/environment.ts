@@ -1,5 +1,7 @@
 import { isIP } from "node:net";
 
+import { parseDashboardAuthConfiguration } from "./authConfiguration";
+
 export function dashboardBindOptions(
     environment: Readonly<Record<string, string | undefined>> = process.env
 ): { hostname: string; port: number } {
@@ -15,4 +17,8 @@ export function dashboardBindOptions(
 
 export function dashboardDevelopment(): boolean {
     return process.env.NODE_ENV !== "production";
+}
+
+export function dashboardAuthConfiguration() {
+    return parseDashboardAuthConfiguration(process.env);
 }

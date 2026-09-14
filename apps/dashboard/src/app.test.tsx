@@ -1,5 +1,6 @@
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, mock, spyOn, test } from "bun:test";
 
+import { IdentityClient } from "@homelab/identity-ui/client";
 import { QueryClient } from "@tanstack/react-query";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { render, screen } from "@testing-library/react";
@@ -11,12 +12,12 @@ import { createDashboardRouter } from "./browser/router";
 const readyStatus = {
     name: "Homelab",
     version: "0.1.0",
-    phase: "foundation",
-    authenticationImplemented: false,
+    phase: "identity",
+    authenticationImplemented: true,
     integrationsImplemented: false,
     service: "dashboard",
     status: "ok",
-    auth: { provider: "authelia", replacementEnabled: false },
+    auth: { provider: "homelab", replacementEnabled: false },
 } as const;
 
 describe("dashboard foundation", () => {
@@ -52,24 +53,34 @@ describe("dashboard foundation", () => {
         expect(retry).toHaveBeenCalledTimes(1);
     });
 
-    test("navigates to identity without providing a fake login form", async () => {
+    test("navigates to account settings behind the identity boundary", async () => {
         const user = userEvent.setup();
         const queryClient = new QueryClient({
             defaultOptions: { queries: { retry: false } },
         });
         queryClient.setQueryData(["system", "status"], readyStatus);
+        const session = spyOn(IdentityClient.prototype, "session").mockResolvedValue({
+            authenticated: true,
+            mfaRequired: false,
+            methods: [],
+        });
+        const account = spyOn(IdentityClient.prototype, "snapshot").mockRejectedValue(
+            new Error("Test account is unavailable")
+        );
         const router = createDashboardRouter(
             createMemoryHistory({ initialEntries: ["/"] })
         );
         render(<DashboardApp router={router} queryClient={queryClient} />);
         expect(await screen.findByText("Authelia remains in place.")).toBeVisible();
-        await user.click(screen.getByRole("link", { name: "Identity" }));
+        await user.click(screen.getByRole("link", { name: "Settings" }));
         expect(
             await screen.findByRole("heading", {
-                name: "Authentication is not implemented yet",
+                name: "Account settings",
             })
         ).toBeVisible();
         expect(screen.queryByLabelText(/password/i)).not.toBeInTheDocument();
         queryClient.clear();
+        session.mockRestore();
+        account.mockRestore();
     });
 });

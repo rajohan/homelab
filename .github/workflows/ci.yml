@@ -16,6 +16,19 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: homelab_test
+          POSTGRES_PASSWORD: isolated-test-only-password
+          POSTGRES_DB: homelab_auth_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U homelab_test -d homelab_auth_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      HOMELAB_TEST_DATABASE_URL: postgres://homelab_test:isolated-test-only-password@127.0.0.1:5432/homelab_auth_test
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -33,8 +46,8 @@ jobs:
         run: bun run db:check:auth
       - name: Run unit and component tests with coverage
         run: bun run test:coverage
-      - name: Run HTTP integration tests
-        run: bun run test:integration
+      - name: Run HTTP and database integration tests with coverage
+        run: bun run test:integration:coverage
       - name: Build both applications
         run: bun run build
       - name: Verify built runtime and browser assets
@@ -45,8 +58,8 @@ jobs:
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
-          files: coverage/unit/lcov.info,coverage/component/lcov.info
-          flags: unit-component
+          files: coverage/unit/lcov.info,coverage/component/lcov.info,coverage/integration/lcov.info
+          flags: unit-component-integration
           disable_search: true
           plugins: noop
           fail_ci_if_error: true

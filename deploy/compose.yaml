@@ -1,4 +1,4 @@
-name: homelab-foundation
+name: homelab
 
 services:
   dashboard:
@@ -7,10 +7,16 @@ services:
       dockerfile: deploy/Dockerfile
       args:
         APP: dashboard
-    image: homelab/dashboard:foundation
+    image: homelab/dashboard:identity-preview
     environment:
+      NODE_ENV: production
       HOMELAB_DASHBOARD_HOST: 0.0.0.0
       HOMELAB_DASHBOARD_PORT: "3100"
+      HOMELAB_DASHBOARD_AUTH_ISSUER:
+      HOMELAB_DASHBOARD_ORIGIN:
+      HOMELAB_DASHBOARD_OIDC_CLIENT_ID:
+      HOMELAB_DASHBOARD_OIDC_CLIENT_SECRET:
+      HOMELAB_DASHBOARD_SESSION_KEY:
     ports:
       - "127.0.0.1:3110:3100"
     read_only: true
@@ -19,10 +25,12 @@ services:
     init: true
     healthcheck:
       test:
-        - CMD
-        - bun
-        - -e
-        - "const r = await fetch('http://127.0.0.1:3100/health/ready'); process.exit(r.ok ? 0 : 1)"
+        [
+          CMD,
+          bun,
+          -e,
+          "const r = await fetch('http://127.0.0.1:3100/health/ready'); process.exit(r.ok ? 0 : 1)",
+        ]
       interval: 30s
       timeout: 5s
       start_period: 10s
@@ -39,10 +47,24 @@ services:
       dockerfile: deploy/Dockerfile
       args:
         APP: auth
-    image: homelab/auth:foundation
+    image: homelab/auth:identity-preview
     environment:
+      NODE_ENV: production
       HOMELAB_AUTH_HOST: 0.0.0.0
       HOMELAB_AUTH_PORT: "3101"
+      HOMELAB_AUTH_ISSUER:
+      HOMELAB_AUTH_DASHBOARD_ORIGIN:
+      HOMELAB_AUTH_RP_ID:
+      HOMELAB_AUTH_DATABASE_URL:
+      HOMELAB_AUTH_ENCRYPTION_KEY:
+      HOMELAB_AUTH_COOKIE_KEY:
+      HOMELAB_AUTH_PROXY_KEY:
+      HOMELAB_AUTH_JWKS:
+      HOMELAB_AUTH_CLIENTS:
+      HOMELAB_AUTH_DASHBOARD_CLIENT_ID:
+      HOMELAB_AUTH_ROUTES:
+      HOMELAB_AUTH_RESEND_API_KEY:
+      HOMELAB_AUTH_EMAIL_FROM:
     ports:
       - "127.0.0.1:3111:3101"
     read_only: true
@@ -51,10 +73,12 @@ services:
     init: true
     healthcheck:
       test:
-        - CMD
-        - bun
-        - -e
-        - "const r = await fetch('http://127.0.0.1:3101/health/ready'); process.exit(r.ok ? 0 : 1)"
+        [
+          CMD,
+          bun,
+          -e,
+          "const r = await fetch('http://127.0.0.1:3101/health/ready'); process.exit(r.ok ? 0 : 1)",
+        ]
       interval: 30s
       timeout: 5s
       start_period: 10s

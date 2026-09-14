@@ -9,6 +9,7 @@
         "tests/dom.ts",
         "apps/dashboard/src/assets.d.ts",
         "packages/ui/src/**/*.test.ts",
+        "packages/identity-ui/src/**/*.test.ts",
         "apps/*/src/browser/**/*.test.ts"
     ],
     "exclude": ["**/node_modules", "**/dist"],

@@ -11,6 +11,7 @@ import {
     ShieldCheck,
 } from "lucide-react";
 
+import { IdentityBoundary } from "./browser/IdentityBoundary";
 import type { createDashboardRouter } from "./browser/router";
 import { systemStatusQuery } from "./client";
 
@@ -59,7 +60,7 @@ export function Shell() {
                         Overview
                     </Link>
                     <Link
-                        to="/identity"
+                        to="/settings"
                         activeProps={{
                             "aria-current": "page",
                         }}
@@ -70,7 +71,7 @@ export function Shell() {
                             size={19}
                             aria-hidden="true"
                         />
-                        Identity
+                        Settings
                     </Link>
                     <Link
                         to="/infrastructure"
@@ -92,17 +93,18 @@ export function Shell() {
                         Project status
                     </span>
                     <p className="my-1.25 text-[0.925rem] leading-[1.7] font-semibold text-[#33465c]">
-                        Foundation
+                        Identity preview
                     </p>
                     <span className="block text-xs leading-[1.6] text-[#6d7989]">
-                        Authentication and integrations are the next milestones.
+                        Account security is ready for validation. Infrastructure
+                        integrations come next.
                     </span>
                 </div>
             </aside>
             <div className="flex min-w-0 flex-col">
                 <header className="flex min-h-19.25 items-center justify-between gap-4 border-b border-[#e0e6ee] px-10.5 py-4.5 text-xs text-[#64738a] max-[1050px]:px-6.25 max-[640px]:min-h-15 max-[640px]:px-5 max-[640px]:py-3">
                     <span>Workspace / Homelab</span>
-                    <Badge>Foundation preview</Badge>
+                    <Badge>Identity preview</Badge>
                 </header>
                 <main
                     className="mx-auto w-full max-w-312.5 flex-1 px-10.5 pt-12.25 pb-15 max-[1050px]:px-6.25 max-[1050px]:py-8 max-[640px]:px-4.5 max-[640px]:py-7.5 min-[1500px]:pt-16.25"
@@ -282,11 +284,11 @@ export function Overview() {
                         className="my-2 text-[1.05rem] leading-[1.45] font-[650] tracking-[-0.015em]"
                         id="next-step-heading"
                     >
-                        Build identity before integrations.
+                        Validate identity before cutover.
                     </h2>
                     <p className="max-w-147.5 text-[0.85rem] leading-[1.7] text-[#536174]">
-                        Implement and verify authentication alongside Authelia before
-                        considering a cutover.
+                        Verify real devices and client integrations alongside Authelia
+                        before considering a cutover.
                     </p>
                 </div>
                 <Link
@@ -312,7 +314,7 @@ export function Identity() {
                     One identity. Clear boundaries.
                 </h1>
                 <p className="text-[0.925rem] leading-[1.7] text-[#536174]">
-                    A separate identity application will serve the dashboard and other
+                    A separate identity application serves the dashboard and other
                     approved clients.
                 </p>
             </div>
@@ -322,18 +324,19 @@ export function Identity() {
                         className="text-[1.05rem] leading-[1.45] font-[650] tracking-[-0.015em]"
                         id="identity-heading"
                     >
-                        Authentication is not implemented yet
+                        Independent identity service
                     </h2>
-                    <Badge>Planned</Badge>
+                    <Badge>Identity preview</Badge>
                 </div>
                 <p className="text-[0.925rem] leading-[1.7] text-[#536174]">
-                    Authelia continues to handle existing sign-ins. This application does
-                    not accept passwords, issue sessions, or provide OIDC or ForwardAuth
-                    endpoints.
+                    Authelia continues to handle production sign-ins. The isolated Homelab
+                    identity service implements account security, OIDC and ForwardAuth; it
+                    has not replaced the existing service.
                 </p>
                 <ul className="mt-4.5 list-disc pl-5.25 text-[0.925rem] leading-[1.8] text-[#536174]">
                     <li>
-                        Implement standards-based sign-in and explicit access policies.
+                        Review account security in Settings and validate explicit access
+                        policies.
                     </li>
                     <li>
                         Verify desktop security keys, mobile NFC, and existing client
@@ -394,7 +397,9 @@ export function DashboardApp({
 }) {
     return (
         <QueryClientProvider client={queryClient}>
-            <RouterProvider router={router} />
+            <IdentityBoundary>
+                <RouterProvider router={router} />
+            </IdentityBoundary>
         </QueryClientProvider>
     );
 }

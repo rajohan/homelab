@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-router";
 
 import { Shell, Overview, Identity, Infrastructure, NotFound } from "../app";
+import { Settings } from "./Settings";
 
 export function createDashboardRouter(history?: RouterHistory) {
     const root = createRootRoute({
@@ -28,7 +29,16 @@ export function createDashboardRouter(history?: RouterHistory) {
         component: Infrastructure,
     });
     return createRouter({
-        routeTree: root.addChildren([overview, identity, infrastructure]),
+        routeTree: root.addChildren([
+            overview,
+            identity,
+            infrastructure,
+            createRoute({
+                getParentRoute: () => root,
+                path: "/settings",
+                component: Settings,
+            }),
+        ]),
         ...(history ? { history } : {}),
     });
 }

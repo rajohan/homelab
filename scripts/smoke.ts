@@ -62,7 +62,7 @@ async function start(app: "auth" | "dashboard"): Promise<string> {
             "--no-env-file",
             "-e",
             `const { ${exportName} } = await import('./server.js');
-const server = ${exportName}({ hostname: '127.0.0.1', port: 0, development: false });
+const server = await ${exportName}({ configuration: null, authentication: null, hostname: '127.0.0.1', port: 0, development: false });
 console.log('SMOKE_PORT:' + server.port);`,
         ],
         {
@@ -101,6 +101,11 @@ async function checkDashboard(origin: string) {
     const response = await get(origin, "/");
     assert.equal(response.status, 200);
     assert.match(response.headers.get("Content-Type") ?? "", /text\/html/i);
+    assert.match(
+        response.headers.get("Content-Security-Policy") ?? "",
+        /frame-ancestors 'none'/
+    );
+    assert.equal(response.headers.get("Referrer-Policy"), "no-referrer");
     const html = await response.text();
     assert.match(html, /<title>Homelab<\/title>/);
     assert.match(html, /id=["']root["']/);
@@ -137,19 +142,11 @@ async function checkDashboard(origin: string) {
     assert.match(await deepLink.text(), /id=["']root["']/);
 
     const apiResponse = await get(origin, "/api/trpc/system.status");
-    assert.equal(apiResponse.status, 200);
-    const payload: unknown = await apiResponse.json();
-    assert.ok(record(payload) && record(payload.result) && record(payload.result.data));
-    const status = payload.result.data.json;
-    assert.ok(record(status) && record(status.auth));
-    assert.equal(status.service, "dashboard");
-    assert.equal(status.phase, "foundation");
-    assert.equal(status.authenticationImplemented, false);
-    assert.equal(status.auth.replacementEnabled, false);
+    assert.equal(apiResponse.status, 503);
     const missingApi = await get(origin, "/api/missing");
-    assert.equal(missingApi.status, 404);
+    assert.equal(missingApi.status, 503);
     console.info(
-        "PASS: built dashboard HTML, linked assets, deep link and typed status transport."
+        "PASS: built dashboard HTML, linked assets, deep links and fail-closed private API."
     );
 }
 
@@ -159,7 +156,7 @@ async function checkAuth(origin: string) {
     const status: unknown = await response.json();
     assert.ok(record(status));
     assert.equal(status.service, "auth");
-    assert.equal(status.authenticationImplemented, false);
+    assert.equal(status.authenticationImplemented, true);
     for (const path of [
         "/.well-known/openid-configuration",
         "/authorize",

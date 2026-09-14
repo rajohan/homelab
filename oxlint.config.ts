@@ -30,6 +30,7 @@ const browserFiles = [
     "apps/dashboard/src/browser/**/*.{ts,tsx}",
     "apps/auth/src/browser/**/*.{ts,tsx}",
     "packages/ui/src/**/*.{ts,tsx}",
+    "packages/identity-ui/src/**/*.{ts,tsx}",
 ];
 const serverFiles = ["apps/auth/src/**/*.{ts,tsx}", "apps/dashboard/src/**/*.{ts,tsx}"];
 const appImports = ["**/apps/**", "@homelab/auth", "@homelab/dashboard"];
@@ -203,7 +204,10 @@ export default defineConfig({
             },
         },
         {
-            files: ["packages/ui/src/**/*.{ts,tsx}"],
+            files: [
+                "packages/ui/src/**/*.{ts,tsx}",
+                "packages/identity-ui/src/**/*.{ts,tsx}",
+            ],
             excludeFiles: testFiles,
             rules: {
                 "no-restricted-imports": [
@@ -362,6 +366,8 @@ export default defineConfig({
         },
         {
             files: ["scripts/**/*.ts", "*.config.ts"],
+            // The isolated development harness composes both apps with fake dependencies.
+            excludeFiles: ["scripts/devIdentity.ts"],
             rules: {
                 "no-restricted-imports": [
                     "error",
@@ -381,11 +387,6 @@ export default defineConfig({
                     },
                 ],
             },
-        },
-        {
-            // Auth tables are deliberately deferred. Remove this exception with the first schema.
-            files: ["apps/auth/src/database/schema.ts"],
-            rules: { "unicorn/no-empty-file": "off" },
         },
     ],
 });

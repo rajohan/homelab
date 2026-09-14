@@ -31,3 +31,5 @@
         outline-offset: 4px;
     }
 }
+
+@source "../../../packages/identity-ui/src";

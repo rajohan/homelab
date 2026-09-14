@@ -12,4 +12,9 @@ env = "disable"
 
 [test]
 coverageSkipTestFiles = true
-coveragePathIgnorePatterns = ["**/dist/**", "**/node_modules/**", "tests/**"]
+coveragePathIgnorePatterns = [
+    "**/dist/**",
+    "**/node_modules/**",
+    "tests/**",
+    "**/testing/**",
+]

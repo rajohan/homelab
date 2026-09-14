@@ -1,0 +1,35 @@
+# Documentation example: review addresses and policies before installing.
+# Render only inside Traefik's protected file-provider configuration.
+http:
+  middlewares:
+    homelab-clear-untrusted:
+      headers:
+        customRequestHeaders:
+          Remote-User: ""
+          Remote-Name: ""
+          Remote-Email: ""
+          Remote-Groups: ""
+          X-Homelab-Proxy-Key: ""
+    homelab-proxy-credential:
+      headers:
+        customRequestHeaders:
+          X-Homelab-Proxy-Key: '{{ env "HOMELAB_AUTH_PROXY_KEY" }}'
+    homelab-forward-auth:
+      forwardAuth:
+        address: https://auth.example.test/api/authz/forward-auth
+        trustForwardHeader: false
+        forwardBody: false
+        authRequestHeaders: [Cookie, X-Homelab-Proxy-Key]
+        authResponseHeaders: [Remote-User, Remote-Name, Remote-Email, Remote-Groups]
+        addAuthCookiesToResponse: [__Host-homelab_sso, __Host-homelab_sso_nonce]
+    homelab-strip-credential:
+      headers:
+        customRequestHeaders:
+          X-Homelab-Proxy-Key: ""
+    homelab-identity:
+      chain:
+        middlewares:
+          - homelab-clear-untrusted
+          - homelab-proxy-credential
+          - homelab-forward-auth
+          - homelab-strip-credential

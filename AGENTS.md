@@ -7,6 +7,6 @@
 - Shared `packages/ui` and `packages/contracts` are browser-safe. They must not import application internals or server-only dependencies.
 - Unit tests use `*.test.ts`; Happy DOM component tests use `*.test.tsx`; real HTTP integration tests use `*.integration.test.ts`. Run them with `bun run test` and `bun run test:integration` so DOM emulation cannot replace backend network primitives.
 - Run `bun run check`, `bun run test`, `bun run test:integration`, `bun run build` and `bun run test:smoke` before delivery.
-- Do not read or modify production identity data in ordinary development. The foundation is not an identity provider and must not replace Authelia until separately qualified and approved.
+- Do not read or modify production identity data in ordinary development. The identity implementation must not replace production Authelia until separately qualified and approved.
 - Never commit secrets, tokens, real session data, private keys or local `.env` files. Configuration examples contain nonsecret values only.
 - Do not add custom provisioning frameworks or machine-specific helper dependencies. Setup must remain unprivileged and scoped to this repository.

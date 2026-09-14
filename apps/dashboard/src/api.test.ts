@@ -6,12 +6,12 @@ import { appRouter } from "./api";
 import { readSystemStatus, SystemStatusService } from "./system";
 
 describe("dashboard system API", () => {
-    test("reports the current boundary without claiming authentication is implemented", async () => {
+    test("reports identity support without claiming a production cutover", async () => {
         const result = await appRouter.createCaller({}).system.status();
 
         expect(result.service).toBe("dashboard");
-        expect(result.authenticationImplemented).toBe(false);
-        expect(result.auth).toEqual({ provider: "authelia", replacementEnabled: false });
+        expect(result.authenticationImplemented).toBe(true);
+        expect(result.auth).toEqual({ provider: "homelab", replacementEnabled: false });
     });
 
     test("the Effect service has a replaceable dependency boundary", async () => {

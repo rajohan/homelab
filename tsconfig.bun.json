@@ -24,6 +24,7 @@
         "apps/dashboard/src/client.ts",
         "apps/dashboard/src/browser/**",
         "apps/auth/src/browser/**",
-        "packages/ui/src/**"
+        "packages/ui/src/**",
+        "packages/identity-ui/src/**"
     ]
 }

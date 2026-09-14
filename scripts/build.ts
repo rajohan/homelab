@@ -1,4 +1,4 @@
-import { realpath, rm } from "node:fs/promises";
+import { cp, realpath, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -27,10 +27,14 @@ for (const app of apps) {
     await rm(outputDirectory, { recursive: true, force: true });
 
     const result = await Bun.build({
-        entrypoints: [path.resolve(applicationRoot, "src/server.ts")],
+        entrypoints: [
+            path.resolve(applicationRoot, "src/server.ts"),
+            ...(app === "auth" ? [path.resolve(applicationRoot, "src/admin.ts")] : []),
+        ],
         outdir: outputDirectory,
         target: "bun",
-        minify: true,
+        // Protocol libraries use class names as durable model identifiers.
+        minify: { whitespace: true, syntax: false, identifiers: false, keepNames: true },
         sourcemap: "none",
         env: "disable",
         define: { "process.env.NODE_ENV": JSON.stringify("production") },
@@ -42,5 +46,11 @@ for (const app of apps) {
         }
         throw new Error(`The ${app} build failed.`);
     }
+    if (app === "auth")
+        await cp(
+            path.resolve(applicationRoot, "migrations"),
+            path.resolve(outputDirectory, "migrations"),
+            { recursive: true }
+        );
     console.info(`Built ${app}: ${result.outputs.length} artifacts in apps/${app}/dist.`);
 }
