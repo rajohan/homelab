@@ -12,7 +12,9 @@ export function useIdentitySession(client: IdentityClient) {
                 Awaited<ReturnType<IdentityClient["session"]>>
             >(["identity", "session"]);
             if (
-                !result.authenticated ||
+                (!result.authenticated &&
+                    !result.mfaRequired &&
+                    (previous?.authenticated || previous?.mfaRequired)) ||
                 previous?.userId !== result.userId ||
                 previous?.username !== result.username
             ) {

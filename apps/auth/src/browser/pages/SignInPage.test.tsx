@@ -2,7 +2,7 @@ import { expect, spyOn, test } from "bun:test";
 
 import { IdentityClient, type AccountSnapshot } from "@homelab/ui/identity/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { SignInPage } from "./SignInPage";
@@ -71,6 +71,73 @@ test("auth account identity changes discard old account state and pending dialog
         query.clear();
         session.mockRestore();
         snapshot.mockRestore();
+        cancel.mockRestore();
+    }
+});
+
+test("stable pending-MFA polling preserves a security-key ceremony; signing out cancels it", async () => {
+    const client = new IdentityClient();
+    let authenticated = false;
+    let mfaRequired = true;
+    const session = spyOn(client, "session").mockImplementation(() =>
+        Promise.resolve({
+            authenticated,
+            mfaRequired,
+            userId: authenticated || mfaRequired ? "operator" : undefined,
+            username: authenticated || mfaRequired ? "operator" : undefined,
+            methods: ["webauthn"],
+        })
+    );
+    const pending = Promise.withResolvers<void>();
+    const proof = spyOn(client, "securityKeyProof").mockImplementation(
+        () => pending.promise
+    );
+    const cancel = spyOn(client, "cancelActions");
+    const query = new QueryClient({
+        defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+    const view = render(
+        <QueryClientProvider client={query}>
+            <SignInPage
+                client={client}
+                address={new URL("https://auth.example.test/sign-in")}
+                token={null}
+            />
+        </QueryClientProvider>
+    );
+    try {
+        await userEvent
+            .setup()
+            .click(await screen.findByRole("button", { name: "Use security key" }));
+        expect(
+            await screen.findByRole("button", { name: "Waiting for your security key…" })
+        ).toBeDisabled();
+        cancel.mockClear();
+        await query.invalidateQueries({ queryKey: ["identity", "session"] });
+        expect(cancel).not.toHaveBeenCalled();
+        expect(
+            screen.getByRole("button", { name: "Waiting for your security key…" })
+        ).toBeDisabled();
+        expect(proof).toHaveBeenCalledTimes(1);
+        authenticated = true;
+        mfaRequired = false;
+        pending.resolve();
+        await waitFor(() =>
+            expect(query.getQueryData(["identity", "session"])).toMatchObject({
+                authenticated: true,
+            })
+        );
+        expect(cancel).not.toHaveBeenCalled();
+        authenticated = false;
+        await query.invalidateQueries({ queryKey: ["identity", "session"] });
+        expect(cancel).toHaveBeenCalled();
+        expect(query.getQueryData(["identity", "methods"])).toBeUndefined();
+    } finally {
+        pending.resolve();
+        view.unmount();
+        query.clear();
+        session.mockRestore();
+        proof.mockRestore();
         cancel.mockRestore();
     }
 });
