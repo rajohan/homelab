@@ -1,2 +1,0 @@
-ALTER TABLE "auth_mail_outbox" ADD COLUMN "proof_digest" text;--> statement-breakpoint
-ALTER TABLE "auth_mail_outbox" ADD CONSTRAINT "auth_mail_outbox_proof_digest_auth_challenges_digest_fkey" FOREIGN KEY ("proof_digest") REFERENCES "auth_challenges"("digest") ON DELETE CASCADE;

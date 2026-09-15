@@ -1,1 +1,0 @@
-ALTER TABLE "auth_factors" ALTER COLUMN "counter" SET DATA TYPE bigint USING "counter"::bigint;

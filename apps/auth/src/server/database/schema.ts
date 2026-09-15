@@ -108,6 +108,7 @@ export const oidcRecords = pgTable(
 
 export const grantSessions = pgTable("auth_grant_sessions", {
     grantId: text("grant_id").primaryKey(),
+    encryptedLogout: text("encrypted_logout"),
     sessionId: uuid("session_id")
         .notNull()
         .references(() => sessions.id, { onDelete: "cascade" }),
@@ -144,4 +145,13 @@ export const mailOutbox = pgTable("auth_mail_outbox", {
     nextAttemptAt: time("next_attempt_at").notNull(),
     attempts: integer("attempts").notNull().default(0),
     sentAt: time("sent_at"),
+});
+
+export const logoutOutbox = pgTable("auth_logout_outbox", {
+    id: text("id").primaryKey(),
+    encryptedData: text("encrypted_data").notNull(),
+    createdAt: time("created_at").notNull(),
+    expiresAt: time("expires_at").notNull(),
+    nextAttemptAt: time("next_attempt_at").notNull(),
+    attempts: integer("attempts").notNull().default(0),
 });

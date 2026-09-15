@@ -1,5 +1,6 @@
 import * as v from "valibot";
 
+import { resourcePolicy } from "../config/accessPolicy";
 import { type Accounts, type Principal } from "../security/accounts";
 import { decryptValue, encryptValue, randomToken } from "../security/crypto";
 import { AuthFailure, denied } from "../security/errors";
@@ -146,13 +147,9 @@ export async function forwardAuth(
             return response;
         });
     }
-    const ambiguousPath = /%(?:2f|5c|00|25)/i.test(target.pathname);
-    if (
-        !ambiguousPath &&
-        (rule.publicPaths.includes(target.pathname) ||
-            rule.publicPrefixes.some((prefix) => target.pathname.startsWith(prefix)))
-    )
-        return new Response(null, { status: 200 });
+    const access = resourcePolicy(rule, target.pathname);
+    if (access.policy === "deny") return secureJson({ error: "Access denied" }, 403);
+    if (access.policy === "bypass") return new Response(null, { status: 200 });
     const envelope = readCookie(request, resourceSession);
     if (envelope) {
         let session: v.InferOutput<typeof resourceSchema> | undefined;
@@ -180,7 +177,7 @@ export async function forwardAuth(
             await accounts.requireAuthenticated(principal);
             if (
                 !principal.session.mfaAt ||
-                !rule.groups.some((group) => principal.user.groups.includes(group))
+                !access.groups.some((group) => principal.user.groups.includes(group))
             )
                 return secureJson({ error: "Access denied" }, 403);
             const origin = request.headers.get("origin");

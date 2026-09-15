@@ -5,6 +5,7 @@ import * as v from "valibot";
 import type { AuthDatabase } from "../database/connection";
 import { grantSessions, oidcRecords, sessions } from "../database/schema";
 import { decryptValue, encryptValue, tokenDigest } from "../security/crypto";
+import { revokeBoundGrants } from "./logout";
 
 export function createOidcAdapter(database: AuthDatabase, key: Uint8Array) {
     return class PersistentAdapter implements Adapter {
@@ -128,12 +129,15 @@ export function createOidcAdapter(database: AuthDatabase, key: Uint8Array) {
         }
 
         async revokeByGrantId(id: string): Promise<void> {
-            await database
-                .delete(oidcRecords)
-                .where(eq(oidcRecords.grantId, tokenDigest(id)));
-            await database
-                .delete(grantSessions)
-                .where(eq(grantSessions.grantId, tokenDigest(id)));
+            await database.transaction(async (transaction) => {
+                await revokeBoundGrants(
+                    transaction,
+                    eq(grantSessions.grantId, tokenDigest(id))
+                );
+                await transaction
+                    .delete(oidcRecords)
+                    .where(eq(oidcRecords.grantId, tokenDigest(id)));
+            });
         }
     };
 }

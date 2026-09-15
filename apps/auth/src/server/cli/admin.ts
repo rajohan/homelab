@@ -10,6 +10,7 @@ import { authMigrationsFolder } from "../database/migrations";
 import { challenges, factors, recoveryCodes, sessions, users } from "../database/schema";
 import { Accounts } from "../security/accounts";
 import { hashPassword, randomToken } from "../security/crypto";
+import { rotateDataKey } from "../security/keyRotation";
 import { audit } from "../security/store";
 
 const usernameSchema = v.pipe(v.string(), v.regex(/^[a-z0-9][a-z0-9_-]{0,63}$/));
@@ -68,20 +69,47 @@ export async function runAdmin(command: readonly string[]): Promise<void> {
     }
     if (
         !action ||
-        !["migrate", "create-user", "recover-user"].includes(action) ||
+        !["migrate", "create-user", "recover-user", "rotate-data-key"].includes(action) ||
         (option !== undefined &&
-            !(action === "recover-user" && option === "--reset-mfa")) ||
+            !(action === "recover-user" && option === "--reset-mfa") &&
+            !(
+                action === "rotate-data-key" &&
+                ["--check", "--service-stopped"].includes(option)
+            )) ||
+        (action === "rotate-data-key" && !option) ||
         command.length > 2
     ) {
         throw new Error(
-            "Use migrate, create-user, recover-user [--reset-mfa], or generate-keys"
+            "Use migrate, create-user, recover-user [--reset-mfa], rotate-data-key --check|--service-stopped, or generate-keys"
         );
     }
     const configuration = await authConfiguration();
     if (!configuration) throw new Error("Configure the isolated auth service first");
     const connection = connectAuthDatabase(configuration.databaseUrl);
     try {
-        if (action === "migrate") {
+        if (action === "rotate-data-key") {
+            const input = v.parse(
+                v.strictObject({
+                    nextEncryptionKey: v.pipe(v.string(), v.base64(), v.length(44)),
+                }),
+                await privateInput()
+            );
+            const counts = await rotateDataKey(
+                connection.database,
+                configuration.encryptionKey,
+                Buffer.from(input.nextEncryptionKey, "base64"),
+                option === "--service-stopped"
+            );
+            process.stdout.write(
+                JSON.stringify({
+                    operation:
+                        option === "--check"
+                            ? "rotation_verified_without_changes"
+                            : "rotation_committed_update_secret_before_restart",
+                    counts,
+                }) + "\n"
+            );
+        } else if (action === "migrate") {
             await migrate(connection.database, {
                 migrationsFolder: authMigrationsFolder(),
             });

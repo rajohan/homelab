@@ -74,8 +74,12 @@ or another OIDC client before MFA. Trusted configured clients are auto-consented
 third-party applications. Consent and grants are bound to the actual central session.
 
 RP logout uses the library's CSRF-validated confirmation before ending the central session;
-a GET link alone does not revoke it. This implementation does not send OIDC back-channel
-logout notifications. Third-party app sessions therefore need their own logout/lifetime policy.
+a GET link alone does not revoke it. Session-bound back-channel logout uses the provider's
+native signed tokens, with an encrypted transactional retry queue for Settings revocation,
+recovery, expiry and RP logout. Each new grant receives a fresh SID; delayed delivery cannot
+target a subsequent login. Receivers must support the protocol and duplicate delivery.
+Client failure does not undo central revocation. See the operations guide for retry bounds
+and per-client qualification; no unsupported consumer is assumed to have logged out.
 
 ## ForwardAuth and public endpoints
 
@@ -89,8 +93,9 @@ Sec-Fetch-Site evidence forwarded by the trusted proxy; sibling or headerless re
 remain authorized but do not extend idle lifetime. A short-lived handoff ticket binds the central session, destination, browser nonce
 and one-time redemption. Spoofed identity headers, unrelated hosts and replayed tickets fail.
 
-Public exceptions are exact paths or segment prefixes. Ambiguous encoded separators are not
-eligible for bypass. Inventory media manifests, catalog/meta/stream/subtitle APIs, MediaFlow,
+Public exceptions are exact paths, segment prefixes, or ordered anchored RE2 resource rules.
+Unknown origins are denied; registered origins default to MFA with allowed groups.
+Ambiguous encoded separators, malformed encoding and control characters are denied. Inventory media manifests, catalog/meta/stream/subtitle APIs, MediaFlow,
 CometNet, Hydra, authenticated NZB endpoints, short links and Nextcloud WebDAV/mobile
 **before cutover**. Do not blanket-protect endpoints whose non-browser clients cannot log in.
 
@@ -112,6 +117,9 @@ current address changes; a previous verified address receives a notification.
 TOTP secrets, WebAuthn stored payloads, protocol records and outbox messages use AES-256-GCM
 with purpose-bound authenticated data. Metadata needed for indexing remains plaintext.
 Never replace the encryption key casually: existing encrypted records would become unreadable.
+The offline `rotate-data-key` command verifies and re-encrypts all persistent encrypted columns
+atomically. Stop every auth process, follow the documented check/apply/secret-update sequence
+and retain backup-era keys. Cookie keys and OIDC signing keys have distinct lifecycles.
 
 Logs contain bounded event names, not credentials, raw requests, tokens or email bodies.
 Security activity retains 90 days of sanitized events. Dev-only delivery prints synthetic mail

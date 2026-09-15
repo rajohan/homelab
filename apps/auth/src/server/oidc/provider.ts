@@ -6,10 +6,11 @@ import { Provider, interactionPolicy } from "oidc-provider";
 import { grantSessions, users } from "../database/schema";
 import { cookieName, readAuthCookie } from "../http/httpSecurity";
 import { type Accounts, type Principal } from "../security/accounts";
-import { tokenDigest } from "../security/crypto";
+import { encryptValue, randomToken, tokenDigest } from "../security/crypto";
 import { AuthFailure } from "../security/errors";
 import { audit } from "../security/store";
 import { createOidcAdapter } from "./adapter";
+import { createOidcFetch } from "./fetch";
 
 async function cookiePrincipal(
     accounts: Accounts,
@@ -41,6 +42,8 @@ export function createProvider(accounts: Accounts): Provider {
                 );
                 if (!principal) return true;
                 const clientId = context.oidc.client?.clientId;
+                if (clientId && !clientAllowed(accounts, principal, clientId))
+                    return true;
                 if (
                     clientId !== configuration.dashboardClientId &&
                     !principal.session.mfaAt
@@ -61,6 +64,7 @@ export function createProvider(accounts: Accounts): Provider {
         },
         features: {
             devInteractions: { enabled: false },
+            backchannelLogout: { enabled: true },
             rpInitiatedLogout: {
                 enabled: true,
                 logoutSource: (context, form) => {
@@ -76,6 +80,7 @@ export function createProvider(accounts: Accounts): Provider {
             revocation: { enabled: true },
             introspection: { enabled: true },
         },
+        fetch: createOidcFetch(configuration.clients),
         pkce: { required: () => true },
         clientBasedCORS: () => false,
         rotateRefreshToken: true,
@@ -260,6 +265,8 @@ async function completeInteraction(
         !accounts.configuration.clients.some((client) => client.client_id === clientId)
     )
         throw new Error("Unknown client");
+    if (!clientAllowed(accounts, principal, clientId))
+        throw new Error("Client access denied");
     if (clientId !== accounts.configuration.dashboardClientId && !principal.session.mfaAt)
         throw new Error("Two-factor authentication is required");
     let result;
@@ -285,10 +292,52 @@ async function completeInteraction(
             throw new Error("Account access is restricted to the dashboard");
         grant.addOIDCScope(scope);
         const grantId = await grant.save();
-        await accounts.database.insert(grantSessions).values({
-            grantId: tokenDigest(grantId),
-            sessionId: principal.session.id,
-            userId: principal.user.id,
+        const protocolSession = details.session?.uid
+            ? await provider.Session.findByUid(details.session.uid)
+            : undefined;
+        if (!protocolSession || protocolSession.accountId !== principal.user.id)
+            throw new Error("OIDC session changed");
+        // A new grant receives a new sid, so a delayed logout cannot terminate a later login.
+        const sid = randomToken();
+        protocolSession.sidFor(clientId, sid);
+        await protocolSession.persist();
+        const metadata = configurationClient(accounts, clientId);
+        const digest = tokenDigest(grantId);
+        await accounts.database.transaction(async (transaction) => {
+            await transaction
+                .select({ id: users.id })
+                .from(users)
+                .where(eq(users.id, principal.user.id))
+                .for("update");
+            const current = await accounts.principalById(
+                principal.session.id,
+                transaction
+            );
+            await accounts.requireAuthenticated(current, transaction);
+            if (!clientAllowed(accounts, current, clientId))
+                throw new Error("Client access denied");
+            if (
+                clientId !== accounts.configuration.dashboardClientId &&
+                !current.session.mfaAt
+            )
+                throw new Error("Two-factor authentication is required");
+            await transaction.insert(grantSessions).values({
+                grantId: digest,
+                sessionId: current.session.id,
+                userId: current.user.id,
+                encryptedLogout: metadata?.backchannel_logout_uri
+                    ? encryptValue(
+                          accounts.configuration.encryptionKey,
+                          `logout:${digest}`,
+                          {
+                              clientId,
+                              accountId: current.user.id,
+                              sid,
+                              uri: metadata.backchannel_logout_uri,
+                          }
+                      )
+                    : null,
+            });
         });
         result = { consent: { grantId } };
     } else throw new Error("Unsupported interaction");
@@ -326,4 +375,17 @@ export async function tokenPrincipal(
         );
     if (!grant) throw new AuthFailure("UNAUTHORIZED", 401, "Sign in to continue.");
     return accounts.principalById(grant.sessionId);
+}
+
+function configurationClient(accounts: Accounts, clientId: string) {
+    return accounts.configuration.clients.find((client) => client.client_id === clientId);
+}
+
+function clientAllowed(
+    accounts: Accounts,
+    principal: Principal,
+    clientId: string
+): boolean {
+    const groups = accounts.configuration.clientGroups?.[clientId] ?? ["admins"];
+    return groups.some((group) => principal.user.groups.includes(group));
 }

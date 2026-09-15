@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, inArray, isNull, isNotNull, ne } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, isNotNull, ne } from "drizzle-orm";
 
 import type { AuthConfiguration } from "../config/configuration";
 import type { AuthDatabase, AuthStore, AuthTransaction } from "../database/connection";
@@ -7,11 +7,11 @@ import {
     challenges,
     factors,
     grantSessions,
-    oidcRecords,
     recoveryCodes,
     sessions,
     users,
 } from "../database/schema";
+import { revokeBoundGrants } from "../oidc/logout";
 import { hashPassword, randomToken, tokenDigest, verifyPassword } from "./crypto";
 import { AuthFailure, denied, invalidProof, requireRecent } from "./errors";
 import { audit, rateLimit } from "./store";
@@ -217,18 +217,7 @@ export class Accounts {
     }
 
     async revokeGrants(store: AuthStore, sessionId: string): Promise<void> {
-        const grants = await store
-            .select({ id: grantSessions.grantId })
-            .from(grantSessions)
-            .where(eq(grantSessions.sessionId, sessionId));
-        if (grants.length > 0)
-            await store.delete(oidcRecords).where(
-                inArray(
-                    oidcRecords.grantId,
-                    grants.map((grant) => grant.id)
-                )
-            );
-        await store.delete(grantSessions).where(eq(grantSessions.sessionId, sessionId));
+        await revokeBoundGrants(store, eq(grantSessions.sessionId, sessionId));
     }
 
     async revoke(store: AuthStore, sessionId: string): Promise<void> {

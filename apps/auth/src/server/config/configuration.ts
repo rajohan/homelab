@@ -4,25 +4,23 @@ import type { ClientMetadata, JWKS } from "oidc-provider";
 import { getDomain } from "tldts";
 import * as v from "valibot";
 
+import { routeSchema, validateResourceRules } from "./accessPolicy";
+
 const emptyAccessPolicy = { routes: [] };
 const originSchema = v.pipe(v.string(), v.url(), v.maxLength(512));
 const clientSchema = v.strictObject({
+    groups: v.optional(
+        v.pipe(v.array(v.pipe(v.string(), v.minLength(1))), v.minLength(1)),
+        ["admins"]
+    ),
     client_id: v.pipe(v.string(), v.minLength(1), v.maxLength(100)),
     client_secret: v.pipe(v.string(), v.minLength(32), v.maxLength(512)),
     client_name: v.pipe(v.string(), v.minLength(1), v.maxLength(100)),
     redirect_uris: v.pipe(v.array(originSchema), v.minLength(1), v.maxLength(8)),
+    backchannel_logout_uri: v.optional(originSchema),
+    backchannel_logout_session_required: v.optional(v.literal(true)),
     post_logout_redirect_uris: v.optional(v.array(originSchema), []),
     token_endpoint_auth_method: v.picklist(["client_secret_basic", "client_secret_post"]),
-});
-const routeSchema = v.strictObject({
-    origin: originSchema,
-    // Only exact paths or path-segment prefixes may bypass authentication.
-    publicPaths: v.optional(v.array(v.pipe(v.string(), v.regex(/^\/(?!\/)/))), []),
-    publicPrefixes: v.optional(
-        v.array(v.pipe(v.string(), v.minLength(2), v.regex(/^\/(?!\/).*\/$/))),
-        []
-    ),
-    groups: v.optional(v.array(v.pipe(v.string(), v.minLength(1))), ["admins"]),
 });
 
 export interface AuthConfiguration {
@@ -35,6 +33,7 @@ export interface AuthConfiguration {
     readonly proxyKey: string;
     readonly rpId: string;
     readonly origins: readonly string[];
+    readonly clientGroups?: Readonly<Record<string, readonly string[]>>;
     readonly clients: readonly ClientMetadata[];
     readonly dashboardClientId: string;
     readonly jwks: JWKS;
@@ -138,6 +137,15 @@ export function parseAuthConfiguration(
             "The dashboard client must register its exact /auth/callback URL"
         );
     for (const client of clients) {
+        if (
+            Boolean(client.backchannel_logout_uri) !==
+            Boolean(client.backchannel_logout_session_required)
+        )
+            throw new Error(
+                "Back-channel logout requires an endpoint and session-bound logout"
+            );
+        if (client.backchannel_logout_uri)
+            secureUrl(client.backchannel_logout_uri, development);
         for (const uri of [...client.redirect_uris, ...client.post_logout_redirect_uris])
             secureUrl(uri, development);
     }
@@ -165,6 +173,7 @@ export function parseAuthConfiguration(
         normalizedRoutes.length
     )
         throw new Error("Duplicate protected route origins");
+    for (const route of normalizedRoutes) validateResourceRules(route);
     const databaseUrl = required("HOMELAB_AUTH_DATABASE_URL");
     if (!["postgres:", "postgresql:"].includes(new URL(databaseUrl).protocol))
         throw new Error("Auth requires PostgreSQL");
@@ -194,7 +203,10 @@ export function parseAuthConfiguration(
         proxyKey,
         rpId,
         origins,
-        clients: clients.map((client) => ({
+        clientGroups: Object.fromEntries(
+            clients.map((client) => [client.client_id, client.groups])
+        ),
+        clients: clients.map(({ groups: _groups, ...client }) => ({
             ...client,
             grant_types: ["authorization_code", "refresh_token"],
             response_types: ["code"],

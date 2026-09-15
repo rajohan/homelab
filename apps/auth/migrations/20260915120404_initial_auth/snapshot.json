@@ -1,7 +1,7 @@
 {
     "version": "8",
     "dialect": "postgres",
-    "id": "cf79b8c4-190f-4eac-a338-1b52a90a8db3",
+    "id": "9a551449-7746-4eee-962a-aefb4588159f",
     "prevIds": ["00000000-0000-0000-0000-000000000000"],
     "ddl": [
         {
@@ -25,6 +25,12 @@
         {
             "isRlsEnabled": false,
             "name": "auth_grant_sessions",
+            "entityType": "tables",
+            "schema": "public"
+        },
+        {
+            "isRlsEnabled": false,
+            "name": "auth_logout_outbox",
             "entityType": "tables",
             "schema": "public"
         },
@@ -273,7 +279,7 @@
             "table": "auth_factors"
         },
         {
-            "type": "integer",
+            "type": "bigint",
             "typeSchema": null,
             "notNull": true,
             "dimensions": 0,
@@ -325,6 +331,19 @@
             "table": "auth_grant_sessions"
         },
         {
+            "type": "text",
+            "typeSchema": null,
+            "notNull": false,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "name": "encrypted_logout",
+            "entityType": "columns",
+            "schema": "public",
+            "table": "auth_grant_sessions"
+        },
+        {
             "type": "uuid",
             "typeSchema": null,
             "notNull": true,
@@ -351,6 +370,84 @@
             "table": "auth_grant_sessions"
         },
         {
+            "type": "text",
+            "typeSchema": null,
+            "notNull": true,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "name": "id",
+            "entityType": "columns",
+            "schema": "public",
+            "table": "auth_logout_outbox"
+        },
+        {
+            "type": "text",
+            "typeSchema": null,
+            "notNull": true,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "name": "encrypted_data",
+            "entityType": "columns",
+            "schema": "public",
+            "table": "auth_logout_outbox"
+        },
+        {
+            "type": "timestamp with time zone",
+            "typeSchema": null,
+            "notNull": true,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "name": "created_at",
+            "entityType": "columns",
+            "schema": "public",
+            "table": "auth_logout_outbox"
+        },
+        {
+            "type": "timestamp with time zone",
+            "typeSchema": null,
+            "notNull": true,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "name": "expires_at",
+            "entityType": "columns",
+            "schema": "public",
+            "table": "auth_logout_outbox"
+        },
+        {
+            "type": "timestamp with time zone",
+            "typeSchema": null,
+            "notNull": true,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "name": "next_attempt_at",
+            "entityType": "columns",
+            "schema": "public",
+            "table": "auth_logout_outbox"
+        },
+        {
+            "type": "integer",
+            "typeSchema": null,
+            "notNull": true,
+            "dimensions": 0,
+            "default": "0",
+            "generated": null,
+            "identity": null,
+            "name": "attempts",
+            "entityType": "columns",
+            "schema": "public",
+            "table": "auth_logout_outbox"
+        },
+        {
             "type": "uuid",
             "typeSchema": null,
             "notNull": true,
@@ -359,6 +456,19 @@
             "generated": null,
             "identity": null,
             "name": "id",
+            "entityType": "columns",
+            "schema": "public",
+            "table": "auth_mail_outbox"
+        },
+        {
+            "type": "text",
+            "typeSchema": null,
+            "notNull": false,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "name": "proof_digest",
             "entityType": "columns",
             "schema": "public",
             "table": "auth_mail_outbox"
@@ -1052,6 +1162,19 @@
         },
         {
             "nameExplicit": false,
+            "columns": ["proof_digest"],
+            "schemaTo": "public",
+            "tableTo": "auth_challenges",
+            "columnsTo": ["digest"],
+            "onUpdate": "NO ACTION",
+            "onDelete": "CASCADE",
+            "name": "auth_mail_outbox_proof_digest_auth_challenges_digest_fkey",
+            "entityType": "fks",
+            "schema": "public",
+            "table": "auth_mail_outbox"
+        },
+        {
+            "nameExplicit": false,
             "columns": ["user_id"],
             "schemaTo": "public",
             "tableTo": "auth_users",
@@ -1114,6 +1237,14 @@
             "name": "auth_grant_sessions_pkey",
             "schema": "public",
             "table": "auth_grant_sessions",
+            "entityType": "pks"
+        },
+        {
+            "columns": ["id"],
+            "nameExplicit": false,
+            "name": "auth_logout_outbox_pkey",
+            "schema": "public",
+            "table": "auth_logout_outbox",
             "entityType": "pks"
         },
         {

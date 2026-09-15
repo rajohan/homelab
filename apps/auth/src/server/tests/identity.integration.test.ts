@@ -3,6 +3,7 @@ import { generateKeyPairSync } from "node:crypto";
 
 import { eq, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/bun-sql/migrator";
+import { createLocalJWKSet, decodeJwt, jwtVerify } from "jose";
 import { TOTP } from "otpauth";
 import * as v from "valibot";
 
@@ -12,6 +13,7 @@ import type { AuthConfiguration } from "../config/configuration";
 import { requiredAuthMigrations } from "../database/migrations";
 import {
     factors,
+    logoutOutbox,
     sessions,
     users,
     mailOutbox,
@@ -20,6 +22,7 @@ import {
     challenges,
     recoveryCodes,
 } from "../database/schema";
+import { deliverLogouts } from "../oidc/logout";
 import { encryptValue, hashPassword, tokenDigest } from "../security/crypto";
 import type { AuthEmail } from "../security/email";
 import { softwareAuthenticator } from "../testing/webauthnFixture";
@@ -31,6 +34,9 @@ let issuer: string;
 const delivered: AuthEmail[] = [];
 const password = "isolated-test-password-not-production";
 const clientSecret = "isolated-client-secret-for-tests-only-32-characters";
+let logoutServer: ReturnType<typeof Bun.serve>;
+const logoutTokens: string[] = [];
+let logoutStatus = 204;
 const cookieJar = new Map<string, { value: string; path: string }>();
 
 async function browser(path: string, options: RequestInit = {}): Promise<Response> {
@@ -71,6 +77,18 @@ function post(path: string, body: unknown): Promise<Response> {
 }
 
 beforeAll(async () => {
+    logoutServer = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        async fetch(request) {
+            const body = new URLSearchParams(await request.text());
+            const token = body.get("logout_token");
+            if (request.method !== "POST" || !token)
+                return new Response(null, { status: 400 });
+            logoutTokens.push(token);
+            return new Response(null, { status: logoutStatus });
+        },
+    });
     testDatabase = await createTestDatabase();
     const databaseUrl = testDatabase.url;
     if (!databaseUrl)
@@ -109,6 +127,8 @@ beforeAll(async () => {
                 client_id: "dashboard",
                 client_secret: clientSecret,
                 client_name: "Test Dashboard",
+                backchannel_logout_uri: `http://127.0.0.1:${logoutServer.port}/logout`,
+                backchannel_logout_session_required: true,
                 redirect_uris: [`${issuer}/callback`],
                 response_types: ["code"],
                 grant_types: ["authorization_code", "refresh_token"],
@@ -174,6 +194,7 @@ beforeAll(async () => {
 afterAll(async () => {
     await application?.close();
     await server?.stop(true);
+    await logoutServer?.stop(true);
     await testDatabase?.close();
 });
 
@@ -443,6 +464,9 @@ describe("security invariants against the isolated database", () => {
     let username: string;
     beforeEach(async () => {
         cookieJar.clear();
+        logoutTokens.length = 0;
+        logoutStatus = 204;
+        await application.connection.database.delete(logoutOutbox);
         await application.connection.database.delete(rateBuckets);
         username = `operator-${crypto.randomUUID()}`;
         await application.connection.database.insert(users).values({
@@ -455,6 +479,142 @@ describe("security invariants against the isolated database", () => {
             createdAt: new Date(),
         });
         expect(await status(post("/api/login", { username, password }))).toBe(200);
+    });
+
+    test("delivers signed session-specific logout after Settings revokes only the old device", async () => {
+        const old = await authorizationTokens("openid profile");
+        const oldSid = decodeJwt(old.id_token).sid;
+        const snapshot = await json(
+            browser("/api/account"),
+            v.object({
+                sessions: v.array(v.object({ id: v.string(), current: v.boolean() })),
+            })
+        );
+        const oldSession = snapshot.sessions.find((session) => session.current);
+        if (!oldSession) throw new Error("Current session missing");
+        expect(await status(post("/api/login", { username, password }))).toBe(200);
+        const current = await authorizationTokens("openid profile");
+        const newSid = decodeJwt(current.id_token).sid;
+        expect(typeof oldSid).toBe("string");
+        expect(newSid).not.toBe(oldSid);
+        expect(
+            await status(post("/api/account/session/revoke", { id: oldSession.id }))
+        ).toBe(200);
+        expect(
+            await deliverLogouts(
+                application.connection.database,
+                application.services.accounts.configuration,
+                application.services.provider
+            )
+        ).toBe(1);
+        const token = logoutTokens.at(-1);
+        if (!token) throw new Error("Logout not delivered");
+        const keysResponse = await browser("/jwks");
+        const keys = v.parse(
+            v.object({ keys: v.array(v.record(v.string(), v.unknown())) }),
+            await keysResponse.json()
+        );
+        const { payload } = await jwtVerify(token, createLocalJWKSet(keys), {
+            issuer,
+            audience: "dashboard",
+        });
+        expect(payload.sid).toBe(oldSid);
+        expect(payload.sid).not.toBe(newSid);
+        expect(payload.sub).toBe(decodeJwt(old.id_token).sub);
+        expect(payload.events).toEqual({
+            "http://schemas.openid.net/event/backchannel-logout": {},
+        });
+        expect(payload.nonce).toBeUndefined();
+        expect(typeof payload.jti).toBe("string");
+        expect(
+            await status(
+                browser("/userinfo", {
+                    headers: { authorization: "Bearer " + old.access_token },
+                })
+            )
+        ).toBe(401);
+        expect(
+            await status(
+                browser("/userinfo", {
+                    headers: { authorization: "Bearer " + current.access_token },
+                })
+            )
+        ).toBe(200);
+        expect(await status(browser("/api/account"))).toBe(200);
+    });
+
+    test("retries unavailable logout endpoints without restoring the revoked session", async () => {
+        await authorizationTokens("openid profile");
+        logoutStatus = 503;
+        expect(await status(post("/api/logout", {}))).toBe(200);
+        expect(
+            await deliverLogouts(
+                application.connection.database,
+                application.services.accounts.configuration,
+                application.services.provider
+            )
+        ).toBe(0);
+        expect(await status(browser("/api/account"))).toBe(401);
+        const queued = await application.connection.database.select().from(logoutOutbox);
+        expect(queued).toHaveLength(1);
+        expect(queued[0]?.attempts).toBe(1);
+        expect(queued[0]?.encryptedData).not.toContain("http:");
+        logoutStatus = 204;
+        await application.connection.database
+            .update(logoutOutbox)
+            .set({ nextAttemptAt: new Date(0) });
+        expect(
+            await deliverLogouts(
+                application.connection.database,
+                application.services.accounts.configuration,
+                application.services.provider
+            )
+        ).toBe(1);
+        expect(
+            await application.connection.database.select().from(logoutOutbox)
+        ).toHaveLength(0);
+    });
+
+    test("logout queue rolls back with revocation and expires with a redacted failure event", async () => {
+        await authorizationTokens("openid profile");
+        const token = cookieJar.get("homelab_auth")?.value;
+        if (!token) throw new Error("Test auth cookie missing");
+        const principal = await application.services.accounts.principalByToken(token);
+        await application.connection.database
+            .transaction(async (transaction) => {
+                await application.services.accounts.revoke(
+                    transaction,
+                    principal.session.id
+                );
+                throw new Error("Test rollback");
+            })
+            .then(
+                () => {
+                    throw new Error("Expected rollback");
+                },
+                (error: unknown) => {
+                    expect(String(error)).toContain("Test rollback");
+                }
+            );
+        expect(
+            await application.connection.database.select().from(logoutOutbox)
+        ).toHaveLength(0);
+        expect(await status(browser("/api/account"))).toBe(200);
+        expect(await status(post("/api/logout", {}))).toBe(200);
+        await application.connection.database
+            .update(logoutOutbox)
+            .set({ expiresAt: new Date(0) });
+        expect(
+            await deliverLogouts(
+                application.connection.database,
+                application.services.accounts.configuration,
+                application.services.provider
+            )
+        ).toBe(0);
+        expect(logoutTokens).toHaveLength(0);
+        expect(
+            await application.connection.database.select().from(logoutOutbox)
+        ).toHaveLength(0);
     });
 
     test("readiness rejects missing or changed migration records without migrating automatically", async () => {
@@ -1046,6 +1206,7 @@ describe("security invariants against the isolated database", () => {
         expect(await status(browser("/api/account"))).toBe(200);
         const signedOut = await formPost(action, { xsrf, logout: "yes" });
         expect(signedOut.status).toBe(303);
+        expect(logoutTokens.length).toBeGreaterThan(0);
         expect(signedOut.headers.get("location")).toBe(issuer + "/signed-out");
         expect(await status(browser("/api/account"))).toBe(401);
         expect(
@@ -1401,7 +1562,7 @@ describe("security invariants against the isolated database", () => {
         expect(await status(proxyRequest("/manifest.webmanifest"))).toBe(200);
         expect(await status(proxyRequest("/public/catalog.json"))).toBe(200);
         expect(await status(proxyRequest("/publicity/settings"))).toBe(302);
-        expect(await status(proxyRequest("/public/%2fadmin"))).toBe(302);
+        expect(await status(proxyRequest("/public/%2fadmin"))).toBe(403);
     });
 
     test("ForwardAuth tickets bind the browser nonce and host, work once and respect revocation", async () => {

@@ -16,6 +16,7 @@ import {
 import { accountApi } from "./http/accountApi";
 import { forwardAuth } from "./http/forwardAuth";
 import { secureJson } from "./http/httpSecurity";
+import { deliverLogouts } from "./oidc/logout";
 import { startProviderListener } from "./oidc/provider";
 import { Accounts } from "./security/accounts";
 import { AccountEmail, type EmailDelivery } from "./security/email";
@@ -136,6 +137,7 @@ export async function createAuthApplication(
             await connection.database.transaction((transaction) =>
                 accounts.revoke(transaction, session.id)
             );
+        await deliverLogouts(connection.database, configuration, listener.provider);
         await connection.database
             .delete(auditEvents)
             .where(lt(auditEvents.createdAt, new Date(now.getTime() - 90 * 86_400_000)));

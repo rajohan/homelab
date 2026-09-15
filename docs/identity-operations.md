@@ -22,8 +22,9 @@ The Resend rename/reference step was completed and verified on 2026-09-15 with t
 new temporary Doppler login. `prd.HOMELAB_AUTH_RESEND_API_KEY` owns the value;
 `apps_homelab_auth.HOMELAB_AUTH_RESEND_API_KEY` references it. The legacy `prd.RESEND_API_KEY`
 is only a reference for old consumers, not a duplicate secret. The separate
-`apps_homelab_dashboard` config exists without Resend access. Remaining runtime database,
-client and signing keys, sender qualification and actual deployment are still production gates.
+`apps_homelab_dashboard` config exists without Resend access. New auth/database/cookie/signing
+keys and dashboard credentials are prepared, and both app scopes resolve their complete runtime
+key inventory. Database provisioning, sender qualification and deployment remain production gates.
 The earlier missing local CLI login was not evidence of a known token-expiration period.
 
 ## Database and keys
@@ -86,8 +87,33 @@ traffic. Verify account records, factor payload readability and a synthetic logi
 explicitly whether restored sessions are revoked before service resumes. Never restore an old
 identity database over a live one as a casual application rollback.
 
-The data-encryption key currently has one active version. Its rotation needs a reviewed,
-transactional re-encryption migration; changing the environment variable is not rotation.
+The supported offline data-key rotation command processes all six encrypted record types in
+bounded batches within one PostgreSQL transaction. Password hashes, account IDs, factors and
+their metadata are preserved. A corrupt record, wrong old key, or failed verification aborts
+the whole operation; the database remains encrypted with the old key. Tests cover more than
+one batch, every encrypted column, rollback and rotation back to the original key.
+
+1. Take the normal verified PBS backup and retain its matching old key securely.
+2. Stop **all** auth replicas, background workers and administrative writers. Rotation is an
+   offline maintenance operation; table locks protect the transaction, not an old process
+   restarted with the wrong key after commit.
+3. Keep the current `HOMELAB_AUTH_ENCRYPTION_KEY` injected. Supply private JSON on stdin:
+   `{ "nextEncryptionKey": "<new random 32-byte base64 key>" }`.
+   Do not put keys in command arguments, repository files, chat or logs.
+4. Run `bun run auth:admin rotate-data-key --check`. It verifies every candidate without
+   modifying records.
+5. With services still stopped, supply the same private input to
+   `bun run auth:admin rotate-data-key --service-stopped`. This commits the verified
+   re-encryption atomically and reports only per-table counts.
+6. Update the canonical Doppler data key to the new value **before restarting any auth
+   process**, then verify readiness, TOTP/WebAuthn and normal login. These are two operational
+   steps: PostgreSQL and Doppler cannot be committed as one transaction. If secret publication
+   fails, leave services stopped, retain both keys and resume publication or rotate back.
+   Never start the old key against the newly encrypted database.
+
+The old key remains necessary for pre-rotation PBS backups. Do not delete it until their
+retention has elapsed. Existing encrypted ForwardAuth cookies become invalid and re-enter SSO;
+persistent MFA enrollment is retained. The dashboard's separate key is not changed.
 Cookie/JWE-key replacement logs out affected browsers. For signing rotation, publish old and
 new identified public JWKs through the overlap period; qualify which key is selected for new
 signatures and do not remove a key while valid tokens still reference it.
@@ -156,7 +182,7 @@ The suffix list is bundled in the pinned `tldts` dependency, with no startup net
 
 `HOMELAB_AUTH_POLICY_FILE` selects a deployment-owned YAML policy, for example
 `/etc/homelab-auth/access-policy.yml` on Edge. Start from
-`apps/auth/config/access-policy.example.yml`; the file contains a top-level `routes`
+`apps/auth/config/access-policy.homelab.yml`; the file contains a top-level `routes`
 list. Keep this non-secret policy in version control, mount it read-only in the auth
 deployment and restart auth after a reviewed edit. Secret values remain in Doppler.
 The former JSON-valued `HOMELAB_AUTH_ROUTES` is rejected rather than silently ignored.
@@ -173,9 +199,18 @@ These exceptions bypass Homelab sign-in only. An app's own manifest/configuratio
 API key or other endpoint checks still apply. Before cutover, inventory the actual Stremio
 routes, including token-prefixed paths, and qualify unauthenticated manifests, catalogs,
 metadata, streams and subtitles without exposing the configuration/admin pages.
-The current path/prefix model does not support arbitrary regular expressions. If a current
-Authelia rule needs more expressive matching, extend and test the model before migrating
-that route; never replace it with a root-wide bypass.
+Ordered `resourceRules` support anchored RE2 expressions over the normalized URL path, not
+the query string. The first matching rule wins: `bypass`, `two_factor`, or `deny`. Place
+admin restrictions before broader public API exceptions. RE2 avoids exponential backtracking.
+No match defaults to MFA and the route's groups; unknown origins are denied. YAML `&admin`
+defines a reusable rule and `*admin` reuses it, rather than acting as a wildcard.
+
+The Homelab file was translated from **active generated** Authelia configuration on Edge on
+2026-09-15, including its effective `admins` policy. It contains 15 origins, token-prefixed
+media exceptions, exact Hydra paths and explicit admin restrictions. It has not been installed
+on Edge. Attach ForwardAuth to each protected Traefik router; a policy cannot protect a service
+whose router bypasses the middleware. Do not wrap the auth service in its own login middleware:
+its public login/OIDC endpoints and authenticated account APIs enforce their own boundaries.
 
 ## Recovery queue and passive account reads
 
@@ -189,3 +224,60 @@ not on the public request's timing path. Unknown and unverified accounts produce
 Proof emails reference their challenge with a cascading foreign key; replacing, consuming
 or revoking that challenge also removes its queued message, including delayed retries.
 Deploy the generated schema migration before starting the updated service.
+
+## OIDC logout delivery and client qualification
+
+Clients opt in with both `backchannel_logout_uri` (exact HTTPS endpoint) and
+`backchannel_logout_session_required: true`. Optional `groups` defaults to `["admins"]`.
+A fresh grant gets a fresh protocol SID. Signed logout tokens are produced by the pinned
+oidc-provider implementation with issuer, audience, issued time, event, JTI, subject and SID;
+they contain no nonce. Settings revocation, recovery, expiry and confirmed RP logout revoke
+central grants and atomically enqueue encrypted notifications.
+
+The maintenance worker processes at most five messages per pass, with exponential retry from
+15 seconds up to five minutes and a 24-hour expiry. Downstream failure never restores central
+access. Native RP logout may also send immediately; delivery is **at least once**, so receivers
+must accept repeated SID invalidation. A changed/removed endpoint is not sent old session data.
+Watch `oidc_logout_delivery_failed` and `oidc_logout_delivery_expired`; an expired delivery
+requires operational attention, not a claim that the remote application logged out.
+
+Only registered exact logout endpoints may receive outbound OIDC POSTs. Redirects are not
+followed. Dynamic registration and remote client metadata/JWKS are not enabled. Private LAN
+destinations are intentionally allowed only through this operator-managed endpoint inventory;
+the Node-specific undici SSRF dispatcher is not relied upon under Bun.
+
+The dashboard BFF has no independently authorized server-side session: it checks central
+state on every protected request. It does not need a redundant logout receiver or local
+revocation database. A stale browser cookie cannot grant continued access.
+
+Prepared Doppler clients preserve the current AIOStreams, AIOMetadata, CrossWatch and Nextcloud
+client IDs, callback URIs, client-secret auth methods and original secret references; the
+dashboard gets a new independent client. No live consumer has been switched. Back-channel
+endpoints must be enabled only after testing the installed client receiver and subject/SID
+mapping. The installed Nextcloud `user_oidc` app exposes
+`/apps/user_oidc/backchannel-logout/{providerIdentifier}`; select the actual new provider's
+identifier during qualification, not a guessed URL or one still bound to Authelia. Native
+mobile app-password/token revocation is a separate client-specific policy, not promised by
+OIDC browser logout.
+
+## Prepared Doppler expressions
+
+Canonical credentials remain single values in `prd`. App configs reference only their required
+leaf values. Doppler does not resolve references to another reference expression, so database
+URL, auth client JSON and the three cross-app name/origin expressions live directly in their
+consuming app scope and refer to canonical leaves. The five redundant, newly created `prd`
+expressions were removed only after equal-value checks, with operator approval. Existing
+Authelia secrets and consumer credentials were neither rotated nor deleted.
+
+The prepared direct PostgreSQL URL names the dedicated `homelab_auth` database/role.
+Preparing a URL does **not** provision that database. The dashboard origin is prepared as
+`https://dashboard.home.rajohan.no`; DNS, TLS routing and deployment remain separate acceptance
+steps. No application currently consumes these new production scopes.
+
+## Initial schema history
+
+All auth migrations belong to this unreleased PR and were consolidated into one
+`initial_auth` migration at the operator's request. Disposable test databases are created
+fresh from it. Earlier preview databases must be recreated, not have their migration ledger
+rewritten to claim an unapplied schema. Once a schema is deployed, preserve that migration
+and add reviewed incremental migrations for future changes.

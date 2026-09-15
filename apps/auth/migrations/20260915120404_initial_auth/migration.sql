@@ -21,19 +21,30 @@ CREATE TABLE "auth_factors" (
 	"label" text NOT NULL,
 	"credential_id" text UNIQUE,
 	"encrypted_data" text NOT NULL,
-	"counter" integer DEFAULT 0 NOT NULL,
+	"counter" bigint DEFAULT 0 NOT NULL,
 	"created_at" timestamp with time zone NOT NULL,
 	"last_used_at" timestamp with time zone
 );
 --> statement-breakpoint
 CREATE TABLE "auth_grant_sessions" (
 	"grant_id" text PRIMARY KEY,
+	"encrypted_logout" text,
 	"session_id" uuid NOT NULL,
 	"user_id" uuid NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "auth_logout_outbox" (
+	"id" text PRIMARY KEY,
+	"encrypted_data" text NOT NULL,
+	"created_at" timestamp with time zone NOT NULL,
+	"expires_at" timestamp with time zone NOT NULL,
+	"next_attempt_at" timestamp with time zone NOT NULL,
+	"attempts" integer DEFAULT 0 NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "auth_mail_outbox" (
 	"id" uuid PRIMARY KEY,
+	"proof_digest" text,
 	"encrypted_data" text NOT NULL,
 	"created_at" timestamp with time zone NOT NULL,
 	"expires_at" timestamp with time zone NOT NULL,
@@ -100,5 +111,6 @@ ALTER TABLE "auth_challenges" ADD CONSTRAINT "auth_challenges_session_id_auth_se
 ALTER TABLE "auth_factors" ADD CONSTRAINT "auth_factors_user_id_auth_users_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth_users"("id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "auth_grant_sessions" ADD CONSTRAINT "auth_grant_sessions_session_id_auth_sessions_id_fkey" FOREIGN KEY ("session_id") REFERENCES "auth_sessions"("id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "auth_grant_sessions" ADD CONSTRAINT "auth_grant_sessions_user_id_auth_users_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth_users"("id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "auth_mail_outbox" ADD CONSTRAINT "auth_mail_outbox_proof_digest_auth_challenges_digest_fkey" FOREIGN KEY ("proof_digest") REFERENCES "auth_challenges"("digest") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "auth_recovery_codes" ADD CONSTRAINT "auth_recovery_codes_user_id_auth_users_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth_users"("id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "auth_sessions" ADD CONSTRAINT "auth_sessions_user_id_auth_users_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth_users"("id") ON DELETE CASCADE;

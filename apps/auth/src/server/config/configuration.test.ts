@@ -222,3 +222,39 @@ test("accepts one mailbox or a simple display name and rejects malformed senders
         ).toThrow("Invalid sender address");
     }
 });
+
+test("requires secure, session-bound back-channel endpoints and preserves client groups", () => {
+    const input = environment();
+    const clients = JSON.parse(input.HOMELAB_AUTH_CLIENTS ?? "[]") as Record<
+        string,
+        unknown
+    >[];
+    const client = clients[0];
+    if (!client) throw new Error("Missing test client");
+    client.groups = ["operators"];
+    client.backchannel_logout_uri = "https://home.example.test/auth/logout/backchannel";
+    client.backchannel_logout_session_required = true;
+    const parse = () =>
+        parseAuthConfiguration({
+            ...input,
+            HOMELAB_AUTH_CLIENTS: JSON.stringify(clients),
+        });
+    expect(parse()?.clientGroups?.dashboard).toEqual(["operators"]);
+    expect(parse()?.clients[0]?.groups).toBeUndefined();
+    for (const uri of [
+        "http://home.example.test/logout",
+        "https://user:password@home.example.test/logout",
+        "https://home.example.test/logout#fragment",
+    ]) {
+        client.backchannel_logout_uri = uri;
+        expect(parse).toThrow();
+    }
+    client.backchannel_logout_uri = "https://home.example.test/logout";
+    client.backchannel_logout_session_required = false;
+    expect(parse).toThrow();
+    delete client.backchannel_logout_session_required;
+    expect(parse).toThrow("session-bound");
+    delete client.backchannel_logout_uri;
+    client.backchannel_logout_session_required = true;
+    expect(parse).toThrow("session-bound");
+});
