@@ -13,6 +13,11 @@ import { Overview } from "./pages/Overview";
 import { RouteError } from "./pages/RouteError";
 import { Settings } from "./pages/Settings";
 
+/**
+ * Build the dashboard route tree with shared layout and error handling.
+ * @param history - Optional router history, used for isolated navigation tests.
+ * @returns A configured dashboard router.
+ */
 export function createDashboardRouter(history?: RouterHistory) {
     const root = createRootRoute({
         component: Shell,

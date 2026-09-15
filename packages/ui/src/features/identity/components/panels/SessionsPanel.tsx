@@ -2,6 +2,10 @@ import { Monitor } from "lucide-react";
 
 import { Button, Card, SectionHeader, SuccessNotice } from "../../../../index";
 import type { AccountPanelProps } from "../../types";
+/**
+ * List active sessions and offer explicit individual or grouped revocation actions.
+ * @returns The component's rendered content for its current state.
+ */
 export function SessionsPanel({ data, onAction, notice }: AccountPanelProps) {
     return (
         <Card id="account-sessions" className="space-y-5">

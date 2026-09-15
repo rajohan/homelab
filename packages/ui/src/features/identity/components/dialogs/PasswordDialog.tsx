@@ -1,6 +1,10 @@
 import { Modal } from "../../../../index";
 import type { AccountDialogProps } from "../../types";
 import { PasswordForm } from "../forms/PasswordForm";
+/**
+ * Change the account password through the shared authenticated action flow.
+ * @returns The component's rendered content for its current state.
+ */
 export function PasswordDialog({ client, onClose, onComplete }: AccountDialogProps) {
     return (
         <Modal title="Change password" onClose={onClose}>

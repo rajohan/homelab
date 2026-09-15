@@ -2,6 +2,10 @@ import { mergeCoverageReportFiles } from "lcov-result-merger";
 
 import { assertCoverageInventory, executableSources } from "./coverageInventory";
 
+/**
+ * Merge coverage partitions and verify every executable source appears in the report.
+ * @returns Completion after the complete merged report is written.
+ */
 export async function checkCoverage(): Promise<void> {
     const paths = ["unit", "component", "integration"].map(
         (group) => `coverage/${group}/lcov.info`

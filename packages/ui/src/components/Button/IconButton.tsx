@@ -4,6 +4,10 @@ import type { ComponentProps } from "react";
 import { cn } from "../../lib/classNames";
 import { Button } from "./Button";
 
+/**
+ * Render an icon-only action with an accessible text label.
+ * @returns The component's rendered content for its current state.
+ */
 export function IconButton({
     icon: Icon,
     label,

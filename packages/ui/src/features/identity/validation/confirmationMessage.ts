@@ -1,5 +1,10 @@
 import type { ConfirmationAction } from "../types";
 
+/**
+ * Select success feedback for a completed confirmation action.
+ * @param action - The successfully completed action.
+ * @returns The action-specific success message.
+ */
 export function confirmationMessage(action: ConfirmationAction): string {
     if (typeof action === "object")
         return action.kind === "remove"

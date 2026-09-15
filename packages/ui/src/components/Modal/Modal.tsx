@@ -4,6 +4,10 @@ import type { ReactNode } from "react";
 
 import { IconButton } from "../Button/IconButton";
 
+/**
+ * Present a dismissible, focus-managed dialog with a shared title and close control.
+ * @returns The component's rendered content for its current state.
+ */
 export function Modal({
     title,
     children,

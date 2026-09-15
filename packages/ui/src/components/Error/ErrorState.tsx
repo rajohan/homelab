@@ -3,6 +3,10 @@ import { TriangleAlert } from "lucide-react";
 import { Button } from "../Button/Button";
 import { Card } from "../Card/Card";
 
+/**
+ * Present a recoverable error state with an optional retry action.
+ * @returns The component's rendered content for its current state.
+ */
 export function ErrorState({
     onRetry,
     title = "This view couldn't load",

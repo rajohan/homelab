@@ -1,4 +1,8 @@
 import { Button, Modal } from "../../../../index";
+/**
+ * Display newly issued one-use recovery codes until the user confirms saving them.
+ * @returns The component's rendered content for its current state.
+ */
 export function RecoveryCodesDialog({
     codes,
     onClose,

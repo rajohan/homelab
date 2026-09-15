@@ -4,6 +4,10 @@ import { Modal } from "../../../../index";
 import type { IdentityClient } from "../../api/IdentityClient";
 import { VerificationMethods } from "./VerificationMethods";
 
+/**
+ * Show the shared step-up dialog and cancel pending actions when it is dismissed.
+ * @returns The component's rendered content for its current state.
+ */
 export function SecurityPrompt({ client }: { client: IdentityClient }) {
     useEffect(() => () => client.cancelActions(), [client]);
     const open = useSyncExternalStore(

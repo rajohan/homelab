@@ -31,6 +31,10 @@ async function docker(...arguments_: string[]): Promise<string> {
     return output.trim();
 }
 
+/**
+ * Run an isolated development identity environment with a disposable database.
+ * @returns Completion after shutdown and cleanup of this run's owned resources.
+ */
 export async function main(): Promise<void> {
     // Disposable developer identities only. No production environment is passed to Docker
     // or used as an identity source. Ctrl+C removes this run's exact temporary container.

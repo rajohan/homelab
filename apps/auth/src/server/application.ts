@@ -23,6 +23,12 @@ import { AccountEmail, type EmailDelivery } from "./security/email";
 import { AuthFailure } from "./security/errors";
 import { MultiFactor } from "./security/mfa";
 
+/**
+ * Compose account security, OIDC, request handling and bounded maintenance work.
+ * @param configuration - Validated identity-service settings.
+ * @param delivery - Optional mail-delivery implementation; tests supply an isolated sink.
+ * @returns The request handler, service handles and a close operation for owned resources.
+ */
 export async function createAuthApplication(
     configuration: AuthConfiguration,
     delivery?: EmailDelivery

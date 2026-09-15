@@ -1,5 +1,9 @@
 import { Link } from "@tanstack/react-router";
 
+/**
+ * Offer navigation back to the overview when no dashboard route matches.
+ * @returns The component's rendered content for its current state.
+ */
 export function NotFound() {
     return (
         <>

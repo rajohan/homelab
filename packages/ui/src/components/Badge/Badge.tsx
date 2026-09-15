@@ -2,6 +2,10 @@ import type { ComponentProps } from "react";
 
 import { cn } from "../../lib/classNames";
 
+/**
+ * Render a compact status label with a semantic visual tone.
+ * @returns The component's rendered content for its current state.
+ */
 export function Badge({
     className,
     tone = "neutral",

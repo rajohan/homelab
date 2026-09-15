@@ -1,6 +1,10 @@
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
+/**
+ * Run Oxlint with the pinned native type checker under Bun.
+ * @returns Completion after lint exits; its status becomes the process exit code.
+ */
 export async function main(): Promise<void> {
     const require = createRequire(import.meta.url);
     const typeLintRequire = createRequire(

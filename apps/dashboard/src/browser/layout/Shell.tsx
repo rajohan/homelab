@@ -6,6 +6,10 @@ import { useState } from "react";
 import { MobileNavigation } from "./MobileNavigation";
 import { Sidebar } from "./Sidebar";
 
+/**
+ * Render responsive dashboard navigation and the active child route.
+ * @returns The component's rendered content for its current state.
+ */
 export function Shell() {
     const location = useLocation();
     const [navigationPath, setNavigationPath] = useState<string>();

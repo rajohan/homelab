@@ -5,6 +5,10 @@ import { LoadingDots } from "./LoadingDots";
 
 const sizes = { sm: "min-h-24", md: "min-h-40", lg: "min-h-64" } as const;
 
+/**
+ * Announce pending work and show the shared loading indicator.
+ * @returns The component's rendered content for its current state.
+ */
 export function LoadingState({
     label = "Loading…",
     size = "md",

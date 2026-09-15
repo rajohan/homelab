@@ -6,6 +6,10 @@ import { ArrowRight, Server, ShieldCheck } from "lucide-react";
 import { systemStatusQuery } from "../api/client";
 import { ConnectionStatus } from "../features/overview/ConnectionStatus";
 
+/**
+ * Show the identity preview and live dashboard API connection status.
+ * @returns The component's rendered content for its current state.
+ */
 export function Overview() {
     const status = useQuery(systemStatusQuery);
     return (

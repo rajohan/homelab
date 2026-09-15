@@ -6,6 +6,11 @@ export interface AuthServerOptions {
     readonly delivery?: EmailDelivery;
     readonly configuration?: AuthConfiguration | null;
 }
+/**
+ * Serve only liveness successfully when the auth application is not configured.
+ * @param request - The incoming health request.
+ * @returns A non-cacheable liveness response or an unconfigured 503 response.
+ */
 export function authRequest(request: Request): Response {
     const live = new URL(request.url).pathname === "/health/live";
     return Response.json(

@@ -1,5 +1,12 @@
 import type { IdentityClient } from "@homelab/ui/identity/client";
 import * as v from "valibot";
+/**
+ * Finish the pending SSO or OIDC handoff after validating its return destination.
+ * @param client - The authenticated browser identity client.
+ * @param address - The current sign-in URL containing handoff parameters.
+ * @returns Completion after scheduling navigation.
+ * @throws {Error} The server returns an unexpected or unsafe redirect destination.
+ */
 export async function continueSignIn(
     client: IdentityClient,
     address: URL

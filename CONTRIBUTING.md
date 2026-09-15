@@ -25,6 +25,21 @@ Setup installs repository Git hooks; it does not configure the host, deploy an a
 - Use synthetic data. Do not copy credentials, production identity records, or runtime data into the repository.
 - Do not make the foundation grant authentication or authorization merely to make a test pass. Authelia remains authoritative until a separately approved migration.
 
+## API documentation
+
+Exported functions (including arrow functions and indirect exports), public class methods,
+function-valued public fields, accessors and interface methods require JSDoc. Describe
+the operation and its contract; preserve the existing parameter, return, throw and yield
+description checks. TypeScript already owns parameter and return types, so do not repeat
+them in JSDoc. Private and protected implementation methods do not require a block.
+
+Oxlint runs the upstream `eslint-plugin-jsdoc` presence rule in two configurations:
+exported functions and public methods. The small registration module in
+`scripts/lint/documentation.ts` reuses the upstream rules without implementing a custom
+parser or validator. Empty blocks and ordinary `//` comments cannot satisfy the policy,
+and the automatic empty-block fixer is disabled. A fixture test checks these boundaries
+through the actual lint command.
+
 ## Verify a change
 
 ```sh

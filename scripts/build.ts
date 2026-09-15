@@ -4,6 +4,10 @@ import { fileURLToPath } from "node:url";
 
 import tailwind from "bun-plugin-tailwind";
 
+/**
+ * Build the requested applications into their independently deployable packages.
+ * @returns Completion after the selected builds and asset copies finish.
+ */
 export async function main(): Promise<void> {
     const repositoryRoot = await realpath(fileURLToPath(new URL("..", import.meta.url)));
     const applicationsRoot = path.resolve(repositoryRoot, "apps");

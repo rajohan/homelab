@@ -3,6 +3,10 @@ import { useState } from "react";
 
 import { AuthLayout } from "../layout/AuthLayout";
 import type { AuthPageProps } from "../types";
+/**
+ * Redeem the current email-verification proof and display its result.
+ * @returns The component's rendered content for its current state.
+ */
 export function VerifyEmailPage({ client, token }: AuthPageProps) {
     const [notice, setNotice] = useState("");
     return (

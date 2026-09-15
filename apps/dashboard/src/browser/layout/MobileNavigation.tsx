@@ -2,6 +2,10 @@ import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from "@headlessui/re
 
 import { Sidebar } from "./Sidebar";
 
+/**
+ * Display the dashboard navigation in a dismissible, focus-managed mobile drawer.
+ * @returns The component's rendered content for its current state.
+ */
 export function MobileNavigation({
     open,
     onClose,

@@ -3,6 +3,10 @@ import type { ReactNode } from "react";
 import { FieldsForm } from "../Form/FieldsForm";
 import { Modal } from "./Modal";
 
+/**
+ * Require an explicit confirmation before running the supplied action.
+ * @returns The component's rendered content for its current state.
+ */
 export function ConfirmDialog({
     title,
     children,

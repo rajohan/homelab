@@ -4,6 +4,10 @@ import { useState } from "react";
 
 import { AuthLayout } from "../layout/AuthLayout";
 import type { AuthPageProps } from "../types";
+/**
+ * Redeem an email reset proof and collect a validated replacement password.
+ * @returns The component's rendered content for its current state.
+ */
 export function ResetPasswordPage({ client, token }: AuthPageProps) {
     const [notice, setNotice] = useState("");
     return (

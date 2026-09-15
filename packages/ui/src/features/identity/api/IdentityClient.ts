@@ -20,12 +20,22 @@ export class IdentityClient {
             throw new IdentityError("CANCELLED", 0, "The request was cancelled.");
     }
 
+    /**
+     * Abort the current action generation and close any shared verification prompt.
+     */
     cancelActions(): void {
         this.#actions.abort();
         this.#actions = new AbortController();
         this.verification.cancel();
     }
 
+    /**
+     * Send a same-origin JSON request with bounded time and explicit error decoding.
+     * @param path - The identity API path.
+     * @param input - A POST payload; omitting it selects GET.
+     * @param signal - Optional caller cancellation signal.
+     * @returns The decoded response, to be schema-validated by the caller.
+     */
     async request(path: string, input?: unknown, signal?: AbortSignal): Promise<unknown> {
         try {
             signal?.throwIfAborted();
@@ -74,6 +84,10 @@ export class IdentityClient {
         }
     }
 
+    /**
+     * Cancel pending actions when their account/session binding changes.
+     * @param identity - The current account/session key, or undefined when signed out.
+     */
     bindIdentity(identity: string | undefined): void {
         if (this.#identity !== identity) {
             this.cancelActions();
@@ -81,6 +95,10 @@ export class IdentityClient {
         }
     }
 
+    /**
+     * Fetch and validate account settings, binding actions to the returned current session.
+     * @returns The validated account snapshot.
+     */
     async snapshot(): Promise<AccountSnapshot> {
         const snapshot = v.parse(accountSchema, await this.request("/api/account"));
         this.bindIdentity(
@@ -89,10 +107,21 @@ export class IdentityClient {
         return snapshot;
     }
 
+    /**
+     * Read the current central session without marking background polling as activity.
+     * @returns The validated session and available verification methods.
+     */
     async session() {
         return v.parse(sessionSchema, await this.request("/api/session"));
     }
 
+    /**
+     * Run an account mutation and retry once after shared step-up if its identity is unchanged.
+     * @param path - The account action path below /api/account/.
+     * @param input - The JSON action payload.
+     * @param signal - Optional cancellation tied to the caller's operation.
+     * @returns The decoded action response.
+     */
     async action(
         path: string,
         input: unknown = {},
@@ -122,6 +151,10 @@ export class IdentityClient {
         }
     }
 
+    /**
+     * Complete a browser WebAuthn proof bound to the current action generation.
+     * @returns Completion after the server verifies the assertion.
+     */
     async securityKeyProof(): Promise<void> {
         const signal = this.#actions.signal;
         const value = v.parse(
@@ -143,6 +176,11 @@ export class IdentityClient {
         );
     }
 
+    /**
+     * Register a security key without allowing a canceled ceremony to mutate the account.
+     * @param label - The display name for the new authenticator.
+     * @returns New recovery codes, if this enrollment creates them.
+     */
     async enrollSecurityKey(label: string): Promise<string[]> {
         const signal = this.#actions.signal;
         const value = v.parse(

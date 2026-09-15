@@ -2,6 +2,12 @@ import { isIP } from "node:net";
 
 import { parseDashboardAuthConfiguration } from "./auth";
 
+/**
+ * Validate the dashboard listener address and port.
+ * @param environment - Environment values; defaults to the current process.
+ * @returns The listener IP and numeric TCP port.
+ * @throws {Error} The host is not an IP address or the port is outside the supported range.
+ */
 export function dashboardBindOptions(
     environment: Readonly<Record<string, string | undefined>> = process.env
 ): { hostname: string; port: number } {
@@ -15,10 +21,18 @@ export function dashboardBindOptions(
     return { hostname, port: Number(rawPort) };
 }
 
+/**
+ * Read whether the dashboard runs outside production.
+ * @returns Whether development behavior is enabled.
+ */
 export function dashboardDevelopment(): boolean {
     return process.env.NODE_ENV !== "production";
 }
 
+/**
+ * Parse the dashboard identity settings from the process environment.
+ * @returns Validated identity settings, or undefined for an unconfigured development shell.
+ */
 export function dashboardAuthConfiguration() {
     return parseDashboardAuthConfiguration(process.env);
 }

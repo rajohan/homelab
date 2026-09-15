@@ -48,6 +48,11 @@ function compile(route: AccessRoute): readonly CompiledRule[] {
     return rules;
 }
 
+/**
+ * Compile resource patterns during configuration validation so invalid rules fail early.
+ * @param route - The registered origin and its ordered resource rules.
+ * @throws {Error} A resource expression cannot be compiled safely.
+ */
 export function validateResourceRules(route: AccessRoute): void {
     compile(route);
 }

@@ -7,6 +7,10 @@ export const timingFiles = {
 } as const;
 export type TestGroup = keyof typeof timingFiles;
 
+/**
+ * Discover unit, component and HTTP integration tests without generated build files.
+ * @returns The sorted test file inventory for each partition.
+ */
 export function discoverTests(): Record<TestGroup, string[]> {
     const files = [
         ...new Bun.Glob(
@@ -30,6 +34,14 @@ const timingsSchema = v.strictObject({
     files: v.record(v.string(), v.pipe(v.number(), v.finite(), v.minValue(0))),
 });
 
+/**
+ * Require timing entries to match the complete test partition without stale files.
+ * @param value - The parsed timing-file contents.
+ * @param files - The expected test files.
+ * @param name - The partition name used in validation errors.
+ * @returns The validated timing inventory.
+ * @throws {Error} The timing schema or its file inventory is invalid.
+ */
 export function assertTimings(value: unknown, files: readonly string[], name: string) {
     const timings = v.parse(timingsSchema, value);
     const missing = files.filter((file) => !(file in timings.files));
@@ -47,6 +59,10 @@ export function assertTimings(value: unknown, files: readonly string[], name: st
     return timings;
 }
 
+/**
+ * Validate every committed timing inventory against current test discovery.
+ * @returns Completion when all partitions have exact timing coverage.
+ */
 export async function checkTimings(): Promise<void> {
     const groups = discoverTests();
     for (const group of Object.keys(timingFiles) as TestGroup[])

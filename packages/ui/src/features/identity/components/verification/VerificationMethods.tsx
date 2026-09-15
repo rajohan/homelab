@@ -4,6 +4,10 @@ import { useState } from "react";
 import { Button, ErrorNotice, FieldsForm } from "../../../../index";
 import type { IdentityClient } from "../../api/IdentityClient";
 
+/**
+ * Offer the current account's available step-up methods and report successful proof.
+ * @returns The component's rendered content for its current state.
+ */
 export function VerificationMethods({
     client,
     onVerified,

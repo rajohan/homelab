@@ -1,6 +1,10 @@
 import logo from "../../assets/rajohan-mark.svg";
 import { cn } from "../../lib/classNames";
 
+/**
+ * Display the transparent Rajohan logo with a configurable product subtitle.
+ * @returns The component's rendered content for its current state.
+ */
 export function Brand({
     className,
     subtitle = "Homelab",

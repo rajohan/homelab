@@ -2,6 +2,10 @@ import { UserRound } from "lucide-react";
 
 import { Badge, Button, Card, SectionHeader, SuccessNotice } from "../../../../index";
 import type { AccountPanelProps } from "../../types";
+/**
+ * Show the account identity and controls for changing verified email and password.
+ * @returns The component's rendered content for its current state.
+ */
 export function ProfilePanel({ data, onAction, notice }: AccountPanelProps) {
     return (
         <Card id="account-profile" className="space-y-5">

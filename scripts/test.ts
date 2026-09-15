@@ -8,6 +8,10 @@ import {
     type TestGroup,
 } from "./testing/inventory";
 
+/**
+ * Run the selected test partitions with enforced parallelism and timing inventories.
+ * @returns Completion after all selected test commands finish.
+ */
 export async function main(): Promise<void> {
     const mode = process.argv[2];
     const allowed = [

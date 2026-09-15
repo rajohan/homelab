@@ -9,6 +9,10 @@ import { isoCBOR } from "@simplewebauthn/server/helpers";
 function clientData(type: string, challenge: string, origin: string): Buffer {
     return Buffer.from(JSON.stringify({ type, challenge, origin, crossOrigin: false }));
 }
+/**
+ * Create an isolated software authenticator for real WebAuthn signature tests.
+ * @returns Registration and assertion builders backed by a fresh EC key pair.
+ */
 export function softwareAuthenticator() {
     const { privateKey, publicKey } = generateKeyPairSync("ec", {
         namedCurve: "prime256v1",

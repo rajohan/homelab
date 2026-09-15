@@ -3,6 +3,10 @@ import { useContext, type ReactNode } from "react";
 
 import { FormFieldInvalidContext } from "../../lib/formFieldContext";
 
+/**
+ * Associate a field label, description and validation feedback with its child control.
+ * @returns The component's rendered content for its current state.
+ */
 export function FormField({
     label,
     children,

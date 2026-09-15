@@ -26,6 +26,10 @@ const replacement: readonly FieldDefinition[] = [
         minimum: 12,
     },
 ];
+/**
+ * Collect and validate password fields, including confirmation, before submission.
+ * @returns The component's rendered content for its current state.
+ */
 export function PasswordForm({
     requireCurrent = false,
     submitLabel,

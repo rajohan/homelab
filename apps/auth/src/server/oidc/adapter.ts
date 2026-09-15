@@ -7,13 +7,30 @@ import { grantSessions, oidcRecords, sessions } from "../database/schema";
 import { decryptValue, encryptValue, tokenDigest } from "../security/crypto";
 import { revokeBoundGrants } from "./logout";
 
+/**
+ * Create the provider's encrypted PostgreSQL adapter with central-session grant checks.
+ * @param database - The auth database.
+ * @param key - The data-encryption key for OIDC payloads.
+ * @returns The adapter class instantiated by oidc-provider for each model.
+ */
 export function createOidcAdapter(database: AuthDatabase, key: Uint8Array) {
     return class PersistentAdapter implements Adapter {
         readonly model: string;
+        /**
+         * Bind an adapter instance to one provider model namespace.
+         * @param model - The OIDC model whose records this instance stores.
+         */
         constructor(model: string) {
             this.model = model;
         }
 
+        /**
+         * Encrypt and insert or replace a provider record with its expiry and lookup indexes.
+         * @param id - The provider record identifier.
+         * @param payload - The provider payload to encrypt.
+         * @param expiresIn - The record lifetime in seconds.
+         * @returns Completion after the record is stored.
+         */
         async upsert(
             id: string,
             payload: AdapterPayload,
@@ -35,6 +52,11 @@ export function createOidcAdapter(database: AuthDatabase, key: Uint8Array) {
                 .onConflictDoUpdate({ target: oidcRecords.digest, set: row });
         }
 
+        /**
+         * Decrypt a stored payload only while any bound central session remains live.
+         * @param row - The stored record, or undefined when lookup found nothing.
+         * @returns The usable provider payload, or undefined for an invalid session or missing record.
+         */
         async decode(
             row: typeof oidcRecords.$inferSelect | undefined
         ): Promise<AdapterPayload | undefined> {
@@ -63,6 +85,11 @@ export function createOidcAdapter(database: AuthDatabase, key: Uint8Array) {
                 : { ...payload, consumed: row.consumedAt };
         }
 
+        /**
+         * Find an unexpired provider record by its model-scoped identifier.
+         * @param id - The provider record identifier.
+         * @returns The usable provider payload, if present.
+         */
         async find(id: string): Promise<AdapterPayload | undefined> {
             const [row] = await database
                 .select()
@@ -76,6 +103,11 @@ export function createOidcAdapter(database: AuthDatabase, key: Uint8Array) {
             return this.decode(row);
         }
 
+        /**
+         * Find an unexpired model record through a hashed provider UID.
+         * @param uid - The provider UID.
+         * @returns The usable provider payload, if present.
+         */
         async findByUid(uid: string): Promise<AdapterPayload | undefined> {
             const [row] = await database
                 .select()
@@ -90,6 +122,11 @@ export function createOidcAdapter(database: AuthDatabase, key: Uint8Array) {
             return this.decode(row);
         }
 
+        /**
+         * Find an unexpired model record through a hashed user code.
+         * @param userCode - The device-flow user code.
+         * @returns The usable provider payload, if present.
+         */
         async findByUserCode(userCode: string): Promise<AdapterPayload | undefined> {
             const [row] = await database
                 .select()
@@ -104,6 +141,11 @@ export function createOidcAdapter(database: AuthDatabase, key: Uint8Array) {
             return this.decode(row);
         }
 
+        /**
+         * Atomically consume an unexpired provider record once.
+         * @param id - The provider record identifier.
+         * @returns Completion after the first successful consumption.
+         */
         async consume(id: string): Promise<void> {
             const [row] = await database
                 .update(oidcRecords)
@@ -122,12 +164,22 @@ export function createOidcAdapter(database: AuthDatabase, key: Uint8Array) {
                 );
         }
 
+        /**
+         * Delete a single model-scoped provider record.
+         * @param id - The provider record identifier.
+         * @returns Completion after deletion.
+         */
         async destroy(id: string): Promise<void> {
             await database
                 .delete(oidcRecords)
                 .where(eq(oidcRecords.digest, tokenDigest(`${this.model}:${id}`)));
         }
 
+        /**
+         * Revoke grant-bound records and preserve logout notifications in one transaction.
+         * @param id - The provider grant identifier.
+         * @returns Completion after the grant revocation commits.
+         */
         async revokeByGrantId(id: string): Promise<void> {
             await database.transaction(async (transaction) => {
                 await revokeBoundGrants(

@@ -1,3 +1,7 @@
+/**
+ * Start the requested Bun development applications and forward shutdown signals.
+ * @returns Completion after the child processes stop.
+ */
 export async function main(): Promise<void> {
     const requested = process.argv.slice(2);
     const apps = requested.length === 0 ? ["auth", "dashboard"] : requested;

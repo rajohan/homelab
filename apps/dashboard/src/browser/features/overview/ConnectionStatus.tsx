@@ -1,6 +1,10 @@
 import type { SystemStatus } from "@homelab/contracts";
 import { Badge, Button, Card, LoadingState } from "@homelab/ui";
 
+/**
+ * Display the dashboard API connection state with an explicit retry action.
+ * @returns The component's rendered content for its current state.
+ */
 export function ConnectionStatus({
     pending,
     failed,

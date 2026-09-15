@@ -1,6 +1,10 @@
 import { Link } from "@tanstack/react-router";
 import type { LucideIcon } from "lucide-react";
 
+/**
+ * Render a dashboard navigation link with accessible active-page feedback.
+ * @returns The component's rendered content for its current state.
+ */
 export function NavigationLink({
     to,
     label,

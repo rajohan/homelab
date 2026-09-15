@@ -30,6 +30,10 @@ const random = () =>
 const cwd = (app: string) =>
     fileURLToPath(new URL(`../apps/${app}/dist/`, import.meta.url));
 
+/**
+ * Verify the built auth and dashboard identity flow against the isolated test database.
+ * @returns Completion after migration, login and logout checks and child-process cleanup.
+ */
 export async function main(): Promise<void> {
     const databaseUrl = process.env.HOMELAB_TEST_DATABASE_URL;
     if (!databaseUrl)

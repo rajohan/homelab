@@ -71,6 +71,12 @@ export interface IdentityServices {
     readonly provider: Provider;
 }
 
+/**
+ * Resolve the current identity from an account bearer token or central session cookie.
+ * @param request - The incoming authenticated account request.
+ * @param services - The identity services used to verify it.
+ * @returns The live account/session principal.
+ */
 export async function requestPrincipal(
     request: Request,
     services: IdentityServices
@@ -92,6 +98,13 @@ export async function requestPrincipal(
     return services.accounts.principalByToken(value);
 }
 
+/**
+ * Handle the bounded account, session and proof API routes.
+ * @param request - The incoming account API request.
+ * @param services - The configured identity services.
+ * @param remoteAddress - The trusted peer identifier used for rate limiting.
+ * @returns The route's private JSON response.
+ */
 export async function accountApi(
     request: Request,
     services: IdentityServices,

@@ -9,6 +9,10 @@ import { ProfilePanel } from "./panels/ProfilePanel";
 import { SecurityPanel } from "./panels/SecurityPanel";
 import { SessionsPanel } from "./panels/SessionsPanel";
 import { SecurityPrompt } from "./verification/SecurityPrompt";
+/**
+ * Load account security settings and coordinate dialogs, notices and session changes.
+ * @returns The component's rendered content for its current state.
+ */
 export function AccountSettings({
     client,
     signInPath = "/login",

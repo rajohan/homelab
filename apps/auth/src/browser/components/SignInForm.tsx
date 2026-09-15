@@ -1,5 +1,9 @@
 import { FieldsForm } from "@homelab/ui";
 import type { IdentityClient } from "@homelab/ui/identity/client";
+/**
+ * Collect account credentials and continue only after a successful password check.
+ * @returns The component's rendered content for its current state.
+ */
 export function SignInForm({
     client,
     onComplete,

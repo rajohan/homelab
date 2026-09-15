@@ -62,6 +62,10 @@ function record(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/**
+ * Smoke-test the independently built applications using isolated child processes.
+ * @returns Completion after health checks pass and all test processes stop.
+ */
 export async function main(): Promise<void> {
     const children: Array<ReturnType<typeof Bun.spawn>> = [];
 

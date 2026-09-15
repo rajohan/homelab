@@ -2,6 +2,10 @@ import { AuthFrame, Button, LoadingState, buttonStyles } from "@homelab/ui";
 import { useIdentitySession } from "@homelab/ui/identity";
 import { IdentityClient } from "@homelab/ui/identity/client";
 import { Fragment, useState, type ReactNode } from "react";
+/**
+ * Render private dashboard content only while the current session is verified.
+ * @returns The component's rendered content for its current state.
+ */
 export function IdentityBoundary({ children }: { children: ReactNode }) {
     const [client] = useState(() => new IdentityClient());
     const session = useIdentitySession(client);

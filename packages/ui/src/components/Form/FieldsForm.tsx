@@ -9,6 +9,10 @@ import { FormField } from "./FormField";
 import type { FieldDefinition, FormErrors, FormValues } from "./types";
 import { touchedFieldError, validateFields } from "./validation";
 
+/**
+ * Render declarative fields with live validation and action-local submission feedback.
+ * @returns The component's rendered content for its current state.
+ */
 export function FieldsForm({
     fields,
     submitLabel,

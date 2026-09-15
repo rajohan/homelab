@@ -72,6 +72,13 @@ function secureUrl(value: string, development: boolean, originOnly = false): URL
     return url;
 }
 
+/**
+ * Validate identity secrets, clients, origins and resource policies before startup.
+ * @param environment - The scoped identity environment values.
+ * @param accessPolicy - The parsed deployment policy; defaults to denying unknown origins.
+ * @returns Validated identity configuration, or undefined for an unconfigured development shell.
+ * @throws {Error} Required settings or deployment policy are invalid.
+ */
 export function parseAuthConfiguration(
     environment: Readonly<Record<string, string | undefined>>,
     accessPolicy: unknown = emptyAccessPolicy

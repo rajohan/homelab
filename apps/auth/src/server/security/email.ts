@@ -23,6 +23,11 @@ export type EmailDelivery = (id: string, message: AuthEmail) => Promise<void>;
 export class AccountEmail {
     readonly accounts: Accounts;
     readonly deliver: EmailDelivery;
+    /**
+     * Bind email workflows to the account service and an explicit delivery implementation.
+     * @param accounts - The central account service.
+     * @param delivery - Optional isolated delivery sink; production defaults to Resend.
+     */
     constructor(accounts: Accounts, delivery?: EmailDelivery) {
         this.accounts = accounts;
         this.deliver =
@@ -51,6 +56,13 @@ export class AccountEmail {
             });
     }
 
+    /**
+     * Store encrypted email work in the caller's transaction.
+     * @param store - The caller-owned transaction.
+     * @param message - The validated queued email or reset-lookup work.
+     * @param proofToken - Optional proof token whose digest binds delivery to a live challenge.
+     * @returns Completion after work is safely queued.
+     */
     async enqueue(
         store: AuthStore,
         message: v.InferOutput<typeof queuedMessageSchema>,
@@ -72,6 +84,12 @@ export class AccountEmail {
         });
     }
 
+    /**
+     * Queue verification for a proposed address while retaining the active address.
+     * @param principal - The freshly verified initiating session.
+     * @param email - The proposed replacement address.
+     * @returns Completion after the bound proof and delivery work commit.
+     */
     async requestEmail(principal: Principal, email: string): Promise<void> {
         await this.accounts.requireFresh(principal);
         await rateLimit(
@@ -111,6 +129,11 @@ export class AccountEmail {
         });
     }
 
+    /**
+     * Consume an email proof and replace the address only while its initiating session remains valid.
+     * @param token - The one-use verification token from the delivered link.
+     * @returns Completion after address replacement and stale-proof invalidation commit.
+     */
     async verifyEmail(token: string): Promise<void> {
         await this.accounts.database.transaction(async (transaction) => {
             const { user, challenge } = await this.takeAccountProof(
@@ -158,6 +181,12 @@ export class AccountEmail {
         });
     }
 
+    /**
+     * Queue rate-limited reset lookup work without publicly disclosing account existence.
+     * @param username - The submitted account identifier.
+     * @param remote - The trusted peer identifier used for rate limiting.
+     * @returns Completion after reset work is admitted to the queue.
+     */
     async requestReset(username: string, remote: string): Promise<void> {
         // Commit admission and queued work together. Rejected local attempts must
         // not consume the shared recovery capacity or leave unused rate buckets.
@@ -213,6 +242,12 @@ export class AccountEmail {
         await audit(transaction, user.id, "password_reset_requested");
     }
 
+    /**
+     * Redeem a reset proof, replace credentials and revoke active sessions atomically.
+     * @param token - The one-use password-reset token.
+     * @param password - The replacement password.
+     * @returns Completion after the protected credential replacement commits.
+     */
     async resetPassword(token: string, password: string): Promise<void> {
         const [pending] = await this.accounts.database
             .select({ digest: challenges.digest })
@@ -285,6 +320,10 @@ export class AccountEmail {
         return { user, challenge };
     }
 
+    /**
+     * Deliver a bounded batch of encrypted mail work with expiry, retries and idempotency keys.
+     * @returns The number of queued jobs completed in this pass.
+     */
     async deliverPending(): Promise<number> {
         let delivered = 0;
         for (let attempt = 0; attempt < 5; attempt += 1) {

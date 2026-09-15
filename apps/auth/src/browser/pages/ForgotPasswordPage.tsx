@@ -3,6 +3,10 @@ import { useState } from "react";
 
 import { AuthLayout } from "../layout/AuthLayout";
 import type { AuthPageProps } from "../types";
+/**
+ * Request a password-reset email without revealing whether the account exists.
+ * @returns The component's rendered content for its current state.
+ */
 export function ForgotPasswordPage({ client }: AuthPageProps) {
     const [notice, setNotice] = useState("");
     return (

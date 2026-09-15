@@ -1,6 +1,10 @@
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+/**
+ * Verify the pinned Bun runtime and install repository development hooks.
+ * @returns Completion after local repository setup is ready.
+ */
 export async function main(): Promise<void> {
     const repositoryRoot = realpathSync(fileURLToPath(new URL("..", import.meta.url)));
     const versionFile = await Bun.file(

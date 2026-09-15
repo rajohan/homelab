@@ -1,4 +1,8 @@
 import type { ReactNode } from "react";
+/**
+ * Render a page heading with optional introductory text and an eyebrow label.
+ * @returns The component's rendered content for its current state.
+ */
 export function PageHeader({
     title,
     description,

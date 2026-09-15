@@ -101,7 +101,39 @@ export default defineConfig({
         "typescript",
         "unicorn",
     ],
+    jsPlugins: [{ name: "documentation", specifier: "./scripts/lint/documentation.ts" }],
     rules: {
+        "documentation/exported": [
+            "error",
+            {
+                enableFixer: false,
+                publicOnly: { esm: true, cjs: false, window: false },
+                checkGetters: true,
+                checkSetters: true,
+                require: {
+                    FunctionDeclaration: true,
+                    ArrowFunctionExpression: true,
+                    FunctionExpression: true,
+                    MethodDefinition: false,
+                },
+            },
+        ],
+        "documentation/methods": [
+            "error",
+            {
+                enableFixer: false,
+                checkGetters: true,
+                checkSetters: true,
+                contexts: [
+                    'MethodDefinition:not([accessibility="private"]):not([accessibility="protected"]):not([key.type="PrivateIdentifier"]) > FunctionExpression',
+                    'PropertyDefinition:not([accessibility="private"]):not([accessibility="protected"]):not([key.type="PrivateIdentifier"]) > :matches(ArrowFunctionExpression, FunctionExpression)',
+                    "TSMethodSignature",
+                ],
+                require: { FunctionDeclaration: false },
+            },
+        ],
+        "documentation/description": "error",
+        "jsdoc/no-blank-blocks": "error",
         eqeqeq: "error",
         "typescript/no-explicit-any": "error",
         "typescript/consistent-type-imports": "error",

@@ -1,6 +1,10 @@
 import { FieldsForm, Modal } from "../../../../index";
 import type { AccountDialogProps } from "../../types";
 
+/**
+ * Request verification of a replacement email address without changing the active address yet.
+ * @returns The component's rendered content for its current state.
+ */
 export function EmailDialog({
     client,
     onClose,

@@ -4,6 +4,10 @@ import { LayoutDashboard, Server, Settings, X } from "lucide-react";
 
 import { NavigationLink } from "./NavigationLink";
 
+/**
+ * Render shared desktop and mobile navigation with optional close callbacks.
+ * @returns The component's rendered content for its current state.
+ */
 export function Sidebar({
     onClose,
     onNavigate,

@@ -4,6 +4,10 @@ import { useId, type ReactNode } from "react";
 import { cn } from "../../lib/classNames";
 import { FormFieldInvalidContext } from "../../lib/formFieldContext";
 
+/**
+ * Group controls under a legend with shared disabled and validation state.
+ * @returns The component's rendered content for its current state.
+ */
 export function Fieldset({
     legend,
     children,

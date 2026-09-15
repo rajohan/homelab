@@ -40,6 +40,14 @@ function safeTarget(accounts: Accounts, value: string): URL {
     return target;
 }
 
+/**
+ * Create a short-lived, one-use SSO handoff for an authorized target origin.
+ * @param accounts - The central account service.
+ * @param principal - The session completing the handoff.
+ * @param targetValue - The requested, registered service URL.
+ * @param nonce - The proxy-generated challenge that binds this handoff.
+ * @returns The callback URL containing the one-use ticket.
+ */
 export async function createSsoTicket(
     accounts: Accounts,
     principal: Principal,
@@ -68,6 +76,12 @@ export async function createSsoTicket(
     return `${target.origin}/.homelab/sso/callback?ticket=${ticket}`;
 }
 
+/**
+ * Apply the registered origin's access policy to a trusted reverse-proxy request.
+ * @param request - A ForwardAuth request carrying authenticated proxy headers.
+ * @param accounts - The central account service and access configuration.
+ * @returns A policy decision, identity headers or sign-in handoff response.
+ */
 export async function forwardAuth(
     request: Request,
     accounts: Accounts

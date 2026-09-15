@@ -3,6 +3,10 @@ import type { ReactNode } from "react";
 import { Brand } from "../Brand/Brand";
 import { Card } from "../Card/Card";
 
+/**
+ * Provide the shared responsive frame for sign-in and account-recovery screens.
+ * @returns The component's rendered content for its current state.
+ */
 export function AuthFrame({
     title,
     description,

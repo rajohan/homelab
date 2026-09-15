@@ -28,6 +28,11 @@ async function cookiePrincipal(
     }
 }
 
+/**
+ * Configure the OIDC engine with persistent grants and Homelab session policy.
+ * @param accounts - Account storage, current keys and registered client settings.
+ * @returns The configured OIDC provider.
+ */
 export function createProvider(accounts: Accounts): Provider {
     const configuration = accounts.configuration;
     const policy = interactionPolicy.base();
@@ -211,6 +216,11 @@ export function createProvider(accounts: Accounts): Provider {
     return provider;
 }
 
+/**
+ * Start the internal loopback HTTP bridge required by the OIDC provider.
+ * @param accounts - The account service used by provider authentication and interactions.
+ * @returns The provider and its loopback listener handles.
+ */
 export async function startProviderListener(accounts: Accounts) {
     const provider = createProvider(accounts);
     const callback = provider.callback();
@@ -351,6 +361,13 @@ async function completeInteraction(
     response.end(JSON.stringify({ redirect }));
 }
 
+/**
+ * Authorize an account-scoped dashboard bearer token against its live central session.
+ * @param accounts - The central account service.
+ * @param provider - The OIDC engine that owns the token.
+ * @param token - The presented bearer token.
+ * @returns The active account and session principal.
+ */
 export async function tokenPrincipal(
     accounts: Accounts,
     provider: Provider,

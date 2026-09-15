@@ -16,6 +16,10 @@ const sizes: Record<ButtonSize, string> = {
     lg: "min-h-12 px-5 py-3 text-base",
 };
 
+/**
+ * Compose shared button variants and merge caller-provided Tailwind classes.
+ * @returns The merged classes for the requested button appearance.
+ */
 export function buttonStyles({
     variant = "primary",
     size = "md",

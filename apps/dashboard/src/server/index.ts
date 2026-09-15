@@ -13,6 +13,11 @@ import {
 } from "./http/responses";
 import { createDashboardAuthentication } from "./identity/authentication";
 
+/**
+ * Start the dashboard HTTP server with identity-protected APIs and bundled assets.
+ * @param options - Explicit listener and identity overrides for deployment or isolated tests.
+ * @returns The running Bun server; the caller owns shutdown.
+ */
 export function startDashboardServer(options: DashboardServerOptions = {}) {
     const bindOptions = dashboardBindOptions();
     const configuration =

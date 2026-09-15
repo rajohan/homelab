@@ -7,6 +7,11 @@ import {
 } from "./config/environment";
 import { authRequest, type AuthServerOptions } from "./http/responses";
 
+/**
+ * Start the auth HTTP server and its configured identity application.
+ * @param options - Listener, configuration and mail-delivery overrides for deployment or tests.
+ * @returns The server and application handles required for controlled shutdown.
+ */
 export async function startAuthServer(options: AuthServerOptions = {}) {
     const bindOptions = authBindOptions();
     const configuration =

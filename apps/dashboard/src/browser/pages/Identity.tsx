@@ -1,5 +1,9 @@
 import { Badge, Card, PageHeader } from "@homelab/ui";
 
+/**
+ * Explain the independent identity service and the current preview boundaries.
+ * @returns The component's rendered content for its current state.
+ */
 export function Identity() {
     return (
         <>

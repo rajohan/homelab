@@ -88,7 +88,9 @@ export async function deliverLogouts(
                 );
                 // Do not deliver old session data to a changed or removed client endpoint.
                 if (
-                    metadata?.backchannel_logout_uri !== payload.uri ||
+                    !metadata?.backchannel_logout_uri ||
+                    new URL(metadata.backchannel_logout_uri).href !==
+                        new URL(payload.uri).href ||
                     metadata.backchannel_logout_session_required !== true
                 )
                     throw new Error("Logout client configuration changed");
@@ -96,6 +98,12 @@ export async function deliverLogouts(
                 if (!client) throw new Error("Logout client unavailable");
                 // The pinned library exposes this method; its external @types omit it.
                 const sender = client as typeof client & {
+                    /**
+                     * Send the provider's signed, session-specific back-channel logout token.
+                     * @param sub - The client-visible subject of the revoked session.
+                     * @param sid - The client session identifier to invalidate.
+                     * @returns Completion after the receiver accepts the notification.
+                     */
                     backchannelLogout(sub: string, sid: string): Promise<void>;
                 };
                 await sender.backchannelLogout(payload.accountId, payload.sid);

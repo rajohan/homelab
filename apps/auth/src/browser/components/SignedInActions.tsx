@@ -3,6 +3,10 @@ import type { IdentityClient } from "@homelab/ui/identity/client";
 import { useState } from "react";
 
 import { continueSignIn } from "../navigation/continueSignIn";
+/**
+ * Continue the pending sign-in handoff or sign out of the current account.
+ * @returns The component's rendered content for its current state.
+ */
 export function SignedInActions({
     client,
     address,

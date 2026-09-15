@@ -10,6 +10,10 @@ export interface DashboardServerOptions {
     readonly authentication?: DashboardAuthConfiguration | null;
 }
 
+/**
+ * Report that the dashboard process can serve requests.
+ * @returns A non-cacheable JSON health response.
+ */
 export function dashboardHealthResponse(): Response {
     return Response.json(
         { service: "dashboard", phase: "identity", status: "ok" },
@@ -17,6 +21,11 @@ export function dashboardHealthResponse(): Response {
     );
 }
 
+/**
+ * Dispatch an already authorized request to the dashboard tRPC router.
+ * @param request - The request after the server's origin and session checks.
+ * @returns The tRPC response with private-response caching disabled.
+ */
 export async function dashboardApiRequest(request: Request): Promise<Response> {
     const response = await fetchRequestHandler({
         endpoint: "/api/trpc",
@@ -29,6 +38,10 @@ export async function dashboardApiRequest(request: Request): Promise<Response> {
     return response;
 }
 
+/**
+ * Return the dashboard API's missing-resource response.
+ * @returns A JSON 404 response.
+ */
 export function dashboardNotFound(): Response {
     return Response.json({ error: "Not found" }, { status: 404 });
 }

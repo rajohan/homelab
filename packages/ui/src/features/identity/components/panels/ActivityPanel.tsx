@@ -2,6 +2,10 @@ import { History } from "lucide-react";
 
 import { Card, SectionHeader } from "../../../../index";
 import type { AccountPanelProps } from "../../types";
+/**
+ * List recent account security events from the authenticated account snapshot.
+ * @returns The component's rendered content for its current state.
+ */
 export function ActivityPanel({ data }: AccountPanelProps) {
     return (
         <Card id="security-activity" className="space-y-4">

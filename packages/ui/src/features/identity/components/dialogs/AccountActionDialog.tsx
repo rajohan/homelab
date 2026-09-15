@@ -5,6 +5,10 @@ import { PasswordDialog } from "./PasswordDialog";
 import { SecurityChangeDialog } from "./SecurityChangeDialog";
 import { SecurityKeyDialog } from "./SecurityKeyDialog";
 
+/**
+ * Select the account dialog for the requested security or profile action.
+ * @returns The component's rendered content for its current state.
+ */
 export function AccountActionDialog({
     action,
     email,

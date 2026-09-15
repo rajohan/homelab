@@ -49,6 +49,7 @@
         "bun-plugin-tailwind": "0.1.2",
         "drizzle-kit": "1.0.0-rc.5-5935859",
         "drizzle-orm": "1.0.0-rc.5-5935859",
+        "eslint-plugin-jsdoc": "64.5.0",
         "eslint-plugin-react-you-might-not-need-an-effect": "1.0.2",
         "happy-dom": "20.14.5",
         "lcov-result-merger": "6.0.0",

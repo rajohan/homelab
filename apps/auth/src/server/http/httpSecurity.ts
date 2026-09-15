@@ -3,10 +3,21 @@ import { timingSafeEqual } from "node:crypto";
 import type { AuthConfiguration } from "../config/configuration";
 import { AuthFailure } from "../security/errors";
 
+/**
+ * Choose the secure host-only session name, or its loopback development variant.
+ * @param configuration - The identity deployment settings.
+ * @returns The session cookie name.
+ */
 export function cookieName(configuration: AuthConfiguration): string {
     return configuration.development ? "homelab_auth" : "__Host-homelab_auth";
 }
 
+/**
+ * Read a single unambiguous identity cookie from the incoming header.
+ * @param header - The raw Cookie header, if present.
+ * @param configuration - The identity deployment settings.
+ * @returns The cookie value, or undefined when missing or ambiguous.
+ */
 export function readAuthCookie(
     header: string | null | undefined,
     configuration: AuthConfiguration
@@ -21,6 +32,13 @@ export function readAuthCookie(
     return value && /^[\w-]{43}$/.test(value) ? value : undefined;
 }
 
+/**
+ * Serialize a host-only identity session cookie or expire it explicitly.
+ * @param configuration - The identity deployment settings.
+ * @param token - The opaque session token.
+ * @param clear - Whether to expire the cookie instead of setting it.
+ * @returns The Set-Cookie header value.
+ */
 export function sessionCookie(
     configuration: AuthConfiguration,
     token: string,
@@ -29,6 +47,12 @@ export function sessionCookie(
     return `${cookieName(configuration)}=${clear ? "" : token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${clear ? 0 : 43_200}${configuration.development ? "" : "; Secure"}`;
 }
 
+/**
+ * Verify the shared ForwardAuth proxy key using a constant-time byte comparison.
+ * @param request - The incoming proxy request.
+ * @param configuration - Settings containing the expected proxy key.
+ * @returns Whether the presented key matches.
+ */
 export function trustedProxy(
     request: Request,
     configuration: AuthConfiguration
@@ -38,6 +62,12 @@ export function trustedProxy(
     return supplied.length === expected.length && timingSafeEqual(supplied, expected);
 }
 
+/**
+ * Require an explicitly allowed origin and JSON content type for mutations.
+ * @param request - The incoming mutation request.
+ * @param configuration - Settings containing the allowed origins.
+ * @returns The validated request origin.
+ */
 export function assertMutationOrigin(
     request: Request,
     configuration: AuthConfiguration
@@ -53,6 +83,12 @@ export function assertMutationOrigin(
     return origin;
 }
 
+/**
+ * Serialize a private JSON response with cache and content-sniffing protections.
+ * @param value - The response payload.
+ * @param status - The HTTP status; defaults to success.
+ * @returns The protected JSON response.
+ */
 export function secureJson(value: unknown, status = 200): Response {
     return Response.json(value, {
         status,

@@ -5,6 +5,10 @@ import { RouterProvider } from "@tanstack/react-router";
 import { IdentityBoundary } from "./identity/IdentityBoundary";
 import type { createDashboardRouter } from "./router";
 
+/**
+ * Compose query state, identity verification, routing and top-level error handling.
+ * @returns The component's rendered content for its current state.
+ */
 export function DashboardApp({
     router,
     queryClient,

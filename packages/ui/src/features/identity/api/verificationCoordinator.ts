@@ -8,13 +8,27 @@ export class VerificationCoordinator {
     #generation = 0;
     #active = 0;
     #timeout: ReturnType<typeof setTimeout> | undefined;
+    /**
+     * Read the active verification generation for the external-store subscription.
+     * @returns The active generation, or zero when no prompt is open.
+     */
     getSnapshot = (): number => this.#active;
+    /**
+     * Observe changes to the shared verification prompt.
+     * @param listener - The callback notified when prompt state changes.
+     * @returns An unsubscribe callback.
+     */
     subscribe = (listener: () => void): (() => void) => {
         this.#listeners.add(listener);
         return () => {
             this.#listeners.delete(listener);
         };
     };
+    /**
+     * Join one shared verification prompt and wait for its result.
+     * @param signal - Optional cancellation signal for this pending action.
+     * @returns Whether the matching verification generation completed successfully.
+     */
     request(signal?: AbortSignal): Promise<boolean> {
         if (signal?.aborted) return Promise.resolve(false);
         if (!this.#active) {
@@ -38,9 +52,16 @@ export class VerificationCoordinator {
         for (const listener of this.#listeners) listener();
         return pending.promise;
     }
+    /**
+     * Resolve pending actions only for the current verification generation.
+     * @param generation - The generation whose proof just succeeded.
+     */
     complete(generation: number): void {
         if (generation === this.#active && generation !== 0) this.#finish(true);
     }
+    /**
+     * Close the prompt and release pending actions without accepting their proof.
+     */
     cancel(): void {
         this.#finish(false);
     }

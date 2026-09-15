@@ -39,6 +39,11 @@ async function privateInput(): Promise<unknown> {
     }
     return JSON.parse(Buffer.concat(chunks).toString()) as unknown;
 }
+/**
+ * Execute an explicit operator command without exposing persisted identity secrets.
+ * @param command - The validated command name and arguments from the CLI.
+ * @returns Completion after the requested command succeeds.
+ */
 export async function runAdmin(command: readonly string[]): Promise<void> {
     const [action, option] = command;
     if (action === "generate-keys" && command.length === 1) {

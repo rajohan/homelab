@@ -5,6 +5,10 @@ import type { ComponentProps } from "react";
 import { LoadingDots } from "../Loading/LoadingDots";
 import { buttonStyles, type ButtonSize, type ButtonVariant } from "./buttonStyles";
 
+/**
+ * Render a shared action button that disables interaction while work is pending.
+ * @returns The component's rendered content for its current state.
+ */
 export function Button({
     className,
     disabled = false,

@@ -1,6 +1,10 @@
 import { AuthFrame } from "@homelab/ui";
 import type { ReactNode } from "react";
 
+/**
+ * Wrap authentication pages with the appropriate sign-in or recovery navigation.
+ * @returns The component's rendered content for its current state.
+ */
 export function AuthLayout({
     title,
     children,

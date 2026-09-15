@@ -5,6 +5,10 @@ import type { AccountDialogProps, ConfirmationAction } from "../../types";
 import { confirmationMessage } from "../../validation/confirmationMessage";
 import { confirmationTitle } from "../../validation/confirmationTitle";
 
+/**
+ * Confirm factor removal, recovery-code rotation or session revocation.
+ * @returns The component's rendered content for its current state.
+ */
 export function SecurityChangeDialog({
     client,
     onClose,

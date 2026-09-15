@@ -8,6 +8,12 @@ export interface DashboardAuthConfiguration {
     readonly development: boolean;
 }
 
+/**
+ * Validate dashboard OIDC, origin and cookie-key settings before startup.
+ * @param environment - The scoped dashboard environment values.
+ * @returns Validated settings, or undefined only when identity is omitted in development.
+ * @throws {Error} Production identity settings, client authentication mode, origins or key material are invalid.
+ */
 export function parseDashboardAuthConfiguration(
     environment: Readonly<Record<string, string | undefined>>
 ): DashboardAuthConfiguration | undefined {

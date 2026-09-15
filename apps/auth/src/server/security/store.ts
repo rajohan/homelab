@@ -5,6 +5,14 @@ import { auditEvents, challenges, rateBuckets } from "../database/schema";
 import { decryptValue, encryptValue, randomToken, tokenDigest } from "./crypto";
 import { AuthFailure, invalidProof } from "./errors";
 
+/**
+ * Prepare insertion of a redacted account security event.
+ * @param store - The database or caller-owned transaction.
+ * @param userId - The associated account, or null for an unbound event.
+ * @param event - The nonsecret event identifier.
+ * @param now - The event timestamp.
+ * @returns The insert query, which the caller must await.
+ */
 export function audit(
     store: AuthStore,
     userId: string | null,
@@ -16,6 +24,15 @@ export function audit(
         .values({ id: crypto.randomUUID(), userId, event, createdAt: now });
 }
 
+/**
+ * Consume an atomic rate-limit slot using a hashed bucket identifier.
+ * @param store - The database or caller-owned transaction.
+ * @param bucket - The purpose-bound rate-limit key.
+ * @param limit - The allowed operation count within the period.
+ * @param periodMs - The bucket lifetime in milliseconds.
+ * @param now - The timestamp used to evaluate and renew the bucket.
+ * @returns Completion when the request is within its limit.
+ */
 export async function rateLimit(
     store: AuthStore,
     bucket: string,
@@ -40,6 +57,17 @@ export async function rateLimit(
         throw new AuthFailure("RATE_LIMITED", 429, "Too many attempts. Try again later.");
 }
 
+/**
+ * Persist an expiring, encrypted challenge under an opaque one-use token.
+ * @param store - The database or caller-owned transaction.
+ * @param key - The data-encryption key.
+ * @param userId - The account bound to the proof.
+ * @param sessionId - The initiating session, or null for explicitly sessionless proofs.
+ * @param purpose - The operation the proof may authorize.
+ * @param data - The proof payload to encrypt.
+ * @param lifetimeMs - The validity period in milliseconds.
+ * @returns The plaintext token to deliver privately to the client.
+ */
 export async function createChallenge(
     store: AuthStore,
     key: Uint8Array,
@@ -62,6 +90,16 @@ export async function createChallenge(
     return token;
 }
 
+/**
+ * Atomically consume a matching, unexpired proof and decrypt its payload.
+ * @param store - The database or caller-owned transaction.
+ * @param key - The data-encryption key.
+ * @param token - The presented one-use token.
+ * @param purpose - The required proof purpose.
+ * @param userId - An optional required account binding.
+ * @param sessionId - An optional required session binding.
+ * @returns The proof's account/session bindings and decoded payload.
+ */
 export async function takeChallenge(
     store: AuthStore,
     key: Uint8Array,

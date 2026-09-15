@@ -2,6 +2,11 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type { IdentityClient } from "../api/IdentityClient";
 
+/**
+ * Poll session identity and cancel pending actions and private caches when it changes.
+ * @param client - The identity client shared by the account UI.
+ * @returns The current session query, including pending and failure states.
+ */
 export function useIdentitySession(client: IdentityClient) {
     const queryClient = useQueryClient();
     return useQuery({

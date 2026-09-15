@@ -1,6 +1,10 @@
 import { FieldsForm, Modal } from "../../../../index";
 import type { AccountDialogProps } from "../../types";
 
+/**
+ * Register a named WebAuthn authenticator through the browser ceremony.
+ * @returns The component's rendered content for its current state.
+ */
 export function SecurityKeyDialog({
     client,
     onClose,

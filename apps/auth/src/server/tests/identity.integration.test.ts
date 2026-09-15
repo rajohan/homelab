@@ -575,6 +575,58 @@ describe("security invariants against the isolated database", () => {
         ).toHaveLength(0);
     });
 
+    test("queued logout accepts equivalent endpoint spelling but rejects changed destinations", async () => {
+        await authorizationTokens("openid profile");
+        expect(await status(post("/api/logout", {}))).toBe(200);
+        const configuration = application.services.accounts.configuration;
+        const client = configuration.clients.find(
+            (entry) => entry.client_id === "dashboard"
+        );
+        const uri = client?.backchannel_logout_uri;
+        if (!client || !uri) throw new Error("Logout fixture missing");
+        const withUri = (replacement: string | undefined): AuthConfiguration => ({
+            ...configuration,
+            clients: configuration.clients.map((entry) =>
+                entry === client
+                    ? { ...entry, backchannel_logout_uri: replacement }
+                    : entry
+            ),
+        });
+        for (const changed of [
+            undefined,
+            uri + "/changed",
+            uri + "?changed=true",
+            uri.replace("127.0.0.1", "localhost"),
+            uri.replace("http:", "https:"),
+        ]) {
+            await application.connection.database
+                .update(logoutOutbox)
+                .set({ nextAttemptAt: new Date(0) });
+            expect(
+                await deliverLogouts(
+                    application.connection.database,
+                    withUri(changed),
+                    application.services.provider
+                )
+            ).toBe(0);
+            expect(logoutTokens).toHaveLength(0);
+        }
+        await application.connection.database
+            .update(logoutOutbox)
+            .set({ nextAttemptAt: new Date(0) });
+        expect(
+            await deliverLogouts(
+                application.connection.database,
+                withUri(uri.replace("http:", "HTTP:")),
+                application.services.provider
+            )
+        ).toBe(1);
+        expect(logoutTokens).toHaveLength(1);
+        expect(
+            await application.connection.database.select().from(logoutOutbox)
+        ).toHaveLength(0);
+    });
+
     test("logout queue rolls back with revocation and expires with a redacted failure event", async () => {
         await authorizationTokens("openid profile");
         const token = cookieJar.get("homelab_auth")?.value;

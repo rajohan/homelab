@@ -6,6 +6,10 @@ import * as v from "valibot";
 
 import type { AuthDatabase } from "./connection";
 
+/**
+ * Locate migrations in either the source tree or the built auth package.
+ * @returns The absolute migration directory path.
+ */
 export function authMigrationsFolder(): string {
     return new URL(
         existsSync(new URL("migrations", import.meta.url))
@@ -15,6 +19,11 @@ export function authMigrationsFolder(): string {
     ).pathname;
 }
 
+/**
+ * Load the schema inventory shipped with this auth build.
+ * @returns The nonempty ordered migration inventory.
+ * @throws {Error} The packaged migration inventory is missing.
+ */
 export function requiredAuthMigrations(): MigrationMeta[] {
     const migrations = readMigrationFiles({ migrationsFolder: authMigrationsFolder() });
     if (migrations.length === 0)
@@ -24,6 +33,13 @@ export function requiredAuthMigrations(): MigrationMeta[] {
 
 const appliedSchema = v.array(v.object({ name: v.string(), hash: v.string() }));
 
+/**
+ * Require the applied database journal to match this build's migration inventory.
+ * @param database - The auth database to inspect.
+ * @param expected - The exact migrations required by the running build.
+ * @returns Completion when all journal names and hashes agree.
+ * @throws {Error} The schema journal is missing, outdated or otherwise inconsistent.
+ */
 export async function assertAuthSchemaReady(
     database: AuthDatabase,
     expected: readonly MigrationMeta[]

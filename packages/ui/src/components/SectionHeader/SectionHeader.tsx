@@ -1,6 +1,10 @@
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
+/**
+ * Display a section title, supporting text, icon and optional actions.
+ * @returns The component's rendered content for its current state.
+ */
 export function SectionHeader({
     title,
     description,

@@ -4,6 +4,11 @@ import { useState } from "react";
 import type { IdentityClient } from "../api/IdentityClient";
 import type { AccountAction, AccountNotice } from "../types";
 import { actionSection } from "../validation/actionSection";
+/**
+ * Coordinate the account snapshot, dialogs and action-local success feedback.
+ * @param client - The identity client bound to the displayed account.
+ * @returns Account query state and dialog, refresh and recovery-code controls.
+ */
 export function useAccountSettings(client: IdentityClient) {
     const queryClient = useQueryClient();
     const account = useQuery({

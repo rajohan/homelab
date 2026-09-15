@@ -12,6 +12,11 @@ const stateSchema = v.object({
 });
 const accessSchema = v.object({ accessToken: v.string() });
 
+/**
+ * Create OIDC login and account-proxy handlers with encrypted, purpose-bound cookies.
+ * @param configuration - Validated issuer, client credentials, session key and dashboard origin.
+ * @returns Login, callback, proxy and central-session verification handlers.
+ */
 export function createDashboardAuthentication(configuration: DashboardAuthConfiguration) {
     const sessionName = configuration.development
         ? "homelab_dashboard"

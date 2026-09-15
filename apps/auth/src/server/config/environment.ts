@@ -3,6 +3,12 @@ import { isIP } from "node:net";
 import { type AuthConfiguration, parseAuthConfiguration } from "./configuration";
 import { loadAccessPolicy } from "./policyFile";
 
+/**
+ * Validate the identity listener address and port.
+ * @param environment - Environment values; defaults to the current process.
+ * @returns The listener IP and numeric TCP port.
+ * @throws {Error} The host is not an IP address or the port is invalid.
+ */
 export function authBindOptions(
     environment: Readonly<Record<string, string | undefined>> = process.env
 ): { hostname: string; port: number } {
@@ -15,6 +21,11 @@ export function authBindOptions(
     return { hostname, port: Number(rawPort) };
 }
 
+/**
+ * Load the deployment access policy and validate scoped identity settings.
+ * @param environment - Identity-service environment values; defaults to the current process.
+ * @returns Validated settings, or undefined for the visual-only development shell.
+ */
 export async function authConfiguration(
     environment: Readonly<Record<string, string | undefined>> = process.env
 ): Promise<AuthConfiguration | undefined> {
@@ -25,6 +36,10 @@ export async function authConfiguration(
         await loadAccessPolicy(environment.HOMELAB_AUTH_POLICY_FILE)
     );
 }
+/**
+ * Read whether the auth app runs outside production.
+ * @returns Whether development behavior is enabled.
+ */
 export function authDevelopment(): boolean {
     return process.env.NODE_ENV !== "production";
 }

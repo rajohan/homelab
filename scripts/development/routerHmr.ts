@@ -6,6 +6,12 @@ const deferredAssignment =
 
 // Bun's development module loader evaluates the RouterCore/load-client cycle eagerly.
 // Defer this one binding; do not modify installed dependencies or production output.
+/**
+ * Apply the guarded TanStack Router workaround for Bun's development chunk initialization.
+ * @param source - The exact dependency module contents.
+ * @returns The module with its eager binding deferred.
+ * @throws {Error} The expected dependency shape changed and the workaround needs review.
+ */
 export function deferRouterChunkBinding(source: string): string {
     if (source.split(eagerAssignment).length !== 2)
         throw new Error(

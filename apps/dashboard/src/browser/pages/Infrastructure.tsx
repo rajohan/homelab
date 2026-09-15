@@ -1,5 +1,9 @@
 import { Badge, Card, PageHeader } from "@homelab/ui";
 
+/**
+ * Show the infrastructure module placeholder without querying or fabricating host state.
+ * @returns The component's rendered content for its current state.
+ */
 export function Infrastructure() {
     return (
         <>

@@ -2,6 +2,10 @@ import { ShieldCheck } from "lucide-react";
 
 import { Button, Card, SectionHeader, SuccessNotice } from "../../../../index";
 import type { AccountPanelProps } from "../../types";
+/**
+ * List enrolled factors and offer enrollment, removal and recovery-code actions.
+ * @returns The component's rendered content for its current state.
+ */
 export function SecurityPanel({ data, onAction, notice }: AccountPanelProps) {
     return (
         <Card id="account-security" className="space-y-5">

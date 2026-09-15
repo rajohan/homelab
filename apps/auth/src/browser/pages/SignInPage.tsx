@@ -10,6 +10,10 @@ import { SignedInActions } from "../components/SignedInActions";
 import { SignInForm } from "../components/SignInForm";
 import { AuthLayout } from "../layout/AuthLayout";
 import type { AuthPageProps } from "../types";
+/**
+ * Coordinate password, MFA and account views using the verified session identity.
+ * @returns The component's rendered content for its current state.
+ */
 export function SignInPage({ client, address }: AuthPageProps) {
     const queryClient = useQueryClient();
     const session = useIdentitySession(client);

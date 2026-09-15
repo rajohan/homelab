@@ -1,3 +1,7 @@
+/**
+ * List executable source and tooling files independently of which modules tests import.
+ * @returns The sorted files that must appear in coverage.
+ */
 export async function executableSources(): Promise<string[]> {
     const files = [
         ...new Bun.Glob("{apps,packages,scripts}/**/*.{ts,tsx}").scanSync("."),
@@ -24,6 +28,13 @@ export async function executableSources(): Promise<string[]> {
     return result;
 }
 
+/**
+ * Reject a coverage report that omits executable source files.
+ * @param lcov - The merged LCOV report.
+ * @param expected - The complete executable source inventory.
+ * @param root - The repository root used to normalize reported paths.
+ * @throws {Error} The report is missing required source files.
+ */
 export function assertCoverageInventory(
     lcov: string,
     expected: readonly string[],

@@ -1,3 +1,7 @@
+/**
+ * Animate a loading label's trailing dots while respecting reduced-motion preferences.
+ * @returns The component's rendered content for its current state.
+ */
 export function LoadingDots({ label }: { readonly label: string }) {
     const text = label.replace(/(?:…|\.{1,3})$/u, "").trimEnd();
     const lastSpace = text.lastIndexOf(" ");

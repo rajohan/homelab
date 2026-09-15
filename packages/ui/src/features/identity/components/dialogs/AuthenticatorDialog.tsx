@@ -5,6 +5,10 @@ import * as v from "valibot";
 import { FieldsForm, Modal } from "../../../../index";
 import type { AccountDialogProps } from "../../types";
 
+/**
+ * Enroll a TOTP authenticator and present newly issued recovery codes.
+ * @returns The component's rendered content for its current state.
+ */
 export function AuthenticatorDialog({
     client,
     onClose,

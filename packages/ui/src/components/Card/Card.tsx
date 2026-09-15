@@ -2,6 +2,10 @@ import type { ComponentProps } from "react";
 
 import { cn } from "../../lib/classNames";
 
+/**
+ * Render a shared surface while preserving native section attributes.
+ * @returns The component's rendered content for its current state.
+ */
 export function Card({ className, ...props }: ComponentProps<"section">) {
     return (
         <section
