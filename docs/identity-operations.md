@@ -151,7 +151,17 @@ The suffix list is bundled in the pinned `tldts` dependency, with no startup net
 
 ## Public resource exceptions
 
-`HOMELAB_AUTH_ROUTES` is a per-origin allowlist for ForwardAuth. `publicPaths` matches exact
+`HOMELAB_AUTH_POLICY_FILE` selects a deployment-owned YAML policy, for example
+`/etc/homelab-auth/access-policy.yml` on Edge. Start from
+`apps/auth/config/access-policy.example.yml`; the file contains a top-level `routes`
+list. Keep this non-secret policy in version control, mount it read-only in the auth
+deployment and restart auth after a reviewed edit. Secret values remain in Doppler.
+The former JSON-valued `HOMELAB_AUTH_ROUTES` is rejected rather than silently ignored.
+A missing, malformed, oversized or schema-invalid policy prevents configured startup.
+Unknown origins remain denied; an empty list grants no ForwardAuth destinations.
+This PR does not install the file on Edge or replace the live Authelia policy.
+
+Each route is a per-origin allowlist for ForwardAuth. `publicPaths` matches exact
 paths; `publicPrefixes` matches path-segment prefixes ending in `/`, never the whole root.
 Unknown origins are denied. Other paths require a current MFA session and an allowed group.
 Encoded ambiguous separators cannot turn a protected path into a public exception.
@@ -163,3 +173,16 @@ metadata, streams and subtitles without exposing the configuration/admin pages.
 The current path/prefix model does not support arbitrary regular expressions. If a current
 Authelia rule needs more expressive matching, extend and test the model before migrating
 that route; never replace it with a root-wide bypass.
+
+## Recovery queue and passive account reads
+
+Account snapshots never extend session activity, whether reached through the dashboard
+BFF or directly on auth. Authenticated same-origin tRPC work and successful security
+operations remain active; passive polling cannot defeat idle expiry.
+
+Password-reset requests always enqueue the same encrypted job before responding.
+Account lookup and recovery eligibility are evaluated by the existing maintenance worker,
+not on the public request's timing path. Unknown and unverified accounts produce no email.
+Proof emails reference their challenge with a cascading foreign key; replacing, consuming
+or revoking that challenge also removes its queued message, including delayed retries.
+Deploy the generated schema migration before starting the updated service.

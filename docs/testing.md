@@ -2,15 +2,33 @@
 
 Use `bun run test` for fast unit and Happy DOM component tests without coverage overhead. Use `bun run test:coverage` when inspecting coverage locally; CI uses the coverage command instead of running the same tests twice.
 
-The runner keeps native unit tests and Happy DOM component tests in separate Bun processes. Each process writes its own LCOV file:
+The runner uses `--parallel=2 --no-isolate` for every unit, component, integration and
+coverage group. Workers reuse globals and module caches between files. Happy DOM runs
+in a separate group from native Bun networking; each component test cleans its DOM.
+Tests must restore mocks, globals, servers and connections rather than relying on
+per-file isolation. The command regression test enforces these flags.
+
+Every discovered test must have exactly one finite, nonnegative timing in its group's
+committed inventory. Missing, stale or invalid entries fail `bun run check` and normal
+test runs. Update measured values with `bun run test:timings` and
+`bun run test:integration:timings` (the latter requires the disposable PostgreSQL server).
+Updates use temporary files and are accepted only after successful tests and exact
+inventory validation. CI never regenerates timings automatically.
+
+Each group writes its own LCOV file:
 
 - `coverage/unit/lcov.info`
 - `coverage/component/lcov.info`
 - `coverage/integration/lcov.info` (from `bun run test:integration:coverage`)
 
-The reports cannot overwrite each other. CI uploads these three exact files together with the `unit-component-integration` Codecov flag. Codecov combines their coverage for the same commit, including shared source files; no repository-specific LCOV merger is needed. Generated coverage reports are Git-ignored.
+Run `bun run test:coverage:check` after both coverage commands. It merges the three
+exact reports with the same LCOV library used by Mira-Dashboard, rejects missing
+executable source files and writes `coverage/lcov.info`. CI performs this check before
+uploading that one report with the `unit-component-integration` flag. Each group removes
+its previous report before running, so a failed run cannot reuse that group's stale file.
+Generated coverage reports are Git-ignored.
 
-`bun run test:integration` tests real HTTP behavior with native Bun networking and a disposable PostgreSQL database. Set `HOMELAB_TEST_DATABASE_URL` to a loopback database named exactly `homelab_auth_test`; the fixture setup deletes existing test rows. CI creates PostgreSQL 18 as an isolated service. Never point these tests at production. After `bun run build`, `bun run test:smoke` runs the built services and checks their HTTP responses and browser assets. It also requires the isolated test database and exercises the built migration/user CLI and two separate configured processes through real OIDC login, account access and logout. Integration coverage is uploaded alongside unit/component coverage. Built smoke checks are deliberately outside source coverage.
+`bun run test:integration` tests real HTTP behavior with native Bun networking and a disposable PostgreSQL database. Set `HOMELAB_TEST_DATABASE_URL` to a loopback database named exactly `homelab_auth_test`; each concurrent suite creates and removes its own database on that test server. CI creates PostgreSQL 18 as an isolated service. Never point these tests at production. After `bun run build`, `bun run test:smoke` runs the built services and checks their HTTP responses and browser assets. It also requires the isolated test database and exercises the built migration/user CLI and two separate configured processes through real OIDC login, account access and logout. Integration coverage is uploaded alongside unit/component coverage. Built smoke checks are deliberately outside source coverage.
 
 ## Component assertions and interaction
 
@@ -40,7 +58,19 @@ Do not add a replacement green CI job to conceal a missing Codecov notification.
 
 ## Interpretation
 
-Bun reports coverage of loaded source modules. A high percentage is not proof that every source file has tests, and test/preload/generated files are excluded. Review missing test scenarios and the file list, not only the overall number.
+Bun reports only loaded modules. Coverage-only preloads therefore import executable
+application, package, tooling and root TypeScript configuration modules in their proper
+runtime. Tool commands are guarded by `import.meta.main`: importing one never runs a
+build, migration or development server. Component smoke tests mount and unmount the
+two real browser entrypoints. The independent source-inventory gate rejects any missing
+module, including a newly added untested file. Type-only modules, declarations, tests,
+test fixtures, dependencies and build output are excluded; CSS and static assets do not
+have executable JavaScript line coverage. Loading a module is not a behavioral test:
+uncalled functions remain uncovered and the percentage must be read accordingly.
+
+The complete inventory initially measures about 72.5% line coverage. The previous partial
+report is not a comparable baseline. No threshold was lowered or source excluded to
+conceal this change; Codecov remains informational as documented above.
 
 Happy DOM checks our DOM and component behavior, not a real browser's security enforcement or physical authenticators. Actual cookie/redirect behavior, YubiKey and iPhone NFC remain targeted manual acceptance checks before the identity preview replaces production. Coverage does not replace those tests.
 

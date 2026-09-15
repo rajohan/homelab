@@ -16,5 +16,5 @@ coveragePathIgnorePatterns = [
     "**/dist/**",
     "**/node_modules/**",
     "tests/**",
-    "**/testing/**",
+    "apps/**/testing/**",
 ]

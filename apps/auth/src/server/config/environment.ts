@@ -1,6 +1,7 @@
 import { isIP } from "node:net";
 
 import { parseAuthConfiguration } from "./configuration";
+import { loadAccessPolicy } from "./policyFile";
 
 export function authBindOptions(
     environment: Readonly<Record<string, string | undefined>> = process.env
@@ -14,8 +15,15 @@ export function authBindOptions(
     return { hostname, port: Number(rawPort) };
 }
 
-export function authConfiguration() {
-    return parseAuthConfiguration(process.env);
+export async function authConfiguration(
+    environment: Readonly<Record<string, string | undefined>> = process.env
+) {
+    // The visual-only development shell does not load a deployment policy.
+    if (!environment.HOMELAB_AUTH_ISSUER) return parseAuthConfiguration(environment);
+    return parseAuthConfiguration(
+        environment,
+        await loadAccessPolicy(environment.HOMELAB_AUTH_POLICY_FILE)
+    );
 }
 export function authDevelopment(): boolean {
     return process.env.NODE_ENV !== "production";

@@ -16,10 +16,12 @@ import {
 } from "../apps/auth/src/server/database/schema";
 import { hashPassword } from "../apps/auth/src/server/security/crypto";
 import { startDashboardServer } from "../apps/dashboard/src/server/index";
+import { createTestDatabase } from "./database";
 
 describe.each(["client_secret_post", "client_secret_basic"] as const)(
     "BFF with %s",
     (method) => {
+        let testDatabase: Awaited<ReturnType<typeof createTestDatabase>>;
         let auth: Awaited<ReturnType<typeof createAuthApplication>>;
         let authServer: ReturnType<typeof Bun.serve>,
             dashboard: ReturnType<typeof startDashboardServer>;
@@ -76,12 +78,13 @@ describe.each(["client_secret_post", "client_secret_basic"] as const)(
             return response;
         }
         beforeAll(async () => {
-            const databaseUrl = process.env.HOMELAB_TEST_DATABASE_URL;
+            testDatabase = await createTestDatabase();
+            const databaseUrl = testDatabase.url;
             if (!databaseUrl) throw new Error("Isolated test database required");
             const target = new URL(databaseUrl);
             if (
                 !["localhost", "127.0.0.1"].includes(target.hostname) ||
-                target.pathname !== "/homelab_auth_test"
+                !target.pathname.startsWith("/homelab_test_")
             )
                 throw new Error("Refusing non-test database");
             authServer = Bun.serve({
@@ -176,6 +179,7 @@ describe.each(["client_secret_post", "client_secret_basic"] as const)(
         afterAll(async () => {
             await dashboard?.stop(true);
             await auth?.close();
+            await testDatabase?.close();
             await authServer?.stop(true);
         });
         async function signIn(): Promise<string> {
@@ -238,6 +242,23 @@ describe.each(["client_secret_post", "client_secret_basic"] as const)(
                     .from(sessions)
                     .where(eq(sessions.id, session.id));
                 expect(unchanged?.lastSeenAt.getTime()).toBe(lastSeen.getTime());
+                // Account proxy reads are passive too, even when a sibling page
+                // causes the browser to attach the dashboard cookie.
+                const accountCookie = jar.get(origin)?.get("homelab_dashboard")?.value;
+                for (const site of ["same-site", "same-origin"]) {
+                    const snapshot = await fetch(origin + "/api/account", {
+                        headers: {
+                            Cookie: "homelab_dashboard=" + accountCookie,
+                            "Sec-Fetch-Site": site,
+                        },
+                    });
+                    expect(snapshot.status).toBe(200);
+                    const [stillIdle] = await auth.connection.database
+                        .select()
+                        .from(sessions)
+                        .where(eq(sessions.id, session.id));
+                    expect(stillIdle?.lastSeenAt.getTime()).toBe(lastSeen.getTime());
+                }
                 const active = await browser(`${origin}/api/trpc/system.status`);
                 expect(active.status).toBe(200);
                 const [renewed] = await auth.connection.database

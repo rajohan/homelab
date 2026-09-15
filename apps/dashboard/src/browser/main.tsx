@@ -10,7 +10,8 @@ import "../styles.css";
 const root = document.querySelector("#root");
 if (!root) throw new Error("The application root was not found.");
 
-createRoot(root).render(
+export const applicationRoot = createRoot(root);
+applicationRoot.render(
     <StrictMode>
         <DashboardApp router={createDashboardRouter()} queryClient={new QueryClient()} />
     </StrictMode>

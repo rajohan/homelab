@@ -1,78 +1,76 @@
-const mode = process.argv[2];
-const integration = mode === "integration" || mode === "integration-coverage";
-const coverage = mode === "coverage" || mode === "integration-coverage";
-const timings = mode === "timings";
-if (process.argv.length > 3 || (mode && !integration && !coverage && !timings)) {
-    throw new Error(
-        "Use bun run test, bun run test:coverage, bun run test:integration, bun run test:integration:coverage or bun run test:timings."
-    );
-}
+import { unlink } from "node:fs/promises";
 
-const files = [...new Bun.Glob("{apps,packages,tests}/**/*.test.{ts,tsx}").scanSync(".")]
-    .filter((file) => !file.includes("node_modules/") && !file.includes("/dist/"))
-    .filter((file) => file.includes(".integration.test.") === integration)
-    .toSorted();
+import { testArguments } from "./testing/command";
+import {
+    assertTimings,
+    discoverTests,
+    timingFiles,
+    type TestGroup,
+} from "./testing/inventory";
 
-if (files.length === 0) {
-    throw new Error(`No ${integration ? "integration" : "unit/component"} tests found.`);
-}
-
-const groups = integration
-    ? [{ name: "integration", files, preload: [] }]
-    : [
-          {
-              name: "unit",
-              files: files.filter((file) => file.endsWith(".ts")),
-              preload: [],
-          },
-          {
-              name: "component",
-              files: files.filter((file) => file.endsWith(".tsx")),
-              preload: ["--preload", "./tests/dom.ts"],
-          },
-      ];
-
-for (const group of groups) {
-    if (group.files.length === 0) continue;
-    const coverageDirectory = `coverage/${group.name}`;
-    const coverageArguments = coverage
-        ? [
-              "--coverage",
-              "--coverage-reporter=text",
-              "--coverage-reporter=lcov",
-              `--coverage-dir=${coverageDirectory}`,
-          ]
-        : [];
-    const timingsFile =
-        group.name === "unit"
-            ? ".bun-test-timings.json"
-            : ".bun-browser-test-timings.json";
-    const timingArguments = integration
-        ? []
-        : [
-              "--parallel=2",
-              ...(timings || (await Bun.file(timingsFile).exists())
-                  ? [`--timings=${timingsFile}`]
-                  : []),
-              ...(timings ? ["--update-timings"] : []),
-          ];
-    const child = Bun.spawn(
-        [
-            process.execPath,
-            "test",
-            ...group.preload,
-            ...coverageArguments,
-            ...timingArguments,
-            ...group.files.map((file) => `./${file}`),
-        ],
-        { stdin: "inherit", stdout: "inherit", stderr: "inherit" }
-    );
-    const result = await child.exited;
-    if (result !== 0) {
-        process.exitCode = result;
-        break;
-    }
-    if (coverage && !(await Bun.file(`${coverageDirectory}/lcov.info`).exists())) {
-        throw new Error(`The ${group.name} coverage report was not generated.`);
+export async function main(): Promise<void> {
+    const mode = process.argv[2];
+    const allowed = [
+        "coverage",
+        "integration",
+        "integration-coverage",
+        "timings",
+        "integration-timings",
+    ];
+    if (process.argv.length > 3 || (mode && !allowed.includes(mode)))
+        throw new Error(
+            "Use the documented test scripts; arbitrary runner overrides are not allowed."
+        );
+    const integration = mode?.startsWith("integration") ?? false;
+    const coverage = mode?.endsWith("coverage") ?? false;
+    const update = mode?.endsWith("timings") ?? false;
+    const inventory = discoverTests();
+    const groups: TestGroup[] = integration ? ["integration"] : ["unit", "component"];
+    for (const group of groups) {
+        const files = inventory[group];
+        const target = timingFiles[group];
+        const staged = update ? `${target}.${crypto.randomUUID()}.tmp` : target;
+        try {
+            if (update) {
+                await Bun.write(staged, JSON.stringify({ version: 1, files: {} }));
+            } else {
+                assertTimings(await Bun.file(target).json(), files, group);
+            }
+            if (coverage) {
+                const report = Bun.file(`coverage/${group}/lcov.info`);
+                if (await report.exists()) await report.delete();
+            }
+            const child = Bun.spawn(
+                [
+                    process.execPath,
+                    ...testArguments(group, files, coverage, staged, update),
+                ],
+                {
+                    stdin: "inherit",
+                    stdout: "inherit",
+                    stderr: "inherit",
+                    env: { ...process.env, HOMELAB_COVERAGE_GROUP: group },
+                }
+            );
+            const result = await child.exited;
+            if (result !== 0) {
+                process.exitCode = result;
+                break;
+            }
+            if (update) {
+                const measured = assertTimings(
+                    await Bun.file(staged).json(),
+                    files,
+                    group
+                );
+                await Bun.write(target, JSON.stringify(measured, null, 4) + "\n");
+            }
+            if (coverage && !(await Bun.file(`coverage/${group}/lcov.info`).exists()))
+                throw new Error(`The ${group} coverage report was not generated.`);
+        } finally {
+            if (update) await unlink(staged);
+        }
     }
 }
+
+if (import.meta.main) await main();

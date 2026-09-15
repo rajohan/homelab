@@ -10,7 +10,9 @@ import { authRequest, type AuthServerOptions } from "./http/responses";
 export async function startAuthServer(options: AuthServerOptions = {}) {
     const bindOptions = authBindOptions();
     const configuration =
-        options.configuration === undefined ? authConfiguration() : options.configuration;
+        options.configuration === undefined
+            ? await authConfiguration()
+            : options.configuration;
     const application = configuration
         ? await createAuthApplication(configuration, options.delivery)
         : undefined;

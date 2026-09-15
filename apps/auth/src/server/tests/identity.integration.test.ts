@@ -6,6 +6,7 @@ import { migrate } from "drizzle-orm/bun-sql/migrator";
 import { TOTP } from "otpauth";
 import * as v from "valibot";
 
+import { createTestDatabase } from "../../../../../tests/database";
 import { createAuthApplication } from "../application";
 import type { AuthConfiguration } from "../config/configuration";
 import {
@@ -21,6 +22,7 @@ import { hashPassword, tokenDigest } from "../security/crypto";
 import type { AuthEmail } from "../security/email";
 import { softwareAuthenticator } from "../testing/webauthnFixture";
 
+let testDatabase: Awaited<ReturnType<typeof createTestDatabase>>;
 let application: Awaited<ReturnType<typeof createAuthApplication>>;
 let server: ReturnType<typeof Bun.serve>;
 let issuer: string;
@@ -67,7 +69,8 @@ function post(path: string, body: unknown): Promise<Response> {
 }
 
 beforeAll(async () => {
-    const databaseUrl = process.env.HOMELAB_TEST_DATABASE_URL;
+    testDatabase = await createTestDatabase();
+    const databaseUrl = testDatabase.url;
     if (!databaseUrl)
         throw new Error(
             "HOMELAB_TEST_DATABASE_URL must point to the isolated test database"
@@ -75,7 +78,7 @@ beforeAll(async () => {
     const target = new URL(databaseUrl);
     if (
         !["localhost", "127.0.0.1"].includes(target.hostname) ||
-        target.pathname !== "/homelab_auth_test"
+        !target.pathname.startsWith("/homelab_test_")
     )
         throw new Error("Refusing to use a non-test database");
     server = Bun.serve({
@@ -169,6 +172,7 @@ beforeAll(async () => {
 afterAll(async () => {
     await application?.close();
     await server?.stop(true);
+    await testDatabase?.close();
 });
 
 describe("identity service with PostgreSQL and Bun", () => {
@@ -445,6 +449,88 @@ describe("security invariants against the isolated database", () => {
         expect(await status(post("/api/login", { username, password }))).toBe(200);
     });
 
+    test("account snapshots never renew idle time, including same-site cross-origin GETs", async () => {
+        const digest = tokenDigest(cookieJar.get("homelab_auth")?.value ?? "");
+        const original = new Date(Date.now() - 600_000);
+        await application.connection.database
+            .update(sessions)
+            .set({ lastSeenAt: original })
+            .where(eq(sessions.tokenHash, digest));
+        for (const headers of [
+            {},
+            { "Sec-Fetch-Site": "same-site", Origin: "https://sibling.example.test" },
+            { "Sec-Fetch-Site": "same-origin" },
+        ]) {
+            expect(await status(browser("/api/account", { headers }))).toBe(200);
+            const [session] = await application.connection.database
+                .select()
+                .from(sessions)
+                .where(eq(sessions.tokenHash, digest));
+            expect(session?.lastSeenAt.getTime()).toBe(original.getTime());
+        }
+    });
+
+    test("reset requests enqueue identical work before any account lookup or delivery", async () => {
+        await application.connection.database.delete(mailOutbox);
+        await application.connection.database.delete(challenges);
+        const unverified = "unverified-" + crypto.randomUUID();
+        await application.connection.database.insert(users).values({
+            id: crypto.randomUUID(),
+            username: unverified,
+            email: unverified + "@example.test",
+            emailVerified: false,
+            passwordHash: await hashPassword(password),
+            groups: [],
+            createdAt: new Date(),
+        });
+        const before = delivered.length;
+        for (const candidate of [username, unverified, "missing-" + crypto.randomUUID()])
+            expect(
+                await status(post("/api/password/request-reset", { username: candidate }))
+            ).toBe(200);
+        const queued = await application.connection.database.select().from(mailOutbox);
+        expect(queued).toHaveLength(3);
+        expect(
+            queued.every((item) => item.proofDigest === null && item.sentAt === null)
+        ).toBe(true);
+        expect(
+            await application.connection.database.select().from(challenges)
+        ).toHaveLength(0);
+        expect(delivered).toHaveLength(before);
+        await application.maintain();
+        expect(delivered.slice(before)).toHaveLength(1);
+        expect(delivered.at(-1)?.to).toBe(username + "@example.test");
+    });
+
+    test("superseded queued reset emails cannot be retried after their replacement", async () => {
+        await application.connection.database.delete(mailOutbox);
+        expect(await status(post("/api/password/request-reset", { username }))).toBe(200);
+        await application.maintain();
+        const [old] = await application.connection.database.select().from(mailOutbox);
+        if (!old?.proofDigest) throw new Error("Proof message missing");
+        // Model an old delivery awaiting retry, without contacting an email provider.
+        await application.connection.database
+            .update(mailOutbox)
+            .set({ sentAt: null, nextAttemptAt: new Date(Date.now() + 60_000) })
+            .where(eq(mailOutbox.id, old.id));
+        const before = delivered.length;
+        expect(await status(post("/api/password/request-reset", { username }))).toBe(200);
+        await application.maintain();
+        expect(
+            await application.connection.database
+                .select()
+                .from(mailOutbox)
+                .where(eq(mailOutbox.id, old.id))
+        ).toHaveLength(0);
+        expect(
+            await application.connection.database
+                .select()
+                .from(challenges)
+                .where(eq(challenges.digest, old.proofDigest))
+        ).toHaveLength(0);
+        expect(delivered.slice(before)).toHaveLength(1);
+    });
+
     test("revoking the initiating session invalidates its pending email replacement", async () => {
         const current = await json(
             browser("/api/account"),
@@ -548,6 +634,7 @@ describe("security invariants against the isolated database", () => {
             browser("/api/account"),
             v.object({ user: v.object({ id: v.string() }) })
         );
+        await application.maintain();
         const pending = await application.connection.database
             .select()
             .from(challenges)

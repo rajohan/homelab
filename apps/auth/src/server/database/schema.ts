@@ -135,6 +135,9 @@ export const rateBuckets = pgTable("auth_rate_buckets", {
 
 export const mailOutbox = pgTable("auth_mail_outbox", {
     id: uuid("id").primaryKey(),
+    proofDigest: text("proof_digest").references(() => challenges.digest, {
+        onDelete: "cascade",
+    }),
     encryptedData: text("encrypted_data").notNull(),
     createdAt: time("created_at").notNull(),
     expiresAt: time("expires_at").notNull(),

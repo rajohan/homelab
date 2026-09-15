@@ -4,6 +4,7 @@ import type { ClientMetadata, JWKS } from "oidc-provider";
 import { getDomain } from "tldts";
 import * as v from "valibot";
 
+const emptyAccessPolicy = { routes: [] };
 const originSchema = v.pipe(v.string(), v.url(), v.maxLength(512));
 const clientSchema = v.strictObject({
     client_id: v.pipe(v.string(), v.minLength(1), v.maxLength(100)),
@@ -73,7 +74,8 @@ function secureUrl(value: string, development: boolean, originOnly = false): URL
 }
 
 export function parseAuthConfiguration(
-    environment: Readonly<Record<string, string | undefined>>
+    environment: Readonly<Record<string, string | undefined>>,
+    accessPolicy: unknown = emptyAccessPolicy
 ): AuthConfiguration | undefined {
     if (!environment.HOMELAB_AUTH_ISSUER) {
         if (environment.NODE_ENV === "production")
@@ -148,9 +150,11 @@ export function parseAuthConfiguration(
     ) as JWKS;
     if (!jwks.keys.every((key) => "kid" in key && key.kid && "d" in key && key.d))
         throw new Error("OIDC requires identified private signing keys");
-    const routes = v.parse(
-        v.array(routeSchema),
-        parsedJson(environment.HOMELAB_AUTH_ROUTES ?? "[]", "HOMELAB_AUTH_ROUTES")
+    if (environment.HOMELAB_AUTH_ROUTES !== undefined)
+        throw new Error("Move HOMELAB_AUTH_ROUTES to the access policy YAML file");
+    const { routes } = v.parse(
+        v.strictObject({ routes: v.array(routeSchema) }),
+        accessPolicy
     );
     const normalizedRoutes = routes.map((route) => ({
         ...route,

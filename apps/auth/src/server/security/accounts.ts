@@ -290,8 +290,8 @@ export class Accounts {
     }
 
     async snapshot(principal: Principal) {
+        // Account snapshots are passive reads, including credentialed cross-site GETs.
         await this.requireAuthenticated(principal);
-        await this.touch(principal);
         const inventory = await this.database
             .select({
                 id: factors.id,

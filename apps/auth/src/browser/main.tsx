@@ -15,7 +15,8 @@ const token = new URLSearchParams(address.hash.slice(1)).get("token");
 if (address.hash)
     globalThis.history.replaceState(null, "", `${address.pathname}${address.search}`);
 
-createRoot(root).render(
+export const applicationRoot = createRoot(root);
+applicationRoot.render(
     <StrictMode>
         <AppErrorBoundary>
             <QueryClientProvider client={new QueryClient()}>

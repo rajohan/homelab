@@ -13,6 +13,10 @@ const messageSchema = v.strictObject({
     subject: v.string(),
     text: v.string(),
 });
+const queuedMessageSchema = v.union([
+    messageSchema,
+    v.strictObject({ resetUsername: v.string() }),
+]);
 export type AuthEmail = v.InferOutput<typeof messageSchema>;
 export type EmailDelivery = (id: string, message: AuthEmail) => Promise<void>;
 
@@ -47,11 +51,16 @@ export class AccountEmail {
             });
     }
 
-    async enqueue(store: AuthStore, message: AuthEmail): Promise<void> {
+    async enqueue(
+        store: AuthStore,
+        message: v.InferOutput<typeof queuedMessageSchema>,
+        proofToken?: string
+    ): Promise<void> {
         const now = new Date();
         const id = crypto.randomUUID();
         await store.insert(mailOutbox).values({
             id,
+            proofDigest: proofToken ? tokenDigest(proofToken) : null,
             encryptedData: encryptValue(
                 this.accounts.configuration.encryptionKey,
                 `mail:${id}`,
@@ -89,11 +98,15 @@ export class AccountEmail {
                 { email },
                 30 * 60_000
             );
-            await this.enqueue(transaction, {
-                to: email,
-                subject: "Verify your Homelab email",
-                text: `Confirm your email within 30 minutes: ${this.accounts.configuration.issuer}/verify-email#token=${token}\nIf you did not request this change, ignore this message.`,
-            });
+            await this.enqueue(
+                transaction,
+                {
+                    to: email,
+                    subject: "Verify your Homelab email",
+                    text: `Confirm your email within 30 minutes: ${this.accounts.configuration.issuer}/verify-email#token=${token}\nIf you did not request this change, ignore this message.`,
+                },
+                token
+            );
             await audit(transaction, principal.user.id, "email_verification_requested");
         });
     }
@@ -153,42 +166,48 @@ export class AccountEmail {
             3,
             3_600_000
         );
-        const [user] = await this.accounts.database
+        // The public response never looks up an account. Identical encrypted queue
+        // work is performed for known, unknown and unverified usernames.
+        await this.enqueue(this.accounts.database, {
+            resetUsername: username.toLowerCase(),
+        });
+    }
+
+    private async prepareReset(transaction: AuthStore, username: string): Promise<void> {
+        const [user] = await transaction
             .select()
             .from(users)
-            .where(eq(users.username, username.toLowerCase()));
+            .where(eq(users.username, username))
+            .for("update");
         if (!user?.emailVerified) return;
-        await this.accounts.database.transaction(async (transaction) => {
-            const [current] = await transaction
-                .select()
-                .from(users)
-                .where(eq(users.id, user.id))
-                .for("update");
-            if (!current?.emailVerified || current.email !== user.email) return;
-            await transaction
-                .delete(challenges)
-                .where(
-                    and(
-                        eq(challenges.userId, user.id),
-                        eq(challenges.purpose, "password-reset")
-                    )
-                );
-            const token = await createChallenge(
-                transaction,
-                this.accounts.configuration.encryptionKey,
-                user.id,
-                null,
-                "password-reset",
-                {},
-                30 * 60_000
+        // Cascading proof ownership cancels superseded or invalidated queued mail.
+        await transaction
+            .delete(challenges)
+            .where(
+                and(
+                    eq(challenges.userId, user.id),
+                    eq(challenges.purpose, "password-reset")
+                )
             );
-            await this.enqueue(transaction, {
+        const token = await createChallenge(
+            transaction,
+            this.accounts.configuration.encryptionKey,
+            user.id,
+            null,
+            "password-reset",
+            {},
+            30 * 60_000
+        );
+        await this.enqueue(
+            transaction,
+            {
                 to: user.email,
                 subject: "Reset your Homelab password",
                 text: `Reset your password within 30 minutes: ${this.accounts.configuration.issuer}/reset-password#token=${token}\nYour existing two-factor methods remain required. If you did not request this, ignore this message.`,
-            });
-            await audit(transaction, user.id, "password_reset_requested");
-        });
+            },
+            token
+        );
+        await audit(transaction, user.id, "password_reset_requested");
     }
 
     async resetPassword(token: string, password: string): Promise<void> {
@@ -284,17 +303,22 @@ export class AccountEmail {
                         .for("update", { skipLocked: true });
                     if (!message) return false;
                     try {
-                        await this.deliver(
-                            message.id,
-                            v.parse(
-                                messageSchema,
-                                decryptValue(
-                                    this.accounts.configuration.encryptionKey,
-                                    `mail:${message.id}`,
-                                    message.encryptedData
-                                )
+                        const payload = v.parse(
+                            queuedMessageSchema,
+                            decryptValue(
+                                this.accounts.configuration.encryptionKey,
+                                `mail:${message.id}`,
+                                message.encryptedData
                             )
                         );
+                        if ("resetUsername" in payload) {
+                            await this.prepareReset(transaction, payload.resetUsername);
+                            await transaction
+                                .delete(mailOutbox)
+                                .where(eq(mailOutbox.id, message.id));
+                            return true;
+                        }
+                        await this.deliver(message.id, payload);
                         await transaction
                             .update(mailOutbox)
                             .set({

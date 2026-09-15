@@ -76,41 +76,42 @@ describe("auth configuration boundaries", () => {
     });
 });
 
-test("normalizes protected origins and rejects normalized duplicates", () => {
+test("validates a file policy and rejects ambiguous legacy configuration", () => {
     const routes = [{ origin: "https://TOOLS.example.test:443/" }];
-    expect(
-        parseAuthConfiguration({
-            ...environment(),
-            HOMELAB_AUTH_ROUTES: JSON.stringify(routes),
-        })?.routes[0]?.origin
-    ).toBe("https://tools.example.test");
+    expect(parseAuthConfiguration(environment(), { routes })?.routes[0]?.origin).toBe(
+        "https://tools.example.test"
+    );
     expect(() =>
-        parseAuthConfiguration({
-            ...environment(),
-            HOMELAB_AUTH_ROUTES: JSON.stringify([
-                ...routes,
-                { origin: "https://tools.example.test" },
-            ]),
+        parseAuthConfiguration(environment(), {
+            routes: [...routes, { origin: "https://tools.example.test" }],
         })
     ).toThrow("Duplicate protected route origins");
+    expect(() =>
+        parseAuthConfiguration({ ...environment(), HOMELAB_AUTH_ROUTES: "[]" })
+    ).toThrow("Move HOMELAB_AUTH_ROUTES");
+    for (const value of [
+        null,
+        [],
+        {},
+        { routes: [], typo: true },
+        { routes: [{ origin: "http://public.example.com" }] },
+    ])
+        expect(() => parseAuthConfiguration(environment(), value)).toThrow();
 });
 test("rejects root-wide public prefixes without affecting segment prefixes", () => {
-    for (const prefix of ["/", "//", "/assets"]) {
+    for (const prefix of ["/", "//", "/assets"])
         expect(() =>
-            parseAuthConfiguration({
-                ...environment(),
-                HOMELAB_AUTH_ROUTES: JSON.stringify([
+            parseAuthConfiguration(environment(), {
+                routes: [
                     { origin: "https://tools.example.test", publicPrefixes: [prefix] },
-                ]),
+                ],
             })
         ).toThrow();
-    }
     expect(
-        parseAuthConfiguration({
-            ...environment(),
-            HOMELAB_AUTH_ROUTES: JSON.stringify([
+        parseAuthConfiguration(environment(), {
+            routes: [
                 { origin: "https://tools.example.test", publicPrefixes: ["/assets/"] },
-            ]),
+            ],
         })?.routes[0]?.publicPrefixes
     ).toEqual(["/assets/"]);
 });

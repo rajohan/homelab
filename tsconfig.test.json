@@ -7,6 +7,7 @@
         "apps/**/*.test.tsx",
         "packages/**/*.test.tsx",
         "tests/dom.ts",
+        "tests/**/*.test.tsx",
         "types/assets.d.ts",
         "packages/ui/src/**/*.test.ts",
         "apps/*/src/browser/**/*.test.ts"

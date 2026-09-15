@@ -1,4 +1,4 @@
-import { afterAll, afterEach, expect } from "bun:test";
+import { afterEach, expect } from "bun:test";
 
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 
@@ -13,6 +13,4 @@ afterEach(() => {
     document.body.replaceChildren();
 });
 
-afterAll(async () => {
-    await GlobalRegistrator.unregister();
-});
+// The DOM belongs to the shared worker; clean each test, not the worker globals.

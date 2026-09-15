@@ -77,7 +77,7 @@ export async function runAdmin(command: readonly string[]): Promise<void> {
             "Use migrate, create-user, recover-user [--reset-mfa], or generate-keys"
         );
     }
-    const configuration = authConfiguration();
+    const configuration = await authConfiguration();
     if (!configuration) throw new Error("Configure the isolated auth service first");
     const connection = connectAuthDatabase(configuration.databaseUrl);
     try {

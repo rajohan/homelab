@@ -1,0 +1,14 @@
+# Copy this file to a deployment-owned path and set HOMELAB_AUTH_POLICY_FILE.
+# Unknown origins are denied. Known origins require MFA and the listed group,
+# except the exact public paths and path-segment prefixes explicitly listed here.
+# No passwords, tokens, OIDC client secrets or signing keys belong in this file.
+routes:
+  - origin: https://tools.home.example.com
+    groups: [admins]
+    publicPaths: [/manifest.webmanifest]
+  - origin: https://addon.example.com
+    groups: [admins]
+    publicPaths: [/manifest.json]
+    publicPrefixes: [/public/]
+# Inventory real addon routes before production cutover. Never exempt "/" to
+# accommodate tokenized addon paths; a whole-host exemption would expose its UI.

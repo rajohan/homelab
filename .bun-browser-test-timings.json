@@ -1,10 +1,15 @@
 {
   "version": 1,
   "files": {
-    "packages/ui/src/features/identity/components/forms/PasswordForm.test.tsx": 370,
-    "packages/ui/src/features/identity/components/AccountSettings.test.tsx": 344,
-    "apps/dashboard/src/browser/identity/IdentityBoundary.test.tsx": 280,
-    "apps/dashboard/src/browser/pages/pages.test.tsx": 165,
-    "packages/ui/src/index.test.tsx": 81
+    "packages/ui/src/features/identity/components/AccountSettings.test.tsx": 513,
+    "packages/ui/src/features/identity/components/forms/PasswordForm.test.tsx": 305,
+    "packages/ui/src/components/Form/FieldsForm.test.tsx": 304,
+    "apps/dashboard/src/browser/identity/IdentityBoundary.test.tsx": 288,
+    "apps/dashboard/src/browser/pages/pages.test.tsx": 71,
+    "packages/ui/src/states.test.tsx": 47,
+    "packages/ui/src/index.test.tsx": 28,
+    "packages/ui/src/components/Input/Input.test.tsx": 27,
+    "tests/browserEntries.test.tsx": 21,
+    "packages/ui/src/components/Form/Form.test.tsx": 17
   }
 }

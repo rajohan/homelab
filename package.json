@@ -31,7 +31,10 @@
         "db:check:auth": "bun node_modules/drizzle-kit/bin.cjs check --config apps/auth/drizzle.config.ts",
         "auth:admin": "bun apps/auth/src/server/cli/admin.ts",
         "dev:identity": "bun --no-env-file scripts/devIdentity.ts",
-        "test:integration:coverage": "bun scripts/test.ts integration-coverage"
+        "test:integration:coverage": "bun scripts/test.ts integration-coverage",
+        "test:integration:timings": "bun scripts/test.ts integration-timings",
+        "test:inventory": "bun scripts/testing/inventory.ts",
+        "test:coverage:check": "bun scripts/testing/coverage.ts"
     },
     "devDependencies": {
         "@happy-dom/global-registrator": "20.14.5",
@@ -48,6 +51,7 @@
         "drizzle-orm": "1.0.0-rc.5-5935859",
         "eslint-plugin-react-you-might-not-need-an-effect": "1.0.2",
         "happy-dom": "20.14.5",
+        "lcov-result-merger": "6.0.0",
         "lefthook": "2.1.14",
         "oxfmt": "0.68.0",
         "oxlint": "1.83.0",
