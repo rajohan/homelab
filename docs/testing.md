@@ -120,3 +120,26 @@ null and missing origins with a valid dashboard cookie and assert that rejected 
 do not advance the central session's activity timestamp. Browser-client unit tests use
 deferred WebAuthn results to check cancellation and identity changes before the finish
 request, without invoking a physical authenticator.
+
+## Editor TypeScript and runtime
+
+Checks use the lockfile-pinned TypeScript 7.0.2 compiler through Bun. For the editor,
+install Microsoft's `TypeScriptTeam.native-preview` (display name: TypeScript 7), enable
+`js/ts.experimental.useTsgo` and select the workspace `node_modules/typescript` SDK.
+The repository includes these settings when opened as a folder. If it is nested below
+another workspace root, put the settings on that actual workspace and adjust the SDK path.
+These are window-scoped settings, not per-nested-directory switches.
+
+Do not point a legacy `typescript.tsdk` at TypeScript 7's `lib` directory: the native
+compiler uses its LSP server, not the old JavaScript `tsserver.js`. After allowing the
+workspace SDK, the TypeScript output must show 7.0.2 from this repository, not just
+the version bundled with the extension. Keep lint and `bun run typecheck` enabled;
+changing the language server is not a reason to suppress diagnostics.
+
+The application, CLI, scripts, builds and tests run with Bun. `Bun.password` provides
+Argon2id, `Bun.CryptoHasher` provides SHA-256, and Web Crypto supplies secure random
+bytes. Remaining `node:` imports use Bun's compatibility APIs, not a Node process:
+AES-GCM and constant-time comparison, OIDC's required HTTP request/response interface,
+key-generation fixtures and filesystem/path/module utilities. Web Crypto's AES-GCM is
+asynchronous; keep the existing synchronous AEAD envelope rather than changing all
+storage/protocol call contracts solely to remove an import prefix.

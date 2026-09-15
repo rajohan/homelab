@@ -143,3 +143,54 @@ test("requires the designated dashboard client to register the exact BFF callbac
         );
     }
 });
+
+test("rejects ICANN and private public-suffix RP IDs before startup", () => {
+    for (const rpId of ["com", "co.uk", "github.io", "appspot.com", "test"]) {
+        const input = environment();
+        input.HOMELAB_AUTH_ISSUER = `https://identity.example.${rpId}`;
+        input.HOMELAB_AUTH_DASHBOARD_ORIGIN = `https://home.example.${rpId}`;
+        input.HOMELAB_AUTH_RP_ID = rpId;
+        input.HOMELAB_AUTH_CLIENTS = JSON.stringify([
+            {
+                client_id: "dashboard",
+                client_name: "Dashboard",
+                client_secret: "test-client-secret-not-production-32",
+                redirect_uris: [`https://home.example.${rpId}/auth/callback`],
+                token_endpoint_auth_method: "client_secret_post",
+            },
+        ]);
+        expect(() => parseAuthConfiguration(input)).toThrow("Invalid WebAuthn RP ID");
+    }
+});
+test("allows registrable RP IDs, subdomains and the explicit localhost development case", () => {
+    for (const rpId of [
+        "example.com",
+        "example.co.uk",
+        "account.github.io",
+        "account.appspot.com",
+        "login.example.test",
+        "localhost",
+    ]) {
+        const input = environment();
+        const local = rpId === "localhost";
+        const issuer = local ? "http://localhost:3100" : `https://identity.${rpId}`;
+        const dashboard = local ? "http://localhost:3101" : `https://home.${rpId}`;
+        if (local) {
+            input.NODE_ENV = "development";
+            input.HOMELAB_AUTH_DEVELOPMENT = "true";
+        }
+        input.HOMELAB_AUTH_ISSUER = issuer;
+        input.HOMELAB_AUTH_DASHBOARD_ORIGIN = dashboard;
+        input.HOMELAB_AUTH_RP_ID = rpId;
+        input.HOMELAB_AUTH_CLIENTS = JSON.stringify([
+            {
+                client_id: "dashboard",
+                client_name: "Dashboard",
+                client_secret: "test-client-secret-not-production-32",
+                redirect_uris: [dashboard + "/auth/callback"],
+                token_endpoint_auth_method: "client_secret_post",
+            },
+        ]);
+        expect(parseAuthConfiguration(input)?.rpId).toBe(rpId);
+    }
+});

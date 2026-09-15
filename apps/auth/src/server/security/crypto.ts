@@ -1,18 +1,18 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv } from "node:crypto";
 
 import { AuthFailure } from "./errors";
 
 export function randomToken(): string {
-    return randomBytes(32).toString("base64url");
+    return Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url");
 }
 
 export function tokenDigest(value: string): string {
-    return createHash("sha256").update(value).digest("hex");
+    return new Bun.CryptoHasher("sha256").update(value).digest("hex");
 }
 
 // A versioned AEAD envelope binds ciphertext to its intended record/purpose.
 export function encryptValue(key: Uint8Array, purpose: string, value: unknown): string {
-    const nonce = randomBytes(12);
+    const nonce = Buffer.from(crypto.getRandomValues(new Uint8Array(12)));
     const cipher = createCipheriv("aes-256-gcm", key, nonce);
     cipher.setAAD(Buffer.from(purpose));
     const ciphertext = Buffer.concat([

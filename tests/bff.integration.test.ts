@@ -40,6 +40,7 @@ describe.each(["client_secret_post", "client_secret_basic"] as const)(
                 redirect: "manual",
                 method: input === undefined ? "GET" : "POST",
                 headers: {
+                    "Sec-Fetch-Site": "same-origin",
                     cookie: [...cookies]
                         .filter(
                             ([, item]) =>
@@ -277,6 +278,51 @@ describe.each(["client_secret_post", "client_secret_basic"] as const)(
                         .where(eq(sessions.id, session.id));
                     expect(unchanged?.lastSeenAt.getTime()).toBe(lastSeen.getTime());
                 }
+            });
+            test("cross-site or unproven tRPC GETs cannot renew the central session", async () => {
+                const [session] = await auth.connection.database.select().from(sessions);
+                if (!session) throw new Error("Session missing");
+                const cookie = jar.get(origin)?.get("homelab_dashboard")?.value;
+                if (!cookie) throw new Error("Dashboard cookie missing");
+                const lastSeen = new Date(Date.now() - 55 * 60_000);
+                await auth.connection.database
+                    .update(sessions)
+                    .set({ lastSeenAt: lastSeen })
+                    .where(eq(sessions.id, session.id));
+                const attempts: Record<string, string>[] = [
+                    {},
+                    { "Sec-Fetch-Site": "same-site" },
+                    { "Sec-Fetch-Site": "cross-site" },
+                    { "Sec-Fetch-Site": "none" },
+                    { Origin: "http://sibling.example.test" },
+                    { Origin: "null" },
+                    { Origin: origin, "Sec-Fetch-Site": "same-site" },
+                    {
+                        Origin: "http://sibling.example.test",
+                        "Sec-Fetch-Site": "same-origin",
+                    },
+                ];
+                for (const headers of attempts) {
+                    const rejected = await fetch(origin + "/api/trpc/system.status", {
+                        headers: { Cookie: "homelab_dashboard=" + cookie, ...headers },
+                    });
+                    expect(rejected.status).toBe(403);
+                    const [unchanged] = await auth.connection.database
+                        .select()
+                        .from(sessions)
+                        .where(eq(sessions.id, session.id));
+                    expect(unchanged?.lastSeenAt.getTime()).toBe(lastSeen.getTime());
+                }
+                // An explicit exact Origin is also sufficient for clients without Fetch Metadata.
+                const accepted = await fetch(origin + "/api/trpc/system.status", {
+                    headers: { Cookie: "homelab_dashboard=" + cookie, Origin: origin },
+                });
+                expect(accepted.status).toBe(200);
+                const [renewed] = await auth.connection.database
+                    .select()
+                    .from(sessions)
+                    .where(eq(sessions.id, session.id));
+                expect(renewed?.lastSeenAt.getTime()).toBeGreaterThan(lastSeen.getTime());
             });
             test("uses server-side step-up and rejects a forged dashboard origin", async () => {
                 const bad = await browser(

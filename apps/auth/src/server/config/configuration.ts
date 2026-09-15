@@ -1,6 +1,7 @@
 import { isIP } from "node:net";
 
 import type { ClientMetadata, JWKS } from "oidc-provider";
+import { getDomain } from "tldts";
 import * as v from "valibot";
 
 const originSchema = v.pipe(v.string(), v.url(), v.maxLength(512));
@@ -94,7 +95,13 @@ export function parseAuthConfiguration(
         true
     ).origin;
     const rpId = required("HOMELAB_AUTH_RP_ID");
-    if (isIP(rpId) !== 0 || rpId.includes("/") || rpId.includes(":"))
+    if (
+        isIP(rpId) !== 0 ||
+        rpId.includes("/") ||
+        rpId.includes(":") ||
+        (!(development && rpId === "localhost") &&
+            !getDomain(rpId, { allowPrivateDomains: true, extractHostname: false }))
+    )
         throw new Error("Invalid WebAuthn RP ID");
     const origins = [issuer, dashboardOrigin];
     for (const origin of origins) {

@@ -25,6 +25,14 @@ describe("identity cryptography", () => {
         expect(randomToken()).not.toBe(token);
         expect(tokenDigest(token)).toHaveLength(64);
     });
+    test("keeps token digests compatible with the stored SHA-256 format", () => {
+        expect(tokenDigest("")).toBe(
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+        expect(tokenDigest("abc")).toBe(
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    });
     test("uses Argon2id and rejects incorrect passwords", async () => {
         const hash = await hashPassword("isolated test password");
         expect(hash.startsWith("$argon2id$")).toBe(true);

@@ -4,6 +4,7 @@ import {
     dashboardDevelopment,
     dashboardAuthConfiguration,
 } from "./config/environment";
+import { isSameOriginApiRequest } from "./http/requestOrigin";
 import {
     dashboardApiRequest,
     dashboardHealthResponse,
@@ -37,8 +38,8 @@ export function startDashboardServer(options: DashboardServerOptions = {}) {
                 return await authentication.callback(request);
             if (path === "/api/trpc" || path.startsWith("/api/trpc/")) {
                 if (
-                    request.method !== "GET" &&
-                    request.headers.get("origin") !== configuration?.origin
+                    !configuration ||
+                    !isSameOriginApiRequest(request, configuration.origin)
                 )
                     return json("INVALID_ORIGIN", "Request origin is not allowed.", 403);
                 if (!(await authentication.authenticated(request)))

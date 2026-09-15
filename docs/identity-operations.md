@@ -136,3 +136,30 @@ revokes every OIDC grant bound to the current session, including the dashboard g
 Existing access and refresh tokens cannot be reused or revived by enrolling a new factor.
 The central auth cookie stays valid so the user can manage the account and enroll MFA
 again. Connected applications must sign in again; non-dashboard clients still require MFA.
+
+## Browser request and WebAuthn boundaries
+
+The private dashboard tRPC API requires same-origin evidence before it validates a session
+or records activity. GET requests need `Sec-Fetch-Site: same-origin` or an exact `Origin`;
+writes still require the exact `Origin`. Contradictory headers, same-site sibling requests
+and unproven GETs are rejected. Passive session polling does not renew the idle deadline.
+
+WebAuthn RP IDs are checked against the Public Suffix List, including private suffixes.
+Use an owned domain covering the approved UI origins, not a suffix such as `com`, `co.uk`
+or `github.io`. The explicit development mode permits `localhost`; production does not.
+The suffix list is bundled in the pinned `tldts` dependency, with no startup network lookup.
+
+## Public resource exceptions
+
+`HOMELAB_AUTH_ROUTES` is a per-origin allowlist for ForwardAuth. `publicPaths` matches exact
+paths; `publicPrefixes` matches path-segment prefixes ending in `/`, never the whole root.
+Unknown origins are denied. Other paths require a current MFA session and an allowed group.
+Encoded ambiguous separators cannot turn a protected path into a public exception.
+
+These exceptions bypass Homelab sign-in only. An app's own manifest/configuration token,
+API key or other endpoint checks still apply. Before cutover, inventory the actual Stremio
+routes, including token-prefixed paths, and qualify unauthenticated manifests, catalogs,
+metadata, streams and subtitles without exposing the configuration/admin pages.
+The current path/prefix model does not support arbitrary regular expressions. If a current
+Authelia rule needs more expressive matching, extend and test the model before migrating
+that route; never replace it with a root-wide bypass.

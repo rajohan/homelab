@@ -27,7 +27,7 @@ async function cookiePrincipal(
     }
 }
 
-export function createProvider(accounts: Accounts) {
+export function createProvider(accounts: Accounts): Provider {
     const configuration = accounts.configuration;
     const policy = interactionPolicy.base();
     policy.get("login")?.checks.add(
@@ -50,7 +50,7 @@ export function createProvider(accounts: Accounts) {
             }
         )
     );
-    const provider = new Provider(configuration.issuer, {
+    const provider: Provider = new Provider(configuration.issuer, {
         clients: [...configuration.clients],
         adapter: createOidcAdapter(accounts.database, configuration.encryptionKey),
         jwks: configuration.jwks,
