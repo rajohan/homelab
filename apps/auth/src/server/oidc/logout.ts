@@ -14,7 +14,12 @@ export const logoutPayloadSchema = v.strictObject({
     uri: v.pipe(v.string(), v.url()),
 });
 
-/** Atomically remove grants and preserve their logout notifications before session deletion. */
+/**
+ * Remove grants and preserve notifications before their session is deleted.
+ * @param store - The caller's transaction, shared with session revocation.
+ * @param condition - The exact grant selection to revoke.
+ * @returns Completion after grants and notifications have been updated.
+ */
 export async function revokeBoundGrants(store: AuthStore, condition: SQL): Promise<void> {
     const grants = await store.delete(grantSessions).where(condition).returning();
     const now = new Date();
@@ -40,7 +45,13 @@ export async function revokeBoundGrants(store: AuthStore, condition: SQL): Promi
         );
 }
 
-// Deliver through oidc-provider's native signed logout implementation, never a custom JWT.
+/**
+ * Deliver a bounded batch through the provider's native signed logout implementation.
+ * @param database - The auth store containing the encrypted outbox.
+ * @param configuration - Current keys and permitted client endpoints.
+ * @param provider - The pinned OIDC engine that signs session-specific logout tokens.
+ * @returns The number of deliveries completed; failed requests remain queued.
+ */
 export async function deliverLogouts(
     database: AuthDatabase,
     configuration: AuthConfiguration,

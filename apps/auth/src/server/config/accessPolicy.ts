@@ -52,7 +52,12 @@ export function validateResourceRules(route: AccessRoute): void {
     compile(route);
 }
 
-// First match wins; RE2 matching is linear-time, not JavaScript backtracking.
+/**
+ * Resolve a normalized path with first-match-wins, linear-time RE2 rules.
+ * @param route - The validated origin policy.
+ * @param pathname - The URL path without a query string.
+ * @returns Denial for ambiguous paths, or the matching/default authentication policy.
+ */
 export function resourcePolicy(route: AccessRoute, pathname: string) {
     const denied = { policy: "deny", groups: [] } as const;
     if (pathname.length > 8192 || /%(?:2f|5c|00|25)/i.test(pathname)) return denied;

@@ -34,7 +34,16 @@ export const encryptedRecords = [
 ] as const;
 const rowsSchema = v.array(v.object({ id: v.string(), data: v.string() }));
 
-// Run only with every auth process stopped. Both check and apply lock a consistent inventory.
+/**
+ * Verify or replace every stored AEAD envelope in one all-or-nothing transaction.
+ * All auth processes must be stopped; locks alone cannot prevent old-key writes after commit.
+ * @param database - The isolated auth database, with no concurrent application writers.
+ * @param oldKey - The currently configured data key.
+ * @param newKey - A different, privately retained 32-byte replacement key.
+ * @param apply - Commit replacements when true; otherwise verify without writes.
+ * @returns Processed record counts, never keys or decrypted data.
+ * @throws {Error} Invalid keys, corrupt records or database failures abort the transaction.
+ */
 export async function rotateDataKey(
     database: AuthDatabase,
     oldKey: Uint8Array,

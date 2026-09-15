@@ -1,6 +1,6 @@
 import { isIP } from "node:net";
 
-import { parseAuthConfiguration } from "./configuration";
+import { type AuthConfiguration, parseAuthConfiguration } from "./configuration";
 import { loadAccessPolicy } from "./policyFile";
 
 export function authBindOptions(
@@ -17,7 +17,7 @@ export function authBindOptions(
 
 export async function authConfiguration(
     environment: Readonly<Record<string, string | undefined>> = process.env
-) {
+): Promise<AuthConfiguration | undefined> {
     // The visual-only development shell does not load a deployment policy.
     if (!environment.HOMELAB_AUTH_ISSUER) return parseAuthConfiguration(environment);
     return parseAuthConfiguration(

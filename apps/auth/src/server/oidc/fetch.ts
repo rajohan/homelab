@@ -1,6 +1,10 @@
 import type { ClientMetadata, Configuration } from "oidc-provider";
 
-// Only operator-registered logout endpoints may receive outgoing OIDC requests.
+/**
+ * Restrict OIDC requests to operator-registered logout endpoints without redirects.
+ * @param clients - The static client inventory; request data cannot extend it.
+ * @returns A bounded POST-only transport for the pinned provider.
+ */
 export function createOidcFetch(
     clients: readonly ClientMetadata[]
 ): NonNullable<Configuration["fetch"]> {
