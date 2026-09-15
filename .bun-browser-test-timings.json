@@ -1,16 +1,17 @@
 {
   "version": 1,
   "files": {
-    "packages/ui/src/features/identity/components/verification/VerificationMethods.test.tsx": 1292,
-    "packages/ui/src/features/identity/components/AccountSettings.test.tsx": 530,
-    "apps/dashboard/src/browser/identity/IdentityBoundary.test.tsx": 363,
-    "packages/ui/src/features/identity/components/forms/PasswordForm.test.tsx": 330,
-    "packages/ui/src/components/Form/FieldsForm.test.tsx": 275,
+    "packages/ui/src/features/identity/components/verification/VerificationMethods.test.tsx": 1237,
+    "packages/ui/src/features/identity/components/AccountSettings.test.tsx": 535,
+    "packages/ui/src/features/identity/components/forms/PasswordForm.test.tsx": 303,
+    "apps/auth/src/browser/pages/SignInPage.test.tsx": 279,
+    "packages/ui/src/components/Form/FieldsForm.test.tsx": 279,
+    "apps/dashboard/src/browser/identity/IdentityBoundary.test.tsx": 125,
     "apps/dashboard/src/browser/pages/pages.test.tsx": 61,
     "packages/ui/src/states.test.tsx": 34,
     "packages/ui/src/components/Input/Input.test.tsx": 25,
-    "packages/ui/src/index.test.tsx": 24,
-    "tests/browserEntries.test.tsx": 16,
-    "packages/ui/src/components/Form/Form.test.tsx": 15
+    "packages/ui/src/index.test.tsx": 25,
+    "packages/ui/src/components/Form/Form.test.tsx": 14,
+    "tests/browserEntries.test.tsx": 14
   }
 }

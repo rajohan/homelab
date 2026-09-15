@@ -1,6 +1,10 @@
 import { Brand, Button, ErrorNotice, LoadingState } from "@homelab/ui";
-import { AccountSettings, VerificationMethods } from "@homelab/ui/identity";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+    AccountSettings,
+    VerificationMethods,
+    useIdentitySession,
+} from "@homelab/ui/identity";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { SignedInActions } from "../components/SignedInActions";
 import { SignInForm } from "../components/SignInForm";
@@ -8,18 +12,18 @@ import { AuthLayout } from "../layout/AuthLayout";
 import type { AuthPageProps } from "../types";
 export function SignInPage({ client, address }: AuthPageProps) {
     const queryClient = useQueryClient();
-    const session = useQuery({
-        queryKey: ["identity", "session"],
-        queryFn: () => client.session(),
-        retry: false,
-        staleTime: 0,
-    });
+    const session = useIdentitySession(client);
+    const identityKey = session.data?.userId ?? session.data?.username ?? "anonymous";
     async function refresh(): Promise<void> {
         await queryClient.invalidateQueries({ queryKey: ["identity"] });
     }
-    if (address.pathname === "/account" && session.data?.authenticated)
+    if (
+        !session.isError &&
+        address.pathname === "/account" &&
+        session.data?.authenticated
+    )
         return (
-            <main className="mx-auto max-w-5xl p-5 sm:p-10">
+            <main key={identityKey} className="mx-auto max-w-5xl p-5 sm:p-10">
                 <a
                     href="/sign-in"
                     className="mb-8 inline-flex"
@@ -31,7 +35,7 @@ export function SignInPage({ client, address }: AuthPageProps) {
             </main>
         );
     return (
-        <AuthLayout title="Sign in">
+        <AuthLayout key={identityKey} title="Sign in">
             {session.isPending && (
                 <LoadingState label="Checking your session…" size="sm" />
             )}
@@ -41,7 +45,7 @@ export function SignInPage({ client, address }: AuthPageProps) {
                     <Button onClick={() => void refresh()}>Try again</Button>
                 </div>
             )}
-            {session.data?.mfaRequired && (
+            {!session.isError && session.data?.mfaRequired && (
                 <div className="space-y-4">
                     <p className="text-base text-primary-300">
                         Confirm your second factor to finish signing in.
@@ -52,7 +56,7 @@ export function SignInPage({ client, address }: AuthPageProps) {
                     />
                 </div>
             )}
-            {session.data?.authenticated && (
+            {!session.isError && session.data?.authenticated && (
                 <SignedInActions
                     client={client}
                     address={address}
@@ -60,9 +64,12 @@ export function SignInPage({ client, address }: AuthPageProps) {
                     onRefresh={refresh}
                 />
             )}
-            {session.data && !session.data.authenticated && !session.data.mfaRequired && (
-                <SignInForm client={client} onComplete={refresh} />
-            )}
+            {!session.isError &&
+                session.data &&
+                !session.data.authenticated &&
+                !session.data.mfaRequired && (
+                    <SignInForm client={client} onComplete={refresh} />
+                )}
         </AuthLayout>
     );
 }
