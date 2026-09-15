@@ -36,13 +36,13 @@ export function startDashboardServer(options: DashboardServerOptions = {}) {
             if (path === "/auth/callback" && request.method === "GET")
                 return await authentication.callback(request);
             if (path === "/api/trpc" || path.startsWith("/api/trpc/")) {
-                if (!(await authentication.authenticated(request)))
-                    return json("UNAUTHORIZED", "Sign in to continue.", 401);
                 if (
                     request.method !== "GET" &&
                     request.headers.get("origin") !== configuration?.origin
                 )
                     return json("INVALID_ORIGIN", "Request origin is not allowed.", 403);
+                if (!(await authentication.authenticated(request)))
+                    return json("UNAUTHORIZED", "Sign in to continue.", 401);
                 return await dashboardApiRequest(request);
             }
             return await authentication.proxy(request);

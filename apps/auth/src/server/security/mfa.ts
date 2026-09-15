@@ -437,6 +437,8 @@ export class MultiFactor {
                     .delete(recoveryCodes)
                     .where(eq(recoveryCodes.userId, principal.user.id));
                 await this.accounts.revokeOthers(transaction, principal);
+                // Drop every grant issued with the old assurance level, including dashboard grants.
+                await this.accounts.revokeGrants(transaction, principal.session.id);
                 await transaction
                     .update(sessions)
                     .set({ mfaAt: null })

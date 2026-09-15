@@ -245,6 +245,39 @@ describe.each(["client_secret_post", "client_secret_basic"] as const)(
                     .where(eq(sessions.id, session.id));
                 expect(renewed?.lastSeenAt.getTime()).toBeGreaterThan(lastSeen.getTime());
             });
+
+            test("rejected tRPC origins cannot renew the central session", async () => {
+                const [session] = await auth.connection.database.select().from(sessions);
+                if (!session) throw new Error("Session missing");
+                const lastSeen = new Date(Date.now() - 55 * 60_000);
+                await auth.connection.database
+                    .update(sessions)
+                    .set({ lastSeenAt: lastSeen })
+                    .where(eq(sessions.id, session.id));
+                const cookie = jar.get(origin)?.get("homelab_dashboard")?.value;
+                if (!cookie) throw new Error("Dashboard cookie missing");
+                for (const requestOrigin of [
+                    "http://sibling.example.test",
+                    "null",
+                    undefined,
+                ]) {
+                    const rejected = await fetch(origin + "/api/trpc/system.status", {
+                        method: "POST",
+                        headers: {
+                            Cookie: "homelab_dashboard=" + cookie,
+                            "Content-Type": "application/x-www-form-urlencoded",
+                            ...(requestOrigin ? { Origin: requestOrigin } : {}),
+                        },
+                        body: "input={}",
+                    });
+                    expect(rejected.status).toBe(403);
+                    const [unchanged] = await auth.connection.database
+                        .select()
+                        .from(sessions)
+                        .where(eq(sessions.id, session.id));
+                    expect(unchanged?.lastSeenAt.getTime()).toBe(lastSeen.getTime());
+                }
+            });
             test("uses server-side step-up and rejects a forged dashboard origin", async () => {
                 const bad = await browser(
                     `${origin}/api/account/email`,

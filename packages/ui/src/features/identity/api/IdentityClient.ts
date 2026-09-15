@@ -15,6 +15,11 @@ export class IdentityClient {
     #identity: string | undefined;
     #actions = new AbortController();
 
+    #assertActiveAction(signal: AbortSignal): void {
+        if (signal.aborted)
+            throw new IdentityError("CANCELLED", 0, "The request was cancelled.");
+    }
+
     cancelActions(): void {
         this.#actions.abort();
         this.#actions = new AbortController();
@@ -23,6 +28,7 @@ export class IdentityClient {
 
     async request(path: string, input?: unknown, signal?: AbortSignal): Promise<unknown> {
         try {
+            signal?.throwIfAborted();
             const response = await fetch(path, {
                 method: input === undefined ? "GET" : "POST",
                 headers: { "Content-Type": "application/json" },
@@ -117,32 +123,44 @@ export class IdentityClient {
     }
 
     async securityKeyProof(): Promise<void> {
+        const signal = this.#actions.signal;
         const value = v.parse(
             v.object({ token: v.string(), options: v.record(v.string(), v.unknown()) }),
-            await this.request("/api/account/proof/webauthn/begin", {})
+            await this.request("/api/account/proof/webauthn/begin", {}, signal)
         );
+        this.#assertActiveAction(signal);
         const response = await startAuthentication({
             optionsJSON:
                 value.options as unknown as PublicKeyCredentialRequestOptionsJSON,
         });
-        await this.request("/api/account/proof/webauthn/finish", {
-            token: value.token,
-            response,
-        });
+        await this.request(
+            "/api/account/proof/webauthn/finish",
+            {
+                token: value.token,
+                response,
+            },
+            signal
+        );
     }
 
     async enrollSecurityKey(label: string): Promise<string[]> {
+        const signal = this.#actions.signal;
         const value = v.parse(
             v.object({ token: v.string(), options: v.record(v.string(), v.unknown()) }),
-            await this.action("webauthn/begin")
+            await this.action("webauthn/begin", {}, signal)
         );
+        this.#assertActiveAction(signal);
         const response = await startRegistration({
             optionsJSON:
                 value.options as unknown as PublicKeyCredentialCreationOptionsJSON,
         });
         return v.parse(
             v.object({ recoveryCodes: v.array(v.string()) }),
-            await this.action("webauthn/finish", { token: value.token, label, response })
+            await this.action(
+                "webauthn/finish",
+                { token: value.token, label, response },
+                signal
+            )
         ).recoveryCodes;
     }
 }

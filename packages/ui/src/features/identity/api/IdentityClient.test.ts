@@ -1,5 +1,7 @@
 import { afterAll, afterEach, describe, expect, spyOn, test } from "bun:test";
 
+import * as webauthn from "@simplewebauthn/browser";
+
 import { IdentityClient } from "../client";
 
 const stale = () =>
@@ -102,4 +104,125 @@ test("a timeout while reading the response body is also translated", async () =>
         .request("/api/session")
         .catch((error: unknown) => error);
     expect(failure).toMatchObject({ code: "TIMEOUT", status: 0 });
+});
+
+describe("WebAuthn action cancellation", () => {
+    const registration: Awaited<ReturnType<typeof webauthn.startRegistration>> = {
+        id: "test-key",
+        rawId: "test-key",
+        response: { clientDataJSON: "test", attestationObject: "test" },
+        type: "public-key",
+        clientExtensionResults: {},
+    };
+
+    test.each(["cancel", "identity"] as const)(
+        "%s during registration prevents the finish request",
+        async (mode) => {
+            const client = new IdentityClient();
+            client.bindIdentity("user:session");
+            const ceremony = Promise.withResolvers<typeof registration>();
+            const started = Promise.withResolvers<void>();
+            const register = spyOn(webauthn, "startRegistration").mockImplementation(
+                () => {
+                    started.resolve();
+                    return ceremony.promise;
+                }
+            );
+            fetchSpy
+                .mockResolvedValueOnce(Response.json({ token: "test", options: {} }))
+                .mockResolvedValueOnce(Response.json({ recoveryCodes: [] }));
+            try {
+                const outcome = client
+                    .enrollSecurityKey("Test key")
+                    .catch((error: unknown) => error);
+                await started.promise;
+                if (mode === "cancel") client.cancelActions();
+                else client.bindIdentity("user:replacement-session");
+                ceremony.resolve(registration);
+                expect(await outcome).toMatchObject({ code: "CANCELLED" });
+                expect(fetchSpy).toHaveBeenCalledTimes(1);
+            } finally {
+                register.mockRestore();
+            }
+        }
+    );
+
+    test("canceling a pending begin response prevents opening the authenticator", async () => {
+        const client = new IdentityClient();
+        client.bindIdentity("user:session");
+        const begin = Promise.withResolvers<Response>();
+        const register = spyOn(webauthn, "startRegistration").mockResolvedValue(
+            registration
+        );
+        fetchSpy.mockReturnValueOnce(begin.promise);
+        try {
+            const outcome = client
+                .enrollSecurityKey("Test key")
+                .catch((error: unknown) => error);
+            client.cancelActions();
+            begin.resolve(Response.json({ token: "test", options: {} }));
+            expect(await outcome).toMatchObject({ code: "CANCELLED" });
+            expect(register).not.toHaveBeenCalled();
+            expect(fetchSpy).toHaveBeenCalledTimes(1);
+        } finally {
+            register.mockRestore();
+        }
+    });
+
+    test("canceling WebAuthn verification prevents submitting the late proof", async () => {
+        const client = new IdentityClient();
+        client.bindIdentity("user:session");
+        const ceremony =
+            Promise.withResolvers<
+                Awaited<ReturnType<typeof webauthn.startAuthentication>>
+            >();
+        const started = Promise.withResolvers<void>();
+        const authenticate = spyOn(webauthn, "startAuthentication").mockImplementation(
+            () => {
+                started.resolve();
+                return ceremony.promise;
+            }
+        );
+        fetchSpy
+            .mockResolvedValueOnce(Response.json({ token: "test", options: {} }))
+            .mockResolvedValueOnce(Response.json({ ok: true }));
+        try {
+            const outcome = client.securityKeyProof().catch((error: unknown) => error);
+            await started.promise;
+            client.cancelActions();
+            ceremony.resolve({
+                id: "test-key",
+                rawId: "test-key",
+                response: {
+                    clientDataJSON: "test",
+                    authenticatorData: "test",
+                    signature: "test",
+                },
+                type: "public-key",
+                clientExtensionResults: {},
+            });
+            expect(await outcome).toMatchObject({ code: "CANCELLED" });
+            expect(fetchSpy).toHaveBeenCalledTimes(1);
+        } finally {
+            authenticate.mockRestore();
+        }
+    });
+
+    test("an active registration still submits its result once", async () => {
+        const register = spyOn(webauthn, "startRegistration").mockResolvedValue(
+            registration
+        );
+        fetchSpy
+            .mockResolvedValueOnce(Response.json({ token: "test", options: {} }))
+            .mockResolvedValueOnce(Response.json({ recoveryCodes: ["test-recovery"] }));
+        try {
+            const client = new IdentityClient();
+            client.bindIdentity("user:session");
+            expect(await client.enrollSecurityKey("Test key")).toEqual(["test-recovery"]);
+            expect(fetchSpy).toHaveBeenCalledTimes(2);
+            expect(fetchSpy.mock.calls[1]?.[0]).toBe("/api/account/webauthn/finish");
+        } finally {
+            register.mockRestore();
+        }
+    });
 });

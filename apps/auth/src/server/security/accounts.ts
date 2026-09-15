@@ -191,7 +191,7 @@ export class Accounts {
         }
     }
 
-    async revoke(store: AuthStore, sessionId: string): Promise<void> {
+    async revokeGrants(store: AuthStore, sessionId: string): Promise<void> {
         const grants = await store
             .select({ id: grantSessions.grantId })
             .from(grantSessions)
@@ -203,6 +203,11 @@ export class Accounts {
                     grants.map((grant) => grant.id)
                 )
             );
+        await store.delete(grantSessions).where(eq(grantSessions.sessionId, sessionId));
+    }
+
+    async revoke(store: AuthStore, sessionId: string): Promise<void> {
+        await this.revokeGrants(store, sessionId);
         await store.delete(sessions).where(eq(sessions.id, sessionId));
     }
 

@@ -662,6 +662,71 @@ describe("security invariants against the isolated database", () => {
         expect(JSON.stringify(jwks)).not.toContain('"p":');
     });
 
+    test("removing the last factor revokes current-session OIDC grants permanently", async () => {
+        await enrollTotp();
+        await enrollTotp();
+        const external = await authorizationTokens(
+            "openid profile email groups offline_access",
+            "basic-client"
+        );
+        const dashboardTokens = await authorizationTokens(
+            "openid profile email groups account offline_access"
+        );
+        expect(external.refresh_token).toBeTruthy();
+        expect(dashboardTokens.refresh_token).toBeTruthy();
+        const inventory = await json(
+            browser("/api/account"),
+            v.object({ factors: v.array(v.object({ id: v.string() })) })
+        );
+        expect(inventory.factors).toHaveLength(2);
+        const [first, last] = inventory.factors;
+        if (!first || !last) throw new Error("Test factors missing");
+        const userinfo = (token: string) =>
+            browser("/userinfo", {
+                headers: { authorization: "Bearer " + token },
+            });
+        expect(await status(post("/api/account/factor/remove", { id: first.id }))).toBe(
+            200
+        );
+        expect(await status(userinfo(external.access_token))).toBe(200);
+        expect(await status(userinfo(dashboardTokens.access_token))).toBe(200);
+        expect(await status(post("/api/account/factor/remove", { id: last.id }))).toBe(
+            200
+        );
+        expect(await status(userinfo(external.access_token))).toBe(401);
+        expect(await status(userinfo(dashboardTokens.access_token))).toBe(401);
+        expect(
+            await status(
+                formPost(
+                    "/token",
+                    {
+                        grant_type: "refresh_token",
+                        refresh_token: external.refresh_token ?? "",
+                    },
+                    "Basic " +
+                        Buffer.from("basic-client:" + clientSecret).toString("base64")
+                )
+            )
+        ).toBe(400);
+        expect(
+            await status(
+                formPost("/token", {
+                    grant_type: "refresh_token",
+                    refresh_token: dashboardTokens.refresh_token ?? "",
+                    client_id: "dashboard",
+                    client_secret: clientSecret,
+                })
+            )
+        ).toBe(400);
+        // Keep the central cookie so the account can enroll MFA again.
+        expect(await status(browser("/api/account"))).toBe(200);
+        await enrollTotp();
+        expect(await status(userinfo(external.access_token))).toBe(401);
+        expect(await status(userinfo(dashboardTokens.access_token))).toBe(401);
+        const fresh = await authorizationTokens("openid profile", "basic-client");
+        expect(await status(userinfo(fresh.access_token))).toBe(200);
+    });
+
     test("rotates refresh tokens and revokes them with the central session", async () => {
         const result = await authorizationTokens(
             "openid profile email groups account offline_access"

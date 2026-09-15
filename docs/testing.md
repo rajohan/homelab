@@ -113,3 +113,10 @@ methods or sessions. Starting another action clears the previous notice. Email
 verification uses "Check your inbox for a verification link." rather than claiming
 that a queued email has already been delivered. Reset and verification pages replace
 their completed forms with a local confirmation instead of leaving a reusable token form.
+
+Security regressions exercise last-factor removal with live access and refresh tokens,
+including that re-enrollment does not revive revoked grants. BFF tests send foreign,
+null and missing origins with a valid dashboard cookie and assert that rejected requests
+do not advance the central session's activity timestamp. Browser-client unit tests use
+deferred WebAuthn results to check cancellation and identity changes before the finish
+request, without invoking a physical authenticator.

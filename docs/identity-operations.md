@@ -127,3 +127,12 @@ tokens. The existing external Healthchecks/Sentinel arrangement remains unchange
 
 This PR creates no production account, sends no real email, installs no new DNS/certificate
 job and does not change current Authelia, Traefik, firewall or OIDC client settings.
+
+## Removing the last security method
+
+Removing one factor while another remains preserves the current session's OIDC grants.
+Removing the last factor atomically clears recovery codes, revokes other sessions and
+revokes every OIDC grant bound to the current session, including the dashboard grant.
+Existing access and refresh tokens cannot be reused or revived by enrolling a new factor.
+The central auth cookie stays valid so the user can manage the account and enroll MFA
+again. Connected applications must sign in again; non-dashboard clients still require MFA.
