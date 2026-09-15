@@ -34,10 +34,18 @@ export function SignInPage({ client, address }: AuthPageProps) {
         setCompleted(true);
         await refresh();
     }
+    const signedOutTitle = session.data?.mfaRequired ? "Verify your identity" : "Sign in";
+    const signedInTitle = handoff ? "Redirecting" : "Your account";
     return (
         <AuthLayout
             key={identityKey}
-            title={session.data?.mfaRequired ? "Verify your identity" : "Sign in"}
+            description={
+                session.data?.mfaRequired
+                    ? "Choose a verification method to finish signing in."
+                    : undefined
+            }
+            authenticated={session.data?.authenticated ?? false}
+            title={session.data?.authenticated ? signedInTitle : signedOutTitle}
         >
             {session.isPending && (
                 <LoadingState label="Checking your session…" size="sm" />
@@ -50,9 +58,6 @@ export function SignInPage({ client, address }: AuthPageProps) {
             )}
             {!session.isError && session.data?.mfaRequired && (
                 <div className="space-y-4">
-                    <p className="text-base text-primary-300">
-                        Choose a verification method to finish signing in.
-                    </p>
                     <VerificationMethods
                         client={client}
                         onVerified={() => void finish()}

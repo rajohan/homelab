@@ -39,20 +39,11 @@ export function AccountSettings({
             </Card>
         );
     return (
-        <div className="space-y-6">
+        <div className="mx-auto w-full max-w-5xl space-y-4">
             <PageHeader
                 title="Account settings"
-                description="Manage your Homelab identity, security methods and signed-in devices."
+                description="Manage your sign-in details, two-factor authentication and active sessions."
             />
-            <nav
-                aria-label="Account sections"
-                className="flex flex-wrap gap-2 border-b border-primary-700 pb-4 text-sm font-medium text-primary-300 [&_a]:rounded-lg [&_a]:px-3 [&_a]:py-2.5 [&_a]:transition-colors [&_a:hover]:bg-primary-700 [&_a:hover]:text-primary-50"
-            >
-                <a href="#account-profile">Account</a>
-                <a href="#account-security">Security</a>
-                <a href="#account-sessions">Sessions</a>
-                <a href="#security-activity">Activity</a>
-            </nav>
             <ProfilePanel
                 data={account.data}
                 onAction={state.setAction}

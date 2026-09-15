@@ -31,7 +31,13 @@ export function FieldsForm({
         defaultValues: Object.fromEntries(
             fields.map((field) => [field.name, field.initial ?? ""])
         ),
-        validators: { onChange: validateValues },
+        validators: {
+            // Password managers can blur/clear fields before dispatching their final input.
+            // Coalesce that burst while still validating submissions immediately.
+            onChangeAsyncDebounceMs: 200,
+            onChangeAsync: (input) => Promise.resolve(validateValues(input)),
+            onSubmit: validateValues,
+        },
         onSubmit: async ({ value }) => {
             setError(undefined);
             try {
@@ -62,7 +68,14 @@ export function FieldsForm({
                                         autoComplete={definition.autoComplete}
                                         placeholder={definition.placeholder}
                                         value={field.state.value ?? ""}
-                                        onBlur={() => {
+                                        onBlur={(event) => {
+                                            if (
+                                                event.currentTarget.value !==
+                                                field.state.value
+                                            )
+                                                field.handleChange(
+                                                    event.currentTarget.value
+                                                );
                                             field.handleBlur();
                                             // Reuse change validation so corrected errors cannot linger.
                                             void field.validate("change");

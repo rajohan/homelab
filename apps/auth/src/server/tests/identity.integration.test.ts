@@ -1070,6 +1070,56 @@ describe("security invariants against the isolated database", () => {
         expect(await status(post("/api/account/sessions/revoke-others", {}))).toBe(200);
     });
 
+    test.each([false, true])(
+        "self-revocation needs no fresh proof with enrolled MFA=%s, while other sessions remain protected",
+        async (withMfa) => {
+            if (withMfa) await enrollTotp();
+            const token = cookieJar.get("homelab_auth")?.value;
+            if (!token) throw new Error("Current cookie missing");
+            const principal = await application.services.accounts.principalByToken(token);
+            const otherId = crypto.randomUUID();
+            const now = new Date();
+            await application.connection.database.insert(sessions).values({
+                id: otherId,
+                userId: principal.user.id,
+                tokenHash: tokenDigest(otherId),
+                userAgent: "Other synthetic browser",
+                createdAt: now,
+                passwordAt: now,
+                lastSeenAt: now,
+                expiresAt: new Date(now.getTime() + 60_000),
+            });
+            await application.connection.database
+                .update(sessions)
+                .set({
+                    passwordAt: new Date(now.getTime() - 10 * 60_000),
+                    ...(withMfa ? { mfaAt: new Date(now.getTime() - 10 * 60_000) } : {}),
+                })
+                .where(eq(sessions.id, principal.session.id));
+            expect(
+                await status(post("/api/account/session/revoke", { id: otherId }))
+            ).toBe(403);
+            expect(
+                await status(
+                    post("/api/account/session/revoke", { id: principal.session.id })
+                )
+            ).toBe(200);
+            expect(await status(browser("/api/account"))).toBe(401);
+            expect(
+                await application.connection.database
+                    .select()
+                    .from(sessions)
+                    .where(eq(sessions.id, otherId))
+            ).toHaveLength(1);
+            expect(
+                await application.connection.database
+                    .select()
+                    .from(sessions)
+                    .where(eq(sessions.id, principal.session.id))
+            ).toHaveLength(0);
+        }
+    );
+
     test("rotates recovery codes, removes a factor and revokes all sessions through Settings", async () => {
         const original = await enrollTotp();
         const rotated = await json(

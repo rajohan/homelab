@@ -8,6 +8,7 @@ export type ConfirmationAction =
           readonly kind: "remove" | "session";
           readonly id: string;
           readonly label: string;
+          readonly current?: boolean;
       };
 export type AccountAction =
     | "password"

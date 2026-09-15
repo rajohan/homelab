@@ -1,6 +1,6 @@
 import { expect, mock, test } from "bun:test";
 
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { PasswordForm } from "./PasswordForm";
@@ -14,8 +14,10 @@ test("uses the same password confirmation validation for reset and account forms
         screen.getByLabelText("Repeat new password"),
         "different-password-123"
     );
-    expect(screen.getByLabelText("Repeat new password")).toHaveAccessibleDescription(
-        "The new passwords do not match."
+    await waitFor(() =>
+        expect(screen.getByLabelText("Repeat new password")).toHaveAccessibleDescription(
+            "The new passwords do not match."
+        )
     );
     expect(screen.getByLabelText("Repeat new password")).toHaveAttribute(
         "aria-invalid",
@@ -27,6 +29,9 @@ test("uses the same password confirmation validation for reset and account forms
     await user.type(
         screen.getByLabelText("Repeat new password"),
         "replacement-password-123"
+    );
+    await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Save password" })).toBeEnabled()
     );
     await user.click(screen.getByRole("button", { name: "Save password" }));
     expect(submit).toHaveBeenCalledTimes(1);
@@ -42,9 +47,13 @@ test("editing the original password revalidates the touched confirmation", async
     await user.type(password, "replacement-password-123");
     await user.type(confirmation, "replacement-password-123");
     await user.type(password, "4");
-    expect(confirmation).toHaveAccessibleDescription("The new passwords do not match.");
+    await waitFor(() =>
+        expect(confirmation).toHaveAccessibleDescription(
+            "The new passwords do not match."
+        )
+    );
     expect(screen.getByRole("button", { name: "Save password" })).toBeDisabled();
     await user.type(password, "{Backspace}");
-    expect(confirmation).not.toHaveAttribute("aria-invalid", "true");
+    await waitFor(() => expect(confirmation).not.toHaveAttribute("aria-invalid", "true"));
     expect(screen.getByRole("button", { name: "Save password" })).toBeEnabled();
 });

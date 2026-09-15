@@ -17,9 +17,9 @@ export function SectionHeader({
     readonly actions?: ReactNode;
 }) {
     return (
-        <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 flex-1 gap-3">
-                <span className="grid size-10 shrink-0 place-items-center rounded-lg border border-primary-700 bg-primary-900 text-primary-300">
+                <span className="mt-0.5 shrink-0 text-accent-300">
                     <Icon size={19} aria-hidden="true" />
                 </span>
                 <div className="min-w-0">

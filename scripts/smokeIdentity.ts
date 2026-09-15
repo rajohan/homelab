@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
+import { createTestDatabase } from "../tests/database";
+
 async function port(): Promise<number> {
     const listener = Bun.serve({
         hostname: "127.0.0.1",
@@ -32,21 +34,18 @@ const cwd = (app: string) =>
 
 /**
  * Verify the built auth and dashboard identity flow against the isolated test database.
- * @returns Completion after migration, login and logout checks and child-process cleanup.
+ * @returns Completion after migration, login and logout checks, process cleanup and database removal.
  */
 export async function main(): Promise<void> {
-    const databaseUrl = process.env.HOMELAB_TEST_DATABASE_URL;
-    if (!databaseUrl)
-        throw new Error(
-            "Built identity smoke requires the isolated HOMELAB_TEST_DATABASE_URL"
-        );
-    const database = new URL(databaseUrl);
-    if (
-        !["localhost", "127.0.0.1"].includes(database.hostname) ||
-        database.pathname !== "/homelab_auth_test"
-    )
-        throw new Error("Refusing a non-test database");
+    const database = await createTestDatabase();
+    try {
+        await verifyBuiltIdentity(database.url);
+    } finally {
+        await database.close();
+    }
+}
 
+async function verifyBuiltIdentity(databaseUrl: string): Promise<void> {
     const children: Array<ReturnType<typeof Bun.spawn>> = [];
     const jar = new Map<string, string>();
     const password = "Built-smoke-password-not-production";

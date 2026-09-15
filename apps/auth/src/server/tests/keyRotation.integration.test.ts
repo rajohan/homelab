@@ -36,6 +36,7 @@ test("key rotation covers every encrypted column, preserves payloads and atomica
     const sessionId = crypto.randomUUID();
     const factorId = crypto.randomUUID();
     const mailId = crypto.randomUUID();
+    const sentMailId = crypto.randomUUID();
     const encrypted = (purpose: string) => encryptValue(oldKey, purpose, payload);
     const rowsSchema = v.array(v.object({ id: v.string(), data: v.string() }));
     async function snapshot() {
@@ -116,6 +117,14 @@ test("key rotation covers every encrypted column, preserves payloads and atomica
             expiresAt: expires,
             nextAttemptAt: now,
         });
+        await connection.database.insert(mailOutbox).values({
+            id: sentMailId,
+            encryptedData: "",
+            sentAt: now,
+            createdAt: now,
+            expiresAt: expires,
+            nextAttemptAt: now,
+        });
         await connection.database.insert(grantSessions).values([
             {
                 grantId: "grant-test",
@@ -135,6 +144,7 @@ test("key rotation covers every encrypted column, preserves payloads and atomica
         const original = await snapshot();
         const counts = await rotateDataKey(connection.database, oldKey, newKey, false);
         expect(counts.auth_factors).toBe(101);
+        expect(counts.auth_mail_outbox).toBe(1);
         expect(Object.values(counts).reduce((sum, count) => sum + count, 0)).toBe(106);
         expect(await snapshot()).toEqual(original);
         for (const [from, to] of [
@@ -153,6 +163,26 @@ test("key rotation covers every encrypted column, preserves payloads and atomica
             );
             expect(await snapshot()).toEqual(original);
         }
+        await connection.database.execute(
+            sql`UPDATE auth_mail_outbox SET encrypted_data = '' WHERE id = ${mailId}`
+        );
+        const corruptMail = await snapshot();
+        for (const apply of [false, true]) {
+            const failure = await rotateDataKey(
+                connection.database,
+                oldKey,
+                newKey,
+                apply
+            ).then(
+                () => null,
+                (error: unknown) => error
+            );
+            expect(failure).toBeInstanceOf(Error);
+            expect(await snapshot()).toEqual(corruptMail);
+        }
+        await connection.database.execute(
+            sql`UPDATE auth_mail_outbox SET encrypted_data = ${encrypted("mail:" + mailId)} WHERE id = ${mailId}`
+        );
         await connection.database.execute(
             sql`UPDATE auth_logout_outbox SET encrypted_data = 'broken' WHERE id = 'logout-test'`
         );
@@ -177,6 +207,10 @@ test("key rotation covers every encrypted column, preserves payloads and atomica
         const rotated = await snapshot();
         for (const entry of encryptedRecords)
             for (const row of rotated[entry.table] ?? []) {
+                if (entry.table === "auth_mail_outbox" && row.id === sentMailId) {
+                    expect(row.data).toBe("");
+                    continue;
+                }
                 expect(
                     decryptValue(newKey, entry.purpose + ":" + row.id, row.data)
                 ).toEqual(payload);
@@ -190,10 +224,15 @@ test("key rotation covers every encrypted column, preserves payloads and atomica
         await rotateDataKey(connection.database, newKey, oldKey, true);
         const returned = await snapshot();
         for (const entry of encryptedRecords)
-            for (const row of returned[entry.table] ?? [])
+            for (const row of returned[entry.table] ?? []) {
+                if (entry.table === "auth_mail_outbox" && row.id === sentMailId) {
+                    expect(row.data).toBe("");
+                    continue;
+                }
                 expect(
                     decryptValue(oldKey, entry.purpose + ":" + row.id, row.data)
                 ).toEqual(payload);
+            }
     } finally {
         await connection.client.close();
         await testDatabase.close();

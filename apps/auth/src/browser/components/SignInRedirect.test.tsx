@@ -99,7 +99,7 @@ test("an unmounted handoff never redirects when its pending request finishes", a
     }
 });
 
-test("an account that cannot complete a handoff can open settings or switch accounts", async () => {
+test("an account that cannot complete a handoff can switch accounts", async () => {
     const client = new IdentityClient();
     const request = spyOn(client, "request").mockImplementation((path) =>
         path === "/api/logout"
@@ -119,9 +119,7 @@ test("an account that cannot complete a handoff can open settings or switch acco
         />
     );
     try {
-        expect(
-            await screen.findByRole("link", { name: "Manage account security" })
-        ).toHaveAttribute("href", "/account");
+        expect(await screen.findByRole("button", { name: "Try again" })).toBeVisible();
         await userEvent
             .setup()
             .click(screen.getByRole("button", { name: "Use another account" }));

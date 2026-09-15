@@ -17,10 +17,11 @@ export function SecurityPrompt({ client }: { client: IdentityClient }) {
     );
     if (!open) return null;
     return (
-        <Modal title="Confirm your identity" onClose={() => client.cancelActions()}>
-            <p className="mb-4 text-base text-primary-300">
-                Verify again to continue. Your pending action will resume automatically.
-            </p>
+        <Modal
+            title="Confirm your identity"
+            description="For your security, verify again to make this change. Your action will continue automatically."
+            onClose={() => client.cancelActions()}
+        >
             <VerificationMethods
                 key={open}
                 client={client}

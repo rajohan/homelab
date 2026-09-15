@@ -323,12 +323,24 @@ export class Accounts {
     }
 
     /**
-     * Authorize and audit revocation of a session owned by the current account.
+     * Revoke the current authenticated session without step-up; require fresh proof for others.
      * @param principal - The session requesting the protected action.
      * @param sessionId - The owned session to revoke.
      * @returns Completion after the revocation commits.
      */
     async revokeSession(principal: Principal, sessionId: string): Promise<void> {
+        if (sessionId === principal.session.id) {
+            await this.database.transaction(async (transaction) => {
+                const current = await this.principalById(
+                    principal.session.id,
+                    transaction
+                );
+                await this.requireAuthenticated(current, transaction);
+                await this.revoke(transaction, current.session.id);
+                await audit(transaction, current.user.id, "session_revoked");
+            });
+            return;
+        }
         await this.protectedAction(principal, async (transaction) => {
             const [session] = await transaction
                 .select()

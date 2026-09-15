@@ -77,6 +77,7 @@ export async function rotateDataKey(
                     await transaction.execute(sql`
                     SELECT ${key}::text AS id, ${column} AS data FROM ${table}
                     WHERE ${column} IS NOT NULL
+                    ${entry.table === "auth_mail_outbox" ? sql`AND NOT (sent_at IS NOT NULL AND ${column} = '')` : sql``}
                     ${cursor === undefined ? sql`` : sql`AND ${key} > ${cursor}`}
                     ORDER BY ${key} LIMIT 100
                 `)

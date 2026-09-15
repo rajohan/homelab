@@ -38,6 +38,13 @@ test("a direct authenticated auth visit keeps the account menu and signs out in 
     );
     try {
         expect(await screen.findByText("operator")).toBeVisible();
+        expect(screen.getByRole("heading", { name: "Your account" })).toBeVisible();
+        expect(
+            screen.queryByRole("heading", { name: "Sign in" })
+        ).not.toBeInTheDocument();
+        expect(
+            screen.queryByRole("link", { name: "Forgot your password?" })
+        ).not.toBeInTheDocument();
         expect(
             screen.getByRole("link", { name: "Manage account security" })
         ).toHaveAttribute("href", "/account");
@@ -50,6 +57,13 @@ test("a direct authenticated auth visit keeps the account menu and signs out in 
             .setup()
             .click(screen.getByRole("button", { name: "Use another account" }));
         expect(await screen.findByLabelText("Username")).toBeVisible();
+        expect(screen.getByRole("heading", { name: "Sign in" })).toBeVisible();
+        expect(
+            screen.getByRole("link", { name: "Forgot your password?" })
+        ).toHaveAttribute("href", "/forgot-password");
+        expect(
+            screen.queryByRole("link", { name: "Manage account security" })
+        ).not.toBeInTheDocument();
         expect(request).toHaveBeenCalledWith("/api/logout", {});
     } finally {
         view.unmount();
@@ -116,6 +130,15 @@ test.each(["totp", "recovery", "webauthn"] as const)(
             const user = userEvent.setup();
             const key = await screen.findByRole("button", { name: "Use security key" });
             expect(key.parentElement).toHaveClass("grid", "grid-cols-1", "gap-3");
+            expect(
+                screen.getByRole("heading", { name: "Verify your identity" })
+            ).toBeVisible();
+            expect(
+                screen.getAllByText("Choose a verification method to finish signing in.")
+            ).toHaveLength(1);
+            expect(
+                screen.queryByText("Use your account to continue to your homelab.")
+            ).not.toBeInTheDocument();
             if (method === "webauthn") await user.click(key);
             else {
                 await user.click(

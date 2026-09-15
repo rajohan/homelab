@@ -3,7 +3,7 @@ import type { IdentityClient } from "@homelab/ui/identity/client";
 import { useState } from "react";
 
 /**
- * Offer account settings and account switching without discarding a pending handoff.
+ * Offer account switching without discarding a pending handoff.
  * @returns Shared actions for direct auth visits and recoverable handoff failures.
  */
 export function AccountActions({
@@ -18,9 +18,6 @@ export function AccountActions({
     return (
         <div className="space-y-4">
             {failure !== undefined && <ErrorNotice error={failure} />}
-            <a className="block text-sm text-accent-300 underline" href="/account">
-                Manage account security
-            </a>
             <Button
                 busy={busy}
                 variant="secondary"

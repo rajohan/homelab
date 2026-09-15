@@ -2,8 +2,8 @@ import * as v from "valibot";
 
 import { ConfirmDialog } from "../../../../index";
 import type { AccountDialogProps, ConfirmationAction } from "../../types";
+import { confirmationCopy } from "../../validation/confirmationCopy";
 import { confirmationMessage } from "../../validation/confirmationMessage";
-import { confirmationTitle } from "../../validation/confirmationTitle";
 
 /**
  * Confirm factor removal, recovery-code rotation or session revocation.
@@ -21,7 +21,7 @@ export function SecurityChangeDialog({
 }) {
     return (
         <ConfirmDialog
-            title={confirmationTitle(action)}
+            {...confirmationCopy(action)}
             onClose={onClose}
             onConfirm={async () => {
                 if (typeof action === "object") {
@@ -44,12 +44,6 @@ export function SecurityChangeDialog({
                 }
                 await onComplete(confirmationMessage(action));
             }}
-        >
-            <p className="mb-4 text-base text-primary-300">
-                {action === "recovery"
-                    ? "Existing recovery codes will stop working. Save the replacement codes immediately."
-                    : "This change takes effect immediately."}
-            </p>
-        </ConfirmDialog>
+        />
     );
 }

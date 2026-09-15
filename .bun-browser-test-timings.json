@@ -1,18 +1,20 @@
 {
   "version": 1,
   "files": {
-    "packages/ui/src/features/identity/components/verification/VerificationMethods.test.tsx": 1234,
-    "apps/auth/src/browser/components/SignInRedirect.test.tsx": 364,
-    "packages/ui/src/features/identity/components/AccountSettings.test.tsx": 359,
-    "packages/ui/src/features/identity/components/forms/PasswordForm.test.tsx": 304,
-    "apps/auth/src/browser/pages/SignInPage.test.tsx": 269,
-    "packages/ui/src/components/Form/FieldsForm.test.tsx": 241,
-    "packages/ui/src/components/Input/Input.test.tsx": 204,
-    "apps/dashboard/src/browser/identity/IdentityBoundary.test.tsx": 202,
-    "tests/browserEntries.test.tsx": 67,
-    "apps/dashboard/src/browser/pages/pages.test.tsx": 56,
-    "packages/ui/src/states.test.tsx": 32,
-    "packages/ui/src/index.test.tsx": 24,
-    "packages/ui/src/components/Form/Form.test.tsx": 12
+    "packages/ui/src/features/identity/components/forms/PasswordForm.test.tsx": 5026,
+    "packages/ui/src/components/Form/FieldsForm.test.tsx": 1375,
+    "packages/ui/src/features/identity/components/verification/VerificationMethods.test.tsx": 1353,
+    "apps/auth/src/browser/pages/SignInPage.test.tsx": 374,
+    "packages/ui/src/features/identity/components/AccountSettings.test.tsx": 317,
+    "apps/auth/src/browser/components/SignInRedirect.test.tsx": 309,
+    "packages/ui/src/components/Modal/ConfirmDialog.test.tsx": 234,
+    "apps/dashboard/src/browser/identity/IdentityBoundary.test.tsx": 200,
+    "tests/browserEntries.test.tsx": 63,
+    "apps/dashboard/src/browser/pages/pages.test.tsx": 62,
+    "packages/ui/src/states.test.tsx": 33,
+    "packages/ui/src/components/Input/Input.test.tsx": 23,
+    "packages/ui/src/index.test.tsx": 23,
+    "packages/ui/src/features/identity/components/panels/ActivityPanel.test.tsx": 19,
+    "packages/ui/src/components/Form/Form.test.tsx": 14
   }
 }

@@ -23,12 +23,16 @@ export function AuthenticatorDialog({
         uri: string;
     }>();
     return (
-        <Modal title="Add authenticator app" onClose={onClose}>
+        <Modal
+            title="Add authenticator app"
+            description="Use an authenticator app to generate a new six-digit sign-in code every 30 seconds."
+            onClose={onClose}
+        >
             {enrollment ? (
                 <div className="space-y-4">
                     <p className="text-base">
-                        Add this setup key to your authenticator app, then enter the
-                        six-digit code.
+                        Scan the QR code or enter the setup key in your app, then enter
+                        the six-digit code.
                     </p>
                     <QRCodeSVG
                         value={enrollment.uri}
@@ -86,7 +90,7 @@ export function AuthenticatorDialog({
                             maximum: 64,
                         },
                     ]}
-                    submitLabel="Continue"
+                    submitLabel="Set up authenticator"
                     onSubmit={async (values) => {
                         setEnrollment(
                             v.parse(

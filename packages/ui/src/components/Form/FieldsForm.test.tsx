@@ -1,11 +1,11 @@
 import { expect, mock, test } from "bun:test";
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { FieldsForm } from "./FieldsForm";
 
-test("validates edited fields immediately without showing untouched-field errors", async () => {
+test("validates edited fields during typing without showing untouched-field errors", async () => {
     const user = userEvent.setup();
     const submit = mock(() => Promise.resolve());
     render(
@@ -23,21 +23,23 @@ test("validates edited fields immediately without showing untouched-field errors
     expect(email).not.toHaveAttribute("aria-invalid", "true");
     expect(password).not.toHaveAttribute("aria-invalid", "true");
     await user.type(email, "invalid");
-    expect(email).toHaveAttribute("aria-invalid", "true");
+    await waitFor(() => expect(email).toHaveAttribute("aria-invalid", "true"));
     expect(email).toHaveAccessibleDescription("Enter a valid email address.");
     expect(password).not.toHaveAttribute("aria-invalid", "true");
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
     await user.clear(email);
     await user.type(email, "you@example.test");
-    expect(email).not.toHaveAttribute("aria-invalid", "true");
+    await waitFor(() => expect(email).not.toHaveAttribute("aria-invalid", "true"));
     expect(screen.queryByText("Enter a valid email address.")).not.toBeInTheDocument();
     await user.type(password, "short");
-    expect(password).toHaveAccessibleDescription(
-        "Password must contain at least 12 characters."
+    await waitFor(() =>
+        expect(password).toHaveAccessibleDescription(
+            "Password must contain at least 12 characters."
+        )
     );
     await user.clear(password);
     await user.type(password, "long-test-password");
-    expect(password).not.toHaveAttribute("aria-invalid", "true");
+    await waitFor(() => expect(password).not.toHaveAttribute("aria-invalid", "true"));
     await user.click(screen.getByRole("button", { name: "Save" }));
     expect(submit).toHaveBeenCalledTimes(1);
 });
@@ -96,8 +98,55 @@ test("blur validates an empty field and editing clears its error immediately", a
     const email = screen.getByLabelText("Email");
     await user.click(email);
     await user.tab();
-    expect(email).toHaveAccessibleDescription("Email is required.");
+    await waitFor(() => expect(email).toHaveAccessibleDescription("Email is required."));
     await user.type(email, "you@example.test");
-    expect(email).not.toHaveAttribute("aria-invalid", "true");
+    await waitFor(() => expect(email).not.toHaveAttribute("aria-invalid", "true"));
     expect(screen.getByRole("button", { name: "Continue" })).toBeEnabled();
+});
+
+test("autofill blur and input bursts do not flash required-field errors", async () => {
+    const submit = mock(() => Promise.resolve());
+    const { container } = render(
+        <FieldsForm
+            fields={[
+                { name: "username", label: "Username", autoComplete: "username" },
+                {
+                    name: "password",
+                    label: "Password",
+                    type: "password",
+                    autoComplete: "current-password",
+                },
+            ]}
+            submitLabel="Sign in"
+            onSubmit={submit}
+        />
+    );
+    const flashes: string[] = [];
+    const observer = new MutationObserver(() => {
+        if (container.textContent?.includes("is required."))
+            flashes.push(container.textContent);
+    });
+    observer.observe(container, { childList: true, subtree: true, characterData: true });
+    try {
+        const username = screen.getByLabelText("Username");
+        const password = screen.getByLabelText("Password");
+        fireEvent.blur(username);
+        fireEvent.blur(password);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        fireEvent.input(username, { target: { value: "operator" } });
+        fireEvent.input(password, { target: { value: "autofill-test-password" } });
+        await waitFor(() =>
+            expect(screen.getByRole("button", { name: "Sign in" })).toBeEnabled()
+        );
+        await userEvent.setup().click(screen.getByRole("button", { name: "Sign in" }));
+        await waitFor(() =>
+            expect(submit).toHaveBeenCalledWith({
+                username: "operator",
+                password: "autofill-test-password",
+            })
+        );
+        expect(flashes).toEqual([]);
+    } finally {
+        observer.disconnect();
+    }
 });

@@ -14,7 +14,11 @@ export function SecurityKeyDialog({
     readonly onRecoveryCodes: (codes: readonly string[]) => void;
 }) {
     return (
-        <Modal title="Add security key" onClose={onClose}>
+        <Modal
+            title="Add security key"
+            description="Give your key a name, then follow your browser’s instructions to connect or tap it."
+            onClose={onClose}
+        >
             <FieldsForm
                 fields={[
                     {
