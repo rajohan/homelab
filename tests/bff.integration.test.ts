@@ -55,11 +55,21 @@ describe.each(["client_secret_post", "client_secret_basic"] as const)(
                     ...(input === undefined
                         ? {}
                         : {
-                              "Content-Type": "application/json",
+                              "Content-Type":
+                                  input instanceof URLSearchParams
+                                      ? "application/x-www-form-urlencoded"
+                                      : "application/json",
                               Origin: forcedOrigin ?? url.origin,
                           }),
                 },
-                ...(input === undefined ? {} : { body: JSON.stringify(input) }),
+                ...(input === undefined
+                    ? {}
+                    : {
+                          body:
+                              input instanceof URLSearchParams
+                                  ? input.toString()
+                                  : JSON.stringify(input),
+                      }),
             });
             for (const header of response.headers.getSetCookie()) {
                 const [pair, ...attributes] = header.split(";");
@@ -197,12 +207,42 @@ describe.each(["client_secret_post", "client_secret_basic"] as const)(
                 password,
             });
             expect(login.status).toBe(200);
-            let response = await browser(
+            return await dashboardLogin(returnTo, expected);
+        }
+        async function dashboardLogin(
+            returnTo: string,
+            expected = returnTo
+        ): Promise<string> {
+            const response = await browser(
                 `${origin}/login?${new URLSearchParams({ returnTo }).toString()}`
             );
+            expect(response.headers.get("Set-Cookie")?.length).toBeLessThan(4096);
+            return await finishLogin(response, expected);
+        }
+        async function finishLogin(
+            response: Response,
+            expected: string
+        ): Promise<string> {
             for (let count = 0; count < 12; count += 1) {
                 const location = response.headers.get("Location");
-                if (!location) throw new Error("OIDC redirect missing");
+                if (!location) {
+                    expect(response.status).toBe(200);
+                    const html = await response.text();
+                    const action = /<form method="post" action="([^"]+)">/.exec(
+                        html
+                    )?.[1];
+                    const xsrf = /name="xsrf" value="([^"]+)"/.exec(html)?.[1];
+                    if (action !== issuer + "/session/end/confirm" || !xsrf)
+                        throw new Error("Unexpected OIDC response");
+                    expect(response.headers.get("Content-Security-Policy")).toContain(
+                        "'sha256-"
+                    );
+                    response = await browser(
+                        action,
+                        new URLSearchParams({ xsrf, logout: "yes" })
+                    );
+                    continue;
+                }
                 const next = new URL(location, issuer);
                 if (next.origin === origin && next.pathname === "/auth/callback") {
                     const callback = await browser(next.href);
@@ -239,9 +279,19 @@ describe.each(["client_secret_post", "client_secret_basic"] as const)(
                 expect(cookie).not.toContain("bff-operator");
             });
             test("returns to the requested dashboard page, including its query and fragment", async () => {
-                await signIn("/infrastructure?view=hosts#storage");
+                await dashboardLogin("/infrastructure?view=hosts#storage");
                 for (const path of ["//attacker.example/", "/login", "/auth/callback"]) {
-                    await signIn(path, "/settings");
+                    await dashboardLogin(path, "/settings");
+                }
+            });
+            test("oversized return paths cannot overflow the encrypted login cookie", async () => {
+                await dashboardLogin("/" + "a".repeat(1023));
+                for (const path of [
+                    "/settings?q=" + "a".repeat(4000),
+                    "/settings#" + "a".repeat(4000),
+                    "/" + "é".repeat(200),
+                ]) {
+                    await dashboardLogin(path, "/settings");
                 }
             });
             test("auth account links use the dashboard instead of a duplicate settings page", async () => {
@@ -253,7 +303,9 @@ describe.each(["client_secret_post", "client_secret_basic"] as const)(
                         issuer + path + "?returnTo=https://attacker.example/"
                     );
                     expect(response.status).toBe(302);
-                    expect(response.headers.get("Location")).toBe(origin + target);
+                    expect(response.headers.get("Location")).toBe(
+                        `${origin}/login?${new URLSearchParams({ returnTo: target ?? "/settings" }).toString()}`
+                    );
                     expect(response.headers.get("Cache-Control")).toBe("no-store");
                 }
             });
@@ -433,6 +485,36 @@ describe.each(["client_secret_post", "client_secret_basic"] as const)(
                     .where(eq(sessions.id, session.id));
                 expect(unchanged?.lastSeenAt.getTime()).toBe(lastSeen.getTime());
                 await signIn();
+            });
+            test("auth account navigation reconciles a different existing dashboard identity", async () => {
+                await signIn();
+                const stale = jar.get(origin)?.get("homelab_dashboard")?.value;
+                await auth.connection.database.insert(users).values({
+                    id: crypto.randomUUID(),
+                    username: "second-operator",
+                    email: "second@example.test",
+                    emailVerified: true,
+                    passwordHash: await hashPassword(password),
+                    groups: ["admins"],
+                    createdAt: new Date(),
+                });
+                const login = await browser(issuer + "/api/login", {
+                    username: "second-operator",
+                    password,
+                });
+                expect(login.status).toBe(200);
+                expect(jar.get(origin)?.get("homelab_dashboard")?.value).toBe(stale);
+                const start = await browser(issuer + "/account");
+                const target = start.headers.get("Location");
+                if (!target) throw new Error("Settings handoff missing");
+                await finishLogin(await browser(target), "/settings");
+                const response = await browser(origin + "/api/account");
+                const account = v.parse(
+                    v.object({ user: v.object({ username: v.string() }) }),
+                    await response.json()
+                );
+                expect(account.user.username).toBe("second-operator");
+                expect(jar.get(origin)?.get("homelab_dashboard")?.value).not.toBe(stale);
             });
             test("rejects a tampered dashboard session instead of exposing account data", async () => {
                 jar.get(origin)?.set("homelab_dashboard", {

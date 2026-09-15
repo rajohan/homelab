@@ -3,6 +3,7 @@ import type { IdentityClient } from "@homelab/ui/identity/client";
 import { useEffect, useRef, useState } from "react";
 
 import { signInDestination } from "../navigation/signInDestination";
+import { AccountActions } from "./AccountActions";
 
 /**
  * Complete a verified sign-in without presenting an additional confirmation screen.
@@ -11,9 +12,11 @@ import { signInDestination } from "../navigation/signInDestination";
 export function SignInRedirect({
     client,
     address,
+    onSignedOut,
 }: {
     client: IdentityClient;
     address: URL;
+    onSignedOut: () => Promise<void>;
 }) {
     const pending = useRef<Promise<string> | undefined>(undefined);
     const [attempt, setAttempt] = useState(0);
@@ -52,6 +55,7 @@ export function SignInRedirect({
                 >
                     Try again
                 </Button>
+                <AccountActions client={client} onSignedOut={onSignedOut} />
             </div>
         );
     return <LoadingState label="Completing sign-in…" />;

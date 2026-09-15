@@ -92,7 +92,7 @@ export async function createAuthApplication(
                 status: 302,
                 headers: {
                     Location: new URL(
-                        path === "/account" ? "/settings" : "/",
+                        `/login?${new URLSearchParams({ returnTo: path === "/account" ? "/settings" : "/" }).toString()}`,
                         configuration.dashboardOrigin
                     ).href,
                     "Cache-Control": "no-store",

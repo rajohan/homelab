@@ -66,6 +66,7 @@ export function SignInPage({ client, address }: AuthPageProps) {
                         key={address.href}
                         client={client}
                         address={address}
+                        onSignedOut={refresh}
                     />
                 ) : (
                     <SignedInActions

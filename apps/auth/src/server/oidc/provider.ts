@@ -171,22 +171,27 @@ export function createProvider(accounts: Accounts): Provider {
     });
     // Mark only the library's CSRF-validated completion, then await our revocation
     // before Koa commits the response. EventEmitter callbacks alone are not awaited.
-    const completedLogouts = new WeakMap<object, boolean>();
+    const completedLogouts = new WeakMap<object, string>();
     provider.on("end_session.success", (context) => {
-        completedLogouts.set(context, Boolean(context.oidc.params?.logout));
+        const accountId = context.oidc.session?.accountId;
+        if (context.oidc.params?.logout && accountId)
+            completedLogouts.set(context, accountId);
     });
     provider.use(async (context, next) => {
-        await next();
         context.set("X-Content-Type-Options", "nosniff");
         context.set("Referrer-Policy", "no-referrer");
-        if (!context.response.get("Content-Security-Policy"))
-            context.set(
-                "Content-Security-Policy",
-                "default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
-            );
+        // An empty script source list denies scripts until the provider adds the
+        // exact hash of its built-in account-switch or form-post submission.
+        context.set(
+            "Content-Security-Policy",
+            "default-src 'none'; script-src; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
+        );
+        await next();
         if (completedLogouts.get(context)) {
             const principal = await cookiePrincipal(accounts, context.req.headers.cookie);
-            if (principal)
+            // Account switching logs out the previous protocol account, not the
+            // newly authenticated central identity carried by the current cookie.
+            if (principal && principal.user.id === completedLogouts.get(context)) {
                 await accounts.database.transaction(async (transaction) => {
                     await accounts.revoke(transaction, principal.session.id);
                     await audit(
@@ -195,12 +200,13 @@ export function createProvider(accounts: Accounts): Provider {
                         "oidc_session_signed_out"
                     );
                 });
-            context.cookies.set(cookieName(configuration), null, {
-                path: "/",
-                httpOnly: true,
-                sameSite: "lax",
-                secure: !configuration.development,
-            });
+                context.cookies.set(cookieName(configuration), null, {
+                    path: "/",
+                    httpOnly: true,
+                    sameSite: "lax",
+                    secure: !configuration.development,
+                });
+            }
         }
     });
     provider.on("server_error", (_context, error) => {

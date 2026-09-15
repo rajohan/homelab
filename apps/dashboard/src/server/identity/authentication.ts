@@ -78,16 +78,20 @@ export function createDashboardAuthentication(configuration: DashboardAuthConfig
     function safeReturn(path: string | null): string {
         if (
             !path ||
+            path.length > 1024 ||
             !path.startsWith("/") ||
             path.startsWith("//") ||
             /[\\\r\n]/.test(path)
         )
             return "/settings";
         const target = new URL(path, configuration.origin);
-        return target.origin === configuration.origin &&
+        const destination = `${target.pathname}${target.search}${target.hash}`;
+        // Reserve ample room for PKCE/state fields, JWE expansion and cookie attributes.
+        return destination.length <= 1024 &&
+            target.origin === configuration.origin &&
             !target.pathname.startsWith("/auth/") &&
             target.pathname !== "/login"
-            ? `${target.pathname}${target.search}${target.hash}`
+            ? destination
             : "/settings";
     }
     async function begin(request: Request): Promise<Response> {

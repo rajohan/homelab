@@ -16,6 +16,7 @@ test("login and consent handoffs each complete automatically, once even with eff
     const view = render(
         <StrictMode>
             <SignInRedirect
+                onSignedOut={() => Promise.resolve()}
                 key="login"
                 client={client}
                 address={new URL("https://auth.example.test/sign-in?interaction=login")}
@@ -27,6 +28,7 @@ test("login and consent handoffs each complete automatically, once even with eff
         view.rerender(
             <StrictMode>
                 <SignInRedirect
+                    onSignedOut={() => Promise.resolve()}
                     key="consent"
                     client={client}
                     address={
@@ -56,6 +58,7 @@ test("a failed handoff stays on auth and retries only when requested", async () 
     const navigate = spyOn(globalThis.location, "replace").mockImplementation(() => {});
     const view = render(
         <SignInRedirect
+            onSignedOut={() => Promise.resolve()}
             client={client}
             address={new URL("https://auth.example.test/sign-in?interaction=test")}
         />
@@ -80,6 +83,7 @@ test("an unmounted handoff never redirects when its pending request finishes", a
     const navigate = spyOn(globalThis.location, "replace").mockImplementation(() => {});
     const view = render(
         <SignInRedirect
+            onSignedOut={() => Promise.resolve()}
             client={client}
             address={new URL("https://auth.example.test/sign-in?interaction=test")}
         />
@@ -90,6 +94,42 @@ test("an unmounted handoff never redirects when its pending request finishes", a
         await pending.promise;
         expect(navigate).not.toHaveBeenCalled();
     } finally {
+        request.mockRestore();
+        navigate.mockRestore();
+    }
+});
+
+test("an account that cannot complete a handoff can open settings or switch accounts", async () => {
+    const client = new IdentityClient();
+    const request = spyOn(client, "request").mockImplementation((path) =>
+        path === "/api/logout"
+            ? Promise.resolve({})
+            : Promise.reject(new Error("Client access denied"))
+    );
+    let signedOut = false;
+    const navigate = spyOn(globalThis.location, "replace").mockImplementation(() => {});
+    const view = render(
+        <SignInRedirect
+            client={client}
+            address={new URL("https://auth.example.test/sign-in?interaction=test")}
+            onSignedOut={() => {
+                signedOut = true;
+                return Promise.resolve();
+            }}
+        />
+    );
+    try {
+        expect(
+            await screen.findByRole("link", { name: "Manage account security" })
+        ).toHaveAttribute("href", "/account");
+        await userEvent
+            .setup()
+            .click(screen.getByRole("button", { name: "Use another account" }));
+        await waitFor(() => expect(signedOut).toBe(true));
+        expect(request).toHaveBeenCalledWith("/api/logout", {});
+        expect(navigate).not.toHaveBeenCalled();
+    } finally {
+        view.unmount();
         request.mockRestore();
         navigate.mockRestore();
     }
