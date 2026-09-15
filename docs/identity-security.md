@@ -12,6 +12,17 @@ Accounts have stable UUID subjects, lowercase usernames and explicit groups. Exi
 may be supplied only for a reviewed account-linking migration, never inferred from an email
 address. No production users, password hashes, factors or approvals are imported by this PR.
 
+## Account UI availability
+
+Self-service account management intentionally lives only in dashboard Settings. Auth
+`/account` redirects there; there is no second account page to maintain on the auth origin.
+The auth service owns authentication, OIDC, ForwardAuth and account-security APIs, which
+remain operational without dashboard. During a dashboard outage, existing users can still
+sign in to other services, but browser enrollment and account changes are unavailable until
+dashboard returns. In particular, a new account cannot enroll its first factor during that
+outage. Operator recovery remains available through the auth CLI; this does not bypass a
+client's MFA requirement or automatically enroll a factor.
+
 ## Passwords and sessions
 
 Passwords are Argon2id hashes (64 MiB, time cost 3). Hash/verification concurrency is bounded

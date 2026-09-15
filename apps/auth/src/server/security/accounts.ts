@@ -246,7 +246,7 @@ export class Accounts {
      * @param principal - The session whose second factor was verified.
      * @returns Completion after verification state and session limits are updated.
      */
-    async completeMfa(store: AuthStore, principal: Principal): Promise<void> {
+    async completeMfa(store: AuthTransaction, principal: Principal): Promise<void> {
         await store
             .update(sessions)
             .set({ mfaAt: new Date(), lastSeenAt: new Date() })
@@ -336,7 +336,19 @@ export class Accounts {
      * @param sessionId - The session to remove.
      * @returns Completion after the session and dependent grants are invalidated.
      */
-    async revoke(store: AuthStore, sessionId: string): Promise<void> {
+    async revoke(store: AuthTransaction, sessionId: string): Promise<void> {
+        const [session] = await store
+            .select({ userId: sessions.userId })
+            .from(sessions)
+            .where(eq(sessions.id, sessionId));
+        if (!session) return;
+        // All callers, including direct and OIDC logout, must lock the account before
+        // grants or sessions. Audit foreign keys also lock this account later.
+        await store
+            .select({ id: users.id })
+            .from(users)
+            .where(eq(users.id, session.userId))
+            .for("update");
         await this.revokeGrants(store, sessionId);
         await store.delete(sessions).where(eq(sessions.id, sessionId));
     }
@@ -347,7 +359,7 @@ export class Accounts {
      * @param principal - The account and session to retain.
      * @returns The number of other sessions revoked.
      */
-    async revokeOthers(store: AuthStore, principal: Principal): Promise<number> {
+    async revokeOthers(store: AuthTransaction, principal: Principal): Promise<number> {
         const others = await store
             .select({ id: sessions.id })
             .from(sessions)

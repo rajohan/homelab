@@ -1629,6 +1629,88 @@ describe("security invariants against the isolated database", () => {
         expect(response.headers.get("cache-control")).toBe("no-store");
     });
 
+    test.each(["settings", "direct", "oidc"] as const)(
+        "%s logout takes the account lock before any session lock",
+        async (route) => {
+            const tokens = await authorizationTokens("openid profile");
+            const accounts = application.services.accounts;
+            const principal = await accounts.principalByToken(
+                cookieJar.get("homelab_auth")?.value ?? ""
+            );
+            let logoutAction = "";
+            let xsrf = "";
+            if (route === "oidc") {
+                const prompt = await browser(
+                    "/session/end?" +
+                        new URLSearchParams({
+                            id_token_hint: tokens.id_token,
+                            post_logout_redirect_uri: issuer + "/signed-out",
+                        }).toString()
+                );
+                const html = await prompt.text();
+                logoutAction = /method="post" action="([^"]+)"/.exec(html)?.[1] ?? "";
+                xsrf = /name="xsrf" value="([^"]+)"/.exec(html)?.[1] ?? "";
+                expect(logoutAction).not.toBe("");
+                expect(xsrf).not.toBe("");
+            }
+            let signingOut: Promise<number> | undefined;
+            try {
+                await accounts.database.transaction(async (transaction) => {
+                    await transaction
+                        .select({ id: users.id })
+                        .from(users)
+                        .where(eq(users.id, principal.user.id))
+                        .for("update");
+                    const [{ pid }] = v.parse(
+                        v.tuple([v.object({ pid: v.number() })]),
+                        await transaction.execute(sql`select pg_backend_pid() as pid`)
+                    );
+                    signingOut = status(
+                        route === "oidc"
+                            ? formPost(logoutAction, { xsrf, logout: "yes" })
+                            : post(
+                                  route === "settings"
+                                      ? "/api/account/session/revoke"
+                                      : "/api/logout",
+                                  route === "settings" ? { id: principal.session.id } : {}
+                              )
+                    );
+                    // Observe the actual blocked request, rather than assume a scheduling delay.
+                    let waiting = false;
+                    for (let attempt = 0; attempt < 100; attempt += 1) {
+                        const [state] = v.parse(
+                            v.tuple([v.object({ waiting: v.boolean() })]),
+                            await transaction.execute(sql`
+                                select exists (
+                                    select 1 from pg_stat_activity
+                                    where ${pid} = any(pg_blocking_pids(pid))
+                                ) as waiting
+                            `)
+                        );
+                        waiting = state.waiting;
+                        if (waiting) break;
+                        await Bun.sleep(10);
+                    }
+                    expect(waiting).toBe(true);
+                    // Expiry cleanup owns this account first. Logout must not hold the session
+                    // while waiting for it, including when its audit insert needs the user FK.
+                    expect(
+                        await transaction
+                            .select({ id: sessions.id })
+                            .from(sessions)
+                            .where(eq(sessions.id, principal.session.id))
+                            .for("update", { noWait: true })
+                    ).toHaveLength(1);
+                });
+            } finally {
+                if (signingOut)
+                    expect(await signingOut).toBe(route === "oidc" ? 303 : 200);
+            }
+            expect(await status(browser("/api/account"))).toBe(401);
+            await accounts.revokeExpired(principal.session.id, new Date());
+        }
+    );
+
     test("maintenance retains a candidate refreshed after the expiry batch was selected", async () => {
         const accounts = application.services.accounts;
         const principal = await accounts.principalByToken(

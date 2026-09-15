@@ -11,7 +11,7 @@ import { and, eq } from "drizzle-orm";
 import { TOTP, Secret } from "otpauth";
 import * as v from "valibot";
 
-import type { AuthStore } from "../database/connection";
+import type { AuthStore, AuthTransaction } from "../database/connection";
 import { factors, recoveryCodes, sessions, users } from "../database/schema";
 import { type Accounts, type Principal } from "./accounts";
 import { decryptValue, encryptValue, randomToken, tokenDigest } from "./crypto";
@@ -85,7 +85,11 @@ export class MultiFactor {
      * @param wasEnabled - Whether the account already had MFA before this enrollment.
      * @returns New recovery codes only when first enabling MFA.
      */
-    async finishEnrollment(store: AuthStore, principal: Principal, wasEnabled: boolean) {
+    async finishEnrollment(
+        store: AuthTransaction,
+        principal: Principal,
+        wasEnabled: boolean
+    ) {
         await this.accounts.completeMfa(store, principal);
         if (wasEnabled) return { recoveryCodes: [] };
         await this.accounts.revokeOthers(store, principal);
