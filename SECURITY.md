@@ -2,9 +2,9 @@
 
 ## Scope and current status
 
-Homelab contains a dashboard and a separately deployable auth application. The current foundation does not implement an identity provider: its auth protocol endpoints fail closed, and existing Authelia authentication remains authoritative.
+Homelab contains a dashboard and a separately deployable auth application. The identity preview implements account security, OIDC and ForwardAuth, but existing production Authelia remains authoritative until a separate, approved cutover. See [the security model](docs/identity-security.md).
 
-Treat this foundation as development software, not a production authentication replacement. Do not expose development listeners or connect production identity data without a separately reviewed implementation and deployment plan.
+Treat this unreleased identity preview as development software, not a production authentication replacement. Do not expose development listeners or connect production identity data without the documented review and deployment gates.
 
 Security reports are welcome for application code, dependencies, build and release workflows, deployment definitions, and documented trust boundaries. The repository does not grant permission to test the owner's running homelab, accounts, or third-party services.
 

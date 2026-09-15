@@ -1,11 +1,30 @@
 {
   "version": 1,
   "files": {
-    "apps/dashboard/src/api.test.ts": 47,
-    "packages/ui/src/theme.test.ts": 10,
-    "apps/dashboard/src/http.test.ts": 6,
-    "packages/ui/src/classNames.test.ts": 6,
-    "apps/auth/src/http.test.ts": 5,
-    "packages/contracts/src/index.test.ts": 3
+    "apps/auth/src/server/security/crypto.test.ts": 302,
+    "scripts/lint/documentation.test.ts": 209,
+    "apps/dashboard/src/server/api/router.test.ts": 58,
+    "apps/auth/src/server/config/accessPolicy.test.ts": 12,
+    "apps/auth/src/server/config/configuration.test.ts": 11,
+    "packages/ui/src/lib/formatDateTime.test.ts": 10,
+    "packages/ui/src/theme.test.ts": 8,
+    "apps/auth/src/browser/navigation/signInDestination.test.ts": 5,
+    "apps/dashboard/src/server/http/responses.test.ts": 5,
+    "packages/ui/src/components/Form/validation.test.ts": 4,
+    "packages/ui/src/components/Virtualizer/VirtualListStore.test.ts": 4,
+    "packages/ui/src/features/identity/api/IdentityClient.test.ts": 4,
+    "packages/ui/src/lib/classNames.test.ts": 4,
+    "tests/buildPipeline.test.ts": 4,
+    "apps/auth/src/server/oidc/fetch.test.ts": 3,
+    "apps/auth/src/server/config/policyFile.test.ts": 2,
+    "scripts/testing/inventory.test.ts": 2,
+    "apps/auth/src/server/config/sessionPolicy.test.ts": 1,
+    "apps/dashboard/src/server/config/auth.test.ts": 1,
+    "tests/deployment.test.ts": 1,
+    "apps/auth/src/server/http/responses.test.ts": 0,
+    "packages/contracts/src/index.test.ts": 0,
+    "packages/ui/src/features/identity/api/verificationCoordinator.test.ts": 0,
+    "packages/ui/src/features/identity/validation/feedback.test.ts": 0,
+    "scripts/testing/coverageInventory.test.ts": 0
   }
 }

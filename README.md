@@ -2,117 +2,117 @@
 
 A modular home infrastructure dashboard with an independently deployable identity service.
 
-**Current milestone: foundation only.** The dashboard has a working shell and typed status API.
-The auth application is a fail-closed placeholder, not an identity provider. Existing Authelia
-authentication remains unchanged. There are no production integrations or stored credentials.
+**Current milestone: identity preview.** Account security, OIDC and ForwardAuth are implemented.
+Production Authelia has not been replaced. A PR, successful build or green readiness check is
+not approval to migrate existing accounts or routes.
 
 ## Start developing
 
-Use the Bun version in `.bun-version`, then run from this repository:
+Use the pinned Bun version in `.bun-version`:
 
 ```sh
 bun install --frozen-lockfile
 bun run setup
-bun run dev
+bun run dev:identity
 ```
 
-Open `http://127.0.0.1:3100` for the dashboard. Auth's informational endpoint is
-`http://127.0.0.1:3101`. Both bind to loopback by default. No database, Doppler login, OpenClaw,
-Docker daemon or production secrets are required to develop this milestone.
+The identity preview requires Docker for one disposable PostgreSQL 18 container. It binds both
+apps and PostgreSQL to loopback, generates independent keys in memory, and seeds only a
+synthetic account: **developer / Development-only-password-123!**. Open
+`http://localhost:3100`. Development emails appear only in the local terminal, never in Resend.
+Use synthetic data only. Ctrl+C closes both apps and removes the exact temporary database;
+nothing is imported from production or retained as a second backup.
 
-When developing on Main, keep the server private and forward the port from your computer:
+When developing on Main, forward **both ports with the same numbers**, because OIDC origins
+and callbacks must match:
 
 ```sh
-ssh -N -L 13100:127.0.0.1:3100 main
+ssh -N -L localhost:3100:127.0.0.1:3100 -L localhost:3101:127.0.0.1:3101 main
 ```
 
-Then open `http://127.0.0.1:13100` locally. Stop the SSH command when finished. An approved
-private HTTPS development origin is needed before testing real WebAuthn/OIDC; it is not
-provisioned by `setup` or by this foundation.
+Open `http://localhost:3100`, not an IP alias or a different port. This preview is disposable;
+restart it after backend changes. For persistent, independently running development processes,
+supply isolated configuration and use `bun run dev`, `dev:auth` or `dev:dashboard` (Bun hot reload).
+They never automatically migrate or seed a configured database. See [configuration](docs/identity-operations.md).
+iPhone/NFC acceptance needs private HTTPS origins reachable by the actual device.
 
-## Daily commands
+## Implemented account flows
+
+- Password sign-in, TOTP, WebAuthn security keys/passkeys, one-use recovery codes.
+- Settings for email verification/change, password changes, factor enrollment/removal,
+  recovery codes, session inventory/revocation and security activity.
+- A shared security-verification modal: stale-proof actions pause and retry once after
+  verification. Cancel, logout, changed sessions and ambiguous network failures do not replay.
+- Confidential OIDC code + S256 PKCE, claims, rotating refresh tokens, introspection,
+  revocation and confirmed RP-initiated logout.
+- Traefik ForwardAuth with explicit host/path policies, a trusted proxy credential and
+  host-only resource sessions; public media/API exceptions stay explicit.
+- A dashboard BFF: browser JavaScript never receives access or refresh tokens.
+
+[Security design](docs/identity-security.md) documents limitations and trust boundaries.
+[Operations and cutover](docs/identity-operations.md) covers recovery, Doppler and production gates.
+
+## Verification
 
 ```sh
 bun run check
-bun run test
+bun run test:coverage
+bun run db:check:auth
+export HOMELAB_TEST_DATABASE_URL=postgres://...@127.0.0.1:5432/homelab_auth_test
 bun run test:integration
 bun run build
 bun run test:smoke
 ```
 
-The check command covers formatting, lint and TypeScript. Unit/component tests use Bun,
-Happy DOM and Testing Library. Integration tests exercise real HTTP handlers without contacting
-production services. Playwright, Storybook and Vitest are intentionally absent.
+Integration tests require a **disposable** loopback database named exactly `homelab_auth_test`;
+they delete synthetic fixture data. Never supply a production database. See [testing](docs/testing.md).
+Bun/Happy DOM tests are intentionally used without Playwright, Storybook or Vitest. Physical
+authenticators and real browser security behavior still have a manual acceptance checklist.
 
-Run `bun run test:coverage` for native Bun LCOV reports. CI uploads the separate unit and
-component reports together to Codecov; see [testing and coverage](docs/testing.md).
-After building, the smoke check starts both built applications briefly on independent ephemeral
-loopback ports. It verifies the dashboard document, JavaScript/CSS assets, deep links, status API
-and auth's fail-closed protocol responses, then stops both processes. It creates no files and
-does not contact production services or inherit application secrets.
-
-To run one built application manually, use `bun run start:dashboard` or `bun run start:auth`.
-These commands select the correct artifact working directory; do not launch a built dashboard
-entrypoint from the repository root directly. See [deployment](deploy/README.md).
-
-## Shared configuration
-
-`oxlint.config.ts` and `oxfmt.config.ts` own the strict lint/format setup; TypeScript
-checks browser, Bun and DOM-test code separately. `tailwind.config.ts` provides shared
-theme tokens and typography. Auth's PostgreSQL tooling lives in
-`apps/auth/drizzle.config.ts`, with no database credentials or startup migration.
-
-Use `bun run test:timings` to refresh native Bun timing maps deliberately, and
-`bun run db:check:auth` to validate migration metadata without a database. See
-[foundation configuration](docs/foundation-configuration.md) for generation commands
-and the distinction between prepared tooling and active persistence.
+`oidc-provider` officially targets Node LTS and emits an unsupported-runtime warning on Bun.
+The pinned library is tested here on Bun 1.4.2, including actual code exchange, refresh and logout;
+this is compatibility evidence, not an upstream support guarantee. Do not suppress the warning.
+Re-run the protocol and device gates after runtime/library upgrades.
 
 ## Layout
 
 ```text
 apps/
-  auth/          Independent foundation service; identity implementation comes next
-  dashboard/     React shell, tRPC API and server-side Effect services
+  auth/             Identity API, OIDC, persistence, migrations and sign-in UI
+  dashboard/        Dashboard shell, Settings, OIDC BFF and private tRPC API
 packages/
-  ui/            Small shared presentation components
-  contracts/     Browser-safe schemas and types
-scripts/         Small, repository-owned development/build/check commands
-deploy/          Separate container deployment definitions
-docs/            Development, architecture and operational boundaries
+  ui/               Reusable components and shared identity features
+  contracts/        Browser-safe shared schemas and types
+scripts/            Repository-owned setup, development, build and test commands
+deploy/             Independent application images and routing examples
+docs/               Architecture, security, configuration and operational boundaries
 ```
 
-One repository does not mean one running process. Dashboard builds run on Main; auth builds
-can run on Edge. Neither service reads the other's source directory at runtime. Updating the
-dashboard must not restart auth. See [architecture](docs/architecture.md) and
-[deployment](deploy/README.md).
+Both applications separate `src/browser/` from `src/server/`. Within `ui`, generic
+`components/` do not depend on `features/identity/`; account panels, dialogs, API validation
+and verification coordination live in that feature. Each React component has its own file,
+enforced by lint. See [architecture](docs/architecture.md) for the folder conventions.
 
-## Security boundaries
+Auth can run on Edge and dashboard on Main. Shared packages compile into each build;
+neither app needs the other's source tree or process at runtime. Auth has no Docker socket,
+host SSH key, OpenClaw dependency or homelab administration privileges.
 
-- No login, account, password, OIDC token or ForwardAuth grant is implemented in this milestone.
-- A green health endpoint means the foundation process is ready, not that identity is ready.
-- Existing Authelia remains authoritative until a separately approved migration.
-- Do not expose development listeners, put secrets in browser code, or use production auth data
-  for tests. The nonsecret `.env.example` documents listener settings only.
-- New runtime secrets will use scoped Doppler access and `HOMELAB_AUTH_*` or
-  `HOMELAB_DASHBOARD_*` names. GitHub credentials belong to tooling, never to these applications.
+Use `bun run start:auth` / `start:dashboard` after building, with scoped runtime environment.
+Startup fails closed when production configuration is missing. These commands select the
+correct artifact directory and disable automatic `.env` loading. See [deployment](deploy/README.md).
 
-## Contributing
+## Project conventions
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), and
-[SECURITY.md](SECURITY.md) for the development, review and private reporting workflows.
+English code, documentation and UI. Bun for installation, tests, scripts, builds and runtime.
+Typed Oxc configuration, strict TypeScript, Tailwind 4, Headless UI, TanStack Form/Query/Router,
+Effect server boundaries, Valibot and private tRPC/SuperJSON. Drizzle and Effect remain on the
+explicitly requested release candidates.
 
-All code, documentation and application text are English. Use a feature branch and a pull
-request, keep checks green, and deploy a tested build deliberately. `setup` does not deploy,
-alter host configuration or initialize a parent directory as a Git repository.
+Read [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md),
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), [architecture](docs/architecture.md),
+[release workflow](docs/releases.md) and [dependency policy](docs/dependencies.md).
+Release-please remains configured; no release is required for this milestone.
 
-Use the issue templates for bugs, feature tasks and operational changes. Follow the
-[release workflow](docs/releases.md) for Conventional Commits and reviewed releases.
-CodeQL scans JavaScript/TypeScript separately from the fast development checks, on pull
-requests, changes to `main` and a weekly schedule. No application build or production
-credentials are needed for that scan.
-
-The initial foundation was developed with AI assistance. Its selected technology conventions
-originate from [Mira-Dashboard](https://github.com/rajohan/Mira-Dashboard), without importing its
-old operational integrations or production data. Licensed under [MIT](LICENSE).
-
-Dependency-update behavior and the current hosted Bun updater limitation are documented in [docs/dependencies.md](docs/dependencies.md).
+Developed with AI assistance, retaining selected conventions and security-flow behavior from
+[Mira-Dashboard](https://github.com/rajohan/Mira-Dashboard), without importing production
+credentials or identity data. Licensed under [MIT](LICENSE).

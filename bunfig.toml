@@ -7,9 +7,14 @@ bun = true
 shell = "bun"
 
 [serve.static]
-plugins = ["bun-plugin-tailwind"]
+plugins = ["./scripts/development/routerHmr.ts", "bun-plugin-tailwind"]
 env = "disable"
 
 [test]
 coverageSkipTestFiles = true
-coveragePathIgnorePatterns = ["**/dist/**", "**/node_modules/**", "tests/**"]
+coveragePathIgnorePatterns = [
+    "**/dist/**",
+    "**/node_modules/**",
+    "tests/**",
+    "apps/**/testing/**",
+]

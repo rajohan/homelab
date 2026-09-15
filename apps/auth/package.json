@@ -3,10 +3,26 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "dev": "bun --hot src/server.ts",
-        "start": "NODE_ENV=production bun --cwd dist --no-env-file server.js"
+        "dev": "bun --hot src/server/index.ts",
+        "start": "NODE_ENV=production bun --cwd dist --no-env-file index.js"
     },
     "dependencies": {
-        "drizzle-orm": "1.0.0-rc.4"
+        "@homelab/contracts": "workspace:*",
+        "@homelab/ui": "workspace:*",
+        "@simplewebauthn/server": "14.0.2",
+        "@tanstack/react-query": "5.102.8",
+        "drizzle-orm": "1.0.0-rc.5-5935859",
+        "effect": "4.0.0-rc.115",
+        "oidc-provider": "9.12.2",
+        "otpauth": "9.5.2",
+        "re2js": "2.8.6",
+        "react": "19.3.0",
+        "react-dom": "19.3.0",
+        "tldts": "7.4.13",
+        "valibot": "1.5.0"
+    },
+    "devDependencies": {
+        "@types/oidc-provider": "9.12.1",
+        "jose": "6.2.12"
     }
 }
