@@ -133,6 +133,17 @@ console.log('SMOKE_PORT:' + server.port);`,
         ] as const) {
             for (const path of paths) {
                 assert.ok(path, "A built asset URL is missing.");
+                const nestedUrl = new URL(path, new URL("/auth/declined", origin));
+                const nestedAsset = await get(origin, nestedUrl.href);
+                assert.equal(
+                    nestedAsset.status,
+                    200,
+                    "Nested routes must resolve built assets."
+                );
+                assert.match(
+                    nestedAsset.headers.get("Content-Type") ?? "",
+                    kind === "css" ? /text\/css/i : /javascript|ecmascript/i
+                );
                 const asset = await get(origin, path);
                 assert.equal(
                     asset.status,
@@ -148,7 +159,7 @@ console.log('SMOKE_PORT:' + server.port);`,
             }
         }
 
-        const deepLink = await get(origin, "/identity");
+        const deepLink = await get(origin, "/auth/declined?returnTo=%2Fsettings");
         assert.equal(deepLink.status, 200);
         assert.match(await deepLink.text(), /id=["']root["']/);
 

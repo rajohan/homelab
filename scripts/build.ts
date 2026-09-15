@@ -39,6 +39,8 @@ export async function main(): Promise<void> {
                     : []),
             ],
             outdir: outputDirectory,
+            // SPA deep links must load the same assets as the site root.
+            publicPath: "/",
             naming: { entry: "[name].[ext]" },
             target: "bun",
             reactCompiler: true,
