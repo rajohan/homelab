@@ -14,7 +14,7 @@ export function FormField({
     readonly label: ReactNode;
     readonly children: ReactNode;
     readonly description?: ReactNode;
-    readonly error?: string;
+    readonly error?: string | undefined;
     readonly disabled?: boolean;
     readonly className?: string;
 }) {

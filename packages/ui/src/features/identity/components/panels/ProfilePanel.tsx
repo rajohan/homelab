@@ -1,8 +1,8 @@
 import { UserRound } from "lucide-react";
 
-import { Badge, Button, Card, SectionHeader } from "../../../../index";
+import { Badge, Button, Card, SectionHeader, SuccessNotice } from "../../../../index";
 import type { AccountPanelProps } from "../../types";
-export function ProfilePanel({ data, onAction }: AccountPanelProps) {
+export function ProfilePanel({ data, onAction, notice }: AccountPanelProps) {
     return (
         <Card id="account-profile" className="space-y-5">
             <SectionHeader
@@ -33,6 +33,7 @@ export function ProfilePanel({ data, onAction }: AccountPanelProps) {
                 </Button>
                 <Button onClick={() => onAction("password")}>Change password</Button>
             </div>
+            {notice && <SuccessNotice>{notice}</SuccessNotice>}
         </Card>
     );
 }

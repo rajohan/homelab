@@ -1,4 +1,4 @@
-import { FieldsForm } from "@homelab/ui";
+import { FieldsForm, SuccessNotice } from "@homelab/ui";
 import { useState } from "react";
 
 import { AuthLayout } from "../layout/AuthLayout";
@@ -7,8 +7,8 @@ export function VerifyEmailPage({ client, token }: AuthPageProps) {
     const [notice, setNotice] = useState("");
     return (
         <AuthLayout title="Verify your email" recovery>
-            {notice && <output className="text-base text-emerald-300">{notice}</output>}
-            {token ? (
+            {notice && <SuccessNotice>{notice}</SuccessNotice>}
+            {!notice && token && (
                 <FieldsForm
                     fields={[]}
                     submitLabel="Verify email"
@@ -17,7 +17,8 @@ export function VerifyEmailPage({ client, token }: AuthPageProps) {
                         setNotice("Your email has been verified.");
                     }}
                 />
-            ) : (
+            )}
+            {!notice && !token && (
                 <p role="alert">
                     This verification link is missing its token. Request another email.
                 </p>

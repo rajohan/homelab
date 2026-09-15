@@ -46,6 +46,10 @@ export function AuthenticatorDialog({
                         fields={[
                             {
                                 name: "code",
+                                validate: (value) =>
+                                    /^\d{6}$/.test(value)
+                                        ? undefined
+                                        : "Enter a 6-digit code.",
                                 placeholder: "6-digit code",
                                 label: "Six-digit code",
                                 autoComplete: "one-time-code",

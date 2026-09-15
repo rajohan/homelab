@@ -28,7 +28,7 @@ export function EmailDialog({
                 submitLabel="Send verification email"
                 onSubmit={async (values) => {
                     await client.action("email", { email: values.email });
-                    await onComplete("A verification link has been queued for delivery.");
+                    await onComplete("Check your inbox for a verification link.");
                 }}
             />
         </Modal>

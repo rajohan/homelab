@@ -1,3 +1,4 @@
+import { SuccessNotice } from "@homelab/ui";
 import { PasswordForm } from "@homelab/ui/identity";
 import { useState } from "react";
 
@@ -7,8 +8,8 @@ export function ResetPasswordPage({ client, token }: AuthPageProps) {
     const [notice, setNotice] = useState("");
     return (
         <AuthLayout title="Choose a new password" recovery>
-            {notice && <output className="text-base text-emerald-300">{notice}</output>}
-            {token ? (
+            {notice && <SuccessNotice>{notice}</SuccessNotice>}
+            {!notice && token && (
                 <PasswordForm
                     submitLabel="Reset password"
                     onSubmit={async (values) => {
@@ -21,7 +22,8 @@ export function ResetPasswordPage({ client, token }: AuthPageProps) {
                         );
                     }}
                 />
-            ) : (
+            )}
+            {!notice && !token && (
                 <p role="alert">
                     This reset link is missing its token. Request another email.
                 </p>

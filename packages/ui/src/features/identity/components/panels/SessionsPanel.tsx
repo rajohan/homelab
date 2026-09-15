@@ -1,8 +1,8 @@
 import { Monitor } from "lucide-react";
 
-import { Button, Card, SectionHeader } from "../../../../index";
+import { Button, Card, SectionHeader, SuccessNotice } from "../../../../index";
 import type { AccountPanelProps } from "../../types";
-export function SessionsPanel({ data, onAction }: AccountPanelProps) {
+export function SessionsPanel({ data, onAction, notice }: AccountPanelProps) {
     return (
         <Card id="account-sessions" className="space-y-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -59,6 +59,7 @@ export function SessionsPanel({ data, onAction }: AccountPanelProps) {
                     </li>
                 ))}
             </ul>
+            {notice && <SuccessNotice>{notice}</SuccessNotice>}
         </Card>
     );
 }

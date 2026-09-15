@@ -87,9 +87,12 @@ describe("account security modal", () => {
             "test-password-only"
         );
         await user.click(within(prompt).getByRole("button", { name: "Verify password" }));
-        expect(
-            await screen.findByText("A verification link has been queued for delivery.")
-        ).toBeVisible();
+        const notice = await screen.findByText(
+            "Check your inbox for a verification link."
+        );
+        expect(notice).toBeVisible();
+        expect(notice.closest("#account-profile")).not.toBeNull();
+        expect(notice.closest("#account-security")).toBeNull();
         const mutations = request.mock.calls.filter(
             ([path]) => path === "/api/account/email"
         );

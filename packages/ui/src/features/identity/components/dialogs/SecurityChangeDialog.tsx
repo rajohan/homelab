@@ -2,6 +2,7 @@ import * as v from "valibot";
 
 import { ConfirmDialog } from "../../../../index";
 import type { AccountDialogProps, ConfirmationAction } from "../../types";
+import { confirmationMessage } from "../../validation/confirmationMessage";
 import { confirmationTitle } from "../../validation/confirmationTitle";
 
 export function SecurityChangeDialog({
@@ -37,7 +38,7 @@ export function SecurityChangeDialog({
                             : "sessions/revoke-others"
                     );
                 }
-                await onComplete("The security change was applied.");
+                await onComplete(confirmationMessage(action));
             }}
         >
             <p className="mb-4 text-base text-primary-300">

@@ -24,3 +24,5 @@ export { Input } from "./components/Input/Input";
 
 export { Form } from "./components/Form/Form";
 export { Fieldset } from "./components/Form/Fieldset";
+
+export { SuccessNotice } from "./components/Alert/SuccessNotice";

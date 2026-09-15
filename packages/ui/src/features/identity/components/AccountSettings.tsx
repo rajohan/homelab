@@ -49,14 +49,31 @@ export function AccountSettings({
                 <a href="#account-sessions">Sessions</a>
                 <a href="#security-activity">Activity</a>
             </nav>
-            {state.notice && (
-                <output className="block rounded-lg bg-emerald-950 p-4 text-base text-emerald-200">
-                    {state.notice}
-                </output>
-            )}
-            <ProfilePanel data={account.data} onAction={state.setAction} />
-            <SecurityPanel data={account.data} onAction={state.setAction} />
-            <SessionsPanel data={account.data} onAction={state.setAction} />
+            <ProfilePanel
+                data={account.data}
+                onAction={state.setAction}
+                notice={
+                    state.notice?.section === "profile" ? state.notice.message : undefined
+                }
+            />
+            <SecurityPanel
+                data={account.data}
+                onAction={state.setAction}
+                notice={
+                    state.notice?.section === "security"
+                        ? state.notice.message
+                        : undefined
+                }
+            />
+            <SessionsPanel
+                data={account.data}
+                onAction={state.setAction}
+                notice={
+                    state.notice?.section === "sessions"
+                        ? state.notice.message
+                        : undefined
+                }
+            />
             <ActivityPanel data={account.data} onAction={state.setAction} />
             {state.action !== undefined && (
                 <AccountActionDialog

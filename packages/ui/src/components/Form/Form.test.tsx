@@ -10,14 +10,14 @@ import { FieldsForm } from "./FieldsForm";
 import { Form } from "./Form";
 import { FormField } from "./FormField";
 
-test("Form delegates submission and retains native validation by default", async () => {
+test("Form delegates submission and disables native validation for client-managed errors", async () => {
     const submit = mock();
     const { container } = render(
         <Form onSubmit={submit}>
             <Button type="submit">Submit form</Button>
         </Form>
     );
-    expect(container.querySelector("form")?.noValidate).toBe(false);
+    expect(container.querySelector("form")?.noValidate).toBe(true);
     await userEvent.setup().click(screen.getByRole("button", { name: "Submit form" }));
     expect(submit).toHaveBeenCalledTimes(1);
 });

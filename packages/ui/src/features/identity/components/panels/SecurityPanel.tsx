@@ -1,8 +1,8 @@
 import { ShieldCheck } from "lucide-react";
 
-import { Button, Card, SectionHeader } from "../../../../index";
+import { Button, Card, SectionHeader, SuccessNotice } from "../../../../index";
 import type { AccountPanelProps } from "../../types";
-export function SecurityPanel({ data, onAction }: AccountPanelProps) {
+export function SecurityPanel({ data, onAction, notice }: AccountPanelProps) {
     return (
         <Card id="account-security" className="space-y-5">
             <SectionHeader
@@ -67,6 +67,7 @@ export function SecurityPanel({ data, onAction }: AccountPanelProps) {
                     </Button>
                 </div>
             )}
+            {notice && <SuccessNotice>{notice}</SuccessNotice>}
         </Card>
     );
 }

@@ -58,6 +58,11 @@ export function VerificationMethods({
                     fields={[
                         {
                             name: "code",
+                            minimum: codeMethod === "totp" ? 6 : 1,
+                            validate: (value) =>
+                                codeMethod === "totp" && !/^\d{6}$/.test(value)
+                                    ? "Enter a 6-digit code."
+                                    : undefined,
                             placeholder:
                                 codeMethod === "totp"
                                     ? "6-digit code"

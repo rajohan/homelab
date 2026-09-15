@@ -97,3 +97,19 @@ The shared input keeps visible labels separate from optional placeholders. Hover
 and focus use the Mira accent, while invalid and disabled states remain distinct.
 Transport failures use actionable messages and never automatically replay a mutation
 whose outcome is unknown.
+
+## Form validation and feedback
+
+Shared forms disable browser-native validation popups. TanStack Form runs the same
+Valibot and cross-field rules while values change, when a field loses focus, and
+before submission. Errors remain hidden on untouched fields until submission and
+are associated with their inputs through accessible descriptions and invalid state.
+Blur reuses change validation so an old blur error cannot survive a corrected value.
+Tests cover empty submission, invalid email, password length and confirmation,
+correction without refocusing, and form-local server errors.
+
+Account confirmations appear in the section that owns the action: profile, security
+methods or sessions. Starting another action clears the previous notice. Email
+verification uses "Check your inbox for a verification link." rather than claiming
+that a queued email has already been delivered. Reset and verification pages replace
+their completed forms with a local confirmation instead of leaving a reusable token form.

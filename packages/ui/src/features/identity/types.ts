@@ -15,7 +15,13 @@ export type AccountAction =
     | "totp"
     | "webauthn"
     | ConfirmationAction;
+export type AccountSection = "profile" | "security" | "sessions";
+export interface AccountNotice {
+    readonly section: AccountSection;
+    readonly message: string;
+}
 export interface AccountPanelProps {
+    readonly notice?: string | undefined;
     readonly data: AccountSnapshot;
     readonly onAction: (action: AccountAction) => void;
 }

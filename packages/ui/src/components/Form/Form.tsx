@@ -2,7 +2,7 @@ import type { ComponentProps } from "react";
 
 export function Form({
     onSubmit,
-    noValidate = false,
+    noValidate = true,
     ...props
 }: Omit<ComponentProps<"form">, "onSubmit"> & {
     readonly onSubmit: () => void | Promise<void>;

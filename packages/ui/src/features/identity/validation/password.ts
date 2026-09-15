@@ -1,6 +1,7 @@
-import type { FormValues } from "../../../components/Form/types";
-export function validatePasswordConfirmation(values: FormValues): string | undefined {
+import type { FormErrors, FormValues } from "../../../components/Form/types";
+
+export function validatePasswordConfirmation(values: FormValues): FormErrors {
     return values.newPassword === values.confirmPassword
-        ? undefined
-        : "The new passwords do not match.";
+        ? {}
+        : { confirmPassword: "The new passwords do not match." };
 }
