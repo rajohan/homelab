@@ -95,7 +95,10 @@ signatures and do not remove a key while valid tokens still reference it.
 ## Monitoring
 
 Add private `/health/live` and `/health/ready` probes to the existing VictoriaMetrics/blackbox
-setup at deployment. Auth readiness queries its schema; dashboard readiness checks configured
+setup at deployment. Auth readiness verifies the complete applied migration names and hashes
+against the running build; missing, changed or extra migrations return unavailable. Startup
+and readiness never apply migrations. The CLI and server share the same migration inventory.
+Dashboard readiness checks configured
 identity wiring, not every downstream dependency. Also probe a synthetic unauthenticated
 protected endpoint for denial, OIDC discovery/JWKS and actual Resend delivery status separately.
 

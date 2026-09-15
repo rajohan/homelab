@@ -1,5 +1,4 @@
 import { generateKeyPairSync } from "node:crypto";
-import { existsSync } from "node:fs";
 
 import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/bun-sql/migrator";
@@ -7,6 +6,7 @@ import * as v from "valibot";
 
 import { authConfiguration } from "../config/environment";
 import { connectAuthDatabase } from "../database/connection";
+import { authMigrationsFolder } from "../database/migrations";
 import { challenges, factors, recoveryCodes, sessions, users } from "../database/schema";
 import { Accounts } from "../security/accounts";
 import { hashPassword, randomToken } from "../security/crypto";
@@ -83,12 +83,7 @@ export async function runAdmin(command: readonly string[]): Promise<void> {
     try {
         if (action === "migrate") {
             await migrate(connection.database, {
-                migrationsFolder: new URL(
-                    existsSync(new URL("migrations", import.meta.url))
-                        ? "./migrations"
-                        : "../../../migrations",
-                    import.meta.url
-                ).pathname,
+                migrationsFolder: authMigrationsFolder(),
             });
         } else if (action === "create-user") {
             const input = v.parse(newUserSchema, await privateInput());

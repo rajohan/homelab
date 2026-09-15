@@ -21,7 +21,9 @@ committing a login or password change, including concurrent recovery races.
 
 Central sessions have random 256-bit opaque cookies; only SHA-256 token digests are stored.
 Production cookies are Secure, HttpOnly, SameSite=Lax and host-only with the `__Host-` prefix.
-Absolute lifetime is 12 hours, idle lifetime one hour. Sensitive changes require proof within
+Absolute lifetime is 12 hours, idle lifetime one hour. Successful password proof and protected
+account mutations renew idle activity transactionally; failed actions and passive reads do not.
+Sensitive changes require proof within
 five minutes. At most 16 password-only sessions and 16 MFA-completed sessions are retained
 per account. Password-only logins cannot evict MFA-completed sessions or their OIDC grants;
 the completed-session cap is enforced only after a successful second factor. MFA-enrolled accounts cannot access settings or clients with password alone.

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { generateKeyPairSync } from "node:crypto";
 
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/bun-sql/migrator";
 import { TOTP } from "otpauth";
 import * as v from "valibot";
@@ -9,6 +9,7 @@ import * as v from "valibot";
 import { createTestDatabase } from "../../../../../tests/database";
 import { createAuthApplication } from "../application";
 import type { AuthConfiguration } from "../config/configuration";
+import { requiredAuthMigrations } from "../database/migrations";
 import {
     factors,
     sessions,
@@ -454,6 +455,67 @@ describe("security invariants against the isolated database", () => {
             createdAt: new Date(),
         });
         expect(await status(post("/api/login", { username, password }))).toBe(200);
+    });
+
+    test("readiness rejects missing or changed migration records without migrating automatically", async () => {
+        const database = application.connection.database;
+        const migration = requiredAuthMigrations().at(-1);
+        if (!migration?.name) throw new Error("Migration fixture missing");
+        expect(await status(browser("/health/ready"))).toBe(200);
+        await database.execute(
+            sql`DELETE FROM drizzle.__drizzle_migrations WHERE name = ${migration.name}`
+        );
+        try {
+            expect(await status(browser("/health/ready"))).toBe(503);
+            expect(await status(browser("/health/live"))).toBe(200);
+        } finally {
+            await database.execute(sql`INSERT INTO drizzle.__drizzle_migrations (name, hash, created_at)
+                VALUES (${migration.name}, ${migration.hash}, ${migration.folderMillis})`);
+        }
+        await database.execute(
+            sql`UPDATE drizzle.__drizzle_migrations SET hash = 'outdated-test-hash' WHERE name = ${migration.name}`
+        );
+        try {
+            expect(await status(browser("/health/ready"))).toBe(503);
+        } finally {
+            await database.execute(
+                sql`UPDATE drizzle.__drizzle_migrations SET hash = ${migration.hash} WHERE name = ${migration.name}`
+            );
+        }
+        expect(await status(browser("/health/ready"))).toBe(200);
+    });
+
+    test("successful password proof and account mutations renew idle time, rejected actions do not", async () => {
+        const accounts = application.services.accounts;
+        const principal = await accounts.principalByToken(
+            cookieJar.get("homelab_auth")?.value ?? ""
+        );
+        const old = new Date(Date.now() - 600_000);
+        await accounts.database
+            .update(sessions)
+            .set({ lastSeenAt: old, passwordAt: old })
+            .where(eq(sessions.id, principal.session.id));
+        expect(
+            await status(
+                post("/api/account/proof/password", { password: "wrong-test-password" })
+            )
+        ).toBe(400);
+        const rejected = await accounts.principalById(principal.session.id);
+        expect(rejected.session.lastSeenAt.getTime()).toBe(old.getTime());
+        expect(await status(post("/api/account/proof/password", { password }))).toBe(200);
+        const proven = await accounts.principalById(principal.session.id);
+        expect(proven.session.lastSeenAt.getTime()).toBeGreaterThan(old.getTime());
+        await accounts.database
+            .update(sessions)
+            .set({ lastSeenAt: old })
+            .where(eq(sessions.id, principal.session.id));
+        expect(
+            await status(
+                post("/api/account/email", { email: username + "@example.test" })
+            )
+        ).toBe(200);
+        const active = await accounts.principalById(principal.session.id);
+        expect(active.session.lastSeenAt.getTime()).toBeGreaterThan(old.getTime());
     });
 
     test("session inspection exposes a stable identifier that changes on a new login", async () => {

@@ -1,9 +1,10 @@
-import { sql, lt, or } from "drizzle-orm";
+import { lt, or } from "drizzle-orm";
 import { Effect } from "effect";
 import * as v from "valibot";
 
 import type { AuthConfiguration } from "./config/configuration";
 import { connectAuthDatabase } from "./database/connection";
+import { assertAuthSchemaReady, requiredAuthMigrations } from "./database/migrations";
 import {
     auditEvents,
     sessions,
@@ -25,6 +26,7 @@ export async function createAuthApplication(
     configuration: AuthConfiguration,
     delivery?: EmailDelivery
 ) {
+    const migrations = requiredAuthMigrations();
     const connection = connectAuthDatabase(configuration.databaseUrl);
     const accounts = new Accounts(connection.database, configuration);
     const email = new AccountEmail(accounts, delivery);
@@ -82,7 +84,7 @@ export async function createAuthApplication(
                 authenticationImplemented: true,
             });
         if (path === "/health/ready") {
-            await connection.database.execute(sql`select id from auth_users limit 1`);
+            await assertAuthSchemaReady(connection.database, migrations);
             return secureJson({
                 service: "auth",
                 status: "ok",

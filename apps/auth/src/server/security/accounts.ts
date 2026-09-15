@@ -118,7 +118,12 @@ export class Accounts {
                 .for("update");
             const current = await this.principalById(principal.session.id, transaction);
             await this.requireFresh(current, transaction);
-            return action(transaction, current);
+            const result = await action(transaction, current);
+            await transaction
+                .update(sessions)
+                .set({ lastSeenAt: new Date() })
+                .where(eq(sessions.id, current.session.id));
+            return result;
         });
     }
 
@@ -283,7 +288,7 @@ export class Accounts {
                 .where(eq(challenges.userId, current.user.id));
             await transaction
                 .update(sessions)
-                .set({ passwordAt: new Date() })
+                .set({ passwordAt: new Date(), lastSeenAt: new Date() })
                 .where(eq(sessions.id, current.session.id));
             await audit(transaction, current.user.id, "password_changed");
         });
@@ -303,7 +308,7 @@ export class Accounts {
             if (current.user.passwordHash !== principal.user.passwordHash) invalidProof();
             await transaction
                 .update(sessions)
-                .set({ passwordAt: new Date() })
+                .set({ passwordAt: new Date(), lastSeenAt: new Date() })
                 .where(eq(sessions.id, principal.session.id));
             await audit(transaction, principal.user.id, "password_reauthenticated");
         });
