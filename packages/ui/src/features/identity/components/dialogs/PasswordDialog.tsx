@@ -13,6 +13,7 @@ export function PasswordDialog({ client, onClose, onComplete }: AccountDialogPro
             onClose={onClose}
         >
             <PasswordForm
+                onCancel={onClose}
                 requireCurrent
                 submitLabel="Change password"
                 onSubmit={async (values) => {

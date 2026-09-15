@@ -1,12 +1,15 @@
+import type { OidcConsent } from "@homelab/contracts";
 import { Button, ErrorNotice, LoadingState, Redirect } from "@homelab/ui";
 import { IdentityError, type IdentityClient } from "@homelab/ui/identity/client";
 import { useEffect, useRef, useState } from "react";
 
 import { signInDestination } from "../navigation/signInDestination";
+import { submitOidcConsent } from "../navigation/submitOidcConsent";
 import { AccountActions } from "./AccountActions";
+import { OidcConsentDialog } from "./OidcConsentDialog";
 
 /**
- * Complete a verified sign-in without presenting an additional confirmation screen.
+ * Complete verified sign-in, asking for explicit app consent when the provider requires it.
  * @returns Navigation progress or a retryable handoff error.
  */
 export function SignInRedirect({
@@ -18,9 +21,10 @@ export function SignInRedirect({
     address: URL;
     onSignedOut: () => Promise<void>;
 }) {
-    const pending = useRef<Promise<string> | undefined>(undefined);
+    const pending = useRef<Promise<string | OidcConsent> | undefined>(undefined);
     const [attempt, setAttempt] = useState(0);
     const [destination, setDestination] = useState<string>();
+    const [consent, setConsent] = useState<OidcConsent>();
     const [failure, setFailure] = useState<unknown>();
     useEffect(() => {
         // React may replay effects; one mounted handoff must only submit once.
@@ -28,7 +32,10 @@ export function SignInRedirect({
         let active = true;
         void pending.current.then(
             (target) => {
-                if (active) setDestination(target);
+                if (active) {
+                    if (typeof target === "string") setDestination(target);
+                    else setConsent(target);
+                }
                 return target;
             },
             (error: unknown) => {
@@ -41,6 +48,17 @@ export function SignInRedirect({
     }, [client, address, attempt]);
 
     if (destination) return <Redirect to={destination} label="Completing sign-in…" />;
+    if (consent)
+        return (
+            <OidcConsentDialog
+                consent={consent}
+                onDecision={async (decision) => {
+                    setDestination(
+                        await submitOidcConsent(client, address, consent, decision)
+                    );
+                }}
+            />
+        );
     if (failure !== undefined)
         return (
             <div className="space-y-4">

@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
+import * as v from "valibot";
+
+import { oidcInteractionSchema } from "../packages/contracts/src/oidcConsent";
 import { createTestDatabase } from "../tests/database";
 
 async function port(): Promise<number> {
@@ -207,7 +210,20 @@ async function verifyBuiltIdentity(databaseUrl: string): Promise<void> {
             if (url.pathname === "/sign-in") {
                 const completed = await request(issuer + "/sign-in/complete", {});
                 assert.equal(completed.status, 200);
-                const payload: unknown = await completed.json();
+                let payload = v.parse(oidcInteractionSchema, await completed.json());
+                if ("consent" in payload) {
+                    const { interactionId, accountId } = payload.consent;
+                    const approved = await request(issuer + "/sign-in/complete", {
+                        interactionId,
+                        accountId,
+                        decision: "approve",
+                    });
+                    assert.equal(approved.status, 200);
+                    payload = v.parse(
+                        v.object({ redirect: v.string() }),
+                        await approved.json()
+                    );
+                }
                 response = await request(redirect(payload));
             } else {
                 response = await request(url.href);

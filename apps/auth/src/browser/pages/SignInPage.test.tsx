@@ -149,6 +149,23 @@ test.each(["totp", "recovery", "webauthn"] as const)(
                                 : "Use recovery code",
                     })
                 );
+                expect(
+                    screen.queryByText(
+                        "Choose a verification method to finish signing in."
+                    )
+                ).not.toBeInTheDocument();
+                expect(
+                    screen.getByText(
+                        method === "totp"
+                            ? "Enter a 6-digit code from your authenticator app."
+                            : "Enter one of your unused recovery codes."
+                    )
+                ).toBeVisible();
+                expect(
+                    screen
+                        .getByRole("button", { name: "Use another method" })
+                        .closest("form")
+                ).toBe(screen.getByRole("button", { name: "Verify" }).closest("form"));
                 await user.type(
                     screen.getByLabelText(
                         method === "totp" ? "Authenticator code" : "Recovery code"

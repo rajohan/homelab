@@ -20,6 +20,7 @@ export function SecurityKeyDialog({
             onClose={onClose}
         >
             <FieldsForm
+                onCancel={onClose}
                 fields={[
                     {
                         name: "label",

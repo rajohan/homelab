@@ -2,6 +2,7 @@ import { useForm } from "@tanstack/react-form";
 import { useState } from "react";
 
 import { ErrorNotice } from "../Alert/ErrorNotice";
+import { ActionGroup } from "../Button/ActionGroup";
 import { Button } from "../Button/Button";
 import { Input } from "../Input/Input";
 import { Form } from "./Form";
@@ -20,13 +21,15 @@ export function FieldsForm({
     onSubmit,
     validate,
     onCancel,
+    cancelLabel = "Cancel",
 }: {
     fields: readonly FieldDefinition[];
     submitLabel: string;
     submitVariant?: "primary" | "danger";
     onSubmit: (values: FormValues) => Promise<void>;
     validate?: (values: FormValues) => FormErrors;
-    onCancel?: () => void;
+    onCancel?: (() => void) | undefined;
+    cancelLabel?: string;
 }) {
     const [error, setError] = useState<unknown>();
     const validateValues = ({ value }: { value: FormValues }) =>
@@ -36,10 +39,24 @@ export function FieldsForm({
             fields.map((field) => [field.name, field.initial ?? ""])
         ),
         validators: {
-            // Password managers can blur/clear fields before dispatching their final input.
-            // Coalesce that burst while still validating submissions immediately.
+            // Focus/blur from password-manager controls is not an edit. Validate only
+            // edited fields here; submission still checks every field immediately.
             onChangeAsyncDebounceMs: 200,
-            onChangeAsync: (input) => Promise.resolve(validateValues(input)),
+            onChangeAsync: ({ value, formApi }) =>
+                Promise.resolve(
+                    validateFields(
+                        fields,
+                        value,
+                        validate,
+                        new Set(
+                            fields
+                                .filter(
+                                    (field) => formApi.getFieldMeta(field.name)?.isDirty
+                                )
+                                .map((field) => field.name)
+                        )
+                    )
+                ),
             onSubmit: validateValues,
         },
         onSubmit: async ({ value }) => {
@@ -86,6 +103,10 @@ export function FieldsForm({
                                         }}
                                         onChange={(event) => {
                                             setError(undefined);
+                                            field.setErrorMap({
+                                                onChange: undefined,
+                                                onSubmit: undefined,
+                                            });
                                             field.handleChange(event.target.value);
                                         }}
                                         required
@@ -97,20 +118,14 @@ export function FieldsForm({
                         </form.Field>
                     ))}
                     {error !== undefined && <ErrorNotice error={error} />}
-                    <div
-                        className={
-                            onCancel
-                                ? "flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"
-                                : undefined
-                        }
-                    >
+                    <ActionGroup>
                         {onCancel && (
                             <Button
                                 variant="secondary"
                                 disabled={submitting}
                                 onClick={onCancel}
                             >
-                                Cancel
+                                {cancelLabel}
                             </Button>
                         )}
                         <Button
@@ -122,7 +137,7 @@ export function FieldsForm({
                         >
                             {submitLabel}
                         </Button>
-                    </div>
+                    </ActionGroup>
                 </Form>
             )}
         </form.Subscribe>

@@ -16,6 +16,7 @@ import {
 } from "../apps/auth/src/server/database/schema";
 import { hashPassword } from "../apps/auth/src/server/security/crypto";
 import { startDashboardServer } from "../apps/dashboard/src/server/index";
+import { oidcInteractionSchema } from "../packages/contracts/src/oidcConsent";
 import { createTestDatabase } from "./database";
 
 describe.each(["client_secret_post", "client_secret_basic"] as const)(
@@ -253,10 +254,19 @@ describe.each(["client_secret_post", "client_secret_basic"] as const)(
                 if (next.pathname === "/sign-in") {
                     const interaction = await browser(`${issuer}/sign-in/complete`, {});
                     expect(interaction.status).toBe(200);
-                    const data = v.parse(
-                        v.object({ redirect: v.string() }),
-                        await interaction.json()
-                    );
+                    let data = v.parse(oidcInteractionSchema, await interaction.json());
+                    if ("consent" in data) {
+                        const { interactionId, accountId } = data.consent;
+                        const approved = await browser(issuer + "/sign-in/complete", {
+                            interactionId,
+                            accountId,
+                            decision: "approve",
+                        });
+                        data = v.parse(
+                            v.object({ redirect: v.string() }),
+                            await approved.json()
+                        );
+                    }
                     response = await browser(data.redirect);
                 } else response = await browser(next.href);
             }

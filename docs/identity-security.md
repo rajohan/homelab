@@ -81,8 +81,17 @@ disabled; use a confidential server-side client.
 
 Only dashboard can request `account` scope. Other clients require MFA. A newly created account
 without a factor may enter dashboard Settings to enroll; it cannot enter a protected resource
-or another OIDC client before MFA. Trusted configured clients are auto-consented, not arbitrary
-third-party applications. Consent and grants are bound to the actual central session.
+or another OIDC client before MFA. Every client, including dashboard, requires explicit
+**Approve** or **Deny** when the provider requests consent. Registration never grants automatic
+approval. The shared-design modal shows the server-validated app name, callback origin and
+requested scopes; the browser cannot choose additional scopes or a different client.
+Closing the modal denies access. Denial returns the protocol `access_denied` error without
+signing out the central account. The decision is bound to the displayed interaction and account.
+
+Consent and grants are bound to the actual central session. An existing approved grant may be
+reused within that session; new access or `prompt=consent` asks again. This is not a permanent
+trusted-client allowlist. Clients still require operator registration, an exact allowed
+callback and the normal group/MFA checks. No dynamic client registration is enabled.
 
 RP logout uses the library's CSRF-validated confirmation before ending the central session;
 a GET link alone does not revoke it. Session-bound back-channel logout uses the provider's

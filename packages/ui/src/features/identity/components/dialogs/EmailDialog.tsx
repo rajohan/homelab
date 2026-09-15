@@ -18,6 +18,7 @@ export function EmailDialog({
                 the emailed link.
             </p>
             <FieldsForm
+                onCancel={onClose}
                 fields={[
                     {
                         name: "email",

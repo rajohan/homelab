@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { Button, FieldsForm, Modal } from "../../../../index";
+import { FieldsForm, Modal } from "../../../../index";
 import type { AccountDialogProps } from "../../types";
 
 /**
@@ -17,6 +17,7 @@ export function DisableMfaDialog({ client, onClose, onComplete }: AccountDialogP
             dismissible={!pending}
         >
             <FieldsForm
+                onCancel={onClose}
                 fields={[
                     {
                         name: "password",
@@ -41,14 +42,6 @@ export function DisableMfaDialog({ client, onClose, onComplete }: AccountDialogP
                     }
                 }}
             />
-            <Button
-                className="mt-3"
-                variant="secondary"
-                disabled={pending}
-                onClick={onClose}
-            >
-                Cancel
-            </Button>
         </Modal>
     );
 }

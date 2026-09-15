@@ -1,6 +1,6 @@
 import { Download } from "lucide-react";
 
-import { Button, CopyTextButton, Modal } from "../../../../index";
+import { ActionGroup, Button, CopyTextButton, Modal } from "../../../../index";
 import { downloadRecoveryCodes } from "../../lib/downloadRecoveryCodes";
 
 /**
@@ -29,7 +29,7 @@ export function RecoveryCodesDialog({
                     </li>
                 ))}
             </ul>
-            <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <ActionGroup className="mt-4">
                 <CopyTextButton label="Copy recovery codes" text={codes.join("\n")} />
                 <Button
                     variant="secondary"
@@ -42,7 +42,7 @@ export function RecoveryCodesDialog({
                 <Button size="sm" onClick={onClose}>
                     I saved the codes
                 </Button>
-            </div>
+            </ActionGroup>
         </Modal>
     );
 }

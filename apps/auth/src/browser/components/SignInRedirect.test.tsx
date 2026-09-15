@@ -7,7 +7,7 @@ import { StrictMode } from "react";
 
 import { SignInRedirect } from "./SignInRedirect";
 
-test("login and consent handoffs each complete automatically, once even with effect replay", async () => {
+test("verified login handoffs complete automatically, once even with effect replay", async () => {
     const client = new IdentityClient();
     const request = spyOn(client, "request").mockResolvedValue({
         redirect: "/authorize/resume",
@@ -159,6 +159,153 @@ test("an expired interaction offers a new dashboard sign-in instead of repeating
         ).not.toBeInTheDocument();
         expect(navigate).toHaveBeenCalledWith("/account");
         expect(request).toHaveBeenCalledTimes(1);
+    } finally {
+        view.unmount();
+        request.mockRestore();
+        navigate.mockRestore();
+    }
+});
+
+const consent = {
+    interactionId: "request-id",
+    accountId: "account-id",
+    clientId: "dashboard",
+    clientName: "Homelab Dashboard",
+    username: "fixture-user",
+    redirectOrigin: "https://dashboard.example.test",
+    scopes: ["openid", "profile", "email", "account"],
+};
+
+test.each(["approve", "deny"] as const)(
+    "OIDC %s requires an explicit decision and submits only the displayed request identity",
+    async (decision) => {
+        const client = new IdentityClient();
+        const request = spyOn(client, "request")
+            .mockResolvedValueOnce({ consent })
+            .mockResolvedValueOnce({ redirect: "/authorize/resume" });
+        const navigate = spyOn(globalThis.location, "replace").mockImplementation(
+            () => {}
+        );
+        const view = render(
+            <StrictMode>
+                <SignInRedirect
+                    client={client}
+                    address={
+                        new URL(
+                            "https://auth.example.test/sign-in?interaction=request-id"
+                        )
+                    }
+                    onSignedOut={() => Promise.resolve()}
+                />
+            </StrictMode>
+        );
+        try {
+            const action = await screen.findByRole("button", {
+                name: decision === "approve" ? "Approve" : "Deny",
+            });
+            expect(screen.getByRole("dialog")).toHaveAccessibleName("Approve access?");
+            expect(
+                screen.getByText("Homelab Dashboard wants to use your Homelab account.")
+            ).toBeVisible();
+            expect(
+                screen.getByText("Read your email address and verification status")
+            ).toBeVisible();
+            expect(
+                screen.getByText("Manage your account security and sessions")
+            ).toBeVisible();
+            expect(screen.getByText(consent.redirectOrigin)).toBeVisible();
+            expect(request).toHaveBeenCalledTimes(1);
+            expect(navigate).not.toHaveBeenCalled();
+            await userEvent.setup().click(action);
+            await waitFor(() => expect(navigate).toHaveBeenCalledTimes(1));
+            expect(request).toHaveBeenCalledTimes(2);
+            expect(request).toHaveBeenLastCalledWith("/sign-in/complete", {
+                interactionId: consent.interactionId,
+                accountId: consent.accountId,
+                decision,
+            });
+            expect(navigate).toHaveBeenCalledWith(
+                "https://auth.example.test/authorize/resume"
+            );
+        } finally {
+            view.unmount();
+            request.mockRestore();
+            navigate.mockRestore();
+        }
+    }
+);
+
+test("a failed consent decision stays in its modal and retries only on another explicit click", async () => {
+    const client = new IdentityClient();
+    const pending = Promise.withResolvers<unknown>();
+    const request = spyOn(client, "request")
+        .mockResolvedValueOnce({
+            consent: { ...consent, clientName: "Another application" },
+        })
+        .mockImplementationOnce(() => pending.promise)
+        .mockResolvedValueOnce({ redirect: "/authorize/resume" });
+    const navigate = spyOn(globalThis.location, "replace").mockImplementation(() => {});
+    const view = render(
+        <SignInRedirect
+            client={client}
+            address={new URL("https://auth.example.test/sign-in?interaction=request-id")}
+            onSignedOut={() => Promise.resolve()}
+        />
+    );
+    try {
+        const user = userEvent.setup();
+        const approve = await screen.findByRole("button", { name: "Approve" });
+        await user.click(approve);
+        expect(approve).toBeDisabled();
+        expect(screen.getByRole("button", { name: "Deny" })).toBeDisabled();
+        expect(
+            screen.queryByRole("button", { name: "Close dialog" })
+        ).not.toBeInTheDocument();
+        pending.reject(new Error("Synthetic decision failure"));
+        await waitFor(() =>
+            expect(screen.getByRole("button", { name: "Approve" })).toBeEnabled()
+        );
+        expect(screen.getByRole("dialog")).toBeVisible();
+        expect(request).toHaveBeenCalledTimes(2);
+        expect(navigate).not.toHaveBeenCalled();
+        await user.click(screen.getByRole("button", { name: "Approve" }));
+        await waitFor(() => expect(navigate).toHaveBeenCalledTimes(1));
+        expect(request).toHaveBeenCalledTimes(3);
+    } finally {
+        view.unmount();
+        request.mockRestore();
+        navigate.mockRestore();
+    }
+});
+
+test("closing consent denies access rather than approving or signing out the account", async () => {
+    const client = new IdentityClient();
+    const request = spyOn(client, "request")
+        .mockResolvedValueOnce({ consent })
+        .mockResolvedValueOnce({ redirect: "/authorize/resume" });
+    const navigate = spyOn(globalThis.location, "replace").mockImplementation(() => {});
+    let signedOut = false;
+    const view = render(
+        <SignInRedirect
+            client={client}
+            address={new URL("https://auth.example.test/sign-in?interaction=request-id")}
+            onSignedOut={() => {
+                signedOut = true;
+                return Promise.resolve();
+            }}
+        />
+    );
+    try {
+        await userEvent
+            .setup()
+            .click(await screen.findByRole("button", { name: "Close dialog" }));
+        await waitFor(() => expect(navigate).toHaveBeenCalledTimes(1));
+        expect(request).toHaveBeenLastCalledWith("/sign-in/complete", {
+            interactionId: consent.interactionId,
+            accountId: consent.accountId,
+            decision: "deny",
+        });
+        expect(signedOut).toBe(false);
     } finally {
         view.unmount();
         request.mockRestore();

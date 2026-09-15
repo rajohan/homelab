@@ -86,7 +86,7 @@ test("request errors stay inside the form and clear when its values change", asy
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
 
-test("blur validates an empty field and editing clears its error immediately", async () => {
+test("focus and blur alone do not validate a field; clearing an edited field does", async () => {
     const user = userEvent.setup();
     render(
         <FieldsForm
@@ -98,6 +98,10 @@ test("blur validates an empty field and editing clears its error immediately", a
     const email = screen.getByLabelText("Email");
     await user.click(email);
     await user.tab();
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(email).not.toHaveAttribute("aria-invalid", "true");
+    await user.type(email, "x");
+    await user.clear(email);
     await waitFor(() => expect(email).toHaveAccessibleDescription("Email is required."));
     await user.type(email, "you@example.test");
     await waitFor(() => expect(email).not.toHaveAttribute("aria-invalid", "true"));
@@ -139,6 +143,60 @@ test("autofill blur and input bursts do not flash required-field errors", async 
             expect(screen.getByRole("button", { name: "Sign in" })).toBeEnabled()
         );
         await userEvent.setup().click(screen.getByRole("button", { name: "Sign in" }));
+        await waitFor(() =>
+            expect(submit).toHaveBeenCalledWith({
+                username: "operator",
+                password: "autofill-test-password",
+            })
+        );
+        expect(flashes).toEqual([]);
+    } finally {
+        observer.disconnect();
+    }
+});
+
+test("manual username validation never prevalidates the untouched autofill password", async () => {
+    const user = userEvent.setup();
+    const validatePassword = mock((value: string) =>
+        value.length > 0 ? undefined : "Password is required."
+    );
+    const submit = mock(() => Promise.resolve());
+    const { container } = render(
+        <FieldsForm
+            fields={[
+                { name: "username", label: "Username", autoComplete: "username" },
+                {
+                    name: "password",
+                    label: "Password",
+                    type: "password",
+                    autoComplete: "current-password",
+                    validate: validatePassword,
+                },
+            ]}
+            submitLabel="Sign in"
+            onSubmit={submit}
+        />
+    );
+    const username = screen.getByLabelText("Username");
+    const password = screen.getByLabelText("Password");
+    await user.type(username, "operator");
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(validatePassword).not.toHaveBeenCalled();
+    const flashes: string[] = [];
+    const observer = new MutationObserver(() => {
+        if (container.textContent?.includes("Password is required."))
+            flashes.push(container.textContent);
+    });
+    observer.observe(container, { childList: true, subtree: true, characterData: true });
+    try {
+        await user.click(password);
+        fireEvent.blur(password);
+        // Opening an autofill picker can take longer than validation's debounce.
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        expect(password).not.toHaveAttribute("aria-invalid", "true");
+        expect(validatePassword).not.toHaveBeenCalled();
+        fireEvent.input(password, { target: { value: "autofill-test-password" } });
+        await user.click(screen.getByRole("button", { name: "Sign in" }));
         await waitFor(() =>
             expect(submit).toHaveBeenCalledWith({
                 username: "operator",

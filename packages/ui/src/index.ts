@@ -1,5 +1,6 @@
 export { Badge } from "./components/Badge/Badge";
 export { Button } from "./components/Button/Button";
+export { ActionGroup } from "./components/Button/ActionGroup";
 export { Card } from "./components/Card/Card";
 export { ErrorNotice } from "./components/Alert/ErrorNotice";
 export { FieldsForm } from "./components/Form/FieldsForm";
@@ -14,6 +15,7 @@ export { IconButton } from "./components/Button/IconButton";
 export { buttonStyles } from "./components/Button/buttonStyles";
 export { AuthFrame } from "./components/AuthFrame/AuthFrame";
 export { SectionHeader } from "./components/SectionHeader/SectionHeader";
+export { SectionIcon } from "./components/SectionHeader/SectionIcon";
 
 export { LoadingState } from "./components/Loading/LoadingState";
 export { LoadingDots } from "./components/Loading/LoadingDots";

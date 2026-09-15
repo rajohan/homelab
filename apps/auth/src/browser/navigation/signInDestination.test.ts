@@ -3,6 +3,7 @@ import { expect, spyOn, test } from "bun:test";
 import { IdentityClient } from "@homelab/ui/identity/client";
 
 import { signInDestination } from "./signInDestination";
+import { submitOidcConsent } from "./submitOidcConsent";
 
 test("handoffs only accept their expected OIDC or SSO destination", async () => {
     const client = new IdentityClient();
@@ -44,6 +45,37 @@ test("handoffs only accept their expected OIDC or SSO destination", async () => 
         expect(
             await signInDestination(client, new URL("https://auth.example.test/sign-in"))
         ).toBe("https://auth.example.test/account");
+    } finally {
+        request.mockRestore();
+    }
+});
+
+test("consent rejects external continuations and unexpected repeat previews", async () => {
+    const client = new IdentityClient();
+    const request = spyOn(client, "request");
+    const consent = {
+        interactionId: "interaction",
+        accountId: "account",
+        clientId: "client",
+        clientName: "Test client",
+        username: "fixture",
+        redirectOrigin: "https://client.example.test",
+        scopes: ["openid"],
+    };
+    const address = new URL("https://auth.example.test/sign-in?interaction=interaction");
+    try {
+        for (const response of [
+            { redirect: "https://attacker.example/authorize" },
+            { consent },
+        ]) {
+            request.mockResolvedValue(response);
+            expect(
+                await submitOidcConsent(client, address, consent, "approve").then(
+                    () => null,
+                    (error: unknown) => error
+                )
+            ).toBeInstanceOf(Error);
+        }
     } finally {
         request.mockRestore();
     }

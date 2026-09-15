@@ -7,15 +7,18 @@ import type { FieldDefinition, FormErrors, FormValues } from "./types";
  * @param definitions Field constraints and presentation metadata.
  * @param values Current form values.
  * @param validate Optional cross-field rules.
+ * @param editedFields Optional names eligible for live validation; omit to validate all on submit.
  * @returns Field-addressed errors, or undefined when valid.
  */
 export function validateFields(
     definitions: readonly FieldDefinition[],
     values: FormValues,
-    validate?: (values: FormValues) => FormErrors
+    validate?: (values: FormValues) => FormErrors,
+    editedFields?: ReadonlySet<string>
 ): { fields: Record<string, string> } | undefined {
     const fields: Record<string, string> = {};
     for (const definition of definitions) {
+        if (editedFields && !editedFields.has(definition.name)) continue;
         const value = values[definition.name] ?? "";
         if (!value || (definition.type !== "password" && !value.trim())) {
             fields[definition.name] = `${definition.label} is required.`;
@@ -43,7 +46,8 @@ export function validateFields(
         if (message) fields[definition.name] = message;
     }
     for (const [name, message] of Object.entries(validate?.(values) ?? {})) {
-        if (message && !fields[name]) fields[name] = message;
+        if (message && !fields[name] && (!editedFields || editedFields.has(name)))
+            fields[name] = message;
     }
     return Object.keys(fields).length > 0 ? { fields } : undefined;
 }

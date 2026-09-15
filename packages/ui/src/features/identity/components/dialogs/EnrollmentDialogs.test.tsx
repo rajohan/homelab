@@ -5,7 +5,11 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { IdentityClient } from "../../api/IdentityClient";
 import { downloadRecoveryCodes } from "../../lib/downloadRecoveryCodes";
 import { AuthenticatorDialog } from "./AuthenticatorDialog";
+import { DisableMfaDialog } from "./DisableMfaDialog";
+import { EmailDialog } from "./EmailDialog";
+import { PasswordDialog } from "./PasswordDialog";
 import { RecoveryCodesDialog } from "./RecoveryCodesDialog";
+import { SecurityKeyDialog } from "./SecurityKeyDialog";
 
 test("authenticator enrollment centers its QR, offers icon copying and cancel without an app link", async () => {
     const client = new IdentityClient();
@@ -95,3 +99,44 @@ test("recovery codes have individual code surfaces and explicit copy and downloa
         click.mockRestore();
     }
 });
+
+test.each([
+    ["password", PasswordDialog],
+    ["email", EmailDialog],
+    ["security key", SecurityKeyDialog],
+    ["disable MFA", DisableMfaDialog],
+] as const)(
+    "%s dialog has an explicit cancel in its shared action group",
+    (_name, Dialog) => {
+        const client = new IdentityClient();
+        const action = spyOn(client, "action");
+        const close = mock(() => {});
+        const view = render(
+            <Dialog
+                client={client}
+                email="operator@example.test"
+                onClose={close}
+                onComplete={() => Promise.resolve()}
+                onRecoveryCodes={() => {}}
+            />
+        );
+        try {
+            const cancel = screen.getByRole("button", { name: "Cancel" });
+            const form = cancel.closest("form");
+            expect(form).not.toBeNull();
+            const submit = form?.querySelector('button[type="submit"]');
+            expect(submit).not.toBeNull();
+            expect(submit?.parentElement).toBe(cancel.parentElement);
+            expect(cancel.parentElement).toHaveClass(
+                "flex-col-reverse",
+                "[&>button]:w-full"
+            );
+            fireEvent.click(cancel);
+            expect(close).toHaveBeenCalledTimes(1);
+            expect(action).not.toHaveBeenCalled();
+        } finally {
+            view.unmount();
+            action.mockRestore();
+        }
+    }
+);

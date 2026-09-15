@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import { Button, ErrorNotice, FieldsForm, LoadingState } from "../../../../index";
 import type { IdentityClient } from "../../api/IdentityClient";
@@ -11,9 +11,11 @@ import type { IdentityClient } from "../../api/IdentityClient";
 export function VerificationMethods({
     client,
     onVerified,
+    renderFrame,
 }: {
     client: IdentityClient;
     onVerified: () => void;
+    renderFrame?: (content: ReactNode, description: string) => ReactNode;
 }) {
     const methods = useQuery({
         queryKey: ["identity", "methods"],
@@ -24,10 +26,16 @@ export function VerificationMethods({
     const [codeMethod, setCodeMethod] = useState<"totp" | "recovery" | undefined>();
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<unknown>();
+    function frame(
+        content: ReactNode,
+        description = "Choose a verification method to finish signing in."
+    ): ReactNode {
+        return renderFrame ? renderFrame(content, description) : content;
+    }
     if (methods.isPending)
-        return <LoadingState label="Loading verification methods…" size="sm" />;
+        return frame(<LoadingState label="Loading verification methods…" size="sm" />);
     if (methods.isError)
-        return (
+        return frame(
             <div className="space-y-3">
                 <ErrorNotice error={methods.error} />
                 <Button onClick={() => void methods.refetch()}>Try again</Button>
@@ -35,7 +43,7 @@ export function VerificationMethods({
         );
     const available = methods.data.methods;
     if (available.length === 0)
-        return (
+        return frame(
             <FieldsForm
                 fields={[
                     {
@@ -54,46 +62,48 @@ export function VerificationMethods({
                     });
                     onVerified();
                 }}
-            />
+            />,
+            "Enter your password to verify your identity."
         );
     if (codeMethod && (codeMethod !== "recovery" || methods.data.recoveryAvailable))
-        return (
-            <div className="space-y-3">
-                <FieldsForm
-                    fields={[
-                        {
-                            name: "code",
-                            minimum: codeMethod === "totp" ? 6 : 1,
-                            validate: (value) =>
-                                codeMethod === "totp" && !/^\d{6}$/.test(value)
-                                    ? "Enter a 6-digit code."
-                                    : undefined,
-                            placeholder:
-                                codeMethod === "totp"
-                                    ? "6-digit code"
-                                    : "Enter a recovery code",
-                            label:
-                                codeMethod === "totp"
-                                    ? "Authenticator code"
-                                    : "Recovery code",
-                            autoComplete: "one-time-code",
-                            maximum: codeMethod === "totp" ? 6 : 64,
-                        },
-                    ]}
-                    submitLabel="Verify"
-                    onSubmit={async (value) => {
-                        await client.request(`/api/account/proof/${codeMethod}`, {
-                            code: value.code?.trim(),
-                        });
-                        onVerified();
-                    }}
-                />
-                <Button onClick={() => setCodeMethod(undefined)}>
-                    Use another method
-                </Button>
-            </div>
+        return frame(
+            <FieldsForm
+                key={codeMethod}
+                onCancel={() => setCodeMethod(undefined)}
+                cancelLabel="Use another method"
+                fields={[
+                    {
+                        name: "code",
+                        minimum: codeMethod === "totp" ? 6 : 1,
+                        validate: (value) =>
+                            codeMethod === "totp" && !/^\d{6}$/.test(value)
+                                ? "Enter a 6-digit code."
+                                : undefined,
+                        placeholder:
+                            codeMethod === "totp"
+                                ? "6-digit code"
+                                : "Enter a recovery code",
+                        label:
+                            codeMethod === "totp"
+                                ? "Authenticator code"
+                                : "Recovery code",
+                        autoComplete: "one-time-code",
+                        maximum: codeMethod === "totp" ? 6 : 64,
+                    },
+                ]}
+                submitLabel="Verify"
+                onSubmit={async (value) => {
+                    await client.request(`/api/account/proof/${codeMethod}`, {
+                        code: value.code?.trim(),
+                    });
+                    onVerified();
+                }}
+            />,
+            codeMethod === "totp"
+                ? "Enter a 6-digit code from your authenticator app."
+                : "Enter one of your unused recovery codes."
         );
-    return (
+    return frame(
         <div className="grid grid-cols-1 gap-3">
             {error !== undefined && <ErrorNotice error={error} />}
             {available.includes("webauthn") && (

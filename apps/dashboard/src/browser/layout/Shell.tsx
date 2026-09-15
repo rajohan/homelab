@@ -53,13 +53,13 @@ export function Shell() {
                     <Badge>Preview</Badge>
                 </header>
                 <main
-                    className="w-full min-w-0 flex-1 p-4 sm:p-5"
+                    className="mx-auto w-full max-w-400 min-w-0 flex-1 p-4 sm:p-5"
                     id="main-content"
                     tabIndex={-1}
                 >
                     <Outlet />
                 </main>
-                <footer className="px-4 py-5 text-xs text-primary-500 sm:px-5">
+                <footer className="mx-auto w-full max-w-400 px-4 py-5 text-xs text-primary-500 sm:px-5">
                     Rajohan · Homelab
                 </footer>
             </div>

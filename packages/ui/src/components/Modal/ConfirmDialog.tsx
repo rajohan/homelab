@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { ErrorNotice } from "../Alert/ErrorNotice";
+import { ActionGroup } from "../Button/ActionGroup";
 import { Button } from "../Button/Button";
 import type { ButtonVariant } from "../Button/buttonStyles";
 import { Form } from "../Form/Form";
@@ -50,7 +51,7 @@ export function ConfirmDialog({
                 }}
             >
                 {error !== undefined && <ErrorNotice error={error} />}
-                <div className="flex flex-wrap justify-end gap-2">
+                <ActionGroup>
                     <Button
                         variant="secondary"
                         onClick={onClose}
@@ -62,7 +63,7 @@ export function ConfirmDialog({
                     <Button type="submit" variant={variant} busy={pending}>
                         {confirmLabel}
                     </Button>
-                </div>
+                </ActionGroup>
             </Form>
         </Modal>
     );

@@ -34,11 +34,21 @@ export function SignInPage({ client, address }: AuthPageProps) {
         setCompleted(true);
         await refresh();
     }
-    const signedOutTitle = session.data?.mfaRequired ? "Verify your identity" : "Sign in";
+    if (!session.isError && session.data?.mfaRequired) {
+        return (
+            <VerificationMethods
+                key={identityKey}
+                client={client}
+                onVerified={() => void finish()}
+                renderFrame={(content, description) => (
+                    <AuthLayout title="Verify your identity" description={description}>
+                        {content}
+                    </AuthLayout>
+                )}
+            />
+        );
+    }
     const signedInTitle = handoff ? "Redirecting" : "Your account";
-    const signedOutDescription = session.data?.mfaRequired
-        ? "Choose a verification method to finish signing in."
-        : undefined;
     const description = session.data?.authenticated ? (
         <>
             Signed in as{" "}
@@ -47,15 +57,13 @@ export function SignInPage({ client, address }: AuthPageProps) {
             </strong>
             .
         </>
-    ) : (
-        signedOutDescription
-    );
+    ) : undefined;
     return (
         <AuthLayout
             key={identityKey}
             description={description}
             authenticated={session.data?.authenticated ?? false}
-            title={session.data?.authenticated ? signedInTitle : signedOutTitle}
+            title={session.data?.authenticated ? signedInTitle : "Sign in"}
         >
             {session.isPending && (
                 <LoadingState label="Checking your session…" size="sm" />
@@ -64,14 +72,6 @@ export function SignInPage({ client, address }: AuthPageProps) {
                 <div className="space-y-3">
                     <ErrorNotice error={session.error} />
                     <Button onClick={() => void refresh()}>Try again</Button>
-                </div>
-            )}
-            {!session.isError && session.data?.mfaRequired && (
-                <div className="space-y-4">
-                    <VerificationMethods
-                        client={client}
-                        onVerified={() => void finish()}
-                    />
                 </div>
             )}
             {!session.isError &&

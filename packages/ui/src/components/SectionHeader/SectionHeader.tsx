@@ -1,6 +1,8 @@
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { SectionIcon } from "./SectionIcon";
+
 /**
  * Display a section title, supporting text, icon and optional actions.
  * @returns The component's rendered content for its current state.
@@ -21,9 +23,7 @@ export function SectionHeader({
     return (
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 flex-1 gap-3">
-                <span className="mt-0.5 shrink-0 text-accent-300">
-                    <Icon size={19} aria-hidden="true" />
-                </span>
+                <SectionIcon icon={Icon} className="mt-0.5" />
                 <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                         <h2 className="text-base font-semibold text-primary-50">

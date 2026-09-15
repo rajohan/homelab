@@ -1,7 +1,9 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 
+import { oidcConsentSchema, type OidcInteraction } from "@homelab/contracts";
 import { and, eq } from "drizzle-orm";
 import { Provider, errors, interactionPolicy } from "oidc-provider";
+import * as v from "valibot";
 
 import { grantSessions, users } from "../database/schema";
 import { cookieName, readAuthCookie } from "../http/httpSecurity";
@@ -10,6 +12,7 @@ import { encryptValue, randomToken, tokenDigest } from "../security/crypto";
 import { AuthFailure } from "../security/errors";
 import { audit } from "../security/store";
 import { createOidcAdapter } from "./adapter";
+import { readConsentDecision } from "./consent";
 import { createOidcFetch } from "./fetch";
 
 async function cookiePrincipal(
@@ -281,6 +284,7 @@ async function completeInteraction(
 ): Promise<void> {
     if (request.headers.origin !== accounts.configuration.issuer)
         throw new Error("Invalid interaction origin");
+    const decision = await readConsentDecision(request);
     const principal = await cookiePrincipal(accounts, request.headers.cookie);
     if (!principal) throw new Error("Sign in first");
     const details = await provider.interactionDetails(request, response);
@@ -294,6 +298,13 @@ async function completeInteraction(
         throw new Error("Client access denied");
     if (clientId !== accounts.configuration.dashboardClientId && !principal.session.mfaAt)
         throw new Error("Two-factor authentication is required");
+    if (
+        decision &&
+        (details.prompt.name !== "consent" ||
+            decision.interactionId !== details.uid ||
+            decision.accountId !== principal.user.id)
+    )
+        throw new Error("Consent no longer matches this sign-in");
     let result;
     if (details.prompt.name === "login") {
         result = {
@@ -307,9 +318,44 @@ async function completeInteraction(
     } else if (details.prompt.name === "consent") {
         if (details.session?.accountId !== principal.user.id)
             throw new Error("Account changed");
-        const grant = new provider.Grant({ accountId: principal.user.id, clientId });
+        // A retry after a lost response must resume the accepted decision, not mint another grant.
+        if (details.result?.consent || details.result?.error) {
+            replyInteraction(response, { redirect: details.returnTo });
+            return;
+        }
+        const metadata = configurationClient(accounts, clientId);
         const scope =
             typeof details.params.scope === "string" ? details.params.scope : "openid";
+        if (!decision) {
+            if (typeof details.params.redirect_uri !== "string")
+                throw new Error("Missing registered redirect");
+            replyInteraction(response, {
+                consent: v.parse(oidcConsentSchema, {
+                    interactionId: details.uid,
+                    accountId: principal.user.id,
+                    clientId,
+                    clientName: metadata?.client_name ?? clientId,
+                    username: principal.user.username,
+                    redirectOrigin: new URL(details.params.redirect_uri).origin,
+                    scopes: [...new Set(scope.split(" ").filter(Boolean))],
+                }),
+            });
+            return;
+        }
+        if (decision.decision === "deny") {
+            const redirect = await provider.interactionResult(
+                request,
+                response,
+                {
+                    error: "access_denied",
+                    error_description: "Access was denied by the user.",
+                },
+                { mergeWithLastSubmission: false }
+            );
+            replyInteraction(response, { redirect });
+            return;
+        }
+        const grant = new provider.Grant({ accountId: principal.user.id, clientId });
         if (
             scope.split(" ").includes("account") &&
             clientId !== accounts.configuration.dashboardClientId
@@ -326,7 +372,6 @@ async function completeInteraction(
         const sid = randomToken();
         protocolSession.sidFor(clientId, sid);
         await protocolSession.persist();
-        const metadata = configurationClient(accounts, clientId);
         const digest = tokenDigest(grantId);
         await accounts.database.transaction(async (transaction) => {
             await transaction
@@ -369,11 +414,15 @@ async function completeInteraction(
     const redirect = await provider.interactionResult(request, response, result, {
         mergeWithLastSubmission: false,
     });
+    replyInteraction(response, { redirect });
+}
+
+function replyInteraction(response: ServerResponse, result: OidcInteraction): void {
     response.writeHead(200, {
         "Content-Type": "application/json",
         "Cache-Control": "no-store",
     });
-    response.end(JSON.stringify({ redirect }));
+    response.end(JSON.stringify(result));
 }
 
 /**

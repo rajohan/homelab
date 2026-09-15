@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { generateKeyPairSync } from "node:crypto";
 
+import { oidcInteractionSchema, type OidcConsent } from "@homelab/contracts";
 import { eq, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/bun-sql/migrator";
 import { createLocalJWKSet, decodeJwt, jwtVerify } from "jose";
@@ -14,6 +15,7 @@ import { requiredAuthMigrations } from "../database/migrations";
 import {
     auditEvents,
     factors,
+    grantSessions,
     logoutOutbox,
     sessions,
     users,
@@ -340,13 +342,7 @@ describe("identity service with PostgreSQL and Bun", () => {
                 break;
             }
             if (url.pathname === "/sign-in") {
-                const completed = await post("/sign-in/complete", {});
-                if (completed.status !== 200)
-                    throw new Error(`Interaction failed: ${await completed.text()}`);
-                const next = v.parse(
-                    v.object({ redirect: v.string() }),
-                    await completed.json()
-                );
+                const next = await approveTestInteraction();
                 response = await browser(next.redirect);
             } else response = await browser(url.href);
         }
@@ -1619,6 +1615,125 @@ describe("security invariants against the isolated database", () => {
         );
     });
 
+    test.each(["dashboard", "basic-client"])(
+        "%s requires explicit consent with the displayed interaction and account",
+        async (clientId) => {
+            if (clientId !== "dashboard") await enrollTotp();
+            const consent = await pendingConsent(clientId);
+            expect(consent.clientId).toBe(clientId);
+            expect(consent.username).toBe(username);
+            expect(consent.redirectOrigin).toBe(issuer);
+            expect(consent.scopes).toEqual(["openid", "profile", "email"]);
+            const before = await application.connection.database
+                .select()
+                .from(grantSessions);
+            expect(
+                await json(post("/sign-in/complete", {}), oidcInteractionSchema)
+            ).toEqual({ consent });
+            for (const invalid of [
+                { interactionId: "another-interaction", accountId: consent.accountId },
+                { interactionId: consent.interactionId, accountId: crypto.randomUUID() },
+                {
+                    interactionId: consent.interactionId,
+                    accountId: consent.accountId,
+                    scopes: ["account"],
+                },
+            ]) {
+                expect(
+                    await status(
+                        post("/sign-in/complete", { ...invalid, decision: "approve" })
+                    )
+                ).toBe(403);
+            }
+            expect(
+                await status(
+                    browser("/sign-in/complete", {
+                        method: "POST",
+                        headers: {
+                            "content-type": "application/json",
+                            origin: "https://attacker.example",
+                        },
+                        body: JSON.stringify({
+                            interactionId: consent.interactionId,
+                            accountId: consent.accountId,
+                            decision: "approve",
+                        }),
+                    })
+                )
+            ).toBe(403);
+            expect(
+                await application.connection.database.select().from(grantSessions)
+            ).toEqual(before);
+            const result = await json(
+                post("/sign-in/complete", {
+                    interactionId: consent.interactionId,
+                    accountId: consent.accountId,
+                    decision: "approve",
+                }),
+                v.object({ redirect: v.string() })
+            );
+            const granted = await application.connection.database
+                .select()
+                .from(grantSessions);
+            const retry = await json(
+                post("/sign-in/complete", {
+                    interactionId: consent.interactionId,
+                    accountId: consent.accountId,
+                    decision: "approve",
+                }),
+                v.object({ redirect: v.string() })
+            );
+            expect(retry).toEqual(result);
+            expect(
+                await application.connection.database.select().from(grantSessions)
+            ).toEqual(granted);
+            const resumed = await browser(result.redirect);
+            const callback = new URL(resumed.headers.get("location") ?? "", issuer);
+            expect(callback.pathname).toBe("/callback");
+            expect(callback.searchParams.has("code")).toBe(true);
+            expect(callback.searchParams.get("state")).toBe("consent-state");
+            expect(
+                await status(
+                    post("/sign-in/complete", {
+                        interactionId: consent.interactionId,
+                        accountId: consent.accountId,
+                        decision: "approve",
+                    })
+                )
+            ).toBe(410);
+        }
+    );
+
+    test("denied app consent returns access_denied without a grant or signing out the user", async () => {
+        const consent = await pendingConsent("dashboard");
+        const before = await application.connection.database.select().from(grantSessions);
+        const next = await json(
+            post("/sign-in/complete", {
+                interactionId: consent.interactionId,
+                accountId: consent.accountId,
+                decision: "deny",
+            }),
+            v.object({ redirect: v.string() })
+        );
+        const resumed = await browser(next.redirect);
+        const callback = new URL(resumed.headers.get("location") ?? "", issuer);
+        expect(callback.pathname).toBe("/callback");
+        expect(callback.searchParams.get("error")).toBe("access_denied");
+        expect(callback.searchParams.get("state")).toBe("consent-state");
+        expect(callback.searchParams.has("code")).toBe(false);
+        expect(
+            await application.connection.database.select().from(grantSessions)
+        ).toEqual(before);
+        expect(await status(browser("/api/account"))).toBe(200);
+        const retry = await pendingConsent("dashboard");
+        expect(retry.interactionId).not.toBe(consent.interactionId);
+        const approved = await approveTestInteraction();
+        const accepted = await browser(approved.redirect);
+        const returned = new URL(accepted.headers.get("location") ?? "", issuer);
+        expect(returned.searchParams.has("code")).toBe(true);
+        expect(returned.searchParams.has("error")).toBe(false);
+    });
+
     test("a signed-in browser with an expired interaction gets a structured restart response", async () => {
         const response = await post("/sign-in/complete", {});
         expect(response.status).toBe(410);
@@ -2097,10 +2212,7 @@ async function authorizationTokens(scope: string, clientId = "dashboard") {
             );
         }
         if (url.pathname === "/sign-in") {
-            const next = await json(
-                post("/sign-in/complete", {}),
-                v.object({ redirect: v.string() })
-            );
+            const next = await approveTestInteraction();
             response = await browser(next.redirect);
         } else response = await browser(url.href);
     }
@@ -2115,4 +2227,48 @@ async function emailProof(recipient: string, subjectPrefix: string): Promise<str
     const token = message?.text.match(/#token=([\w-]{43})/)?.[1];
     if (!token) throw new Error("Test email proof missing");
     return token;
+}
+
+async function approveTestInteraction(): Promise<{ redirect: string }> {
+    const result = await json(post("/sign-in/complete", {}), oidcInteractionSchema);
+    if ("redirect" in result) return result;
+    const { interactionId, accountId } = result.consent;
+    return json(
+        post("/sign-in/complete", { interactionId, accountId, decision: "approve" }),
+        v.object({ redirect: v.string() })
+    );
+}
+
+async function pendingConsent(clientId: string): Promise<OidcConsent> {
+    const verifier = "consent-test-verifier-at-least-43-random-characters";
+    const challenge = Buffer.from(
+        await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))
+    ).toString("base64url");
+    let response = await browser(
+        "/authorize?" +
+            new URLSearchParams({
+                client_id: clientId,
+                redirect_uri: issuer + "/callback",
+                response_type: "code",
+                scope: "openid profile email",
+                prompt: "consent",
+                state: "consent-state",
+                code_challenge: challenge,
+                code_challenge_method: "S256",
+            }).toString()
+    );
+    for (let count = 0; count < 10; count += 1) {
+        const location = response.headers.get("location");
+        if (!location) throw new Error("Consent did not redirect");
+        const target = new URL(location, issuer);
+        if (target.pathname === "/sign-in") {
+            const result = await json(
+                post("/sign-in/complete", {}),
+                oidcInteractionSchema
+            );
+            if ("consent" in result) return result.consent;
+            response = await browser(result.redirect);
+        } else response = await browser(target.href);
+    }
+    throw new Error("Consent was not requested");
 }
