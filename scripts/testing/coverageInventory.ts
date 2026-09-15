@@ -7,7 +7,8 @@ export async function executableSources(): Promise<string[]> {
             (file) =>
                 !/(?:^|\/)(?:node_modules|dist|tests)\//.test(file) &&
                 !file.includes("/server/testing/") &&
-                !/\.(?:test|spec)\.|\.d\.ts$/.test(file)
+                !/\.(?:test|spec)\.tsx?$/.test(file) &&
+                !file.endsWith(".d.ts")
         )
         .toSorted();
     const transpilers = {
