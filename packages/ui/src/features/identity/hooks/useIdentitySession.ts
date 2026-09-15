@@ -15,6 +15,7 @@ export function useIdentitySession(client: IdentityClient) {
                 (!result.authenticated &&
                     !result.mfaRequired &&
                     (previous?.authenticated || previous?.mfaRequired)) ||
+                previous?.sessionId !== result.sessionId ||
                 previous?.userId !== result.userId ||
                 previous?.username !== result.username
             ) {

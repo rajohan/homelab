@@ -13,7 +13,11 @@ import type { AuthPageProps } from "../types";
 export function SignInPage({ client, address }: AuthPageProps) {
     const queryClient = useQueryClient();
     const session = useIdentitySession(client);
-    const identityKey = session.data?.userId ?? session.data?.username ?? "anonymous";
+    const identityKey =
+        session.data?.sessionId ??
+        session.data?.userId ??
+        session.data?.username ??
+        "anonymous";
     async function refresh(): Promise<void> {
         await queryClient.invalidateQueries({ queryKey: ["identity"] });
     }

@@ -456,6 +456,18 @@ describe("security invariants against the isolated database", () => {
         expect(await status(post("/api/login", { username, password }))).toBe(200);
     });
 
+    test("session inspection exposes a stable identifier that changes on a new login", async () => {
+        const shape = v.object({ userId: v.string(), sessionId: v.string() });
+        const first = await json(browser("/api/session"), shape);
+        const again = await json(browser("/api/session"), shape);
+        expect(again).toEqual(first);
+        expect(await status(post("/api/logout", {}))).toBe(200);
+        expect(await status(post("/api/login", { username, password }))).toBe(200);
+        const replacement = await json(browser("/api/session"), shape);
+        expect(replacement.userId).toBe(first.userId);
+        expect(replacement.sessionId).not.toBe(first.sessionId);
+    });
+
     test("account snapshots never renew idle time, including same-site cross-origin GETs", async () => {
         const digest = tokenDigest(cookieJar.get("homelab_auth")?.value ?? "");
         const original = new Date(Date.now() - 600_000);

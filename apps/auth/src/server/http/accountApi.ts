@@ -119,6 +119,7 @@ export async function accountApi(
                 mfaRequired: methods.length > 0 && principal.session.mfaAt === null,
                 username: principal.user.username,
                 userId: principal.user.id,
+                sessionId: principal.session.id,
                 recoveryAvailable:
                     methods.length > 0 && (await mfa.hasRecoveryCodes(principal)),
                 methods,

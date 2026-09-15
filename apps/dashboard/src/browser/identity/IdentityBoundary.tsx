@@ -38,7 +38,14 @@ export function IdentityBoundary({ children }: { children: ReactNode }) {
             </AuthFrame>
         );
     return (
-        <Fragment key={session.data.userId ?? session.data.username ?? "authenticated"}>
+        <Fragment
+            key={
+                session.data.sessionId ??
+                session.data.userId ??
+                session.data.username ??
+                "authenticated"
+            }
+        >
             {children}
         </Fragment>
     );
