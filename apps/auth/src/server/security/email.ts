@@ -1,4 +1,4 @@
-import { and, eq, gt, isNull, lt } from "drizzle-orm";
+import { and, eq, gt, isNull, lte } from "drizzle-orm";
 import * as v from "valibot";
 
 import type { AuthStore } from "../database/connection";
@@ -84,7 +84,7 @@ export class AccountEmail {
                 transaction,
                 this.accounts.configuration.encryptionKey,
                 principal.user.id,
-                null,
+                principal.session.id,
                 "email",
                 { email },
                 30 * 60_000
@@ -100,22 +100,17 @@ export class AccountEmail {
 
     async verifyEmail(token: string): Promise<void> {
         await this.accounts.database.transaction(async (transaction) => {
-            const challenge = await takeChallenge(
+            const { user, challenge } = await this.takeAccountProof(
                 transaction,
-                this.accounts.configuration.encryptionKey,
                 token,
                 "email"
             );
+            if (!challenge.sessionId) invalidProof();
+            await this.accounts.principalById(challenge.sessionId, transaction);
             const { email } = v.parse(
                 v.object({ email: v.pipe(v.string(), v.email()) }),
                 challenge.data
             );
-            const [user] = await transaction
-                .select()
-                .from(users)
-                .where(eq(users.id, challenge.userId))
-                .for("update");
-            if (!user) invalidProof();
             const [occupied] = await transaction
                 .select({ id: users.id })
                 .from(users)
@@ -130,6 +125,16 @@ export class AccountEmail {
                 .update(users)
                 .set({ email, emailVerified: true })
                 .where(eq(users.id, user.id));
+            // Recovery links sent to the previous mailbox must lose authority atomically.
+            if (user.email !== email)
+                await transaction
+                    .delete(challenges)
+                    .where(
+                        and(
+                            eq(challenges.userId, user.id),
+                            eq(challenges.purpose, "password-reset")
+                        )
+                    );
             if (user.emailVerified && user.email !== email)
                 await this.enqueue(transaction, {
                     to: user.email,
@@ -201,17 +206,11 @@ export class AccountEmail {
         if (!pending) invalidProof();
         const passwordHash = await hashPassword(password);
         await this.accounts.database.transaction(async (transaction) => {
-            const challenge = await takeChallenge(
+            const { challenge } = await this.takeAccountProof(
                 transaction,
-                this.accounts.configuration.encryptionKey,
                 token,
                 "password-reset"
             );
-            await transaction
-                .select({ id: users.id })
-                .from(users)
-                .where(eq(users.id, challenge.userId))
-                .for("update");
             await transaction
                 .update(users)
                 .set({ passwordHash })
@@ -229,6 +228,41 @@ export class AccountEmail {
         });
     }
 
+    private async takeAccountProof(
+        store: AuthStore,
+        token: string,
+        purpose: "email" | "password-reset"
+    ) {
+        const [pending] = await store
+            .select({ userId: challenges.userId })
+            .from(challenges)
+            .where(
+                and(
+                    eq(challenges.digest, tokenDigest(token)),
+                    eq(challenges.purpose, purpose),
+                    gt(challenges.expiresAt, new Date())
+                )
+            )
+            .limit(1);
+        if (!pending) invalidProof();
+        // Use the same lock order as session revocation and other account mutations.
+        // A proof invalidated while waiting must be rechecked after acquiring the lock.
+        const [user] = await store
+            .select()
+            .from(users)
+            .where(eq(users.id, pending.userId))
+            .for("update");
+        if (!user) invalidProof();
+        const challenge = await takeChallenge(
+            store,
+            this.accounts.configuration.encryptionKey,
+            token,
+            purpose,
+            user.id
+        );
+        return { user, challenge };
+    }
+
     async deliverPending(): Promise<number> {
         let delivered = 0;
         for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -241,7 +275,7 @@ export class AccountEmail {
                         .where(
                             and(
                                 isNull(mailOutbox.sentAt),
-                                lt(mailOutbox.nextAttemptAt, now),
+                                lte(mailOutbox.nextAttemptAt, now),
                                 gt(mailOutbox.expiresAt, now)
                             )
                         )

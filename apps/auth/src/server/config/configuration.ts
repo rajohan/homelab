@@ -121,6 +121,13 @@ export function parseAuthConfiguration(
         !clients.some((client) => client.client_id === dashboardClientId)
     )
         throw new Error("Invalid OIDC client inventory");
+    const dashboardClient = clients.find(
+        (client) => client.client_id === dashboardClientId
+    );
+    if (!dashboardClient?.redirect_uris.includes(`${dashboardOrigin}/auth/callback`))
+        throw new Error(
+            "The dashboard client must register its exact /auth/callback URL"
+        );
     for (const client of clients) {
         for (const uri of [...client.redirect_uris, ...client.post_logout_redirect_uris])
             secureUrl(uri, development);

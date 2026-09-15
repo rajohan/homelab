@@ -21,7 +21,10 @@ function environment(): Record<string, string> {
                 client_id: "dashboard",
                 client_name: "Dashboard",
                 client_secret: "test-client-secret-not-production-32",
-                redirect_uris: ["https://home.example.test/callback?fixed=1"],
+                redirect_uris: [
+                    "https://home.example.test/auth/callback",
+                    "https://home.example.test/callback?fixed=1",
+                ],
                 token_endpoint_auth_method: "client_secret_post",
             },
         ]),
@@ -34,6 +37,7 @@ describe("auth configuration boundaries", () => {
     test("accepts exact HTTPS callbacks including fixed query parameters", () => {
         const result = parseAuthConfiguration(environment());
         expect(result?.clients[0]?.redirect_uris).toEqual([
+            "https://home.example.test/auth/callback",
             "https://home.example.test/callback?fixed=1",
         ]);
         expect(result?.development).toBe(false);
@@ -109,4 +113,33 @@ test("rejects root-wide public prefixes without affecting segment prefixes", () 
             ]),
         })?.routes[0]?.publicPrefixes
     ).toEqual(["/assets/"]);
+});
+
+test("requires the designated dashboard client to register the exact BFF callback", () => {
+    for (const callback of [
+        "https://home.example.test/callback",
+        "https://home.example.test/auth/callback?fixed=1",
+        "https://other.example.test/auth/callback",
+    ]) {
+        const input = environment();
+        input.HOMELAB_AUTH_CLIENTS = JSON.stringify([
+            {
+                client_id: "dashboard",
+                client_name: "Dashboard",
+                client_secret: "test-client-secret-not-production-32",
+                redirect_uris: [callback],
+                token_endpoint_auth_method: "client_secret_basic",
+            },
+            {
+                client_id: "other",
+                client_name: "Other",
+                client_secret: "test-client-secret-not-production-32",
+                redirect_uris: ["https://home.example.test/auth/callback"],
+                token_endpoint_auth_method: "client_secret_post",
+            },
+        ]);
+        expect(() => parseAuthConfiguration(input)).toThrow(
+            "The dashboard client must register its exact /auth/callback URL"
+        );
+    }
 });

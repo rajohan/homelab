@@ -445,6 +445,101 @@ describe("security invariants against the isolated database", () => {
         expect(await status(post("/api/login", { username, password }))).toBe(200);
     });
 
+    test("revoking the initiating session invalidates its pending email replacement", async () => {
+        const current = await json(
+            browser("/api/account"),
+            v.object({
+                user: v.object({ email: v.string() }),
+                sessions: v.array(v.object({ id: v.string(), current: v.boolean() })),
+            })
+        );
+        const initiating = current.sessions.find((session) => session.current);
+        if (!initiating) throw new Error("Initiating session missing");
+        const replacement = `replacement-${username}@example.test`;
+        expect(await status(post("/api/account/email", { email: replacement }))).toBe(
+            200
+        );
+        const token = await emailProof(replacement, "Verify");
+        expect(await status(post("/api/login", { username, password }))).toBe(200);
+        expect(
+            await status(post("/api/account/session/revoke", { id: initiating.id }))
+        ).toBe(200);
+        expect(await status(post("/api/email/verify", { token }))).toBe(400);
+        const account = await json(
+            browser("/api/account"),
+            v.object({
+                user: v.object({ email: v.string() }),
+            })
+        );
+        expect(account.user.email).toBe(current.user.email);
+    });
+
+    test("expired initiating sessions cannot redeem an email replacement", async () => {
+        const replacement = `expired-${username}@example.test`;
+        expect(await status(post("/api/account/email", { email: replacement }))).toBe(
+            200
+        );
+        const token = await emailProof(replacement, "Verify");
+        const sessionToken = cookieJar.get("homelab_auth")?.value ?? "";
+        await application.connection.database
+            .update(sessions)
+            .set({ expiresAt: new Date(Date.now() - 1000) })
+            .where(eq(sessions.tokenHash, tokenDigest(sessionToken)));
+        expect(await status(post("/api/email/verify", { token }))).toBe(401);
+        const [account] = await application.connection.database
+            .select()
+            .from(users)
+            .where(eq(users.username, username));
+        expect(account?.email).toBe(`${username}@example.test`);
+    });
+
+    test("replacing email invalidates old reset links but permits recovery at the new address", async () => {
+        expect(await status(post("/api/password/request-reset", { username }))).toBe(200);
+        const oldReset = await emailProof(`${username}@example.test`, "Reset");
+        const replacement = `new-${username}@example.test`;
+        expect(await status(post("/api/account/email", { email: replacement }))).toBe(
+            200
+        );
+        const verification = await emailProof(replacement, "Verify");
+        expect(await status(post("/api/email/verify", { token: verification }))).toBe(
+            200
+        );
+        const newPassword = password + "-recovered";
+        expect(
+            await status(
+                post("/api/password/reset", {
+                    token: oldReset,
+                    password: newPassword,
+                })
+            )
+        ).toBe(400);
+        const [account] = await application.connection.database
+            .select()
+            .from(users)
+            .where(eq(users.username, username));
+        if (!account) throw new Error("Test account missing");
+        expect(
+            await application.services.accounts.checkPassword(
+                password,
+                account.passwordHash
+            )
+        ).toBe(true);
+        expect(account.email).toBe(replacement);
+        expect(await status(post("/api/password/request-reset", { username }))).toBe(200);
+        const newReset = await emailProof(replacement, "Reset");
+        expect(
+            await status(
+                post("/api/password/reset", {
+                    token: newReset,
+                    password: newPassword,
+                })
+            )
+        ).toBe(200);
+        expect(
+            await status(post("/api/login", { username, password: newPassword }))
+        ).toBe(200);
+    });
+
     test("changes passwords without leaving old sessions or pending proofs usable", async () => {
         const oldCookie = cookieJar.get("homelab_auth")?.value;
         expect(await status(post("/api/login", { username, password }))).toBe(200);
@@ -961,4 +1056,14 @@ async function authorizationTokens(scope: string, clientId = "dashboard") {
         } else response = await browser(url.href);
     }
     throw new Error("Authorization did not complete");
+}
+
+async function emailProof(recipient: string, subjectPrefix: string): Promise<string> {
+    await application.services.email.deliverPending();
+    const message = delivered.findLast(
+        (entry) => entry.to === recipient && entry.subject.startsWith(subjectPrefix)
+    );
+    const token = message?.text.match(/#token=([\w-]{43})/)?.[1];
+    if (!token) throw new Error("Test email proof missing");
+    return token;
 }
