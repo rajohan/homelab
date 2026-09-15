@@ -42,8 +42,8 @@ export function FieldsForm({
             fields.map((field) => [field.name, field.initial ?? ""])
         ),
         validators: {
-            // Focus/blur from password-manager controls is not an edit. Validate only
-            // edited fields here; submission still checks every field immediately.
+            // Before submit, focus/blur from password-manager controls is not an edit.
+            // After any submit attempt, keep validating every field until form.reset().
             // These local rules are synchronous: do not clear submit errors while
             // waiting for a debounced change validator to replace them.
             onChange: ({ value, formApi }) =>
@@ -51,11 +51,15 @@ export function FieldsForm({
                     fields,
                     value,
                     validate,
-                    new Set(
-                        fields
-                            .filter((field) => formApi.getFieldMeta(field.name)?.isDirty)
-                            .map((field) => field.name)
-                    )
+                    formApi.state.submissionAttempts > 0
+                        ? undefined
+                        : new Set(
+                              fields
+                                  .filter(
+                                      (field) => formApi.getFieldMeta(field.name)?.isDirty
+                                  )
+                                  .map((field) => field.name)
+                          )
                 ),
             onSubmit: validateValues,
         },

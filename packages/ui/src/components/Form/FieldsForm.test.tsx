@@ -295,3 +295,52 @@ test("submit errors update during correction without flashing or blocking a vali
     await user.click(screen.getByRole("button", { name: "Save" }));
     expect(submit).toHaveBeenCalledWith({ password: "short-valid-password" });
 });
+
+test.each(["Username", "Password"])(
+    "correcting only %s after an empty submit retains the other field error",
+    async (firstLabel) => {
+        const user = userEvent.setup();
+        const submit = mock(() => Promise.resolve());
+        render(
+            <FieldsForm
+                fields={[
+                    { name: "username", label: "Username" },
+                    {
+                        name: "password",
+                        label: "Password",
+                        type: "password",
+                        minimum: 12,
+                    },
+                ]}
+                submitLabel="Sign in"
+                onSubmit={submit}
+            />
+        );
+        const button = screen.getByRole("button", { name: "Sign in" });
+        await user.click(button);
+        const secondLabel = firstLabel === "Username" ? "Password" : "Username";
+        const first = screen.getByLabelText(firstLabel);
+        const second = screen.getByLabelText(secondLabel);
+        expect(second).toHaveAccessibleDescription(`${secondLabel} is required.`);
+        await user.type(
+            first,
+            firstLabel === "Username" ? "operator" : "valid-test-password"
+        );
+        expect(first).not.toHaveAttribute("aria-invalid", "true");
+        expect(second).toHaveAccessibleDescription(`${secondLabel} is required.`);
+        await user.click(second);
+        await user.tab();
+        expect(second).toHaveAccessibleDescription(`${secondLabel} is required.`);
+        expect(button).toBeDisabled();
+        await user.type(
+            second,
+            secondLabel === "Username" ? "operator" : "valid-test-password"
+        );
+        expect(button).toBeEnabled();
+        await user.click(button);
+        expect(submit).toHaveBeenCalledWith({
+            username: "operator",
+            password: "valid-test-password",
+        });
+    }
+);
