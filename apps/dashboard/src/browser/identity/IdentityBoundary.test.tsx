@@ -16,6 +16,7 @@ test.each([
     ["Log out", "Revoke your current session?", "session/revoke"],
     ["Revoke all sessions", "Revoke all sessions?", "sessions/revoke-all"],
 ])("immediately closes private settings after %s", async (button, title, endpoint) => {
+    const navigate = spyOn(globalThis.location, "replace").mockImplementation(() => {});
     const user = userEvent.setup();
     const client = new IdentityClient();
     let authenticated = true;
@@ -67,9 +68,8 @@ test.each([
         await user.click(await screen.findByRole("button", { name: button }));
         const dialog = await screen.findByRole("dialog", { name: title });
         await user.click(within(dialog).getByRole("button", { name: "Confirm" }));
-        expect(
-            await screen.findByRole("heading", { name: "Welcome to Homelab" })
-        ).toBeVisible();
+        await waitFor(() => expect(navigate).toHaveBeenCalledTimes(1));
+        expect(screen.queryByRole("link", { name: "Sign in" })).not.toBeInTheDocument();
         expect(
             screen.queryByRole("heading", { name: "Active sessions" })
         ).not.toBeInTheDocument();
@@ -83,6 +83,7 @@ test.each([
         session.mockRestore();
         account.mockRestore();
         action.mockRestore();
+        navigate.mockRestore();
     }
 });
 
@@ -152,3 +153,62 @@ test.each(["different-user", "same-user"])(
         }
     }
 );
+
+test("anonymous dashboard visits go straight to login with their complete destination", async () => {
+    const original = globalThis.location.href;
+    globalThis.history.replaceState(null, "", "/infrastructure?view=hosts#storage");
+    const session = spyOn(IdentityClient.prototype, "session").mockResolvedValue({
+        authenticated: false,
+        mfaRequired: false,
+        methods: [],
+    });
+    const navigate = spyOn(globalThis.location, "replace").mockImplementation(() => {});
+    const query = new QueryClient({
+        defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+    const view = render(
+        <QueryClientProvider client={query}>
+            <IdentityBoundary>Private content</IdentityBoundary>
+        </QueryClientProvider>
+    );
+    try {
+        await waitFor(() =>
+            expect(navigate).toHaveBeenCalledWith(
+                "/login?returnTo=%2Finfrastructure%3Fview%3Dhosts%23storage"
+            )
+        );
+        expect(screen.queryByText("Private content")).not.toBeInTheDocument();
+        expect(screen.queryByRole("link", { name: "Sign in" })).not.toBeInTheDocument();
+    } finally {
+        view.unmount();
+        query.clear();
+        session.mockRestore();
+        navigate.mockRestore();
+        globalThis.history.replaceState(null, "", original);
+    }
+});
+
+test("an unavailable identity service offers retry instead of an automatic redirect loop", async () => {
+    const session = spyOn(IdentityClient.prototype, "session").mockRejectedValue(
+        new Error("Synthetic outage")
+    );
+    const navigate = spyOn(globalThis.location, "replace").mockImplementation(() => {});
+    const query = new QueryClient({
+        defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+    const view = render(
+        <QueryClientProvider client={query}>
+            <IdentityBoundary>Private content</IdentityBoundary>
+        </QueryClientProvider>
+    );
+    try {
+        expect(await screen.findByRole("button", { name: "Try again" })).toBeVisible();
+        expect(navigate).not.toHaveBeenCalled();
+        expect(screen.queryByText("Private content")).not.toBeInTheDocument();
+    } finally {
+        view.unmount();
+        query.clear();
+        session.mockRestore();
+        navigate.mockRestore();
+    }
+});

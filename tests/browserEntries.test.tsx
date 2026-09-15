@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 
 import { act, screen, waitFor } from "@testing-library/react";
 
@@ -41,6 +41,7 @@ test("the dashboard entry mounts its unauthenticated boundary without exposing a
     root.id = "root";
     document.body.append(root);
     globalThis.history.replaceState(null, "", "/account");
+    const navigate = spyOn(globalThis.location, "replace").mockImplementation(() => {});
     globalThis.fetch = Object.assign(
         () =>
             Promise.resolve(
@@ -54,12 +55,13 @@ test("the dashboard entry mounts its unauthenticated boundary without exposing a
             entry = await import("../apps/dashboard/src/browser/main");
         });
         await waitFor(() =>
-            expect(screen.getByRole("link", { name: /Sign in/ })).toBeTruthy()
+            expect(navigate).toHaveBeenCalledWith("/login?returnTo=%2Faccount")
         );
         expect(screen.queryByRole("heading", { name: "Account settings" })).toBeNull();
     } finally {
         act(() => entry?.applicationRoot.unmount());
         globalThis.fetch = originalFetch;
         root.remove();
+        navigate.mockRestore();
     }
 });

@@ -1,4 +1,4 @@
-import { AuthFrame, Button, LoadingState, buttonStyles } from "@homelab/ui";
+import { AuthFrame, Button, LoadingState, Redirect } from "@homelab/ui";
 import { useIdentitySession } from "@homelab/ui/identity";
 import { IdentityClient } from "@homelab/ui/identity/client";
 import { Fragment, useState, type ReactNode } from "react";
@@ -15,32 +15,34 @@ export function IdentityBoundary({ children }: { children: ReactNode }) {
                 <LoadingState label="Verifying your session…" />
             </main>
         );
-    if (session.isError || !session.data.authenticated)
+    if (session.isError)
         return (
             <AuthFrame title="Welcome to Homelab">
                 <p className="text-sm leading-6 text-primary-300">
-                    {session.isError
-                        ? "The identity service is unavailable. Your session has not been verified."
-                        : "Sign in to manage your account and infrastructure."}
+                    The identity service is unavailable. Your session has not been
+                    verified.
                 </p>
-                {session.isError ? (
-                    <Button
-                        onClick={() => {
-                            void session.refetch();
-                        }}
-                    >
-                        Try again
-                    </Button>
-                ) : (
-                    <a
-                        className={buttonStyles({ fullWidth: true })}
-                        href="/login?returnTo=/settings"
-                    >
-                        Sign in
-                    </a>
-                )}
+                <Button
+                    onClick={() => {
+                        void session.refetch();
+                    }}
+                >
+                    Try again
+                </Button>
             </AuthFrame>
         );
+    if (!session.data.authenticated) {
+        const { pathname, search, hash } = globalThis.location;
+        const query = new URLSearchParams({ returnTo: pathname + search + hash });
+        return (
+            <main className="flex min-h-dvh items-center justify-center p-4">
+                <Redirect
+                    to={`/login?${query.toString()}`}
+                    label="Taking you to sign-in…"
+                />
+            </main>
+        );
+    }
     return (
         <Fragment
             key={

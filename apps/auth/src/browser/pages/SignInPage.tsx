@@ -1,49 +1,44 @@
-import { Brand, Button, ErrorNotice, LoadingState } from "@homelab/ui";
-import {
-    AccountSettings,
-    VerificationMethods,
-    useIdentitySession,
-} from "@homelab/ui/identity";
+import { Button, ErrorNotice, LoadingState } from "@homelab/ui";
+import { VerificationMethods, useIdentitySession } from "@homelab/ui/identity";
 import { useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 
 import { SignedInActions } from "../components/SignedInActions";
 import { SignInForm } from "../components/SignInForm";
+import { SignInRedirect } from "../components/SignInRedirect";
 import { AuthLayout } from "../layout/AuthLayout";
 import type { AuthPageProps } from "../types";
+
 /**
- * Coordinate password, MFA and account views using the verified session identity.
- * @returns The component's rendered content for its current state.
+ * Coordinate password and MFA verification, returning completed sign-ins to their app.
+ * @returns Authentication progress or the account menu for a direct signed-in visit.
  */
 export function SignInPage({ client, address }: AuthPageProps) {
     const queryClient = useQueryClient();
     const session = useIdentitySession(client);
+    const [completed, setCompleted] = useState(false);
     const identityKey =
         session.data?.sessionId ??
         session.data?.userId ??
         session.data?.username ??
         "anonymous";
+    const handoff =
+        completed ||
+        address.pathname === "/sso" ||
+        address.searchParams.has("interaction");
+
     async function refresh(): Promise<void> {
         await queryClient.invalidateQueries({ queryKey: ["identity"] });
     }
-    if (
-        !session.isError &&
-        address.pathname === "/account" &&
-        session.data?.authenticated
-    )
-        return (
-            <main key={identityKey} className="mx-auto max-w-5xl p-5 sm:p-10">
-                <a
-                    href="/sign-in"
-                    className="mb-8 inline-flex"
-                    aria-label="Homelab sign in"
-                >
-                    <Brand subtitle="Account security" />
-                </a>
-                <AccountSettings client={client} signInPath="/sign-in" />
-            </main>
-        );
+    async function finish(): Promise<void> {
+        setCompleted(true);
+        await refresh();
+    }
     return (
-        <AuthLayout key={identityKey} title="Sign in">
+        <AuthLayout
+            key={identityKey}
+            title={session.data?.mfaRequired ? "Verify your identity" : "Sign in"}
+        >
             {session.isPending && (
                 <LoadingState label="Checking your session…" size="sm" />
             )}
@@ -56,27 +51,34 @@ export function SignInPage({ client, address }: AuthPageProps) {
             {!session.isError && session.data?.mfaRequired && (
                 <div className="space-y-4">
                     <p className="text-base text-primary-300">
-                        Confirm your second factor to finish signing in.
+                        Choose a verification method to finish signing in.
                     </p>
                     <VerificationMethods
                         client={client}
-                        onVerified={() => void refresh()}
+                        onVerified={() => void finish()}
                     />
                 </div>
             )}
-            {!session.isError && session.data?.authenticated && (
-                <SignedInActions
-                    client={client}
-                    address={address}
-                    username={session.data.username}
-                    onRefresh={refresh}
-                />
-            )}
+            {!session.isError &&
+                session.data?.authenticated &&
+                (handoff ? (
+                    <SignInRedirect
+                        key={address.href}
+                        client={client}
+                        address={address}
+                    />
+                ) : (
+                    <SignedInActions
+                        client={client}
+                        username={session.data.username}
+                        onRefresh={refresh}
+                    />
+                ))}
             {!session.isError &&
                 session.data &&
                 !session.data.authenticated &&
                 !session.data.mfaRequired && (
-                    <SignInForm client={client} onComplete={refresh} />
+                    <SignInForm client={client} onComplete={finish} />
                 )}
         </AuthLayout>
     );

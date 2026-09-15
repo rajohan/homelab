@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { Button, ErrorNotice, FieldsForm } from "../../../../index";
+import { Button, ErrorNotice, FieldsForm, LoadingState } from "../../../../index";
 import type { IdentityClient } from "../../api/IdentityClient";
 
 /**
@@ -24,7 +24,8 @@ export function VerificationMethods({
     const [codeMethod, setCodeMethod] = useState<"totp" | "recovery" | undefined>();
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<unknown>();
-    if (methods.isPending) return <output>Loading verification methods…</output>;
+    if (methods.isPending)
+        return <LoadingState label="Loading verification methods…" size="sm" />;
     if (methods.isError)
         return (
             <div className="space-y-3">
@@ -93,10 +94,11 @@ export function VerificationMethods({
             </div>
         );
     return (
-        <div className="space-y-3">
+        <div className="grid grid-cols-1 gap-3">
             {error !== undefined && <ErrorNotice error={error} />}
             {available.includes("webauthn") && (
                 <Button
+                    fullWidth
                     disabled={busy}
                     onClick={() => {
                         setBusy(true);
@@ -112,12 +114,22 @@ export function VerificationMethods({
                 </Button>
             )}
             {available.includes("totp") && (
-                <Button disabled={busy} onClick={() => setCodeMethod("totp")}>
+                <Button
+                    fullWidth
+                    variant={available.includes("webauthn") ? "secondary" : "primary"}
+                    disabled={busy}
+                    onClick={() => setCodeMethod("totp")}
+                >
                     Use authenticator app
                 </Button>
             )}
             {methods.data.recoveryAvailable && (
-                <Button disabled={busy} onClick={() => setCodeMethod("recovery")}>
+                <Button
+                    fullWidth
+                    variant="ghost"
+                    disabled={busy}
+                    onClick={() => setCodeMethod("recovery")}
+                >
                     Use recovery code
                 </Button>
             )}

@@ -87,7 +87,7 @@ export function createDashboardAuthentication(configuration: DashboardAuthConfig
         return target.origin === configuration.origin &&
             !target.pathname.startsWith("/auth/") &&
             target.pathname !== "/login"
-            ? `${target.pathname}${target.search}`
+            ? `${target.pathname}${target.search}${target.hash}`
             : "/settings";
     }
     async function begin(request: Request): Promise<Response> {

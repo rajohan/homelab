@@ -182,13 +182,24 @@ describe.each(["client_secret_post", "client_secret_basic"] as const)(
             await testDatabase?.close();
             await authServer?.stop(true);
         });
-        async function signIn(): Promise<string> {
+        async function currentSession() {
+            const token = jar.get(issuer)?.get("homelab_auth")?.value;
+            if (!token) throw new Error("Current test session cookie missing");
+            const principal = await auth.services.accounts.principalByToken(token);
+            return principal.session;
+        }
+        async function signIn(
+            returnTo = "/settings",
+            expected = returnTo
+        ): Promise<string> {
             const login = await browser(`${issuer}/api/login`, {
                 username: "bff-operator",
                 password,
             });
             expect(login.status).toBe(200);
-            let response = await browser(`${origin}/login?returnTo=/settings`);
+            let response = await browser(
+                `${origin}/login?${new URLSearchParams({ returnTo }).toString()}`
+            );
             for (let count = 0; count < 12; count += 1) {
                 const location = response.headers.get("Location");
                 if (!location) throw new Error("OIDC redirect missing");
@@ -196,7 +207,7 @@ describe.each(["client_secret_post", "client_secret_basic"] as const)(
                 if (next.origin === origin && next.pathname === "/auth/callback") {
                     const callback = await browser(next.href);
                     expect(callback.status).toBe(303);
-                    expect(callback.headers.get("Location")).toBe("/settings");
+                    expect(callback.headers.get("Location")).toBe(expected);
                     return next.href;
                 }
                 if (next.pathname === "/sign-in") {
@@ -227,8 +238,27 @@ describe.each(["client_secret_post", "client_secret_basic"] as const)(
                 expect(cookie?.split(".")).toHaveLength(5);
                 expect(cookie).not.toContain("bff-operator");
             });
+            test("returns to the requested dashboard page, including its query and fragment", async () => {
+                await signIn("/infrastructure?view=hosts#storage");
+                for (const path of ["//attacker.example/", "/login", "/auth/callback"]) {
+                    await signIn(path, "/settings");
+                }
+            });
+            test("auth account links use the dashboard instead of a duplicate settings page", async () => {
+                for (const [path, target] of [
+                    ["/account", "/settings"],
+                    ["/dashboard", "/"],
+                ]) {
+                    const response = await browser(
+                        issuer + path + "?returnTo=https://attacker.example/"
+                    );
+                    expect(response.status).toBe(302);
+                    expect(response.headers.get("Location")).toBe(origin + target);
+                    expect(response.headers.get("Cache-Control")).toBe("no-store");
+                }
+            });
             test("renews activity for private API calls, not passive session polling", async () => {
-                const [session] = await auth.connection.database.select().from(sessions);
+                const session = await currentSession();
                 if (!session) throw new Error("Session missing");
                 const lastSeen = new Date(Date.now() - 55 * 60_000);
                 await auth.connection.database
@@ -269,7 +299,7 @@ describe.each(["client_secret_post", "client_secret_basic"] as const)(
             });
 
             test("rejected tRPC origins cannot renew the central session", async () => {
-                const [session] = await auth.connection.database.select().from(sessions);
+                const session = await currentSession();
                 if (!session) throw new Error("Session missing");
                 const lastSeen = new Date(Date.now() - 55 * 60_000);
                 await auth.connection.database
@@ -301,7 +331,7 @@ describe.each(["client_secret_post", "client_secret_basic"] as const)(
                 }
             });
             test("cross-site or unproven tRPC GETs cannot renew the central session", async () => {
-                const [session] = await auth.connection.database.select().from(sessions);
+                const session = await currentSession();
                 if (!session) throw new Error("Session missing");
                 const cookie = jar.get(origin)?.get("homelab_dashboard")?.value;
                 if (!cookie) throw new Error("Dashboard cookie missing");
@@ -352,7 +382,7 @@ describe.each(["client_secret_post", "client_secret_basic"] as const)(
                     "https://attacker.example"
                 );
                 expect(bad.status).toBe(403);
-                const [session] = await auth.connection.database.select().from(sessions);
+                const session = await currentSession();
                 if (!session) throw new Error("Session missing");
                 await auth.connection.database
                     .update(sessions)
@@ -388,7 +418,7 @@ describe.each(["client_secret_post", "client_secret_basic"] as const)(
             test("does not revive an idle-expired central session", async () => {
                 const sessionData = await browser(`${origin}/api/account`);
                 expect(sessionData.status).toBe(200);
-                const [session] = await auth.connection.database.select().from(sessions);
+                const session = await currentSession();
                 if (!session) throw new Error("Session missing");
                 const lastSeen = new Date(Date.now() - 61 * 60_000);
                 await auth.connection.database

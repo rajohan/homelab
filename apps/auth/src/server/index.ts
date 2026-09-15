@@ -39,7 +39,6 @@ export async function startAuthServer(options: AuthServerOptions = {}) {
             routes: {
                 "/": application ? index : authRequest,
                 "/sign-in": application ? index : authRequest,
-                "/account": application ? index : authRequest,
                 "/sso": application ? index : authRequest,
                 "/verify-email": application ? index : authRequest,
                 "/forgot-password": application ? index : authRequest,

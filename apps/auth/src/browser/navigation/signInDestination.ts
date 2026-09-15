@@ -1,16 +1,16 @@
 import type { IdentityClient } from "@homelab/ui/identity/client";
 import * as v from "valibot";
 /**
- * Finish the pending SSO or OIDC handoff after validating its return destination.
+ * Complete the pending SSO or OIDC handoff and validate its return destination.
  * @param client - The authenticated browser identity client.
  * @param address - The current sign-in URL containing handoff parameters.
- * @returns Completion after scheduling navigation.
+ * @returns The validated destination for browser navigation.
  * @throws {Error} The server returns an unexpected or unsafe redirect destination.
  */
-export async function continueSignIn(
+export async function signInDestination(
     client: IdentityClient,
     address: URL
-): Promise<void> {
+): Promise<string> {
     if (address.pathname === "/sso") {
         const target = address.searchParams.get("target");
         const nonce = address.searchParams.get("nonce");
@@ -25,15 +25,15 @@ export async function continueSignIn(
             destination.pathname !== "/.homelab/sso/callback"
         )
             throw new Error("Invalid return address.");
-        globalThis.location.assign(destination.href);
+        return destination.href;
     } else if (address.searchParams.has("interaction")) {
         const result = v.parse(
             v.object({ redirect: v.string() }),
             await client.request("/sign-in/complete", {})
         );
-        const destination = new URL(result.redirect, globalThis.location.origin);
-        if (destination.origin !== globalThis.location.origin)
+        const destination = new URL(result.redirect, address.origin);
+        if (destination.origin !== address.origin)
             throw new Error("Invalid authorization return address.");
-        globalThis.location.assign(destination.href);
-    } else globalThis.location.assign("/account");
+        return destination.href;
+    } else return new URL("/account", address).href;
 }

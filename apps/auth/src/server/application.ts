@@ -84,6 +84,21 @@ export async function createAuthApplication(
         remoteAddress = "unknown"
     ): Promise<Response> {
         const path = new URL(request.url).pathname;
+        if (
+            (request.method === "GET" || request.method === "HEAD") &&
+            (path === "/account" || path === "/dashboard")
+        )
+            return new Response(null, {
+                status: 302,
+                headers: {
+                    Location: new URL(
+                        path === "/account" ? "/settings" : "/",
+                        configuration.dashboardOrigin
+                    ).href,
+                    "Cache-Control": "no-store",
+                    "Referrer-Policy": "no-referrer",
+                },
+            });
         if (path === "/health/live")
             return secureJson({
                 service: "auth",

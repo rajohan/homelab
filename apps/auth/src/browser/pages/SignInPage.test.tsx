@@ -1,86 +1,155 @@
 import { expect, spyOn, test } from "bun:test";
 
-import { IdentityClient, type AccountSnapshot } from "@homelab/ui/identity/client";
+import { IdentityClient } from "@homelab/ui/identity/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { StrictMode } from "react";
 
 import { SignInPage } from "./SignInPage";
 
-test.each(["different-user", "same-user"])(
-    "auth %s session changes discard old account state and pending dialogs",
-    async (kind) => {
+test("a direct authenticated auth visit keeps the account menu and signs out in place", async () => {
+    const client = new IdentityClient();
+    let authenticated = true;
+    const session = spyOn(client, "session").mockImplementation(() =>
+        Promise.resolve({
+            authenticated,
+            mfaRequired: false,
+            methods: [],
+            username: "operator",
+        })
+    );
+    const request = spyOn(client, "request").mockImplementation(() => {
+        authenticated = false;
+        return Promise.resolve({});
+    });
+    const navigate = spyOn(globalThis.location, "replace").mockImplementation(() => {});
+    const query = new QueryClient({
+        defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+    const view = render(
+        <QueryClientProvider client={query}>
+            <SignInPage
+                client={client}
+                address={new URL("https://auth.example.test/sign-in")}
+                token={null}
+            />
+        </QueryClientProvider>
+    );
+    try {
+        expect(await screen.findByText("operator")).toBeVisible();
+        expect(
+            screen.getByRole("link", { name: "Manage account security" })
+        ).toHaveAttribute("href", "/account");
+        expect(screen.getByRole("link", { name: "Continue" })).toHaveAttribute(
+            "href",
+            "/dashboard"
+        );
+        expect(navigate).not.toHaveBeenCalled();
+        await userEvent
+            .setup()
+            .click(screen.getByRole("button", { name: "Use another account" }));
+        expect(await screen.findByLabelText("Username")).toBeVisible();
+        expect(request).toHaveBeenCalledWith("/api/logout", {});
+    } finally {
+        view.unmount();
+        query.clear();
+        session.mockRestore();
+        request.mockRestore();
+        navigate.mockRestore();
+    }
+});
+
+test.each(["totp", "recovery", "webauthn"] as const)(
+    "completed %s verification automatically resumes OIDC without Continue",
+    async (method) => {
         const client = new IdentityClient();
-        let identity = "first";
-        let sessionId = "first";
+        let authenticated = false;
         const session = spyOn(client, "session").mockImplementation(() =>
             Promise.resolve({
-                authenticated: true,
-                userId: identity,
-                sessionId,
-                username: identity,
-                mfaRequired: false,
-                methods: [],
+                authenticated,
+                mfaRequired: !authenticated,
+                userId: "operator",
+                sessionId: "fixture",
+                username: "operator",
+                methods: ["totp", "webauthn"],
+                recoveryAvailable: true,
             })
         );
-        const snapshot = spyOn(client, "snapshot").mockImplementation(() =>
-            Promise.resolve({
-                user: {
-                    id: identity,
-                    username: identity,
-                    email: sessionId + "@example.test",
-                    emailVerified: true,
-                },
-                factors: [],
-                recoveryCodesRemaining: 0,
-                sessions: [],
-                events: [],
-            } satisfies AccountSnapshot)
+        const request = spyOn(client, "request").mockImplementation((path) => {
+            if (path.startsWith("/api/account/proof/")) {
+                authenticated = true;
+                return Promise.resolve({});
+            }
+            if (path === "/sign-in/complete")
+                return Promise.resolve({
+                    redirect: "https://auth.example.test/authorize/fixture",
+                });
+            throw new Error("Unexpected test request");
+        });
+        const proof = spyOn(client, "securityKeyProof").mockImplementation(() => {
+            authenticated = true;
+            return Promise.resolve();
+        });
+        const navigate = spyOn(globalThis.location, "replace").mockImplementation(
+            () => {}
         );
-        const cancel = spyOn(client, "cancelActions");
         const query = new QueryClient({
             defaultOptions: { queries: { retry: false, gcTime: 0 } },
         });
         const view = render(
-            <QueryClientProvider client={query}>
-                <SignInPage
-                    client={client}
-                    address={new URL("https://auth.example.test/account")}
-                    token={null}
-                />
-            </QueryClientProvider>
+            <StrictMode>
+                <QueryClientProvider client={query}>
+                    <SignInPage
+                        client={client}
+                        address={
+                            new URL(
+                                "https://auth.example.test/sign-in?interaction=fixture"
+                            )
+                        }
+                        token={null}
+                    />
+                </QueryClientProvider>
+            </StrictMode>
         );
         try {
-            expect(await screen.findByText("first@example.test")).toBeVisible();
-            await userEvent
-                .setup()
-                .click(screen.getByRole("button", { name: "Change email" }));
+            const user = userEvent.setup();
+            const key = await screen.findByRole("button", { name: "Use security key" });
+            expect(key.parentElement).toHaveClass("grid", "grid-cols-1", "gap-3");
+            if (method === "webauthn") await user.click(key);
+            else {
+                await user.click(
+                    screen.getByRole("button", {
+                        name:
+                            method === "totp"
+                                ? "Use authenticator app"
+                                : "Use recovery code",
+                    })
+                );
+                await user.type(
+                    screen.getByLabelText(
+                        method === "totp" ? "Authenticator code" : "Recovery code"
+                    ),
+                    method === "totp" ? "123456" : "synthetic-recovery"
+                );
+                await user.click(screen.getByRole("button", { name: "Verify" }));
+            }
+            await waitFor(() =>
+                expect(navigate).toHaveBeenCalledWith(
+                    "https://auth.example.test/authorize/fixture"
+                )
+            );
             expect(
-                await screen.findByRole("dialog", { name: "Verify email" })
-            ).toBeVisible();
-            query.setQueryData(["identity", "methods"], { old: true });
-            cancel.mockClear();
-            if (kind === "different-user") identity = "second";
-            sessionId = "second";
-            await query.invalidateQueries({ queryKey: ["identity", "session"] });
-            expect(await screen.findByText("second@example.test")).toBeVisible();
-            expect(screen.queryByText("first@example.test")).not.toBeInTheDocument();
-            expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-            expect(query.getQueryData(["identity", "methods"])).toBeUndefined();
-            expect(cancel).toHaveBeenCalled();
-            expect(snapshot).toHaveBeenCalledTimes(2);
-            session.mockRejectedValueOnce(new Error("Synthetic service failure"));
-            await query.invalidateQueries({ queryKey: ["identity", "session"] });
-            expect(
-                await screen.findByRole("button", { name: "Try again" })
-            ).toBeVisible();
-            expect(screen.queryByText("second@example.test")).not.toBeInTheDocument();
+                request.mock.calls.filter(([path]) => path === "/sign-in/complete")
+            ).toHaveLength(1);
+            expect(screen.queryByText("Continue")).not.toBeInTheDocument();
         } finally {
             view.unmount();
             query.clear();
             session.mockRestore();
-            snapshot.mockRestore();
-            cancel.mockRestore();
+            request.mockRestore();
+            proof.mockRestore();
+            navigate.mockRestore();
         }
     }
 );
@@ -103,6 +172,7 @@ test("stable pending-MFA polling preserves a security-key ceremony; signing out 
         () => pending.promise
     );
     const cancel = spyOn(client, "cancelActions");
+    const navigate = spyOn(globalThis.location, "replace").mockImplementation(() => {});
     const query = new QueryClient({
         defaultOptions: { queries: { retry: false, gcTime: 0 } },
     });
@@ -133,9 +203,7 @@ test("stable pending-MFA polling preserves a security-key ceremony; signing out 
         mfaRequired = false;
         pending.resolve();
         await waitFor(() =>
-            expect(query.getQueryData(["identity", "session"])).toMatchObject({
-                authenticated: true,
-            })
+            expect(navigate).toHaveBeenCalledWith("https://auth.example.test/account")
         );
         expect(cancel).not.toHaveBeenCalled();
         authenticated = false;
@@ -149,5 +217,6 @@ test("stable pending-MFA polling preserves a security-key ceremony; signing out 
         session.mockRestore();
         proof.mockRestore();
         cancel.mockRestore();
+        navigate.mockRestore();
     }
 });
