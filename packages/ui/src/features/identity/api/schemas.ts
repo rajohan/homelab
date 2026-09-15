@@ -36,4 +36,6 @@ export const sessionSchema = v.object({
     mfaRequired: v.boolean(),
     methods: v.array(v.picklist(["totp", "webauthn"])),
     username: v.optional(v.string()),
+    userId: v.optional(v.string()),
+    recoveryAvailable: v.optional(v.boolean()),
 });

@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, inArray, ne } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, isNotNull, ne } from "drizzle-orm";
 
 import type { AuthConfiguration } from "../config/configuration";
 import type { AuthDatabase, AuthStore, AuthTransaction } from "../database/connection";
@@ -162,7 +162,7 @@ export class Accounts {
             const existing = await transaction
                 .select({ id: sessions.id })
                 .from(sessions)
-                .where(eq(sessions.userId, user.id))
+                .where(and(eq(sessions.userId, user.id), isNull(sessions.mfaAt)))
                 .orderBy(desc(sessions.createdAt));
             for (const session of existing.slice(15))
                 await this.revoke(transaction, session.id);
@@ -180,6 +180,26 @@ export class Accounts {
             await audit(transaction, user.id, "password_login");
         });
         return { token, mfaRequired: await this.hasMfa(user.id) };
+    }
+
+    async completeMfa(store: AuthStore, principal: Principal): Promise<void> {
+        await store
+            .update(sessions)
+            .set({ mfaAt: new Date(), lastSeenAt: new Date() })
+            .where(eq(sessions.id, principal.session.id));
+        // Only a completed second factor may displace another verified session.
+        const others = await store
+            .select({ id: sessions.id })
+            .from(sessions)
+            .where(
+                and(
+                    eq(sessions.userId, principal.user.id),
+                    isNotNull(sessions.mfaAt),
+                    ne(sessions.id, principal.session.id)
+                )
+            )
+            .orderBy(desc(sessions.lastSeenAt));
+        for (const session of others.slice(15)) await this.revoke(store, session.id);
     }
 
     async touch(principal: Principal): Promise<void> {

@@ -159,6 +159,9 @@ export class AccountEmail {
     }
 
     async requestReset(username: string, remote: string): Promise<void> {
+        // Four reset jobs/minute leaves capacity for verified-user mail in the
+        // shared five-jobs-per-cycle worker, even with distributed unknown names.
+        await rateLimit(this.accounts.database, "reset-global", 4, 60_000);
         await rateLimit(this.accounts.database, `reset-ip:${remote}`, 10, 3_600_000);
         await rateLimit(
             this.accounts.database,

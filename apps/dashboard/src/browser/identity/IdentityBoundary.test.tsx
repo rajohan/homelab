@@ -85,3 +85,61 @@ test.each([
         action.mockRestore();
     }
 });
+
+test("switching authenticated users clears old snapshots, dialogs and account caches", async () => {
+    const client = new IdentityClient();
+    let identity = "first";
+    const snapshot = (): AccountSnapshot => ({
+        user: {
+            id: identity,
+            username: identity,
+            email: identity + "@example.test",
+            emailVerified: true,
+        },
+        factors: [],
+        recoveryCodesRemaining: 0,
+        sessions: [],
+        events: [],
+    });
+    const session = spyOn(IdentityClient.prototype, "session").mockImplementation(() =>
+        Promise.resolve({
+            authenticated: true,
+            userId: identity,
+            username: identity,
+            mfaRequired: false,
+            methods: [],
+        })
+    );
+    const account = spyOn(client, "snapshot").mockImplementation(() =>
+        Promise.resolve(snapshot())
+    );
+    const query = new QueryClient({
+        defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+    const view = render(
+        <QueryClientProvider client={query}>
+            <IdentityBoundary>
+                <AccountSettings client={client} />
+            </IdentityBoundary>
+        </QueryClientProvider>
+    );
+    try {
+        expect(await screen.findByText("first@example.test")).toBeVisible();
+        const user = userEvent.setup();
+        await user.click(screen.getByRole("button", { name: "Change email" }));
+        expect(await screen.findByRole("dialog", { name: "Verify email" })).toBeVisible();
+        query.setQueryData(["identity", "methods"], { old: true });
+        identity = "second";
+        await query.invalidateQueries({ queryKey: ["identity", "session"] });
+        expect(await screen.findByText("second@example.test")).toBeVisible();
+        expect(screen.queryByText("first@example.test")).not.toBeInTheDocument();
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+        expect(query.getQueryData(["identity", "methods"])).toBeUndefined();
+        expect(account).toHaveBeenCalledTimes(2);
+    } finally {
+        view.unmount();
+        query.clear();
+        session.mockRestore();
+        account.mockRestore();
+    }
+});

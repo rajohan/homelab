@@ -118,6 +118,9 @@ export async function accountApi(
                 authenticated: methods.length === 0 || principal.session.mfaAt !== null,
                 mfaRequired: methods.length > 0 && principal.session.mfaAt === null,
                 username: principal.user.username,
+                userId: principal.user.id,
+                recoveryAvailable:
+                    methods.length > 0 && (await mfa.hasRecoveryCodes(principal)),
                 methods,
             });
         } catch (error) {

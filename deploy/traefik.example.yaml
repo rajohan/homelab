@@ -19,7 +19,7 @@ http:
         address: https://auth.example.test/api/authz/forward-auth
         trustForwardHeader: false
         forwardBody: false
-        authRequestHeaders: [Cookie, X-Homelab-Proxy-Key]
+        authRequestHeaders: [Cookie, Origin, Sec-Fetch-Site, X-Homelab-Proxy-Key]
         authResponseHeaders: [Remote-User, Remote-Name, Remote-Email, Remote-Groups]
         addAuthCookiesToResponse: [__Host-homelab_sso, __Host-homelab_sso_nonce]
     homelab-strip-credential:

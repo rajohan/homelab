@@ -63,11 +63,18 @@ services:
       HOMELAB_AUTH_JWKS:
       HOMELAB_AUTH_CLIENTS:
       HOMELAB_AUTH_DASHBOARD_CLIENT_ID:
-      HOMELAB_AUTH_ROUTES:
+      HOMELAB_AUTH_POLICY_FILE: /etc/homelab-auth/access-policy.yml
       HOMELAB_AUTH_RESEND_API_KEY:
       HOMELAB_AUTH_EMAIL_FROM:
     ports:
       - "127.0.0.1:3111:3101"
+    volumes:
+      - type: bind
+        source: ${HOMELAB_AUTH_POLICY_FILE:?Set the host path to the reviewed access policy YAML}
+        target: /etc/homelab-auth/access-policy.yml
+        read_only: true
+        bind:
+          create_host_path: false
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]

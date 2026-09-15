@@ -1,7 +1,7 @@
 import { AuthFrame, Button, LoadingState, buttonStyles } from "@homelab/ui";
 import { IdentityClient } from "@homelab/ui/identity/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, type ReactNode } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 export function IdentityBoundary({ children }: { children: ReactNode }) {
     const queryClient = useQueryClient();
     const [client] = useState(() => new IdentityClient());
@@ -9,8 +9,21 @@ export function IdentityBoundary({ children }: { children: ReactNode }) {
         queryKey: ["identity", "session"],
         queryFn: async () => {
             const result = await client.session();
-            if (!result.authenticated)
-                queryClient.removeQueries({ queryKey: ["identity", "account"] });
+            const previous = queryClient.getQueryData<
+                Awaited<ReturnType<IdentityClient["session"]>>
+            >(["identity", "session"]);
+            if (
+                !result.authenticated ||
+                previous?.userId !== result.userId ||
+                previous?.username !== result.username
+            )
+                queryClient.removeQueries({
+                    predicate: (query) =>
+                        !(
+                            query.queryKey[0] === "identity" &&
+                            query.queryKey[1] === "session"
+                        ),
+                });
             return result;
         },
         retry: false,
@@ -49,5 +62,9 @@ export function IdentityBoundary({ children }: { children: ReactNode }) {
                 )}
             </AuthFrame>
         );
-    return children;
+    return (
+        <Fragment key={session.data.userId ?? session.data.username ?? "authenticated"}>
+            {children}
+        </Fragment>
+    );
 }

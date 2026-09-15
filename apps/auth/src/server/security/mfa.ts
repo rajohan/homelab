@@ -40,6 +40,15 @@ export class MultiFactor {
         return [...new Set(inventory.map((factor) => factor.kind))];
     }
 
+    async hasRecoveryCodes(principal: Principal): Promise<boolean> {
+        const [code] = await this.accounts.database
+            .select({ digest: recoveryCodes.digest })
+            .from(recoveryCodes)
+            .where(eq(recoveryCodes.userId, principal.user.id))
+            .limit(1);
+        return code !== undefined;
+    }
+
     async newRecoveryCodes(store: AuthStore, userId: string): Promise<string[]> {
         const codes = Array.from({ length: 10 }, () => randomToken().slice(0, 20));
         await store.delete(recoveryCodes).where(eq(recoveryCodes.userId, userId));
@@ -50,10 +59,7 @@ export class MultiFactor {
     }
 
     async finishEnrollment(store: AuthStore, principal: Principal, wasEnabled: boolean) {
-        await store
-            .update(sessions)
-            .set({ mfaAt: new Date() })
-            .where(eq(sessions.id, principal.session.id));
+        await this.accounts.completeMfa(store, principal);
         if (wasEnabled) return { recoveryCodes: [] };
         await this.accounts.revokeOthers(store, principal);
         return { recoveryCodes: await this.newRecoveryCodes(store, principal.user.id) };
@@ -337,10 +343,7 @@ export class MultiFactor {
                     lastUsedAt: new Date(),
                 })
                 .where(eq(factors.id, factor.id));
-            await transaction
-                .update(sessions)
-                .set({ mfaAt: new Date(), lastSeenAt: new Date() })
-                .where(eq(sessions.id, principal.session.id));
+            await this.accounts.completeMfa(transaction, principal);
             await audit(transaction, principal.user.id, "webauthn_verified");
         });
     }
@@ -410,10 +413,7 @@ export class MultiFactor {
                 }
                 if (!accepted) invalidProof();
             }
-            await transaction
-                .update(sessions)
-                .set({ mfaAt: new Date(), lastSeenAt: new Date() })
-                .where(eq(sessions.id, principal.session.id));
+            await this.accounts.completeMfa(transaction, principal);
             await audit(
                 transaction,
                 principal.user.id,

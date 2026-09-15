@@ -80,13 +80,16 @@ export async function forwardAuth(
     if (
         scheme !== "https" ||
         !host ||
+        /[\\/\s?#@]/.test(host) ||
         !rawPath?.startsWith("/") ||
         rawPath.startsWith("//") ||
         /[\\\r\n]/.test(rawPath)
     )
         return secureJson({ error: "Invalid proxy request" }, 403);
     const target = safeTarget(accounts, `https://${host}${rawPath}`);
-    if (target.host !== host) return secureJson({ error: "Invalid proxy target" }, 403);
+    const authority = new URL(`https://${host}`);
+    if (target.origin !== authority.origin)
+        return secureJson({ error: "Invalid proxy target" }, 403);
     const rule = configuration.routes.find((route) => route.origin === target.origin);
     if (!rule) return secureJson({ error: "Access denied" }, 403);
     if (target.pathname === "/.homelab/sso/callback") {
@@ -180,7 +183,14 @@ export async function forwardAuth(
                 !rule.groups.some((group) => principal.user.groups.includes(group))
             )
                 return secureJson({ error: "Access denied" }, 403);
-            await accounts.touch(principal);
+            const origin = request.headers.get("origin");
+            const site = request.headers.get("sec-fetch-site");
+            if (
+                (origin === null || origin === target.origin) &&
+                (site === null || site === "same-origin") &&
+                (origin === target.origin || site === "same-origin")
+            )
+                await accounts.touch(principal);
             return new Response(null, {
                 status: 200,
                 headers: {

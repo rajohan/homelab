@@ -22,7 +22,9 @@ committing a login or password change, including concurrent recovery races.
 Central sessions have random 256-bit opaque cookies; only SHA-256 token digests are stored.
 Production cookies are Secure, HttpOnly, SameSite=Lax and host-only with the `__Host-` prefix.
 Absolute lifetime is 12 hours, idle lifetime one hour. Sensitive changes require proof within
-five minutes. MFA-enrolled accounts cannot access settings or clients with password alone.
+five minutes. At most 16 password-only sessions and 16 MFA-completed sessions are retained
+per account. Password-only logins cannot evict MFA-completed sessions or their OIDC grants;
+the completed-session cap is enforced only after a successful second factor. MFA-enrolled accounts cannot access settings or clients with password alone.
 
 The dashboard's HttpOnly JWE cookie carries its opaque account-scope token to its BFF, not to
 browser JavaScript. Every BFF request still checks central state. Removing a session deletes its
@@ -80,7 +82,9 @@ credential. Forwarded host/protocol/path are validated against explicit route po
 Authentication failure, database failure, unknown hosts and missing configuration fail closed.
 
 Resource sessions use per-host encrypted cookies, not a parent-domain cookie shared by every
-application. A short-lived handoff ticket binds the central session, destination, browser nonce
+application. Resource activity renews idle time only with consistent same-origin Origin or
+Sec-Fetch-Site evidence forwarded by the trusted proxy; sibling or headerless requests can
+remain authorized but do not extend idle lifetime. A short-lived handoff ticket binds the central session, destination, browser nonce
 and one-time redemption. Spoofed identity headers, unrelated hosts and replayed tickets fail.
 
 Public exceptions are exact paths or segment prefixes. Ambiguous encoded separators are not
@@ -92,7 +96,11 @@ CometNet, Hydra, authenticated NZB endpoints, short links and Nextcloud WebDAV/m
 
 Resend receives email only through its fixed HTTPS API with a timeout and idempotency key.
 A transactional outbox encrypts messages at rest, bounds retries and expires undelivered
-proofs. Verification/reset tokens expire after 30 minutes and are consumed once. Link tokens
+proofs. Public reset admission is limited atomically to four jobs per minute across all
+requesters, before per-IP/per-name limits, without checking whether an account exists. This
+keeps anonymous reset work below the maintenance worker's capacity and reserves throughput
+for authenticated verification mail. Over-capacity requests receive the same rate-limit
+response for known and unknown accounts. Verification/reset tokens expire after 30 minutes and are consumed once. Link tokens
 are in URL fragments and immediately removed from browser history; they are not query strings
 in proxy logs. Changing email requires proof and verification of the new address before the
 current address changes; a previous verified address receives a notification.

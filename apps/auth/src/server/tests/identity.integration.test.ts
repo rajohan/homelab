@@ -17,8 +17,9 @@ import {
     rateBuckets,
     oidcRecords,
     challenges,
+    recoveryCodes,
 } from "../database/schema";
-import { hashPassword, tokenDigest } from "../security/crypto";
+import { encryptValue, hashPassword, tokenDigest } from "../security/crypto";
 import type { AuthEmail } from "../security/email";
 import { softwareAuthenticator } from "../testing/webauthnFixture";
 
@@ -413,7 +414,12 @@ async function enrollTotp() {
     );
     return { ...setup, codes: codes.recoveryCodes };
 }
-function proxyRequest(uri: string, cookie?: string, trusted = true) {
+function proxyRequest(
+    uri: string,
+    cookie?: string,
+    trusted = true,
+    activity: Record<string, string> = {}
+) {
     return browser("/api/authz/forward-auth", {
         headers: {
             "x-forwarded-proto": "https",
@@ -427,6 +433,7 @@ function proxyRequest(uri: string, cookie?: string, trusted = true) {
                 : {}),
             ...(cookie ? { cookie } : {}),
             "Remote-User": "spoofed-admin",
+            ...activity,
         },
     });
 }
@@ -468,6 +475,64 @@ describe("security invariants against the isolated database", () => {
                 .where(eq(sessions.tokenHash, digest));
             expect(session?.lastSeenAt.getTime()).toBe(original.getTime());
         }
+    });
+
+    test("distributed reset requests cannot starve authenticated verification mail", async () => {
+        await application.connection.database.delete(mailOutbox);
+        const attempts = await Promise.all(
+            Array.from({ length: 12 }, (_, index) =>
+                application.services.email
+                    .requestReset("unknown-" + index, "remote-" + index)
+                    .then(
+                        () => true,
+                        () => false
+                    )
+            )
+        );
+        expect(attempts.filter(Boolean)).toHaveLength(4);
+        expect(
+            await application.connection.database.select().from(mailOutbox)
+        ).toHaveLength(4);
+        const before = delivered.length;
+        expect(
+            await status(
+                post("/api/account/email", {
+                    email: "verification-" + username + "@example.test",
+                })
+            )
+        ).toBe(200);
+        await application.maintain();
+        expect(delivered.slice(before)).toHaveLength(1);
+        expect(delivered.at(-1)?.subject).toBe("Verify your Homelab email");
+    });
+
+    test("session advertises recovery only while unused codes remain", async () => {
+        const enrollment = await enrollTotp();
+        expect(
+            v.parse(
+                v.object({ recoveryAvailable: v.boolean() }),
+                await responseJson(browser("/api/session"))
+            ).recoveryAvailable
+        ).toBe(true);
+        const digest = tokenDigest(cookieJar.get("homelab_auth")?.value ?? "");
+        const principal = await application.services.accounts.principalByToken(
+            cookieJar.get("homelab_auth")?.value ?? ""
+        );
+        await application.connection.database
+            .delete(recoveryCodes)
+            .where(eq(recoveryCodes.userId, principal.user.id));
+        expect(enrollment.codes).toHaveLength(10);
+        expect(
+            v.parse(
+                v.object({ recoveryAvailable: v.boolean() }),
+                await responseJson(browser("/api/session"))
+            ).recoveryAvailable
+        ).toBe(false);
+        const [session] = await application.connection.database
+            .select()
+            .from(sessions)
+            .where(eq(sessions.tokenHash, digest));
+        expect(session).toBeDefined();
     });
 
     test("reset requests enqueue identical work before any account lookup or delivery", async () => {
@@ -1073,6 +1138,146 @@ describe("security invariants against the isolated database", () => {
             v.object({ mfaRequired: v.boolean() })
         );
         expect(result.mfaRequired).toBe(true);
+    });
+
+    test("ForwardAuth authorizes passive requests without renewing their idle lifetime", async () => {
+        await enrollTotp();
+        const accounts = application.services.accounts;
+        const principal = await accounts.principalByToken(
+            cookieJar.get("homelab_auth")?.value ?? ""
+        );
+        const cookie =
+            "__Host-homelab_sso=" +
+            encryptValue(
+                accounts.configuration.encryptionKey,
+                "resource:https://tools.example.test",
+                {
+                    sessionId: principal.session.id,
+                    expiresAt: principal.session.expiresAt.getTime(),
+                }
+            );
+        const original = new Date(Date.now() - 600_000);
+        const cases: { headers: Record<string, string>; active: boolean }[] = [
+            { headers: {}, active: false },
+            {
+                headers: {
+                    Origin: "https://sibling.example.test",
+                    "Sec-Fetch-Site": "same-site",
+                },
+                active: false,
+            },
+            {
+                headers: {
+                    Origin: "https://tools.example.test",
+                    "Sec-Fetch-Site": "same-site",
+                },
+                active: false,
+            },
+            {
+                headers: {
+                    Origin: "https://sibling.example.test",
+                    "Sec-Fetch-Site": "same-origin",
+                },
+                active: false,
+            },
+            { headers: { "Sec-Fetch-Site": "same-origin" }, active: true },
+            { headers: { Origin: "https://tools.example.test" }, active: true },
+        ];
+        for (const item of cases) {
+            await accounts.database
+                .update(sessions)
+                .set({ lastSeenAt: original })
+                .where(eq(sessions.id, principal.session.id));
+            expect(
+                await status(proxyRequest("/settings", cookie, true, item.headers))
+            ).toBe(200);
+            const current = await accounts.principalById(principal.session.id);
+            expect(current.session.lastSeenAt.getTime() > original.getTime()).toBe(
+                item.active
+            );
+        }
+    });
+
+    test("password-only sessions cannot evict verified sessions; completed MFA enforces its own cap", async () => {
+        const enrollment = await enrollTotp();
+        const accounts = application.services.accounts;
+        const original = await accounts.principalByToken(
+            cookieJar.get("homelab_auth")?.value ?? ""
+        );
+        await accounts.database
+            .update(sessions)
+            .set({ lastSeenAt: new Date(Date.now() - 600_000) })
+            .where(eq(sessions.id, original.session.id));
+        await accounts.database.insert(sessions).values(
+            Array.from({ length: 31 }, (_, index) => ({
+                ...original.session,
+                id: crypto.randomUUID(),
+                tokenHash: tokenDigest(crypto.randomUUID()),
+                createdAt: new Date(Date.now() - 60_000 + index),
+                lastSeenAt: new Date(Date.now() - 60_000 + index),
+                mfaAt: index < 16 ? null : new Date(),
+            }))
+        );
+        expect(await status(post("/api/login", { username, password }))).toBe(200);
+        const retained = await accounts.principalById(original.session.id);
+        expect(retained.session.mfaAt).not.toBeNull();
+        let inventory = await accounts.database
+            .select()
+            .from(sessions)
+            .where(eq(sessions.userId, original.user.id));
+        expect(inventory.filter((item) => item.mfaAt === null)).toHaveLength(16);
+        expect(inventory.filter((item) => item.mfaAt !== null)).toHaveLength(16);
+        expect(
+            await status(
+                post("/api/account/proof/recovery", { code: enrollment.codes[0] })
+            )
+        ).toBe(200);
+        inventory = await accounts.database
+            .select()
+            .from(sessions)
+            .where(eq(sessions.userId, original.user.id));
+        expect(inventory.filter((item) => item.mfaAt === null)).toHaveLength(15);
+        expect(inventory.filter((item) => item.mfaAt !== null)).toHaveLength(16);
+        expect(inventory.some((item) => item.id === original.session.id)).toBe(false);
+    });
+
+    test("ForwardAuth accepts canonical host equivalents but rejects authority injection", async () => {
+        for (const host of [
+            "tools.example.test",
+            "TOOLS.example.test",
+            "tools.example.test:443",
+            "TOOLS.example.test:443",
+        ]) {
+            const result = await browser("/api/authz/forward-auth", {
+                headers: {
+                    "x-homelab-proxy-key":
+                        application.services.accounts.configuration.proxyKey,
+                    "x-forwarded-proto": "https",
+                    "x-forwarded-host": host,
+                    "x-forwarded-uri": "/manifest.webmanifest",
+                },
+            });
+            expect(result.status).toBe(200);
+        }
+        for (const host of [
+            "tools.example.test:444",
+            "tools.example.test@evil.test",
+            "tools.example.test/path",
+            "tools.example.test?query=1",
+            "tools.example.test#fragment",
+            "evil.test",
+        ]) {
+            const result = await browser("/api/authz/forward-auth", {
+                headers: {
+                    "x-homelab-proxy-key":
+                        application.services.accounts.configuration.proxyKey,
+                    "x-forwarded-proto": "https",
+                    "x-forwarded-host": host,
+                    "x-forwarded-uri": "/manifest.webmanifest",
+                },
+            });
+            expect(result.status).toBe(403);
+        }
     });
 
     test("ForwardAuth rejects untrusted proxies and limits public exceptions", async () => {

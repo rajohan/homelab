@@ -51,7 +51,7 @@ export function VerificationMethods({
                 }}
             />
         );
-    if (codeMethod)
+    if (codeMethod && (codeMethod !== "recovery" || methods.data.recoveryAvailable))
         return (
             <div className="space-y-3">
                 <FieldsForm
@@ -112,9 +112,11 @@ export function VerificationMethods({
                     Use authenticator app
                 </Button>
             )}
-            <Button disabled={busy} onClick={() => setCodeMethod("recovery")}>
-                Use recovery code
-            </Button>
+            {methods.data.recoveryAvailable && (
+                <Button disabled={busy} onClick={() => setCodeMethod("recovery")}>
+                    Use recovery code
+                </Button>
+            )}
         </div>
     );
 }
