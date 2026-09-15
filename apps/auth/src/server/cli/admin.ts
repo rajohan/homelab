@@ -1,5 +1,6 @@
 import { generateKeyPairSync } from "node:crypto";
 
+import { passwordPolicy } from "@homelab/contracts";
 import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/bun-sql/migrator";
 import * as v from "valibot";
@@ -17,7 +18,11 @@ const usernameSchema = v.pipe(v.string(), v.regex(/^[a-z0-9][a-z0-9_-]{0,63}$/))
 const newUserSchema = v.strictObject({
     username: usernameSchema,
     email: v.pipe(v.string(), v.maxLength(254), v.email(), v.toLowerCase()),
-    password: v.pipe(v.string(), v.minLength(12), v.maxLength(256)),
+    password: v.pipe(
+        v.string(),
+        v.minLength(passwordPolicy.minimumLength),
+        v.maxLength(passwordPolicy.maximumLength)
+    ),
     groups: v.optional(v.array(v.pipe(v.string(), v.regex(/^[a-z0-9_-]{1,64}$/))), [
         "admins",
     ]),
@@ -25,7 +30,11 @@ const newUserSchema = v.strictObject({
 });
 const recoverySchema = v.strictObject({
     username: usernameSchema,
-    password: v.pipe(v.string(), v.minLength(12), v.maxLength(256)),
+    password: v.pipe(
+        v.string(),
+        v.minLength(passwordPolicy.minimumLength),
+        v.maxLength(passwordPolicy.maximumLength)
+    ),
 });
 
 async function privateInput(): Promise<unknown> {

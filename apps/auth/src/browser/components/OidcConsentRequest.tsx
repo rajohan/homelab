@@ -53,19 +53,19 @@ export function OidcConsentRequest({
             {error !== undefined && <ErrorNotice error={error} />}
             <ActionGroup>
                 <Button
+                    disabled={pending !== undefined}
+                    busy={pending === "approve"}
+                    onClick={() => void decide("approve")}
+                >
+                    Approve
+                </Button>
+                <Button
                     variant="secondary"
                     disabled={pending !== undefined}
                     busy={pending === "deny"}
                     onClick={() => void decide("deny")}
                 >
                     Deny
-                </Button>
-                <Button
-                    disabled={pending !== undefined}
-                    busy={pending === "approve"}
-                    onClick={() => void decide("approve")}
-                >
-                    Approve
                 </Button>
             </ActionGroup>
         </div>

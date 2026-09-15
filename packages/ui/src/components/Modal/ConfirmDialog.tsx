@@ -52,6 +52,9 @@ export function ConfirmDialog({
             >
                 {error !== undefined && <ErrorNotice error={error} />}
                 <ActionGroup>
+                    <Button type="submit" variant={variant} busy={pending}>
+                        {confirmLabel}
+                    </Button>
                     <Button
                         variant="secondary"
                         onClick={onClose}
@@ -59,9 +62,6 @@ export function ConfirmDialog({
                         data-autofocus
                     >
                         Cancel
-                    </Button>
-                    <Button type="submit" variant={variant} busy={pending}>
-                        {confirmLabel}
                     </Button>
                 </ActionGroup>
             </Form>

@@ -1,5 +1,6 @@
 import { expect, mock, test } from "bun:test";
 
+import { passwordPolicy } from "@homelab/contracts";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
@@ -58,4 +59,24 @@ test("editing the original password revalidates the touched confirmation", async
     await user.type(password, "{Backspace}");
     await waitFor(() => expect(confirmation).not.toHaveAttribute("aria-invalid", "true"));
     expect(screen.getByRole("button", { name: "Save password" })).toBeEnabled();
+});
+
+test("current and replacement password inputs use the same shared length policy", () => {
+    render(
+        <PasswordForm
+            requireCurrent
+            submitLabel="Save password"
+            onSubmit={() => Promise.resolve()}
+        />
+    );
+    for (const label of ["Current password", "New password", "Repeat new password"]) {
+        expect(screen.getByLabelText(label)).toHaveAttribute(
+            "minlength",
+            String(passwordPolicy.minimumLength)
+        );
+    }
+    expect(screen.getByLabelText("New password")).toHaveAttribute(
+        "placeholder",
+        `At least ${passwordPolicy.minimumLength} characters`
+    );
 });

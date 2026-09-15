@@ -1,3 +1,4 @@
+import { Fieldset } from "@headlessui/react";
 import { useForm } from "@tanstack/react-form";
 import { useState, type ReactNode } from "react";
 
@@ -105,10 +106,6 @@ export function FieldsForm({
                                         }}
                                         onChange={(event) => {
                                             setError(undefined);
-                                            field.setErrorMap({
-                                                onChange: undefined,
-                                                onSubmit: undefined,
-                                            });
                                             field.handleChange(event.target.value);
                                         }}
                                         required
@@ -119,18 +116,9 @@ export function FieldsForm({
                             )}
                         </form.Field>
                     ))}
-                    {children && <fieldset disabled={submitting}>{children}</fieldset>}
+                    {children && <Fieldset disabled={submitting}>{children}</Fieldset>}
                     {error !== undefined && <ErrorNotice error={error} />}
                     <ActionGroup>
-                        {onCancel && (
-                            <Button
-                                variant="secondary"
-                                disabled={submitting}
-                                onClick={onCancel}
-                            >
-                                {cancelLabel}
-                            </Button>
-                        )}
                         <Button
                             type="submit"
                             variant={submitVariant}
@@ -140,6 +128,15 @@ export function FieldsForm({
                         >
                             {submitLabel}
                         </Button>
+                        {onCancel && (
+                            <Button
+                                variant="secondary"
+                                disabled={submitting}
+                                onClick={onCancel}
+                            >
+                                {cancelLabel}
+                            </Button>
+                        )}
                     </ActionGroup>
                 </Form>
             )}

@@ -10,6 +10,7 @@ import { DisableMfaPanel } from "./DisableMfaPanel";
 import { ProfilePanel } from "./ProfilePanel";
 import { RecoveryCodesPanel } from "./RecoveryCodesPanel";
 import { SecurityKeysPanel } from "./SecurityKeysPanel";
+import { SessionsPanel } from "./SessionsPanel";
 
 const data: AccountSnapshot = {
     user: {
@@ -143,4 +144,21 @@ test("approved applications expose permissions and an app-specific revocation ac
     } finally {
         view.unmount();
     }
+});
+
+test("session-wide actions share the responsive full-width action group", () => {
+    const action = mock(() => {});
+    render(<SessionsPanel data={data} onAction={action} />);
+    const all = screen.getByRole("button", { name: "Log out all" });
+    const others = screen.getByRole("button", { name: "Log out others" });
+    expect(all.parentElement).toBe(others.parentElement);
+    expect(all.parentElement).toHaveClass(
+        "flex-col",
+        "[&>button]:w-full",
+        "min-[30rem]:flex-row"
+    );
+    expect(all.parentElement?.firstElementChild).toBe(all);
+    expect(others).toBeDisabled();
+    fireEvent.click(all);
+    expect(action).toHaveBeenCalledWith("all");
 });

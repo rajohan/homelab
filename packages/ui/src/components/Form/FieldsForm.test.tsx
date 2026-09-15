@@ -208,3 +208,40 @@ test("manual username validation never prevalidates the untouched autofill passw
         observer.disconnect();
     }
 });
+
+test("an existing length error stays visible during invalid typing and clears when valid", async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+        <FieldsForm
+            fields={[
+                { name: "password", label: "Password", type: "password", minimum: 12 },
+            ]}
+            submitLabel="Save"
+            onSubmit={() => Promise.resolve()}
+        />
+    );
+    const password = screen.getByLabelText("Password");
+    const message = "Password must contain at least 12 characters.";
+    await user.type(password, "short");
+    await waitFor(() => expect(password).toHaveAccessibleDescription(message));
+    const missing: string[] = [];
+    const observer = new MutationObserver(() => {
+        if (!container.textContent?.includes(message))
+            missing.push(container.textContent ?? "");
+    });
+    observer.observe(container, { childList: true, subtree: true, characterData: true });
+    try {
+        for (const character of "123") {
+            await user.type(password, character);
+            expect(password).toHaveAccessibleDescription(message);
+            await new Promise((resolve) => setTimeout(resolve, 250));
+            expect(password).toHaveAccessibleDescription(message);
+        }
+        expect(missing).toEqual([]);
+    } finally {
+        observer.disconnect();
+    }
+    await user.type(password, "4567");
+    await waitFor(() => expect(password).not.toHaveAttribute("aria-invalid", "true"));
+    expect(screen.queryByText(message)).not.toBeInTheDocument();
+});

@@ -127,7 +127,12 @@ test.each([
             const submit = form?.querySelector('button[type="submit"]');
             expect(submit).not.toBeNull();
             expect(submit?.parentElement).toBe(cancel.parentElement);
-            expect(cancel.parentElement).toHaveClass("flex-col", "[&>button]:w-full");
+            expect(cancel.parentElement).toHaveClass(
+                "flex-col",
+                "min-[30rem]:flex-row",
+                "[&>button]:w-full"
+            );
+            expect(cancel.parentElement?.firstElementChild).toBe(submit);
             fireEvent.click(cancel);
             expect(close).toHaveBeenCalledTimes(1);
             expect(action).not.toHaveBeenCalled();

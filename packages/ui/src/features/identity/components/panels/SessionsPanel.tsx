@@ -1,6 +1,6 @@
 import { Monitor } from "lucide-react";
 
-import { Badge, Button, SuccessNotice } from "../../../../index";
+import { ActionGroup, Badge, Button, SuccessNotice } from "../../../../index";
 import { formatDateTime } from "../../../../lib/formatDateTime";
 import type { AccountPanelProps } from "../../types";
 import { SettingsSection } from "./SettingsSection";
@@ -16,7 +16,10 @@ export function SessionsPanel({ data, onAction, notice }: AccountPanelProps) {
             description="Sessions expire after inactivity and can be revoked independently."
             icon={Monitor}
             actions={
-                <div className="flex flex-wrap gap-2">
+                <ActionGroup>
+                    <Button size="sm" variant="danger" onClick={() => onAction("all")}>
+                        Log out all
+                    </Button>
                     <Button
                         size="sm"
                         variant="secondary"
@@ -25,17 +28,14 @@ export function SessionsPanel({ data, onAction, notice }: AccountPanelProps) {
                     >
                         Log out others
                     </Button>
-                    <Button size="sm" variant="danger" onClick={() => onAction("all")}>
-                        Log out all
-                    </Button>
-                </div>
+                </ActionGroup>
             }
         >
             <ul className="space-y-2">
                 {data.sessions.map((session) => (
                     <li
                         key={session.id}
-                        className="flex flex-col gap-3 rounded-lg border border-primary-700 bg-primary-900/40 p-3 sm:flex-row sm:items-center sm:justify-between"
+                        className="flex flex-col gap-3 rounded-lg border border-primary-700 bg-primary-900/40 p-3 min-[30rem]:flex-row min-[30rem]:items-center min-[30rem]:justify-between"
                     >
                         <div className="min-w-0 flex-1">
                             <p className="flex flex-wrap items-center gap-2 text-sm font-medium">

@@ -1,4 +1,5 @@
-import { CheckboxField, FieldsForm } from "@homelab/ui";
+import { passwordPolicy } from "@homelab/contracts";
+import { Switch, FieldsForm } from "@homelab/ui";
 import type { IdentityClient } from "@homelab/ui/identity/client";
 import { useState } from "react";
 /**
@@ -29,7 +30,7 @@ export function SignInForm({
                     placeholder: "Enter your password",
                     type: "password",
                     autoComplete: "current-password",
-                    minimum: 8,
+                    minimum: passwordPolicy.minimumLength,
                 },
             ]}
             submitLabel="Sign in"
@@ -42,7 +43,7 @@ export function SignInForm({
                 await onComplete();
             }}
         >
-            <CheckboxField
+            <Switch
                 label="Remember me"
                 checked={remember}
                 onChange={setRemember}

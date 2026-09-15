@@ -91,7 +91,10 @@ approval. The shared-design auth page shows the server-validated app name, callb
 requested scopes; the browser cannot choose additional scopes or a different client. Denial returns
 `access_denied` without signing out the central account. Dashboard presents a deliberate retry page,
 not JSON or an automatic sign-in loop. A decision is bound to the displayed interaction and account;
-a conflicting replay is rejected rather than silently continuing the opposite decision.
+a conflicting replay is rejected rather than silently continuing the opposite decision. A transaction-scoped
+PostgreSQL advisory lock serializes decisions for the same interaction across processes. One dedicated
+connection orders local handoffs without occupying the seven-connection provider/account pool; the
+service retains its total budget of eight. Lock contention is retryable and records no decision.
 
 User-owned approval receipts persist across central-session logout and expiry. They contain the
 approved scopes and a fingerprint of recipient metadata, never tokens. Additional permissions,

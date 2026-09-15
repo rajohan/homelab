@@ -35,3 +35,20 @@ test("Compose mounts an read-only auth policy without requiring it for dashboard
         },
     ]);
 });
+
+test("Compose forwards all configurable session policy values to auth", async () => {
+    const config = v.parse(
+        composeSchema,
+        Bun.YAML.parse(await Bun.file("deploy/compose.yaml").text())
+    );
+    for (const key of [
+        "HOMELAB_AUTH_SESSION_MAX_AGE_SECONDS",
+        "HOMELAB_AUTH_SESSION_IDLE_TIMEOUT_SECONDS",
+        "HOMELAB_AUTH_STEP_UP_MAX_AGE_SECONDS",
+        "HOMELAB_AUTH_REMEMBER_MAX_AGE_SECONDS",
+        "HOMELAB_AUTH_REMEMBER_IDLE_TIMEOUT_SECONDS",
+    ]) {
+        expect(Object.hasOwn(config.services.auth.environment, key)).toBe(true);
+        expect(config.services.auth.environment[key]).toBeNull();
+    }
+});

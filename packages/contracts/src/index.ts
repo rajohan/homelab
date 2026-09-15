@@ -23,3 +23,5 @@ export {
     oidcInteractionSchema,
 } from "./oidcConsent";
 export type { OidcConsent, OidcConsentDecision, OidcInteraction } from "./oidcConsent";
+
+export { passwordPolicy } from "./passwordPolicy";

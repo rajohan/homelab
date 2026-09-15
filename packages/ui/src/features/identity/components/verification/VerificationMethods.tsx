@@ -1,3 +1,4 @@
+import { passwordPolicy } from "@homelab/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 
@@ -52,7 +53,7 @@ export function VerificationMethods({
                         placeholder: "Enter your current password",
                         type: "password",
                         autoComplete: "current-password",
-                        minimum: 8,
+                        minimum: passwordPolicy.minimumLength,
                     },
                 ]}
                 submitLabel="Verify password"

@@ -1,3 +1,5 @@
+import { passwordPolicy } from "@homelab/contracts";
+
 import { FieldsForm, type FieldDefinition, type FormValues } from "../../../../index";
 import { validatePasswordConfirmation } from "../../validation/password";
 const current: FieldDefinition = {
@@ -6,16 +8,16 @@ const current: FieldDefinition = {
     placeholder: "Enter your current password",
     type: "password",
     autoComplete: "current-password",
-    minimum: 8,
+    minimum: passwordPolicy.minimumLength,
 };
 const replacement: readonly FieldDefinition[] = [
     {
         name: "newPassword",
         label: "New password",
-        placeholder: "At least 12 characters",
+        placeholder: `At least ${passwordPolicy.minimumLength} characters`,
         type: "password",
         autoComplete: "new-password",
-        minimum: 12,
+        minimum: passwordPolicy.minimumLength,
     },
     {
         name: "confirmPassword",
@@ -23,7 +25,7 @@ const replacement: readonly FieldDefinition[] = [
         placeholder: "Re-enter your new password",
         type: "password",
         autoComplete: "new-password",
-        minimum: 12,
+        minimum: passwordPolicy.minimumLength,
     },
 ];
 /**

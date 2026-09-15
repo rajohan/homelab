@@ -35,7 +35,7 @@ export async function createAuthApplication(
     delivery?: EmailDelivery
 ) {
     const migrations = requiredAuthMigrations();
-    const connection = connectAuthDatabase(configuration.databaseUrl);
+    const connection = connectAuthDatabase(configuration.databaseUrl, 7);
     const accounts = new Accounts(connection.database, configuration);
     const email = new AccountEmail(accounts, delivery);
     const mfa = new MultiFactor(accounts);

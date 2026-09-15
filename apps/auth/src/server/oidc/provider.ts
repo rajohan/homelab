@@ -5,6 +5,7 @@ import { and, eq } from "drizzle-orm";
 import { Provider, errors, interactionPolicy } from "oidc-provider";
 import * as v from "valibot";
 
+import { connectAuthDatabase } from "../database/connection";
 import { grantSessions, users } from "../database/schema";
 import { cookieName, readAuthCookie } from "../http/httpSecurity";
 import { type Accounts, type Principal } from "../security/accounts";
@@ -15,6 +16,7 @@ import { createOidcAdapter } from "./adapter";
 import { hasClientApproval, rememberClientApproval } from "./approvals";
 import { readConsentDecision } from "./consent";
 import { createOidcFetch } from "./fetch";
+import { serializeInteraction } from "./interactionLock";
 
 async function cookiePrincipal(
     accounts: Accounts,
@@ -257,12 +259,21 @@ export function createProvider(accounts: Accounts): Provider {
  */
 export async function startProviderListener(accounts: Accounts) {
     const provider = createProvider(accounts);
+    // Reserve one of the service's eight connections for interaction ordering.
+    // This keeps held advisory locks out of the pool used by provider operations.
+    const interactions = connectAuthDatabase(accounts.configuration.databaseUrl, 1);
     const callback = provider.callback();
     const server = createServer((request, response) => {
         const url = new URL(request.url ?? "/", accounts.configuration.issuer);
         if (url.pathname === "/sign-in/complete" && request.method === "POST") {
-            void completeInteraction(accounts, provider, request, response).catch(
-                (error: unknown) => {
+            void provider
+                .interactionDetails(request, response)
+                .then((details) =>
+                    serializeInteraction(interactions.database, details.uid, () =>
+                        completeInteraction(accounts, provider, request, response)
+                    )
+                )
+                .catch((error: unknown) => {
                     if (!response.headersSent) {
                         let status = 403;
                         let code = "SIGN_IN_FAILED";
@@ -275,7 +286,7 @@ export async function startProviderListener(accounts: Accounts) {
                                 "This sign-in request has expired. Start a new sign-in to continue.";
                         } else if (
                             error instanceof AuthFailure &&
-                            error.code === "CONSENT_CONFLICT"
+                            ["CONSENT_CONFLICT", "CONSENT_BUSY"].includes(error.code)
                         ) {
                             status = 409;
                             code = error.code;
@@ -287,14 +298,18 @@ export async function startProviderListener(accounts: Accounts) {
                         });
                         response.end(JSON.stringify({ code, message }));
                     }
-                }
-            );
+                });
         } else void callback(request, response);
     });
-    await new Promise<void>((resolve, reject) => {
-        server.once("error", reject);
-        server.listen(0, "127.0.0.1", resolve);
-    });
+    try {
+        await new Promise<void>((resolve, reject) => {
+            server.once("error", reject);
+            server.listen(0, "127.0.0.1", resolve);
+        });
+    } catch (error) {
+        await interactions.client.close();
+        throw error;
+    }
     const address = server.address();
     if (!address || typeof address === "string")
         throw new Error("OIDC listener did not start");
@@ -306,6 +321,7 @@ export async function startProviderListener(accounts: Accounts) {
                 server.close((error) => (error ? reject(error) : resolve()));
                 server.closeAllConnections();
             });
+            await interactions.client.close();
         },
     };
 }

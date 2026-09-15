@@ -1,3 +1,4 @@
+import { passwordPolicy } from "@homelab/contracts";
 import type {
     AuthenticationResponseJSON,
     RegistrationResponseJSON,
@@ -25,8 +26,11 @@ import {
 
 const text = (maximum: number) =>
     v.pipe(v.string(), v.minLength(1), v.maxLength(maximum));
-const password = v.pipe(v.string(), v.minLength(8), v.maxLength(256));
-const newPassword = v.pipe(v.string(), v.minLength(12), v.maxLength(256));
+const password = v.pipe(
+    v.string(),
+    v.minLength(passwordPolicy.minimumLength),
+    v.maxLength(passwordPolicy.maximumLength)
+);
 const identifier = v.pipe(v.string(), v.uuid());
 const label = v.pipe(text(64), v.regex(/^[^\p{Cc}]+$/u));
 const token = v.pipe(v.string(), v.regex(/^[\w-]{43}$/));
@@ -200,7 +204,7 @@ export async function accountApi(
         });
     }
     if (path === "/api/password/reset") {
-        const input = v.parse(v.strictObject({ token, password: newPassword }), body);
+        const input = v.parse(v.strictObject({ token, password }), body);
         await rateLimit(accounts.database, `password-reset:${remote}`, 5, 300_000);
         await email.resetPassword(input.token, input.password);
         return secureJson({ ok: true });
@@ -252,7 +256,7 @@ export async function accountApi(
         );
     } else if (path === "/api/account/password") {
         const input = v.parse(
-            v.strictObject({ currentPassword: password, newPassword }),
+            v.strictObject({ currentPassword: password, newPassword: password }),
             body
         );
         await accounts.changePassword(

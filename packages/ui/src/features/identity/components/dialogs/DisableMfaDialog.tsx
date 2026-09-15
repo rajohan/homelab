@@ -1,3 +1,4 @@
+import { passwordPolicy } from "@homelab/contracts";
 import { useState } from "react";
 
 import { FieldsForm, Modal } from "../../../../index";
@@ -25,7 +26,7 @@ export function DisableMfaDialog({ client, onClose, onComplete }: AccountDialogP
                         type: "password",
                         autoComplete: "current-password",
                         placeholder: "Enter your current password",
-                        minimum: 8,
+                        minimum: passwordPolicy.minimumLength,
                     },
                 ]}
                 submitLabel="Disable two-step login"

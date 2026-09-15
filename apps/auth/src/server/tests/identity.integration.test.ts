@@ -1758,6 +1758,96 @@ describe("security invariants against the isolated database", () => {
         expect(returned.searchParams.has("error")).toBe(false);
     });
 
+    test.each([
+        ["approve", "deny"],
+        ["deny", "approve"],
+        ["approve", "approve"],
+    ] as const)(
+        "simultaneous consent decisions %s/%s record one consistent outcome",
+        async (first, second) => {
+            const consent = await pendingConsent("dashboard");
+            const responses = await Promise.all(
+                [first, second].map((decision) =>
+                    post("/sign-in/complete", {
+                        interactionId: consent.interactionId,
+                        accountId: consent.accountId,
+                        decision,
+                    })
+                )
+            );
+            expect(responses.filter((response) => response.status === 200)).toHaveLength(
+                first === second ? 2 : 1
+            );
+            const winningIndex = responses.findIndex(
+                (response) => response.status === 200
+            );
+            const winning = [first, second][winningIndex];
+            for (const response of responses.filter(
+                (response) => response.status !== 200
+            )) {
+                expect(response.status).toBe(409);
+                expect(await response.json()).toMatchObject({ code: "CONSENT_CONFLICT" });
+            }
+            const database = application.connection.database;
+            expect(
+                await database
+                    .select()
+                    .from(grantSessions)
+                    .where(eq(grantSessions.userId, consent.accountId))
+            ).toHaveLength(winning === "approve" ? 1 : 0);
+            expect(
+                await database
+                    .select()
+                    .from(oidcApprovals)
+                    .where(eq(oidcApprovals.userId, consent.accountId))
+            ).toHaveLength(winning === "approve" ? 1 : 0);
+            const winner = responses[winningIndex];
+            if (!winner) throw new Error("Decision did not complete");
+            const result = v.parse(
+                v.object({ redirect: v.string() }),
+                await winner.json()
+            );
+            const resumed = await browser(result.redirect);
+            const callback = new URL(resumed.headers.get("location") ?? "", issuer);
+            expect(callback.searchParams.has("code")).toBe(winning === "approve");
+            expect(callback.searchParams.get("error")).toBe(
+                winning === "deny" ? "access_denied" : null
+            );
+        }
+    );
+
+    test("an interaction locked by another database connection cannot record a decision", async () => {
+        const consent = await pendingConsent("dashboard");
+        const database = application.connection.database;
+        await database.transaction(async (transaction) => {
+            await transaction.execute(
+                sql`select pg_advisory_xact_lock(hashtextextended(${"homelab:oidc:" + consent.interactionId}, 0))`
+            );
+            const response = await post("/sign-in/complete", {
+                interactionId: consent.interactionId,
+                accountId: consent.accountId,
+                decision: "approve",
+            });
+            expect(response.status).toBe(409);
+            expect(await response.json()).toMatchObject({ code: "CONSENT_BUSY" });
+            expect(
+                await database
+                    .select()
+                    .from(oidcApprovals)
+                    .where(eq(oidcApprovals.userId, consent.accountId))
+            ).toHaveLength(0);
+        });
+        expect(
+            await status(
+                post("/sign-in/complete", {
+                    interactionId: consent.interactionId,
+                    accountId: consent.accountId,
+                    decision: "approve",
+                })
+            )
+        ).toBe(200);
+    });
+
     test("app approval persists across logout but additional scopes and revocation require approval", async () => {
         const initial = await authorizationTokens("openid profile");
         const database = application.connection.database;
