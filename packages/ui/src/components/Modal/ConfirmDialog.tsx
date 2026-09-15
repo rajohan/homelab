@@ -18,7 +18,7 @@ export function ConfirmDialog({
 }) {
     return (
         <Modal title={title} onClose={onClose}>
-            <div className="mb-4 text-base text-slate-600">{children}</div>
+            <div className="mb-4 text-base text-primary-300">{children}</div>
             <FieldsForm fields={[]} submitLabel={confirmLabel} onSubmit={onConfirm} />
         </Modal>
     );

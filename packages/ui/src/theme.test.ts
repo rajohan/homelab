@@ -17,3 +17,22 @@ describe("shared Tailwind configuration", () => {
         expect(theme.plugins[0]).toBeFunction();
     });
 });
+
+test("both applications import the shared stylesheet without redefining global rules", async () => {
+    for (const app of ["auth", "dashboard"]) {
+        const entry = await Bun.file(
+            new URL(`../../../apps/${app}/src/styles.css`, import.meta.url)
+        ).text();
+        expect(entry).toContain('@import "@homelab/ui/styles"');
+        expect(entry).toContain('@source "./browser"');
+        expect(entry).not.toMatch(/:root|@layer|#[\da-f]{3,8}/i);
+    }
+    const shared = await Bun.file(new URL("styles/index.css", import.meta.url)).text();
+    expect(shared).toContain('@import "./base.css"');
+    expect(shared).toContain('@config "../../../../tailwind.config.ts"');
+    const base = await Bun.file(new URL("styles/base.css", import.meta.url)).text();
+    expect(base).toContain("color-scheme: dark");
+    expect(base).toContain('theme("colors.primary.900")');
+    expect(base).toContain('theme("colors.primary.50")');
+    expect(base).not.toContain("overflow: hidden");
+});

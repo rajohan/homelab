@@ -14,7 +14,7 @@ export function SecurityPrompt({ client }: { client: IdentityClient }) {
     if (!open) return null;
     return (
         <Modal title="Confirm your identity" onClose={() => client.verification.cancel()}>
-            <p className="mb-4 text-base text-slate-600">
+            <p className="mb-4 text-base text-primary-300">
                 Verify again to continue. Your pending action will resume automatically.
             </p>
             <VerificationMethods

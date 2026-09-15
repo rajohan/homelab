@@ -9,7 +9,7 @@ export function EmailDialog({
 }: AccountDialogProps & { readonly email: string }) {
     return (
         <Modal title="Verify email" onClose={onClose}>
-            <p className="mb-4 text-base text-slate-600">
+            <p className="mb-4 text-base text-primary-300">
                 Your current address stays active until you confirm the new address using
                 the emailed link.
             </p>
@@ -17,6 +17,7 @@ export function EmailDialog({
                 fields={[
                     {
                         name: "email",
+                        placeholder: "you@example.com",
                         label: "Email address",
                         type: "email",
                         autoComplete: "email",

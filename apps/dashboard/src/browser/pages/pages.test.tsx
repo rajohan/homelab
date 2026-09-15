@@ -38,7 +38,9 @@ describe("dashboard foundation", () => {
 
     test("shows a pending connection without claiming success", () => {
         render(<ConnectionStatus pending failed={false} onRetry={() => {}} />);
-        expect(screen.getByText("Checking this application's API…")).toBeVisible();
+        expect(
+            screen.getByRole("status", { name: "Checking this application's API…" })
+        ).toBeVisible();
         expect(screen.queryByText("Connected")).not.toBeInTheDocument();
     });
 
@@ -72,7 +74,7 @@ describe("dashboard foundation", () => {
             createMemoryHistory({ initialEntries: ["/"] })
         );
         render(<DashboardApp router={router} queryClient={queryClient} />);
-        expect(await screen.findByText("Authelia remains in place.")).toBeVisible();
+        expect(await screen.findByText("You're in the identity preview")).toBeVisible();
         await user.click(screen.getByRole("link", { name: "Settings" }));
         expect(
             await screen.findByRole("heading", {

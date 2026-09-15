@@ -1,3 +1,4 @@
+import { AppErrorBoundary } from "@homelab/ui";
 import { IdentityClient } from "@homelab/ui/identity/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";
@@ -16,8 +17,14 @@ if (address.hash)
 
 createRoot(root).render(
     <StrictMode>
-        <QueryClientProvider client={new QueryClient()}>
-            <AuthScreen client={new IdentityClient()} address={address} token={token} />
-        </QueryClientProvider>
+        <AppErrorBoundary>
+            <QueryClientProvider client={new QueryClient()}>
+                <AuthScreen
+                    client={new IdentityClient()}
+                    address={address}
+                    token={token}
+                />
+            </QueryClientProvider>
+        </AppErrorBoundary>
     </StrictMode>
 );

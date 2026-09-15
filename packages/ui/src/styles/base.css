@@ -1,0 +1,66 @@
+@layer base {
+    :root {
+        color-scheme: dark;
+        font-family:
+            Inter,
+            ui-sans-serif,
+            system-ui,
+            -apple-system,
+            BlinkMacSystemFont,
+            "Segoe UI",
+            sans-serif;
+        background: theme("colors.primary.900");
+        color: theme("colors.primary.50");
+        font-synthesis: none;
+        text-rendering: optimizeLegibility;
+    }
+
+    html,
+    body {
+        min-height: 100%;
+        min-width: 0;
+        margin: 0;
+    }
+
+    /* Long account forms must remain scrollable without an app-owned scroll container. */
+    body {
+        overflow-x: hidden;
+    }
+
+    #root {
+        min-height: 100dvh;
+    }
+
+    * {
+        scrollbar-color: theme("colors.primary.500") theme("colors.primary.900");
+        scrollbar-width: thin;
+    }
+
+    ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+        background: theme("colors.primary.900");
+    }
+
+    ::-webkit-scrollbar-thumb {
+        background: theme("colors.primary.500");
+        border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+        background: theme("colors.primary.400");
+    }
+
+    button,
+    a {
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    :focus-visible {
+        outline: 3px solid theme("colors.accent.400");
+        outline-offset: 4px;
+    }
+}

@@ -1,33 +1,40 @@
-import { Field, Input, Label } from "@headlessui/react";
+import { Description, Field, Label } from "@headlessui/react";
+import { useContext, type ReactNode } from "react";
 
-import type { FieldDefinition } from "./types";
+import { FormFieldInvalidContext } from "../../lib/formFieldContext";
 
 export function FormField({
-    definition,
-    value,
-    onBlur,
-    onChange,
+    label,
+    children,
+    description,
+    error,
+    disabled,
+    className,
 }: {
-    definition: FieldDefinition;
-    value: string;
-    onBlur: () => void;
-    onChange: (value: string) => void;
+    readonly label: ReactNode;
+    readonly children: ReactNode;
+    readonly description?: ReactNode;
+    readonly error?: string;
+    readonly disabled?: boolean;
+    readonly className?: string;
 }) {
+    const inheritedInvalid = useContext(FormFieldInvalidContext);
     return (
-        <Field>
-            <Label className="mb-1.5 block text-sm font-medium">{definition.label}</Label>
-            <Input
-                name={definition.name}
-                type={definition.type ?? "text"}
-                autoComplete={definition.autoComplete}
-                value={value}
-                onBlur={onBlur}
-                onChange={(event) => onChange(event.target.value)}
-                required
-                minLength={definition.minimum ?? 1}
-                maxLength={definition.maximum ?? 256}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-base focus:border-blue-600"
-            />
+        <Field {...(disabled === undefined ? {} : { disabled })} className={className}>
+            <Label className="mb-1.5 block text-sm font-medium text-primary-200 data-disabled:opacity-60">
+                {label}
+            </Label>
+            <FormFieldInvalidContext value={error !== undefined || inheritedInvalid}>
+                {children}
+            </FormFieldInvalidContext>
+            {description && (
+                <Description className="mt-1.5 text-xs leading-5 text-primary-400">
+                    {description}
+                </Description>
+            )}
+            {error !== undefined && (
+                <Description className="mt-1.5 text-sm text-red-300">{error}</Description>
+            )}
         </Field>
     );
 }

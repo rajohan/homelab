@@ -27,7 +27,7 @@ When developing on Main, forward **both ports with the same numbers**, because O
 and callbacks must match:
 
 ```sh
-ssh -N -L 3100:127.0.0.1:3100 -L 3101:127.0.0.1:3101 main
+ssh -N -L localhost:3100:127.0.0.1:3100 -L localhost:3101:127.0.0.1:3101 main
 ```
 
 Open `http://localhost:3100`, not an IP alias or a different port. This preview is disposable;

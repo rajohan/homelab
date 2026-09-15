@@ -23,7 +23,8 @@ export function SignedInActions({
                 Signed in as <strong>{username}</strong>.
             </p>
             <Button
-                disabled={busy}
+                busy={busy}
+                fullWidth
                 onClick={() => {
                     setBusy(true);
                     setFailure(undefined);
@@ -32,9 +33,9 @@ export function SignedInActions({
                         .finally(() => setBusy(false));
                 }}
             >
-                {busy ? "Continuing…" : "Continue"}
+                Continue
             </Button>
-            <a className="block text-sm text-blue-700 underline" href="/account">
+            <a className="block text-sm text-accent-300 underline" href="/account">
                 Manage account security
             </a>
             <Button

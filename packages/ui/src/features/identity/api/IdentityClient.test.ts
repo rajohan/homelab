@@ -38,8 +38,8 @@ describe("identity action replay", () => {
         client.bindIdentity("user:session");
         fetchSpy.mockRejectedValueOnce(new TypeError("Network unavailable"));
         const failure = await client.action("email", {}).catch((error: unknown) => error);
-        expect(failure).toBeInstanceOf(TypeError);
-        expect((failure as Error).message).toBe("Network unavailable");
+        expect(failure).toMatchObject({ code: "NETWORK_ERROR", status: 0 });
+        expect((failure as Error).message).toContain("Could not reach the server");
         expect(fetchSpy).toHaveBeenCalledTimes(1);
         expect(client.verification.getSnapshot()).toBe(0);
     });
@@ -74,4 +74,32 @@ describe("identity action replay", () => {
         expect((failure as Error).message).toContain("Verify again");
         expect(fetchSpy).toHaveBeenCalledTimes(2);
     });
+});
+
+test("timeouts and cancelled requests show actionable messages without replaying mutations", async () => {
+    for (const [name, code, message] of [
+        ["TimeoutError", "TIMEOUT", "The server took too long to respond"],
+        ["AbortError", "CANCELLED", "The request was cancelled"],
+    ] as const) {
+        fetchSpy
+            .mockReset()
+            .mockRejectedValueOnce(new DOMException("signal timed out", name));
+        const client = new IdentityClient();
+        const failure = await client.action("email", {}).catch((error: unknown) => error);
+        expect(failure).toMatchObject({ code, status: 0 });
+        expect((failure as Error).message).toContain(message);
+        expect(fetchSpy).toHaveBeenCalledTimes(1);
+    }
+});
+
+test("a timeout while reading the response body is also translated", async () => {
+    const response = new Response("{}");
+    spyOn(response, "json").mockRejectedValueOnce(
+        new DOMException("signal timed out", "TimeoutError")
+    );
+    fetchSpy.mockResolvedValueOnce(response);
+    const failure = await new IdentityClient()
+        .request("/api/session")
+        .catch((error: unknown) => error);
+    expect(failure).toMatchObject({ code: "TIMEOUT", status: 0 });
 });

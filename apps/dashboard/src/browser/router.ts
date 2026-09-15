@@ -10,6 +10,7 @@ import { Identity } from "./pages/Identity";
 import { Infrastructure } from "./pages/Infrastructure";
 import { NotFound } from "./pages/NotFound";
 import { Overview } from "./pages/Overview";
+import { RouteError } from "./pages/RouteError";
 import { Settings } from "./pages/Settings";
 
 export function createDashboardRouter(history?: RouterHistory) {
@@ -33,6 +34,7 @@ export function createDashboardRouter(history?: RouterHistory) {
         component: Infrastructure,
     });
     return createRouter({
+        defaultErrorComponent: RouteError,
         routeTree: root.addChildren([
             overview,
             identity,

@@ -65,3 +65,35 @@ operation. It does not emulate a hardware security key or assert Safari's NFC su
 
 The disposable `bun run dev:identity` flow is also suitable for manual acceptance using
 synthetic accounts. Browser/device testing must not use the production account database.
+
+## Responsive theme and compiler checks
+
+Use the disposable identity preview to inspect both auth and dashboard at 320px/390px,
+tablet and desktop widths. Check navigation, long account values, scrolling, focus and
+security dialogs. Happy DOM does not calculate browser layout, so component tests alone
+cannot certify responsiveness.
+
+The shared base uses Mira's dark palette and scrollbar treatment, but leaves long pages
+vertically scrollable rather than copying the old shell's global `overflow: hidden`.
+App CSS entrypoints contain only the shared import and local Tailwind source registration.
+
+Bun's production build enables its native React Compiler; the build regression checks
+verify generated memoization without Babel or another runtime. Development keeps Bun's
+Fast Refresh pipeline. `scripts/development/routerHmr.ts` defers one eager TanStack
+RouterCore binding that otherwise fails during Bun's development module cycle. It changes
+only the in-memory development bundle, not installed dependencies or production output.
+The test checks the installed upstream implementation and fails on an incompatible update.
+Remove the workaround once an upstream Bun/Router combination passes the same browser check.
+
+## Remote loopback preview
+
+When forwarding the preview from Main, bind the SSH listeners to `localhost`, not
+only `127.0.0.1`. The browser may connect to `::1`; both loopback families must reach
+the same preview. An IPv4-only tunnel can make browser requests time out even when
+an HTTP client succeeds after falling back to IPv4. Keep the app listeners on Main
+loopback-only; do not expose the preview on the LAN or disable IPv6.
+
+The shared input keeps visible labels separate from optional placeholders. Hover
+and focus use the Mira accent, while invalid and disabled states remain distinct.
+Transport failures use actionable messages and never automatically replay a mutation
+whose outcome is unknown.

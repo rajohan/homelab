@@ -31,6 +31,14 @@ const browserFiles = [
     "packages/ui/src/**/*.{ts,tsx}",
 ];
 const serverFiles = ["apps/auth/src/**/*.{ts,tsx}", "apps/dashboard/src/**/*.{ts,tsx}"];
+const compilerManagedImports = [
+    {
+        name: "react",
+        importNames: ["memo", "useMemo", "useCallback"],
+        message:
+            "React Compiler owns memoization; do not add manual memo, useMemo or useCallback.",
+    },
+];
 const appImports = ["**/apps/**", "@homelab/auth", "@homelab/dashboard"];
 const serverImports = [
     "bun",
@@ -177,6 +185,7 @@ export default defineConfig({
                 "no-restricted-imports": [
                     "error",
                     {
+                        paths: compilerManagedImports,
                         patterns: [
                             {
                                 group: [
@@ -210,6 +219,7 @@ export default defineConfig({
                 "no-restricted-imports": [
                     "error",
                     {
+                        paths: compilerManagedImports,
                         patterns: [
                             {
                                 group: [...appImports, ...serverImports],
@@ -228,6 +238,7 @@ export default defineConfig({
                 "no-restricted-imports": [
                     "error",
                     {
+                        paths: compilerManagedImports,
                         patterns: [
                             {
                                 group: [
@@ -267,6 +278,7 @@ export default defineConfig({
                 "no-restricted-imports": [
                     "error",
                     {
+                        paths: compilerManagedImports,
                         patterns: [
                             {
                                 group: [
@@ -291,6 +303,7 @@ export default defineConfig({
                 "no-restricted-imports": [
                     "error",
                     {
+                        paths: compilerManagedImports,
                         patterns: [
                             {
                                 group: appImports,
@@ -310,6 +323,7 @@ export default defineConfig({
                 "no-restricted-imports": [
                     "error",
                     {
+                        paths: compilerManagedImports,
                         patterns: [
                             {
                                 group: [
@@ -367,6 +381,7 @@ export default defineConfig({
                 "no-restricted-imports": [
                     "error",
                     {
+                        paths: compilerManagedImports,
                         patterns: [
                             {
                                 group: [
@@ -397,6 +412,7 @@ export default defineConfig({
                 "no-restricted-imports": [
                     "error",
                     {
+                        paths: compilerManagedImports,
                         patterns: [
                             {
                                 group: [

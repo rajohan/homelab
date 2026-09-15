@@ -1,3 +1,4 @@
+import { AppErrorBoundary } from "@homelab/ui";
 import { type QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 
@@ -12,10 +13,12 @@ export function DashboardApp({
     queryClient: QueryClient;
 }) {
     return (
-        <QueryClientProvider client={queryClient}>
-            <IdentityBoundary>
-                <RouterProvider router={router} />
-            </IdentityBoundary>
-        </QueryClientProvider>
+        <AppErrorBoundary>
+            <QueryClientProvider client={queryClient}>
+                <IdentityBoundary>
+                    <RouterProvider router={router} />
+                </IdentityBoundary>
+            </QueryClientProvider>
+        </AppErrorBoundary>
     );
 }

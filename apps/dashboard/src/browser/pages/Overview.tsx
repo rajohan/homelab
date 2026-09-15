@@ -1,7 +1,7 @@
-import { Card } from "@homelab/ui";
+import { Badge, Card, PageHeader, SectionHeader, buttonStyles } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { ArrowRight, Blocks, Check, ShieldCheck } from "lucide-react";
+import { ArrowRight, Server, ShieldCheck } from "lucide-react";
 
 import { systemStatusQuery } from "../api/client";
 import { ConnectionStatus } from "../features/overview/ConnectionStatus";
@@ -10,111 +10,72 @@ export function Overview() {
     const status = useQuery(systemStatusQuery);
     return (
         <>
-            <div className="mb-7.25 max-[640px]:mb-5.75">
-                <span className="text-[0.65rem] font-[650] tracking-[0.12em] text-[#68798e] uppercase">
-                    Overview
-                </span>
-                <h1 className="mt-2.5 mb-3.25 text-[clamp(1.8rem,3vw,2.5rem)] leading-[1.2] font-[650] tracking-[-0.045em]">
-                    A clear home for your homelab.
-                </h1>
-                <p className="text-[0.925rem] leading-[1.7] text-[#536174]">
-                    A modular dashboard, starting with a small, independent foundation.
-                </p>
-            </div>
-            <div className="mb-6.25 flex items-start gap-3.25 rounded-[11px] border border-[#ccdbee] bg-[#eef4fd] px-5 py-4.5 text-[#2b538d] max-[640px]:p-4">
-                <ShieldCheck className="mt-0.5 shrink-0" size={21} aria-hidden="true" />
+            <PageHeader
+                title="Overview"
+                description="Your account and infrastructure, in one place."
+            />
+            <div className="mb-6 flex items-start gap-3 rounded-xl border border-accent-800/60 bg-accent-950/40 p-4 text-sm">
+                <ShieldCheck
+                    size={20}
+                    className="mt-0.5 shrink-0 text-accent-300"
+                    aria-hidden="true"
+                />
                 <div>
-                    <strong className="text-[0.85rem] font-[650]">
-                        Authelia remains in place.
-                    </strong>
-                    <p className="mt-0.75 text-[0.8rem] leading-[1.7] text-[#496280]">
-                        This preview has not replaced authentication or changed access to
-                        your services.
+                    <p className="font-medium text-accent-100">
+                        You&apos;re in the identity preview
+                    </p>
+                    <p className="mt-1 leading-6 text-primary-300">
+                        Authelia still protects your services. Explore account settings
+                        here before the production switch.
                     </p>
                 </div>
             </div>
-            <div className="grid grid-cols-2 gap-5.5 max-[1050px]:grid-cols-1">
+            <div className="grid gap-6 lg:grid-cols-2">
                 <ConnectionStatus
                     pending={status.isPending}
                     failed={status.isError}
                     data={status.data}
-                    onRetry={() => {
-                        void status.refetch();
-                    }}
+                    onRetry={() => void status.refetch()}
                 />
-                <Card aria-labelledby="foundation-heading">
-                    <div className="mb-4.5 flex items-start justify-between gap-3">
-                        <h2
-                            className="text-[1.05rem] leading-[1.45] font-[650] tracking-[-0.015em]"
-                            id="foundation-heading"
-                        >
-                            A focused starting point
-                        </h2>
-                        <Blocks
-                            className="shrink-0 text-[#75869b]"
-                            size={20}
-                            aria-hidden="true"
-                        />
-                    </div>
-                    <p className="text-[0.925rem] leading-[1.7] text-[#536174]">
-                        Dashboard and identity are separate applications in one workspace.
-                        Shared code stays small and explicit.
+                <Card className="flex flex-col gap-5">
+                    <SectionHeader
+                        title="Account & security"
+                        description="Manage the identity you use across your homelab."
+                        icon={ShieldCheck}
+                    />
+                    <p className="text-sm leading-6 text-primary-300">
+                        Update your email and password, register security keys, and review
+                        your signed-in devices.
                     </p>
-                    <ul className="mt-5 grid list-none gap-2.75 p-0 text-[0.8rem] text-[#526176]">
-                        <li className="flex items-center gap-2.25">
-                            <Check
-                                className="shrink-0 text-[#548068]"
-                                size={17}
-                                aria-hidden="true"
-                            />
-                            Independent application entry points
-                        </li>
-                        <li className="flex items-center gap-2.25">
-                            <Check
-                                className="shrink-0 text-[#548068]"
-                                size={17}
-                                aria-hidden="true"
-                            />
-                            Typed API and shared UI primitives
-                        </li>
-                        <li className="flex items-center gap-2.25">
-                            <Check
-                                className="shrink-0 text-[#548068]"
-                                size={17}
-                                aria-hidden="true"
-                            />
-                            No production credentials required
-                        </li>
-                    </ul>
+                    <Link
+                        to="/settings"
+                        className={buttonStyles({
+                            variant: "secondary",
+                            className: "mt-auto self-start",
+                        })}
+                    >
+                        Open settings <ArrowRight size={16} aria-hidden="true" />
+                    </Link>
+                </Card>
+                <Card className="flex flex-col gap-5 lg:col-span-2">
+                    <SectionHeader
+                        title="Infrastructure"
+                        description="Services, hosts and monitoring will live here."
+                        icon={Server}
+                        actions={<Badge>Not connected</Badge>}
+                    />
+                    <p className="text-sm leading-6 text-primary-400">
+                        Infrastructure integrations have not been enabled in this preview.
+                        Existing services continue to run independently.
+                    </p>
+                    <Link
+                        to="/infrastructure"
+                        className="inline-flex items-center gap-2 self-start text-sm font-medium text-accent-300 hover:text-accent-200"
+                    >
+                        View integration plan <ArrowRight size={16} aria-hidden="true" />
+                    </Link>
                 </Card>
             </div>
-            <Card
-                className="mt-5.5 flex items-center justify-between gap-6.25 max-[1050px]:flex-col max-[1050px]:items-start"
-                aria-labelledby="next-step-heading"
-            >
-                <div>
-                    <span className="text-[0.65rem] font-[650] tracking-[0.12em] text-[#68798e] uppercase">
-                        Next milestone
-                    </span>
-                    <h2
-                        className="my-2 text-[1.05rem] leading-[1.45] font-[650] tracking-[-0.015em]"
-                        id="next-step-heading"
-                    >
-                        Validate identity before cutover.
-                    </h2>
-                    <p className="max-w-147.5 text-[0.85rem] leading-[1.7] text-[#536174]">
-                        Verify real devices and client integrations alongside Authelia
-                        before considering a cutover.
-                    </p>
-                </div>
-                <Link
-                    to="/identity"
-                    className="inline-flex items-center gap-2 text-[0.8rem] font-semibold whitespace-nowrap text-[#2c568f] hover:underline"
-                >
-                    View the boundary
-                    <ArrowRight size={17} aria-hidden="true" />
-                </Link>
-            </Card>
         </>
     );
 }

@@ -9,7 +9,7 @@
     "include": [
         "apps/dashboard/src/browser/main.tsx",
         "apps/dashboard/src/browser/api/client.ts",
-        "apps/dashboard/src/browser/assets.d.ts",
+        "types/assets.d.ts",
         "apps/dashboard/src/browser/**/*.ts",
         "apps/dashboard/src/browser/**/*.tsx",
         "apps/auth/src/browser/**/*.ts",

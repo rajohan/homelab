@@ -10,9 +10,9 @@ export function Badge({
     tone?: "neutral" | "positive" | "warning";
 }) {
     const classes = {
-        neutral: "bg-[#eef1f5] text-[#526174]",
-        positive: "bg-[#e9f4ee] text-[#28704a]",
-        warning: "bg-[#fff3df] text-[#8c591c]",
+        neutral: "bg-primary-700 text-primary-200",
+        positive: "bg-emerald-950 text-emerald-300",
+        warning: "bg-red-500/10 text-red-300",
     } as const;
     return (
         <span

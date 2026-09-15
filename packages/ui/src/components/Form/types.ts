@@ -1,6 +1,7 @@
 export interface FieldDefinition {
     readonly name: string;
     readonly label: string;
+    readonly placeholder?: string;
     readonly type?: "email" | "password" | "text";
     readonly autoComplete?: string;
     readonly minimum?: number;

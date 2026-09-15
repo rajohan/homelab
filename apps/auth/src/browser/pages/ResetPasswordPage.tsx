@@ -7,7 +7,7 @@ export function ResetPasswordPage({ client, token }: AuthPageProps) {
     const [notice, setNotice] = useState("");
     return (
         <AuthLayout title="Choose a new password" recovery>
-            {notice && <output className="text-base text-emerald-800">{notice}</output>}
+            {notice && <output className="text-base text-emerald-300">{notice}</output>}
             {token ? (
                 <PasswordForm
                     submitLabel="Reset password"

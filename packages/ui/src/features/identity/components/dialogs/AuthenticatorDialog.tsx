@@ -29,14 +29,16 @@ export function AuthenticatorDialog({
                     <QRCodeSVG
                         value={enrollment.uri}
                         size={192}
+                        marginSize={4}
+                        className="h-auto max-w-full"
                         title="Scan to add your Homelab authenticator"
                     />
-                    <code className="block rounded-lg bg-slate-100 p-3 text-base break-all">
+                    <code className="block rounded-lg bg-primary-900 p-3 text-base break-all">
                         {enrollment.secret}
                     </code>
                     <a
                         href={enrollment.uri}
-                        className="block text-sm text-blue-700 underline"
+                        className="block text-sm text-accent-300 underline"
                     >
                         Open in an authenticator app
                     </a>
@@ -44,6 +46,7 @@ export function AuthenticatorDialog({
                         fields={[
                             {
                                 name: "code",
+                                placeholder: "6-digit code",
                                 label: "Six-digit code",
                                 autoComplete: "one-time-code",
                                 minimum: 6,
@@ -67,7 +70,14 @@ export function AuthenticatorDialog({
                 </div>
             ) : (
                 <FieldsForm
-                    fields={[{ name: "label", label: "Authenticator name", maximum: 64 }]}
+                    fields={[
+                        {
+                            name: "label",
+                            label: "Authenticator name",
+                            placeholder: "e.g. Personal phone",
+                            maximum: 64,
+                        },
+                    ]}
                     submitLabel="Continue"
                     onSubmit={async (values) => {
                         setEnrollment(

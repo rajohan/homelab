@@ -40,7 +40,7 @@ export function SecurityChangeDialog({
                 await onComplete("The security change was applied.");
             }}
         >
-            <p className="mb-4 text-base text-slate-600">
+            <p className="mb-4 text-base text-primary-300">
                 {action === "recovery"
                     ? "Existing recovery codes will stop working. Save the replacement codes immediately."
                     : "This change takes effect immediately."}

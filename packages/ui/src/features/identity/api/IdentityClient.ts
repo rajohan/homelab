@@ -22,32 +22,50 @@ export class IdentityClient {
     }
 
     async request(path: string, input?: unknown, signal?: AbortSignal): Promise<unknown> {
-        const response = await fetch(path, {
-            method: input === undefined ? "GET" : "POST",
-            headers: { "Content-Type": "application/json" },
-            credentials: "same-origin",
-            cache: "no-store",
-            ...(input === undefined ? {} : { body: JSON.stringify(input) }),
-            signal: signal
-                ? AbortSignal.any([signal, AbortSignal.timeout(20_000)])
-                : AbortSignal.timeout(20_000),
-        });
-        const value: unknown = await response.json();
-        if (!response.ok) {
-            const result = v.safeParse(
-                v.object({ code: v.string(), message: v.string() }),
-                value
-            );
-            if (response.status === 401) this.bindIdentity(undefined);
-            throw new IdentityError(
-                result.success ? result.output.code : "REQUEST_FAILED",
-                response.status,
-                result.success
-                    ? result.output.message
-                    : "The request could not be completed."
-            );
+        try {
+            const response = await fetch(path, {
+                method: input === undefined ? "GET" : "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "same-origin",
+                cache: "no-store",
+                ...(input === undefined ? {} : { body: JSON.stringify(input) }),
+                signal: signal
+                    ? AbortSignal.any([signal, AbortSignal.timeout(20_000)])
+                    : AbortSignal.timeout(20_000),
+            });
+            const value: unknown = await response.json();
+            if (!response.ok) {
+                const result = v.safeParse(
+                    v.object({ code: v.string(), message: v.string() }),
+                    value
+                );
+                if (response.status === 401) this.bindIdentity(undefined);
+                throw new IdentityError(
+                    result.success ? result.output.code : "REQUEST_FAILED",
+                    response.status,
+                    result.success
+                        ? result.output.message
+                        : "The request could not be completed."
+                );
+            }
+            return value;
+        } catch (error) {
+            if (error instanceof Error && error.name === "TimeoutError")
+                throw new IdentityError(
+                    "TIMEOUT",
+                    0,
+                    "The server took too long to respond. Check your connection and refresh before trying again."
+                );
+            if (error instanceof Error && error.name === "AbortError")
+                throw new IdentityError("CANCELLED", 0, "The request was cancelled.");
+            if (error instanceof TypeError)
+                throw new IdentityError(
+                    "NETWORK_ERROR",
+                    0,
+                    "Could not reach the server. Check your connection and refresh before trying again."
+                );
+            throw error;
         }
-        return value;
     }
 
     bindIdentity(identity: string | undefined): void {

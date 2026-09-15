@@ -36,6 +36,8 @@ for (const app of apps) {
         outdir: outputDirectory,
         naming: { entry: "[name].[ext]" },
         target: "bun",
+        reactCompiler: true,
+        reactCompilerOutputMode: "client",
         // Protocol libraries use class names as durable model identifiers.
         minify: { whitespace: true, syntax: false, identifiers: false, keepNames: true },
         sourcemap: "none",

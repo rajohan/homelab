@@ -7,7 +7,7 @@ export function VerifyEmailPage({ client, token }: AuthPageProps) {
     const [notice, setNotice] = useState("");
     return (
         <AuthLayout title="Verify your email" recovery>
-            {notice && <output className="text-base text-emerald-800">{notice}</output>}
+            {notice && <output className="text-base text-emerald-300">{notice}</output>}
             {token ? (
                 <FieldsForm
                     fields={[]}

@@ -8,11 +8,11 @@ export function RecoveryCodesDialog({
 }) {
     return (
         <Modal title="Save your recovery codes" onClose={onClose}>
-            <p className="mb-4 text-base text-slate-600">
+            <p className="mb-4 text-base text-primary-300">
                 Each code works once. Save these privately in your password manager. They
                 cannot be displayed again.
             </p>
-            <ul className="grid gap-2 rounded-lg bg-slate-100 p-4 font-mono text-sm sm:grid-cols-2">
+            <ul className="grid gap-2 rounded-lg bg-primary-900 p-4 font-mono text-sm sm:grid-cols-2">
                 {codes.map((code) => (
                     <li key={code}>{code}</li>
                 ))}

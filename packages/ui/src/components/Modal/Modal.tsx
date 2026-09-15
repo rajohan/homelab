@@ -1,7 +1,8 @@
 import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from "@headlessui/react";
+import { X } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { Button } from "../Button/Button";
+import { IconButton } from "../Button/IconButton";
 
 export function Modal({
     title,
@@ -14,19 +15,28 @@ export function Modal({
 }) {
     return (
         <Dialog open onClose={onClose} className="relative z-50">
-            <DialogBackdrop className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs" />
+            <DialogBackdrop
+                transition
+                className="fixed inset-0 bg-black/65 backdrop-blur-sm transition duration-200 data-closed:opacity-0 motion-reduce:transition-none"
+            />
             <div className="fixed inset-0 overflow-y-auto p-4 sm:p-8">
                 <div className="flex min-h-full items-center justify-center">
-                    <DialogPanel className="w-full max-w-lg rounded-xl bg-white p-6 text-base text-slate-900 shadow-xl">
-                        <div className="mb-5 flex items-center justify-between gap-4">
-                            <DialogTitle className="text-xl font-semibold">
+                    <DialogPanel
+                        transition
+                        className="w-full max-w-lg min-w-0 rounded-xl border border-primary-700 bg-primary-800 text-primary-50 shadow-2xl shadow-black/50 transition duration-200 data-closed:translate-y-2 data-closed:opacity-0 motion-reduce:transition-none"
+                    >
+                        <div className="flex items-start justify-between gap-3 rounded-t-xl border-b border-primary-700 bg-primary-900/40 px-5 py-4">
+                            <DialogTitle className="min-w-0 pt-2 text-lg font-semibold wrap-anywhere">
                                 {title}
                             </DialogTitle>
-                            <Button onClick={onClose} aria-label="Close dialog">
-                                Close
-                            </Button>
+                            <IconButton
+                                icon={X}
+                                label="Close dialog"
+                                onClick={onClose}
+                                className="-mr-2"
+                            />
                         </div>
-                        {children}
+                        <div className="min-w-0 p-5">{children}</div>
                     </DialogPanel>
                 </div>
             </div>

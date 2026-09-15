@@ -9,17 +9,17 @@ export function PageHeader({
     eyebrow?: string;
 }) {
     return (
-        <header className="mb-7.25 max-[640px]:mb-5.75">
+        <header className="mb-7">
             {eyebrow && (
-                <p className="text-[0.65rem] font-[650] tracking-[0.12em] text-[#68798e] uppercase">
+                <p className="text-xs font-semibold tracking-widest text-primary-400 uppercase">
                     {eyebrow}
                 </p>
             )}
-            <h1 className="mt-2.5 mb-3.25 text-[clamp(1.8rem,3vw,2.5rem)] leading-[1.2] font-[650] tracking-[-0.045em]">
+            <h1 className="my-2 text-2xl leading-tight font-semibold tracking-tight sm:text-3xl">
                 {title}
             </h1>
             {description && (
-                <p className="text-[0.925rem] leading-[1.7] text-[#536174]">
+                <p className="max-w-3xl text-sm leading-6 text-primary-400">
                     {description}
                 </p>
             )}

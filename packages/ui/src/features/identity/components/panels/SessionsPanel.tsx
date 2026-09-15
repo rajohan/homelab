@@ -1,25 +1,30 @@
-import { Button, Card } from "../../../../index";
+import { Monitor } from "lucide-react";
+
+import { Button, Card, SectionHeader } from "../../../../index";
 import type { AccountPanelProps } from "../../types";
 export function SessionsPanel({ data, onAction }: AccountPanelProps) {
     return (
         <Card id="account-sessions" className="space-y-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="text-xl font-semibold">Active sessions</h2>
+                <SectionHeader title="Active sessions" icon={Monitor} />
                 <div className="flex flex-wrap gap-2">
                     <Button
+                        variant="secondary"
                         disabled={data.sessions.length < 2}
                         onClick={() => onAction("others")}
                     >
                         Revoke other sessions
                     </Button>
-                    <Button onClick={() => onAction("all")}>Revoke all sessions</Button>
+                    <Button variant="secondary" onClick={() => onAction("all")}>
+                        Revoke all sessions
+                    </Button>
                 </div>
             </div>
-            <p className="text-base text-slate-600">
+            <p className="text-sm leading-6 text-primary-400">
                 Revoking a session stops its Homelab access. Applications may retain their
                 own local sessions until their next authentication check.
             </p>
-            <ul className="divide-y divide-slate-200">
+            <ul className="divide-y divide-primary-700">
                 {data.sessions.map((session) => (
                     <li
                         key={session.id}
@@ -29,15 +34,16 @@ export function SessionsPanel({ data, onAction }: AccountPanelProps) {
                             <p className="font-medium">
                                 {session.current ? "Current session" : "Browser session"}
                             </p>
-                            <p className="mt-1 text-sm wrap-break-word text-slate-600">
+                            <p className="mt-1 text-sm wrap-break-word text-primary-300">
                                 {session.userAgent}
                             </p>
-                            <p className="mt-1 text-sm text-slate-600">
+                            <p className="mt-1 text-sm text-primary-300">
                                 Last active{" "}
                                 {new Date(session.lastSeenAt).toLocaleString()}
                             </p>
                         </div>
                         <Button
+                            variant="ghost"
                             onClick={() =>
                                 onAction({
                                     kind: "session",

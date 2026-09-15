@@ -13,12 +13,14 @@ export function SignInForm({
                 {
                     name: "username",
                     label: "Username",
+                    placeholder: "Enter your username",
                     autoComplete: "username",
                     maximum: 100,
                 },
                 {
                     name: "password",
                     label: "Password",
+                    placeholder: "Enter your password",
                     type: "password",
                     autoComplete: "current-password",
                     minimum: 8,

@@ -51,6 +51,18 @@ components sit together in `layout/`, `pages/`, `components/panels/` or `compone
 Hooks and API clients are separate from presentation. Server modules are grouped into
 `config/`, `http/`, `security/`, `database/` and `oidc/`, with tests beside the appropriate layer.
 
+Both apps import `@homelab/ui/styles`. The shared UI stylesheet owns the Mira dark base,
+focus indicators, scrollbar styling and Tailwind setup. The root `tailwind.config.ts` owns
+the primary/accent palettes; app CSS entrypoints only register each app's browser source.
+Do not introduce app-specific copies of global styling or hardcoded replacements for these
+tokens. The shared `PageHeader` and UI primitives own repeated presentation.
+
+Production builds use Bun's native React Compiler in client mode, including UI shared by
+both applications. Do not add `memo`, `useMemo` or `useCallback`; the import restriction
+enforces compiler-owned memoization. Ordinary callbacks and event handlers are unaffected.
+The compiler optimizes eligible components; it is not a guarantee that every function is
+memoized, and correctness must never depend on memoization.
+
 Infrastructure screens remain clearly marked as unconnected. This milestone does not invent
 monitoring data or give the dashboard administrative host access.
 

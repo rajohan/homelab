@@ -7,6 +7,7 @@
         "start": "NODE_ENV=production bun --cwd dist --no-env-file index.js"
     },
     "dependencies": {
+        "@headlessui/react": "2.2.10",
         "@homelab/contracts": "workspace:*",
         "@homelab/ui": "workspace:*",
         "@simplewebauthn/browser": "14.0.0",

@@ -36,6 +36,7 @@ export function VerificationMethods({
                     {
                         name: "password",
                         label: "Current password",
+                        placeholder: "Enter your current password",
                         type: "password",
                         autoComplete: "current-password",
                         minimum: 8,
@@ -57,6 +58,10 @@ export function VerificationMethods({
                     fields={[
                         {
                             name: "code",
+                            placeholder:
+                                codeMethod === "totp"
+                                    ? "6-digit code"
+                                    : "Enter a recovery code",
                             label:
                                 codeMethod === "totp"
                                     ? "Authenticator code"

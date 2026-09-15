@@ -1,32 +1,62 @@
-import { Badge } from "@homelab/ui";
-import { Outlet } from "@tanstack/react-router";
+import { Badge, IconButton } from "@homelab/ui";
+import { Outlet, useLocation } from "@tanstack/react-router";
+import { Menu } from "lucide-react";
+import { useState } from "react";
 
+import { MobileNavigation } from "./MobileNavigation";
 import { Sidebar } from "./Sidebar";
 
 export function Shell() {
+    const location = useLocation();
+    const [navigationPath, setNavigationPath] = useState<string>();
+    const titles: Readonly<Record<string, string>> = {
+        "/settings": "Settings",
+        "/infrastructure": "Infrastructure",
+        "/identity": "Identity",
+    };
+    const title = titles[location.pathname] ?? "Overview";
     return (
-        <div className="grid min-h-screen grid-cols-[250px_minmax(0,1fr)] max-[1050px]:grid-cols-[210px_minmax(0,1fr)] max-[640px]:block">
+        <div className="min-h-dvh bg-primary-900 text-primary-50">
             <a
-                className="absolute -top-20 left-3.75 z-10 rounded-md border border-[#ccdbee] bg-white px-4.5 py-3 focus:top-3"
+                className="fixed top-3 left-3 z-50 -translate-y-24 rounded-lg bg-accent-700 px-4 py-3 text-sm font-semibold text-white focus:translate-y-0"
                 href="#main-content"
             >
                 Skip to content
             </a>
-            <Sidebar />
-            <div className="flex min-w-0 flex-col">
-                <header className="flex min-h-19.25 items-center justify-between gap-4 border-b border-[#e0e6ee] px-10.5 py-4.5 text-xs text-[#64738a] max-[1050px]:px-6.25 max-[640px]:min-h-15 max-[640px]:px-5 max-[640px]:py-3">
-                    <span>Workspace / Homelab</span>
-                    <Badge>Identity preview</Badge>
+            <aside className="fixed inset-y-0 left-0 hidden w-60 flex-col border-r border-primary-700 bg-primary-950 md:flex xl:w-64">
+                <Sidebar />
+            </aside>
+            <MobileNavigation
+                open={navigationPath === location.pathname}
+                onClose={() => setNavigationPath(undefined)}
+            />
+            <div className="flex min-h-dvh min-w-0 flex-col md:pl-60 xl:pl-64">
+                <header className="sticky top-0 z-20 flex h-20 shrink-0 items-center justify-between gap-3 border-b border-primary-700 bg-primary-950/95 px-4 backdrop-blur-sm sm:px-6 lg:px-8">
+                    <div className="flex min-w-0 items-center gap-3">
+                        <IconButton
+                            icon={Menu}
+                            label="Open navigation menu"
+                            className="md:hidden"
+                            onClick={() => setNavigationPath(location.pathname)}
+                        />
+                        <p className="truncate text-sm font-medium text-primary-400">
+                            <span className="hidden sm:inline">
+                                Homelab<span className="mx-3 text-primary-600">/</span>
+                            </span>
+                            <span className="text-primary-100">{title}</span>
+                        </p>
+                    </div>
+                    <Badge>Preview</Badge>
                 </header>
                 <main
-                    className="mx-auto w-full max-w-312.5 flex-1 px-10.5 pt-12.25 pb-15 max-[1050px]:px-6.25 max-[1050px]:py-8 max-[640px]:px-4.5 max-[640px]:py-7.5 min-[1500px]:pt-16.25"
+                    className="mx-auto w-full max-w-7xl min-w-0 flex-1 px-4 py-7 sm:px-6 sm:py-9 lg:px-8"
                     id="main-content"
                     tabIndex={-1}
                 >
                     <Outlet />
                 </main>
-                <footer className="px-10.5 pb-6.25 text-[0.7rem] text-[#8490a0] max-[1050px]:px-6.25 max-[640px]:pl-5">
-                    Independent services. Shared foundation.
+                <footer className="px-4 py-5 text-xs text-primary-500 sm:px-6 lg:px-8">
+                    Rajohan · Homelab
                 </footer>
             </div>
         </div>

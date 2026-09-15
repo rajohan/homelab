@@ -3,6 +3,8 @@ import { useState } from "react";
 
 import { ErrorNotice } from "../Alert/ErrorNotice";
 import { Button } from "../Button/Button";
+import { Input } from "../Input/Input";
+import { Form } from "./Form";
 import { FormField } from "./FormField";
 import type { FieldDefinition, FormValues } from "./types";
 
@@ -38,33 +40,37 @@ export function FieldsForm({
         },
     });
     return (
-        <form
-            onSubmit={(event) => {
-                event.preventDefault();
-                void form.handleSubmit();
-            }}
-            className="space-y-4"
-        >
+        <Form onSubmit={() => form.handleSubmit()} className="space-y-4">
             {fields.map((definition) => (
                 <form.Field name={definition.name} key={definition.name}>
                     {(field) => (
-                        <FormField
-                            definition={definition}
-                            value={field.state.value ?? ""}
-                            onBlur={field.handleBlur}
-                            onChange={field.handleChange}
-                        />
+                        <FormField label={definition.label}>
+                            <Input
+                                name={definition.name}
+                                type={definition.type ?? "text"}
+                                autoComplete={definition.autoComplete}
+                                placeholder={definition.placeholder}
+                                value={field.state.value ?? ""}
+                                onBlur={field.handleBlur}
+                                onChange={(event) =>
+                                    field.handleChange(event.target.value)
+                                }
+                                required
+                                minLength={definition.minimum ?? 1}
+                                maxLength={definition.maximum ?? 256}
+                            />
+                        </FormField>
                     )}
                 </form.Field>
             ))}
             {error !== undefined && <ErrorNotice error={error} />}
             <form.Subscribe selector={(state) => state.isSubmitting}>
                 {(submitting) => (
-                    <Button type="submit" disabled={submitting}>
-                        {submitting ? "Please wait…" : submitLabel}
+                    <Button type="submit" busy={submitting} fullWidth>
+                        {submitLabel}
                     </Button>
                 )}
             </form.Subscribe>
-        </form>
+        </Form>
     );
 }
