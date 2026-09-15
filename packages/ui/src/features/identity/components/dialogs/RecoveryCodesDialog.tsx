@@ -30,6 +30,9 @@ export function RecoveryCodesDialog({
                 ))}
             </ul>
             <ActionGroup className="mt-4">
+                <Button size="sm" onClick={onClose}>
+                    I saved the codes
+                </Button>
                 <CopyTextButton label="Copy recovery codes" text={codes.join("\n")} />
                 <Button
                     variant="secondary"
@@ -38,9 +41,6 @@ export function RecoveryCodesDialog({
                 >
                     <Download aria-hidden="true" className="size-4" />
                     Download
-                </Button>
-                <Button size="sm" onClick={onClose}>
-                    I saved the codes
                 </Button>
             </ActionGroup>
         </Modal>

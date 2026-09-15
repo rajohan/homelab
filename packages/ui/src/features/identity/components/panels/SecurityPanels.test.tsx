@@ -157,7 +157,9 @@ test("session-wide actions share the responsive full-width action group", () => 
         "[&>button]:w-full",
         "min-[30rem]:flex-row"
     );
-    expect(all.parentElement?.firstElementChild).toBe(all);
+    expect(all.parentElement?.lastElementChild).toBe(
+        globalThis.matchMedia("(min-width: 30rem)").matches ? all : others
+    );
     expect(others).toBeDisabled();
     fireEvent.click(all);
     expect(action).toHaveBeenCalledWith("all");

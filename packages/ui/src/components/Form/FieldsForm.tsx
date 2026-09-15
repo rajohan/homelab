@@ -44,20 +44,17 @@ export function FieldsForm({
         validators: {
             // Focus/blur from password-manager controls is not an edit. Validate only
             // edited fields here; submission still checks every field immediately.
-            onChangeAsyncDebounceMs: 200,
-            onChangeAsync: ({ value, formApi }) =>
-                Promise.resolve(
-                    validateFields(
-                        fields,
-                        value,
-                        validate,
-                        new Set(
-                            fields
-                                .filter(
-                                    (field) => formApi.getFieldMeta(field.name)?.isDirty
-                                )
-                                .map((field) => field.name)
-                        )
+            // These local rules are synchronous: do not clear submit errors while
+            // waiting for a debounced change validator to replace them.
+            onChange: ({ value, formApi }) =>
+                validateFields(
+                    fields,
+                    value,
+                    validate,
+                    new Set(
+                        fields
+                            .filter((field) => formApi.getFieldMeta(field.name)?.isDirty)
+                            .map((field) => field.name)
                     )
                 ),
             onSubmit: validateValues,

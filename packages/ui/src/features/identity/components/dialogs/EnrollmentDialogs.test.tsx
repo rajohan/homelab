@@ -132,7 +132,9 @@ test.each([
                 "min-[30rem]:flex-row",
                 "[&>button]:w-full"
             );
-            expect(cancel.parentElement?.firstElementChild).toBe(submit);
+            expect(cancel.parentElement?.lastElementChild).toBe(
+                globalThis.matchMedia("(min-width: 30rem)").matches ? submit : cancel
+            );
             fireEvent.click(cancel);
             expect(close).toHaveBeenCalledTimes(1);
             expect(action).not.toHaveBeenCalled();

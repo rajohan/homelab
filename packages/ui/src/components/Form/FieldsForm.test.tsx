@@ -245,3 +245,53 @@ test("an existing length error stays visible during invalid typing and clears wh
     await waitFor(() => expect(password).not.toHaveAttribute("aria-invalid", "true"));
     expect(screen.queryByText(message)).not.toBeInTheDocument();
 });
+
+test("submit errors update during correction without flashing or blocking a valid retry", async () => {
+    const user = userEvent.setup();
+    const submit = mock(() => Promise.resolve());
+    const { container } = render(
+        <FieldsForm
+            fields={[
+                { name: "password", label: "Password", type: "password", minimum: 12 },
+            ]}
+            submitLabel="Save"
+            onSubmit={submit}
+        />
+    );
+    const password = screen.getByLabelText("Password");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(password).toHaveAccessibleDescription("Password is required.");
+    const missing: string[] = [];
+    const observer = new MutationObserver(() => {
+        if (!password.hasAttribute("aria-invalid"))
+            missing.push(container.textContent ?? "");
+    });
+    observer.observe(container, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+        attributes: true,
+        attributeFilter: ["aria-invalid"],
+    });
+    try {
+        await user.type(password, "short");
+        await waitFor(() =>
+            expect(password).toHaveAccessibleDescription(
+                "Password must contain at least 12 characters."
+            )
+        );
+        expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+        expect(missing).toEqual([]);
+    } finally {
+        observer.disconnect();
+    }
+    expect(screen.getByLabelText("Password")).toBe(password);
+    expect(password).toHaveFocus();
+    await user.type(password, "-valid-password");
+    expect(screen.getByLabelText("Password")).toBe(password);
+    expect(password).toHaveFocus();
+    await waitFor(() => expect(password).not.toHaveAttribute("aria-invalid", "true"));
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(submit).toHaveBeenCalledWith({ password: "short-valid-password" });
+});
