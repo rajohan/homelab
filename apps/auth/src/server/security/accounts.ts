@@ -3,7 +3,6 @@ import { and, desc, eq, gt, isNull, isNotNull, ne } from "drizzle-orm";
 import type { AuthConfiguration } from "../config/configuration";
 import type { AuthDatabase, AuthStore, AuthTransaction } from "../database/connection";
 import {
-    auditEvents,
     challenges,
     factors,
     grantSessions,
@@ -457,16 +456,6 @@ export class Accounts {
             .select({ digest: recoveryCodes.digest })
             .from(recoveryCodes)
             .where(eq(recoveryCodes.userId, principal.user.id));
-        const events = await this.database
-            .select({
-                id: auditEvents.id,
-                event: auditEvents.event,
-                createdAt: auditEvents.createdAt,
-            })
-            .from(auditEvents)
-            .where(eq(auditEvents.userId, principal.user.id))
-            .orderBy(desc(auditEvents.createdAt))
-            .limit(50);
         return {
             user: {
                 id: principal.user.id,
@@ -480,7 +469,6 @@ export class Accounts {
                 ...session,
                 current: session.id === principal.session.id,
             })),
-            events,
         };
     }
 }

@@ -12,6 +12,7 @@ import { createAuthApplication } from "../application";
 import type { AuthConfiguration } from "../config/configuration";
 import { requiredAuthMigrations } from "../database/migrations";
 import {
+    auditEvents,
     factors,
     logoutOutbox,
     sessions,
@@ -479,6 +480,142 @@ describe("security invariants against the isolated database", () => {
             createdAt: new Date(),
         });
         expect(await status(post("/api/login", { username, password }))).toBe(200);
+    });
+
+    test("audit pagination is stable across tied timestamps and never includes another account", async () => {
+        const database = application.connection.database;
+        const [user] = await database
+            .select()
+            .from(users)
+            .where(eq(users.username, username));
+        if (!user) throw new Error("Fixture account missing");
+        await database.delete(auditEvents).where(eq(auditEvents.userId, user.id));
+        const timestamp = new Date("2026-09-15T12:00:00.000Z");
+        const rows = Array.from({ length: 57 }, () => ({
+            id: crypto.randomUUID(),
+            userId: user.id,
+            event: "password_changed",
+            createdAt: timestamp,
+        }));
+        await database.insert(auditEvents).values(rows);
+        await database.insert(auditEvents).values({
+            id: crypto.randomUUID(),
+            userId: null,
+            event: "unrelated_event",
+            createdAt: timestamp,
+        });
+        const schema = v.object({
+            events: v.array(v.object({ id: v.string(), account: v.string() })),
+            nextCursor: v.nullable(v.string()),
+        });
+        const first = await json(browser("/api/account/activity"), schema);
+        expect(first.events).toHaveLength(50);
+        expect(first.nextCursor).not.toBeNull();
+        const second = await json(
+            browser(
+                "/api/account/activity?cursor=" +
+                    encodeURIComponent(first.nextCursor ?? "")
+            ),
+            schema
+        );
+        expect(second.events).toHaveLength(7);
+        expect(second.nextCursor).toBeNull();
+        expect(
+            [...first.events, ...second.events].every(
+                (event) => event.account === username
+            )
+        ).toBe(true);
+        expect(
+            new Set([...first.events, ...second.events].map((event) => event.id)).size
+        ).toBe(57);
+        expect([...first.events, ...second.events].map((event) => event.id)).toEqual(
+            rows
+                .map((row) => row.id)
+                .toSorted()
+                .toReversed()
+        );
+        expect(await status(browser("/api/account/activity?cursor=invalid"))).toBe(400);
+        await post("/api/logout", {});
+        expect(await status(browser("/api/account/activity"))).toBe(401);
+    });
+
+    test("disabling two-step login requires fresh MFA and the password, then revokes all factors and sessions", async () => {
+        await enrollTotp();
+        const tokens = await authorizationTokens(
+            "openid profile groups account offline_access"
+        );
+        const database = application.connection.database;
+        const [user] = await database
+            .select()
+            .from(users)
+            .where(eq(users.username, username));
+        if (!user) throw new Error("Fixture account missing");
+        const [session] = await database
+            .select()
+            .from(sessions)
+            .where(eq(sessions.userId, user.id));
+        if (!session) throw new Error("Fixture session missing");
+        await database
+            .update(sessions)
+            .set({ mfaAt: new Date(Date.now() - 600_000) })
+            .where(eq(sessions.id, session.id));
+        expect(await status(post("/api/account/mfa/disable", { password }))).toBe(403);
+        await database
+            .update(sessions)
+            .set({ mfaAt: new Date() })
+            .where(eq(sessions.id, session.id));
+        expect(
+            await status(
+                post("/api/account/mfa/disable", { password: "incorrect-password" })
+            )
+        ).toBe(400);
+        expect(
+            await database.select().from(factors).where(eq(factors.userId, user.id))
+        ).toHaveLength(1);
+        const second = await application.services.accounts.login(
+            username,
+            password,
+            "disable-mfa-fixture",
+            "Other fixture browser"
+        );
+        expect(second.mfaRequired).toBe(true);
+        expect(await status(post("/api/account/mfa/disable", { password }))).toBe(200);
+        for (const table of [factors, recoveryCodes, challenges, sessions])
+            expect(
+                await database.select().from(table).where(eq(table.userId, user.id))
+            ).toHaveLength(0);
+        expect(await status(browser("/api/account"))).toBe(401);
+        expect(
+            await status(
+                browser("/userinfo", {
+                    headers: { authorization: `Bearer ${tokens.access_token}` },
+                })
+            )
+        ).toBe(401);
+        expect(
+            await deliverLogouts(
+                database,
+                application.services.accounts.configuration,
+                application.services.provider
+            )
+        ).toBeGreaterThan(0);
+        expect(await status(post("/api/login", { username, password }))).toBe(200);
+        const result = await json(
+            browser("/api/session"),
+            v.object({ authenticated: v.boolean(), methods: v.array(v.string()) })
+        );
+        expect(result).toEqual({ authenticated: true, methods: [] });
+        const redirected = await proxyRequest("/private");
+        expect(redirected.status).toBe(302);
+        const target = new URL(redirected.headers.get("location") ?? "");
+        expect(
+            await status(
+                post("/api/sso/complete", {
+                    target: target.searchParams.get("target"),
+                    nonce: target.searchParams.get("nonce"),
+                })
+            )
+        ).toBe(403);
     });
 
     test("delivers signed session-specific logout after Settings revokes only the old device", async () => {

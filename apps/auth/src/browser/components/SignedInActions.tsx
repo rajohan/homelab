@@ -9,18 +9,13 @@ import { AccountActions } from "./AccountActions";
  */
 export function SignedInActions({
     client,
-    username,
     onRefresh,
 }: {
     readonly client: IdentityClient;
-    readonly username: string | undefined;
     readonly onRefresh: () => Promise<void>;
 }) {
     return (
         <div className="space-y-4">
-            <p className="text-base">
-                Signed in as <strong>{username}</strong>.
-            </p>
             <a className={buttonStyles({ fullWidth: true })} href="/dashboard">
                 Continue
             </a>

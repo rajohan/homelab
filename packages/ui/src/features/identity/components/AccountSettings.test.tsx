@@ -16,7 +16,6 @@ const snapshot: AccountSnapshot = {
     },
     factors: [],
     recoveryCodesRemaining: 0,
-    events: [],
     sessions: [
         {
             id: "session",
@@ -38,6 +37,8 @@ function renderSettings() {
     const read = spyOn(client, "snapshot").mockResolvedValue(snapshot);
     let fresh = false;
     const request = spyOn(client, "request").mockImplementation((path) => {
+        if (path.startsWith("/api/account/activity"))
+            return Promise.resolve({ events: [], nextCursor: null });
         if (path === "/api/session")
             return Promise.resolve({
                 authenticated: true,

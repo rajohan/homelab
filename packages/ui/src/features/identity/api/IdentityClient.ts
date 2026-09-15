@@ -7,7 +7,13 @@ import {
 import * as v from "valibot";
 
 import { IdentityError } from "./IdentityError";
-import { accountSchema, sessionSchema, type AccountSnapshot } from "./schemas";
+import {
+    accountSchema,
+    activityPageSchema,
+    sessionSchema,
+    type AccountSnapshot,
+    type ActivityPage,
+} from "./schemas";
 import { VerificationCoordinator } from "./verificationCoordinator";
 
 export class IdentityClient {
@@ -105,6 +111,23 @@ export class IdentityClient {
             `${snapshot.user.id}:${snapshot.sessions.find((session) => session.current)?.id ?? "missing"}`
         );
         return snapshot;
+    }
+
+    /**
+     * Read a cancellable page of this account's security events.
+     * @param cursor - The server-supplied continuation token, or null for the newest page.
+     * @param signal - Cancellation tied to the current list query.
+     * @returns Validated redacted events and the next page boundary.
+     */
+    async activity(cursor: string | null, signal?: AbortSignal): Promise<ActivityPage> {
+        return v.parse(
+            activityPageSchema,
+            await this.request(
+                `/api/account/activity${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`,
+                undefined,
+                signal
+            )
+        );
     }
 
     /**

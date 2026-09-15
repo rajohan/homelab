@@ -278,6 +278,28 @@ describe.each(["client_secret_post", "client_secret_basic"] as const)(
                 expect(cookie?.split(".")).toHaveLength(5);
                 expect(cookie).not.toContain("bff-operator");
             });
+            test("forwards activity cursors instead of silently returning the first page", async () => {
+                const first = await browser(`${origin}/api/account/activity`);
+                expect(first.status).toBe(200);
+                const page = v.parse(
+                    v.object({
+                        events: v.array(v.object({ account: v.string() })),
+                        nextCursor: v.nullable(v.string()),
+                    }),
+                    await first.json()
+                );
+                expect(
+                    page.events.every((event) => event.account === "bff-operator")
+                ).toBe(true);
+                const malformed = await browser(
+                    `${origin}/api/account/activity?cursor=not-valid`
+                );
+                expect(malformed.status).toBe(400);
+                expect(
+                    v.parse(v.object({ code: v.string() }), await malformed.json()).code
+                ).toBe("INVALID_CURSOR");
+            });
+
             test("returns to the requested dashboard page, including its query and fragment", async () => {
                 await dashboardLogin("/infrastructure?view=hosts#storage");
                 for (const path of ["//attacker.example/", "/login", "/auth/callback"]) {

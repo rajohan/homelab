@@ -35,7 +35,7 @@ export function Shell() {
                 onClose={() => setNavigationPath(undefined)}
             />
             <div className="flex min-h-dvh min-w-0 flex-col md:pl-60 xl:pl-64">
-                <header className="sticky top-0 z-20 flex h-20 shrink-0 items-center justify-between gap-3 border-b border-primary-700 bg-primary-950/95 px-4 backdrop-blur-sm sm:px-6 lg:px-8">
+                <header className="sticky top-0 z-20 flex h-20 shrink-0 items-center justify-between gap-3 border-b border-primary-700 bg-primary-950/95 px-4 backdrop-blur-sm sm:px-5">
                     <div className="flex min-w-0 items-center gap-3">
                         <IconButton
                             icon={Menu}
@@ -53,13 +53,13 @@ export function Shell() {
                     <Badge>Preview</Badge>
                 </header>
                 <main
-                    className="mx-auto w-full max-w-7xl min-w-0 flex-1 px-4 py-7 sm:px-6 sm:py-9 lg:px-8"
+                    className="w-full min-w-0 flex-1 p-4 sm:p-5"
                     id="main-content"
                     tabIndex={-1}
                 >
                     <Outlet />
                 </main>
-                <footer className="px-4 py-5 text-xs text-primary-500 sm:px-6 lg:px-8">
+                <footer className="px-4 py-5 text-xs text-primary-500 sm:px-5">
                     Rajohan · Homelab
                 </footer>
             </div>

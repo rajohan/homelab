@@ -13,13 +13,8 @@ import userEvent from "@testing-library/user-event";
 import { IdentityBoundary } from "./IdentityBoundary";
 
 test.each([
-    ["Log out", "Log out of this browser?", "session/revoke", "Log out"],
-    [
-        "Log out all",
-        "Log out of all sessions?",
-        "sessions/revoke-all",
-        "Log out everywhere",
-    ],
+    ["Log out", "Log out this browser?", "session/revoke", "Log out"],
+    ["Log out all", "Log out all sessions?", "sessions/revoke-all", "Log out everywhere"],
 ])(
     "immediately closes private settings after %s",
     async (button, title, endpoint, confirmLabel) => {
@@ -38,7 +33,6 @@ test.each([
             },
             factors: [],
             recoveryCodesRemaining: 0,
-            events: [],
             sessions: [
                 {
                     id: "fixture-session",
@@ -62,6 +56,10 @@ test.each([
             if (path !== endpoint) throw new Error("Unexpected action");
             authenticated = false;
             return Promise.resolve({ ok: true });
+        });
+        const activity = spyOn(client, "activity").mockResolvedValue({
+            events: [],
+            nextCursor: null,
         });
         const query = new QueryClient({
             defaultOptions: { queries: { retry: false, gcTime: 0 } },
@@ -93,6 +91,7 @@ test.each([
             query.clear();
             session.mockRestore();
             account.mockRestore();
+            activity.mockRestore();
             action.mockRestore();
             navigate.mockRestore();
         }
@@ -115,7 +114,6 @@ test.each(["different-user", "same-user"])(
             factors: [],
             recoveryCodesRemaining: 0,
             sessions: [],
-            events: [],
         });
         const session = spyOn(IdentityClient.prototype, "session").mockImplementation(
             () =>
@@ -131,6 +129,10 @@ test.each(["different-user", "same-user"])(
         const account = spyOn(client, "snapshot").mockImplementation(() =>
             Promise.resolve(snapshot())
         );
+        const activity = spyOn(client, "activity").mockResolvedValue({
+            events: [],
+            nextCursor: null,
+        });
         const query = new QueryClient({
             defaultOptions: { queries: { retry: false, gcTime: 0 } },
         });
@@ -162,6 +164,7 @@ test.each(["different-user", "same-user"])(
             query.clear();
             session.mockRestore();
             account.mockRestore();
+            activity.mockRestore();
         }
     }
 );

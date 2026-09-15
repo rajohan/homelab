@@ -28,7 +28,6 @@ export const accountSchema = v.object({
             current: v.boolean(),
         })
     ),
-    events: v.array(v.object({ id: v.string(), event: v.string(), createdAt: date })),
 });
 export type AccountSnapshot = v.InferOutput<typeof accountSchema>;
 export const sessionSchema = v.object({
@@ -40,3 +39,16 @@ export const sessionSchema = v.object({
     sessionId: v.optional(v.string()),
     recoveryAvailable: v.optional(v.boolean()),
 });
+
+export const activityPageSchema = v.object({
+    events: v.array(
+        v.object({
+            id: v.string(),
+            event: v.string(),
+            createdAt: date,
+            account: v.string(),
+        })
+    ),
+    nextCursor: v.nullable(v.string()),
+});
+export type ActivityPage = v.InferOutput<typeof activityPageSchema>;

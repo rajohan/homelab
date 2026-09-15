@@ -1,20 +1,22 @@
 {
   "version": 1,
   "files": {
-    "packages/ui/src/features/identity/components/forms/PasswordForm.test.tsx": 5026,
-    "packages/ui/src/components/Form/FieldsForm.test.tsx": 1375,
-    "packages/ui/src/features/identity/components/verification/VerificationMethods.test.tsx": 1353,
-    "apps/auth/src/browser/pages/SignInPage.test.tsx": 374,
-    "packages/ui/src/features/identity/components/AccountSettings.test.tsx": 317,
-    "apps/auth/src/browser/components/SignInRedirect.test.tsx": 309,
-    "packages/ui/src/components/Modal/ConfirmDialog.test.tsx": 234,
-    "apps/dashboard/src/browser/identity/IdentityBoundary.test.tsx": 200,
-    "tests/browserEntries.test.tsx": 63,
-    "apps/dashboard/src/browser/pages/pages.test.tsx": 62,
-    "packages/ui/src/states.test.tsx": 33,
-    "packages/ui/src/components/Input/Input.test.tsx": 23,
-    "packages/ui/src/index.test.tsx": 23,
-    "packages/ui/src/features/identity/components/panels/ActivityPanel.test.tsx": 19,
-    "packages/ui/src/components/Form/Form.test.tsx": 14
+    "packages/ui/src/components/Form/FieldsForm.test.tsx": 1404,
+    "packages/ui/src/features/identity/components/verification/VerificationMethods.test.tsx": 1366,
+    "packages/ui/src/features/identity/components/forms/PasswordForm.test.tsx": 897,
+    "apps/auth/src/browser/pages/SignInPage.test.tsx": 380,
+    "apps/auth/src/browser/components/SignInRedirect.test.tsx": 350,
+    "packages/ui/src/features/identity/components/AccountSettings.test.tsx": 347,
+    "packages/ui/src/components/Modal/ConfirmDialog.test.tsx": 274,
+    "apps/dashboard/src/browser/identity/IdentityBoundary.test.tsx": 214,
+    "tests/browserEntries.test.tsx": 64,
+    "apps/dashboard/src/browser/pages/pages.test.tsx": 55,
+    "packages/ui/src/states.test.tsx": 37,
+    "packages/ui/src/index.test.tsx": 30,
+    "packages/ui/src/components/Input/Input.test.tsx": 26,
+    "packages/ui/src/features/identity/components/panels/ActivityPanel.test.tsx": 22,
+    "packages/ui/src/components/Form/Form.test.tsx": 16,
+    "packages/ui/src/features/identity/components/panels/SecurityPanels.test.tsx": 7,
+    "packages/ui/src/components/InfiniteScrollTrigger/InfiniteScrollTrigger.test.tsx": 3
   }
 }

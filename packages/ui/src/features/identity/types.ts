@@ -11,12 +11,20 @@ export type ConfirmationAction =
           readonly current?: boolean;
       };
 export type AccountAction =
+    | "disable-mfa"
     | "password"
     | "email"
     | "totp"
     | "webauthn"
     | ConfirmationAction;
-export type AccountSection = "profile" | "security" | "sessions";
+export type AccountSection =
+    | "profile"
+    | "password"
+    | "keys"
+    | "authenticators"
+    | "recovery"
+    | "security"
+    | "sessions";
 export interface AccountNotice {
     readonly section: AccountSection;
     readonly message: string;

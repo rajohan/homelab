@@ -36,14 +36,24 @@ export function SignInPage({ client, address }: AuthPageProps) {
     }
     const signedOutTitle = session.data?.mfaRequired ? "Verify your identity" : "Sign in";
     const signedInTitle = handoff ? "Redirecting" : "Your account";
+    const signedOutDescription = session.data?.mfaRequired
+        ? "Choose a verification method to finish signing in."
+        : undefined;
+    const description = session.data?.authenticated ? (
+        <>
+            Signed in as{" "}
+            <strong className="font-semibold text-primary-200">
+                {session.data.username}
+            </strong>
+            .
+        </>
+    ) : (
+        signedOutDescription
+    );
     return (
         <AuthLayout
             key={identityKey}
-            description={
-                session.data?.mfaRequired
-                    ? "Choose a verification method to finish signing in."
-                    : undefined
-            }
+            description={description}
             authenticated={session.data?.authenticated ?? false}
             title={session.data?.authenticated ? signedInTitle : signedOutTitle}
         >
@@ -74,11 +84,7 @@ export function SignInPage({ client, address }: AuthPageProps) {
                         onSignedOut={refresh}
                     />
                 ) : (
-                    <SignedInActions
-                        client={client}
-                        username={session.data.username}
-                        onRefresh={refresh}
-                    />
+                    <SignedInActions client={client} onRefresh={refresh} />
                 ))}
             {!session.isError &&
                 session.data &&

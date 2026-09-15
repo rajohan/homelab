@@ -7,6 +7,8 @@ import * as v from "valibot";
 
 import { tokenPrincipal } from "../oidc/provider";
 import { type Accounts, type Principal } from "../security/accounts";
+import { accountActivity } from "../security/activity";
+import { disableMfa } from "../security/disableMfa";
 import type { AccountEmail } from "../security/email";
 import { AuthFailure, denied } from "../security/errors";
 import type { MultiFactor } from "../security/mfa";
@@ -151,6 +153,14 @@ export async function accountApi(
         return secureJson(
             await accounts.snapshot(await requestPrincipal(request, services))
         );
+    if (request.method === "GET" && path === "/api/account/activity")
+        return secureJson(
+            await accountActivity(
+                accounts,
+                await requestPrincipal(request, services),
+                new URL(request.url).searchParams.get("cursor")
+            )
+        );
     if (request.method !== "POST") return secureJson({ error: "Not found" }, 404);
     const origin = assertMutationOrigin(request, configuration);
     const body: unknown = await request.json();
@@ -268,6 +278,9 @@ export async function accountApi(
                 input.response as RegistrationResponseJSON
             )
         );
+    } else if (path === "/api/account/mfa/disable") {
+        const input = v.parse(v.strictObject({ password }), body);
+        await disableMfa(accounts, principal, input.password);
     } else if (path === "/api/account/factor/remove") {
         const input = v.parse(v.strictObject({ id: identifier }), body);
         await mfa.remove(principal, input.id);

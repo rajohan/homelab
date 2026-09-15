@@ -19,9 +19,9 @@ export function confirmationCopy(action: ConfirmationAction): {
             };
         if (action.current)
             return {
-                title: "Log out of this browser?",
+                title: "Log out this browser?",
                 description:
-                    "You will be signed out here. Your other sessions will stay signed in.",
+                    "You will be signed out. Your other sessions will stay signed in.",
                 confirmLabel: "Log out",
             };
         return {
@@ -40,15 +40,15 @@ export function confirmationCopy(action: ConfirmationAction): {
         };
     if (action === "all")
         return {
-            title: "Log out of all sessions?",
+            title: "Log out all sessions?",
             description:
                 "You will be signed out everywhere, including this browser. Connected applications will receive a logout notification where supported.",
             confirmLabel: "Log out everywhere",
         };
     return {
-        title: "Log out of other sessions?",
+        title: "Log out other sessions?",
         description:
-            "Your other sessions will be signed out. This browser will stay signed in.",
+            "All other sessions will be signed out. This browser will stay signed in.",
         confirmLabel: "Log out other sessions",
     };
 }

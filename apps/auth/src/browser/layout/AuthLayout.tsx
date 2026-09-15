@@ -13,7 +13,7 @@ export function AuthLayout({
     authenticated = false,
 }: {
     readonly title: string;
-    readonly description?: string | undefined;
+    readonly description?: ReactNode;
     readonly children: ReactNode;
     readonly recovery?: boolean;
     readonly authenticated?: boolean;
@@ -31,7 +31,7 @@ export function AuthLayout({
     const signedOutNavigation = recovery ? recoveryNavigation : signInNavigation;
     const navigation = authenticated
         ? {
-              description: "Your account is ready to use.",
+              description: "Manage your Homelab account.",
               href: "/account",
               label: "Manage account security",
           }

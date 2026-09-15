@@ -197,18 +197,23 @@ export function createDashboardAuthentication(configuration: DashboardAuthConfig
                 { status: 401, headers: { "Cache-Control": "no-store" } }
             );
         }
-        const response = await fetch(new URL(path, configuration.issuer), {
-            method: request.method,
-            headers: {
-                Authorization: `Bearer ${token.accessToken}`,
-                "Content-Type": "application/json",
-                Origin: configuration.origin,
-                ...(activity ? { "X-Homelab-Session-Activity": "1" } : {}),
-            },
-            ...(request.method === "POST" ? { body: await request.arrayBuffer() } : {}),
-            redirect: "error",
-            signal: AbortSignal.timeout(15_000),
-        });
+        const response = await fetch(
+            new URL(`${path}${new URL(request.url).search}`, configuration.issuer),
+            {
+                method: request.method,
+                headers: {
+                    Authorization: `Bearer ${token.accessToken}`,
+                    "Content-Type": "application/json",
+                    Origin: configuration.origin,
+                    ...(activity ? { "X-Homelab-Session-Activity": "1" } : {}),
+                },
+                ...(request.method === "POST"
+                    ? { body: await request.arrayBuffer() }
+                    : {}),
+                redirect: "error",
+                signal: AbortSignal.timeout(15_000),
+            }
+        );
         const forwarded = new Response(response.body, {
             status: response.status,
             headers: {

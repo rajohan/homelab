@@ -8,10 +8,10 @@ import { confirmationMessage } from "./confirmationMessage";
 test("account feedback stays with the action's owning section", () => {
     const actions: ReadonlyArray<readonly [AccountAction, AccountSection]> = [
         ["email", "profile"],
-        ["password", "profile"],
-        ["totp", "security"],
-        ["webauthn", "security"],
-        ["recovery", "security"],
+        ["password", "password"],
+        ["totp", "authenticators"],
+        ["webauthn", "keys"],
+        ["recovery", "recovery"],
         [{ kind: "remove", id: "factor", label: "Phone" }, "security"],
         ["all", "sessions"],
         ["others", "sessions"],
@@ -45,7 +45,7 @@ test("confirmations explain exactly which security access will change", () => {
         label: "Current",
         current: true,
     });
-    expect(current.title).toBe("Log out of this browser?");
+    expect(current.title).toBe("Log out this browser?");
     expect(current.confirmLabel).toBe("Log out");
     expect(current.description).toContain("other sessions will stay signed in");
     const other = confirmationCopy({

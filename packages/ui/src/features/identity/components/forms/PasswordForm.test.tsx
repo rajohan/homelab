@@ -1,19 +1,20 @@
 import { expect, mock, test } from "bun:test";
 
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { PasswordForm } from "./PasswordForm";
 
 test("uses the same password confirmation validation for reset and account forms", async () => {
-    const user = userEvent.setup(),
-        submit = mock(() => Promise.resolve());
+    const submit = mock(() => Promise.resolve());
     render(<PasswordForm submitLabel="Save password" onSubmit={submit} />);
-    await user.type(screen.getByLabelText("New password"), "replacement-password-123");
-    await user.type(
-        screen.getByLabelText("Repeat new password"),
-        "different-password-123"
-    );
+    const submitButton = screen.getByRole("button", { name: "Save password" });
+    fireEvent.change(screen.getByLabelText("New password"), {
+        target: { value: "replacement-password-123" },
+    });
+    fireEvent.change(screen.getByLabelText("Repeat new password"), {
+        target: { value: "different-password-123" },
+    });
     await waitFor(() =>
         expect(screen.getByLabelText("Repeat new password")).toHaveAccessibleDescription(
             "The new passwords do not match."
@@ -23,18 +24,19 @@ test("uses the same password confirmation validation for reset and account forms
         "aria-invalid",
         "true"
     );
-    expect(screen.getByRole("button", { name: "Save password" })).toBeDisabled();
+    expect(submitButton).toBeDisabled();
     expect(submit).not.toHaveBeenCalled();
-    await user.clear(screen.getByLabelText("Repeat new password"));
-    await user.type(
-        screen.getByLabelText("Repeat new password"),
-        "replacement-password-123"
-    );
-    await waitFor(() =>
-        expect(screen.getByRole("button", { name: "Save password" })).toBeEnabled()
-    );
-    await user.click(screen.getByRole("button", { name: "Save password" }));
-    expect(submit).toHaveBeenCalledTimes(1);
+    await act(async () => {
+        fireEvent.change(screen.getByLabelText("Repeat new password"), {
+            target: { value: "replacement-password-123" },
+        });
+        await Bun.sleep(250);
+    });
+    expect(submitButton).toBeEnabled();
+    const form = submitButton.closest("form");
+    if (!form) throw new Error("Password form was not rendered");
+    fireEvent.submit(form);
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
 });
 
 test("editing the original password revalidates the touched confirmation", async () => {
@@ -44,8 +46,8 @@ test("editing the original password revalidates the touched confirmation", async
     );
     const password = screen.getByLabelText("New password");
     const confirmation = screen.getByLabelText("Repeat new password");
-    await user.type(password, "replacement-password-123");
-    await user.type(confirmation, "replacement-password-123");
+    fireEvent.change(password, { target: { value: "replacement-password-123" } });
+    fireEvent.change(confirmation, { target: { value: "replacement-password-123" } });
     await user.type(password, "4");
     await waitFor(() =>
         expect(confirmation).toHaveAccessibleDescription(

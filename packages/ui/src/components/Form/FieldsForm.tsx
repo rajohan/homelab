@@ -16,11 +16,13 @@ import { touchedFieldError, validateFields } from "./validation";
 export function FieldsForm({
     fields,
     submitLabel,
+    submitVariant = "primary",
     onSubmit,
     validate,
 }: {
     fields: readonly FieldDefinition[];
     submitLabel: string;
+    submitVariant?: "primary" | "danger";
     onSubmit: (values: FormValues) => Promise<void>;
     validate?: (values: FormValues) => FormErrors;
 }) {
@@ -95,6 +97,7 @@ export function FieldsForm({
                     {error !== undefined && <ErrorNotice error={error} />}
                     <Button
                         type="submit"
+                        variant={submitVariant}
                         busy={submitting}
                         disabled={!canSubmit}
                         fullWidth

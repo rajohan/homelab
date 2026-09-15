@@ -5,7 +5,12 @@ import { useAccountSettings } from "../hooks/useAccountSettings";
 import { AccountActionDialog } from "./dialogs/AccountActionDialog";
 import { RecoveryCodesDialog } from "./dialogs/RecoveryCodesDialog";
 import { ActivityPanel } from "./panels/ActivityPanel";
+import { AuthenticatorAppsPanel } from "./panels/AuthenticatorAppsPanel";
+import { DisableMfaPanel } from "./panels/DisableMfaPanel";
+import { PasswordPanel } from "./panels/PasswordPanel";
 import { ProfilePanel } from "./panels/ProfilePanel";
+import { RecoveryCodesPanel } from "./panels/RecoveryCodesPanel";
+import { SecurityKeysPanel } from "./panels/SecurityKeysPanel";
 import { SecurityPanel } from "./panels/SecurityPanel";
 import { SessionsPanel } from "./panels/SessionsPanel";
 import { SecurityPrompt } from "./verification/SecurityPrompt";
@@ -39,17 +44,10 @@ export function AccountSettings({
             </Card>
         );
     return (
-        <div className="mx-auto w-full max-w-5xl space-y-4">
+        <div className="w-full space-y-4">
             <PageHeader
                 title="Account settings"
                 description="Manage your sign-in details, two-factor authentication and active sessions."
-            />
-            <ProfilePanel
-                data={account.data}
-                onAction={state.setAction}
-                notice={
-                    state.notice?.section === "profile" ? state.notice.message : undefined
-                }
             />
             <SecurityPanel
                 data={account.data}
@@ -58,6 +56,51 @@ export function AccountSettings({
                     state.notice?.section === "security"
                         ? state.notice.message
                         : undefined
+                }
+            />
+            <div className="grid items-start gap-4 xl:grid-cols-2">
+                <SecurityKeysPanel
+                    data={account.data}
+                    onAction={state.setAction}
+                    notice={
+                        state.notice?.section === "keys"
+                            ? state.notice.message
+                            : undefined
+                    }
+                />
+                <AuthenticatorAppsPanel
+                    data={account.data}
+                    onAction={state.setAction}
+                    notice={
+                        state.notice?.section === "authenticators"
+                            ? state.notice.message
+                            : undefined
+                    }
+                />
+            </div>
+            <RecoveryCodesPanel
+                data={account.data}
+                onAction={state.setAction}
+                notice={
+                    state.notice?.section === "recovery"
+                        ? state.notice.message
+                        : undefined
+                }
+            />
+            <PasswordPanel
+                data={account.data}
+                onAction={state.setAction}
+                notice={
+                    state.notice?.section === "password"
+                        ? state.notice.message
+                        : undefined
+                }
+            />
+            <ProfilePanel
+                data={account.data}
+                onAction={state.setAction}
+                notice={
+                    state.notice?.section === "profile" ? state.notice.message : undefined
                 }
             />
             <SessionsPanel
@@ -69,7 +112,8 @@ export function AccountSettings({
                         : undefined
                 }
             />
-            <ActivityPanel data={account.data} onAction={state.setAction} />
+            <DisableMfaPanel data={account.data} onAction={state.setAction} />
+            <ActivityPanel client={client} accountId={account.data.user.id} />
             {state.action !== undefined && (
                 <AccountActionDialog
                     action={state.action}

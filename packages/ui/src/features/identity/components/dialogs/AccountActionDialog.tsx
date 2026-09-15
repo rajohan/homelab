@@ -1,5 +1,6 @@
 import type { AccountAction, AccountDialogProps } from "../../types";
 import { AuthenticatorDialog } from "./AuthenticatorDialog";
+import { DisableMfaDialog } from "./DisableMfaDialog";
 import { EmailDialog } from "./EmailDialog";
 import { PasswordDialog } from "./PasswordDialog";
 import { SecurityChangeDialog } from "./SecurityChangeDialog";
@@ -20,6 +21,9 @@ export function AccountActionDialog({
     readonly onRecoveryCodes: (codes: readonly string[]) => void;
 }) {
     switch (action) {
+        case "disable-mfa": {
+            return <DisableMfaDialog {...props} />;
+        }
         case "password": {
             return <PasswordDialog {...props} />;
         }

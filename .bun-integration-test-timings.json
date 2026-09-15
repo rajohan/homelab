@@ -1,10 +1,10 @@
 {
     "version": 1,
     "files": {
-        "apps/auth/src/server/tests/identity.integration.test.ts": 13039,
-        "tests/bff.integration.test.ts": 2839,
-        "apps/auth/src/server/tests/keyRotation.integration.test.ts": 179,
-        "apps/auth/src/server/tests/http.integration.test.ts": 176,
-        "apps/dashboard/src/server/tests/http.integration.test.ts": 64
+        "apps/auth/src/server/tests/identity.integration.test.ts": 13775,
+        "tests/bff.integration.test.ts": 2933,
+        "apps/auth/src/server/tests/keyRotation.integration.test.ts": 173,
+        "apps/auth/src/server/tests/http.integration.test.ts": 164,
+        "apps/dashboard/src/server/tests/http.integration.test.ts": 67
     }
 }

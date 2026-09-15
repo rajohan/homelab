@@ -14,7 +14,7 @@ export function AuthFrame({
     footer,
 }: {
     readonly title: string;
-    readonly description?: string;
+    readonly description?: ReactNode;
     readonly children: ReactNode;
     readonly footer?: ReactNode;
 }) {

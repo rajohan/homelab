@@ -1,6 +1,7 @@
 import { Monitor } from "lucide-react";
 
 import { Badge, Button, SuccessNotice } from "../../../../index";
+import { formatDateTime } from "../../../../lib/formatDateTime";
 import type { AccountPanelProps } from "../../types";
 import { SettingsSection } from "./SettingsSection";
 /**
@@ -51,8 +52,7 @@ export function SessionsPanel({ data, onAction, notice }: AccountPanelProps) {
                                 {session.userAgent}
                             </p>
                             <p className="mt-1 text-xs text-primary-400">
-                                Last active{" "}
-                                {new Date(session.lastSeenAt).toLocaleString()}
+                                Last active {formatDateTime(session.lastSeenAt)}
                             </p>
                         </div>
                         <Button
