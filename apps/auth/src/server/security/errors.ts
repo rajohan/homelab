@@ -32,13 +32,18 @@ export function invalidProof(): never {
 }
 
 /**
- * Require a successful identity proof within the five-minute step-up window.
+ * Require a successful identity proof within the configured step-up window.
  * @param verifiedAt - The last accepted proof time, or null if absent.
  * @param now - The timestamp against which freshness is checked.
+ * @param maximumAgeMs - The configured maximum proof age in milliseconds.
  * @throws {Error} The operation requires a fresh identity confirmation.
  */
-export function requireRecent(verifiedAt: Date | null, now: Date): void {
-    if (!verifiedAt || now.getTime() - verifiedAt.getTime() >= 5 * 60_000) {
+export function requireRecent(
+    verifiedAt: Date | null,
+    now: Date,
+    maximumAgeMs: number
+): void {
+    if (!verifiedAt || now.getTime() - verifiedAt.getTime() >= maximumAgeMs) {
         throw new AuthFailure(
             "STEP_UP_REQUIRED",
             403,

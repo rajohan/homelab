@@ -5,6 +5,7 @@ import { getDomain } from "tldts";
 import * as v from "valibot";
 
 import { routeSchema, validateResourceRules } from "./accessPolicy";
+import { parseSessionPolicy, type AuthSessionPolicy } from "./sessionPolicy";
 
 const emptyAccessPolicy = { routes: [] };
 const originSchema = v.pipe(v.string(), v.url(), v.maxLength(512));
@@ -25,6 +26,7 @@ const clientSchema = v.strictObject({
 
 export interface AuthConfiguration {
     readonly issuer: string;
+    readonly sessionPolicy: AuthSessionPolicy;
     readonly dashboardOrigin: string;
     readonly databaseUrl: string;
     readonly development: boolean;
@@ -202,6 +204,7 @@ export function parseAuthConfiguration(
         throw new Error("Invalid sender address");
     return {
         issuer,
+        sessionPolicy: parseSessionPolicy(environment),
         dashboardOrigin,
         databaseUrl,
         development,

@@ -37,14 +37,19 @@ export function readAuthCookie(
  * @param configuration - The identity deployment settings.
  * @param token - The opaque session token.
  * @param clear - Whether to expire the cookie instead of setting it.
+ * @param remember - Whether this newly created session uses the extended lifetime.
  * @returns The Set-Cookie header value.
  */
 export function sessionCookie(
     configuration: AuthConfiguration,
     token: string,
-    clear = false
+    clear = false,
+    remember = false
 ): string {
-    return `${cookieName(configuration)}=${clear ? "" : token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${clear ? 0 : 43_200}${configuration.development ? "" : "; Secure"}`;
+    const maximum = remember
+        ? configuration.sessionPolicy.rememberMaximumSeconds
+        : configuration.sessionPolicy.maximumSeconds;
+    return `${cookieName(configuration)}=${clear ? "" : token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${clear ? 0 : maximum}${configuration.development ? "" : "; Secure"}`;
 }
 
 /**

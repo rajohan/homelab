@@ -12,6 +12,7 @@ import { encryptValue, randomToken, tokenDigest } from "../security/crypto";
 import { AuthFailure } from "../security/errors";
 import { audit } from "../security/store";
 import { createOidcAdapter } from "./adapter";
+import { hasClientApproval, rememberClientApproval } from "./approvals";
 import { readConsentDecision } from "./consent";
 import { createOidcFetch } from "./fetch";
 
@@ -20,13 +21,13 @@ async function cookiePrincipal(
     cookie: string | undefined
 ): Promise<Principal | undefined> {
     const token = readAuthCookie(cookie, accounts.configuration);
-    if (!token) return undefined;
+    if (!token) return;
     try {
         const principal = await accounts.principalByToken(token);
         await accounts.requireAuthenticated(principal);
         return principal;
     } catch (error) {
-        if (error instanceof AuthFailure) return undefined;
+        if (error instanceof AuthFailure) return;
         throw error;
     }
 }
@@ -63,7 +64,11 @@ export function createProvider(accounts: Accounts): Provider {
     );
     const provider: Provider = new Provider(configuration.issuer, {
         clients: [...configuration.clients],
-        adapter: createOidcAdapter(accounts.database, configuration.encryptionKey),
+        adapter: createOidcAdapter(
+            accounts.database,
+            configuration.encryptionKey,
+            configuration.sessionPolicy
+        ),
         jwks: configuration.jwks,
         cookies: {
             keys: [configuration.cookieKey],
@@ -110,12 +115,14 @@ export function createProvider(accounts: Accounts): Provider {
         ttl: {
             IdToken: 600,
             AccessToken: (_context, token) =>
-                token.clientId === configuration.dashboardClientId ? 43_200 : 600,
+                token.clientId === configuration.dashboardClientId
+                    ? configuration.sessionPolicy.rememberMaximumSeconds
+                    : 600,
             AuthorizationCode: 60,
-            RefreshToken: 43_200,
-            Session: 43_200,
+            RefreshToken: configuration.sessionPolicy.rememberMaximumSeconds,
+            Session: configuration.sessionPolicy.rememberMaximumSeconds,
             Interaction: 600,
-            Grant: 43_200,
+            Grant: configuration.sessionPolicy.rememberMaximumSeconds,
         },
         interactions: {
             policy,
@@ -138,7 +145,25 @@ export function createProvider(accounts: Accounts): Provider {
                         eq(grantSessions.sessionId, principal.session.id)
                     )
                 );
-            return binding ? provider.Grant.find(grantId) : undefined;
+            const metadata = clientId
+                ? configurationClient(accounts, clientId)
+                : undefined;
+            const scope =
+                typeof context.oidc.params?.scope === "string"
+                    ? context.oidc.params.scope
+                    : "openid";
+            if (
+                !binding ||
+                !metadata ||
+                !(await hasClientApproval(
+                    accounts.database,
+                    principal.user.id,
+                    metadata,
+                    scope
+                ))
+            )
+                return;
+            return provider.Grant.find(grantId);
         },
         findAccount: async (_context, id) => {
             const [user] = await accounts.database
@@ -239,19 +264,28 @@ export async function startProviderListener(accounts: Accounts) {
             void completeInteraction(accounts, provider, request, response).catch(
                 (error: unknown) => {
                     if (!response.headersSent) {
-                        const expired = error instanceof errors.SessionNotFound;
-                        response.writeHead(expired ? 410 : 403, {
+                        let status = 403;
+                        let code = "SIGN_IN_FAILED";
+                        let message =
+                            "Sign-in could not be completed. Try again or use another account.";
+                        if (error instanceof errors.SessionNotFound) {
+                            status = 410;
+                            code = "INTERACTION_EXPIRED";
+                            message =
+                                "This sign-in request has expired. Start a new sign-in to continue.";
+                        } else if (
+                            error instanceof AuthFailure &&
+                            error.code === "CONSENT_CONFLICT"
+                        ) {
+                            status = 409;
+                            code = error.code;
+                            message = error.message;
+                        }
+                        response.writeHead(status, {
                             "Content-Type": "application/json",
                             "Cache-Control": "no-store",
                         });
-                        response.end(
-                            JSON.stringify({
-                                code: expired ? "INTERACTION_EXPIRED" : "SIGN_IN_FAILED",
-                                message: expired
-                                    ? "This sign-in request has expired. Start a new sign-in to continue."
-                                    : "Sign-in could not be completed. Try again or use another account.",
-                            })
-                        );
+                        response.end(JSON.stringify({ code, message }));
                     }
                 }
             );
@@ -320,13 +354,32 @@ async function completeInteraction(
             throw new Error("Account changed");
         // A retry after a lost response must resume the accepted decision, not mint another grant.
         if (details.result?.consent || details.result?.error) {
+            const recorded = details.result.consent ? "approve" : "deny";
+            if (decision && decision.decision !== recorded)
+                throw new AuthFailure(
+                    "CONSENT_CONFLICT",
+                    409,
+                    "This request already has a different decision. Start a new sign-in to change it."
+                );
             replyInteraction(response, { redirect: details.returnTo });
             return;
         }
         const metadata = configurationClient(accounts, clientId);
+        if (!metadata) throw new Error("Unknown client");
         const scope =
             typeof details.params.scope === "string" ? details.params.scope : "openid";
-        if (!decision) {
+        const forceConsent =
+            typeof details.params.prompt === "string" &&
+            details.params.prompt.split(" ").includes("consent");
+        const remembered =
+            !forceConsent &&
+            (await hasClientApproval(
+                accounts.database,
+                principal.user.id,
+                metadata,
+                scope
+            ));
+        if (!decision && !remembered) {
             if (typeof details.params.redirect_uri !== "string")
                 throw new Error("Missing registered redirect");
             replyInteraction(response, {
@@ -342,7 +395,7 @@ async function completeInteraction(
             });
             return;
         }
-        if (decision.decision === "deny") {
+        if (decision?.decision === "deny") {
             const redirect = await provider.interactionResult(
                 request,
                 response,
@@ -391,8 +444,21 @@ async function completeInteraction(
                 !current.session.mfaAt
             )
                 throw new Error("Two-factor authentication is required");
+            if (decision?.decision === "approve") {
+                await rememberClientApproval(
+                    transaction,
+                    current.user.id,
+                    metadata,
+                    scope
+                );
+            } else if (
+                !(await hasClientApproval(transaction, current.user.id, metadata, scope))
+            ) {
+                throw new Error("App approval was revoked");
+            }
             await transaction.insert(grantSessions).values({
                 grantId: digest,
+                clientId,
                 sessionId: current.session.id,
                 userId: current.user.id,
                 encryptedLogout: metadata?.backchannel_logout_uri

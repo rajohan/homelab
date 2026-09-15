@@ -48,7 +48,16 @@ export function SignInPage({ client, address }: AuthPageProps) {
             />
         );
     }
-    const signedInTitle = handoff ? "Redirecting" : "Your account";
+    if (!session.isError && session.data?.authenticated && handoff) {
+        return (
+            <SignInRedirect
+                key={identityKey + address.href}
+                client={client}
+                address={address}
+                onSignedOut={refresh}
+            />
+        );
+    }
     const description = session.data?.authenticated ? (
         <>
             Signed in as{" "}
@@ -63,7 +72,7 @@ export function SignInPage({ client, address }: AuthPageProps) {
             key={identityKey}
             description={description}
             authenticated={session.data?.authenticated ?? false}
-            title={session.data?.authenticated ? signedInTitle : "Sign in"}
+            title={session.data?.authenticated ? "Your account" : "Sign in"}
         >
             {session.isPending && (
                 <LoadingState label="Checking your session…" size="sm" />
@@ -74,18 +83,9 @@ export function SignInPage({ client, address }: AuthPageProps) {
                     <Button onClick={() => void refresh()}>Try again</Button>
                 </div>
             )}
-            {!session.isError &&
-                session.data?.authenticated &&
-                (handoff ? (
-                    <SignInRedirect
-                        key={address.href}
-                        client={client}
-                        address={address}
-                        onSignedOut={refresh}
-                    />
-                ) : (
-                    <SignedInActions client={client} onRefresh={refresh} />
-                ))}
+            {!session.isError && session.data?.authenticated && (
+                <SignedInActions client={client} onRefresh={refresh} />
+            )}
             {!session.isError &&
                 session.data &&
                 !session.data.authenticated &&

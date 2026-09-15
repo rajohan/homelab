@@ -1,4 +1,4 @@
-import { lt, lte, or } from "drizzle-orm";
+import { lt, not } from "drizzle-orm";
 import { Effect } from "effect";
 import * as v from "valibot";
 
@@ -13,6 +13,7 @@ import {
     oidcRecords,
     rateBuckets,
 } from "./database/schema";
+import { liveSessionCondition } from "./database/sessionValidity";
 import { accountApi } from "./http/accountApi";
 import { forwardAuth } from "./http/forwardAuth";
 import { secureJson } from "./http/httpSecurity";
@@ -147,12 +148,7 @@ export async function createAuthApplication(
         const expiredSessions = await connection.database
             .select({ id: sessions.id })
             .from(sessions)
-            .where(
-                or(
-                    lte(sessions.expiresAt, now),
-                    lte(sessions.lastSeenAt, new Date(now.getTime() - 3_600_000))
-                )
-            )
+            .where(not(liveSessionCondition(configuration.sessionPolicy, now)))
             .limit(100);
         for (const session of expiredSessions)
             await accounts.revokeExpired(session.id, now);

@@ -26,7 +26,11 @@ export function SecurityChangeDialog({
             onConfirm={async () => {
                 if (typeof action === "object") {
                     await client.action(
-                        action.kind === "remove" ? "factor/remove" : "session/revoke",
+                        {
+                            remove: "factor/remove",
+                            application: "application/revoke",
+                            session: "session/revoke",
+                        }[action.kind],
                         { id: action.id }
                     );
                 } else if (action === "recovery") {

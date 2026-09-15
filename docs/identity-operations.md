@@ -281,3 +281,27 @@ All auth migrations belong to this unreleased PR and were consolidated into one
 fresh from it. Earlier preview databases must be recreated, not have their migration ledger
 rewritten to claim an unapplied schema. Once a schema is deployed, preserve that migration
 and add reviewed incremental migrations for future changes.
+
+## Configurable session lifetimes
+
+Set these nonsecret values in the scoped auth deployment environment (or its Doppler config), then
+restart auth. No build or source edit is required. Dashboard and ForwardAuth follow central validity.
+
+| Variable                                     | Default | Meaning                            |
+| -------------------------------------------- | ------- | ---------------------------------- |
+| `HOMELAB_AUTH_SESSION_MAX_AGE_SECONDS`       | 43200   | Normal session: 12 hours absolute  |
+| `HOMELAB_AUTH_SESSION_IDLE_TIMEOUT_SECONDS`  | 3600    | Normal session: one hour inactive  |
+| `HOMELAB_AUTH_REMEMBER_MAX_AGE_SECONDS`      | 2592000 | Remember me: 30 days absolute      |
+| `HOMELAB_AUTH_REMEMBER_IDLE_TIMEOUT_SECONDS` | 604800  | Remember me: seven days inactive   |
+| `HOMELAB_AUTH_STEP_UP_MAX_AGE_SECONDS`       | 300     | Fresh security proof: five minutes |
+
+Remember me is an explicit choice at password sign-in, off by default; it never skips enrolled MFA.
+Absolute expiry does not slide. Passive session polling does not count as activity. Bounds are checked
+at startup: idle cannot exceed absolute expiry, remembered limits cannot be shorter than normal ones,
+and step-up is between 30 seconds and one hour, no longer than normal idle. Absolute limits are capped
+at 30 days. Shortening a policy also restricts existing sessions; increasing it does not extend an
+already stored absolute expiry or cookie. A new login adopts the new full lifetime.
+
+Approved applications are separate from Remember me. Consent persists per account across logouts,
+until revoked in Settings or superseded by recipient/permission changes. All registered clients
+require initial approval, including dashboard; client registration alone grants nothing.

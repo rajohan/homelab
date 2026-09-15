@@ -5,6 +5,7 @@ import type {
 import type Provider from "oidc-provider";
 import * as v from "valibot";
 
+import { revokeClientApproval } from "../oidc/approvals";
 import { tokenPrincipal } from "../oidc/provider";
 import { type Accounts, type Principal } from "../security/accounts";
 import { accountActivity } from "../security/activity";
@@ -169,15 +170,26 @@ export async function accountApi(
         : remoteAddress;
     await rateLimit(accounts.database, `api:${remote}`, 180, 60_000);
     if (path === "/api/login") {
-        const input = v.parse(v.strictObject({ username: text(100), password }), body);
+        const input = v.parse(
+            v.strictObject({
+                username: text(100),
+                password,
+                remember: v.optional(v.boolean(), false),
+            }),
+            body
+        );
         const result = await accounts.login(
             input.username,
             input.password,
             remote,
-            request.headers.get("user-agent") ?? "Unknown browser"
+            request.headers.get("user-agent") ?? "Unknown browser",
+            input.remember
         );
         const response = secureJson({ mfaRequired: result.mfaRequired });
-        response.headers.append("Set-Cookie", sessionCookie(configuration, result.token));
+        response.headers.append(
+            "Set-Cookie",
+            sessionCookie(configuration, result.token, false, input.remember)
+        );
         return response;
     }
     if (path === "/api/password/request-reset") {
@@ -299,6 +311,9 @@ export async function accountApi(
                 return { recoveryCodes: codes };
             })
         );
+    } else if (path === "/api/account/application/revoke") {
+        const input = v.parse(v.strictObject({ id: text(100) }), body);
+        await revokeClientApproval(accounts, principal, input.id);
     } else if (path === "/api/account/session/revoke") {
         const input = v.parse(v.strictObject({ id: identifier }), body);
         await accounts.revokeSession(principal, input.id);

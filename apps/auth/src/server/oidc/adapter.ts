@@ -1,9 +1,11 @@
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, eq, gt, isNull, isNotNull } from "drizzle-orm";
 import { errors, type Adapter, type AdapterPayload } from "oidc-provider";
 import * as v from "valibot";
 
+import type { AuthSessionPolicy } from "../config/sessionPolicy";
 import type { AuthDatabase } from "../database/connection";
 import { grantSessions, oidcRecords, sessions } from "../database/schema";
+import { liveSessionCondition } from "../database/sessionValidity";
 import { decryptValue, encryptValue, tokenDigest } from "../security/crypto";
 import { revokeBoundGrants } from "./logout";
 
@@ -11,9 +13,14 @@ import { revokeBoundGrants } from "./logout";
  * Create the provider's encrypted PostgreSQL adapter with central-session grant checks.
  * @param database - The auth database.
  * @param key - The data-encryption key for OIDC payloads.
+ * @param policy - The absolute and idle lifetimes enforced for every bound token.
  * @returns The adapter class instantiated by oidc-provider for each model.
  */
-export function createOidcAdapter(database: AuthDatabase, key: Uint8Array) {
+export function createOidcAdapter(
+    database: AuthDatabase,
+    key: Uint8Array,
+    policy: AuthSessionPolicy
+) {
     return class PersistentAdapter implements Adapter {
         readonly model: string;
         /**
@@ -69,8 +76,8 @@ export function createOidcAdapter(database: AuthDatabase, key: Uint8Array) {
                     .where(
                         and(
                             eq(grantSessions.grantId, row.grantId),
-                            gt(sessions.expiresAt, new Date()),
-                            gt(sessions.lastSeenAt, new Date(Date.now() - 3_600_000))
+                            isNotNull(grantSessions.clientId),
+                            liveSessionCondition(policy)
                         )
                     )
                     .limit(1);

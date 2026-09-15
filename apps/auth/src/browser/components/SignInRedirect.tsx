@@ -3,10 +3,11 @@ import { Button, ErrorNotice, LoadingState, Redirect } from "@homelab/ui";
 import { IdentityError, type IdentityClient } from "@homelab/ui/identity/client";
 import { useEffect, useRef, useState } from "react";
 
+import { AuthLayout } from "../layout/AuthLayout";
 import { signInDestination } from "../navigation/signInDestination";
 import { submitOidcConsent } from "../navigation/submitOidcConsent";
 import { AccountActions } from "./AccountActions";
-import { OidcConsentDialog } from "./OidcConsentDialog";
+import { OidcConsentRequest } from "./OidcConsentRequest";
 
 /**
  * Complete verified sign-in, asking for explicit app consent when the provider requires it.
@@ -50,41 +51,70 @@ export function SignInRedirect({
     if (destination) return <Redirect to={destination} label="Completing sign-in…" />;
     if (consent)
         return (
-            <OidcConsentDialog
-                consent={consent}
-                onDecision={async (decision) => {
-                    setDestination(
-                        await submitOidcConsent(client, address, consent, decision)
-                    );
-                }}
-            />
+            <AuthLayout
+                title="Approve access?"
+                description={consent.clientName + " wants to use your Homelab account."}
+                authenticated
+            >
+                <OidcConsentRequest
+                    consent={consent}
+                    onDecision={async (decision) => {
+                        try {
+                            setDestination(
+                                await submitOidcConsent(
+                                    client,
+                                    address,
+                                    consent,
+                                    decision
+                                )
+                            );
+                        } catch (error) {
+                            if (
+                                error instanceof IdentityError &&
+                                ["INTERACTION_EXPIRED", "CONSENT_CONFLICT"].includes(
+                                    error.code
+                                )
+                            ) {
+                                setConsent(undefined);
+                                setFailure(error);
+                            } else throw error;
+                        }
+                    }}
+                />
+            </AuthLayout>
         );
     if (failure !== undefined)
         return (
-            <div className="space-y-4">
-                <ErrorNotice error={failure} />
-                {failure instanceof IdentityError &&
-                failure.code === "INTERACTION_EXPIRED" ? (
-                    <Button
-                        fullWidth
-                        onClick={() => globalThis.location.replace("/account")}
-                    >
-                        Start a new sign-in
-                    </Button>
-                ) : (
-                    <Button
-                        fullWidth
-                        onClick={() => {
-                            pending.current = undefined;
-                            setFailure(undefined);
-                            setAttempt(attempt + 1);
-                        }}
-                    >
-                        Try again
-                    </Button>
-                )}
-                <AccountActions client={client} onSignedOut={onSignedOut} />
-            </div>
+            <AuthLayout title="Sign-in not completed" authenticated>
+                <div className="space-y-4">
+                    <ErrorNotice error={failure} />
+                    {failure instanceof IdentityError &&
+                    ["INTERACTION_EXPIRED", "CONSENT_CONFLICT"].includes(failure.code) ? (
+                        <Button
+                            fullWidth
+                            onClick={() => globalThis.location.replace("/account")}
+                        >
+                            Start a new sign-in
+                        </Button>
+                    ) : (
+                        <Button
+                            fullWidth
+                            onClick={() => {
+                                pending.current = undefined;
+                                setFailure(undefined);
+                                setAttempt(attempt + 1);
+                            }}
+                        >
+                            Try again
+                        </Button>
+                    )}
+                    <AccountActions client={client} onSignedOut={onSignedOut} />
+                </div>
+            </AuthLayout>
         );
-    return <LoadingState label="Completing sign-in…" />;
+    return (
+        <AuthLayout title="Completing sign-in" authenticated>
+            <LoadingState label="Completing sign-in…" />
+        </AuthLayout>
+    );
 }

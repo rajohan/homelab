@@ -2,6 +2,8 @@ import { AuthFrame, Button, LoadingState, Redirect } from "@homelab/ui";
 import { useIdentitySession } from "@homelab/ui/identity";
 import { IdentityClient } from "@homelab/ui/identity/client";
 import { Fragment, useState, type ReactNode } from "react";
+
+import { AuthorizationDeclined } from "./AuthorizationDeclined";
 /**
  * Render private dashboard content only while the current session is verified.
  * @returns The component's rendered content for its current state.
@@ -9,6 +11,8 @@ import { Fragment, useState, type ReactNode } from "react";
 export function IdentityBoundary({ children }: { children: ReactNode }) {
     const [client] = useState(() => new IdentityClient());
     const session = useIdentitySession(client);
+    if (globalThis.location.pathname === "/auth/declined")
+        return <AuthorizationDeclined />;
     if (session.isPending)
         return (
             <main className="flex min-h-dvh items-center justify-center p-4">

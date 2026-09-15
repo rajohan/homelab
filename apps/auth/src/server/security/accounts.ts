@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, isNull, isNotNull, lte, ne, or } from "drizzle-orm";
+import { and, desc, eq, isNull, isNotNull, ne, not } from "drizzle-orm";
 
 import type { AuthConfiguration } from "../config/configuration";
 import type { AuthDatabase, AuthStore, AuthTransaction } from "../database/connection";
@@ -6,10 +6,12 @@ import {
     challenges,
     factors,
     grantSessions,
+    oidcApprovals,
     recoveryCodes,
     sessions,
     users,
 } from "../database/schema";
+import { liveSessionCondition } from "../database/sessionValidity";
 import { revokeBoundGrants } from "../oidc/logout";
 import { hashPassword, randomToken, tokenDigest, verifyPassword } from "./crypto";
 import { AuthFailure, denied, invalidProof, requireRecent } from "./errors";
@@ -19,9 +21,6 @@ export interface Principal {
     readonly user: typeof users.$inferSelect;
     readonly session: typeof sessions.$inferSelect;
 }
-
-const sessionLifetime = 12 * 60 * 60_000;
-const idleLifetime = 60 * 60_000;
 
 export class Accounts {
     readonly database: AuthDatabase;
@@ -67,8 +66,7 @@ export class Accounts {
             .where(
                 and(
                     eq(sessions.id, id),
-                    gt(sessions.expiresAt, now),
-                    gt(sessions.lastSeenAt, new Date(now.getTime() - idleLifetime))
+                    liveSessionCondition(this.configuration.sessionPolicy, now)
                 )
             )
             .limit(1);
@@ -140,7 +138,8 @@ export class Accounts {
             (await this.hasMfa(principal.user.id, store))
                 ? principal.session.mfaAt
                 : principal.session.passwordAt,
-            new Date()
+            new Date(),
+            this.configuration.sessionPolicy.stepUpSeconds * 1000
         );
     }
 
@@ -178,13 +177,15 @@ export class Accounts {
      * @param password - The submitted password.
      * @param remote - The trusted peer identifier for admission limits.
      * @param userAgent - The client description stored with the new session.
+     * @param remember - Whether the user explicitly chose the extended session policy.
      * @returns The opaque session token and whether a second factor is required.
      */
     async login(
         username: string,
         password: string,
         remote: string,
-        userAgent: string
+        userAgent: string,
+        remember = false
     ): Promise<{ token: string; mfaRequired: boolean }> {
         await rateLimit(this.database, `login-ip:${remote}`, 20, 60_000);
         await rateLimit(
@@ -228,9 +229,16 @@ export class Accounts {
                 id: crypto.randomUUID(),
                 userId: user.id,
                 tokenHash: tokenDigest(token),
+                remember,
                 createdAt: now,
                 lastSeenAt: now,
-                expiresAt: new Date(now.getTime() + sessionLifetime),
+                expiresAt: new Date(
+                    now.getTime() +
+                        (remember
+                            ? this.configuration.sessionPolicy.rememberMaximumSeconds
+                            : this.configuration.sessionPolicy.maximumSeconds) *
+                            1000
+                ),
                 passwordAt: now,
                 mfaAt: null,
                 userAgent: userAgent.slice(0, 256),
@@ -305,13 +313,7 @@ export class Accounts {
                 .where(
                     and(
                         eq(sessions.id, sessionId),
-                        or(
-                            lte(sessions.expiresAt, now),
-                            lte(
-                                sessions.lastSeenAt,
-                                new Date(now.getTime() - idleLifetime)
-                            )
-                        )
+                        not(liveSessionCondition(this.configuration.sessionPolicy, now))
                     )
                 )
                 .for("update");
@@ -499,8 +501,7 @@ export class Accounts {
             .where(
                 and(
                     eq(sessions.userId, principal.user.id),
-                    gt(sessions.expiresAt, new Date()),
-                    gt(sessions.lastSeenAt, new Date(Date.now() - idleLifetime))
+                    liveSessionCondition(this.configuration.sessionPolicy)
                 )
             )
             .orderBy(desc(sessions.lastSeenAt));
@@ -508,7 +509,18 @@ export class Accounts {
             .select({ digest: recoveryCodes.digest })
             .from(recoveryCodes)
             .where(eq(recoveryCodes.userId, principal.user.id));
+        const applications = await this.database
+            .select({
+                id: oidcApprovals.clientId,
+                name: oidcApprovals.clientName,
+                scopes: oidcApprovals.scopes,
+                approvedAt: oidcApprovals.approvedAt,
+            })
+            .from(oidcApprovals)
+            .where(eq(oidcApprovals.userId, principal.user.id))
+            .orderBy(oidcApprovals.clientName);
         return {
+            applications,
             user: {
                 id: principal.user.id,
                 username: principal.user.username,

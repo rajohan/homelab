@@ -18,6 +18,16 @@ export const accountSchema = v.object({
         })
     ),
     recoveryCodesRemaining: v.number(),
+    applications: v.optional(
+        v.array(
+            v.object({
+                id: v.string(),
+                name: v.string(),
+                scopes: v.array(v.string()),
+                approvedAt: date,
+            })
+        )
+    ),
     sessions: v.array(
         v.object({
             id: v.string(),

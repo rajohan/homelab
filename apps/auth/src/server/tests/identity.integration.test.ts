@@ -11,8 +11,10 @@ import * as v from "valibot";
 import { createTestDatabase } from "../../../../../tests/database";
 import { createAuthApplication } from "../application";
 import type { AuthConfiguration } from "../config/configuration";
+import { defaultSessionPolicy } from "../config/sessionPolicy";
 import { requiredAuthMigrations } from "../database/migrations";
 import {
+    oidcApprovals,
     auditEvents,
     factors,
     grantSessions,
@@ -25,6 +27,7 @@ import {
     challenges,
     recoveryCodes,
 } from "../database/schema";
+import { hasClientApproval } from "../oidc/approvals";
 import { deliverLogouts } from "../oidc/logout";
 import { encryptValue, hashPassword, tokenDigest } from "../security/crypto";
 import type { AuthEmail } from "../security/email";
@@ -40,6 +43,7 @@ const clientSecret = "isolated-client-secret-for-tests-only-32-characters";
 let logoutServer: ReturnType<typeof Bun.serve>;
 const logoutTokens: string[] = [];
 let logoutStatus = 204;
+const configuredPolicy = { ...defaultSessionPolicy };
 const cookieJar = new Map<string, { value: string; path: string }>();
 
 async function browser(path: string, options: RequestInit = {}): Promise<Response> {
@@ -116,6 +120,7 @@ beforeAll(async () => {
     issuer = `http://127.0.0.1:${server.port}`;
     const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
     const configuration: AuthConfiguration = {
+        sessionPolicy: configuredPolicy,
         issuer,
         dashboardOrigin: issuer,
         databaseUrl,
@@ -460,6 +465,7 @@ function proxyRequest(
 describe("security invariants against the isolated database", () => {
     let username: string;
     beforeEach(async () => {
+        Object.assign(configuredPolicy, defaultSessionPolicy);
         cookieJar.clear();
         logoutTokens.length = 0;
         logoutStatus = 204;
@@ -1683,6 +1689,15 @@ describe("security invariants against the isolated database", () => {
                 }),
                 v.object({ redirect: v.string() })
             );
+            expect(
+                await status(
+                    post("/sign-in/complete", {
+                        interactionId: consent.interactionId,
+                        accountId: consent.accountId,
+                        decision: "deny",
+                    })
+                )
+            ).toBe(409);
             expect(retry).toEqual(result);
             expect(
                 await application.connection.database.select().from(grantSessions)
@@ -1715,6 +1730,15 @@ describe("security invariants against the isolated database", () => {
             }),
             v.object({ redirect: v.string() })
         );
+        expect(
+            await status(
+                post("/sign-in/complete", {
+                    interactionId: consent.interactionId,
+                    accountId: consent.accountId,
+                    decision: "approve",
+                })
+            )
+        ).toBe(409);
         const resumed = await browser(next.redirect);
         const callback = new URL(resumed.headers.get("location") ?? "", issuer);
         expect(callback.pathname).toBe("/callback");
@@ -1732,6 +1756,241 @@ describe("security invariants against the isolated database", () => {
         const returned = new URL(accepted.headers.get("location") ?? "", issuer);
         expect(returned.searchParams.has("code")).toBe(true);
         expect(returned.searchParams.has("error")).toBe(false);
+    });
+
+    test("app approval persists across logout but additional scopes and revocation require approval", async () => {
+        const initial = await authorizationTokens("openid profile");
+        const database = application.connection.database;
+        const accounts = application.services.accounts;
+        let principal = await accounts.principalByToken(
+            cookieJar.get("homelab_auth")?.value ?? ""
+        );
+        const approval = await database
+            .select()
+            .from(oidcApprovals)
+            .where(eq(oidcApprovals.userId, principal.user.id));
+        expect(approval).toHaveLength(1);
+        expect(approval[0]?.scopes).toEqual(["openid", "profile"]);
+        const metadata = accounts.configuration.clients.find(
+            (client) => client.client_id === "dashboard"
+        );
+        if (!metadata) throw new Error("Fixture client missing");
+        expect(
+            await hasClientApproval(
+                database,
+                principal.user.id,
+                metadata,
+                "openid profile"
+            )
+        ).toBe(true);
+        expect(
+            await hasClientApproval(database, crypto.randomUUID(), metadata, "openid")
+        ).toBe(false);
+        expect(
+            await hasClientApproval(
+                database,
+                principal.user.id,
+                { ...metadata, client_name: "Changed recipient" },
+                "openid"
+            )
+        ).toBe(false);
+        expect(
+            await hasClientApproval(
+                database,
+                principal.user.id,
+                { ...metadata, redirect_uris: [issuer + "/changed"] },
+                "openid"
+            )
+        ).toBe(false);
+        expect(
+            await hasClientApproval(
+                database,
+                principal.user.id,
+                {
+                    ...metadata,
+                    client_secret: "rotated-credential-with-the-same-recipient",
+                },
+                "openid"
+            )
+        ).toBe(true);
+        expect(await status(post("/api/logout", {}))).toBe(200);
+        expect(await status(post("/api/login", { username, password }))).toBe(200);
+        const next = await authorizationTokens("openid profile", "dashboard", true);
+        expect(next.access_token).not.toBe(initial.access_token);
+        const requested = await pendingConsent(
+            "dashboard",
+            "openid profile email",
+            false
+        );
+        expect(requested.scopes).toContain("email");
+        const denied = await json(
+            post("/sign-in/complete", {
+                interactionId: requested.interactionId,
+                accountId: requested.accountId,
+                decision: "deny",
+            }),
+            v.object({ redirect: v.string() })
+        );
+        await browser(denied.redirect);
+        expect(
+            await database
+                .select()
+                .from(oidcApprovals)
+                .where(eq(oidcApprovals.userId, principal.user.id))
+        ).toEqual(approval);
+        await authorizationTokens("openid profile", "dashboard", true);
+        const extended = await authorizationTokens("openid profile email");
+        const snapshot = await json(
+            browser("/api/account"),
+            v.object({
+                applications: v.array(
+                    v.object({ id: v.string(), scopes: v.array(v.string()) })
+                ),
+            })
+        );
+        expect(snapshot.applications).toContainEqual({
+            id: "dashboard",
+            scopes: ["email", "openid", "profile"],
+        });
+        principal = await accounts.principalByToken(
+            cookieJar.get("homelab_auth")?.value ?? ""
+        );
+        await database
+            .update(sessions)
+            .set({ passwordAt: new Date(0) })
+            .where(eq(sessions.id, principal.session.id));
+        expect(
+            await status(post("/api/account/application/revoke", { id: "dashboard" }))
+        ).toBe(403);
+        expect(await status(post("/api/account/proof/password", { password }))).toBe(200);
+        expect(
+            await status(post("/api/account/application/revoke", { id: "dashboard" }))
+        ).toBe(200);
+        expect(
+            await database
+                .select()
+                .from(oidcApprovals)
+                .where(eq(oidcApprovals.userId, principal.user.id))
+        ).toHaveLength(0);
+        expect(
+            await status(
+                browser("/userinfo", {
+                    headers: { authorization: "Bearer " + extended.access_token },
+                })
+            )
+        ).toBe(401);
+        const renewed = await pendingConsent("dashboard", "openid profile", false);
+        expect(renewed.clientId).toBe("dashboard");
+    });
+
+    test.each([false, true])(
+        "session choice %s controls cookies, stored expiry, idle validity and OIDC access",
+        async (remember) => {
+            const login = await post("/api/login", { username, password, remember });
+            expect(login.status).toBe(200);
+            const maximum = remember ? 2_592_000 : 43_200;
+            const idle = remember ? 604_800 : 3600;
+            expect(login.headers.get("set-cookie")).toContain("Max-Age=" + maximum);
+            const tokens = await authorizationTokens("openid profile");
+            const accounts = application.services.accounts;
+            const principal = await accounts.principalByToken(
+                cookieJar.get("homelab_auth")?.value ?? ""
+            );
+            expect(principal.session.remember).toBe(remember);
+            expect(
+                principal.session.expiresAt.getTime() -
+                    principal.session.createdAt.getTime()
+            ).toBe(maximum * 1000);
+            const activeAt = new Date(Date.now() - (idle - 30) * 1000);
+            await accounts.database
+                .update(sessions)
+                .set({ lastSeenAt: activeAt })
+                .where(eq(sessions.id, principal.session.id));
+            expect(await status(browser("/api/account"))).toBe(200);
+            expect(
+                await status(
+                    browser("/userinfo", {
+                        headers: { authorization: "Bearer " + tokens.access_token },
+                    })
+                )
+            ).toBe(200);
+            await accounts.database
+                .update(sessions)
+                .set({ lastSeenAt: new Date(Date.now() - (idle + 1) * 1000) })
+                .where(eq(sessions.id, principal.session.id));
+            expect(await status(browser("/api/account"))).toBe(401);
+            expect(
+                await status(
+                    browser("/userinfo", {
+                        headers: { authorization: "Bearer " + tokens.access_token },
+                    })
+                )
+            ).toBe(401);
+            await accounts.revokeExpired(principal.session.id, new Date());
+            expect(
+                await accounts.database
+                    .select()
+                    .from(sessions)
+                    .where(eq(sessions.id, principal.session.id))
+            ).toHaveLength(0);
+        }
+    );
+
+    test("remembered login still requires enrolled MFA and expires absolutely despite recent activity", async () => {
+        await enrollTotp();
+        const result = await json(
+            post("/api/login", { username, password, remember: true }),
+            v.object({ mfaRequired: v.boolean() })
+        );
+        expect(result.mfaRequired).toBe(true);
+        expect(await status(browser("/api/account"))).toBe(403);
+        const token = cookieJar.get("homelab_auth")?.value ?? "";
+        await application.connection.database
+            .update(sessions)
+            .set({
+                createdAt: new Date(Date.now() - 2_592_001_000),
+                lastSeenAt: new Date(),
+                expiresAt: new Date(Date.now() + 60_000),
+            })
+            .where(eq(sessions.tokenHash, tokenDigest(token)));
+        expect(await status(browser("/api/account"))).toBe(401);
+    });
+
+    test("nondefault policy is enforced for live sessions and step-up, not just their cookies", async () => {
+        configuredPolicy.maximumSeconds = 7200;
+        configuredPolicy.idleSeconds = 900;
+        configuredPolicy.stepUpSeconds = 60;
+        try {
+            const accounts = application.services.accounts;
+            const principal = await accounts.principalByToken(
+                cookieJar.get("homelab_auth")?.value ?? ""
+            );
+            await accounts.database
+                .update(sessions)
+                .set({ passwordAt: new Date(Date.now() - 61_000) })
+                .where(eq(sessions.id, principal.session.id));
+            expect(await status(post("/api/account/totp/begin", { label: "Test" }))).toBe(
+                403
+            );
+            await accounts.database
+                .update(sessions)
+                .set({
+                    passwordAt: new Date(),
+                    lastSeenAt: new Date(Date.now() - 901_000),
+                })
+                .where(eq(sessions.id, principal.session.id));
+            expect(await status(browser("/api/account"))).toBe(401);
+            await accounts.database
+                .update(sessions)
+                .set({
+                    createdAt: new Date(Date.now() - 7_201_000),
+                    lastSeenAt: new Date(),
+                })
+                .where(eq(sessions.id, principal.session.id));
+            expect(await status(browser("/api/account"))).toBe(401);
+        } finally {
+            Object.assign(configuredPolicy, defaultSessionPolicy);
+        }
     });
 
     test("a signed-in browser with an expired interaction gets a structured restart response", async () => {
@@ -2163,7 +2422,11 @@ function formPost(path: string, body: Record<string, string>, authorization?: st
         body: new URLSearchParams(body).toString(),
     });
 }
-async function authorizationTokens(scope: string, clientId = "dashboard") {
+async function authorizationTokens(
+    scope: string,
+    clientId = "dashboard",
+    rememberedOnly = false
+) {
     const verifier = "separate-test-verifier-at-least-43-random-characters";
     const challenge = Buffer.from(
         await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))
@@ -2177,7 +2440,7 @@ async function authorizationTokens(scope: string, clientId = "dashboard") {
                 scope,
                 state: "state",
                 nonce: "nonce",
-                prompt: "consent",
+                ...(rememberedOnly ? {} : { prompt: "consent" }),
                 code_challenge: challenge,
                 code_challenge_method: "S256",
             }).toString()
@@ -2212,7 +2475,12 @@ async function authorizationTokens(scope: string, clientId = "dashboard") {
             );
         }
         if (url.pathname === "/sign-in") {
-            const next = await approveTestInteraction();
+            const next = rememberedOnly
+                ? await json(
+                      post("/sign-in/complete", {}),
+                      v.object({ redirect: v.string() })
+                  )
+                : await approveTestInteraction();
             response = await browser(next.redirect);
         } else response = await browser(url.href);
     }
@@ -2239,7 +2507,11 @@ async function approveTestInteraction(): Promise<{ redirect: string }> {
     );
 }
 
-async function pendingConsent(clientId: string): Promise<OidcConsent> {
+async function pendingConsent(
+    clientId: string,
+    scope = "openid profile email",
+    force = true
+): Promise<OidcConsent> {
     const verifier = "consent-test-verifier-at-least-43-random-characters";
     const challenge = Buffer.from(
         await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))
@@ -2250,8 +2522,8 @@ async function pendingConsent(clientId: string): Promise<OidcConsent> {
                 client_id: clientId,
                 redirect_uri: issuer + "/callback",
                 response_type: "code",
-                scope: "openid profile email",
-                prompt: "consent",
+                scope,
+                ...(force ? { prompt: "consent" } : {}),
                 state: "consent-state",
                 code_challenge: challenge,
                 code_challenge_method: "S256",

@@ -40,3 +40,5 @@ export {
 export { formatDateTime, formatDateTimeParts } from "./lib/formatDateTime";
 
 export { CopyTextButton } from "./components/Button/CopyTextButton";
+
+export { CheckboxField } from "./components/Checkbox/CheckboxField";

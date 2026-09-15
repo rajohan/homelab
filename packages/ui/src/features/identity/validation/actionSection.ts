@@ -6,6 +6,8 @@ import type { AccountAction, AccountSection } from "../types";
  * @returns The settings section that owns the requested action.
  */
 export function actionSection(action: AccountAction): AccountSection {
+    if (typeof action === "object" && action.kind === "application")
+        return "applications";
     if (action === "email") return "profile";
     if (action === "password" || action === "recovery") return action;
     if (action === "totp") return "authenticators";

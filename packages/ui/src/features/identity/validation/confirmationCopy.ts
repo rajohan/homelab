@@ -11,6 +11,12 @@ export function confirmationCopy(action: ConfirmationAction): {
     confirmLabel: string;
 } {
     if (typeof action === "object") {
+        if (action.kind === "application")
+            return {
+                title: "Revoke app access?",
+                description: `"${action.label}" will need your approval again. Its active Homelab tokens will be revoked; logout notifications are sent where supported.`,
+                confirmLabel: "Revoke access",
+            };
         if (action.kind === "remove")
             return {
                 title: "Remove security method?",

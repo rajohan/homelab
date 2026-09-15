@@ -7,7 +7,9 @@ import * as v from "valibot";
 
 import { createAuthApplication } from "../apps/auth/src/server/application";
 import type { AuthConfiguration } from "../apps/auth/src/server/config/configuration";
+import { defaultSessionPolicy } from "../apps/auth/src/server/config/sessionPolicy";
 import {
+    oidcApprovals,
     users,
     sessions,
     mailOutbox,
@@ -118,6 +120,7 @@ describe.each(["client_secret_post", "client_secret_basic"] as const)(
             origin = `http://127.0.0.1:${port}`;
             const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
             const configuration: AuthConfiguration = {
+                sessionPolicy: { ...defaultSessionPolicy },
                 issuer,
                 dashboardOrigin: origin,
                 databaseUrl,
@@ -222,7 +225,8 @@ describe.each(["client_secret_post", "client_secret_basic"] as const)(
         }
         async function finishLogin(
             response: Response,
-            expected: string
+            expected: string,
+            decision: "approve" | "deny" = "approve"
         ): Promise<string> {
             for (let count = 0; count < 12; count += 1) {
                 const location = response.headers.get("Location");
@@ -260,7 +264,7 @@ describe.each(["client_secret_post", "client_secret_basic"] as const)(
                         const approved = await browser(issuer + "/sign-in/complete", {
                             interactionId,
                             accountId,
-                            decision: "approve",
+                            decision,
                         });
                         data = v.parse(
                             v.object({ redirect: v.string() }),
@@ -287,6 +291,23 @@ describe.each(["client_secret_post", "client_secret_basic"] as const)(
                 const cookie = jar.get(origin)?.get("homelab_dashboard")?.value;
                 expect(cookie?.split(".")).toHaveLength(5);
                 expect(cookie).not.toContain("bff-operator");
+            });
+            test("declined consent offers a deliberate retry and does not block the next sign-in", async () => {
+                const loggedOut = await browser(origin + "/api/logout", {});
+                expect(loggedOut.status).toBe(200);
+                const login = await browser(issuer + "/api/login", {
+                    username: "bff-operator",
+                    password,
+                });
+                expect(login.status).toBe(200);
+                await auth.connection.database.delete(oidcApprovals);
+                const started = await browser(origin + "/login?returnTo=%2Fsettings");
+                await finishLogin(started, "/auth/declined?returnTo=%2Fsettings", "deny");
+                const session = await browser(origin + "/api/session");
+                expect(await session.json()).toMatchObject({ authenticated: false });
+                await dashboardLogin("/settings");
+                const account = await browser(origin + "/api/account");
+                expect(account.status).toBe(200);
             });
             test("forwards activity cursors instead of silently returning the first page", async () => {
                 const first = await browser(`${origin}/api/account/activity`);

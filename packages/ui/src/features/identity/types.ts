@@ -4,6 +4,7 @@ export type ConfirmationAction =
     | "recovery"
     | "others"
     | "all"
+    | { readonly kind: "application"; readonly id: string; readonly label: string }
     | {
           readonly kind: "remove";
           readonly factorKind: "webauthn" | "totp";
@@ -30,7 +31,8 @@ export type AccountSection =
     | "authenticators"
     | "recovery"
     | "disable-mfa"
-    | "sessions";
+    | "sessions"
+    | "applications";
 export interface AccountNotice {
     readonly section: AccountSection;
     readonly message: string;

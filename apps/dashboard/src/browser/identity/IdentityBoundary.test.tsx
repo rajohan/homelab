@@ -227,3 +227,37 @@ test("an unavailable identity service offers retry instead of an automatic redir
         navigate.mockRestore();
     }
 });
+
+test("declined authorization stays on a public retry screen without rendering private content", async () => {
+    const original = globalThis.location.href;
+    globalThis.history.replaceState(null, "", "/auth/declined?returnTo=%2Fsettings");
+    const session = spyOn(IdentityClient.prototype, "session").mockResolvedValue({
+        authenticated: false,
+        mfaRequired: false,
+        methods: [],
+    });
+    const navigate = spyOn(globalThis.location, "replace").mockImplementation(() => {});
+    const query = new QueryClient({
+        defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+    const view = render(
+        <QueryClientProvider client={query}>
+            <IdentityBoundary>Private content</IdentityBoundary>
+        </QueryClientProvider>
+    );
+    try {
+        expect(
+            await screen.findByRole("heading", { name: "Access not approved" })
+        ).toBeVisible();
+        expect(screen.queryByText("Private content")).not.toBeInTheDocument();
+        expect(navigate).not.toHaveBeenCalled();
+        await userEvent.setup().click(screen.getByRole("button", { name: "Try again" }));
+        expect(navigate).toHaveBeenCalledWith("/login?returnTo=%2Fsettings");
+    } finally {
+        view.unmount();
+        query.clear();
+        session.mockRestore();
+        navigate.mockRestore();
+        globalThis.history.replaceState(null, "", original);
+    }
+});

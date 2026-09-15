@@ -131,14 +131,37 @@ export function createDashboardAuthentication(configuration: DashboardAuthConfig
             `${incoming.pathname}${incoming.search}`,
             configuration.origin
         );
-        const result = await oidc.authorizationCodeGrant(await discover(), callbackUrl, {
-            expectedState: state.state,
-            expectedNonce: state.nonce,
-            pkceCodeVerifier: state.verifier,
-            idTokenExpected: true,
-        });
+        let result: Awaited<ReturnType<typeof oidc.authorizationCodeGrant>>;
+        try {
+            result = await oidc.authorizationCodeGrant(await discover(), callbackUrl, {
+                expectedState: state.state,
+                expectedNonce: state.nonce,
+                pkceCodeVerifier: state.verifier,
+                idTokenExpected: true,
+            });
+        } catch (error) {
+            if (
+                error instanceof oidc.AuthorizationResponseError &&
+                error.error === "access_denied" &&
+                callbackUrl.searchParams.getAll("state").length === 1 &&
+                callbackUrl.searchParams.get("state") === state.state
+            ) {
+                const query = new URLSearchParams({
+                    returnTo: safeReturn(state.returnTo),
+                });
+                return new Response(null, {
+                    status: 303,
+                    headers: {
+                        Location: "/auth/declined?" + query.toString(),
+                        "Set-Cookie": cookie(loginName, "", 0),
+                        "Cache-Control": "no-store",
+                    },
+                });
+            }
+            throw error;
+        }
         if (!result.claims()?.sub) throw new Error("Identity claim missing");
-        const duration = Math.min(result.expires_in ?? 600, 43_200);
+        const duration = result.expires_in ?? 600;
         const response = new Response(null, {
             status: 303,
             headers: {

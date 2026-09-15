@@ -6,6 +6,7 @@ import { AccountActionDialog } from "./dialogs/AccountActionDialog";
 import { RecoveryCodesDialog } from "./dialogs/RecoveryCodesDialog";
 import { AccountIdentityPanel } from "./panels/AccountIdentityPanel";
 import { ActivityPanel } from "./panels/ActivityPanel";
+import { ApprovedApplicationsPanel } from "./panels/ApprovedApplicationsPanel";
 import { AuthenticatorAppsPanel } from "./panels/AuthenticatorAppsPanel";
 import { DisableMfaPanel } from "./panels/DisableMfaPanel";
 import { PasswordPanel } from "./panels/PasswordPanel";
@@ -100,6 +101,15 @@ export function AccountSettings({
                 onAction={state.setAction}
                 notice={
                     state.notice?.section === "sessions"
+                        ? state.notice.message
+                        : undefined
+                }
+            />
+            <ApprovedApplicationsPanel
+                data={account.data}
+                onAction={state.setAction}
+                notice={
+                    state.notice?.section === "applications"
                         ? state.notice.message
                         : undefined
                 }

@@ -31,6 +31,7 @@ export const sessions = pgTable(
             .notNull()
             .references(() => users.id, { onDelete: "cascade" }),
         tokenHash: text("token_hash").notNull().unique(),
+        remember: boolean("remember").notNull().default(false),
         createdAt: time("created_at").notNull(),
         lastSeenAt: time("last_seen_at").notNull(),
         expiresAt: time("expires_at").notNull(),
@@ -108,6 +109,7 @@ export const oidcRecords = pgTable(
 
 export const grantSessions = pgTable("auth_grant_sessions", {
     grantId: text("grant_id").primaryKey(),
+    clientId: text("client_id"),
     encryptedLogout: text("encrypted_logout"),
     sessionId: uuid("session_id")
         .notNull()
@@ -155,3 +157,18 @@ export const logoutOutbox = pgTable("auth_logout_outbox", {
     nextAttemptAt: time("next_attempt_at").notNull(),
     attempts: integer("attempts").notNull().default(0),
 });
+
+export const oidcApprovals = pgTable(
+    "auth_oidc_approvals",
+    {
+        userId: uuid("user_id")
+            .notNull()
+            .references(() => users.id, { onDelete: "cascade" }),
+        clientId: text("client_id").notNull(),
+        clientName: text("client_name").notNull(),
+        fingerprint: text("fingerprint").notNull(),
+        scopes: jsonb("scopes").$type<string[]>().notNull(),
+        approvedAt: time("approved_at").notNull(),
+    },
+    (table) => [primaryKey({ columns: [table.userId, table.clientId] })]
+);

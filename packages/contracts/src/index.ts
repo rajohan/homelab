@@ -17,6 +17,7 @@ export const systemStatusSchema = v.strictObject({
 export type SystemStatus = v.InferOutput<typeof systemStatusSchema>;
 
 export {
+    oidcScopeDescriptions,
     oidcConsentSchema,
     oidcConsentDecisionSchema,
     oidcInteractionSchema,

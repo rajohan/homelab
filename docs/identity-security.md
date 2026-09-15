@@ -32,7 +32,11 @@ committing a login or password change, including concurrent recovery races.
 
 Central sessions have random 256-bit opaque cookies; only SHA-256 token digests are stored.
 Production cookies are Secure, HttpOnly, SameSite=Lax and host-only with the `__Host-` prefix.
-Absolute lifetime is 12 hours, idle lifetime one hour. Successful password proof and protected
+By default, absolute lifetime is 12 hours and idle lifetime one hour. An explicit, unchecked-by-default
+**Remember me** choice uses 30 days absolute and seven days idle. All five durations, including
+step-up, are bounded deployment settings; see the operations guide. Remembered sessions still
+require enrolled MFA at login and recent proof for sensitive changes. Absolute expiry never slides.
+The same central policy gates cookies, account APIs, protocol tokens and expiry cleanup. Successful password proof and protected
 account mutations renew idle activity transactionally; failed actions and passive reads do not.
 Sensitive changes require proof within
 five minutes. At most 16 password-only sessions and 16 MFA-completed sessions are retained
@@ -83,15 +87,21 @@ Only dashboard can request `account` scope. Other clients require MFA. A newly c
 without a factor may enter dashboard Settings to enroll; it cannot enter a protected resource
 or another OIDC client before MFA. Every client, including dashboard, requires explicit
 **Approve** or **Deny** when the provider requests consent. Registration never grants automatic
-approval. The shared-design modal shows the server-validated app name, callback origin and
-requested scopes; the browser cannot choose additional scopes or a different client.
-Closing the modal denies access. Denial returns the protocol `access_denied` error without
-signing out the central account. The decision is bound to the displayed interaction and account.
+approval. The shared-design auth page shows the server-validated app name, callback origin and
+requested scopes; the browser cannot choose additional scopes or a different client. Denial returns
+`access_denied` without signing out the central account. Dashboard presents a deliberate retry page,
+not JSON or an automatic sign-in loop. A decision is bound to the displayed interaction and account;
+a conflicting replay is rejected rather than silently continuing the opposite decision.
 
-Consent and grants are bound to the actual central session. An existing approved grant may be
-reused within that session; new access or `prompt=consent` asks again. This is not a permanent
-trusted-client allowlist. Clients still require operator registration, an exact allowed
-callback and the normal group/MFA checks. No dynamic client registration is enabled.
+User-owned approval receipts persist across central-session logout and expiry. They contain the
+approved scopes and a fingerprint of recipient metadata, never tokens. Additional permissions,
+changed recipient names/destinations, explicit `prompt=consent`, or revocation require approval again.
+Settings lists approved apps with a step-up-protected revocation action that removes the receipt,
+revokes its session-bound grants and queues supported back-channel logout. Other accounts' receipts
+are unaffected. Protocol grants and tokens remain bound to an actual live central session: remembering
+consent is not remembering authentication, and never bypasses group or MFA checks. Existing pre-consent
+grants without a client binding are rejected and require a fresh app sign-in. No dynamic client
+registration is enabled.
 
 RP logout uses the library's CSRF-validated confirmation before ending the central session;
 a GET link alone does not revoke it. Session-bound back-channel logout uses the provider's

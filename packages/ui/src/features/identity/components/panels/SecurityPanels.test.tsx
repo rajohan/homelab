@@ -4,6 +4,7 @@ import { render, screen, fireEvent, within } from "@testing-library/react";
 
 import type { AccountSnapshot } from "../../api/schemas";
 import { AccountIdentityPanel } from "./AccountIdentityPanel";
+import { ApprovedApplicationsPanel } from "./ApprovedApplicationsPanel";
 import { AuthenticatorAppsPanel } from "./AuthenticatorAppsPanel";
 import { DisableMfaPanel } from "./DisableMfaPanel";
 import { ProfilePanel } from "./ProfilePanel";
@@ -106,4 +107,40 @@ test("unverified email and exhausted recovery codes retain warning states", () =
     expect(screen.getByText("Unverified")).toHaveClass("text-red-300");
     expect(screen.getByRole("button", { name: "Verify email" })).toBeEnabled();
     expect(screen.getByText("0 unused")).toHaveClass("text-red-300");
+});
+
+test("approved applications expose permissions and an app-specific revocation action", () => {
+    const action = mock(() => {});
+    const view = render(
+        <ApprovedApplicationsPanel
+            data={{
+                ...data,
+                applications: [
+                    {
+                        id: "fixture-client",
+                        name: "Fixture app",
+                        scopes: ["openid", "profile"],
+                        approvedAt: "2026-01-01T12:30:00Z",
+                    },
+                ],
+            }}
+            onAction={action}
+        />
+    );
+    try {
+        expect(
+            screen.getByRole("heading", { name: "Approved applications" })
+        ).toBeVisible();
+        expect(screen.getByText("Read your name and username")).toBeVisible();
+        const button = screen.getByRole("button", { name: "Revoke Fixture app" });
+        expect(button.querySelector("svg")).not.toBeNull();
+        fireEvent.click(button);
+        expect(action).toHaveBeenCalledWith({
+            kind: "application",
+            id: "fixture-client",
+            label: "Fixture app",
+        });
+    } finally {
+        view.unmount();
+    }
 });

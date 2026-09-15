@@ -1,5 +1,5 @@
 import { useForm } from "@tanstack/react-form";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import { ErrorNotice } from "../Alert/ErrorNotice";
 import { ActionGroup } from "../Button/ActionGroup";
@@ -16,6 +16,7 @@ import { touchedFieldError, validateFields } from "./validation";
  */
 export function FieldsForm({
     fields,
+    children,
     submitLabel,
     submitVariant = "primary",
     onSubmit,
@@ -24,6 +25,7 @@ export function FieldsForm({
     cancelLabel = "Cancel",
 }: {
     fields: readonly FieldDefinition[];
+    children?: ReactNode;
     submitLabel: string;
     submitVariant?: "primary" | "danger";
     onSubmit: (values: FormValues) => Promise<void>;
@@ -117,6 +119,7 @@ export function FieldsForm({
                             )}
                         </form.Field>
                     ))}
+                    {children && <fieldset disabled={submitting}>{children}</fieldset>}
                     {error !== undefined && <ErrorNotice error={error} />}
                     <ActionGroup>
                         {onCancel && (

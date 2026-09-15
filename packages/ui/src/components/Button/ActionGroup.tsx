@@ -16,7 +16,7 @@ export function ActionGroup({
 }) {
     return (
         <div className={cn("@container", className)}>
-            <div className="flex flex-col-reverse gap-2 @sm:flex-row @sm:justify-end [&>button]:w-full @sm:[&>button]:w-auto [&>button:only-child]:w-full">
+            <div className="flex flex-col gap-2 @sm:flex-row @sm:justify-end [&>button]:w-full @sm:[&>button]:w-auto [&>button:only-child]:w-full">
                 {children}
             </div>
         </div>

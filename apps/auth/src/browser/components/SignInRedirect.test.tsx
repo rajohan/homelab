@@ -203,7 +203,10 @@ test.each(["approve", "deny"] as const)(
             const action = await screen.findByRole("button", {
                 name: decision === "approve" ? "Approve" : "Deny",
             });
-            expect(screen.getByRole("dialog")).toHaveAccessibleName("Approve access?");
+            expect(
+                screen.getByRole("heading", { name: "Approve access?" })
+            ).toBeVisible();
+            expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
             expect(
                 screen.getByText("Homelab Dashboard wants to use your Homelab account.")
             ).toBeVisible();
@@ -235,7 +238,7 @@ test.each(["approve", "deny"] as const)(
     }
 );
 
-test("a failed consent decision stays in its modal and retries only on another explicit click", async () => {
+test("a failed consent decision stays on its page and retries only on another explicit click", async () => {
     const client = new IdentityClient();
     const pending = Promise.withResolvers<unknown>();
     const request = spyOn(client, "request")
@@ -265,7 +268,7 @@ test("a failed consent decision stays in its modal and retries only on another e
         await waitFor(() =>
             expect(screen.getByRole("button", { name: "Approve" })).toBeEnabled()
         );
-        expect(screen.getByRole("dialog")).toBeVisible();
+        expect(screen.getByRole("heading", { name: "Approve access?" })).toBeVisible();
         expect(request).toHaveBeenCalledTimes(2);
         expect(navigate).not.toHaveBeenCalled();
         await user.click(screen.getByRole("button", { name: "Approve" }));
@@ -278,37 +281,41 @@ test("a failed consent decision stays in its modal and retries only on another e
     }
 });
 
-test("closing consent denies access rather than approving or signing out the account", async () => {
-    const client = new IdentityClient();
-    const request = spyOn(client, "request")
-        .mockResolvedValueOnce({ consent })
-        .mockResolvedValueOnce({ redirect: "/authorize/resume" });
-    const navigate = spyOn(globalThis.location, "replace").mockImplementation(() => {});
-    let signedOut = false;
-    const view = render(
-        <SignInRedirect
-            client={client}
-            address={new URL("https://auth.example.test/sign-in?interaction=request-id")}
-            onSignedOut={() => {
-                signedOut = true;
-                return Promise.resolve();
-            }}
-        />
-    );
-    try {
-        await userEvent
-            .setup()
-            .click(await screen.findByRole("button", { name: "Close dialog" }));
-        await waitFor(() => expect(navigate).toHaveBeenCalledTimes(1));
-        expect(request).toHaveBeenLastCalledWith("/sign-in/complete", {
-            interactionId: consent.interactionId,
-            accountId: consent.accountId,
-            decision: "deny",
-        });
-        expect(signedOut).toBe(false);
-    } finally {
-        view.unmount();
-        request.mockRestore();
-        navigate.mockRestore();
+test.each(["INTERACTION_EXPIRED", "CONSENT_CONFLICT"])(
+    "a %s decision offers a fresh sign-in instead of an unusable consent form",
+    async (code) => {
+        const client = new IdentityClient();
+        const request = spyOn(client, "request")
+            .mockResolvedValueOnce({ consent })
+            .mockRejectedValueOnce(new IdentityError(code, 409, "Start a new sign-in."));
+        const navigate = spyOn(globalThis.location, "replace").mockImplementation(
+            () => {}
+        );
+        const view = render(
+            <SignInRedirect
+                client={client}
+                address={
+                    new URL("https://auth.example.test/sign-in?interaction=request-id")
+                }
+                onSignedOut={() => Promise.resolve()}
+            />
+        );
+        try {
+            const user = userEvent.setup();
+            await user.click(await screen.findByRole("button", { name: "Approve" }));
+            const restart = await screen.findByRole("button", {
+                name: "Start a new sign-in",
+            });
+            expect(
+                screen.queryByRole("button", { name: "Approve" })
+            ).not.toBeInTheDocument();
+            await user.click(restart);
+            expect(navigate).toHaveBeenCalledWith("/account");
+            expect(request).toHaveBeenCalledTimes(2);
+        } finally {
+            view.unmount();
+            request.mockRestore();
+            navigate.mockRestore();
+        }
     }
-});
+);
