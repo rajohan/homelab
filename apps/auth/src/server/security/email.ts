@@ -159,20 +159,20 @@ export class AccountEmail {
     }
 
     async requestReset(username: string, remote: string): Promise<void> {
-        // Four reset jobs/minute leaves capacity for verified-user mail in the
-        // shared five-jobs-per-cycle worker, even with distributed unknown names.
-        await rateLimit(this.accounts.database, "reset-global", 4, 60_000);
-        await rateLimit(this.accounts.database, `reset-ip:${remote}`, 10, 3_600_000);
-        await rateLimit(
-            this.accounts.database,
-            `reset-user:${username.toLowerCase()}`,
-            3,
-            3_600_000
-        );
-        // The public response never looks up an account. Identical encrypted queue
-        // work is performed for known, unknown and unverified usernames.
-        await this.enqueue(this.accounts.database, {
-            resetUsername: username.toLowerCase(),
+        // Commit admission and queued work together. Rejected local attempts must
+        // not consume the shared recovery capacity or leave unused rate buckets.
+        await this.accounts.database.transaction(async (transaction) => {
+            await rateLimit(transaction, `reset-ip:${remote}`, 10, 3_600_000);
+            await rateLimit(
+                transaction,
+                `reset-user:${username.toLowerCase()}`,
+                3,
+                3_600_000
+            );
+            // Four jobs/minute leaves room for verification and notification mail.
+            await rateLimit(transaction, "reset-global", 4, 60_000);
+            // No account lookup occurs on the public request path.
+            await this.enqueue(transaction, { resetUsername: username.toLowerCase() });
         });
     }
 

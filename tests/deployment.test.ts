@@ -15,7 +15,7 @@ const authSchema = v.object({
 });
 const composeSchema = v.object({ services: v.object({ auth: authSchema }) });
 
-test("Compose mounts an explicit read-only auth policy without the rejected JSON variable", async () => {
+test("Compose mounts an read-only auth policy without requiring it for dashboard operations without the rejected JSON variable", async () => {
     const config = v.parse(
         composeSchema,
         Bun.YAML.parse(await Bun.file("deploy/compose.yaml").text())
@@ -28,7 +28,7 @@ test("Compose mounts an explicit read-only auth policy without the rejected JSON
     expect(auth.volumes).toEqual([
         {
             type: "bind",
-            source: "${HOMELAB_AUTH_POLICY_FILE:?Set the host path to the reviewed access policy YAML}",
+            source: "${HOMELAB_AUTH_POLICY_FILE:-/etc/homelab-auth/access-policy.yml}",
             target: "/etc/homelab-auth/access-policy.yml",
             read_only: true,
             bind: { create_host_path: false },

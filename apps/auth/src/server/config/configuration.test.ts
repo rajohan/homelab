@@ -195,3 +195,30 @@ test("allows registrable RP IDs, subdomains and the explicit localhost developme
         expect(parseAuthConfiguration(input)?.rpId).toBe(rpId);
     }
 });
+
+test("accepts one mailbox or a simple display name and rejects malformed senders", () => {
+    for (const from of [
+        "noreply@example.test",
+        "Homelab Notifications <noreply@example.test>",
+        "Équipe <notify+auth@example.test>",
+    ]) {
+        expect(
+            parseAuthConfiguration({ ...environment(), HOMELAB_AUTH_EMAIL_FROM: from })
+                ?.emailFrom
+        ).toBe(from);
+    }
+    for (const from of [
+        "not-an-address",
+        "Name <not-an-address>",
+        "Name <>",
+        " <sender@example.test>",
+        "Name <sender@example.test> trailing",
+        "a@example.test,b@example.test",
+        "Name\r\nBcc: other@example.test <sender@example.test>",
+        "Name <a@example.test> <b@example.test>",
+    ]) {
+        expect(() =>
+            parseAuthConfiguration({ ...environment(), HOMELAB_AUTH_EMAIL_FROM: from })
+        ).toThrow("Invalid sender address");
+    }
+});

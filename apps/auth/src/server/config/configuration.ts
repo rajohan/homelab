@@ -175,7 +175,15 @@ export function parseAuthConfiguration(
     if (!development && !resendKey)
         throw new Error("Resend delivery must be configured for production");
     const emailFrom = required("HOMELAB_AUTH_EMAIL_FROM");
-    if (/[\r\n]/.test(emailFrom)) throw new Error("Invalid sender address");
+    const sender = /^([\p{L}\p{N} ._'’-]+) <([^<>\s]+)>$/u.exec(emailFrom);
+    const mailbox = sender?.[2] ?? emailFrom;
+    if (
+        emailFrom.length > 320 ||
+        /[\r\n]/.test(emailFrom) ||
+        (sender !== null && !sender[1]?.trim()) ||
+        !v.is(v.pipe(v.string(), v.email(), v.maxLength(254)), mailbox)
+    )
+        throw new Error("Invalid sender address");
     return {
         issuer,
         dashboardOrigin,

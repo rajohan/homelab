@@ -8,6 +8,12 @@ docker compose -f deploy/compose.yaml build auth
 docker compose -f deploy/compose.yaml build dashboard
 ```
 
+Set `HOMELAB_AUTH_EMAIL_FROM` to a single mailbox such as `noreply@example.test` or
+an unquoted simple display name such as `Homelab Notifications <noreply@example.test>`.
+Display names support letters, numbers, spaces, periods, underscores, apostrophes and hyphens;
+address lists, comments and folded headers are not supported. Startup validates the syntax,
+but the sender domain must also be verified in Resend before production mail is enabled.
+
 Supply only the selected app's scoped environment and use
 `docker compose -f deploy/compose.yaml up -d --no-deps auth` (or `dashboard`).
 Unprovided variables remain absent; runtime validation fails closed. Do not print
@@ -15,7 +21,11 @@ Unprovided variables remain absent; runtime validation fails closed. Do not prin
 
 This Compose file is a single-host verification definition, not a multi-host orchestrator.
 Dashboard maps to loopback 3110 and auth to loopback 3111. Both run as Bun's unprivileged user,
-with read-only root filesystems, dropped capabilities, bounded logs and no source/host mounts.
+with read-only root filesystems, dropped capabilities, bounded logs and no source mounts.
+Auth mounts only the reviewed policy file read-only at `/etc/homelab-auth/access-policy.yml`.
+That is also the default host path; `HOMELAB_AUTH_POLICY_FILE` may override the host path.
+The file must exist and be readable by the container user before starting auth. Compose never
+creates it automatically. Dashboard-only builds and starts do not require that file or variable.
 Deploy them separately on Main and Edge using the existing approved private network pattern.
 No Docker daemon, development package installation or source tree is needed inside either app.
 

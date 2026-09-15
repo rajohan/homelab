@@ -506,6 +506,46 @@ describe("security invariants against the isolated database", () => {
         expect(delivered.at(-1)?.subject).toBe("Verify your Homelab email");
     });
 
+    test.each(["ip", "user"])(
+        "rejected reset %s limits cannot consume global admission",
+        async (kind) => {
+            const database = application.connection.database;
+            await database.delete(mailOutbox);
+            await database.insert(rateBuckets).values({
+                digest: tokenDigest(
+                    kind === "ip" ? "reset-ip:blocked" : "reset-user:blocked"
+                ),
+                attempts: kind === "ip" ? 10 : 3,
+                expiresAt: new Date(Date.now() + 3_600_000),
+            });
+            for (let index = 0; index < 4; index += 1) {
+                const result = await application.services.email
+                    .requestReset(
+                        kind === "user" ? "blocked" : "rejected-" + index,
+                        kind === "ip" ? "blocked" : "rejected-" + index
+                    )
+                    .then(
+                        () => null,
+                        (error: unknown) => error
+                    );
+                expect(result).toMatchObject({ status: 429 });
+            }
+            expect(await database.select().from(mailOutbox)).toHaveLength(0);
+            expect(
+                await database
+                    .select()
+                    .from(rateBuckets)
+                    .where(eq(rateBuckets.digest, tokenDigest("reset-global")))
+            ).toHaveLength(0);
+            for (let index = 0; index < 4; index += 1)
+                await application.services.email.requestReset(
+                    "allowed-" + index,
+                    "allowed-" + index
+                );
+            expect(await database.select().from(mailOutbox)).toHaveLength(4);
+        }
+    );
+
     test("session advertises recovery only while unused codes remain", async () => {
         const enrollment = await enrollTotp();
         expect(

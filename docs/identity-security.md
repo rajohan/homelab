@@ -97,7 +97,9 @@ CometNet, Hydra, authenticated NZB endpoints, short links and Nextcloud WebDAV/m
 Resend receives email only through its fixed HTTPS API with a timeout and idempotency key.
 A transactional outbox encrypts messages at rest, bounds retries and expires undelivered
 proofs. Public reset admission is limited atomically to four jobs per minute across all
-requesters, before per-IP/per-name limits, without checking whether an account exists. This
+requesters, alongside per-IP/per-name limits, without checking whether an account exists.
+All three limits and enqueueing commit in one admission transaction, so a rejected local
+attempt cannot consume global capacity. This
 keeps anonymous reset work below the maintenance worker's capacity and reserves throughput
 for authenticated verification mail. Over-capacity requests receive the same rate-limit
 response for known and unknown accounts. Verification/reset tokens expire after 30 minutes and are consumed once. Link tokens
