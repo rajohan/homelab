@@ -1,6 +1,6 @@
 import { expect, spyOn, test } from "bun:test";
 
-import { IdentityClient } from "@homelab/ui/identity/client";
+import { IdentityClient, IdentityError } from "@homelab/ui/identity/client";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
@@ -126,6 +126,39 @@ test("an account that cannot complete a handoff can switch accounts", async () =
         await waitFor(() => expect(signedOut).toBe(true));
         expect(request).toHaveBeenCalledWith("/api/logout", {});
         expect(navigate).not.toHaveBeenCalled();
+    } finally {
+        view.unmount();
+        request.mockRestore();
+        navigate.mockRestore();
+    }
+});
+
+test("an expired interaction offers a new dashboard sign-in instead of repeating a dead request", async () => {
+    const client = new IdentityClient();
+    const request = spyOn(client, "request").mockRejectedValue(
+        new IdentityError(
+            "INTERACTION_EXPIRED",
+            410,
+            "This sign-in request has expired. Start a new sign-in to continue."
+        )
+    );
+    const navigate = spyOn(globalThis.location, "replace").mockImplementation(() => {});
+    const view = render(
+        <SignInRedirect
+            client={client}
+            address={new URL("https://auth.example.test/sign-in?interaction=expired")}
+            onSignedOut={() => Promise.resolve()}
+        />
+    );
+    try {
+        await userEvent
+            .setup()
+            .click(await screen.findByRole("button", { name: "Start a new sign-in" }));
+        expect(
+            screen.queryByRole("button", { name: "Try again" })
+        ).not.toBeInTheDocument();
+        expect(navigate).toHaveBeenCalledWith("/account");
+        expect(request).toHaveBeenCalledTimes(1);
     } finally {
         view.unmount();
         request.mockRestore();

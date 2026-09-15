@@ -13,7 +13,7 @@ export function SessionsPanel({ data, onAction, notice }: AccountPanelProps) {
         <SettingsSection
             id="account-sessions"
             title="Active sessions"
-            description="Manage the browsers signed in to your account."
+            description="Sessions expire after inactivity and can be revoked independently."
             icon={Monitor}
             actions={
                 <div className="flex flex-wrap gap-2">
@@ -31,10 +31,6 @@ export function SessionsPanel({ data, onAction, notice }: AccountPanelProps) {
                 </div>
             }
         >
-            <p className="text-xs leading-5 text-primary-400">
-                Revoking a session stops its Homelab access. Applications may retain their
-                own local sessions until their next authentication check.
-            </p>
             <ul className="space-y-2">
                 {data.sessions.map((session) => (
                     <li

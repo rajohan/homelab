@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, isNull, isNotNull, ne } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, isNotNull, lte, ne, or } from "drizzle-orm";
 
 import type { AuthConfiguration } from "../config/configuration";
 import type { AuthDatabase, AuthStore, AuthTransaction } from "../database/connection";
@@ -278,6 +278,46 @@ export class Accounts {
                 .set({ lastSeenAt: new Date() })
                 .where(eq(sessions.id, principal.session.id));
         }
+    }
+
+    /**
+     * Recheck an expiry candidate under the same account lock used by protected mutations.
+     * @param sessionId - A session selected by the maintenance batch; it may have become active.
+     * @param now - The maintenance batch's expiry cutoff.
+     * @returns Completion after revoking a still-expired session, or retaining a refreshed one.
+     */
+    async revokeExpired(sessionId: string, now: Date): Promise<void> {
+        await this.database.transaction(async (transaction) => {
+            const [candidate] = await transaction
+                .select({ userId: sessions.userId })
+                .from(sessions)
+                .where(eq(sessions.id, sessionId));
+            if (!candidate) return;
+            // Match protectedAction's account-first lock order before inspecting the session.
+            await transaction
+                .select({ id: users.id })
+                .from(users)
+                .where(eq(users.id, candidate.userId))
+                .for("update");
+            const [expired] = await transaction
+                .select({ id: sessions.id })
+                .from(sessions)
+                .where(
+                    and(
+                        eq(sessions.id, sessionId),
+                        or(
+                            lte(sessions.expiresAt, now),
+                            lte(
+                                sessions.lastSeenAt,
+                                new Date(now.getTime() - idleLifetime)
+                            )
+                        )
+                    )
+                )
+                .for("update");
+            // The session lock also serializes touch() and rechecks a concurrent timestamp update.
+            if (expired) await this.revoke(transaction, expired.id);
+        });
     }
 
     /**

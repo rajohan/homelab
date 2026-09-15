@@ -1,4 +1,4 @@
-import { lt, or } from "drizzle-orm";
+import { lt, lte, or } from "drizzle-orm";
 import { Effect } from "effect";
 import * as v from "valibot";
 
@@ -149,15 +149,13 @@ export async function createAuthApplication(
             .from(sessions)
             .where(
                 or(
-                    lt(sessions.expiresAt, now),
-                    lt(sessions.lastSeenAt, new Date(now.getTime() - 3_600_000))
+                    lte(sessions.expiresAt, now),
+                    lte(sessions.lastSeenAt, new Date(now.getTime() - 3_600_000))
                 )
             )
             .limit(100);
         for (const session of expiredSessions)
-            await connection.database.transaction((transaction) =>
-                accounts.revoke(transaction, session.id)
-            );
+            await accounts.revokeExpired(session.id, now);
         await deliverLogouts(connection.database, configuration, listener.provider);
         await connection.database
             .delete(auditEvents)

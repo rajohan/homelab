@@ -12,7 +12,7 @@ export function SettingsSection({
     ...heading
 }: ComponentProps<typeof SectionHeader> & {
     readonly id: string;
-    readonly children: ReactNode;
+    readonly children?: ReactNode;
 }) {
     return (
         <Card

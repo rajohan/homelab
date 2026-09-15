@@ -1,4 +1,6 @@
-import { Button } from "../../../../index";
+import { Trash2 } from "lucide-react";
+
+import { IconButton } from "../../../../index";
 import { formatDateTime } from "../../../../lib/formatDateTime";
 import type { AccountPanelProps } from "../../types";
 
@@ -34,20 +36,20 @@ export function FactorList({
                                 : "Not used yet"}
                         </p>
                     </div>
-                    <Button
+                    <IconButton
                         size="sm"
-                        variant="secondary"
-                        aria-label={`Remove ${factor.label}`}
+                        variant="danger"
+                        icon={Trash2}
+                        label={`Remove ${factor.label}`}
                         onClick={() =>
                             onAction({
                                 kind: "remove",
+                                factorKind: kind,
                                 id: factor.id,
                                 label: factor.label,
                             })
                         }
-                    >
-                        Remove
-                    </Button>
+                    />
                 </li>
             ))}
         </ul>

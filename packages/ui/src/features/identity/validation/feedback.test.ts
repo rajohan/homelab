@@ -12,7 +12,12 @@ test("account feedback stays with the action's owning section", () => {
         ["totp", "authenticators"],
         ["webauthn", "keys"],
         ["recovery", "recovery"],
-        [{ kind: "remove", id: "factor", label: "Phone" }, "security"],
+        [
+            { kind: "remove", factorKind: "totp", id: "factor", label: "Phone" },
+            "authenticators",
+        ],
+        [{ kind: "remove", factorKind: "webauthn", id: "key", label: "Key" }, "keys"],
+        ["disable-mfa", "disable-mfa"],
         ["all", "sessions"],
         ["others", "sessions"],
         [{ kind: "session", id: "session", label: "Browser" }, "sessions"],
@@ -26,7 +31,7 @@ test("confirmation feedback names the completed operation", () => {
         ["all", "All sessions were revoked."],
         ["others", "Other sessions were revoked."],
         [
-            { kind: "remove", id: "factor", label: "Phone" },
+            { kind: "remove", factorKind: "totp", id: "factor", label: "Phone" },
             "The security method was removed.",
         ],
         [
@@ -64,6 +69,11 @@ test("confirmations explain exactly which security access will change", () => {
         "existing recovery codes will stop working"
     );
     expect(
-        confirmationCopy({ kind: "remove", id: "factor", label: "My key" }).description
+        confirmationCopy({
+            kind: "remove",
+            factorKind: "webauthn",
+            id: "factor",
+            label: "My key",
+        }).description
     ).toContain('"My key"');
 });

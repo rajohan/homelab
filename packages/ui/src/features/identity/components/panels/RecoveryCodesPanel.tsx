@@ -15,6 +15,11 @@ export function RecoveryCodesPanel({ data, onAction, notice }: AccountPanelProps
             title="Recovery codes"
             description="Store these one-time codes offline. Full codes are shown only when generated."
             icon={ShieldCheck}
+            badge={
+                <Badge tone={data.recoveryCodesRemaining > 0 ? "positive" : "warning"}>
+                    {data.recoveryCodesRemaining} unused
+                </Badge>
+            }
             actions={
                 <Button
                     size="sm"
@@ -27,9 +32,6 @@ export function RecoveryCodesPanel({ data, onAction, notice }: AccountPanelProps
                 </Button>
             }
         >
-            <Badge tone={data.recoveryCodesRemaining > 0 ? "neutral" : "warning"}>
-                {data.recoveryCodesRemaining} unused
-            </Badge>
             {notice && <SuccessNotice>{notice}</SuccessNotice>}
         </SettingsSection>
     );

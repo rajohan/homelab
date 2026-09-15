@@ -93,7 +93,12 @@ describe("account security modal", () => {
         );
         expect(notice).toBeVisible();
         expect(notice.closest("#account-profile")).not.toBeNull();
-        expect(notice.closest("#account-security")).toBeNull();
+        expect(
+            screen.queryByRole("heading", { name: "Two-step login" })
+        ).not.toBeInTheDocument();
+        expect(screen.getByText("Signed in as", { exact: false })).toHaveTextContent(
+            "Signed in as operator."
+        );
         const mutations = request.mock.calls.filter(
             ([path]) => path === "/api/account/email"
         );

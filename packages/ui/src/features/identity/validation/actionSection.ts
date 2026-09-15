@@ -3,7 +3,7 @@ import type { AccountAction, AccountSection } from "../types";
 /**
  * Place action feedback beside the account section that initiated it.
  * @param action - The pending account action.
- * @returns The owning profile, sessions or security section.
+ * @returns The settings section that owns the requested action.
  */
 export function actionSection(action: AccountAction): AccountSection {
     if (action === "email") return "profile";
@@ -16,5 +16,7 @@ export function actionSection(action: AccountAction): AccountSection {
         (typeof action === "object" && action.kind === "session")
     )
         return "sessions";
-    return "security";
+    if (typeof action === "object" && action.kind === "remove")
+        return action.factorKind === "webauthn" ? "keys" : "authenticators";
+    return "disable-mfa";
 }

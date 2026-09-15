@@ -1,5 +1,5 @@
 import { Button, ErrorNotice, LoadingState, Redirect } from "@homelab/ui";
-import type { IdentityClient } from "@homelab/ui/identity/client";
+import { IdentityError, type IdentityClient } from "@homelab/ui/identity/client";
 import { useEffect, useRef, useState } from "react";
 
 import { signInDestination } from "../navigation/signInDestination";
@@ -45,16 +45,26 @@ export function SignInRedirect({
         return (
             <div className="space-y-4">
                 <ErrorNotice error={failure} />
-                <Button
-                    fullWidth
-                    onClick={() => {
-                        pending.current = undefined;
-                        setFailure(undefined);
-                        setAttempt(attempt + 1);
-                    }}
-                >
-                    Try again
-                </Button>
+                {failure instanceof IdentityError &&
+                failure.code === "INTERACTION_EXPIRED" ? (
+                    <Button
+                        fullWidth
+                        onClick={() => globalThis.location.replace("/account")}
+                    >
+                        Start a new sign-in
+                    </Button>
+                ) : (
+                    <Button
+                        fullWidth
+                        onClick={() => {
+                            pending.current = undefined;
+                            setFailure(undefined);
+                            setAttempt(attempt + 1);
+                        }}
+                    >
+                        Try again
+                    </Button>
+                )}
                 <AccountActions client={client} onSignedOut={onSignedOut} />
             </div>
         );

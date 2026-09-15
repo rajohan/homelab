@@ -4,6 +4,7 @@ import { IdentityError } from "../api/IdentityError";
 import { useAccountSettings } from "../hooks/useAccountSettings";
 import { AccountActionDialog } from "./dialogs/AccountActionDialog";
 import { RecoveryCodesDialog } from "./dialogs/RecoveryCodesDialog";
+import { AccountIdentityPanel } from "./panels/AccountIdentityPanel";
 import { ActivityPanel } from "./panels/ActivityPanel";
 import { AuthenticatorAppsPanel } from "./panels/AuthenticatorAppsPanel";
 import { DisableMfaPanel } from "./panels/DisableMfaPanel";
@@ -11,7 +12,6 @@ import { PasswordPanel } from "./panels/PasswordPanel";
 import { ProfilePanel } from "./panels/ProfilePanel";
 import { RecoveryCodesPanel } from "./panels/RecoveryCodesPanel";
 import { SecurityKeysPanel } from "./panels/SecurityKeysPanel";
-import { SecurityPanel } from "./panels/SecurityPanel";
 import { SessionsPanel } from "./panels/SessionsPanel";
 import { SecurityPrompt } from "./verification/SecurityPrompt";
 /**
@@ -49,15 +49,7 @@ export function AccountSettings({
                 title="Account settings"
                 description="Manage your sign-in details, two-factor authentication and active sessions."
             />
-            <SecurityPanel
-                data={account.data}
-                onAction={state.setAction}
-                notice={
-                    state.notice?.section === "security"
-                        ? state.notice.message
-                        : undefined
-                }
-            />
+            <AccountIdentityPanel username={account.data.user.username} />
             <div className="grid items-start gap-4 xl:grid-cols-2">
                 <SecurityKeysPanel
                     data={account.data}

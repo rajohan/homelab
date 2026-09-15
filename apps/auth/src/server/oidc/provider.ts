@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 
 import { and, eq } from "drizzle-orm";
-import { Provider, interactionPolicy } from "oidc-provider";
+import { Provider, errors, interactionPolicy } from "oidc-provider";
 
 import { grantSessions, users } from "../database/schema";
 import { cookieName, readAuthCookie } from "../http/httpSecurity";
@@ -233,16 +233,25 @@ export async function startProviderListener(accounts: Accounts) {
     const server = createServer((request, response) => {
         const url = new URL(request.url ?? "/", accounts.configuration.issuer);
         if (url.pathname === "/sign-in/complete" && request.method === "POST") {
-            void completeInteraction(accounts, provider, request, response).catch(() => {
-                if (!response.headersSent) {
-                    response.writeHead(403, { "Content-Type": "application/json" });
-                    response.end(
-                        JSON.stringify({
-                            error: "The sign-in request expired or could not be completed.",
-                        })
-                    );
+            void completeInteraction(accounts, provider, request, response).catch(
+                (error: unknown) => {
+                    if (!response.headersSent) {
+                        const expired = error instanceof errors.SessionNotFound;
+                        response.writeHead(expired ? 410 : 403, {
+                            "Content-Type": "application/json",
+                            "Cache-Control": "no-store",
+                        });
+                        response.end(
+                            JSON.stringify({
+                                code: expired ? "INTERACTION_EXPIRED" : "SIGN_IN_FAILED",
+                                message: expired
+                                    ? "This sign-in request has expired. Start a new sign-in to continue."
+                                    : "Sign-in could not be completed. Try again or use another account.",
+                            })
+                        );
+                    }
                 }
-            });
+            );
         } else void callback(request, response);
     });
     await new Promise<void>((resolve, reject) => {

@@ -1619,6 +1619,102 @@ describe("security invariants against the isolated database", () => {
         );
     });
 
+    test("a signed-in browser with an expired interaction gets a structured restart response", async () => {
+        const response = await post("/sign-in/complete", {});
+        expect(response.status).toBe(410);
+        expect(await response.json()).toEqual({
+            code: "INTERACTION_EXPIRED",
+            message: "This sign-in request has expired. Start a new sign-in to continue.",
+        });
+        expect(response.headers.get("cache-control")).toBe("no-store");
+    });
+
+    test("maintenance retains a candidate refreshed after the expiry batch was selected", async () => {
+        const accounts = application.services.accounts;
+        const principal = await accounts.principalByToken(
+            cookieJar.get("homelab_auth")?.value ?? ""
+        );
+        const cutoff = new Date();
+        const old = new Date(cutoff.getTime() - 3_700_000);
+        await accounts.database
+            .update(sessions)
+            .set({ lastSeenAt: old })
+            .where(eq(sessions.id, principal.session.id));
+        await accounts.touch({
+            ...principal,
+            session: { ...principal.session, lastSeenAt: old },
+        });
+        await accounts.revokeExpired(principal.session.id, cutoff);
+        expect(await status(browser("/api/account"))).toBe(200);
+    });
+
+    test("expiry cleanup cannot revoke a protected mutation that renews its session", async () => {
+        const accounts = application.services.accounts;
+        const principal = await accounts.principalByToken(
+            cookieJar.get("homelab_auth")?.value ?? ""
+        );
+        const entered = Promise.withResolvers<void>();
+        const finish = Promise.withResolvers<void>();
+        const action = accounts.protectedAction(
+            principal,
+            async (transaction, current) => {
+                entered.resolve();
+                await finish.promise;
+                await transaction.insert(auditEvents).values({
+                    id: crypto.randomUUID(),
+                    userId: current.user.id,
+                    event: "test_protected_activity",
+                    createdAt: new Date(),
+                });
+            }
+        );
+        await entered.promise;
+        let cleanup: Promise<void> | undefined;
+        try {
+            await accounts.database
+                .update(sessions)
+                .set({ lastSeenAt: new Date(Date.now() - 3_700_000) })
+                .where(eq(sessions.id, principal.session.id));
+            cleanup = accounts.revokeExpired(principal.session.id, new Date());
+        } finally {
+            finish.resolve();
+            await action;
+            await cleanup;
+        }
+        expect(await status(browser("/api/account"))).toBe(200);
+        expect(
+            await accounts.database
+                .select()
+                .from(auditEvents)
+                .where(eq(auditEvents.event, "test_protected_activity"))
+        ).toHaveLength(1);
+    });
+
+    test("maintenance revokes still-expired sessions before stale protected actions can run", async () => {
+        const accounts = application.services.accounts;
+        const principal = await accounts.principalByToken(
+            cookieJar.get("homelab_auth")?.value ?? ""
+        );
+        await accounts.database
+            .update(sessions)
+            .set({ expiresAt: new Date(Date.now() - 1) })
+            .where(eq(sessions.id, principal.session.id));
+        await application.maintain();
+        let ran = false;
+        function markAttempt(): Promise<void> {
+            ran = true;
+            return Promise.resolve();
+        }
+        const failure = await accounts.protectedAction(principal, markAttempt).then(
+            () => null,
+            (error: unknown) => error
+        );
+        expect(failure).toMatchObject({ status: 401 });
+        expect(ran).toBe(false);
+        expect(await status(browser("/api/account"))).toBe(401);
+        await accounts.revokeExpired(principal.session.id, new Date());
+    });
+
     test("idle expiration is enforced server-side even while a cookie remains", async () => {
         const token = cookieJar.get("homelab_auth")?.value ?? "";
         await application.connection.database

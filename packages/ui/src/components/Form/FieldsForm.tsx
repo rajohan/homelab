@@ -19,12 +19,14 @@ export function FieldsForm({
     submitVariant = "primary",
     onSubmit,
     validate,
+    onCancel,
 }: {
     fields: readonly FieldDefinition[];
     submitLabel: string;
     submitVariant?: "primary" | "danger";
     onSubmit: (values: FormValues) => Promise<void>;
     validate?: (values: FormValues) => FormErrors;
+    onCancel?: () => void;
 }) {
     const [error, setError] = useState<unknown>();
     const validateValues = ({ value }: { value: FormValues }) =>
@@ -95,15 +97,32 @@ export function FieldsForm({
                         </form.Field>
                     ))}
                     {error !== undefined && <ErrorNotice error={error} />}
-                    <Button
-                        type="submit"
-                        variant={submitVariant}
-                        busy={submitting}
-                        disabled={!canSubmit}
-                        fullWidth
+                    <div
+                        className={
+                            onCancel
+                                ? "flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"
+                                : undefined
+                        }
                     >
-                        {submitLabel}
-                    </Button>
+                        {onCancel && (
+                            <Button
+                                variant="secondary"
+                                disabled={submitting}
+                                onClick={onCancel}
+                            >
+                                Cancel
+                            </Button>
+                        )}
+                        <Button
+                            type="submit"
+                            variant={submitVariant}
+                            busy={submitting}
+                            disabled={!canSubmit}
+                            fullWidth={onCancel === undefined}
+                        >
+                            {submitLabel}
+                        </Button>
+                    </div>
                 </Form>
             )}
         </form.Subscribe>

@@ -1,40 +1,42 @@
 import { expect, mock, test } from "bun:test";
 
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 
 import type { AccountSnapshot } from "../../api/schemas";
+import { AccountIdentityPanel } from "./AccountIdentityPanel";
 import { AuthenticatorAppsPanel } from "./AuthenticatorAppsPanel";
 import { DisableMfaPanel } from "./DisableMfaPanel";
+import { ProfilePanel } from "./ProfilePanel";
 import { RecoveryCodesPanel } from "./RecoveryCodesPanel";
 import { SecurityKeysPanel } from "./SecurityKeysPanel";
 
-test("keys, authenticator apps and recovery each have their own card and actions", () => {
-    const data: AccountSnapshot = {
-        user: {
-            id: "fixture",
-            username: "operator",
-            email: "operator@example.test",
-            emailVerified: true,
+const data: AccountSnapshot = {
+    user: {
+        id: "fixture",
+        username: "operator",
+        email: "operator@example.test",
+        emailVerified: true,
+    },
+    sessions: [],
+    recoveryCodesRemaining: 8,
+    factors: [
+        {
+            id: "key",
+            kind: "webauthn",
+            label: "Backup key",
+            createdAt: "2026-01-01T00:00:00Z",
+            lastUsedAt: null,
         },
-        sessions: [],
-        recoveryCodesRemaining: 8,
-        factors: [
-            {
-                id: "key",
-                kind: "webauthn",
-                label: "Backup key",
-                createdAt: "2026-01-01T00:00:00Z",
-                lastUsedAt: null,
-            },
-            {
-                id: "phone",
-                kind: "totp",
-                label: "Phone",
-                createdAt: "2026-01-01T00:00:00Z",
-                lastUsedAt: null,
-            },
-        ],
-    };
+        {
+            id: "phone",
+            kind: "totp",
+            label: "Phone",
+            createdAt: "2026-01-01T00:00:00Z",
+            lastUsedAt: null,
+        },
+    ],
+};
+test("keys, authenticator apps and recovery each have their own card and actions", () => {
     const action = mock(() => {});
     render(
         <>
@@ -46,7 +48,62 @@ test("keys, authenticator apps and recovery each have their own card and actions
     );
     expect(screen.getByText("Backup key").closest("#account-keys")).not.toBeNull();
     expect(screen.getByText("Phone").closest("#account-authenticators")).not.toBeNull();
-    expect(screen.getByText("8 unused").closest("#account-recovery")).not.toBeNull();
+    const count = screen.getByText("8 unused");
+    expect(count.closest("#account-recovery")).not.toBeNull();
+    expect(count).toHaveClass("text-emerald-300");
+    expect(
+        screen.getByRole("heading", { name: "Recovery codes" }).parentElement
+    ).toContainElement(count);
+    for (const [label, id, factorKind] of [
+        ["Backup key", "key", "webauthn"],
+        ["Phone", "phone", "totp"],
+    ] as const) {
+        const remove = screen.getByRole("button", { name: `Remove ${label}` });
+        expect(remove).toHaveClass("bg-red-700");
+        expect(remove.querySelector("svg")).not.toBeNull();
+        expect(remove).toHaveTextContent("");
+        fireEvent.click(remove);
+        expect(action).toHaveBeenCalledWith({ kind: "remove", factorKind, id, label });
+    }
     fireEvent.click(screen.getByRole("button", { name: "Disable two-step login" }));
     expect(action).toHaveBeenCalledWith("disable-mfa");
+});
+
+test("account identity stays compact and email verification is beside the heading", () => {
+    render(
+        <>
+            <AccountIdentityPanel username={data.user.username} />
+            <ProfilePanel data={data} onAction={() => {}} />
+        </>
+    );
+    const summary = screen.getByText("Signed in as", { exact: false });
+    expect(summary).toHaveTextContent("Signed in as operator.");
+    expect(within(summary).getByText("operator").tagName).toBe("STRONG");
+    expect(
+        screen.queryByRole("heading", { name: "Two-step login" })
+    ).not.toBeInTheDocument();
+    const verified = screen.getByText("Verified");
+    expect(verified).toHaveClass("text-emerald-300");
+    expect(
+        screen.getByRole("heading", { name: "Account email" }).parentElement
+    ).toContainElement(verified);
+    expect(screen.getByText(data.user.email)).not.toContainElement(verified);
+});
+
+test("unverified email and exhausted recovery codes retain warning states", () => {
+    render(
+        <>
+            <ProfilePanel
+                data={{ ...data, user: { ...data.user, emailVerified: false } }}
+                onAction={() => {}}
+            />
+            <RecoveryCodesPanel
+                data={{ ...data, recoveryCodesRemaining: 0 }}
+                onAction={() => {}}
+            />
+        </>
+    );
+    expect(screen.getByText("Unverified")).toHaveClass("text-red-300");
+    expect(screen.getByRole("button", { name: "Verify email" })).toBeEnabled();
+    expect(screen.getByText("0 unused")).toHaveClass("text-red-300");
 });

@@ -5,7 +5,13 @@ export type ConfirmationAction =
     | "others"
     | "all"
     | {
-          readonly kind: "remove" | "session";
+          readonly kind: "remove";
+          readonly factorKind: "webauthn" | "totp";
+          readonly id: string;
+          readonly label: string;
+      }
+    | {
+          readonly kind: "session";
           readonly id: string;
           readonly label: string;
           readonly current?: boolean;
@@ -23,7 +29,7 @@ export type AccountSection =
     | "keys"
     | "authenticators"
     | "recovery"
-    | "security"
+    | "disable-mfa"
     | "sessions";
 export interface AccountNotice {
     readonly section: AccountSection;

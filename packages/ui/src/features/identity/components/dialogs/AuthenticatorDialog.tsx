@@ -2,7 +2,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { useState } from "react";
 import * as v from "valibot";
 
-import { FieldsForm, Modal } from "../../../../index";
+import { CopyTextButton, FieldsForm, Modal } from "../../../../index";
 import type { AccountDialogProps } from "../../types";
 
 /**
@@ -25,32 +25,43 @@ export function AuthenticatorDialog({
     return (
         <Modal
             title="Add authenticator app"
-            description="Use an authenticator app to generate a new six-digit sign-in code every 30 seconds."
+            description={
+                enrollment
+                    ? "Scan the QR code, or enter the setup key manually, then confirm with a code from your authenticator app."
+                    : "Give this authenticator a name so you can recognize it later."
+            }
             onClose={onClose}
         >
             {enrollment ? (
                 <div className="space-y-4">
-                    <p className="text-base">
-                        Scan the QR code or enter the setup key in your app, then enter
-                        the six-digit code.
-                    </p>
-                    <QRCodeSVG
-                        value={enrollment.uri}
-                        size={192}
-                        marginSize={4}
-                        className="h-auto max-w-full"
-                        title="Scan to add your Homelab authenticator"
-                    />
-                    <code className="block rounded-lg bg-primary-900 p-3 text-base break-all">
-                        {enrollment.secret}
-                    </code>
-                    <a
-                        href={enrollment.uri}
-                        className="block text-sm text-accent-300 underline"
-                    >
-                        Open in an authenticator app
-                    </a>
+                    <div className="flex justify-center">
+                        <div className="rounded-lg bg-white p-3">
+                            <QRCodeSVG
+                                value={enrollment.uri}
+                                size={192}
+                                marginSize={4}
+                                className="h-auto max-w-full"
+                                title="Authenticator enrollment QR code"
+                            />
+                        </div>
+                    </div>
+                    <div className="min-w-0">
+                        <p className="text-sm font-medium text-primary-200">
+                            Manual setup key
+                        </p>
+                        <div className="mt-2 flex min-w-0 items-center gap-2 rounded-lg border border-primary-700 bg-primary-900 p-2">
+                            <code className="min-w-0 flex-1 p-1 font-mono text-xs break-all text-primary-100 select-all">
+                                {enrollment.secret}
+                            </code>
+                            <CopyTextButton
+                                iconOnly
+                                label="Copy setup key"
+                                text={enrollment.secret}
+                            />
+                        </div>
+                    </div>
                     <FieldsForm
+                        onCancel={onClose}
                         fields={[
                             {
                                 name: "code",
@@ -82,6 +93,7 @@ export function AuthenticatorDialog({
                 </div>
             ) : (
                 <FieldsForm
+                    onCancel={onClose}
                     fields={[
                         {
                             name: "label",

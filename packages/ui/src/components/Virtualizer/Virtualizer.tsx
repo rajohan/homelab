@@ -1,5 +1,5 @@
 import {
-    useLayoutEffect,
+    useEffect,
     useState,
     useSyncExternalStore,
     type ReactNode,
@@ -28,8 +28,9 @@ export function Virtualizer({
     readonly children: (window: VirtualWindow) => ReactNode;
 }) {
     const [store] = useState(() => new VirtualListStore(count, getKey));
-    useLayoutEffect(() => store.mount(), [store]);
-    useLayoutEffect(
+    // Parent DOM refs are committed before passive effects, not before child layout effects.
+    useEffect(() => store.mount(), [store]);
+    useEffect(
         () => store.configure(count, getKey, scrollRef.current),
         [store, count, getKey, scrollRef]
     );

@@ -25,11 +25,6 @@ export function DisableMfaPanel({ data, onAction }: AccountPanelProps) {
                     Disable two-step login
                 </Button>
             }
-        >
-            <p className="text-sm text-primary-400">
-                You will need to enroll a new second factor before using services that
-                require two-step login.
-            </p>
-        </SettingsSection>
+        />
     );
 }

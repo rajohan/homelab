@@ -10,11 +10,13 @@ export function SectionHeader({
     description,
     icon: Icon,
     actions,
+    badge,
 }: {
     readonly title: string;
     readonly description?: string;
     readonly icon: LucideIcon;
     readonly actions?: ReactNode;
+    readonly badge?: ReactNode;
 }) {
     return (
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -23,7 +25,12 @@ export function SectionHeader({
                     <Icon size={19} aria-hidden="true" />
                 </span>
                 <div className="min-w-0">
-                    <h2 className="text-base font-semibold text-primary-50">{title}</h2>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <h2 className="text-base font-semibold text-primary-50">
+                            {title}
+                        </h2>
+                        {badge}
+                    </div>
                     {description && (
                         <p className="mt-1 max-w-2xl text-sm leading-6 text-primary-400">
                             {description}

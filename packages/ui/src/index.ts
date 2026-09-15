@@ -36,3 +36,5 @@ export {
     type InfiniteScrollContinuation,
 } from "./components/InfiniteScrollTrigger/InfiniteScrollTrigger";
 export { formatDateTime, formatDateTimeParts } from "./lib/formatDateTime";
+
+export { CopyTextButton } from "./components/Button/CopyTextButton";
