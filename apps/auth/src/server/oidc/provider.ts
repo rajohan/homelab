@@ -18,6 +18,7 @@ import { clientAllowed } from "./clientAccess";
 import { readConsentDecision } from "./consent";
 import { createOidcFetch } from "./fetch";
 import { serializeInteraction } from "./interactionLock";
+import { renderLogout } from "./logoutPage";
 
 async function cookiePrincipal(
     accounts: Accounts,
@@ -82,10 +83,12 @@ export function createProvider(accounts: Accounts): Provider {
             backchannelLogout: { enabled: true },
             rpInitiatedLogout: {
                 enabled: true,
-                logoutSource: (context, form) => {
-                    context.type = "html";
-                    context.body = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Sign out of Homelab</title><main><h1>Sign out of Homelab?</h1><p>This ends this browser's identity session and its connected grants.</p>${form}<button type="submit" form="op.logoutForm" name="logout" value="yes">Sign out</button><p><a href="/account">Cancel</a></p></main></html>`;
-                },
+                logoutSource: async (context, form) =>
+                    renderLogout(
+                        context,
+                        form,
+                        await cookiePrincipal(accounts, context.req.headers.cookie)
+                    ),
                 postLogoutSuccessSource: (context) => {
                     context.type = "html";
                     context.body =

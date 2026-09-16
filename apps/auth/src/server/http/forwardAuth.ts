@@ -110,56 +110,65 @@ export async function forwardAuth(
     if (target.pathname === "/.homelab/sso/callback") {
         const ticket = target.searchParams.get("ticket");
         const nonce = readCookie(request, resourceNonce);
-        if (!ticket || !nonce) return secureJson({ error: "SSO request expired" }, 403);
-        return accounts.database.transaction(async (transaction) => {
-            const challenge = await takeChallenge(
-                transaction,
-                configuration.encryptionKey,
-                ticket,
-                "forward-auth"
-            );
-            const data = v.parse(ticketSchema, challenge.data);
-            const returnTo = safeTarget(accounts, data.target);
-            if (returnTo.origin !== target.origin || data.nonce !== nonce) denied();
-            // The ticket's session binding is resolved before its one-time deletion.
-            const principal = await accounts.principalById(
-                challenge.sessionId ?? "",
-                transaction
-            );
-            if (principal.user.id !== challenge.userId || !principal.session.mfaAt)
-                denied();
-            const value = encryptValue(
-                configuration.encryptionKey,
-                `resource:${target.origin}`,
-                {
-                    sessionId: principal.session.id,
-                    expiresAt: principal.session.expiresAt.getTime(),
-                }
-            );
-            const response = new Response(null, {
-                status: 303,
-                headers: {
-                    Location: returnTo.href,
-                    "Cache-Control": "no-store",
-                    "Referrer-Policy": "no-referrer",
-                },
-            });
-            response.headers.append(
-                "Set-Cookie",
-                cookie(
-                    resourceSession,
-                    value,
-                    Math.max(
-                        0,
-                        Math.floor(
-                            (principal.session.expiresAt.getTime() - Date.now()) / 1000
+        if (!ticket || !nonce) return restartSso(target);
+        try {
+            return await accounts.database.transaction(async (transaction) => {
+                const challenge = await takeChallenge(
+                    transaction,
+                    configuration.encryptionKey,
+                    ticket,
+                    "forward-auth"
+                );
+                const data = v.parse(ticketSchema, challenge.data);
+                const returnTo = safeTarget(accounts, data.target);
+                if (returnTo.origin !== target.origin || data.nonce !== nonce) denied();
+                // The ticket's session binding is resolved before its one-time deletion.
+                const principal = await accounts.principalById(
+                    challenge.sessionId ?? "",
+                    transaction
+                );
+                if (principal.user.id !== challenge.userId || !principal.session.mfaAt)
+                    denied();
+                const value = encryptValue(
+                    configuration.encryptionKey,
+                    `resource:${target.origin}`,
+                    {
+                        sessionId: principal.session.id,
+                        expiresAt: principal.session.expiresAt.getTime(),
+                    }
+                );
+                const response = new Response(null, {
+                    status: 303,
+                    headers: {
+                        Location: returnTo.href,
+                        "Cache-Control": "no-store",
+                        "Referrer-Policy": "no-referrer",
+                    },
+                });
+                response.headers.append(
+                    "Set-Cookie",
+                    cookie(
+                        resourceSession,
+                        value,
+                        Math.max(
+                            0,
+                            Math.floor(
+                                (principal.session.expiresAt.getTime() - Date.now()) /
+                                    1000
+                            )
                         )
                     )
-                )
-            );
-            response.headers.append("Set-Cookie", cookie(resourceNonce, "", 0));
-            return response;
-        });
+                );
+                response.headers.append("Set-Cookie", cookie(resourceNonce, "", 0));
+                return response;
+            });
+        } catch (error) {
+            // Never expose a spent handoff as a JSON page. Re-enter through the
+            // registered origin, which must still pass the ordinary access policy.
+            if (error instanceof AuthFailure && [400, 401, 403].includes(error.status))
+                return restartSso(target);
+            throw error;
+        }
     }
     const access = resourcePolicy(rule, target.pathname);
     if (access.policy === "deny") return secureJson({ error: "Access denied" }, 403);
@@ -225,6 +234,18 @@ export async function forwardAuth(
             "Set-Cookie": cookie(resourceNonce, nonce, 600),
             "Cache-Control": "no-store",
             "Referrer-Policy": "no-referrer",
+        },
+    });
+}
+
+function restartSso(target: URL): Response {
+    return new Response(null, {
+        status: 303,
+        headers: {
+            Location: target.origin + "/",
+            "Cache-Control": "no-store",
+            "Referrer-Policy": "no-referrer",
+            "Set-Cookie": cookie(resourceNonce, "", 0),
         },
     });
 }

@@ -133,6 +133,11 @@ test("approved applications expose permissions and an app-specific revocation ac
             screen.getByRole("heading", { name: "Approved applications" })
         ).toBeVisible();
         expect(screen.getByText("Read your name and username")).toBeVisible();
+        expect(screen.getByRole("list", { name: "Approved applications" })).toHaveClass(
+            "max-h-96",
+            "overflow-y-auto",
+            "overscroll-contain"
+        );
         const button = screen.getByRole("button", { name: "Revoke Fixture app" });
         expect(button.querySelector("svg")).not.toBeNull();
         fireEvent.click(button);

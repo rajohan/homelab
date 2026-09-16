@@ -11,6 +11,7 @@ import { authMigrationsFolder } from "../database/migrations";
 import { challenges, factors, recoveryCodes, sessions, users } from "../database/schema";
 import { Accounts } from "../security/accounts";
 import { hashPassword, randomToken } from "../security/crypto";
+import { AccountEmail } from "../security/email";
 import { rotateDataKey } from "../security/keyRotation";
 import { audit } from "../security/store";
 
@@ -129,14 +130,24 @@ export async function runAdmin(command: readonly string[]): Promise<void> {
             });
         } else if (action === "create-user") {
             const input = v.parse(newUserSchema, await privateInput());
-            await connection.database.insert(users).values({
-                id: input.id ?? crypto.randomUUID(),
-                username: input.username,
-                email: input.email,
-                emailVerified: false,
-                passwordHash: await hashPassword(input.password),
-                groups: input.groups,
-                createdAt: new Date(),
+            const accounts = new Accounts(connection.database, configuration);
+            const email = new AccountEmail(accounts);
+            const passwordHash = await hashPassword(input.password);
+            await connection.database.transaction(async (transaction) => {
+                const [user] = await transaction
+                    .insert(users)
+                    .values({
+                        id: input.id ?? crypto.randomUUID(),
+                        username: input.username,
+                        email: input.email,
+                        emailVerified: false,
+                        passwordHash,
+                        groups: input.groups,
+                        createdAt: new Date(),
+                    })
+                    .returning({ id: users.id, email: users.email });
+                if (!user) throw new Error("Account was not created");
+                await email.initialVerification(transaction, user);
             });
         } else {
             const input = v.parse(recoverySchema, await privateInput());

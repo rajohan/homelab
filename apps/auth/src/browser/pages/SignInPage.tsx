@@ -1,7 +1,7 @@
-import { Button, ErrorNotice, LoadingState } from "@homelab/ui";
+import { Button, ErrorNotice, LoadingState, SuccessNotice } from "@homelab/ui";
 import { VerificationMethods, useIdentitySession } from "@homelab/ui/identity";
 import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { AccountActions } from "../components/AccountActions";
 import { SignedInActions } from "../components/SignedInActions";
@@ -18,6 +18,20 @@ export function SignInPage({ client, address }: AuthPageProps) {
     const queryClient = useQueryClient();
     const session = useIdentitySession(client);
     const [completed, setCompleted] = useState(false);
+    const [emailVerified] = useState(() => {
+        try {
+            return sessionStorage.getItem("homelab.email-verified") === "true";
+        } catch {
+            return false;
+        }
+    });
+    useEffect(() => {
+        try {
+            sessionStorage.removeItem("homelab.email-verified");
+        } catch {
+            // The notice is optional when browser storage is unavailable.
+        }
+    }, []);
     const identityKey =
         session.data?.sessionId ??
         session.data?.userId ??
@@ -78,6 +92,9 @@ export function SignInPage({ client, address }: AuthPageProps) {
             authenticated={session.data?.authenticated ?? false}
             title={session.data?.authenticated ? "Your account" : "Sign in"}
         >
+            {emailVerified && (
+                <SuccessNotice>Your email has been verified.</SuccessNotice>
+            )}
             {session.isPending && (
                 <LoadingState label="Checking your session…" size="sm" />
             )}

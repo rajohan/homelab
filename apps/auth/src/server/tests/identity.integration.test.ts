@@ -489,6 +489,69 @@ describe("security invariants against the isolated database", () => {
         expect(await status(post("/api/login", { username, password }))).toBe(200);
     });
 
+    test("initial email verification needs no browser session and cannot be replayed", async () => {
+        const { accounts, email } = application.services;
+        const principal = await accounts.principalByToken(
+            cookieJar.get("homelab_auth")?.value ?? ""
+        );
+        await accounts.database.transaction(async (transaction) => {
+            await transaction
+                .update(users)
+                .set({ emailVerified: false })
+                .where(eq(users.id, principal.user.id));
+            await email.initialVerification(transaction, principal.user);
+        });
+        expect(await status(post("/api/logout", {}))).toBe(200);
+        await email.deliverPending();
+        const message = delivered.find((entry) => entry.to === principal.user.email);
+        const token = message?.text.match(/#token=([\w-]{43})/)?.[1];
+        if (!token) throw new Error("Initial verification was not delivered");
+        expect(await status(post("/api/email/verify", { token }))).toBe(200);
+        expect(await status(browser("/api/account"))).toBe(401);
+        expect(await status(post("/api/email/verify", { token }))).toBe(400);
+        const [verified] = await accounts.database
+            .select()
+            .from(users)
+            .where(eq(users.id, principal.user.id));
+        expect(verified?.email).toBe(principal.user.email);
+        expect(verified?.emailVerified).toBe(true);
+    });
+
+    test.each(["changed", "verified", "expired"] as const)(
+        "initial email proof cannot verify a %s mailbox or proof",
+        async (condition) => {
+            const { accounts, email } = application.services;
+            const principal = await accounts.principalByToken(
+                cookieJar.get("homelab_auth")?.value ?? ""
+            );
+            await accounts.database.transaction(async (transaction) => {
+                await transaction
+                    .update(users)
+                    .set({ emailVerified: false })
+                    .where(eq(users.id, principal.user.id));
+                await email.initialVerification(transaction, principal.user);
+            });
+            await email.deliverPending();
+            const message = delivered.find((entry) => entry.to === principal.user.email);
+            const token = message?.text.match(/#token=([\w-]{43})/)?.[1];
+            if (!token) throw new Error("Initial verification was not delivered");
+            await (condition === "expired"
+                ? accounts.database
+                      .update(challenges)
+                      .set({ expiresAt: new Date(0) })
+                      .where(eq(challenges.userId, principal.user.id))
+                : accounts.database
+                      .update(users)
+                      .set(
+                          condition === "verified"
+                              ? { emailVerified: true }
+                              : { email: "changed-" + principal.user.email }
+                      )
+                      .where(eq(users.id, principal.user.id)));
+            expect(await status(post("/api/email/verify", { token }))).toBe(400);
+        }
+    );
+
     test("audit pagination is stable across tied timestamps and never includes another account", async () => {
         const database = application.connection.database;
         const [user] = await database
@@ -1514,7 +1577,7 @@ describe("security invariants against the isolated database", () => {
         ).toBe(401);
     });
 
-    test("RP logout requires confirmation and revokes the central session", async () => {
+    test("matching RP logout auto-submits the CSRF form and revokes the central session", async () => {
         const tokens = await authorizationTokens("openid profile");
         const query = new URLSearchParams({
             id_token_hint: tokens.id_token,
@@ -1524,6 +1587,13 @@ describe("security invariants against the isolated database", () => {
         expect(prompt.status).toBe(200);
         const html = await prompt.text();
         const xsrf = /name="xsrf" value="([^"]+)"/.exec(html)?.[1];
+        expect(html).toContain("requestSubmit");
+        expect(prompt.headers.get("content-security-policy")).toContain(
+            "script-src 'sha256-"
+        );
+        expect(prompt.headers.get("content-security-policy")).not.toContain(
+            "unsafe-inline"
+        );
         const action = /method="post" action="([^"]+)"/.exec(html)?.[1];
         if (!xsrf || !action) throw new Error("Missing logout confirmation");
         expect(await status(browser("/api/account"))).toBe(200);
@@ -1542,6 +1612,34 @@ describe("security invariants against the isolated database", () => {
                 })
             )
         ).toBe(401);
+    });
+
+    test("unsigned or stale-session RP logout still requires explicit confirmation", async () => {
+        const old = await authorizationTokens("openid profile");
+        // A newer grant has a different sid even for the same account and client.
+        await authorizationTokens("openid profile");
+        for (const hint of [undefined, old.id_token]) {
+            const query = new URLSearchParams({
+                client_id: "dashboard",
+                post_logout_redirect_uri: issuer + "/signed-out",
+                ...(hint ? { id_token_hint: hint } : {}),
+            });
+            const prompt = await browser("/session/end?" + query.toString());
+            expect(prompt.status).toBe(200);
+            const html = await prompt.text();
+            expect(html).not.toContain("requestSubmit");
+            expect(html).toContain("Sign out of Homelab?");
+            expect(await status(browser("/api/account"))).toBe(200);
+        }
+        const malformed = await browser(
+            "/session/end?" +
+                new URLSearchParams({
+                    id_token_hint: "forged",
+                    client_id: "dashboard",
+                }).toString()
+        );
+        expect(malformed.status).toBe(400);
+        expect(await status(browser("/api/account"))).toBe(200);
     });
 
     test("rejects authorization without S256 and unregistered redirect destinations", async () => {
@@ -2567,7 +2665,10 @@ describe("security invariants against the isolated database", () => {
             callback.pathname + callback.search,
             "__Host-homelab_sso_nonce=wrong"
         );
-        expect(wrong.status).toBe(401);
+        expect(wrong.status).toBe(303);
+        expect(wrong.headers.get("location")).toBe("https://tools.example.test/");
+        expect(wrong.headers.get("set-cookie")).not.toContain("__Host-homelab_sso=");
+        expect(wrong.headers.get("referrer-policy")).toBe("no-referrer");
         const accepted = await proxyRequest(
             callback.pathname + callback.search,
             `__Host-homelab_sso_nonce=${nonce ?? ""}`
@@ -2585,7 +2686,7 @@ describe("security invariants against the isolated database", () => {
                     `__Host-homelab_sso_nonce=${nonce ?? ""}`
                 )
             )
-        ).toBe(400);
+        ).toBe(303);
         const access = await proxyRequest("/settings", cookie);
         expect(access.status).toBe(200);
         expect(access.headers.get("Remote-User")).toBe(username);
