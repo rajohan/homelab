@@ -44,6 +44,10 @@ let logoutServer: ReturnType<typeof Bun.serve>;
 const logoutTokens: string[] = [];
 let logoutStatus = 204;
 const configuredPolicy = { ...defaultSessionPolicy };
+const configuredClientGroups: Record<string, string[]> = {
+    dashboard: ["admins"],
+    "basic-client": ["admins"],
+};
 const cookieJar = new Map<string, { value: string; path: string }>();
 
 async function browser(path: string, options: RequestInit = {}): Promise<Response> {
@@ -121,6 +125,7 @@ beforeAll(async () => {
     const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
     const configuration: AuthConfiguration = {
         sessionPolicy: configuredPolicy,
+        clientGroups: configuredClientGroups,
         issuer,
         dashboardOrigin: issuer,
         databaseUrl,
@@ -1329,6 +1334,86 @@ describe("security invariants against the isolated database", () => {
         expect(JSON.stringify(jwks)).not.toContain('"p":');
     });
 
+    test.each(["client policy", "account membership"] as const)(
+        "existing OIDC tokens recheck changed %s without expiring the central session",
+        async (change) => {
+            await enrollTotp();
+            const dashboardTokens = await authorizationTokens(
+                "openid profile email groups account offline_access"
+            );
+            const external = await authorizationTokens(
+                "openid profile email groups offline_access",
+                "basic-client"
+            );
+            const account = () =>
+                browser("/api/account", {
+                    headers: { authorization: "Bearer " + dashboardTokens.access_token },
+                });
+            const userinfo = () =>
+                browser("/userinfo", {
+                    headers: { authorization: "Bearer " + external.access_token },
+                });
+            expect(await status(account())).toBe(200);
+            expect(await status(userinfo())).toBe(200);
+            try {
+                if (change === "client policy") {
+                    configuredClientGroups["basic-client"] = ["operators"];
+                    // Tightening another app must not invalidate the dashboard.
+                    expect(await status(account())).toBe(200);
+                    expect(await status(userinfo())).toBe(401);
+                    configuredClientGroups.dashboard = ["operators"];
+                } else {
+                    await application.connection.database
+                        .update(users)
+                        .set({ groups: ["members"] });
+                }
+                expect(await status(account())).toBe(401);
+                expect(await status(userinfo())).toBe(401);
+                const introspection = await json(
+                    formPost("/introspect", {
+                        token: dashboardTokens.access_token,
+                        client_id: "dashboard",
+                        client_secret: clientSecret,
+                    }),
+                    v.object({ active: v.boolean() })
+                );
+                expect(introspection.active).toBe(false);
+                expect(
+                    await status(
+                        formPost("/token", {
+                            grant_type: "refresh_token",
+                            refresh_token: dashboardTokens.refresh_token ?? "",
+                            client_id: "dashboard",
+                            client_secret: clientSecret,
+                        })
+                    )
+                ).toBe(400);
+                expect(
+                    await status(
+                        formPost(
+                            "/token",
+                            {
+                                grant_type: "refresh_token",
+                                refresh_token: external.refresh_token ?? "",
+                            },
+                            "Basic " +
+                                Buffer.from("basic-client:" + clientSecret).toString(
+                                    "base64"
+                                )
+                        )
+                    )
+                ).toBe(400);
+                expect(await status(browser("/api/account"))).toBe(200);
+            } finally {
+                configuredClientGroups.dashboard = ["admins"];
+                configuredClientGroups["basic-client"] = ["admins"];
+                await application.connection.database
+                    .update(users)
+                    .set({ groups: ["admins"] });
+            }
+        }
+    );
+
     test("removing the last factor revokes current-session OIDC grants permanently", async () => {
         await enrollTotp();
         await enrollTotp();
@@ -1569,6 +1654,26 @@ describe("security invariants against the isolated database", () => {
                 })
             )
         ).toBe(400);
+    });
+
+    test("a remembered pending-MFA session can sign out without proving a factor", async () => {
+        await enrollTotp();
+        expect(
+            await status(post("/api/login", { username, password, remember: true }))
+        ).toBe(200);
+        const sessionState = v.object({
+            authenticated: v.boolean(),
+            mfaRequired: v.boolean(),
+        });
+        expect(await json(browser("/api/session"), sessionState)).toEqual({
+            authenticated: false,
+            mfaRequired: true,
+        });
+        expect(await status(post("/api/logout", {}))).toBe(200);
+        expect(await json(browser("/api/session"), sessionState)).toEqual({
+            authenticated: false,
+            mfaRequired: false,
+        });
     });
 
     test("pre-authenticated sessions cannot read settings until MFA is completed", async () => {

@@ -3,6 +3,7 @@ import { VerificationMethods, useIdentitySession } from "@homelab/ui/identity";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
+import { AccountActions } from "../components/AccountActions";
 import { SignedInActions } from "../components/SignedInActions";
 import { SignInForm } from "../components/SignInForm";
 import { SignInRedirect } from "../components/SignInRedirect";
@@ -42,7 +43,10 @@ export function SignInPage({ client, address }: AuthPageProps) {
                 onVerified={() => void finish()}
                 renderFrame={(content, description) => (
                     <AuthLayout title="Verify your identity" description={description}>
-                        {content}
+                        <div className="space-y-4">
+                            {content}
+                            <AccountActions client={client} onSignedOut={refresh} />
+                        </div>
                     </AuthLayout>
                 )}
             />

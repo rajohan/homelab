@@ -2,7 +2,7 @@ import { expect, spyOn, test } from "bun:test";
 
 import { IdentityClient } from "@homelab/ui/identity/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
 
@@ -260,3 +260,88 @@ test("stable pending-MFA polling preserves a security-key ceremony; signing out 
         navigate.mockRestore();
     }
 });
+
+test.each(["choices", "totp", "recovery", "webauthn"] as const)(
+    "a pending MFA account can be switched from %s without losing the caller",
+    async (method) => {
+        const client = new IdentityClient();
+        let pendingMfa = true;
+        const session = spyOn(client, "session").mockImplementation(() =>
+            Promise.resolve({
+                authenticated: false,
+                mfaRequired: pendingMfa,
+                userId: pendingMfa ? "wrong-account" : undefined,
+                sessionId: pendingMfa ? "pending-session" : undefined,
+                methods: ["totp", "webauthn"],
+                recoveryAvailable: true,
+            })
+        );
+        const request = spyOn(client, "request").mockImplementation((path) => {
+            if (path !== "/api/logout") throw new Error("Unexpected test request");
+            pendingMfa = false;
+            return Promise.resolve({});
+        });
+        const ceremony = Promise.withResolvers<void>();
+        const proof = spyOn(client, "securityKeyProof").mockImplementation(
+            () => ceremony.promise
+        );
+        const cancel = spyOn(client, "cancelActions");
+        const navigate = spyOn(globalThis.location, "replace").mockImplementation(
+            () => {}
+        );
+        const query = new QueryClient({
+            defaultOptions: { queries: { retry: false, gcTime: 0 } },
+        });
+        const address = new URL(
+            "https://auth.example.test/sign-in?interaction=original-caller"
+        );
+        const view = render(
+            <QueryClientProvider client={query}>
+                <SignInPage client={client} address={address} token={null} />
+            </QueryClientProvider>
+        );
+        try {
+            const key = await screen.findByRole("button", { name: "Use security key" });
+            if (method !== "choices") {
+                fireEvent.click(
+                    method === "webauthn"
+                        ? key
+                        : screen.getByRole("button", {
+                              name:
+                                  method === "totp"
+                                      ? "Use authenticator app"
+                                      : "Use recovery code",
+                          })
+                );
+            }
+            const switchAccount = screen.getByRole("button", {
+                name: "Use another account",
+            });
+            await act(() => {
+                fireEvent.click(switchAccount);
+                return Promise.resolve();
+            });
+            expect(await screen.findByLabelText("Username")).toBeVisible();
+            expect(request).toHaveBeenCalledWith("/api/logout", {});
+            expect(cancel).toHaveBeenCalled();
+            await act(() => {
+                ceremony.resolve();
+                return Promise.resolve();
+            });
+            expect(navigate).not.toHaveBeenCalled();
+            expect(address.searchParams.get("interaction")).toBe("original-caller");
+            expect(
+                screen.queryByRole("heading", { name: "Verify your identity" })
+            ).not.toBeInTheDocument();
+        } finally {
+            ceremony.resolve();
+            view.unmount();
+            query.clear();
+            session.mockRestore();
+            request.mockRestore();
+            proof.mockRestore();
+            cancel.mockRestore();
+            navigate.mockRestore();
+        }
+    }
+);

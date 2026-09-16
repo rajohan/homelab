@@ -23,6 +23,7 @@ export function AccountActions({
                 variant="secondary"
                 fullWidth
                 onClick={() => {
+                    client.cancelActions();
                     setBusy(true);
                     setFailure(undefined);
                     void client

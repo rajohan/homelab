@@ -2,25 +2,25 @@ import { and, eq, gt, isNull, isNotNull } from "drizzle-orm";
 import { errors, type Adapter, type AdapterPayload } from "oidc-provider";
 import * as v from "valibot";
 
-import type { AuthSessionPolicy } from "../config/sessionPolicy";
+import type { AuthConfiguration } from "../config/configuration";
 import type { AuthDatabase } from "../database/connection";
-import { grantSessions, oidcRecords, sessions } from "../database/schema";
+import { grantSessions, oidcRecords, sessions, users } from "../database/schema";
 import { liveSessionCondition } from "../database/sessionValidity";
 import { decryptValue, encryptValue, tokenDigest } from "../security/crypto";
+import { clientAllowed } from "./clientAccess";
 import { revokeBoundGrants } from "./logout";
 
 /**
  * Create the provider's encrypted PostgreSQL adapter with central-session grant checks.
  * @param database - The auth database.
- * @param key - The data-encryption key for OIDC payloads.
- * @param policy - The absolute and idle lifetimes enforced for every bound token.
+ * @param configuration - The data key, session lifetimes and current client access policy.
  * @returns The adapter class instantiated by oidc-provider for each model.
  */
 export function createOidcAdapter(
     database: AuthDatabase,
-    key: Uint8Array,
-    policy: AuthSessionPolicy
+    configuration: AuthConfiguration
 ) {
+    const { encryptionKey: key, sessionPolicy: policy } = configuration;
     return class PersistentAdapter implements Adapter {
         readonly model: string;
         /**
@@ -60,7 +60,7 @@ export function createOidcAdapter(
         }
 
         /**
-         * Decrypt a stored payload only while any bound central session remains live.
+         * Decrypt a stored payload only while its bound session and client eligibility remain valid.
          * @param row - The stored record, or undefined when lookup found nothing.
          * @returns The usable provider payload, or undefined for an invalid session or missing record.
          */
@@ -70,18 +70,24 @@ export function createOidcAdapter(
             if (!row) return undefined;
             if (row.grantId) {
                 const [grant] = await database
-                    .select({ id: sessions.id })
+                    .select({ clientId: grantSessions.clientId, groups: users.groups })
                     .from(grantSessions)
                     .innerJoin(sessions, eq(sessions.id, grantSessions.sessionId))
+                    .innerJoin(users, eq(users.id, sessions.userId))
                     .where(
                         and(
                             eq(grantSessions.grantId, row.grantId),
+                            eq(grantSessions.userId, sessions.userId),
                             isNotNull(grantSessions.clientId),
                             liveSessionCondition(policy)
                         )
                     )
                     .limit(1);
-                if (!grant) return undefined;
+                if (
+                    !grant?.clientId ||
+                    !clientAllowed(configuration, grant.groups, grant.clientId)
+                )
+                    return undefined;
             }
             const payload = v.parse(
                 v.record(v.string(), v.unknown()),

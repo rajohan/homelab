@@ -14,6 +14,7 @@ import { AuthFailure } from "../security/errors";
 import { audit } from "../security/store";
 import { createOidcAdapter } from "./adapter";
 import { hasClientApproval, rememberClientApproval } from "./approvals";
+import { clientAllowed } from "./clientAccess";
 import { readConsentDecision } from "./consent";
 import { createOidcFetch } from "./fetch";
 import { serializeInteraction } from "./interactionLock";
@@ -53,7 +54,10 @@ export function createProvider(accounts: Accounts): Provider {
                 );
                 if (!principal) return true;
                 const clientId = context.oidc.client?.clientId;
-                if (clientId && !clientAllowed(accounts, principal, clientId))
+                if (
+                    clientId &&
+                    !clientAllowed(configuration, principal.user.groups, clientId)
+                )
                     return true;
                 if (
                     clientId !== configuration.dashboardClientId &&
@@ -66,11 +70,7 @@ export function createProvider(accounts: Accounts): Provider {
     );
     const provider: Provider = new Provider(configuration.issuer, {
         clients: [...configuration.clients],
-        adapter: createOidcAdapter(
-            accounts.database,
-            configuration.encryptionKey,
-            configuration.sessionPolicy
-        ),
+        adapter: createOidcAdapter(accounts.database, configuration),
         jwks: configuration.jwks,
         cookies: {
             keys: [configuration.cookieKey],
@@ -344,7 +344,7 @@ async function completeInteraction(
         !accounts.configuration.clients.some((client) => client.client_id === clientId)
     )
         throw new Error("Unknown client");
-    if (!clientAllowed(accounts, principal, clientId))
+    if (!clientAllowed(accounts.configuration, principal.user.groups, clientId))
         throw new Error("Client access denied");
     if (clientId !== accounts.configuration.dashboardClientId && !principal.session.mfaAt)
         throw new Error("Two-factor authentication is required");
@@ -453,7 +453,7 @@ async function completeInteraction(
                 transaction
             );
             await accounts.requireAuthenticated(current, transaction);
-            if (!clientAllowed(accounts, current, clientId))
+            if (!clientAllowed(accounts.configuration, current.user.groups, clientId))
                 throw new Error("Client access denied");
             if (
                 clientId !== accounts.configuration.dashboardClientId &&
@@ -542,13 +542,4 @@ export async function tokenPrincipal(
 
 function configurationClient(accounts: Accounts, clientId: string) {
     return accounts.configuration.clients.find((client) => client.client_id === clientId);
-}
-
-function clientAllowed(
-    accounts: Accounts,
-    principal: Principal,
-    clientId: string
-): boolean {
-    const groups = accounts.configuration.clientGroups?.[clientId] ?? ["admins"];
-    return groups.some((group) => principal.user.groups.includes(group));
 }
