@@ -3,18 +3,23 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "dev": "bun --hot src/server.ts",
-        "start": "NODE_ENV=production bun --cwd dist --no-env-file server.js"
+        "dev": "bun --hot src/server/index.ts",
+        "start": "NODE_ENV=production bun --cwd dist --no-env-file index.js"
     },
     "dependencies": {
+        "@headlessui/react": "2.2.10",
         "@homelab/contracts": "workspace:*",
         "@homelab/ui": "workspace:*",
+        "@simplewebauthn/browser": "14.0.0",
+        "@tanstack/react-form": "1.33.5",
         "@tanstack/react-query": "5.102.8",
         "@tanstack/react-router": "1.170.36",
         "@trpc/client": "11.18.0",
         "@trpc/server": "11.18.0",
         "effect": "4.0.0-rc.115",
+        "jose": "6.2.12",
         "lucide-react": "1.46.0",
+        "openid-client": "6.8.8",
         "react": "19.3.0",
         "react-dom": "19.3.0",
         "superjson": "2.2.6",

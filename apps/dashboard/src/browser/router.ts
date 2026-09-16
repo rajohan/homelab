@@ -5,8 +5,19 @@ import {
     type RouterHistory,
 } from "@tanstack/react-router";
 
-import { Shell, Overview, Identity, Infrastructure, NotFound } from "../app";
+import { Shell } from "./layout/Shell";
+import { Identity } from "./pages/Identity";
+import { Infrastructure } from "./pages/Infrastructure";
+import { NotFound } from "./pages/NotFound";
+import { Overview } from "./pages/Overview";
+import { RouteError } from "./pages/RouteError";
+import { Settings } from "./pages/Settings";
 
+/**
+ * Build the dashboard route tree with shared layout and error handling.
+ * @param history - Optional router history, used for isolated navigation tests.
+ * @returns A configured dashboard router.
+ */
 export function createDashboardRouter(history?: RouterHistory) {
     const root = createRootRoute({
         component: Shell,
@@ -28,7 +39,17 @@ export function createDashboardRouter(history?: RouterHistory) {
         component: Infrastructure,
     });
     return createRouter({
-        routeTree: root.addChildren([overview, identity, infrastructure]),
+        defaultErrorComponent: RouteError,
+        routeTree: root.addChildren([
+            overview,
+            identity,
+            infrastructure,
+            createRoute({
+                getParentRoute: () => root,
+                path: "/settings",
+                component: Settings,
+            }),
+        ]),
         ...(history ? { history } : {}),
     });
 }

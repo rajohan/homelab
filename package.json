@@ -12,8 +12,8 @@
         "dev": "bun scripts/dev.ts",
         "dev:auth": "bun scripts/dev.ts auth",
         "dev:dashboard": "bun scripts/dev.ts dashboard",
-        "start:auth": "NODE_ENV=production bun --cwd apps/auth/dist --no-env-file server.js",
-        "start:dashboard": "NODE_ENV=production bun --cwd apps/dashboard/dist --no-env-file server.js",
+        "start:auth": "NODE_ENV=production bun --cwd apps/auth/dist --no-env-file index.js",
+        "start:dashboard": "NODE_ENV=production bun --cwd apps/dashboard/dist --no-env-file index.js",
         "format": "bun node_modules/oxfmt/bin/oxfmt --write .",
         "format:check": "bun node_modules/oxfmt/bin/oxfmt --check .",
         "lint": "bun scripts/lint.ts",
@@ -22,13 +22,19 @@
         "test": "bun scripts/test.ts",
         "test:coverage": "bun scripts/test.ts coverage",
         "test:integration": "bun scripts/test.ts integration",
-        "test:smoke": "bun scripts/smoke.ts",
+        "test:smoke": "bun scripts/smoke.ts && bun scripts/smokeIdentity.ts",
         "build": "bun scripts/build.ts",
         "build:auth": "bun scripts/build.ts auth",
         "build:dashboard": "bun scripts/build.ts dashboard",
         "test:timings": "bun scripts/test.ts timings",
         "db:generate:auth": "bun node_modules/drizzle-kit/bin.cjs generate --config apps/auth/drizzle.config.ts",
-        "db:check:auth": "bun node_modules/drizzle-kit/bin.cjs check --config apps/auth/drizzle.config.ts"
+        "db:check:auth": "bun node_modules/drizzle-kit/bin.cjs check --config apps/auth/drizzle.config.ts",
+        "auth:admin": "bun apps/auth/src/server/cli/admin.ts",
+        "dev:identity": "bun --no-env-file scripts/devIdentity.ts",
+        "test:integration:coverage": "bun scripts/test.ts integration-coverage",
+        "test:integration:timings": "bun scripts/test.ts integration-timings",
+        "test:inventory": "bun scripts/testing/inventory.ts",
+        "test:coverage:check": "bun scripts/testing/coverage.ts"
     },
     "devDependencies": {
         "@happy-dom/global-registrator": "20.14.5",
@@ -41,9 +47,12 @@
         "@types/react": "19.3.0",
         "@types/react-dom": "19.3.0",
         "bun-plugin-tailwind": "0.1.2",
-        "drizzle-kit": "1.0.0-rc.4",
+        "drizzle-kit": "1.0.0-rc.5-5935859",
+        "drizzle-orm": "1.0.0-rc.5-5935859",
+        "eslint-plugin-jsdoc": "64.5.0",
         "eslint-plugin-react-you-might-not-need-an-effect": "1.0.2",
         "happy-dom": "20.14.5",
+        "lcov-result-merger": "6.0.0",
         "lefthook": "2.1.14",
         "oxfmt": "0.68.0",
         "oxlint": "1.83.0",
@@ -51,7 +60,8 @@
         "oxlint-tailwindcss": "1.12.0",
         "oxlint-tsgolint": "7.0.2001",
         "tailwindcss": "4.3.3",
-        "typescript": "7.0.2"
+        "typescript": "7.0.2",
+        "valibot": "1.5.0"
     },
     "engines": {
         "bun": "1.4.2"

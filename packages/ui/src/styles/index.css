@@ -1,0 +1,5 @@
+@import "tailwindcss" source(none);
+@import "./base.css";
+@config "../../../../tailwind.config.ts";
+@source "../";
+@source not "../**/*.test.tsx";

@@ -1,0 +1,70 @@
+# Prepared from Edge's active Authelia configuration on 2026-09-15.
+# Not activated. First matching resource rule wins; application tokens still apply.
+# RE2 expressions match the normalized URL path, without its query string.
+routes:
+  - origin: https://aiomanager.home.rajohan.no
+    groups: [admins]
+    publicPaths: [/hydra/status, /hydra/reinstall, /hydra/register]
+  - origin: https://jackett.home.rajohan.no
+    groups: [admins]
+  - origin: https://bitmagnet.home.rajohan.no
+    groups: [admins]
+  - origin: https://pgadmin.home.rajohan.no
+    groups: [admins]
+  - origin: https://traefik.home.rajohan.no
+    groups: [admins]
+  - origin: https://crosswatch.home.rajohan.no
+    groups: [admins]
+  - origin: https://speedtest.home.rajohan.no
+    groups: [admins]
+  - origin: https://tools.home.rajohan.no
+    groups: [admins]
+  - origin: https://links.home.rajohan.no
+    groups: [admins]
+  - origin: https://openclaw.home.rajohan.no
+    groups: [admins]
+  - origin: https://aiostreams.rajohan.no
+    groups: [admins]
+    resourceRules:
+      - &admin
+        resources: ["(?i)^/(?:[^/?]+/)*(?:admin|dashboard)(?:/.*)?$"]
+        policy: two_factor
+        groups: [admins]
+      - policy: bypass
+        resources:
+          - '^/(?:[^/?]+/)*manifest\.json$'
+          - "^/(?:[^/?]+/)*(?:catalog|stream|meta|subtitle|subtitles|playback)/.+$"
+          - "^/(?:[^/?]+/)*api/v1/debrid/.+$"
+  - origin: https://aiometadata.rajohan.no
+    groups: [admins]
+    resourceRules:
+      - *admin
+      - policy: bypass
+        resources:
+          - '^/(?:[^/?]+/)*manifest\.json$'
+          - "^/(?:[^/?]+/)*(?:catalog|meta|poster)/.+$"
+  - origin: https://comet.rajohan.no
+    groups: [admins]
+    resourceRules:
+      - *admin
+      - policy: bypass
+        resources:
+          - '^/(?:[^/?]+/)*manifest\.json$'
+          - "^/(?:[^/?]+/)*(?:catalog|stream|meta|playback)/.+$"
+          - "^/cometnet/ws(?:/.*)?$"
+  - origin: https://submaker.rajohan.no
+    groups: [admins]
+    resourceRules:
+      - *admin
+      - policy: bypass
+        resources:
+          - '^/(?:[^/?]+/)*manifest\.json$'
+          - "^/(?:[^/?]+/)*(?:subtitle|subtitles|translate)/.+$"
+  - origin: https://proxy.rajohan.no
+    groups: [admins]
+    resourceRules:
+      - *admin
+      - policy: bypass
+        resources:
+          - "^/(?:proxy|extractor|playback)/.+$"
+          - "^/_token_[A-Za-z0-9_-]+/(?:proxy|extractor|playback)/.+$"

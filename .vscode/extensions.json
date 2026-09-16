@@ -1,3 +1,8 @@
 {
-    "recommendations": ["oxc.oxc-vscode", "editorconfig.editorconfig", "oven.bun-vscode"]
+    "recommendations": [
+        "oxc.oxc-vscode",
+        "editorconfig.editorconfig",
+        "oven.bun-vscode",
+        "TypeScriptTeam.native-preview"
+    ]
 }

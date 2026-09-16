@@ -12,4 +12,4 @@ WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build --chown=bun:bun /output/ ./
 USER bun
-CMD ["bun", "--no-env-file", "server.js"]
+CMD ["bun", "--no-env-file", "index.js"]

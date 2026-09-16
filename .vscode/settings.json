@@ -22,5 +22,8 @@
     "[yaml]": {
         "editor.tabSize": 2
     },
-    "oxc.useExecPath": true
+    "oxc.useExecPath": true,
+    "js/ts.experimental.useTsgo": true,
+    "js/ts.tsdk.path": "./node_modules/typescript",
+    "js/ts.trace.server": "off"
 }

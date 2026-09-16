@@ -24,14 +24,21 @@ const reactEffectStrictRules = (reactEffectPlugin as unknown as ReactEffectPlugi
     .strict.rules;
 const testFiles = ["**/*.test.{ts,tsx}", "tests/**/*.ts"];
 const browserFiles = [
-    "apps/dashboard/src/app.tsx",
-    "apps/dashboard/src/main.tsx",
-    "apps/dashboard/src/client.ts",
+    "apps/dashboard/src/browser/main.tsx",
+    "apps/dashboard/src/browser/api/client.ts",
     "apps/dashboard/src/browser/**/*.{ts,tsx}",
     "apps/auth/src/browser/**/*.{ts,tsx}",
     "packages/ui/src/**/*.{ts,tsx}",
 ];
 const serverFiles = ["apps/auth/src/**/*.{ts,tsx}", "apps/dashboard/src/**/*.{ts,tsx}"];
+const compilerManagedImports = [
+    {
+        name: "react",
+        importNames: ["memo", "useMemo", "useCallback"],
+        message:
+            "React Compiler owns memoization; do not add manual memo, useMemo or useCallback.",
+    },
+];
 const appImports = ["**/apps/**", "@homelab/auth", "@homelab/dashboard"];
 const serverImports = [
     "bun",
@@ -94,7 +101,39 @@ export default defineConfig({
         "typescript",
         "unicorn",
     ],
+    jsPlugins: [{ name: "documentation", specifier: "./scripts/lint/documentation.ts" }],
     rules: {
+        "documentation/exported": [
+            "error",
+            {
+                enableFixer: false,
+                publicOnly: { esm: true, cjs: false, window: false },
+                checkGetters: true,
+                checkSetters: true,
+                require: {
+                    FunctionDeclaration: true,
+                    ArrowFunctionExpression: true,
+                    FunctionExpression: true,
+                    MethodDefinition: false,
+                },
+            },
+        ],
+        "documentation/methods": [
+            "error",
+            {
+                enableFixer: false,
+                checkGetters: true,
+                checkSetters: true,
+                contexts: [
+                    'MethodDefinition:not([accessibility="private"]):not([accessibility="protected"]):not([key.type="PrivateIdentifier"]) > FunctionExpression',
+                    'PropertyDefinition:not([accessibility="private"]):not([accessibility="protected"]):not([key.type="PrivateIdentifier"]) > :matches(ArrowFunctionExpression, FunctionExpression)',
+                    "TSMethodSignature",
+                ],
+                require: { FunctionDeclaration: false },
+            },
+        ],
+        "documentation/description": "error",
+        "jsdoc/no-blank-blocks": "error",
         eqeqeq: "error",
         "typescript/no-explicit-any": "error",
         "typescript/consistent-type-imports": "error",
@@ -117,6 +156,7 @@ export default defineConfig({
         "jsdoc/require-throws-description": "error",
         "jsdoc/require-yields-description": "error",
         "react/unsupported-syntax": "error",
+        "react/no-multi-comp": "error",
         "require-await": "off",
         "typescript/require-await": "error",
         "unicorn/no-null": "off",
@@ -177,12 +217,14 @@ export default defineConfig({
                 "no-restricted-imports": [
                     "error",
                     {
+                        paths: compilerManagedImports,
                         patterns: [
                             {
                                 group: [
                                     ...serverImports,
                                     "**/scripts/**",
                                     "**/server/**",
+                                    "!**/server/api/router",
                                     "**/http",
                                     "**/http.ts",
                                     "**/system",
@@ -192,7 +234,7 @@ export default defineConfig({
                                     "Browser code must not import server runtime or repository scripts.",
                             },
                             {
-                                group: ["**/api", "**/api.ts"],
+                                group: ["**/api", "**/api.ts", "**/server/api/router"],
                                 allowTypeImports: true,
                                 message:
                                     "Only erased tRPC router types may cross from server API to browser code.",
@@ -209,11 +251,37 @@ export default defineConfig({
                 "no-restricted-imports": [
                     "error",
                     {
+                        paths: compilerManagedImports,
                         patterns: [
                             {
                                 group: [...appImports, ...serverImports],
                                 message:
                                     "Shared UI must remain browser-safe and independent of applications.",
+                            },
+                        ],
+                    },
+                ],
+            },
+        },
+        {
+            files: ["packages/ui/src/components/**/*.{ts,tsx}"],
+            excludeFiles: testFiles,
+            rules: {
+                "no-restricted-imports": [
+                    "error",
+                    {
+                        paths: compilerManagedImports,
+                        patterns: [
+                            {
+                                group: [
+                                    ...appImports,
+                                    ...serverImports,
+                                    "**/features/**",
+                                    "@homelab/ui/identity",
+                                    "@homelab/ui/identity/*",
+                                ],
+                                message:
+                                    "Generic UI primitives must not depend on identity features, applications or server modules.",
                             },
                         ],
                     },
@@ -242,6 +310,7 @@ export default defineConfig({
                 "no-restricted-imports": [
                     "error",
                     {
+                        paths: compilerManagedImports,
                         patterns: [
                             {
                                 group: [
@@ -266,6 +335,7 @@ export default defineConfig({
                 "no-restricted-imports": [
                     "error",
                     {
+                        paths: compilerManagedImports,
                         patterns: [
                             {
                                 group: appImports,
@@ -285,6 +355,7 @@ export default defineConfig({
                 "no-restricted-imports": [
                     "error",
                     {
+                        paths: compilerManagedImports,
                         patterns: [
                             {
                                 group: [
@@ -307,7 +378,11 @@ export default defineConfig({
         },
         {
             files: serverFiles,
-            excludeFiles: [...browserFiles, ...testFiles, "apps/*/src/environment.ts"],
+            excludeFiles: [
+                ...browserFiles,
+                ...testFiles,
+                "apps/*/src/server/config/environment.ts",
+            ],
             rules: {
                 "no-restricted-properties": [
                     "error",
@@ -338,6 +413,7 @@ export default defineConfig({
                 "no-restricted-imports": [
                     "error",
                     {
+                        paths: compilerManagedImports,
                         patterns: [
                             {
                                 group: [
@@ -362,10 +438,13 @@ export default defineConfig({
         },
         {
             files: ["scripts/**/*.ts", "*.config.ts"],
+            // The isolated development harness composes both apps with fake dependencies.
+            excludeFiles: ["scripts/devIdentity.ts"],
             rules: {
                 "no-restricted-imports": [
                     "error",
                     {
+                        paths: compilerManagedImports,
                         patterns: [
                             {
                                 group: [
@@ -381,11 +460,6 @@ export default defineConfig({
                     },
                 ],
             },
-        },
-        {
-            // Auth tables are deliberately deferred. Remove this exception with the first schema.
-            files: ["apps/auth/src/database/schema.ts"],
-            rules: { "unicorn/no-empty-file": "off" },
         },
     ],
 });
