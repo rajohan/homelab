@@ -92,6 +92,25 @@ test("account identity stays compact and email verification is beside the headin
     expect(screen.getByText(data.user.email)).not.toContainElement(verified);
 });
 
+test("empty factor lists use the same bordered surface as registered factors", () => {
+    render(
+        <>
+            <SecurityKeysPanel data={{ ...data, factors: [] }} onAction={() => {}} />
+            <AuthenticatorAppsPanel data={{ ...data, factors: [] }} onAction={() => {}} />
+        </>
+    );
+    for (const label of [
+        "No security keys registered.",
+        "No authenticator apps registered.",
+    ])
+        expect(screen.getByText(label)).toHaveClass(
+            "rounded-lg",
+            "border",
+            "border-primary-700",
+            "bg-primary-900/40"
+        );
+});
+
 test("unverified email and exhausted recovery codes retain warning states", () => {
     render(
         <>

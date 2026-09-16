@@ -13,11 +13,13 @@ import { SecurityKeyDialog } from "./SecurityKeyDialog";
 export function AccountActionDialog({
     action,
     email,
+    emailVerified,
     onRecoveryCodes,
     ...props
 }: AccountDialogProps & {
     readonly action: AccountAction;
     readonly email: string;
+    readonly emailVerified: boolean;
     readonly onRecoveryCodes: (codes: readonly string[]) => void;
 }) {
     switch (action) {
@@ -28,7 +30,7 @@ export function AccountActionDialog({
             return <PasswordDialog {...props} />;
         }
         case "email": {
-            return <EmailDialog {...props} email={email} />;
+            return <EmailDialog {...props} email={email} emailVerified={emailVerified} />;
         }
         case "webauthn": {
             return <SecurityKeyDialog {...props} onRecoveryCodes={onRecoveryCodes} />;

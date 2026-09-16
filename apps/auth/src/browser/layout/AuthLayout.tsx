@@ -9,12 +9,14 @@ export function AuthLayout({
     title,
     description,
     children,
+    footer,
     recovery = false,
     authenticated = false,
 }: {
     readonly title: string;
     readonly description?: ReactNode;
     readonly children: ReactNode;
+    readonly footer?: ReactNode;
     readonly recovery?: boolean;
     readonly authenticated?: boolean;
 }) {
@@ -41,12 +43,16 @@ export function AuthLayout({
             title={title}
             description={description ?? navigation.description}
             footer={
-                <a
-                    className="rounded text-accent-300 underline-offset-4 hover:text-accent-200 hover:underline"
-                    href={navigation.href}
-                >
-                    {navigation.label}
-                </a>
+                footer === undefined ? (
+                    <a
+                        className="rounded text-accent-300 underline-offset-4 hover:text-accent-200 hover:underline"
+                        href={navigation.href}
+                    >
+                        {navigation.label}
+                    </a>
+                ) : (
+                    footer
+                )
             }
         >
             {children}

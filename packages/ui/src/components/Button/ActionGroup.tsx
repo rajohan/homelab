@@ -20,7 +20,7 @@ export function ActionGroup({
         wide && actions.length > 1 ? [...actions.slice(1), actions[0]] : actions;
     return (
         <div className={className}>
-            <div className="flex flex-col justify-end gap-2 min-[30rem]:flex-row min-[30rem]:flex-wrap [&>button]:w-full [&>button]:max-w-full [&>button]:min-w-0 min-[30rem]:[&>button]:w-auto min-[30rem]:[&>button]:flex-auto">
+            <div className="flex flex-col justify-end gap-2 min-[30rem]:flex-row min-[30rem]:flex-wrap [&>button]:w-full [&>button]:max-w-full [&>button]:min-w-min min-[30rem]:[&>button]:w-auto min-[30rem]:[&>button]:flex-1 min-[30rem]:[&>button:last-child]:flex-2">
                 {ordered}
             </div>
         </div>

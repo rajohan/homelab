@@ -48,12 +48,23 @@ test("missing or rejected email proofs never navigate or claim success", async (
         <VerifyEmailPage client={client} token={null} address={address} />
     );
     try {
-        expect(screen.getByRole("alert")).toHaveTextContent("missing its token");
+        expect(screen.getByRole("alert")).toHaveTextContent(
+            "The verification failed or expired."
+        );
         expect(request).not.toHaveBeenCalled();
         view.rerender(
             <VerifyEmailPage client={client} token="expired-proof" address={address} />
         );
-        expect(await screen.findByText("This link has expired.")).toBeVisible();
+        expect(await screen.findByRole("alert")).toHaveTextContent(
+            "The verification failed or expired. You can request a new verification link in account settings."
+        );
+        expect(
+            screen.queryByRole("link", { name: "Return to sign in" })
+        ).not.toBeInTheDocument();
+        expect(screen.getByRole("link", { name: "Account settings" })).toHaveClass(
+            "w-full",
+            "bg-accent-700"
+        );
         expect(screen.getByRole("link", { name: "Account settings" })).toHaveAttribute(
             "href",
             "/account"

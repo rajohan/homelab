@@ -147,7 +147,10 @@ beforeAll(async () => {
                 grant_types: ["authorization_code", "refresh_token"],
                 token_endpoint_auth_method: "client_secret_post",
                 scope: "openid profile email groups account offline_access",
-                post_logout_redirect_uris: [`${issuer}/signed-out`],
+                post_logout_redirect_uris: [
+                    `${issuer}/signed-out`,
+                    `http://127.0.0.1:${logoutServer.port}/signed-out`,
+                ],
             },
             {
                 client_id: "basic-client",
@@ -930,7 +933,9 @@ describe("security invariants against the isolated database", () => {
             .where(eq(sessions.id, principal.session.id));
         expect(
             await status(
-                post("/api/account/email", { email: username + "@example.test" })
+                post("/api/account/email", {
+                    email: "updated-" + username + "@example.test",
+                })
             )
         ).toBe(200);
         const active = await accounts.principalById(principal.session.id);
@@ -1127,6 +1132,51 @@ describe("security invariants against the isolated database", () => {
                 .where(eq(challenges.digest, old.proofDigest))
         ).toHaveLength(0);
         expect(delivered.slice(before)).toHaveLength(1);
+    });
+
+    test("already verified addresses cannot queue mail or cancel a pending replacement", async () => {
+        const replacement = `new-${username}@example.test`;
+        expect(await status(post("/api/account/email", { email: replacement }))).toBe(
+            200
+        );
+        const before = await application.connection.database.select().from(challenges);
+        const queued = await application.connection.database.select().from(mailOutbox);
+        const response = await post("/api/account/email", {
+            email: `${username}@example.test`.toUpperCase(),
+        });
+        expect(response.status).toBe(409);
+        expect(await response.json()).toMatchObject({ code: "EMAIL_ALREADY_VERIFIED" });
+        expect(await application.connection.database.select().from(challenges)).toEqual(
+            before
+        );
+        expect(await application.connection.database.select().from(mailOutbox)).toEqual(
+            queued
+        );
+    });
+
+    test("unverified current addresses can be verified but a stale principal cannot resend after verification", async () => {
+        await application.connection.database
+            .update(users)
+            .set({ emailVerified: false })
+            .where(eq(users.username, username));
+        const principal = await application.services.accounts.principalByToken(
+            cookieJar.get("homelab_auth")?.value ?? ""
+        );
+        expect(
+            await status(
+                post("/api/account/email", { email: `${username}@example.test` })
+            )
+        ).toBe(200);
+        const token = await emailProof(`${username}@example.test`, "Verify");
+        expect(await status(post("/api/email/verify", { token }))).toBe(200);
+        expect(principal.user.emailVerified).toBe(false);
+        const failure = await application.services.email
+            .requestEmail(principal, `${username}@example.test`)
+            .then(
+                () => null,
+                (error: unknown) => error
+            );
+        expect(failure).toMatchObject({ code: "EMAIL_ALREADY_VERIFIED" });
     });
 
     test("revoking the initiating session invalidates its pending email replacement", async () => {
@@ -1578,18 +1628,30 @@ describe("security invariants against the isolated database", () => {
     });
 
     test("matching RP logout auto-submits the CSRF form and revokes the central session", async () => {
+        const returnUrl = `http://127.0.0.1:${logoutServer.port}/signed-out`;
         const tokens = await authorizationTokens("openid profile");
         const query = new URLSearchParams({
             id_token_hint: tokens.id_token,
-            post_logout_redirect_uri: issuer + "/signed-out",
+            post_logout_redirect_uri: returnUrl,
         });
         const prompt = await browser("/session/end?" + query.toString());
         expect(prompt.status).toBe(200);
         const html = await prompt.text();
         const xsrf = /name="xsrf" value="([^"]+)"/.exec(html)?.[1];
         expect(html).toContain("requestSubmit");
+        expect(html).not.toContain("<h1>");
+        expect(html).not.toContain("Finishing your sign-out");
+        expect(html).toContain('<button hidden id="confirm-logout"');
         expect(prompt.headers.get("content-security-policy")).toContain(
             "script-src 'sha256-"
+        );
+        expect(prompt.headers.get("content-security-policy")).toContain(
+            `form-action 'self' ${new URL(returnUrl).origin};`
+        );
+        const script = /<script>([^<]+)<\/script>/.exec(html)?.[1];
+        if (!script) throw new Error("Missing automatic submission");
+        expect(prompt.headers.get("content-security-policy")).toContain(
+            `'sha256-${new Bun.CryptoHasher("sha256").update(script).digest("base64")}'`
         );
         expect(prompt.headers.get("content-security-policy")).not.toContain(
             "unsafe-inline"
@@ -1603,7 +1665,7 @@ describe("security invariants against the isolated database", () => {
         const signedOut = await formPost(action, { xsrf, logout: "yes" });
         expect(signedOut.status).toBe(303);
         expect(logoutTokens.length).toBeGreaterThan(0);
-        expect(signedOut.headers.get("location")).toBe(issuer + "/signed-out");
+        expect(signedOut.headers.get("location")).toBe(returnUrl);
         expect(await status(browser("/api/account"))).toBe(401);
         expect(
             await status(

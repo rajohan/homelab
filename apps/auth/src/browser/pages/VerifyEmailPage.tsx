@@ -1,4 +1,4 @@
-import { ErrorNotice, LoadingState } from "@homelab/ui";
+import { buttonStyles, ErrorNotice, LoadingState } from "@homelab/ui";
 import { useEffect, useRef, useState } from "react";
 
 import { AuthLayout } from "../layout/AuthLayout";
@@ -47,24 +47,26 @@ export function VerifyEmailPage({ client, token }: AuthPageProps) {
         };
     }, [client, token]);
     return (
-        <AuthLayout title="Verify your email" recovery>
-            {Boolean(verificationError) && (
+        <AuthLayout
+            title="Verify your email"
+            description="Confirm the email address for your Homelab account."
+            footer={null}
+        >
+            {(Boolean(verificationError) || !token) && (
                 <div className="space-y-3">
-                    <ErrorNotice error={verificationError} />
-                    <p className="text-sm text-primary-300">
-                        You can request a new verification link in account settings.
-                    </p>
-                    <a href="/account" className="text-accent-300 underline">
+                    <ErrorNotice
+                        error={
+                            new Error(
+                                "The verification failed or expired. You can request a new verification link in account settings."
+                            )
+                        }
+                    />
+                    <a href="/account" className={buttonStyles({ fullWidth: true })}>
                         Account settings
                     </a>
                 </div>
             )}
             {!verificationError && token && <LoadingState label="Verifying your email" />}
-            {!verificationError && !token && (
-                <p role="alert">
-                    This verification link is missing its token. Request another email.
-                </p>
-            )}
         </AuthLayout>
     );
 }

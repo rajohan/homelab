@@ -16,7 +16,7 @@ export function FactorList({
     const factors = data.factors.filter((factor) => factor.kind === kind);
     if (factors.length === 0)
         return (
-            <p className="text-sm text-primary-400">
+            <p className="rounded-lg border border-primary-700 bg-primary-900/40 p-3 text-sm text-primary-400">
                 No {kind === "webauthn" ? "security keys" : "authenticator apps"}{" "}
                 registered.
             </p>
