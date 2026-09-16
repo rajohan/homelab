@@ -1,6 +1,6 @@
 import { expect, mock, spyOn, test } from "bun:test";
 
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 import { IdentityClient } from "../../api/IdentityClient";
 import { downloadRecoveryCodes } from "../../lib/downloadRecoveryCodes";
@@ -196,10 +196,13 @@ test.each([
         try {
             for (const [label, value] of fields)
                 fireEvent.change(screen.getByLabelText(label), { target: { value } });
-            fireEvent.click(screen.getByRole("button", { name: submitLabel }));
-            await waitFor(() =>
-                expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled()
-            );
+            const cancel = screen.getByRole("button", { name: "Cancel" });
+            const submit = screen.getByRole("button", { name: submitLabel });
+            await act(() => {
+                fireEvent.click(submit);
+                return Promise.resolve();
+            });
+            expect(cancel).toBeDisabled();
             expect(
                 screen.queryByRole("button", { name: "Close dialog" })
             ).not.toBeInTheDocument();
@@ -209,10 +212,11 @@ test.each([
             });
             expect(close).not.toHaveBeenCalled();
             expect(screen.getByRole("dialog")).toBeVisible();
-            pending.reject(new Error("Synthetic action failure"));
-            await waitFor(() =>
-                expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled()
-            );
+            await act(() => {
+                pending.reject(new Error("Synthetic action failure"));
+                return Promise.resolve();
+            });
+            expect(cancel).toBeEnabled();
             expect(screen.getByRole("button", { name: "Close dialog" })).toBeVisible();
             fireEvent.keyDown(screen.getByRole("dialog"), {
                 key: "Escape",
