@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/rajohan/homelab/compare/v0.1.1...v0.1.2) (2026-09-16)
+
+
+### Bug Fixes
+
+* **auth:** refine verification UI and seamless app logout ([#7](https://github.com/rajohan/homelab/issues/7)) ([c22b0fe](https://github.com/rajohan/homelab/commit/c22b0fe941ea0d8f39a48154b6a5c1f3e2740235))
+
 ## [0.1.1](https://github.com/rajohan/homelab/compare/v0.1.0...v0.1.1) (2026-09-16)
 
 
