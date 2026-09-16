@@ -51,7 +51,7 @@ export function AccountSettings({
                 description="Manage your sign-in details, two-factor authentication and active sessions."
             />
             <AccountIdentityPanel data={account.data} onAction={state.setAction} />
-            <div className="grid items-start gap-4 xl:grid-cols-2">
+            <div className="grid gap-4 xl:grid-cols-2">
                 <SecurityKeysPanel
                     data={account.data}
                     onAction={state.setAction}

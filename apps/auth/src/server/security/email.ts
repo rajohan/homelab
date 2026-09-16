@@ -85,6 +85,44 @@ export class AccountEmail {
     }
 
     /**
+     * Queue the first verification link atomically with operator-created account data.
+     * @param store - The transaction that inserted the unverified account.
+     * @param user - The new account's identifier and current mailbox.
+     * @returns Completion after its one-use proof and encrypted delivery work are queued.
+     */
+    async initialVerification(
+        store: AuthStore,
+        user: Pick<Principal["user"], "id" | "email">
+    ): Promise<void> {
+        const token = await createChallenge(
+            store,
+            this.accounts.configuration.encryptionKey,
+            user.id,
+            null,
+            "initial-email",
+            { email: user.email },
+            30 * 60_000
+        );
+        await this.queueVerification(store, user.email, token);
+        await audit(store, user.id, "email_verification_requested");
+    }
+
+    private async queueVerification(
+        store: AuthStore,
+        email: string,
+        token: string
+    ): Promise<void> {
+        await this.enqueue(
+            store,
+            {
+                to: email,
+                subject: "Verify your Homelab email",
+                text: `Confirm your email within 30 minutes: ${this.accounts.configuration.issuer}/verify-email#token=${token}\nIf you did not request this, ignore this message.`,
+            },
+            token
+        );
+    }
+    /**
      * Queue verification for a proposed address while retaining the active address.
      * @param principal - The freshly verified initiating session.
      * @param email - The proposed replacement address.
@@ -116,37 +154,42 @@ export class AccountEmail {
                 { email },
                 30 * 60_000
             );
-            await this.enqueue(
-                transaction,
-                {
-                    to: email,
-                    subject: "Verify your Homelab email",
-                    text: `Confirm your email within 30 minutes: ${this.accounts.configuration.issuer}/verify-email#token=${token}\nIf you did not request this change, ignore this message.`,
-                },
-                token
-            );
+            await this.queueVerification(transaction, email, token);
             await audit(transaction, principal.user.id, "email_verification_requested");
         });
     }
 
     /**
-     * Consume an email proof and replace the address only while its initiating session remains valid.
+     * Verify the initial mailbox, or replace an address while its initiating session remains valid.
      * @param token - The one-use verification token from the delivered link.
      * @returns Completion after address replacement and stale-proof invalidation commit.
      */
     async verifyEmail(token: string): Promise<void> {
         await this.accounts.database.transaction(async (transaction) => {
+            const [pending] = await transaction
+                .select({ purpose: challenges.purpose })
+                .from(challenges)
+                .where(eq(challenges.digest, tokenDigest(token)));
+            const purpose = pending?.purpose;
+            if (purpose !== "email" && purpose !== "initial-email") invalidProof();
             const { user, challenge } = await this.takeAccountProof(
                 transaction,
                 token,
-                "email"
+                purpose
             );
-            if (!challenge.sessionId) invalidProof();
-            await this.accounts.principalById(challenge.sessionId, transaction);
             const { email } = v.parse(
                 v.object({ email: v.pipe(v.string(), v.email()) }),
                 challenge.data
             );
+            if (purpose === "initial-email") {
+                // Initial proof can only confirm the operator-provisioned mailbox;
+                // it never changes an address or authenticates a browser session.
+                if (challenge.sessionId || user.emailVerified || email !== user.email)
+                    invalidProof();
+            } else {
+                if (!challenge.sessionId) invalidProof();
+                await this.accounts.principalById(challenge.sessionId, transaction);
+            }
             const [occupied] = await transaction
                 .select({ id: users.id })
                 .from(users)
@@ -288,7 +331,7 @@ export class AccountEmail {
     private async takeAccountProof(
         store: AuthStore,
         token: string,
-        purpose: "email" | "password-reset"
+        purpose: "email" | "initial-email" | "password-reset"
     ) {
         const [pending] = await store
             .select({ userId: challenges.userId })

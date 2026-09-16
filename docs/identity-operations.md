@@ -70,6 +70,11 @@ with `auth:admin create-user`, supplying private JSON on stdin:
 Replace placeholders privately. Passwords do not belong in shell arguments/history. This is
 not an example to copy into a shared terminal log. The optional `id` field is a UUID reserved
 for an approved account-linking migration. Email starts unverified.
+Account creation also queues the first verification email atomically. The running auth
+worker delivers it through Resend with normal retries. Its link expires after 30 minutes,
+only confirms that initial mailbox, and does not sign the user in. Opening the link
+submits the proof in the browser and returns to the auth entry page with a success notice;
+no additional Verify button is required.
 
 Recovery uses the same private-stdin pattern with `username` and `password`:
 `auth:admin recover-user`; add `--reset-mfa` only when approved. It revokes sessions and pending

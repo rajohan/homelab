@@ -22,7 +22,10 @@ export function ApprovedApplicationsPanel({ data, onAction, notice }: AccountPan
             {applications.length === 0 ? (
                 <p className="text-sm text-primary-400">No applications approved.</p>
             ) : (
-                <ul className="space-y-2">
+                <ul
+                    aria-label="Approved applications"
+                    className="max-h-96 space-y-2 overflow-y-auto overscroll-contain pr-2"
+                >
                     {applications.map((app) => (
                         <li
                             key={app.id}

@@ -75,7 +75,17 @@ describe("account security modal", () => {
     test("preserves the email form, verifies in a modal and replays the original action", async () => {
         const user = userEvent.setup();
         const { request } = renderSettings();
-        await user.click(await screen.findByRole("button", { name: "Change email" }));
+        const changeEmail = await screen.findByRole("button", { name: "Change email" });
+        const keys = screen
+            .getByRole("heading", { name: "Security keys" })
+            .closest("#account-keys");
+        const apps = screen
+            .getByRole("heading", { name: "Authenticator apps" })
+            .closest("#account-authenticators");
+        expect(keys?.parentElement).toBe(apps?.parentElement);
+        expect(keys?.parentElement).toHaveClass("grid", "xl:grid-cols-2");
+        expect(keys?.parentElement).not.toHaveClass("items-start");
+        await user.click(changeEmail);
         const email = screen.getByLabelText("Email address");
         await user.clear(email);
         await user.type(email, "replacement@example.test");

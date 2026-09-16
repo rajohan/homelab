@@ -106,8 +106,11 @@ consent is not remembering authentication, and never bypasses group or MFA check
 grants without a client binding are rejected and require a fresh app sign-in. No dynamic client
 registration is enabled.
 
-RP logout uses the library's CSRF-validated confirmation before ending the central session;
-a GET link alone does not revoke it. Session-bound back-channel logout uses the provider's
+RP logout always uses the library's CSRF-validated POST before ending the central session.
+A validated ID-token hint matching both the current central account and the current
+client's protocol SID automatically submits that form, avoiding a second confirmation
+after an app's Log out action. Unsigned, different-account and stale-session requests
+still require explicit confirmation. Session-bound back-channel logout uses the provider's
 native signed tokens, with an encrypted transactional retry queue for Settings revocation,
 recovery, expiry and RP logout. Each new grant receives a fresh SID; delayed delivery cannot
 target a subsequent login. Receivers must support the protocol and duplicate delivery.
