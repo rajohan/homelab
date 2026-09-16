@@ -11,6 +11,62 @@ import { PasswordDialog } from "./PasswordDialog";
 import { RecoveryCodesDialog } from "./RecoveryCodesDialog";
 import { SecurityKeyDialog } from "./SecurityKeyDialog";
 
+test.each([true, false])(
+    "email verification keeps the send button visible and guards verified addresses (%s)",
+    async (emailVerified) => {
+        const client = new IdentityClient();
+        const action = spyOn(client, "action").mockResolvedValue({});
+        const complete = mock(() => Promise.resolve());
+        const view = render(
+            <EmailDialog
+                client={client}
+                email="operator@example.test"
+                emailVerified={emailVerified}
+                onClose={() => {}}
+                onComplete={complete}
+            />
+        );
+        try {
+            expect(screen.getByRole("dialog")).toHaveAccessibleDescription(
+                "Your current address stays active until you confirm the new address using the emailed link."
+            );
+            const submit = screen.getByRole("button", {
+                name: "Send verification email",
+            });
+            expect(submit).toBeVisible();
+            if (emailVerified) {
+                expect(submit).toBeDisabled();
+                fireEvent.submit(submit.closest("form") as HTMLFormElement);
+                await act(async () => {});
+                expect(action).not.toHaveBeenCalled();
+                fireEvent.change(screen.getByLabelText("Email address"), {
+                    target: { value: "OPERATOR@example.test" },
+                });
+                expect(submit).toBeDisabled();
+                fireEvent.change(screen.getByLabelText("Email address"), {
+                    target: { value: "other@example.test" },
+                });
+                expect(submit).toBeEnabled();
+                fireEvent.change(screen.getByLabelText("Email address"), {
+                    target: { value: "invalid-address" },
+                });
+                expect(submit).toBeDisabled();
+                fireEvent.change(screen.getByLabelText("Email address"), {
+                    target: { value: "other@example.test" },
+                });
+            } else expect(submit).toBeEnabled();
+            fireEvent.click(submit);
+            await waitFor(() => expect(complete).toHaveBeenCalledTimes(1));
+            expect(action).toHaveBeenCalledWith("email", {
+                email: emailVerified ? "other@example.test" : "operator@example.test",
+            });
+        } finally {
+            view.unmount();
+            action.mockRestore();
+        }
+    }
+);
+
 test("authenticator enrollment centers its QR, offers icon copying and cancel without an app link", async () => {
     const client = new IdentityClient();
     const action = spyOn(client, "action").mockResolvedValue({
@@ -115,6 +171,7 @@ test.each([
             <Dialog
                 client={client}
                 email="operator@example.test"
+                emailVerified
                 onClose={close}
                 onComplete={() => Promise.resolve()}
                 onRecoveryCodes={() => {}}
@@ -188,6 +245,7 @@ test.each([
             <Dialog
                 client={client}
                 email="operator@example.test"
+                emailVerified
                 onClose={close}
                 onComplete={() => Promise.resolve()}
                 onRecoveryCodes={() => {}}

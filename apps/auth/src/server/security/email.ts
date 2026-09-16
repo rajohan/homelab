@@ -136,7 +136,16 @@ export class AccountEmail {
             3,
             3_600_000
         );
-        await this.accounts.protectedAction(principal, async (transaction) => {
+        await this.accounts.protectedAction(principal, async (transaction, current) => {
+            if (
+                current.user.emailVerified &&
+                email.toLowerCase() === current.user.email.toLowerCase()
+            )
+                throw new AuthFailure(
+                    "EMAIL_ALREADY_VERIFIED",
+                    409,
+                    "This email address is already verified. Enter a different address to change it."
+                );
             await transaction
                 .delete(challenges)
                 .where(

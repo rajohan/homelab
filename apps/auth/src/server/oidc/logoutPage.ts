@@ -31,16 +31,25 @@ export function renderLogout(
         hint.sid === session.sidFor(client.clientId)
     );
     context.type = "html";
-    if (automatic) {
-        const hash = new Bun.CryptoHasher("sha256").update(submit).digest("base64");
-        context.set(
-            "Content-Security-Policy",
-            `default-src 'none'; script-src 'sha256-${hash}'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`
-        );
-    }
+    const redirect = context.oidc.params?.post_logout_redirect_uri;
+    const destination =
+        typeof redirect === "string" && client?.postLogoutRedirectUriAllowed(redirect)
+            ? ` ${new URL(redirect).origin}`
+            : "";
+    const scripts = automatic
+        ? `'sha256-${new Bun.CryptoHasher("sha256").update(submit).digest("base64")}'`
+        : "'none'";
+    // Chromium also checks the form's redirect. Permit only this client's
+    // validated return origin, never a wildcard or an unregistered destination.
+    context.set(
+        "Content-Security-Policy",
+        `default-src 'none'; script-src ${scripts}; form-action 'self'${destination}; frame-ancestors 'none'; base-uri 'none'`
+    );
     const title = automatic ? "Signing out" : "Sign out of Homelab?";
-    const description = automatic
-        ? "Finishing your sign-out. If you are not redirected, select Sign out."
-        : "This ends this browser's identity session and its connected grants.";
-    context.body = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${title}</title><main><h1>${title}</h1><p>${description}</p>${form}<button id="confirm-logout" type="submit" form="op.logoutForm" name="logout" value="yes">Sign out</button>${automatic ? `<script>${submit}</script>` : '<p><a href="/account">Cancel</a></p>'}</main></html>`;
+    const button =
+        '<button type="submit" form="op.logoutForm" name="logout" value="yes">Sign out</button>';
+    const content = automatic
+        ? `${form}<button hidden id="confirm-logout" type="submit" form="op.logoutForm" name="logout" value="yes"></button><script>${submit}</script><noscript><p>Enable JavaScript or select Sign out to continue.</p>${button}</noscript>`
+        : `<h1>${title}</h1><p>This ends this browser's identity session and its connected grants.</p>${form}${button}<p><a href="/account">Cancel</a></p>`;
+    context.body = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${title}</title><main>${content}</main></html>`;
 }

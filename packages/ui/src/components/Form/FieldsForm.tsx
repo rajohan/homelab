@@ -23,6 +23,7 @@ export function FieldsForm({
     onSubmit,
     onSubmittingChange,
     validate,
+    isSubmitDisabled,
     onCancel,
     cancelLabel = "Cancel",
 }: {
@@ -33,6 +34,7 @@ export function FieldsForm({
     onSubmit: (values: FormValues) => Promise<void>;
     onSubmittingChange?: ((pending: boolean) => void) | undefined;
     validate?: (values: FormValues) => FormErrors;
+    isSubmitDisabled?: (values: FormValues) => boolean;
     onCancel?: (() => void) | undefined;
     cancelLabel?: string;
 }) {
@@ -66,6 +68,7 @@ export function FieldsForm({
             onSubmit: validateValues,
         },
         onSubmit: async ({ value }) => {
+            if (isSubmitDisabled?.(value)) return;
             setError(undefined);
             onSubmittingChange?.(true);
             try {
@@ -80,9 +83,11 @@ export function FieldsForm({
     });
     return (
         <form.Subscribe
-            selector={(state) => [state.canSubmit, state.isSubmitting] as const}
+            selector={(state) =>
+                [state.canSubmit, state.isSubmitting, state.values] as const
+            }
         >
-            {([canSubmit, submitting]) => (
+            {([canSubmit, submitting, values]) => (
                 <Form onSubmit={() => form.handleSubmit()} className="space-y-4">
                     {fields.map((definition) => (
                         <form.Field name={definition.name} key={definition.name}>
@@ -129,7 +134,7 @@ export function FieldsForm({
                             type="submit"
                             variant={submitVariant}
                             busy={submitting}
-                            disabled={!canSubmit}
+                            disabled={!canSubmit || isSubmitDisabled?.(values)}
                             fullWidth={onCancel === undefined}
                         >
                             {submitLabel}

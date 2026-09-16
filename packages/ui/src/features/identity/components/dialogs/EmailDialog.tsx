@@ -12,15 +12,21 @@ export function EmailDialog({
     onClose,
     onComplete,
     email,
-}: AccountDialogProps & { readonly email: string }) {
+    emailVerified,
+}: AccountDialogProps & { readonly email: string; readonly emailVerified: boolean }) {
     const [pending, setPending] = useState(false);
     return (
-        <Modal title="Verify email" onClose={onClose} dismissible={!pending}>
-            <p className="mb-4 text-base text-primary-300">
-                Your current address stays active until you confirm the new address using
-                the emailed link.
-            </p>
+        <Modal
+            title={emailVerified ? "Change email" : "Verify email"}
+            description="Your current address stays active until you confirm the new address using the emailed link."
+            onClose={onClose}
+            dismissible={!pending}
+        >
             <FieldsForm
+                isSubmitDisabled={(values) =>
+                    emailVerified &&
+                    values.email?.trim().toLowerCase() === email.toLowerCase()
+                }
                 onSubmittingChange={setPending}
                 onCancel={onClose}
                 fields={[

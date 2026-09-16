@@ -121,6 +121,7 @@ export function AccountSettings({
                     action={state.action}
                     client={client}
                     email={account.data.user.email}
+                    emailVerified={account.data.user.emailVerified}
                     onClose={state.closeAction}
                     onComplete={state.refresh}
                     onRecoveryCodes={state.setRecovery}

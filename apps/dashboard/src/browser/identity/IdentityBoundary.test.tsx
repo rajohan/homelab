@@ -162,7 +162,7 @@ test.each(["different-user", "same-user"])(
             const user = userEvent.setup();
             await user.click(screen.getByRole("button", { name: "Change email" }));
             expect(
-                await screen.findByRole("dialog", { name: "Verify email" })
+                await screen.findByRole("dialog", { name: "Change email" })
             ).toBeVisible();
             query.setQueryData(["identity", "methods"], { old: true });
             if (kind === "different-user") identity = "second";

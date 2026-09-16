@@ -32,7 +32,7 @@ export function buttonStyles({
     readonly className?: string | undefined;
 } = {}): string {
     return cn(
-        "inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg font-semibold transition-colors outline-none focus-visible:ring-2 focus-visible:ring-accent-300 focus-visible:ring-offset-2 focus-visible:ring-offset-primary-900 disabled:cursor-not-allowed disabled:opacity-50 aria-disabled:cursor-not-allowed motion-reduce:transition-none",
+        "inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg font-semibold whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-accent-300 focus-visible:ring-offset-2 focus-visible:ring-offset-primary-900 disabled:cursor-not-allowed disabled:opacity-50 aria-disabled:cursor-not-allowed motion-reduce:transition-none",
         variants[variant],
         sizes[size],
         fullWidth && "w-full",
