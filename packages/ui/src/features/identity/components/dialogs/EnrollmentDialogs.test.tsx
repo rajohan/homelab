@@ -1,7 +1,6 @@
 import { expect, mock, spyOn, test } from "bun:test";
 
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 
 import { IdentityClient } from "../../api/IdentityClient";
 import { downloadRecoveryCodes } from "../../lib/downloadRecoveryCodes";
@@ -148,6 +147,7 @@ test.each([
 
 test.each([
     [
+        "password",
         PasswordDialog,
         "Change password",
         [
@@ -156,12 +156,27 @@ test.each([
             ["Repeat new password", "replacement-password-value"],
         ],
     ],
-    [EmailDialog, "Send verification email", [["Email address", "next@example.test"]]],
-    [AuthenticatorDialog, "Set up authenticator", [["Authenticator name", "Test app"]]],
-    [SecurityKeyDialog, "Register security key", [["Key name", "Test key"]]],
+    [
+        "email",
+        EmailDialog,
+        "Send verification email",
+        [["Email address", "next@example.test"]],
+    ],
+    [
+        "authenticator",
+        AuthenticatorDialog,
+        "Set up authenticator",
+        [["Authenticator name", "Test app"]],
+    ],
+    [
+        "security key",
+        SecurityKeyDialog,
+        "Register security key",
+        [["Key name", "Test key"]],
+    ],
 ] as const)(
     "a pending %s mutation cannot be dismissed and unlocks after failure",
-    async (Dialog, submitLabel, fields) => {
+    async (_name, Dialog, submitLabel, fields) => {
         const client = new IdentityClient();
         const pending = Promise.withResolvers<never>();
         const action = spyOn(client, "action").mockImplementation(() => pending.promise);
@@ -188,7 +203,10 @@ test.each([
             expect(
                 screen.queryByRole("button", { name: "Close dialog" })
             ).not.toBeInTheDocument();
-            await userEvent.setup().keyboard("{Escape}");
+            fireEvent.keyDown(screen.getByRole("dialog"), {
+                key: "Escape",
+                code: "Escape",
+            });
             expect(close).not.toHaveBeenCalled();
             expect(screen.getByRole("dialog")).toBeVisible();
             pending.reject(new Error("Synthetic action failure"));
@@ -196,7 +214,10 @@ test.each([
                 expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled()
             );
             expect(screen.getByRole("button", { name: "Close dialog" })).toBeVisible();
-            fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+            fireEvent.keyDown(screen.getByRole("dialog"), {
+                key: "Escape",
+                code: "Escape",
+            });
             expect(close).toHaveBeenCalledTimes(1);
         } finally {
             view.unmount();

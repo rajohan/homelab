@@ -1,7 +1,7 @@
 {
     "version": "8",
     "dialect": "postgres",
-    "id": "9a551449-7746-4eee-962a-aefb4588159f",
+    "id": "b073b919-2f5e-4f46-ab01-630aec09e414",
     "prevIds": ["00000000-0000-0000-0000-000000000000"],
     "ddl": [
         {
@@ -37,6 +37,12 @@
         {
             "isRlsEnabled": false,
             "name": "auth_mail_outbox",
+            "entityType": "tables",
+            "schema": "public"
+        },
+        {
+            "isRlsEnabled": false,
+            "name": "auth_oidc_approvals",
             "entityType": "tables",
             "schema": "public"
         },
@@ -338,6 +344,19 @@
             "default": null,
             "generated": null,
             "identity": null,
+            "name": "client_id",
+            "entityType": "columns",
+            "schema": "public",
+            "table": "auth_grant_sessions"
+        },
+        {
+            "type": "text",
+            "typeSchema": null,
+            "notNull": false,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
             "name": "encrypted_logout",
             "entityType": "columns",
             "schema": "public",
@@ -552,6 +571,84 @@
             "table": "auth_mail_outbox"
         },
         {
+            "type": "uuid",
+            "typeSchema": null,
+            "notNull": true,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "name": "user_id",
+            "entityType": "columns",
+            "schema": "public",
+            "table": "auth_oidc_approvals"
+        },
+        {
+            "type": "text",
+            "typeSchema": null,
+            "notNull": true,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "name": "client_id",
+            "entityType": "columns",
+            "schema": "public",
+            "table": "auth_oidc_approvals"
+        },
+        {
+            "type": "text",
+            "typeSchema": null,
+            "notNull": true,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "name": "client_name",
+            "entityType": "columns",
+            "schema": "public",
+            "table": "auth_oidc_approvals"
+        },
+        {
+            "type": "text",
+            "typeSchema": null,
+            "notNull": true,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "name": "fingerprint",
+            "entityType": "columns",
+            "schema": "public",
+            "table": "auth_oidc_approvals"
+        },
+        {
+            "type": "jsonb",
+            "typeSchema": null,
+            "notNull": true,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "name": "scopes",
+            "entityType": "columns",
+            "schema": "public",
+            "table": "auth_oidc_approvals"
+        },
+        {
+            "type": "timestamp with time zone",
+            "typeSchema": null,
+            "notNull": true,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "name": "approved_at",
+            "entityType": "columns",
+            "schema": "public",
+            "table": "auth_oidc_approvals"
+        },
+        {
             "type": "text",
             "typeSchema": null,
             "notNull": true,
@@ -755,6 +852,19 @@
             "generated": null,
             "identity": null,
             "name": "token_hash",
+            "entityType": "columns",
+            "schema": "public",
+            "table": "auth_sessions"
+        },
+        {
+            "type": "boolean",
+            "typeSchema": null,
+            "notNull": true,
+            "dimensions": 0,
+            "default": "false",
+            "generated": null,
+            "identity": null,
+            "name": "remember",
             "entityType": "columns",
             "schema": "public",
             "table": "auth_sessions"
@@ -1181,6 +1291,19 @@
             "columnsTo": ["id"],
             "onUpdate": "NO ACTION",
             "onDelete": "CASCADE",
+            "name": "auth_oidc_approvals_user_id_auth_users_id_fkey",
+            "entityType": "fks",
+            "schema": "public",
+            "table": "auth_oidc_approvals"
+        },
+        {
+            "nameExplicit": false,
+            "columns": ["user_id"],
+            "schemaTo": "public",
+            "tableTo": "auth_users",
+            "columnsTo": ["id"],
+            "onUpdate": "NO ACTION",
+            "onDelete": "CASCADE",
             "name": "auth_recovery_codes_user_id_auth_users_id_fkey",
             "entityType": "fks",
             "schema": "public",
@@ -1198,6 +1321,14 @@
             "entityType": "fks",
             "schema": "public",
             "table": "auth_sessions"
+        },
+        {
+            "columns": ["user_id", "client_id"],
+            "nameExplicit": false,
+            "name": "auth_oidc_approvals_pkey",
+            "entityType": "pks",
+            "schema": "public",
+            "table": "auth_oidc_approvals"
         },
         {
             "columns": ["user_id", "digest"],

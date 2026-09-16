@@ -279,15 +279,14 @@ steps. No application currently consumes these new production scopes.
 
 ## Initial schema history
 
-The unreleased schema was initially consolidated into `20260915120404_initial_auth` before
-acceptance testing. After that schema was applied to the persistent acceptance environment,
-`20260915223445_remembered_sessions_and_app_consent` was added for remembered sessions and
-account-owned OIDC approvals. Preserve both migrations and their hashes: the test environment
-already depends on this history, even though the PR has not merged.
+The unreleased auth schema is shipped as one `20260915120404_initial_auth` migration,
+generated from the complete schema, including remembered sessions and account-owned OIDC
+approvals. The operator approved discarding the isolated acceptance database and its test
+accounts before this final consolidation. No production database has used these migrations.
 
-Fresh disposable databases apply both migrations in order. Earlier previews from before the
-consolidation must be recreated, not have their migration ledger rewritten to claim an unapplied
-schema. Future changes to an applied schema require another reviewed incremental migration.
+Fresh databases apply this one migration. Any earlier preview database must be removed or
+recreated; do not rewrite its migration journal to claim the new schema. Once deployed to
+production, preserve this migration and add reviewed incremental migrations for later changes.
 
 ## Configurable session lifetimes
 
