@@ -1,0 +1,6 @@
+# Apply after compose.yaml for an independently pinned auth release.
+services:
+  auth:
+    image: ${HOMELAB_AUTH_IMAGE:?Set the auth digest reference from container-images.json}
+    build: !reset null
+    pull_policy: always

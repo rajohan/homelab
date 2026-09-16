@@ -18,7 +18,8 @@ Only root package metadata needs a version change. Bun's root lockfile workspace
 2. Squash merge with a Conventional Commit title, for example `feat(dashboard): add service inventory` or `fix(auth): reject an invalid return URL`.
 3. Release Please creates or updates its release PR with the next version and changelog. Review its changes and wait for CI.
 4. Merge the release PR when the version is ready. The next Release Please run creates the Git tag and GitHub release.
-5. Deploy the desired application separately through the reviewed deployment process. There is no automatic production deployment in this workflow.
+5. Wait for **Container images** on the published release to pass. It runs the source checks again, builds and tests both images, then publishes the exact tested images and attaches `container-images.json` to the release.
+6. Deploy the desired application separately through the reviewed deployment process. There is no automatic production deployment in this workflow.
 
 `fix:` increments the patch version and `feat:` increments the minor version. Before `1.0.0`, a breaking change increments the minor version under the configured pre-major policy. Document breaking changes with `!` or a `BREAKING CHANGE:` footer. Do not automatically merge release PRs or bypass their required checks.
 
@@ -47,7 +48,7 @@ No personal or broad existing PAT is copied into Actions. No server-side Doppler
 
 GitHub restricts workflow chaining from `GITHUB_TOKEN`. Current GitHub documentation permits `opened`, `synchronize` and `reopened` PR events from that token, but starts the corresponding workflows in an approval-required state. Other events, including tag/release automation, remain restricted. Using the App installation token lets the normal release PR checks run automatically, as in the old repository.
 
-The release job never checks out or executes application code while holding the App credentials. Its only tasks are creating the scoped token and running the pinned Release Please action.
+The Release Please job never checks out or executes application code while holding the App credentials. Its only tasks are creating the scoped token and running the pinned Release Please action.
 
 ## Validation and recovery
 
@@ -63,3 +64,57 @@ The release job never checks out or executes application code while holding the 
 - [Manifest configuration](https://github.com/googleapis/release-please/blob/main/docs/manifest-releaser.md)
 - [GitHub workflow-trigger rules](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow)
 - [Create GitHub App Token](https://github.com/actions/create-github-app-token)
+
+## Container publication
+
+The **Container images** workflow runs on pull requests and pushes to `main` without registry
+write access. It builds both images and runs the existing built-runtime smoke suite inside them:
+missing-configuration rejection, HTML/assets and deep links, migration/admin CLI, OIDC consent,
+token exchange, account access and logout. The tests use synthetic keys and a disposable
+PostgreSQL service, never production credentials or a production identity database.
+
+Publishing a stable `vX.Y.Z` GitHub release also runs the complete reusable CI workflow before
+building containers. The release version must equal the root package version, and the source
+commit must belong to `main`. Drafts and prereleases do not publish container images.
+
+Each stable release publishes these private GHCR packages, initially for `linux/amd64`
+(the architecture used by Main and Edge):
+
+- `ghcr.io/rajohan/homelab/auth:X.Y.Z`
+- `ghcr.io/rajohan/homelab/dashboard:X.Y.Z`
+
+Images contain only the corresponding built runtime and Bun; auth additionally includes its
+administrative CLI and migrations. Neither image contains source mounts, Doppler tokens or
+runtime secrets. OCI labels identify the repository, exact commit and product version.
+No floating `latest` tag is published.
+
+The read-only build job transfers the tested images to a separate publishing job using a
+short-lived workflow artifact. The publisher does not check out source or rebuild anything.
+It authenticates to GHCR using the repository's short-lived `GITHUB_TOKEN` with
+`packages: write`; `contents: write` is used only to attach the reference manifest.
+No personal publishing token or additional repository secret is required. Never make these
+packages public merely to simplify server authentication.
+
+`container-images.json` records the release version, commit, platform and both registry
+references including `@sha256:...`. Deploy from those digests, not a moving version tag.
+The publication is not atomic across two packages: **a release is deployable only when the
+workflow is green and the manifest includes both images**. A partial push is not a release
+ready for deployment.
+
+If publishing fails, rerun the failed publishing job while its two-day image artifact remains
+available. Already-published tags are reused only if their image configuration digest matches
+the tested artifact; mismatches fail instead of overwriting a version. If an expired artifact
+requires a complete rebuild and the images differ, publish a new patch release rather than
+deleting/replacing a published tag. A missing manifest can be uploaded again by the successful
+publisher.
+
+For private pulls outside Actions, configure a read-only `read:packages` credential through
+the existing scoped secret-delivery system at deployment. Check package access inheritance
+from this private repository after the first publication. The PR does not provision a host
+login, modify package visibility or publish a test release. Registry permission acceptance
+is therefore verified on the first real release, not claimed from a local Docker build.
+
+See [deployment](../deploy/README.md) for digest-pinned, independent Compose invocations.
+
+References: [Docker's test-before-push pattern](https://docs.docker.com/build/ci/github-actions/test-before-push/)
+and [GitHub Container registry authentication and digests](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).

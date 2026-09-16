@@ -11,3 +11,9 @@
 **/backups
 .github
 docs
+
+**/.env
+**/.env.*
+!**/.env.example
+**/.cache
+**/*.log
