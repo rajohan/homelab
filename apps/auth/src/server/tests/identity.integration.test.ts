@@ -1648,7 +1648,7 @@ describe("security invariants against the isolated database", () => {
         expect(prompt.headers.get("content-security-policy")).toContain(
             `form-action 'self' ${new URL(returnUrl).origin};`
         );
-        const script = /<script>([^<]+)<\/script>/.exec(html)?.[1];
+        const script = /<script>([^<]+)<\/script>/i.exec(html)?.[1];
         if (!script) throw new Error("Missing automatic submission");
         expect(prompt.headers.get("content-security-policy")).toContain(
             `'sha256-${new Bun.CryptoHasher("sha256").update(script).digest("base64")}'`
