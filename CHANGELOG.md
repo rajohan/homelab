@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/rajohan/homelab/compare/v0.1.0...v0.1.1) (2026-09-16)
+
+
+### Bug Fixes
+
+* **auth:** polish production sign-out and account verification ([#5](https://github.com/rajohan/homelab/issues/5)) ([d622076](https://github.com/rajohan/homelab/commit/d622076ff65675b1c2628c658774727a48653e79))
+
 ## 0.1.0 (2026-09-16)
 
 
