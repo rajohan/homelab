@@ -1,15 +1,16 @@
 import { expect, spyOn, test } from "bun:test";
 
-import { AccountSettings } from "@homelab/ui/identity";
 import {
     IdentityClient,
     IdentityError,
     type AccountSnapshot,
 } from "@homelab/ui/identity/client";
+import * as webauthn from "@simplewebauthn/browser";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
+import { Settings } from "../pages/Settings";
 import { IdentityBoundary } from "./IdentityBoundary";
 
 test.each([
@@ -29,7 +30,6 @@ test.each([
             () => {}
         );
         const user = userEvent.setup();
-        const client = new IdentityClient();
         let authenticated = true;
         const snapshot: AccountSnapshot = {
             user: {
@@ -54,17 +54,22 @@ test.each([
         const session = spyOn(IdentityClient.prototype, "session").mockImplementation(
             () => Promise.resolve({ authenticated, mfaRequired: false, methods: [] })
         );
-        const account = spyOn(client, "snapshot").mockImplementation(() =>
-            authenticated
-                ? Promise.resolve(snapshot)
-                : Promise.reject(new IdentityError("UNAUTHORIZED", 401, "Signed out."))
+        const account = spyOn(IdentityClient.prototype, "snapshot").mockImplementation(
+            () =>
+                authenticated
+                    ? Promise.resolve(snapshot)
+                    : Promise.reject(
+                          new IdentityError("UNAUTHORIZED", 401, "Signed out.")
+                      )
         );
-        const action = spyOn(client, "action").mockImplementation((path) => {
-            if (path !== endpoint) throw new Error("Unexpected action");
-            authenticated = false;
-            return Promise.resolve({ ok: true });
-        });
-        const activity = spyOn(client, "activity").mockResolvedValue({
+        const action = spyOn(IdentityClient.prototype, "action").mockImplementation(
+            (path) => {
+                if (path !== endpoint) throw new Error("Unexpected action");
+                authenticated = false;
+                return Promise.resolve({ ok: true });
+            }
+        );
+        const activity = spyOn(IdentityClient.prototype, "activity").mockResolvedValue({
             events: [],
             nextCursor: null,
         });
@@ -74,7 +79,7 @@ test.each([
         const view = render(
             <QueryClientProvider client={query}>
                 <IdentityBoundary>
-                    <AccountSettings client={client} />
+                    <Settings />
                 </IdentityBoundary>
             </QueryClientProvider>
         );
@@ -111,7 +116,6 @@ test.each([
 test.each(["different-user", "same-user"])(
     "dashboard %s session changes clear snapshots, dialogs and account caches",
     async (kind) => {
-        const client = new IdentityClient();
         let identity = "first";
         let sessionId = "first";
         const snapshot = (): AccountSnapshot => ({
@@ -136,10 +140,10 @@ test.each(["different-user", "same-user"])(
                     methods: [],
                 })
         );
-        const account = spyOn(client, "snapshot").mockImplementation(() =>
-            Promise.resolve(snapshot())
+        const account = spyOn(IdentityClient.prototype, "snapshot").mockImplementation(
+            () => Promise.resolve(snapshot())
         );
-        const activity = spyOn(client, "activity").mockResolvedValue({
+        const activity = spyOn(IdentityClient.prototype, "activity").mockResolvedValue({
             events: [],
             nextCursor: null,
         });
@@ -149,7 +153,7 @@ test.each(["different-user", "same-user"])(
         const view = render(
             <QueryClientProvider client={query}>
                 <IdentityBoundary>
-                    <AccountSettings client={client} />
+                    <Settings />
                 </IdentityBoundary>
             </QueryClientProvider>
         );
@@ -269,5 +273,101 @@ test("declined authorization stays on a public retry screen without rendering pr
         session.mockRestore();
         navigate.mockRestore();
         globalThis.history.replaceState(null, "", original);
+    }
+});
+
+test("Settings shares session cancellation with its boundary during WebAuthn enrollment", async () => {
+    const clientSession = {
+        authenticated: true,
+        mfaRequired: false,
+        methods: [],
+        userId: "operator",
+        sessionId: "first",
+    };
+    const session = spyOn(IdentityClient.prototype, "session").mockImplementation(() =>
+        Promise.resolve({ ...clientSession })
+    );
+    const request = spyOn(IdentityClient.prototype, "request").mockImplementation(
+        (path) => {
+            if (path === "/api/account")
+                return Promise.resolve({
+                    user: {
+                        id: "operator",
+                        username: "operator",
+                        email: clientSession.sessionId + "@example.test",
+                        emailVerified: true,
+                    },
+                    factors: [],
+                    recoveryCodesRemaining: 0,
+                    sessions: [
+                        {
+                            id: clientSession.sessionId,
+                            current: true,
+                            userAgent: "Test browser",
+                            createdAt: "2026-01-01T00:00:00Z",
+                            lastSeenAt: "2026-01-01T00:00:00Z",
+                            expiresAt: "2026-01-02T00:00:00Z",
+                        },
+                    ],
+                });
+            if (path === "/api/account/webauthn/begin")
+                return Promise.resolve({ token: "test", options: {} });
+            throw new Error("An unexpected request escaped the cancelled ceremony.");
+        }
+    );
+    const activity = spyOn(IdentityClient.prototype, "activity").mockResolvedValue({
+        events: [],
+        nextCursor: null,
+    });
+    const ceremony =
+        Promise.withResolvers<Awaited<ReturnType<typeof webauthn.startRegistration>>>();
+    const register = spyOn(webauthn, "startRegistration").mockImplementation(
+        () => ceremony.promise
+    );
+    const cancel = spyOn(
+        webauthn.WebAuthnAbortService,
+        "cancelCeremony"
+    ).mockImplementation(() => {});
+    const query = new QueryClient({
+        defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+    const view = render(
+        <QueryClientProvider client={query}>
+            <IdentityBoundary>
+                <Settings />
+            </IdentityBoundary>
+        </QueryClientProvider>
+    );
+    try {
+        const user = userEvent.setup();
+        await user.click(await screen.findByRole("button", { name: "Add security key" }));
+        await user.type(screen.getByLabelText("Key name"), "Fixture key");
+        await user.click(screen.getByRole("button", { name: "Register security key" }));
+        await waitFor(() => expect(register).toHaveBeenCalledTimes(1));
+        clientSession.sessionId = "replacement";
+        await query.invalidateQueries({ queryKey: ["identity", "session"] });
+        expect(await screen.findByText("replacement@example.test")).toBeVisible();
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+        expect(cancel).toHaveBeenCalledTimes(1);
+        ceremony.resolve({
+            id: "test-key",
+            rawId: "test-key",
+            response: { clientDataJSON: "test", attestationObject: "test" },
+            type: "public-key",
+            clientExtensionResults: {},
+        });
+        await ceremony.promise;
+        await Promise.resolve();
+        expect(
+            request.mock.calls.some(([path]) => path === "/api/account/webauthn/finish")
+        ).toBe(false);
+    } finally {
+        view.unmount();
+        query.clear();
+        session.mockRestore();
+        request.mockRestore();
+        activity.mockRestore();
+        register.mockRestore();
+        cancel.mockRestore();
     }
 });

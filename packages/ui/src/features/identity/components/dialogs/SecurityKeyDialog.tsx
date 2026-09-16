@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import { FieldsForm, Modal } from "../../../../index";
 import type { AccountDialogProps } from "../../types";
 
@@ -13,13 +15,16 @@ export function SecurityKeyDialog({
 }: AccountDialogProps & {
     readonly onRecoveryCodes: (codes: readonly string[]) => void;
 }) {
+    const [pending, setPending] = useState(false);
     return (
         <Modal
             title="Add security key"
             description="Give your key a name, then follow your browser’s instructions to connect or tap it."
             onClose={onClose}
+            dismissible={!pending}
         >
             <FieldsForm
+                onSubmittingChange={setPending}
                 onCancel={onClose}
                 fields={[
                     {

@@ -69,6 +69,42 @@ function record(value: unknown): value is Record<string, unknown> {
 export async function main(): Promise<void> {
     const children: Array<ReturnType<typeof Bun.spawn>> = [];
 
+    async function checkStartupFailure(app: "auth" | "dashboard"): Promise<void> {
+        const child = Bun.spawn([process.execPath, "--no-env-file", "index.js"], {
+            cwd: fileURLToPath(new URL(`../apps/${app}/dist/`, import.meta.url)),
+            env: { NODE_ENV: "production" },
+            stdin: "ignore",
+            stdout: "pipe",
+            stderr: "pipe",
+        });
+        children.push(child);
+        const [exitCode, stdout, stderr] = await bounded(
+            Promise.all([
+                child.exited,
+                new Response(child.stdout).text(),
+                new Response(child.stderr).text(),
+            ]),
+            15_000,
+            `${app} missing-configuration rejection`
+        );
+        assert.equal(exitCode, 1);
+        assert.equal(stdout, "");
+        assert.ok(
+            stderr.endsWith("\n"),
+            "Startup diagnostics must end with a real newline."
+        );
+        // oidc-provider may also emit its documented Bun runtime warning.
+        const lines = stderr.trimEnd().split("\n");
+        const structured = lines.filter((line) => line.startsWith("{"));
+        assert.equal(structured.length, 1, "Expected one structured startup failure.");
+        const event: unknown = JSON.parse(structured[0] ?? "");
+        assert.ok(record(event));
+        assert.equal(event.service, app);
+        assert.equal(event.event, "startup_failed");
+        assert.equal(typeof event.hint, "string");
+        assert.deepEqual(Object.keys(event).toSorted(), ["event", "hint", "service"]);
+    }
+
     async function start(app: "auth" | "dashboard"): Promise<string> {
         const exportName = app === "auth" ? "startAuthServer" : "startDashboardServer";
         const child = Bun.spawn(
@@ -194,6 +230,13 @@ console.log('SMOKE_PORT:' + server.port);`,
     }
 
     try {
+        await Promise.all([
+            checkStartupFailure("dashboard"),
+            checkStartupFailure("auth"),
+        ]);
+        console.info(
+            "PASS: built applications reject missing production configuration with one redacted JSON log line."
+        );
         const [dashboard, auth] = await Promise.all([start("dashboard"), start("auth")]);
         await Promise.all([checkDashboard(dashboard), checkAuth(auth)]);
     } finally {

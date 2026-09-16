@@ -36,12 +36,14 @@ export function PasswordForm({
     requireCurrent = false,
     submitLabel,
     onSubmit,
+    onSubmittingChange,
     onCancel,
 }: {
     requireCurrent?: boolean;
     submitLabel: string;
     onCancel?: () => void;
     onSubmit: (values: FormValues) => Promise<void>;
+    onSubmittingChange?: ((pending: boolean) => void) | undefined;
 }) {
     return (
         <FieldsForm
@@ -49,6 +51,7 @@ export function PasswordForm({
             submitLabel={submitLabel}
             validate={validatePasswordConfirmation}
             onSubmit={onSubmit}
+            onSubmittingChange={onSubmittingChange}
             onCancel={onCancel}
         />
     );

@@ -1,6 +1,7 @@
 import {
     startAuthentication,
     startRegistration,
+    WebAuthnAbortService,
     type PublicKeyCredentialCreationOptionsJSON,
     type PublicKeyCredentialRequestOptionsJSON,
 } from "@simplewebauthn/browser";
@@ -24,6 +25,22 @@ export class IdentityClient {
     #assertActiveAction(signal: AbortSignal): void {
         if (signal.aborted)
             throw new IdentityError("CANCELLED", 0, "The request was cancelled.");
+    }
+
+    async #runCeremony<T>(signal: AbortSignal, operation: () => Promise<T>): Promise<T> {
+        this.#assertActiveAction(signal);
+        const cancel = WebAuthnAbortService.cancelCeremony.bind(WebAuthnAbortService);
+        signal.addEventListener("abort", cancel, { once: true });
+        try {
+            const result = await operation();
+            this.#assertActiveAction(signal);
+            return result;
+        } catch (error) {
+            this.#assertActiveAction(signal);
+            throw error;
+        } finally {
+            signal.removeEventListener("abort", cancel);
+        }
     }
 
     /**
@@ -185,10 +202,12 @@ export class IdentityClient {
             await this.request("/api/account/proof/webauthn/begin", {}, signal)
         );
         this.#assertActiveAction(signal);
-        const response = await startAuthentication({
-            optionsJSON:
-                value.options as unknown as PublicKeyCredentialRequestOptionsJSON,
-        });
+        const response = await this.#runCeremony(signal, () =>
+            startAuthentication({
+                optionsJSON:
+                    value.options as unknown as PublicKeyCredentialRequestOptionsJSON,
+            })
+        );
         await this.request(
             "/api/account/proof/webauthn/finish",
             {
@@ -211,10 +230,12 @@ export class IdentityClient {
             await this.action("webauthn/begin", {}, signal)
         );
         this.#assertActiveAction(signal);
-        const response = await startRegistration({
-            optionsJSON:
-                value.options as unknown as PublicKeyCredentialCreationOptionsJSON,
-        });
+        const response = await this.#runCeremony(signal, () =>
+            startRegistration({
+                optionsJSON:
+                    value.options as unknown as PublicKeyCredentialCreationOptionsJSON,
+            })
+        );
         return v.parse(
             v.object({ recoveryCodes: v.array(v.string()) }),
             await this.action(

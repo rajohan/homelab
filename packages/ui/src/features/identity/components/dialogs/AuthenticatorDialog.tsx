@@ -22,6 +22,7 @@ export function AuthenticatorDialog({
         secret: string;
         uri: string;
     }>();
+    const [pending, setPending] = useState(false);
     return (
         <Modal
             title="Add authenticator app"
@@ -31,6 +32,7 @@ export function AuthenticatorDialog({
                     : "Give this authenticator a name so you can recognize it later."
             }
             onClose={onClose}
+            dismissible={!pending}
         >
             {enrollment ? (
                 <div className="space-y-4">
@@ -61,6 +63,7 @@ export function AuthenticatorDialog({
                         </div>
                     </div>
                     <FieldsForm
+                        onSubmittingChange={setPending}
                         onCancel={onClose}
                         fields={[
                             {
@@ -93,6 +96,7 @@ export function AuthenticatorDialog({
                 </div>
             ) : (
                 <FieldsForm
+                    onSubmittingChange={setPending}
                     onCancel={onClose}
                     fields={[
                         {

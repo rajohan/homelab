@@ -119,7 +119,11 @@ if (import.meta.main) {
         process.on("SIGINT", stop);
     } catch {
         process.stderr.write(
-            String.raw`{"service":"dashboard","event":"startup_failed","hint":"Check scoped identity configuration."}\n`
+            JSON.stringify({
+                service: "dashboard",
+                event: "startup_failed",
+                hint: "Check scoped identity configuration.",
+            }) + "\n"
         );
         process.exitCode = 1;
     }

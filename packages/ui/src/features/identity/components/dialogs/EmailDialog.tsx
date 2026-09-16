@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import { FieldsForm, Modal } from "../../../../index";
 import type { AccountDialogProps } from "../../types";
 
@@ -11,13 +13,15 @@ export function EmailDialog({
     onComplete,
     email,
 }: AccountDialogProps & { readonly email: string }) {
+    const [pending, setPending] = useState(false);
     return (
-        <Modal title="Verify email" onClose={onClose}>
+        <Modal title="Verify email" onClose={onClose} dismissible={!pending}>
             <p className="mb-4 text-base text-primary-300">
                 Your current address stays active until you confirm the new address using
                 the emailed link.
             </p>
             <FieldsForm
+                onSubmittingChange={setPending}
                 onCancel={onClose}
                 fields={[
                     {

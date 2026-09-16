@@ -1,9 +1,10 @@
 import { AuthFrame, Button, LoadingState, Redirect } from "@homelab/ui";
 import { useIdentitySession } from "@homelab/ui/identity";
 import { IdentityClient } from "@homelab/ui/identity/client";
-import { Fragment, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import { AuthorizationDeclined } from "./AuthorizationDeclined";
+import { IdentityClientContext } from "./IdentityClientContext";
 /**
  * Render private dashboard content only while the current session is verified.
  * @returns The component's rendered content for its current state.
@@ -48,7 +49,8 @@ export function IdentityBoundary({ children }: { children: ReactNode }) {
         );
     }
     return (
-        <Fragment
+        <IdentityClientContext
+            value={client}
             key={
                 session.data.sessionId ??
                 session.data.userId ??
@@ -57,6 +59,6 @@ export function IdentityBoundary({ children }: { children: ReactNode }) {
             }
         >
             {children}
-        </Fragment>
+        </IdentityClientContext>
     );
 }

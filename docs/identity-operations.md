@@ -154,8 +154,11 @@ tokens. The existing external Healthchecks/Sentinel arrangement remains unchange
 8. Roll back route/client configuration to Authelia if acceptance fails. Do not merge two live
    identity stores or promise sessions survive switching providers.
 
-This PR creates no production account, sends no real email, installs no new DNS/certificate
-job and does not change current Authelia, Traefik, firewall or OIDC client settings.
+This PR does not perform a production cutover or create a production account. Production
+Authelia and its client settings remain unchanged. The separately approved acceptance environment
+uses temporary private origins, routing/firewall entries and a disposable database; its test
+account may use real Resend delivery for email verification. Those deployment resources are
+tracked in the acceptance environment's cleanup inventory, not installed by merging this PR.
 
 ## Removing the last security method
 
@@ -207,8 +210,8 @@ defines a reusable rule and `*admin` reuses it, rather than acting as a wildcard
 
 The Homelab file was translated from **active generated** Authelia configuration on Edge on
 2026-09-15, including its effective `admins` policy. It contains 15 origins, token-prefixed
-media exceptions, exact Hydra paths and explicit admin restrictions. It has not been installed
-on Edge. Attach ForwardAuth to each protected Traefik router; a policy cannot protect a service
+media exceptions, exact Hydra paths and explicit admin restrictions. It has not been activated
+as the production policy on Edge. Attach ForwardAuth to each protected Traefik router; a policy cannot protect a service
 whose router bypasses the middleware. Do not wrap the auth service in its own login middleware:
 its public login/OIDC endpoints and authenticated account APIs enforce their own boundaries.
 
@@ -276,11 +279,15 @@ steps. No application currently consumes these new production scopes.
 
 ## Initial schema history
 
-All auth migrations belong to this unreleased PR and were consolidated into one
-`initial_auth` migration at the operator's request. Disposable test databases are created
-fresh from it. Earlier preview databases must be recreated, not have their migration ledger
-rewritten to claim an unapplied schema. Once a schema is deployed, preserve that migration
-and add reviewed incremental migrations for future changes.
+The unreleased schema was initially consolidated into `20260915120404_initial_auth` before
+acceptance testing. After that schema was applied to the persistent acceptance environment,
+`20260915223445_remembered_sessions_and_app_consent` was added for remembered sessions and
+account-owned OIDC approvals. Preserve both migrations and their hashes: the test environment
+already depends on this history, even though the PR has not merged.
+
+Fresh disposable databases apply both migrations in order. Earlier previews from before the
+consolidation must be recreated, not have their migration ledger rewritten to claim an unapplied
+schema. Future changes to an applied schema require another reviewed incremental migration.
 
 ## Configurable session lifetimes
 

@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { IdentityClient } from "../api/IdentityClient";
 import type { AccountAction, AccountNotice } from "../types";
@@ -11,6 +11,7 @@ import { actionSection } from "../validation/actionSection";
  */
 export function useAccountSettings(client: IdentityClient) {
     const queryClient = useQueryClient();
+    useEffect(() => () => client.cancelActions(), [client]);
     const account = useQuery({
         queryKey: ["identity", "account"],
         queryFn: () => client.snapshot(),

@@ -21,6 +21,7 @@ export function FieldsForm({
     submitLabel,
     submitVariant = "primary",
     onSubmit,
+    onSubmittingChange,
     validate,
     onCancel,
     cancelLabel = "Cancel",
@@ -30,6 +31,7 @@ export function FieldsForm({
     submitLabel: string;
     submitVariant?: "primary" | "danger";
     onSubmit: (values: FormValues) => Promise<void>;
+    onSubmittingChange?: ((pending: boolean) => void) | undefined;
     validate?: (values: FormValues) => FormErrors;
     onCancel?: (() => void) | undefined;
     cancelLabel?: string;
@@ -65,11 +67,14 @@ export function FieldsForm({
         },
         onSubmit: async ({ value }) => {
             setError(undefined);
+            onSubmittingChange?.(true);
             try {
                 await onSubmit(value);
                 form.reset();
             } catch (error) {
                 setError(error);
+            } finally {
+                onSubmittingChange?.(false);
             }
         },
     });

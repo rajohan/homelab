@@ -94,7 +94,11 @@ if (import.meta.main) {
         process.on("SIGINT", stop);
     } catch {
         process.stderr.write(
-            String.raw`{"service":"auth","event":"startup_failed","hint":"Check configuration and database readiness without printing secret values."}\n`
+            JSON.stringify({
+                service: "auth",
+                event: "startup_failed",
+                hint: "Check configuration and database readiness without printing secret values.",
+            }) + "\n"
         );
         process.exitCode = 1;
     }
