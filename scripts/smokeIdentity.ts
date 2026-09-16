@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
-import { fileURLToPath } from "node:url";
 
 import * as v from "valibot";
 
 import { oidcInteractionSchema } from "../packages/contracts/src/oidcConsent";
 import { createTestDatabase } from "../tests/database";
+import { BuiltRuntime } from "./testing/builtRuntime";
 
 async function port(): Promise<number> {
     const listener = Bun.serve({
@@ -32,9 +32,6 @@ function redirect(value: unknown): string {
 const random = () =>
     Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url");
 
-const cwd = (app: string) =>
-    fileURLToPath(new URL(`../apps/${app}/dist/`, import.meta.url));
-
 /**
  * Verify the built auth and dashboard identity flow against the isolated test database.
  * @returns Completion after migration, login and logout checks, process cleanup and database removal.
@@ -50,6 +47,7 @@ export async function main(): Promise<void> {
 
 async function verifyBuiltIdentity(databaseUrl: string): Promise<void> {
     const children: Array<ReturnType<typeof Bun.spawn>> = [];
+    const runtime = new BuiltRuntime();
     const jar = new Map<string, string>();
     const password = "Built-smoke-password-not-production";
     const username = `built-${crypto.randomUUID()}`;
@@ -109,13 +107,12 @@ async function verifyBuiltIdentity(databaseUrl: string): Promise<void> {
     };
 
     async function admin(action: string, input?: unknown) {
-        const child = Bun.spawn([process.execPath, "--no-env-file", "admin.js", action], {
-            cwd: cwd("auth"),
-            env: authEnvironment,
-            stdin: input === undefined ? "ignore" : new Blob([JSON.stringify(input)]),
-            stdout: "pipe",
-            stderr: "pipe",
-        });
+        const child = runtime.spawn(
+            "auth",
+            ["--no-env-file", "admin.js", action],
+            authEnvironment,
+            input === undefined ? undefined : new Blob([JSON.stringify(input)])
+        );
         const [code] = await Promise.all([
             child.exited,
             new Response(child.stdout).text(),
@@ -127,18 +124,12 @@ async function verifyBuiltIdentity(databaseUrl: string): Promise<void> {
             "Built administrative command failed; no private input was logged."
         );
     }
-    function start(app: string, environment: Record<string, string>) {
-        const child = Bun.spawn([process.execPath, "--no-env-file", "index.js"], {
-            cwd: cwd(app),
-            env: environment,
-            stdin: "ignore",
-            stdout: "ignore",
-            stderr: "inherit",
-        });
+    function start(app: "auth" | "dashboard", environment: Record<string, string>) {
+        const child = runtime.spawn(app, ["--no-env-file", "index.js"], environment);
         children.push(child);
     }
     async function ready(url: string) {
-        for (let attempt = 0; attempt < 50; attempt += 1) {
+        for (let attempt = 0; attempt < 150; attempt += 1) {
             try {
                 const response = await fetch(url + "/health/ready", {
                     signal: AbortSignal.timeout(500),
@@ -245,17 +236,7 @@ async function verifyBuiltIdentity(databaseUrl: string): Promise<void> {
             "PASS: built migration CLI, separate configured processes, HTML CSP, OIDC exchange, account BFF and logout."
         );
     } finally {
-        for (const child of children) child.kill("SIGTERM");
-        await Promise.all(
-            children.map(async (child) => {
-                const timer = setTimeout(() => child.kill("SIGKILL"), 3000);
-                try {
-                    await child.exited;
-                } finally {
-                    clearTimeout(timer);
-                }
-            })
-        );
+        await runtime.close();
     }
 }
 

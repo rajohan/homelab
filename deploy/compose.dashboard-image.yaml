@@ -1,0 +1,6 @@
+# Apply after compose.yaml for an independently pinned dashboard release.
+services:
+  dashboard:
+    image: ${HOMELAB_DASHBOARD_IMAGE:?Set the dashboard digest reference from container-images.json}
+    build: !reset null
+    pull_policy: always
