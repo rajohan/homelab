@@ -60,7 +60,7 @@ export function Shell() {
                     <Outlet />
                 </main>
                 <footer className="mx-auto w-full max-w-400 px-4 py-5 text-center text-xs text-primary-500 sm:px-5">
-                    Rajohan · Homelab
+                    Homelab Dashboard · Rajohan
                 </footer>
             </div>
         </div>

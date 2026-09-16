@@ -129,3 +129,25 @@ describe("account security modal", () => {
         expect(screen.getByText("Security verification was cancelled.")).toBeVisible();
     });
 });
+
+test("the account card opens the existing current-browser logout confirmation without step-up", async () => {
+    const user = userEvent.setup();
+    const { request } = renderSettings();
+    const summary = await screen.findByText("Signed in as", { exact: false });
+    const identity = summary.parentElement;
+    if (!identity) throw new Error("Account identity card is missing.");
+    await user.click(within(identity).getByRole("button", { name: "Log out" }));
+    const dialog = screen.getByRole("dialog", { name: "Log out this browser?" });
+    expect(
+        within(dialog).getByText(
+            "You will be signed out. Your other sessions will stay signed in."
+        )
+    ).toBeVisible();
+    expect(
+        screen.queryByRole("dialog", { name: "Confirm your identity" })
+    ).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(request.mock.calls.some(([path]) => path.endsWith("/session/revoke"))).toBe(
+        false
+    );
+});

@@ -74,7 +74,7 @@ test("keys, authenticator apps and recovery each have their own card and actions
 test("account identity stays compact and email verification is beside the heading", () => {
     render(
         <>
-            <AccountIdentityPanel username={data.user.username} />
+            <AccountIdentityPanel data={data} onAction={() => {}} />
             <ProfilePanel data={data} onAction={() => {}} />
         </>
     );
@@ -163,4 +163,39 @@ test("session-wide actions share the responsive full-width action group", () => 
     expect(others).toBeDisabled();
     fireEvent.click(all);
     expect(action).toHaveBeenCalledWith("all");
+});
+
+test("the identity card targets only the current session and disables logout without one", () => {
+    const onAction = mock(() => {});
+    const session = {
+        id: "current-browser",
+        current: true,
+        userAgent: "Test browser",
+        createdAt: "2026-01-01T00:00:00Z",
+        lastSeenAt: "2026-01-01T00:00:00Z",
+        expiresAt: "2026-01-02T00:00:00Z",
+    };
+    const view = render(
+        <AccountIdentityPanel
+            data={{
+                ...data,
+                sessions: [{ ...session, id: "other-browser", current: false }, session],
+            }}
+            onAction={onAction}
+        />
+    );
+    const button = screen.getByRole("button", { name: "Log out" });
+    expect(button).toBeEnabled();
+    expect(button).toHaveClass("shrink-0");
+    fireEvent.click(button);
+    expect(onAction).toHaveBeenCalledWith({
+        kind: "session",
+        current: true,
+        id: session.id,
+        label: "your current session",
+    });
+    view.rerender(<AccountIdentityPanel data={data} onAction={onAction} />);
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(onAction).toHaveBeenCalledTimes(1);
 });

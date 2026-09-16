@@ -13,11 +13,18 @@ import userEvent from "@testing-library/user-event";
 import { IdentityBoundary } from "./IdentityBoundary";
 
 test.each([
-    ["Log out", "Log out this browser?", "session/revoke", "Log out"],
-    ["Log out all", "Log out all sessions?", "sessions/revoke-all", "Log out everywhere"],
+    ["Log out", "Log out this browser?", "session/revoke", "Log out", 0],
+    ["Log out", "Log out this browser?", "session/revoke", "Log out", 1],
+    [
+        "Log out all",
+        "Log out all sessions?",
+        "sessions/revoke-all",
+        "Log out everywhere",
+        0,
+    ],
 ])(
     "immediately closes private settings after %s",
-    async (button, title, endpoint, confirmLabel) => {
+    async (button, title, endpoint, confirmLabel, buttonIndex) => {
         const navigate = spyOn(globalThis.location, "replace").mockImplementation(
             () => {}
         );
@@ -72,7 +79,10 @@ test.each([
             </QueryClientProvider>
         );
         try {
-            await user.click(await screen.findByRole("button", { name: button }));
+            const buttons = await screen.findAllByRole("button", { name: button });
+            const trigger = buttons[Number(buttonIndex)];
+            if (!trigger) throw new Error("Logout action is missing.");
+            await user.click(trigger);
             const dialog = await screen.findByRole("dialog", { name: title });
             await user.click(within(dialog).getByRole("button", { name: confirmLabel }));
             await waitFor(() => expect(navigate).toHaveBeenCalledTimes(1));
