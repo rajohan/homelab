@@ -68,3 +68,44 @@ not an appropriate auth method for all clients.
 
 See [operations](../docs/identity-operations.md) for Doppler, backup, physical-device tests,
 monitoring and the explicit production cutover gate.
+
+## Published images
+
+For production, wait for the release's **Container images** workflow and download its
+`container-images.json`. Each application has its own GHCR digest reference and Compose
+override. Supply only the selected app's scoped runtime environment and the corresponding
+nonsecret image reference:
+
+```sh
+export HOMELAB_AUTH_IMAGE='ghcr.io/rajohan/homelab/auth@sha256:<auth-digest-from-release>'
+docker compose -f deploy/compose.yaml -f deploy/compose.auth-image.yaml pull auth
+docker compose -f deploy/compose.yaml -f deploy/compose.auth-image.yaml up -d --no-build --no-deps auth
+```
+
+On Main, deploy dashboard independently:
+
+```sh
+export HOMELAB_DASHBOARD_IMAGE='ghcr.io/rajohan/homelab/dashboard@sha256:<dashboard-digest-from-release>'
+docker compose -f deploy/compose.yaml -f deploy/compose.dashboard-image.yaml pull dashboard
+docker compose -f deploy/compose.yaml -f deploy/compose.dashboard-image.yaml up -d --no-build --no-deps dashboard
+```
+
+The selected override removes its build definition with Compose's supported `!reset` tag.
+It requires its image reference and never requires the other application's image variable.
+Use a current Docker Compose supporting `!reset`; the homelab's Compose supports it.
+Authenticate to these private packages with a scoped read-only registry credential, not the
+release workflow token or an editor's broad personal token.
+
+These commands illustrate artifact selection, **not approval to deploy**. Database provisioning,
+migration, policy installation, ingress routing, runtime credentials, backup and the approved
+Authelia cutover still follow the operations guide. Publication itself never accesses the
+homelab or restarts a service.
+
+For local container validation, build both images with tags `homelab-release/auth:tested`
+and `homelab-release/dashboard:tested`, set `HOMELAB_SMOKE_IMAGE_PREFIX=homelab-release`, and
+run `bun run test:smoke` with a disposable `HOMELAB_TEST_DATABASE_URL`.
+The same tests normally run local artifacts when the image prefix is absent.
+Container smoke tests require Linux Docker host networking for their loopback-only database
+and OIDC endpoints. They run as the image's unprivileged user with a read-only root filesystem,
+no capabilities, a bounded temporary directory and only the synthetic policy mounted read-only.
+Their exact temporary containers are removed on success or failure.

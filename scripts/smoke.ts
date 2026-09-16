@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { fileURLToPath } from "node:url";
+
+import { BuiltRuntime } from "./testing/builtRuntime";
 
 async function bounded<T>(
     promise: Promise<T>,
@@ -67,17 +68,12 @@ function record(value: unknown): value is Record<string, unknown> {
  * @returns Completion after health checks pass and all test processes stop.
  */
 export async function main(): Promise<void> {
-    const children: Array<ReturnType<typeof Bun.spawn>> = [];
+    const runtime = new BuiltRuntime();
 
     async function checkStartupFailure(app: "auth" | "dashboard"): Promise<void> {
-        const child = Bun.spawn([process.execPath, "--no-env-file", "index.js"], {
-            cwd: fileURLToPath(new URL(`../apps/${app}/dist/`, import.meta.url)),
-            env: { NODE_ENV: "production" },
-            stdin: "ignore",
-            stdout: "pipe",
-            stderr: "pipe",
+        const child = runtime.spawn(app, ["--no-env-file", "index.js"], {
+            NODE_ENV: "production",
         });
-        children.push(child);
         const [exitCode, stdout, stderr] = await bounded(
             Promise.all([
                 child.exited,
@@ -107,24 +103,17 @@ export async function main(): Promise<void> {
 
     async function start(app: "auth" | "dashboard"): Promise<string> {
         const exportName = app === "auth" ? "startAuthServer" : "startDashboardServer";
-        const child = Bun.spawn(
+        const child = runtime.spawn(
+            app,
             [
-                process.execPath,
                 "--no-env-file",
                 "-e",
                 `const { ${exportName} } = await import('./index.js');
 const server = await ${exportName}({ configuration: null, authentication: null, hostname: '127.0.0.1', port: 0, development: false });
 console.log('SMOKE_PORT:' + server.port);`,
             ],
-            {
-                cwd: fileURLToPath(new URL(`../apps/${app}/dist/`, import.meta.url)),
-                env: { NODE_ENV: "production" },
-                stdin: "ignore",
-                stdout: "pipe",
-                stderr: "inherit",
-            }
+            { NODE_ENV: "production" }
         );
-        children.push(child);
         const port = await bounded(
             Promise.race([
                 readPort(child.stdout),
@@ -240,17 +229,7 @@ console.log('SMOKE_PORT:' + server.port);`,
         const [dashboard, auth] = await Promise.all([start("dashboard"), start("auth")]);
         await Promise.all([checkDashboard(dashboard), checkAuth(auth)]);
     } finally {
-        for (const child of children) child.kill("SIGTERM");
-        await Promise.all(
-            children.map(async (child) => {
-                try {
-                    await bounded(child.exited, 3000, "Application shutdown");
-                } catch {
-                    child.kill("SIGKILL");
-                    await bounded(child.exited, 3000, "Application forced shutdown");
-                }
-            })
-        );
+        await runtime.close();
     }
 }
 
