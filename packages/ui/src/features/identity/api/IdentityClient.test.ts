@@ -78,6 +78,85 @@ describe("identity action replay", () => {
     });
 });
 
+describe("verified domain operations", () => {
+    const proofRequired = new Error("Fresh proof required");
+    const requiresProof = (error: unknown) => error === proofRequired;
+
+    test("replays once with the same live identity signal after verification", async () => {
+        const client = new IdentityClient();
+        client.bindIdentity("user:session");
+        const signals: AbortSignal[] = [];
+        const action = client.verifiedOperation((signal) => {
+            signals.push(signal);
+            return signals.length === 1
+                ? Promise.reject(proofRequired)
+                : Promise.resolve("completed");
+        }, requiresProof);
+        await waitForPrompt(client);
+        client.verification.complete(client.verification.getSnapshot());
+        expect(await action).toBe("completed");
+        expect(signals).toHaveLength(2);
+        expect(signals[1]).toBe(signals[0]);
+        expect(signals[1]?.aborted).toBe(false);
+    });
+
+    test.each(["cancel", "abort", "identity"] as const)(
+        "%s prevents replay of a verified domain operation",
+        async (mode) => {
+            const client = new IdentityClient();
+            client.bindIdentity("user:session");
+            let calls = 0;
+            const outcome = client
+                .verifiedOperation(() => {
+                    calls += 1;
+                    throw proofRequired;
+                }, requiresProof)
+                .catch((error: unknown) => error);
+            await waitForPrompt(client);
+            if (mode === "cancel") client.verification.cancel();
+            else if (mode === "abort") client.cancelActions();
+            else client.bindIdentity("user:replacement-session");
+            expect(await outcome).toMatchObject({ code: "CANCELLED" });
+            expect(calls).toBe(1);
+        }
+    );
+
+    test("does not retry an ambiguous failure or prompt without a bound identity", async () => {
+        for (const bound of [true, false]) {
+            const client = new IdentityClient();
+            if (bound) client.bindIdentity("user:session");
+            const failure = bound ? new Error("Network failure") : proofRequired;
+            let calls = 0;
+            const outcome = await client
+                .verifiedOperation(() => {
+                    calls += 1;
+                    throw failure;
+                }, requiresProof)
+                .catch((error: unknown) => error);
+            expect(outcome).toBe(failure);
+            expect(calls).toBe(1);
+            expect(client.verification.getSnapshot()).toBe(0);
+        }
+    });
+
+    test("surfaces a second proof rejection without prompting indefinitely", async () => {
+        const client = new IdentityClient();
+        client.bindIdentity("user:session");
+        let calls = 0;
+        const outcome = client
+            .verifiedOperation(() => {
+                calls += 1;
+                throw proofRequired;
+            }, requiresProof)
+            .catch((error: unknown) => error);
+        await waitForPrompt(client);
+        client.verification.complete(client.verification.getSnapshot());
+        expect(await outcome).toBe(proofRequired);
+        expect(calls).toBe(2);
+        expect(client.verification.getSnapshot()).toBe(0);
+    });
+});
+
 test("timeouts and cancelled requests show actionable messages without replaying mutations", async () => {
     for (const [name, code, message] of [
         ["TimeoutError", "TIMEOUT", "The server took too long to respond"],

@@ -192,6 +192,33 @@ export class IdentityClient {
     }
 
     /**
+     * Retry a domain operation once after an explicit step-up rejection, bound to this identity.
+     * @param operation - A cancellable operation that has not mutated before requesting proof.
+     * @param requiresProof - Whether its typed failure is specifically a fresh-proof rejection.
+     * @returns The operation result after optional shared verification.
+     */
+    async verifiedOperation<T>(
+        operation: (signal: AbortSignal) => Promise<T>,
+        requiresProof: (error: unknown) => boolean
+    ): Promise<T> {
+        const identity = this.#identity;
+        const signal = this.#actions.signal;
+        try {
+            return await operation(signal);
+        } catch (error) {
+            if (!identity || !requiresProof(error)) throw error;
+            const accepted = await this.verification.request(signal);
+            if (!accepted || signal.aborted || identity !== this.#identity)
+                throw new IdentityError(
+                    "CANCELLED",
+                    0,
+                    "Security verification was cancelled."
+                );
+            return operation(signal);
+        }
+    }
+
+    /**
      * Complete a browser WebAuthn proof bound to the current action generation.
      * @returns Completion after the server verifies the assertion.
      */

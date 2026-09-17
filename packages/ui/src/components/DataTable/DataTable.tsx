@@ -1,15 +1,25 @@
 import { useRef, type ReactNode } from "react";
 
+import { cn } from "../../lib/classNames";
 import {
     InfiniteScrollTrigger,
     type InfiniteScrollContinuation,
 } from "../InfiniteScrollTrigger/InfiniteScrollTrigger";
 import { Virtualizer } from "../Virtualizer/Virtualizer";
+import { DataTableRow } from "./DataTableRow";
 
 export interface DataColumn<T> {
     readonly id: string;
     readonly label: string;
     readonly render: (row: T) => ReactNode;
+    readonly mobile?: "title" | "wide" | "actions";
+    readonly hideLabel?: boolean;
+    readonly width?: string;
+}
+
+export interface DataRowAction<T> {
+    readonly label: (row: T) => string;
+    readonly onSelect: (row: T) => void;
 }
 
 /**
@@ -22,12 +32,16 @@ export function DataTable<T>({
     columns,
     getKey,
     continuation,
+    compact = false,
+    rowAction,
 }: {
     readonly label: string;
     readonly rows: readonly T[];
     readonly columns: readonly DataColumn<T>[];
     readonly getKey: (row: T) => string;
     readonly continuation?: InfiniteScrollContinuation;
+    readonly compact?: boolean;
+    readonly rowAction?: DataRowAction<T>;
 }) {
     const scrollRef = useRef<HTMLElement>(null);
     return (
@@ -36,7 +50,7 @@ export function DataTable<T>({
                 ref={scrollRef}
                 tabIndex={0}
                 aria-label={label}
-                className="max-h-130 overflow-auto rounded-lg border border-primary-700 focus-visible:outline-2 focus-visible:outline-accent-500"
+                className="isolate max-h-[min(32.5rem,60dvh)] scrollbar-gutter-stable overflow-auto rounded-lg border border-primary-700 focus-visible:outline-2 focus-visible:outline-accent-500"
             >
                 <Virtualizer
                     count={rows.length}
@@ -57,9 +71,20 @@ export function DataTable<T>({
                                         <th
                                             key={column.id}
                                             scope="col"
-                                            className="border-b border-primary-700 p-3 font-medium"
+                                            className={cn(
+                                                "border-b border-primary-700 p-3 font-medium",
+                                                column.width
+                                            )}
                                         >
-                                            {column.label}
+                                            <span
+                                                className={
+                                                    column.hideLabel
+                                                        ? "sr-only"
+                                                        : undefined
+                                                }
+                                            >
+                                                {column.label}
+                                            </span>
                                         </th>
                                     ))}
                                 </tr>
@@ -74,27 +99,17 @@ export function DataTable<T>({
                                 {items.map((item) => {
                                     const row = rows[item.index];
                                     return row === undefined ? null : (
-                                        <tr
-                                            ref={measureElement}
-                                            data-index={item.index}
+                                        <DataTableRow
                                             key={item.key}
-                                            className="align-top @max-[48rem]:block @max-[48rem]:border-b @max-[48rem]:border-primary-700"
-                                        >
-                                            {columns.map((column) => (
-                                                <td
-                                                    key={column.id}
-                                                    className="border-b border-primary-700/60 p-3 wrap-anywhere @max-[48rem]:grid @max-[48rem]:grid-cols-1 @max-[48rem]:gap-1 @max-[48rem]:border-0 @max-[48rem]:py-2"
-                                                >
-                                                    <span
-                                                        className="hidden text-xs font-medium text-primary-400 @max-[48rem]:block"
-                                                        aria-hidden="true"
-                                                    >
-                                                        {column.label}
-                                                    </span>
-                                                    {column.render(row)}
-                                                </td>
-                                            ))}
-                                        </tr>
+                                            row={row}
+                                            index={item.index}
+                                            measureElement={measureElement}
+                                            columns={columns}
+                                            compact={compact}
+                                            {...(rowAction === undefined
+                                                ? {}
+                                                : { rowAction })}
+                                        />
                                     );
                                 })}
                                 <tr aria-hidden="true" className="@max-[48rem]:block">

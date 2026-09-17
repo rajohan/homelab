@@ -2,12 +2,15 @@ import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 
 import { appRouter } from "../api/router";
 import type { DashboardAuthConfiguration } from "../config/auth";
+import type { OperationsConfiguration } from "../config/operations";
+import type { OperationsContext } from "../operations/context";
 
 export interface DashboardServerOptions {
     readonly hostname?: string;
     readonly port?: number;
     readonly development?: boolean;
     readonly authentication?: DashboardAuthConfiguration | null;
+    readonly operations?: OperationsConfiguration | null;
 }
 
 /**
@@ -16,7 +19,7 @@ export interface DashboardServerOptions {
  */
 export function dashboardHealthResponse(): Response {
     return Response.json(
-        { service: "dashboard", phase: "identity", status: "ok" },
+        { service: "dashboard", phase: "operations", status: "ok" },
         { headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } }
     );
 }
@@ -24,14 +27,20 @@ export function dashboardHealthResponse(): Response {
 /**
  * Dispatch an already authorized request to the dashboard tRPC router.
  * @param request - The request after the server's origin and session checks.
+ * @param context - The server-verified principal and process-owned operation services.
+ * @param endpoint - The browser or machine-only transport mount.
  * @returns The tRPC response with private-response caching disabled.
  */
-export async function dashboardApiRequest(request: Request): Promise<Response> {
+export async function dashboardApiRequest(
+    request: Request,
+    context: OperationsContext = {},
+    endpoint = "/api/trpc"
+): Promise<Response> {
     const response = await fetchRequestHandler({
-        endpoint: "/api/trpc",
+        endpoint,
         req: request,
         router: appRouter,
-        createContext: () => ({}),
+        createContext: () => context,
     });
     response.headers.set("Cache-Control", "no-store");
     response.headers.set("X-Content-Type-Options", "nosniff");

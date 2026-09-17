@@ -1,6 +1,6 @@
 import { Brand, IconButton } from "@homelab/ui";
 import { Link } from "@tanstack/react-router";
-import { LayoutDashboard, Server, Settings, X } from "lucide-react";
+import { LayoutDashboard, Server, Settings, X, ListChecks } from "lucide-react";
 
 import { NavigationLink } from "./NavigationLink";
 
@@ -54,13 +54,17 @@ export function Sidebar({
                     icon={Settings}
                     onNavigate={onNavigate}
                 />
+                <NavigationLink
+                    to="/jobs"
+                    label="Jobs"
+                    icon={ListChecks}
+                    onNavigate={onNavigate}
+                />
             </nav>
             <div className="shrink-0 border-t border-primary-700 p-5">
-                <p className="text-xs font-medium text-primary-300">
-                    Homelab · Identity preview
-                </p>
+                <p className="text-xs font-medium text-primary-300">Homelab Dashboard</p>
                 <p className="mt-2 text-xs leading-5 text-primary-500">
-                    Production access is still managed by Authelia.
+                    Infrastructure, automation and account security.
                 </p>
             </div>
         </>

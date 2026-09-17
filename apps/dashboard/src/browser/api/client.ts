@@ -3,8 +3,14 @@ import superjson from "superjson";
 
 import type { AppRouter } from "../../server/api/router";
 
-const api = createTRPCClient<AppRouter>({
-    links: [httpBatchLink({ url: "/api/trpc", transformer: superjson })],
+export const api = createTRPCClient<AppRouter>({
+    links: [
+        httpBatchLink({
+            url: "/api/trpc",
+            transformer: superjson,
+            headers: { "X-Homelab-Passive": "1" },
+        }),
+    ],
 });
 
 export const systemStatusQuery = {

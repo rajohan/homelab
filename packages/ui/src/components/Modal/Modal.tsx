@@ -8,6 +8,7 @@ import {
 import { X } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { cn } from "../../lib/classNames";
 import { IconButton } from "../Button/IconButton";
 
 /**
@@ -20,12 +21,14 @@ export function Modal({
     onClose,
     description,
     dismissible = true,
+    size = "md",
 }: {
     title: string;
     children: ReactNode;
     onClose: () => void;
     description?: string;
     dismissible?: boolean;
+    size?: "md" | "wide";
 }) {
     return (
         <Dialog
@@ -43,7 +46,10 @@ export function Modal({
                 <div className="flex min-h-full items-center justify-center">
                     <DialogPanel
                         transition
-                        className="w-full max-w-lg min-w-0 rounded-xl border border-primary-700 bg-primary-800 text-primary-50 shadow-2xl shadow-black/50 transition duration-200 data-closed:translate-y-2 data-closed:opacity-0 motion-reduce:transition-none"
+                        className={cn(
+                            "w-full min-w-0 rounded-xl border border-primary-700 bg-primary-800 text-primary-50 shadow-2xl shadow-black/50 transition duration-200 data-closed:translate-y-2 data-closed:opacity-0 motion-reduce:transition-none",
+                            size === "wide" ? "max-w-5xl" : "max-w-lg"
+                        )}
                     >
                         <div className="flex items-start justify-between gap-3 rounded-t-xl border-b border-primary-700 bg-primary-900/40 px-5 py-4">
                             <div className="min-w-0 flex-1">

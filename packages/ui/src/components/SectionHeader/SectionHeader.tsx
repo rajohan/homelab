@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { cn } from "../../lib/classNames";
 import { SectionIcon } from "./SectionIcon";
 
 /**
@@ -13,15 +14,24 @@ export function SectionHeader({
     icon: Icon,
     actions,
     badge,
+    compactActions = false,
 }: {
     readonly title: string;
     readonly description?: string;
     readonly icon: LucideIcon;
     readonly actions?: ReactNode;
     readonly badge?: ReactNode;
+    readonly compactActions?: boolean;
 }) {
     return (
-        <div className="flex flex-col gap-3 min-[30rem]:flex-row min-[30rem]:items-center min-[30rem]:justify-between">
+        <div
+            className={cn(
+                "flex gap-3",
+                compactActions
+                    ? "flex-row items-start justify-between"
+                    : "flex-col min-[30rem]:flex-row min-[30rem]:items-center min-[30rem]:justify-between"
+            )}
+        >
             <div className="flex min-w-0 flex-1 gap-3">
                 <SectionIcon icon={Icon} className="mt-0.5" />
                 <div className="min-w-0">

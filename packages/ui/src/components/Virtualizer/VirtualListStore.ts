@@ -36,6 +36,9 @@ export class VirtualListStore {
             initialRect: { height: 520, width: 960 },
             observeElementRect,
             observeElementOffset,
+            // Responsive row measurements update spacer sizes. Commit those changes
+            // outside ResizeObserver delivery to avoid a same-frame layout feedback loop.
+            useAnimationFrameWithResizeObserver: true,
             scrollToFn: elementScroll,
             onChange: () => this.#publish(),
         });

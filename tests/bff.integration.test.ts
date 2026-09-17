@@ -109,15 +109,26 @@ describe.each(["client_secret_post", "client_secret_basic"] as const)(
                         : new Response(null, { status: 503 }),
             });
             issuer = `http://127.0.0.1:${authServer.port}`;
-            const portProbe = Bun.serve({
+            const dashboardAuthentication = {
+                issuer,
+                origin: "http://127.0.0.1",
+                clientId: "dashboard",
+                clientSecret,
+                tokenEndpointAuthMethod: method,
+                sessionKey: crypto.getRandomValues(new Uint8Array(32)),
+                development: true,
+            };
+            // Keep the allocated port bound while registering the test OIDC client.
+            dashboard = startDashboardServer({
                 hostname: "127.0.0.1",
                 port: 0,
-                fetch: () => new Response(null, { status: 503 }),
+                development: false,
+                authentication: dashboardAuthentication,
             });
-            const port = portProbe.port;
+            const port = dashboard.port;
             if (!port) throw new Error("Port allocation failed");
-            await portProbe.stop(true);
             origin = `http://127.0.0.1:${port}`;
+            dashboardAuthentication.origin = origin;
             const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
             const configuration: AuthConfiguration = {
                 sessionPolicy: { ...defaultSessionPolicy },
@@ -174,20 +185,6 @@ describe.each(["client_secret_post", "client_secret_basic"] as const)(
                 passwordHash: await hashPassword(password),
                 groups: ["admins"],
                 createdAt: new Date(),
-            });
-            dashboard = startDashboardServer({
-                hostname: "127.0.0.1",
-                port,
-                development: false,
-                authentication: {
-                    issuer,
-                    origin,
-                    clientId: "dashboard",
-                    clientSecret,
-                    tokenEndpointAuthMethod: method,
-                    sessionKey: crypto.getRandomValues(new Uint8Array(32)),
-                    development: true,
-                },
             });
         });
         afterAll(async () => {
@@ -401,6 +398,40 @@ describe.each(["client_secret_post", "client_secret_basic"] as const)(
                     .from(sessions)
                     .where(eq(sessions.id, session.id));
                 expect(renewed?.lastSeenAt.getTime()).toBeGreaterThan(lastSeen.getTime());
+            });
+
+            test("background operation polling does not keep an idle session alive", async () => {
+                const session = await currentSession();
+                if (!session) throw new Error("Session missing");
+                const lastSeen = new Date(Date.now() - 55 * 60_000);
+                await auth.connection.database
+                    .update(sessions)
+                    .set({ lastSeenAt: lastSeen })
+                    .where(eq(sessions.id, session.id));
+                const cookie = jar.get(origin)?.get("homelab_dashboard")?.value;
+                const response = await fetch(origin + "/api/trpc/system.status", {
+                    headers: {
+                        Cookie: "homelab_dashboard=" + cookie,
+                        Origin: origin,
+                        "X-Homelab-Passive": "1",
+                    },
+                });
+                expect(response.status).toBe(200);
+                const [unchanged] = await auth.connection.database
+                    .select()
+                    .from(sessions)
+                    .where(eq(sessions.id, session.id));
+                expect(unchanged?.lastSeenAt.getTime()).toBe(lastSeen.getTime());
+            });
+
+            test("automation administration proof rejects a password-only account", async () => {
+                const response = await browser(origin + "/api/account/authorize", {});
+                expect(response.status).toBe(403);
+                const result = v.parse(
+                    v.object({ code: v.string() }),
+                    await response.json()
+                );
+                expect(result.code).toBe("MFA_REQUIRED");
             });
 
             test("rejected tRPC origins cannot renew the central session", async () => {

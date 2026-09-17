@@ -6,6 +6,7 @@ import { ErrorNotice } from "../Alert/ErrorNotice";
 import { ActionGroup } from "../Button/ActionGroup";
 import { Button } from "../Button/Button";
 import { Input } from "../Input/Input";
+import { TimePicker } from "../TimePicker/TimePicker";
 import { Form } from "./Form";
 import { FormField } from "./FormField";
 import type { FieldDefinition, FormErrors, FormValues } from "./types";
@@ -88,43 +89,60 @@ export function FieldsForm({
             }
         >
             {([canSubmit, submitting, values]) => (
-                <Form onSubmit={() => form.handleSubmit()} className="space-y-4">
+                <Form
+                    onSubmit={() => form.handleSubmit()}
+                    className="flex flex-col gap-4"
+                >
                     {fields.map((definition) => (
                         <form.Field name={definition.name} key={definition.name}>
-                            {(field) => (
-                                <FormField
-                                    label={definition.label}
-                                    error={touchedFieldError(field.state.meta)}
-                                    disabled={submitting}
-                                >
-                                    <Input
-                                        name={definition.name}
-                                        type={definition.type ?? "text"}
-                                        autoComplete={definition.autoComplete}
-                                        placeholder={definition.placeholder}
+                            {(field) =>
+                                definition.type === "time" ? (
+                                    <TimePicker
+                                        label={definition.label}
                                         value={field.state.value ?? ""}
-                                        onBlur={(event) => {
-                                            if (
-                                                event.currentTarget.value !==
-                                                field.state.value
-                                            )
-                                                field.handleChange(
-                                                    event.currentTarget.value
-                                                );
-                                            field.handleBlur();
-                                            // Reuse change validation so corrected errors cannot linger.
-                                            void field.validate("change");
-                                        }}
-                                        onChange={(event) => {
+                                        error={touchedFieldError(field.state.meta)}
+                                        disabled={submitting}
+                                        onChange={(value) => {
                                             setError(undefined);
-                                            field.handleChange(event.target.value);
+                                            field.handleChange(value);
+                                            field.handleBlur();
                                         }}
-                                        required
-                                        minLength={definition.minimum ?? 1}
-                                        maxLength={definition.maximum ?? 256}
                                     />
-                                </FormField>
-                            )}
+                                ) : (
+                                    <FormField
+                                        label={definition.label}
+                                        error={touchedFieldError(field.state.meta)}
+                                        disabled={submitting}
+                                    >
+                                        <Input
+                                            name={definition.name}
+                                            type={definition.type ?? "text"}
+                                            autoComplete={definition.autoComplete}
+                                            placeholder={definition.placeholder}
+                                            value={field.state.value ?? ""}
+                                            onBlur={(event) => {
+                                                if (
+                                                    event.currentTarget.value !==
+                                                    field.state.value
+                                                )
+                                                    field.handleChange(
+                                                        event.currentTarget.value
+                                                    );
+                                                field.handleBlur();
+                                                // Reuse change validation so corrected errors cannot linger.
+                                                void field.validate("change");
+                                            }}
+                                            onChange={(event) => {
+                                                setError(undefined);
+                                                field.handleChange(event.target.value);
+                                            }}
+                                            required
+                                            minLength={definition.minimum ?? 1}
+                                            maxLength={definition.maximum ?? 256}
+                                        />
+                                    </FormField>
+                                )
+                            }
                         </form.Field>
                     ))}
                     {children && <Fieldset disabled={submitting}>{children}</Fieldset>}

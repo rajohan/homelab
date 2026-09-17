@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import { Button, Card, ErrorNotice, LoadingState, PageHeader } from "../../../index";
 import type { IdentityClient } from "../api/IdentityClient";
 import { IdentityError } from "../api/IdentityError";
@@ -22,9 +24,11 @@ import { SecurityPrompt } from "./verification/SecurityPrompt";
 export function AccountSettings({
     client,
     signInPath = "/login",
+    children,
 }: {
     client: IdentityClient;
     signInPath?: string;
+    children?: ReactNode;
 }) {
     const state = useAccountSettings(client),
         { account } = state;
@@ -115,6 +119,7 @@ export function AccountSettings({
                 }
             />
             <DisableMfaPanel data={account.data} onAction={state.setAction} />
+            {children}
             <ActivityPanel client={client} accountId={account.data.user.id} />
             {state.action !== undefined && (
                 <AccountActionDialog

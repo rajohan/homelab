@@ -1,0 +1,46 @@
+# Optional worker overlay. Pin it to the same dashboard image and schema version.
+services:
+  dashboard:
+    volumes: ["/etc/localtime:/etc/localtime:ro"]
+    environment:
+      HOMELAB_DASHBOARD_DATABASE_URL:
+      HOMELAB_DASHBOARD_METRICS_URL:
+      HOMELAB_DASHBOARD_JOB_RETENTION_DAYS:
+  worker:
+    image: ${HOMELAB_DASHBOARD_IMAGE:?Set the dashboard digest reference from container-images.json}
+    command: [bun, --no-env-file, worker.js]
+    pull_policy: always
+    environment:
+      NODE_ENV: production
+      HOMELAB_DASHBOARD_DATABASE_URL:
+      HOMELAB_DASHBOARD_METRICS_URL:
+      HOMELAB_DASHBOARD_METRICS_TOKEN:
+      HOMELAB_DASHBOARD_WORKER_CONCURRENCY:
+      HOMELAB_DASHBOARD_JOB_RETENTION_DAYS:
+      HOMELAB_DASHBOARD_WORKER_HOST: 0.0.0.0
+      HOMELAB_DASHBOARD_WORKER_PORT: "3112"
+    ports: ["127.0.0.1:3112:3112"]
+    volumes: ["/etc/localtime:/etc/localtime:ro"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 35s
+    healthcheck:
+      test:
+        [
+          CMD,
+          bun,
+          -e,
+          "const response = await fetch('http://127.0.0.1:3112/health/ready'); process.exitCode = response.ok ? 0 : 1",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    logging:
+      driver: local
+      options:
+        max-size: 5m
+        max-file: "2"

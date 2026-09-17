@@ -1,15 +1,31 @@
 import { systemStatusSchema } from "@homelab/contracts";
-import { initTRPC } from "@trpc/server";
+import type { InfrastructureSnapshot } from "@homelab/contracts/operations";
 import { Effect } from "effect";
-import superjson from "superjson";
 
+import { automationRouter } from "../automation/routes";
+import { jobsRouter } from "../jobs/routes";
+import { schedulesRouter } from "../jobs/scheduleRoutes";
+import { workerRouter } from "../jobs/workerRoutes";
+import { authorizedOperations } from "../operations/authorization";
 import { readSystemStatus, SystemStatusLive } from "./system";
+import { runOperation, trpc } from "./trpc";
 
-const trpc = initTRPC.create({ transformer: superjson });
-
-// This read-only foundation API relies on the private deployment boundary. It does
-// not implement an application login or accept identity from forwarded headers.
 export const appRouter = trpc.router({
+    jobs: jobsRouter,
+    schedules: schedulesRouter,
+    worker: workerRouter,
+    automation: automationRouter,
+    infrastructure: trpc.router({
+        summary: trpc.procedure.query(({ ctx }) =>
+            runOperation(async () => {
+                const { operations } = authorizedOperations(ctx, "infrastructure:read");
+                const rows = await operations.client<
+                    { value: InfrastructureSnapshot }[]
+                >`SELECT value FROM operation_snapshots WHERE key = 'infrastructure'`;
+                return rows[0]?.value ?? null;
+            })
+        ),
+    }),
     system: trpc.router({
         status: trpc.procedure
             .output(systemStatusSchema)
