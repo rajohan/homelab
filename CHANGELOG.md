@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/rajohan/homelab/compare/v0.1.2...v0.2.0) (2026-09-17)
+
+
+### Features
+
+* **dashboard:** add background jobs and automation access ([#9](https://github.com/rajohan/homelab/issues/9)) ([e45a342](https://github.com/rajohan/homelab/commit/e45a342618b9f1f2ba601052af9145e92cffefe2))
+
 ## [0.1.2](https://github.com/rajohan/homelab/compare/v0.1.1...v0.1.2) (2026-09-16)
 
 
