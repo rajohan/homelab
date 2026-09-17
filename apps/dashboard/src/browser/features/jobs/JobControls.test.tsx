@@ -12,8 +12,10 @@ import { DisableScheduleDialog } from "./DisableScheduleDialog";
 import { JobHistory } from "./JobHistory";
 import { JobRunTable } from "./JobRunTable";
 import { JobStatus } from "./JobStatus";
+import { RunDetailDialog } from "./RunDetailDialog";
 import { ScheduleActions } from "./ScheduleActions";
 import { ScheduleDialog } from "./ScheduleDialog";
+import { SchedulesPanel } from "./SchedulesPanel";
 import { WorkerPanel } from "./WorkerPanel";
 
 const schedule: ScheduleSummary = {
@@ -278,3 +280,118 @@ test("the empty active queue uses the same bordered surface as other empty state
         cleanup();
     }
 });
+
+test("schedule inventory shows disabled intent, resume time and independent row actions", () => {
+    const cleanup = fixture(<SchedulesPanel />, (query) => {
+        query.setQueryData(
+            ["operations", "schedules"],
+            [
+                schedule,
+                {
+                    ...schedule,
+                    id: "019959a7-4600-7000-8000-000000000004",
+                    label: "Paused cleanup",
+                    enabled: false,
+                    disableReason: "Waiting for maintenance",
+                },
+                {
+                    ...schedule,
+                    id: "019959a7-4600-7000-8000-000000000005",
+                    label: "Resuming cleanup",
+                    enabled: false,
+                    disableReason: "Temporary maintenance",
+                    disabledUntil: "2026-09-21T10:00:00Z",
+                },
+            ]
+        );
+    });
+    try {
+        expect(screen.getByRole("heading", { name: "Schedules" })).toBeVisible();
+        expect(screen.getByText("Enabled")).toBeVisible();
+        expect(screen.getAllByText("Disabled")).toHaveLength(2);
+        expect(screen.getByText("Disabled indefinitely")).toBeVisible();
+        expect(screen.getByText(/^Resumes /)).toBeVisible();
+        expect(screen.getByText("Waiting for maintenance")).toBeVisible();
+        expect(screen.getAllByText("Every 60 minutes")).toHaveLength(3);
+        expect(
+            screen.getByRole("button", { name: "Actions for Paused cleanup" })
+        ).toBeVisible();
+    } finally {
+        cleanup();
+    }
+});
+
+test.each([false, true])(
+    "run details render policy and paginated events (completed: %s)",
+    async (completed) => {
+        const id = "019959a7-4600-7000-8000-000000000006";
+        const close = mock(() => {});
+        const cleanup = fixture(<RunDetailDialog id={id} onClose={close} />, (query) => {
+            query.setQueryData(["operations", "jobs", "detail", id], {
+                pages: [
+                    {
+                        run: {
+                            id,
+                            action: "system.retention",
+                            label: "Inspected cleanup",
+                            resourceClass: "light",
+                            state: completed ? "failed" : "queued",
+                            attempt: 1,
+                            attemptLimit: 2,
+                            requestedBy: "human:test",
+                            createdAt: "2026-09-17T10:00:00Z",
+                            startedAt: completed ? "2026-09-17T10:00:01Z" : null,
+                            finishedAt: completed ? "2026-09-17T10:00:02Z" : null,
+                            message: completed ? "Execution failed." : null,
+                            cancelRequested: false,
+                            resourceKeys: ["maintenance:operations"],
+                            timeoutMs: 30_000,
+                            retrySafe: completed,
+                        },
+                        events: [
+                            {
+                                id: "019959a7-4600-7000-8000-000000000007",
+                                actor: "human:test",
+                                action: "jobs.enqueue",
+                                createdAt: "2026-09-17T10:00:00Z",
+                            },
+                        ],
+                        nextCursor: completed
+                            ? "019959a7-4600-7000-8000-000000000007"
+                            : null,
+                    },
+                ],
+                pageParams: [undefined],
+            });
+        });
+        try {
+            expect(
+                screen.getByRole("dialog", { name: "Inspected cleanup" })
+            ).toBeVisible();
+            expect(screen.getByText("30 seconds")).toBeVisible();
+            expect(screen.getByText(completed ? "Yes" : "No")).toBeVisible();
+            expect(screen.getByRole("list", { name: "Run events" })).toHaveClass(
+                "bg-primary-950/40"
+            );
+            expect(screen.getByText("jobs.enqueue")).toBeVisible();
+            if (completed) {
+                expect(screen.getByText("Execution failed.")).toBeVisible();
+                expect(
+                    screen.getByRole("button", { name: "Load older events" })
+                ).toBeEnabled();
+            } else {
+                expect(screen.getByText("Not started")).toBeVisible();
+                expect(screen.getByText("Not finished")).toBeVisible();
+                expect(
+                    screen.queryByRole("button", { name: "Load older events" })
+                ).not.toBeInTheDocument();
+            }
+            await userEvent
+                .setup()
+                .click(screen.getByRole("button", { name: "Close dialog" }));
+            expect(close).toHaveBeenCalledTimes(1);
+        } finally {
+            cleanup();
+        }
+    }
+);
