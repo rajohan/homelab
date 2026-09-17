@@ -215,6 +215,17 @@ export async function accountApi(
         return secureJson({ ok: true });
     }
     const principal = await requestPrincipal(request, services);
+    if (path === "/api/account/authorize") {
+        v.parse(v.strictObject({}), body);
+        await accounts.requireFresh(principal);
+        if (!(await accounts.hasMfa(principal.user.id)))
+            throw new AuthFailure(
+                "MFA_REQUIRED",
+                403,
+                "Register a second factor before managing automation access."
+            );
+        return secureJson({ userId: principal.user.id, sessionId: principal.session.id });
+    }
     if (path === "/api/sso/complete") {
         const input = v.parse(v.strictObject({ target: text(4096), nonce: token }), body);
         return secureJson({

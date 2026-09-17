@@ -1,6 +1,7 @@
 import { isIP } from "node:net";
 
 import { parseDashboardAuthConfiguration } from "./auth";
+import { parseOperationsConfiguration } from "./operations";
 
 /**
  * Validate the dashboard listener address and port.
@@ -35,4 +36,23 @@ export function dashboardDevelopment(): boolean {
  */
 export function dashboardAuthConfiguration() {
     return parseDashboardAuthConfiguration(process.env);
+}
+
+/**
+ * Read scoped operation configuration at the process environment boundary.
+ * @returns Validated operation settings, or undefined before provisioning.
+ */
+export function dashboardOperationsConfiguration() {
+    return parseOperationsConfiguration(process.env);
+}
+
+/**
+ * Read the worker's private health listener with the same validation as the web listener.
+ * @returns An explicit IP address and TCP port, defaulting to loopback only.
+ */
+export function workerHealthBinding() {
+    return dashboardBindOptions({
+        HOMELAB_DASHBOARD_HOST: process.env.HOMELAB_DASHBOARD_WORKER_HOST ?? "127.0.0.1",
+        HOMELAB_DASHBOARD_PORT: process.env.HOMELAB_DASHBOARD_WORKER_PORT ?? "3112",
+    });
 }

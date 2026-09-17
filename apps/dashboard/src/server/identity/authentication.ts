@@ -1,8 +1,11 @@
+import { capabilities } from "@homelab/contracts/operations";
 import { EncryptJWT, jwtDecrypt } from "jose";
 import * as oidc from "openid-client";
 import * as v from "valibot";
 
+import type { OperationPrincipal } from "../automation/authentication";
 import type { DashboardAuthConfiguration } from "../config/auth";
+import { OperationFailure } from "../operations/errors";
 
 const stateSchema = v.object({
     state: v.string(),
@@ -260,7 +263,47 @@ export function createDashboardAuthentication(configuration: DashboardAuthConfig
         return v.parse(v.object({ authenticated: v.boolean() }), await check.json())
             .authenticated;
     }
-    return { begin, callback, proxy, authenticated };
+    async function operationPrincipal(
+        request: Request,
+        fresh = false
+    ): Promise<OperationPrincipal> {
+        const path = fresh ? "/api/account/authorize" : "/api/session";
+        const headers = new Headers(request.headers);
+        headers.set("origin", configuration.origin);
+        headers.set("content-type", "application/json");
+        const result = await proxy(
+            new Request(new URL(path, configuration.origin).href, {
+                headers,
+                ...(fresh ? { method: "POST", body: "{}" } : {}),
+            }),
+            !fresh &&
+                (request.method !== "GET" ||
+                    request.headers.get("x-homelab-passive") !== "1")
+        );
+        if (!result.ok) {
+            const failure = v.safeParse(
+                v.object({ code: v.string(), message: v.string() }),
+                await result.json()
+            );
+            if (failure.success && failure.output.code === "STEP_UP_REQUIRED")
+                throw new OperationFailure("PRECONDITION_FAILED", "STEP_UP_REQUIRED");
+            throw new OperationFailure(
+                result.status === 401 ? "UNAUTHORIZED" : "FORBIDDEN",
+                failure.success ? failure.output.message : "Identity verification failed."
+            );
+        }
+        const value = v.parse(
+            v.object({
+                authenticated: v.optional(v.boolean()),
+                userId: v.optional(v.string()),
+            }),
+            await result.json()
+        );
+        if ((!fresh && !value.authenticated) || !value.userId)
+            throw new OperationFailure("UNAUTHORIZED", "Sign in to continue.");
+        return { kind: "human", id: value.userId, capabilities };
+    }
+    return { begin, callback, proxy, authenticated, operationPrincipal };
 }
 
 function readCookie(request: Request, name: string): string | undefined {

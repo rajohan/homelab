@@ -1,5 +1,6 @@
 import { AccountSettings } from "@homelab/ui/identity";
 
+import { AutomationAccess } from "../features/automation/AutomationAccess";
 import { useIdentityClient } from "../identity/IdentityClientContext";
 
 /**
@@ -8,5 +9,9 @@ import { useIdentityClient } from "../identity/IdentityClientContext";
  */
 export function Settings() {
     const client = useIdentityClient();
-    return <AccountSettings client={client} />;
+    return (
+        <AccountSettings client={client}>
+            <AutomationAccess />
+        </AccountSettings>
+    );
 }

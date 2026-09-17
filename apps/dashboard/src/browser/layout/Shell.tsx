@@ -16,6 +16,7 @@ export function Shell() {
     const titles: Readonly<Record<string, string>> = {
         "/settings": "Settings",
         "/infrastructure": "Infrastructure",
+        "/jobs": "Jobs",
         "/identity": "Identity",
     };
     const title = titles[location.pathname] ?? "Overview";

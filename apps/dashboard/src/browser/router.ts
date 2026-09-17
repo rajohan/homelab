@@ -8,6 +8,7 @@ import {
 import { Shell } from "./layout/Shell";
 import { Identity } from "./pages/Identity";
 import { Infrastructure } from "./pages/Infrastructure";
+import { Jobs } from "./pages/Jobs";
 import { NotFound } from "./pages/NotFound";
 import { Overview } from "./pages/Overview";
 import { RouteError } from "./pages/RouteError";
@@ -44,6 +45,7 @@ export function createDashboardRouter(history?: RouterHistory) {
             overview,
             identity,
             infrastructure,
+            createRoute({ getParentRoute: () => root, path: "/jobs", component: Jobs }),
             createRoute({
                 getParentRoute: () => root,
                 path: "/settings",

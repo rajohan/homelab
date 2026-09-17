@@ -1,14 +1,15 @@
-import { Badge, Card, PageHeader, SectionHeader, buttonStyles } from "@homelab/ui";
+import { Card, PageHeader, SectionHeader, buttonStyles } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { ArrowRight, Server, ShieldCheck } from "lucide-react";
+import { ArrowRight, ShieldCheck } from "lucide-react";
 
 import { systemStatusQuery } from "../api/client";
+import { InfrastructureSummary } from "../features/operations/InfrastructureSummary";
 import { ConnectionStatus } from "../features/overview/ConnectionStatus";
 
 /**
- * Show the identity preview and live dashboard API connection status.
- * @returns The component's rendered content for its current state.
+ * Combine the API connection, account settings and background monitoring summary.
+ * @returns Independent overview modules with their own loading and failure states.
  */
 export function Overview() {
     const status = useQuery(systemStatusQuery);
@@ -18,22 +19,6 @@ export function Overview() {
                 title="Overview"
                 description="Your account and infrastructure, in one place."
             />
-            <div className="mb-6 flex items-start gap-3 rounded-xl border border-accent-800/60 bg-accent-950/40 p-4 text-sm">
-                <ShieldCheck
-                    size={20}
-                    className="mt-0.5 shrink-0 text-accent-300"
-                    aria-hidden="true"
-                />
-                <div>
-                    <p className="font-medium text-accent-100">
-                        You&apos;re in the identity preview
-                    </p>
-                    <p className="mt-1 leading-6 text-primary-300">
-                        Authelia still protects your services. Explore account settings
-                        here before the production switch.
-                    </p>
-                </div>
-            </div>
             <div className="grid gap-6 lg:grid-cols-2">
                 <ConnectionStatus
                     pending={status.isPending}
@@ -48,8 +33,8 @@ export function Overview() {
                         icon={ShieldCheck}
                     />
                     <p className="text-sm leading-6 text-primary-300">
-                        Update your email and password, register security keys, and review
-                        your signed-in devices.
+                        Update your account, review signed-in devices, and manage scoped
+                        access for scripts and services.
                     </p>
                     <Link
                         to="/settings"
@@ -61,24 +46,9 @@ export function Overview() {
                         Open settings <ArrowRight size={16} aria-hidden="true" />
                     </Link>
                 </Card>
-                <Card className="flex flex-col gap-5 lg:col-span-2">
-                    <SectionHeader
-                        title="Infrastructure"
-                        description="Services, hosts and monitoring will live here."
-                        icon={Server}
-                        actions={<Badge>Not connected</Badge>}
-                    />
-                    <p className="text-sm leading-6 text-primary-400">
-                        Infrastructure integrations have not been enabled in this preview.
-                        Existing services continue to run independently.
-                    </p>
-                    <Link
-                        to="/infrastructure"
-                        className="inline-flex items-center gap-2 self-start text-sm font-medium text-accent-300 hover:text-accent-200"
-                    >
-                        View integration plan <ArrowRight size={16} aria-hidden="true" />
-                    </Link>
-                </Card>
+                <div className="lg:col-span-2">
+                    <InfrastructureSummary />
+                </div>
             </div>
         </>
     );

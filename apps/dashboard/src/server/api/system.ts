@@ -16,10 +16,10 @@ export const SystemStatusLive = Layer.succeed(SystemStatusService, {
             service: "dashboard",
             status: "ok",
             version: packageInformation.version,
-            phase: "identity",
+            phase: "operations",
             authenticationImplemented: true,
-            integrationsImplemented: false,
-            auth: { provider: "homelab", replacementEnabled: false },
+            integrationsImplemented: true,
+            auth: { provider: "homelab" },
         })
     ),
 });

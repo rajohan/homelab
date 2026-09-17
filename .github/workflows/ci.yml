@@ -45,6 +45,8 @@ jobs:
         run: bun run check
       - name: Check auth migration metadata without a database
         run: bun run db:check:auth
+      - name: Check dashboard migration metadata without a database
+        run: bun run db:check:dashboard
       - name: Run unit and component tests with coverage
         run: bun run test:coverage
       - name: Run HTTP and database integration tests with coverage

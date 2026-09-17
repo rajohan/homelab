@@ -6,12 +6,13 @@ import { appRouter } from "./router";
 import { readSystemStatus, SystemStatusService } from "./system";
 
 describe("dashboard system API", () => {
-    test("reports identity support without claiming a production cutover", async () => {
+    test("reports implementation capabilities without claiming live infrastructure health", async () => {
         const result = await appRouter.createCaller({}).system.status();
 
         expect(result.service).toBe("dashboard");
         expect(result.authenticationImplemented).toBe(true);
-        expect(result.auth).toEqual({ provider: "homelab", replacementEnabled: false });
+        expect(result.auth).toEqual({ provider: "homelab" });
+        expect(result.phase).toBe("operations");
     });
 
     test("the Effect service has a replaceable dependency boundary", async () => {

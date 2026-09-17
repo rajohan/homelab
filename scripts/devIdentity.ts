@@ -1,4 +1,5 @@
 import { generateKeyPairSync } from "node:crypto";
+import { fileURLToPath } from "node:url";
 
 import { migrate } from "drizzle-orm/bun-sql/migrator";
 
@@ -8,7 +9,12 @@ import { users } from "../apps/auth/src/server/database/schema";
 import { startAuthServer } from "../apps/auth/src/server/index";
 import { hashPassword, randomToken } from "../apps/auth/src/server/security/crypto";
 import { parseDashboardAuthConfiguration } from "../apps/dashboard/src/server/config/auth";
+import { parseOperationsConfiguration } from "../apps/dashboard/src/server/config/operations";
+import { connectDashboardDatabase } from "../apps/dashboard/src/server/database/connection";
+import { migrateDashboard } from "../apps/dashboard/src/server/database/migrations";
 import { startDashboardServer } from "../apps/dashboard/src/server/index";
+import { createOperationsRuntime } from "../apps/dashboard/src/server/operations/runtime";
+import { runWorker } from "../apps/dashboard/src/worker/runtime";
 
 async function docker(...arguments_: string[]): Promise<string> {
     const child = Bun.spawn(["docker", ...arguments_], {
@@ -43,12 +49,17 @@ export async function main(): Promise<void> {
     let created = false;
     let auth: Awaited<ReturnType<typeof startAuthServer>> | undefined;
     let dashboard: ReturnType<typeof startDashboardServer> | undefined;
+    let worker: Promise<void> | undefined;
+    let operations: ReturnType<typeof createOperationsRuntime> | undefined;
+    const lifecycle = new AbortController();
     let stopRequested = false;
+    let serverShutdownFailed: boolean;
     let requestStop: (() => void) | undefined;
     const stopped = new Promise<void>((resolve) => {
         requestStop = resolve;
     });
     const stop = () => {
+        lifecycle.abort();
         stopRequested = true;
         requestStop?.();
     };
@@ -70,8 +81,9 @@ export async function main(): Promise<void> {
             }
             if (!ready) throw new Error("Disposable database did not become ready");
             await migrate(connection.database, {
-                migrationsFolder: new URL("../apps/auth/migrations", import.meta.url)
-                    .pathname,
+                migrationsFolder: fileURLToPath(
+                    new URL("../apps/auth/migrations", import.meta.url)
+                ),
             });
             await connection.database.insert(users).values({
                 id: crypto.randomUUID(),
@@ -82,6 +94,7 @@ export async function main(): Promise<void> {
                 groups: ["admins"],
                 createdAt: new Date(),
             });
+            await connection.client`CREATE DATABASE homelab_dashboard_dev`;
         } finally {
             await connection.client.close();
         }
@@ -114,6 +127,19 @@ export async function main(): Promise<void> {
             throw new Error("Expected loopback-only database");
         const databaseUrl = `postgres://homelab_dev:${password}@${binding}/homelab_auth_dev`;
         await prepareDatabase(databaseUrl);
+        const dashboardUrl = new URL(databaseUrl);
+        dashboardUrl.pathname = "/homelab_dashboard_dev";
+        const operationConfiguration = parseOperationsConfiguration({
+            HOMELAB_DASHBOARD_DATABASE_URL: dashboardUrl.href,
+        });
+        if (!operationConfiguration)
+            throw new Error("Invalid isolated dashboard configuration");
+        const dashboardConnection = connectDashboardDatabase(dashboardUrl.href);
+        try {
+            await migrateDashboard(dashboardConnection);
+        } finally {
+            await dashboardConnection.client.close();
+        }
         if (!stopRequested) {
             const clientSecret = randomToken();
             const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 3072 });
@@ -177,8 +203,24 @@ export async function main(): Promise<void> {
                 port: 3100,
                 authentication,
                 development: true,
+                operations: operationConfiguration,
             });
-            console.info("Disposable identity preview: http://localhost:3100");
+            operations = createOperationsRuntime(operationConfiguration);
+            worker = runWorker({
+                client: operations.client,
+                registry: operations.registry,
+                concurrency: operationConfiguration.concurrency,
+                signal: lifecycle.signal,
+                version: "development",
+            }).catch(() => {
+                stop();
+                throw new Error("Development worker failed");
+            });
+            // Observe failure immediately even while the foreground preview awaits a signal.
+            void worker.catch(() => {});
+            console.info(
+                "Disposable identity and operations preview: http://localhost:3100"
+            );
             console.info("Synthetic account: developer / Development-only-password-123!");
             console.info(
                 "Use synthetic data only. Ctrl+C removes the temporary database and identities."
@@ -186,10 +228,21 @@ export async function main(): Promise<void> {
             await stopped;
         }
     } finally {
-        await dashboard?.stop(true);
-        await auth?.stop();
-        if (created) await docker("stop", "--time", "5", container);
+        lifecycle.abort();
+        const servers = await Promise.allSettled([dashboard?.stop(true), auth?.stop()]);
+        serverShutdownFailed = servers.some((result) => result.status === "rejected");
+        try {
+            await worker;
+        } finally {
+            try {
+                await operations?.client.close();
+            } finally {
+                if (created) await docker("stop", "--time", "5", container);
+            }
+        }
     }
+    if (serverShutdownFailed)
+        throw new Error("Development server shutdown failed after resource cleanup");
 }
 
 if (import.meta.main) await main();

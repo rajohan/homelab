@@ -13,12 +13,12 @@ import { createDashboardRouter } from "../router";
 const readyStatus = {
     name: "Homelab",
     version: "0.1.0",
-    phase: "identity",
+    phase: "operations",
     authenticationImplemented: true,
-    integrationsImplemented: false,
+    integrationsImplemented: true,
     service: "dashboard",
     status: "ok",
-    auth: { provider: "homelab", replacementEnabled: false },
+    auth: { provider: "homelab" },
 } as const;
 
 describe("dashboard foundation", () => {
@@ -61,6 +61,7 @@ describe("dashboard foundation", () => {
         const queryClient = new QueryClient({
             defaultOptions: { queries: { retry: false } },
         });
+        queryClient.setQueryDefaults(["operations"], { enabled: false });
         queryClient.setQueryData(["system", "status"], readyStatus);
         const session = spyOn(IdentityClient.prototype, "session").mockResolvedValue({
             authenticated: true,
@@ -74,7 +75,7 @@ describe("dashboard foundation", () => {
             createMemoryHistory({ initialEntries: ["/"] })
         );
         render(<DashboardApp router={router} queryClient={queryClient} />);
-        expect(await screen.findByText("You're in the identity preview")).toBeVisible();
+        expect(await screen.findByRole("heading", { name: "Overview" })).toBeVisible();
         await user.click(screen.getByRole("link", { name: "Settings" }));
         expect(
             await screen.findByRole("heading", {

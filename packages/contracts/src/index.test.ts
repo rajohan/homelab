@@ -5,15 +5,15 @@ import * as v from "valibot";
 import { systemStatusSchema } from "./index";
 
 describe("system status contract", () => {
-    test("does not claim that the isolated implementation replaced production", () => {
+    test("rejects deployment claims that are not part of application capability status", () => {
         const result = v.safeParse(systemStatusSchema, {
             name: "Homelab",
             service: "dashboard",
             status: "ok",
             version: "0.1.0",
-            phase: "identity",
+            phase: "operations",
             authenticationImplemented: true,
-            integrationsImplemented: false,
+            integrationsImplemented: true,
             auth: { provider: "homelab", replacementEnabled: true },
         });
 

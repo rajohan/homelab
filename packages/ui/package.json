@@ -10,6 +10,7 @@
         "./identity/client": "./src/features/identity/client.ts"
     },
     "dependencies": {
+        "@daypicker/react": "10.0.1",
         "@headlessui/react": "2.2.10",
         "@homelab/contracts": "workspace:*",
         "@simplewebauthn/browser": "14.0.0",

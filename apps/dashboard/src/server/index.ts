@@ -1,9 +1,12 @@
 import index from "../index.html";
+import { authenticateAutomation } from "./automation/authentication";
 import {
     dashboardBindOptions,
     dashboardDevelopment,
     dashboardAuthConfiguration,
+    dashboardOperationsConfiguration,
 } from "./config/environment";
+import { assertDashboardSchema } from "./database/migrations";
 import { isSameOriginApiRequest } from "./http/requestOrigin";
 import {
     dashboardApiRequest,
@@ -12,6 +15,8 @@ import {
     type DashboardServerOptions,
 } from "./http/responses";
 import { createDashboardAuthentication } from "./identity/authentication";
+import { OperationFailure } from "./operations/errors";
+import { createOperationsRuntime } from "./operations/runtime";
 
 /**
  * Start the dashboard HTTP server with identity-protected APIs and bundled assets.
@@ -27,14 +32,56 @@ export function startDashboardServer(options: DashboardServerOptions = {}) {
     const authentication = configuration
         ? createDashboardAuthentication(configuration)
         : undefined;
+    const operationalConfiguration =
+        options.operations === undefined
+            ? dashboardOperationsConfiguration()
+            : options.operations;
+    const operations = operationalConfiguration
+        ? createOperationsRuntime(operationalConfiguration)
+        : undefined;
 
     async function api(request: Request): Promise<Response> {
         try {
             const path = new URL(request.url).pathname;
-            if (path === "/health/ready")
+            if (path === "/api/automation" || path.startsWith("/api/automation/")) {
+                if (!operations)
+                    return json(
+                        "UNCONFIGURED",
+                        "Dashboard operations are not configured.",
+                        503
+                    );
+                if (request.headers.has("cookie") || request.headers.has("origin"))
+                    return json(
+                        "INVALID_CREDENTIALS",
+                        "Use an automation token without browser credentials.",
+                        403
+                    );
+                const principal = await authenticateAutomation(
+                    operations.client,
+                    request.headers.get("authorization") ?? ""
+                );
+                return await dashboardApiRequest(
+                    request,
+                    { operations, principal },
+                    "/api/automation"
+                );
+            }
+            if (path === "/health/ready") {
+                if (operations) {
+                    try {
+                        await assertDashboardSchema(operations);
+                    } catch {
+                        return json(
+                            "UNAVAILABLE",
+                            "Dashboard database is not ready.",
+                            503
+                        );
+                    }
+                }
                 return authentication
                     ? dashboardHealthResponse()
                     : json("UNCONFIGURED", "Identity is not configured.", 503);
+            }
             if (!authentication)
                 return json("UNCONFIGURED", "Identity is not configured.", 503);
             if (path === "/login" && request.method === "GET")
@@ -47,12 +94,33 @@ export function startDashboardServer(options: DashboardServerOptions = {}) {
                     !isSameOriginApiRequest(request, configuration.origin)
                 )
                     return json("INVALID_ORIGIN", "Request origin is not allowed.", 403);
-                if (!(await authentication.authenticated(request)))
-                    return json("UNAUTHORIZED", "Sign in to continue.", 401);
-                return await dashboardApiRequest(request);
+                if (request.headers.has("authorization"))
+                    return json(
+                        "INVALID_CREDENTIALS",
+                        "Use the automation endpoint for machine tokens.",
+                        403
+                    );
+                const principal = await authentication.operationPrincipal(request);
+                return await dashboardApiRequest(request, {
+                    operations,
+                    principal,
+                    verifyHuman: () => authentication.operationPrincipal(request, true),
+                });
             }
             return await authentication.proxy(request);
         } catch (error) {
+            if (error instanceof OperationFailure) {
+                const statuses = {
+                    UNAUTHORIZED: 401,
+                    TOO_MANY_REQUESTS: 429,
+                    FORBIDDEN: 403,
+                    BAD_REQUEST: 400,
+                    CONFLICT: 409,
+                    NOT_FOUND: 404,
+                    PRECONDITION_FAILED: 412,
+                } as const;
+                return json(error.code, error.message, statuses[error.code]);
+            }
             process.stderr.write(
                 JSON.stringify({
                     service: "dashboard",
@@ -87,7 +155,7 @@ export function startDashboardServer(options: DashboardServerOptions = {}) {
             "referrer-policy": "no-referrer",
             ...(asset.loader === "html" ? { "cache-control": "no-store" } : {}),
         });
-    return Bun.serve({
+    const server = Bun.serve({
         hostname: options.hostname ?? bindOptions.hostname,
         port: options.port ?? bindOptions.port,
         development: options.development ?? dashboardDevelopment(),
@@ -99,12 +167,20 @@ export function startDashboardServer(options: DashboardServerOptions = {}) {
             "/auth/callback": api,
             "/api/trpc": api,
             "/api/trpc/*": api,
+            "/api/automation": api,
+            "/api/automation/*": api,
             "/api": dashboardNotFound,
             "/api/*": api,
             "/*": index,
         },
         fetch: dashboardNotFound,
     });
+    const stop = server.stop.bind(server);
+    server.stop = async (closeActiveConnections?: boolean) => {
+        await stop(closeActiveConnections);
+        await operations?.client.close();
+    };
+    return server;
 }
 if (import.meta.main) {
     try {

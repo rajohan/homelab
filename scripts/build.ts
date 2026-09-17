@@ -36,7 +36,10 @@ export async function main(): Promise<void> {
                 path.resolve(applicationRoot, "src/server/index.ts"),
                 ...(app === "auth"
                     ? [path.resolve(applicationRoot, "src/server/cli/admin.ts")]
-                    : []),
+                    : [
+                          path.resolve(applicationRoot, "src/worker/worker.ts"),
+                          path.resolve(applicationRoot, "src/worker/migrate.ts"),
+                      ]),
             ],
             outdir: outputDirectory,
             // SPA deep links must load the same assets as the site root.
@@ -63,12 +66,11 @@ export async function main(): Promise<void> {
             }
             throw new Error(`The ${app} build failed.`);
         }
-        if (app === "auth")
-            await cp(
-                path.resolve(applicationRoot, "migrations"),
-                path.resolve(outputDirectory, "migrations"),
-                { recursive: true }
-            );
+        await cp(
+            path.resolve(applicationRoot, "migrations"),
+            path.resolve(outputDirectory, "migrations"),
+            { recursive: true }
+        );
         console.info(
             `Built ${app}: ${result.outputs.length} artifacts in apps/${app}/dist.`
         );
