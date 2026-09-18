@@ -70,6 +70,16 @@ across the Proxmox inventory. Duplicate names do not silently merge two machines
 Additional node-exporter hosts remain visible outside the Proxmox guest list.
 Templates are excluded; stopped guests remain listed.
 
+The PVE metric contract is checked against
+[prometheus-pve-exporter v3.10.0](https://github.com/prometheus-pve/prometheus-pve-exporter/blob/316e9d912f2ea023bfb2866f9ea107537b91e528/src/pve_exporter/collector/cluster.py):
+`pve_node_info` identifies nodes with `name` (not `node`), and
+`pve_storage_info` describes backends with `plugintype` (not `type`).
+Agentless guest history uses the current counters `pve_network_receive_bytes_total`,
+`pve_network_transmit_bytes_total`, `pve_disk_read_bytes_total`, and
+`pve_disk_written_bytes_total`. That exporter also exposes deprecated gauge aliases;
+the integration deliberately uses the counter replacements. Unit tests cover these
+upstream labels and all four history expressions with synthetic data.
+
 ## Interpretation
 
 - **OS memory used** is total minus available. **Assigned memory** is the PVE

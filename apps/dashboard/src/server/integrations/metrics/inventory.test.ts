@@ -95,6 +95,53 @@ function fixture(): Record<string, MetricSample[]> {
 }
 
 describe("resource normalization", () => {
+    test("joins the upstream PVE node name without inventing a node label or duplicate host", () => {
+        const input = fixture();
+        const node = { ...pve, id: "node/hypervisor" };
+        // prometheus-pve-exporter v3.10.0 ClusterNodeCollector emits name, not node.
+        input.pve_node_info = [
+            sample(1, { ...node, name: "hypervisor", level: "", nodeid: "0" }),
+        ];
+        input.pve_up?.push(sample(1, node));
+        input.up?.push(sample(1, { host: "hypervisor", job: "node" }));
+        input.node_memory_MemTotal_bytes?.push(sample(16_000, { host: "hypervisor" }));
+        input.node_memory_MemAvailable_bytes?.push(
+            sample(12_000, { host: "hypervisor" })
+        );
+        const hosts = buildHosts(input);
+        expect(hosts).toHaveLength(2);
+        expect(hosts.find((host) => host.name === "hypervisor")).toMatchObject({
+            kind: "node",
+            host: "hypervisor",
+            guestId: "node/hypervisor",
+            node: null,
+            state: "healthy",
+            guestMetricsAvailable: true,
+            memoryUsed: 4000,
+            memoryTotal: 16_000,
+        });
+        expect(hosts.filter((host) => host.name === "hypervisor")).toHaveLength(1);
+    });
+    test.each(["vm", "container"] as const)(
+        "agentless %s history uses upstream PVE counters rather than deprecated gauges",
+        (kind) => {
+            const host = buildHosts(fixture())[0];
+            if (!host) throw new Error("Missing fixture host");
+            const id = kind === "vm" ? "qemu/100" : "lxc/100";
+            const selection = `instance="cluster-a",id="${id}"`;
+            const history = historyExpressions(
+                { ...host, kind, guestId: id, guestMetricsAvailable: false },
+                null,
+                null
+            );
+            expect(history).toMatchObject({
+                receive: `rate(pve_network_receive_bytes_total{${selection}}[5m])`,
+                transmit: `rate(pve_network_transmit_bytes_total{${selection}}[5m])`,
+                read: `rate(pve_disk_read_bytes_total{${selection}}[5m])`,
+                write: `rate(pve_disk_written_bytes_total{${selection}}[5m])`,
+            });
+        }
+    );
     test("preserves zero and refuses ambiguous, missing, negative and nonfinite samples", () => {
         const values = {
             test: [
@@ -409,29 +456,33 @@ describe("resource tables", () => {
         expect(result.disks).toHaveLength(1);
         expect(buildResources({ ...input, up: [] }).networks[0]?.receive).toBeNull();
     });
-    test("reports pool capacity without aggregating aliases", () => {
-        const labels = { ...pve, id: "storage/node/pool" };
-        const rows = buildStorage({
-            ...fixture(),
-            pve_storage_info: [
-                sample(1, {
-                    ...labels,
-                    node: "node",
-                    storage: "pool",
-                    plugintype: "zfspool",
-                }),
-            ],
-            pve_up: [sample(1, labels)],
-            pve_disk_size_bytes: [sample(500, labels)],
-            pve_disk_usage_bytes: [sample(100, labels)],
-        });
-        expect(rows[0]).toMatchObject({
-            name: "pool",
-            size: 500,
-            used: 100,
-            state: "healthy",
-        });
-    });
+    test.each(["dir", "zfspool", "nfs", "pbs"])(
+        "reports upstream %s pool type and capacity without aggregating aliases",
+        (backend) => {
+            const labels = { ...pve, id: "storage/node/pool" };
+            const rows = buildStorage({
+                ...fixture(),
+                pve_storage_info: [
+                    sample(1, {
+                        ...labels,
+                        node: "node",
+                        storage: "pool",
+                        plugintype: backend,
+                    }),
+                ],
+                pve_up: [sample(1, labels)],
+                pve_disk_size_bytes: [sample(500, labels)],
+                pve_disk_usage_bytes: [sample(100, labels)],
+            });
+            expect(rows[0]).toMatchObject({
+                name: "pool",
+                type: backend,
+                size: 500,
+                used: 100,
+                state: "healthy",
+            });
+        }
+    );
     test("unknown and failed applications are not reported as healthy", () => {
         expect(buildApplications(fixture(), 1000)[0]?.state).toBe("healthy");
         expect(buildApplications(fixture(), 1300)[0]?.state).toBe("unknown");
