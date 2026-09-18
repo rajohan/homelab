@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/rajohan/homelab/compare/v0.2.0...v0.3.0) (2026-09-18)
+
+
+### Features
+
+* **dashboard:** add infrastructure observability and live resource views ([#11](https://github.com/rajohan/homelab/issues/11)) ([9b23093](https://github.com/rajohan/homelab/commit/9b230935884a4b09de75e0da81a102c3d3041f45))
+
 ## [0.2.0](https://github.com/rajohan/homelab/compare/v0.1.2...v0.2.0) (2026-09-17)
 
 
