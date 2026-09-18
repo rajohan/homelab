@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { queryRefresh } from "../../../lib/queryRefresh";
 import type { IdentityClient } from "../api/IdentityClient";
 
 /**
@@ -37,7 +38,6 @@ export function useIdentitySession(client: IdentityClient) {
         },
         retry: false,
         staleTime: 0,
-        refetchOnWindowFocus: true,
-        refetchInterval: 60_000,
+        ...queryRefresh("normal"),
     });
 }

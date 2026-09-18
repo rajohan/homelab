@@ -1,4 +1,10 @@
-import { Button, Card, ErrorNotice, LoadingState, SectionHeader } from "@homelab/ui";
+import {
+    Card,
+    ErrorNotice,
+    LoadingState,
+    SectionHeader,
+    queryRefresh,
+} from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { History, ListTodo } from "lucide-react";
 import { useState } from "react";
@@ -36,7 +42,7 @@ export function JobHistory({
                 { signal }
             ),
         getNextPageParam: (page) => page.nextCursor ?? undefined,
-        refetchInterval: 5000,
+        ...queryRefresh("fast"),
         retry: false,
     });
     const rows = query.data?.pages.flatMap((page) => page.runs) ?? [];
@@ -55,23 +61,29 @@ export function JobHistory({
                 />
             )}
             {query.isPending && <LoadingState label="Loading jobs…" />}
-            {query.isError && <ErrorNotice error={query.error} />}
-            {rows.length > 0 && <JobRunTable rows={rows} onSelect={setSelected} />}
+            {query.isError && rows.length === 0 && <ErrorNotice error={query.error} />}
+            {rows.length > 0 && (
+                <JobRunTable
+                    rows={rows}
+                    onSelect={setSelected}
+                    continuation={{
+                        hasMore: query.hasNextPage,
+                        loading: query.isFetching,
+                        error: query.isError ? query.error : undefined,
+                        loadingLabel: "Loading more runs…",
+                        onLoadMore: () =>
+                            void (query.isRefetchError
+                                ? query.refetch()
+                                : query.fetchNextPage()),
+                    }}
+                />
+            )}
             {!query.isPending && !query.isError && rows.length === 0 && (
                 <p className="rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm text-primary-400">
                     {view === "active"
                         ? "No queued or running jobs."
                         : "No completed runs yet."}
                 </p>
-            )}
-            {query.hasNextPage && (
-                <Button
-                    variant="secondary"
-                    busy={query.isFetchingNextPage}
-                    onClick={() => void query.fetchNextPage()}
-                >
-                    Load more runs
-                </Button>
             )}
             {selected && (
                 <RunDetailDialog id={selected} onClose={() => setSelected(undefined)} />

@@ -106,6 +106,17 @@ consent is not remembering authentication, and never bypasses group or MFA check
 grants without a client binding are rejected and require a fresh app sign-in. No dynamic client
 registration is enabled.
 
+Leaving a sign-in page open does not extend its OIDC interaction lifetime. After
+successful authentication, an expired interaction can restart once automatically
+at the registered client's single-origin entry point. This creates fresh protocol
+state rather than replaying an expired code, nonce or consent decision. Unknown,
+removed, disallowed or multi-origin clients fall back to account settings. The
+expired request's deep link is not recovered. The same-origin, cookie-authenticated
+restart endpoint accepts only a public client identifier, never a return URL;
+normal client, group, MFA and consent checks still apply to the new request.
+A per-tab retry guard prevents redirect loops, and explicit consent failures
+require an explicit restart instead of silently replaying Approve or Deny.
+
 RP logout always uses the library's CSRF-validated POST before ending the central session.
 A validated ID-token hint matching both the current central account and the current
 client's protocol SID automatically submits that form, avoiding a second confirmation

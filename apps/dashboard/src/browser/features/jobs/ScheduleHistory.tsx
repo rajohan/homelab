@@ -15,7 +15,12 @@ export function ScheduleHistory({
     readonly onClose: () => void;
 }) {
     return (
-        <Modal title="History" description={schedule.label} onClose={onClose} size="wide">
+        <Modal
+            title={schedule.label}
+            description="Run history, execution status and recorded events."
+            onClose={onClose}
+            size="wide"
+        >
             <JobHistory action={schedule.action} view="all" embedded />
         </Modal>
     );

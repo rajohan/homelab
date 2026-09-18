@@ -64,3 +64,10 @@
         outline-offset: 4px;
     }
 }
+
+@utility time-series-chart {
+    --chart-surface: theme("colors.primary.900");
+    --chart-border: theme("colors.primary.700");
+    --chart-text: theme("colors.primary.400");
+    --chart-accent: theme("colors.accent.400");
+}

@@ -11,12 +11,13 @@ export function Badge({
     tone = "neutral",
     ...props
 }: ComponentProps<"span"> & {
-    tone?: "neutral" | "positive" | "warning";
+    tone?: "neutral" | "positive" | "warning" | "danger";
 }) {
     const classes = {
         neutral: "bg-primary-700 text-primary-200",
         positive: "bg-emerald-950 text-emerald-300",
-        warning: "bg-red-500/10 text-red-300",
+        warning: "bg-amber-500/10 text-amber-300",
+        danger: "bg-red-500/10 text-red-300",
     } as const;
     return (
         <span

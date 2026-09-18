@@ -4,6 +4,7 @@ import {
     ErrorNotice,
     LoadingState,
     SectionHeader,
+    queryRefresh,
     formatDateTime,
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
@@ -22,7 +23,7 @@ export function InfrastructureSummary() {
             snapshot: await api.infrastructure.summary.query(undefined, { signal }),
             checkedAt: Date.now(),
         }),
-        refetchInterval: 15_000,
+        ...queryRefresh("normal"),
         retry: false,
     });
     const snapshot = query.data?.snapshot;

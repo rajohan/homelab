@@ -33,7 +33,10 @@ export function AccountSettings({
     const state = useAccountSettings(client),
         { account } = state;
     if (account.isPending) return <LoadingState label="Loading account settings…" />;
-    if (account.isError)
+    if (
+        !account.data ||
+        (account.error instanceof IdentityError && account.error.status === 401)
+    )
         return (
             <Card className="space-y-4">
                 <h1 className="text-2xl font-semibold">Account settings</h1>
@@ -50,6 +53,7 @@ export function AccountSettings({
         );
     return (
         <div className="w-full space-y-4">
+            {account.isError && <ErrorNotice error={account.error} />}
             <PageHeader
                 title="Account settings"
                 description="Manage your sign-in details, two-factor authentication and active sessions."

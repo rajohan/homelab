@@ -79,16 +79,20 @@ function UnstableContent({ shouldFail }: { readonly shouldFail: () => boolean })
     return <p>View recovered</p>;
 }
 
-test("errors and attention badges share the red feedback palette", () => {
+test("status badges distinguish success, warnings and errors", () => {
     render(
         <div>
             <ErrorNotice error={new Error("Check the submitted fields.")} />
+            <Badge tone="positive">Healthy</Badge>
             <Badge tone="warning">Needs attention</Badge>
+            <Badge tone="danger">Failed</Badge>
         </div>
     );
     expect(screen.getByRole("alert")).toHaveClass("bg-red-500/10", "text-red-300");
     expect(screen.getByText("Needs attention")).toHaveClass(
-        "bg-red-500/10",
-        "text-red-300"
+        "bg-amber-500/10",
+        "text-amber-300"
     );
+    expect(screen.getByText("Healthy")).toHaveClass("bg-emerald-950", "text-emerald-300");
+    expect(screen.getByText("Failed")).toHaveClass("bg-red-500/10", "text-red-300");
 });

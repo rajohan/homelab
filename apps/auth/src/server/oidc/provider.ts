@@ -131,8 +131,12 @@ export function createProvider(accounts: Accounts): Provider {
         },
         interactions: {
             policy,
-            url: (_context, interaction) =>
-                `${configuration.issuer}/sign-in?interaction=${encodeURIComponent(interaction.uid)}`,
+            url: (context, interaction) => {
+                const query = new URLSearchParams({ interaction: interaction.uid });
+                if (context.oidc.client?.clientId)
+                    query.set("client", context.oidc.client.clientId);
+                return `${configuration.issuer}/sign-in?${query.toString()}`;
+            },
         },
         loadExistingGrant: async (context) => {
             const clientId = context.oidc.client?.clientId;

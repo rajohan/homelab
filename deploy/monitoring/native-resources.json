@@ -1,0 +1,40 @@
+{
+    "main": [
+        {
+            "project": "openclaw",
+            "service": "gateway",
+            "units": { "openclaw-gateway.service": true }
+        }
+    ],
+    "db": [
+        {
+            "project": "homelab-native",
+            "service": "pgadmin",
+            "units": { "homelab-pgadmin.service": true }
+        }
+    ],
+    "nas": [
+        {
+            "project": "homelab-native",
+            "service": "samba",
+            "units": { "smbd.service": true }
+        }
+    ],
+    "nextcloud": [
+        {
+            "project": "homelab-native",
+            "service": "nextcloud",
+            "units": {
+                "nginx.service": true,
+                "php8.4-fpm.service": true,
+                "nextcloud-cron.service": false,
+                "nextcloud-shared-scan.service": false
+            }
+        },
+        {
+            "project": "homelab-native",
+            "service": "valkey",
+            "units": { "valkey-server.service": true }
+        }
+    ]
+}

@@ -1,0 +1,11 @@
+[Unit]
+Description=Collect approved native application counters every five seconds
+
+[Timer]
+OnBootSec=20s
+OnUnitActiveSec=5s
+AccuracySec=100ms
+Unit=homelab-native-resources.service
+
+[Install]
+WantedBy=timers.target

@@ -128,7 +128,11 @@ export function DataTable<T>({
                     )}
                 </Virtualizer>
                 {continuation && (
-                    <InfiniteScrollTrigger rootRef={scrollRef} {...continuation} />
+                    <InfiniteScrollTrigger
+                        rootRef={scrollRef}
+                        itemCount={rows.length}
+                        {...continuation}
+                    />
                 )}
             </section>
         </div>

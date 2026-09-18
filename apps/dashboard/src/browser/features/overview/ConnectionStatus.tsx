@@ -27,7 +27,7 @@ export function ConnectionStatus({
                 >
                     Application connection
                 </h2>
-                <Badge tone={failed ? "warning" : connectionTone}>
+                <Badge tone={failed ? "danger" : connectionTone}>
                     {failed ? "Unavailable" : connectionLabel}
                 </Badge>
             </div>

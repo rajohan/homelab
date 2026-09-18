@@ -51,6 +51,8 @@ jobs:
         run: bun run test:coverage
       - name: Run HTTP and database integration tests with coverage
         run: bun run test:integration:coverage
+      - name: Test native resource collection with synthetic cgroups
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s deploy/monitoring -p 'test_*.py'
       - name: Build both applications
         run: bun run build
       - name: Verify built runtime and browser assets

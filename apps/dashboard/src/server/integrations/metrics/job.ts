@@ -2,6 +2,7 @@ import * as v from "valibot";
 
 import type { JobHandler } from "../../jobs/types";
 import { collectMetrics } from "./collector";
+import { collectInventory } from "./inventory";
 
 /**
  * Register the metrics integration without coupling the job engine to its provider.
@@ -28,10 +29,14 @@ export function metricsJob(configuration: {
             validate: (input) => v.parse(v.strictObject({}), input),
         },
         execute: async (_payload, context) => {
-            const snapshot = await collectMetrics(configuration, context.signal);
+            const [snapshot, inventory] = await Promise.all([
+                collectMetrics(configuration, context.signal),
+                collectInventory(configuration, context.signal),
+            ]);
             if (
                 !(await context.commit(async (transaction) => {
                     await transaction`INSERT INTO operation_snapshots (key, value, captured_at) VALUES ('infrastructure', ${JSON.stringify(snapshot)}::text::jsonb, ${new Date(snapshot.capturedAt)}) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, captured_at = EXCLUDED.captured_at`;
+                    await transaction`INSERT INTO operation_snapshots (key, value, captured_at) VALUES ('infrastructure.inventory', ${JSON.stringify(inventory)}::text::jsonb, ${new Date(inventory.capturedAt)}) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, captured_at = EXCLUDED.captured_at`;
                 }))
             )
                 throw new Error("Job ownership changed before snapshot commit");

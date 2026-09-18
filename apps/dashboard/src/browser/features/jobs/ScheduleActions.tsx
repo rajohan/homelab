@@ -1,21 +1,20 @@
 import type { ScheduleSummary } from "@homelab/contracts/operations";
 import { DropdownMenu, ErrorNotice } from "@homelab/ui";
-import { CalendarClock, History, Pause, Play, Pencil } from "lucide-react";
+import { CalendarClock, Pause, Play, Pencil } from "lucide-react";
 import { useState } from "react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
 import { DisableScheduleDialog } from "./DisableScheduleDialog";
 import { ScheduleDialog } from "./ScheduleDialog";
-import { ScheduleHistory } from "./ScheduleHistory";
 
 /**
- * Group a schedule's manual run, editing, disable intent and history actions.
+ * Group a schedule's manual run, editing and disable intent actions.
  * @returns A compact menu with version-stable dialogs and idempotent manual submissions.
  */
 export function ScheduleActions({ schedule }: { readonly schedule: ScheduleSummary }) {
     const [dialog, setDialog] = useState<{
-        kind: "edit" | "disable" | "history";
+        kind: "edit" | "disable";
         schedule: ScheduleSummary;
     }>();
     const [requestId, setRequestId] = useState(() => crypto.randomUUID());
@@ -72,12 +71,6 @@ export function ScheduleActions({ schedule }: { readonly schedule: ScheduleSumma
                                       setDialog({ kind: "disable", schedule }),
                               },
                           ]),
-                    {
-                        id: "history",
-                        label: "History",
-                        icon: History,
-                        onSelect: () => setDialog({ kind: "history", schedule }),
-                    },
                 ]}
             />
             {run.isError && <ErrorNotice error={run.error} />}
@@ -91,12 +84,6 @@ export function ScheduleActions({ schedule }: { readonly schedule: ScheduleSumma
             {dialog?.kind === "disable" && (
                 <DisableScheduleDialog
                     schedule={dialog.schedule}
-                    onClose={() => setDialog(undefined)}
-                />
-            )}
-            {dialog?.kind === "history" && (
-                <ScheduleHistory
-                    schedule={schedule}
                     onClose={() => setDialog(undefined)}
                 />
             )}

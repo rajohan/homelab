@@ -131,6 +131,8 @@ export async function main(): Promise<void> {
         dashboardUrl.pathname = "/homelab_dashboard_dev";
         const operationConfiguration = parseOperationsConfiguration({
             HOMELAB_DASHBOARD_DATABASE_URL: dashboardUrl.href,
+            // Optional read-only telemetry; identity and operational state remain disposable.
+            HOMELAB_DASHBOARD_METRICS_URL: process.env.HOMELAB_PREVIEW_METRICS_URL,
         });
         if (!operationConfiguration)
             throw new Error("Invalid isolated dashboard configuration");

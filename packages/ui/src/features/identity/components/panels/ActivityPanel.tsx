@@ -4,6 +4,7 @@ import { ScrollText } from "lucide-react";
 import { DataTable, type DataColumn } from "../../../../components/DataTable/DataTable";
 import { Button, ErrorNotice, LoadingState } from "../../../../index";
 import { formatDateTimeParts } from "../../../../lib/formatDateTime";
+import { queryRefresh } from "../../../../lib/queryRefresh";
 import type { IdentityClient } from "../../api/IdentityClient";
 import type { ActivityPage } from "../../api/schemas";
 import { SettingsSection } from "./SettingsSection";
@@ -71,6 +72,7 @@ export function ActivityPanel({
         queryFn: ({ pageParam, signal }) => client.activity(pageParam, signal),
         getNextPageParam: (last) => last.nextCursor ?? undefined,
         retry: false,
+        ...queryRefresh("slow"),
     });
     const events = [
         ...new Map(
@@ -108,8 +110,7 @@ export function ActivityPanel({
                 continuation={{
                     hasMore: query.hasNextPage,
                     loadingLabel: "Loading more events…",
-                    loadMoreLabel: "Load older events",
-                    loading: query.isFetchingNextPage,
+                    loading: query.isFetching,
                     error: query.isError ? query.error : undefined,
                     onLoadMore: () => {
                         void (query.isRefetchError
