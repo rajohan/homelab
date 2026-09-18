@@ -15,6 +15,25 @@ const authSchema = v.object({
 });
 const composeSchema = v.object({ services: v.object({ auth: authSchema }) });
 
+test("the worker overlay forwards the same scoped metrics URL and token to both readers", async () => {
+    const service = v.object({
+        environment: v.record(v.string(), v.nullable(v.string())),
+    });
+    const config = v.parse(
+        v.object({ services: v.object({ dashboard: service, worker: service }) }),
+        Bun.YAML.parse(await Bun.file("deploy/compose.worker.yaml").text())
+    );
+    for (const target of [config.services.dashboard, config.services.worker]) {
+        for (const key of [
+            "HOMELAB_DASHBOARD_METRICS_URL",
+            "HOMELAB_DASHBOARD_METRICS_TOKEN",
+        ]) {
+            expect(Object.hasOwn(target.environment, key)).toBe(true);
+            expect(target.environment[key]).toBeNull();
+        }
+    }
+});
+
 test("Compose mounts an read-only auth policy without requiring it for dashboard operations without the rejected JSON variable", async () => {
     const config = v.parse(
         composeSchema,

@@ -1,7 +1,4 @@
-import type {
-    InfrastructureHost,
-    InfrastructureInventory,
-} from "@homelab/contracts/infrastructure";
+import type { InfrastructureInventory } from "@homelab/contracts/infrastructure";
 
 import {
     applicationInventoryAvailable,
@@ -22,6 +19,7 @@ function retainRows<T extends { readonly id: string }>(
 
 /**
  * Preserve known resource identities while their source is explicitly unavailable.
+ * Host identities are joined separately before calculating independent guest telemetry.
  * @param current - Newly collected rows; healthy sources remain authoritative for deletions.
  * @param previous - The last successful live or persisted inventory, if available.
  * @param samples - Current scrape status and application collector health.
@@ -56,43 +54,8 @@ export function retainUnavailableInventory(
             sample.labels.job === "node" && sample.labels.host ? [sample.labels.host] : []
         )
     );
-    const hosts = retainRows(
-        current.hosts,
-        previous.hosts,
-        (row) => row.pveInstance !== null && pve.has(row.pveInstance),
-        (row): InfrastructureHost => ({
-            ...row,
-            state: "unknown",
-            cpuPercent: null,
-            cores: null,
-            memoryUsed: null,
-            memoryTotal: null,
-            allocatedMemory: null,
-            memorySource: "unavailable",
-            swapUsed: null,
-            swapTotal: null,
-            load: [null, null, null],
-            uptime: null,
-            provisionedDisk: null,
-            guestMetricsAvailable: false,
-        })
-    );
-    // Missing PVE metadata must not turn an existing guest/node into a second standalone host.
-    const linked = new Set(
-        previous.hosts
-            .filter(
-                (row) =>
-                    row.pveInstance !== null &&
-                    pve.has(row.pveInstance) &&
-                    row.host !== null
-            )
-            .map((row) => row.host)
-    );
     return {
         ...current,
-        hosts: hosts
-            .filter((row) => row.kind !== "host" || !linked.has(row.name))
-            .toSorted((left, right) => left.name.localeCompare(right.name)),
         storage: retainRows(
             current.storage,
             previous.storage,

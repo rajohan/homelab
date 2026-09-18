@@ -61,7 +61,7 @@ export async function collectInventory(
     return retainUnavailableInventory(
         {
             capturedAt: new Date().toISOString(),
-            hosts: buildHosts(samples),
+            hosts: buildHosts(samples, previous?.hosts),
             ...resources,
             filesystems: [...resources.filesystems, ...homeAssistantFilesystems(samples)],
             storage: buildStorage(samples),

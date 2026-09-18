@@ -16,6 +16,9 @@ it does not persist every poll or create background jobs while the page is close
 Collection failures remain errors rather than passing old values off as fresh.
 When the API succeeds but a known exporter is down, the last successful inventory
 retains that source's resource identities with unknown health and null measurements.
+PVE identity retention does not suppress a healthy guest exporter: fresh OS CPU,
+memory, load, swap and uptime remain available. PVE-owned status and allocations
+remain unknown, and LXC CPU never falls back to potentially host-wide OS counters.
 Fresh sources continue to update and remain authoritative for actual deletions.
 Live reads retain their successful baseline in memory; restarted dashboard processes
 and workers seed it from the saved snapshot. No historical measurements are copied

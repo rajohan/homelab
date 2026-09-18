@@ -8,20 +8,64 @@ import {
     measurement,
     resourceKey,
     resourceState,
+    type MetricSample,
     type MetricSamples,
 } from "./samples";
+
+function hostInventory(
+    samples: MetricSamples,
+    previous: readonly InfrastructureHost[]
+): MetricSample[] {
+    const inventory = [
+        ...(samples.pve_node_info ?? []),
+        ...(samples.pve_guest_info ?? []),
+    ];
+    for (const host of previous) {
+        const { guestId: id, pveInstance: instance, name, node } = host;
+        if (
+            !id ||
+            !instance ||
+            inventory.some(
+                (row) => row.labels.id === id && row.labels.instance === instance
+            )
+        )
+            continue;
+        const failed = (samples.up ?? []).find(
+            (row) =>
+                row.labels.job === "pve" &&
+                row.labels.instance === instance &&
+                row.value !== 1
+        );
+        if (!failed) continue;
+        inventory.push({
+            labels: {
+                id,
+                instance,
+                name,
+                host: failed.labels.host ?? "",
+                ...(node === null ? {} : { node }),
+            },
+            value: 1,
+        });
+    }
+    return inventory;
+}
 
 function hostMeasurements(
     samples: MetricSamples,
     host: string | null,
     pve: Readonly<Record<string, string>> | null,
-    active: boolean
+    state: ResourceState,
+    pveReachable: boolean
 ) {
-    const guest = host !== null && exporterAvailable(samples, host, "node") && active;
+    const active = state === "healthy";
+    const guest =
+        host !== null && exporterAvailable(samples, host, "node") && state !== "stopped";
     const nodeValue = (name: string) =>
         guest && host ? measurement(samples, name, { host }) : null;
-    const pveValue = (name: string) =>
-        active && pve ? measurement(samples, name, pve) : null;
+    const pveCapacity = (name: string) =>
+        pveReachable && pve ? measurement(samples, name, pve) : null;
+    const pveValue = (name: string) => (active ? pveCapacity(name) : null);
     const total = nodeValue("node_memory_MemTotal_bytes");
     const available = nodeValue("node_memory_MemAvailable_bytes");
     const swap = nodeValue("node_memory_SwapTotal_bytes");
@@ -37,14 +81,13 @@ function hostMeasurements(
         cpuPercent:
             (container ? null : nodeValue("cpu")) ?? (cpu === null ? null : cpu * 100),
         cores:
-            (pve ? measurement(samples, "pve_cpu_usage_limit", pve) : null) ??
-            nodeValue("cores"),
+            pveCapacity("pve_cpu_usage_limit") ?? (container ? null : nodeValue("cores")),
         memoryUsed:
             total !== null && available !== null
                 ? Math.max(0, total - available)
                 : pveValue("pve_memory_usage_bytes"),
         memoryTotal: total ?? pveValue("pve_memory_size_bytes"),
-        allocatedMemory: pve ? measurement(samples, "pve_memory_size_bytes", pve) : total,
+        allocatedMemory: pve ? pveCapacity("pve_memory_size_bytes") : total,
         memorySource,
         swapUsed:
             swap !== null && swapFree !== null ? Math.max(0, swap - swapFree) : null,
@@ -58,7 +101,7 @@ function hostMeasurements(
             boot === null
                 ? pveValue("pve_uptime_seconds")
                 : Math.max(0, Date.now() / 1000 - boot),
-        provisionedDisk: pve ? measurement(samples, "pve_disk_size_bytes", pve) : null,
+        provisionedDisk: pveCapacity("pve_disk_size_bytes"),
         guestMetricsAvailable: guest,
     };
 }
@@ -66,13 +109,14 @@ function hostMeasurements(
 /**
  * Join Proxmox inventory to guest metrics only when host names are unambiguous.
  * @param samples - Validated metric samples from this collection run.
+ * @param previous - Known identities, retained only while their PVE exporter is unavailable.
  * @returns All PVE nodes and guests, plus monitored hosts outside PVE.
  */
-export function buildHosts(samples: MetricSamples): InfrastructureHost[] {
-    const inventory = [
-        ...(samples.pve_node_info ?? []),
-        ...(samples.pve_guest_info ?? []),
-    ];
+export function buildHosts(
+    samples: MetricSamples,
+    previous: readonly InfrastructureHost[] = []
+): InfrastructureHost[] {
+    const inventory = hostInventory(samples, previous);
     const output: InfrastructureHost[] = [];
     const linked = new Set<string>();
     for (const sample of inventory) {
@@ -99,7 +143,7 @@ export function buildHosts(samples: MetricSamples): InfrastructureHost[] {
             host,
             pveInstance: instance,
             state,
-            ...hostMeasurements(samples, host, pve, state === "healthy"),
+            ...hostMeasurements(samples, host, pve, state, reachable),
         });
     }
     for (const sample of samples.up ?? []) {
@@ -116,7 +160,13 @@ export function buildHosts(samples: MetricSamples): InfrastructureHost[] {
             host,
             pveInstance: null,
             state: active ? "healthy" : "unknown",
-            ...hostMeasurements(samples, host, null, active),
+            ...hostMeasurements(
+                samples,
+                host,
+                null,
+                active ? "healthy" : "unknown",
+                false
+            ),
         });
     }
     return output.toSorted((left, right) => left.name.localeCompare(right.name));

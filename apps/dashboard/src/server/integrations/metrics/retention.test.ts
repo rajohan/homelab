@@ -30,10 +30,13 @@ const storage = {
 const filesystem = { host: "guest", device: "sda", mountpoint: "/", fstype: "ext4" };
 const device = { host: "guest", device: "eth0" };
 
-function snapshot(samples: MetricSamples): InfrastructureInventory {
+function snapshot(
+    samples: MetricSamples,
+    previous?: InfrastructureInventory
+): InfrastructureInventory {
     return {
         capturedAt: new Date().toISOString(),
-        hosts: buildHosts(samples),
+        hosts: buildHosts(samples, previous?.hosts),
         ...buildResources(samples),
         storage: buildStorage(samples),
         applications: buildApplications(samples),
@@ -85,7 +88,7 @@ test("failed exporters retain identities without old health, counters or resourc
     const previous = snapshot(fixture());
     expect(previous.applications[0]?.resources?.memoryUsed).toBe(1024);
     const failed = { up: fixture().up?.map((row) => ({ ...row, value: 0 })) ?? [] };
-    const current = snapshot(failed);
+    const current = snapshot(failed, previous);
     expect(current.storage).toHaveLength(0);
     const result = retainUnavailableInventory(current, previous, failed);
     expect(result.hosts).toHaveLength(1);
@@ -139,9 +142,122 @@ test("a failed PVE exporter does not duplicate a guest whose node exporter remai
         ],
     };
     expect(snapshot(failed).hosts[0]?.kind).toBe("host");
-    const result = retainUnavailableInventory(snapshot(failed), previous, failed);
+    const result = retainUnavailableInventory(
+        snapshot(failed, previous),
+        previous,
+        failed
+    );
     expect(result.hosts).toHaveLength(1);
     expect(result.hosts[0]).toMatchObject({ kind: "vm", state: "unknown" });
+});
+
+test.each([false, true])(
+    "fresh guest telemetry survives PVE outages, including stale PVE series (metadata retained: %s)",
+    (staleMetadata) => {
+        const values = fixture();
+        const previous = snapshot(values);
+        const current: MetricSamples = {
+            ...(staleMetadata ? values : {}),
+            up: [
+                sample({ host: "cluster", instance: pve.instance, job: "pve" }, 0),
+                sample({ host: "guest", job: "node" }),
+            ],
+            cpu: [sample({ host: "guest" }, 12)],
+            cores: [sample({ host: "guest" }, 4)],
+            node_memory_MemTotal_bytes: [sample({ host: "guest" }, 4000)],
+            node_memory_MemAvailable_bytes: [sample({ host: "guest" }, 1000)],
+            node_memory_SwapTotal_bytes: [sample({ host: "guest" }, 500)],
+            node_memory_SwapFree_bytes: [sample({ host: "guest" }, 400)],
+            node_load1: [sample({ host: "guest" }, 1.5)],
+            node_boot_time_seconds: [sample({ host: "guest" }, Date.now() / 1000 - 600)],
+        };
+        const result = retainUnavailableInventory(
+            snapshot(current, previous),
+            previous,
+            current
+        );
+        expect(result.hosts).toHaveLength(1);
+        expect(result.hosts[0]).toMatchObject({
+            id: previous.hosts[0]?.id,
+            kind: "vm",
+            state: "unknown",
+            cpuPercent: 12,
+            cores: 4,
+            memoryUsed: 3000,
+            memoryTotal: 4000,
+            memorySource: "guest",
+            allocatedMemory: null,
+            provisionedDisk: null,
+            swapUsed: 100,
+            swapTotal: 500,
+            load: [1.5, null, null],
+            guestMetricsAvailable: true,
+        });
+        expect(result.hosts[0]?.uptime).toBeGreaterThanOrEqual(599);
+        const containers = snapshot({
+            ...values,
+            pve_guest_info: [sample({ ...pve, id: "lxc/100", name: "guest" })],
+        });
+        const container = buildHosts(
+            { ...current, pve_guest_info: [] },
+            containers.hosts
+        )[0];
+        expect(container).toMatchObject({
+            kind: "container",
+            cpuPercent: null,
+            cores: null,
+            memoryUsed: 3000,
+            guestMetricsAvailable: true,
+        });
+    }
+);
+
+test("retained names participate in cross-cluster ambiguity checks before joining guest metrics", () => {
+    const values = fixture();
+    const previous = snapshot(values);
+    const current: MetricSamples = {
+        up: [
+            sample({ host: "cluster", instance: pve.instance, job: "pve" }, 0),
+            sample({ host: "other", instance: "cluster-b", job: "pve" }),
+            sample({ host: "guest", job: "node" }),
+        ],
+        pve_guest_info: [
+            sample({ ...pve, instance: "cluster-b", host: "other", name: "guest" }),
+        ],
+        cpu: [sample({ host: "guest" }, 90)],
+    };
+    const hosts = buildHosts(current, previous.hosts);
+    expect(hosts).toHaveLength(3);
+    const guests = hosts.filter((host) => host.kind === "vm");
+    expect(guests).toHaveLength(2);
+    expect(
+        guests.every(
+            (host) =>
+                host.host === null &&
+                host.cpuPercent === null &&
+                !host.guestMetricsAvailable
+        )
+    ).toBe(true);
+    expect(hosts.find((host) => host.kind === "host")?.cpuPercent).toBe(90);
+});
+
+test("a reachable PVE exporter still reports stopped guest allocations without stale runtime usage", () => {
+    const values: MetricSamples = {
+        ...fixture(),
+        pve_up: [sample(pve, 0)],
+        pve_cpu_usage_limit: [sample(pve, 2)],
+        pve_disk_size_bytes: [sample(pve, 100)],
+        cpu: [sample({ host: "guest" }, 90)],
+    };
+    expect(buildHosts(values)[0]).toMatchObject({
+        state: "stopped",
+        cores: 2,
+        allocatedMemory: 8192,
+        provisionedDisk: 100,
+        cpuPercent: null,
+        memoryUsed: null,
+        guestMetricsAvailable: false,
+    });
 });
 
 test("healthy sources remain authoritative for updates, real deletions and recovery", () => {

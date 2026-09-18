@@ -19,10 +19,13 @@ test("worker and restarted live runtime retain saved identities through successf
     const fixture = await operationFixture();
     let available = true;
     let deleted = false;
+    const token = "synthetic-metrics-token";
     const server = Bun.serve({
         hostname: "127.0.0.1",
         port: 0,
         fetch: (request) => {
+            if (request.headers.get("authorization") !== `Bearer ${token}`)
+                return new Response(null, { status: 401 });
             const query = new URL(request.url).searchParams.get("query");
             let result = [metric({}, "2")];
             if (Object.values(inventoryQueries).includes(query ?? "")) result = [];
@@ -64,7 +67,7 @@ test("worker and restarted live runtime retain saved identities through successf
     const configuration = {
         databaseUrl: fixture.url,
         metricsUrl: `http://127.0.0.1:${server.port}`,
-        metricsToken: undefined,
+        metricsToken: token,
         concurrency: 1,
         retentionDays: 30,
     };
