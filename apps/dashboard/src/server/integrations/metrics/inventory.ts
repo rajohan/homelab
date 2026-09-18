@@ -10,6 +10,7 @@ import {
     buildServices,
     buildStorage,
 } from "./resources";
+import { retainUnavailableInventory } from "./retention";
 import type { MetricSample } from "./samples";
 import { queryMetrics, type MetricsConfiguration } from "./transport";
 
@@ -17,11 +18,13 @@ import { queryMetrics, type MetricsConfiguration } from "./transport";
  * Collect a bounded resource inventory using only the reviewed metric catalog.
  * @param configuration - The configured read-only monitoring endpoint.
  * @param signal - Worker deadline and ownership cancellation.
+ * @param previous - Last successful inventory, used only to retain unavailable source identities.
  * @returns An atomic snapshot; a failed query never silently deletes an inventory section.
  */
 export async function collectInventory(
     configuration: MetricsConfiguration,
-    signal: AbortSignal
+    signal: AbortSignal,
+    previous?: InfrastructureInventory | null
 ): Promise<InfrastructureInventory> {
     const samples: Record<string, MetricSample[]> = {};
     const entries = Object.entries(inventoryQueries);
@@ -55,14 +58,18 @@ export async function collectInventory(
         }
     }
     const resources = buildResources(samples);
-    return {
-        capturedAt: new Date().toISOString(),
-        hosts: buildHosts(samples),
-        ...resources,
-        filesystems: [...resources.filesystems, ...homeAssistantFilesystems(samples)],
-        storage: buildStorage(samples),
-        applications: buildApplications(samples),
-        services: buildServices(samples),
-        diskHealth: buildDiskHealth(samples),
-    };
+    return retainUnavailableInventory(
+        {
+            capturedAt: new Date().toISOString(),
+            hosts: buildHosts(samples),
+            ...resources,
+            filesystems: [...resources.filesystems, ...homeAssistantFilesystems(samples)],
+            storage: buildStorage(samples),
+            applications: buildApplications(samples),
+            services: buildServices(samples),
+            diskHealth: buildDiskHealth(samples),
+        },
+        previous,
+        samples
+    );
 }

@@ -72,3 +72,26 @@ test("failed live collection stays an error, is rate limited and can recover", a
     expect(await read()).toBe(inventory);
     expect(collect).toHaveBeenCalledTimes(3);
 });
+
+test("live collection retains its last successful identity baseline across failed queries", async () => {
+    let now = 0;
+    let fail = false;
+    const baselines: (InfrastructureInventory | undefined)[] = [];
+    const read = createInventoryReader(
+        (previous) => {
+            baselines.push(previous);
+            return fail
+                ? Promise.reject(new Error("Unavailable"))
+                : Promise.resolve(inventory);
+        },
+        () => now
+    );
+    await read();
+    now = 5000;
+    fail = true;
+    await read().catch(() => null);
+    now = 10_000;
+    fail = false;
+    await read();
+    expect(baselines).toEqual([undefined, inventory, inventory]);
+});

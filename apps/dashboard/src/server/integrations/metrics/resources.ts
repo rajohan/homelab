@@ -10,6 +10,7 @@ import type {
 
 import { effectiveMemoryCapacity } from "./memory";
 import {
+    applicationInventoryAvailable,
     exporterAvailable,
     measurement,
     resourceKey,
@@ -143,15 +144,7 @@ export function buildApplications(
         const { host, project, service } = sample.labels;
         if (!host || !project || !service || sample.value !== 1) return [];
         const labels = { host, project, service };
-        const timestamp = measurement(samples, "homelab_app_last_run_timestamp_seconds", {
-            host,
-        });
-        const fresh =
-            exporterAvailable(samples, host, "node") &&
-            measurement(samples, "homelab_app_collector_success", { host }) === 1 &&
-            timestamp !== null &&
-            now - timestamp < 180 &&
-            timestamp <= now + 60;
+        const fresh = applicationInventoryAvailable(samples, host, now);
         const value = (name: string) =>
             fresh ? measurement(samples, name, labels) : null;
         const ready = value("homelab_app_ready");

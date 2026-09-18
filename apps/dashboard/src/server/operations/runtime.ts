@@ -3,6 +3,7 @@ import { connectDashboardDatabase } from "../database/connection";
 import { collectInventory } from "../integrations/metrics/inventory";
 import { metricsJob } from "../integrations/metrics/job";
 import { createInventoryReader } from "../integrations/metrics/liveInventory";
+import { readSavedInventory } from "../integrations/metrics/snapshot";
 import type { MetricsConfiguration } from "../integrations/metrics/transport";
 import { maintenanceJob } from "../jobs/maintenance";
 import { createJobRegistry } from "../jobs/registry";
@@ -20,10 +21,13 @@ export function createOperationsRuntime(
         maintenanceJob(configuration.retentionDays),
         ...(configuration.metricsUrl
             ? [
-                  metricsJob({
-                      url: configuration.metricsUrl,
-                      token: configuration.metricsToken,
-                  }),
+                  metricsJob(
+                      {
+                          url: configuration.metricsUrl,
+                          token: configuration.metricsToken,
+                      },
+                      () => readSavedInventory(connection.client)
+                  ),
               ]
             : []),
     ]);
@@ -31,8 +35,12 @@ export function createOperationsRuntime(
         ? { url: configuration.metricsUrl, token: configuration.metricsToken }
         : undefined;
     const readInventory = metrics
-        ? createInventoryReader(() =>
-              collectInventory(metrics, AbortSignal.timeout(10_000))
+        ? createInventoryReader(async (previous) =>
+              collectInventory(
+                  metrics,
+                  AbortSignal.timeout(10_000),
+                  previous ?? (await readSavedInventory(connection.client))
+              )
           )
         : undefined;
     return { ...connection, registry, metrics, readInventory };

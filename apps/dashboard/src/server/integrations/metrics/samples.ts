@@ -58,6 +58,30 @@ export function exporterAvailable(
 }
 
 /**
+ * Check whether a host's application inventory is authoritative for this collection.
+ * @param samples - Current scrape and application collector measurements.
+ * @param host - The monitored host whose application list is being read.
+ * @param now - Collection time in seconds, injectable for freshness tests.
+ * @returns Whether the reachable collector completed successfully within its freshness window.
+ */
+export function applicationInventoryAvailable(
+    samples: MetricSamples,
+    host: string,
+    now = Date.now() / 1000
+): boolean {
+    const timestamp = measurement(samples, "homelab_app_last_run_timestamp_seconds", {
+        host,
+    });
+    return (
+        exporterAvailable(samples, host, "node") &&
+        measurement(samples, "homelab_app_collector_success", { host }) === 1 &&
+        timestamp !== null &&
+        now - timestamp < 180 &&
+        timestamp <= now + 60
+    );
+}
+
+/**
  * Build a stable collision-safe key from source-owned identity parts.
  * @param parts - Source, host and resource identity components.
  * @returns An opaque key used only to select saved resources.

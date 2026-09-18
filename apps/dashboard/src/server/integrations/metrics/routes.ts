@@ -1,7 +1,4 @@
-import {
-    historyRanges,
-    type InfrastructureInventory,
-} from "@homelab/contracts/infrastructure";
+import { historyRanges } from "@homelab/contracts/infrastructure";
 import type { InfrastructureSnapshot } from "@homelab/contracts/operations";
 import * as v from "valibot";
 
@@ -11,6 +8,7 @@ import { OperationFailure } from "../../operations/errors";
 import type { OperationsRuntime } from "../../operations/runtime";
 import { applicationHistoryExpressions } from "./applicationHistory";
 import { collectHistory, collectMetricHistory } from "./history";
+import { readSavedInventory } from "./snapshot";
 
 const selectionSchema = v.strictObject({
     id: v.pipe(v.string(), v.minLength(1), v.maxLength(1024)),
@@ -21,10 +19,7 @@ const selectionSchema = v.strictObject({
 
 async function readInventory(operations: OperationsRuntime) {
     if (operations.readInventory) return operations.readInventory();
-    const rows = await operations.client<
-        { value: InfrastructureInventory }[]
-    >`SELECT value FROM operation_snapshots WHERE key = 'infrastructure.inventory'`;
-    return rows[0]?.value ?? null;
+    return readSavedInventory(operations.client);
 }
 
 export const infrastructureRouter = trpc.router({

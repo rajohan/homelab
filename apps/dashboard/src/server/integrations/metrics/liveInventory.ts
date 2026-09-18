@@ -7,9 +7,12 @@ import type { InfrastructureInventory } from "@homelab/contracts/infrastructure"
  * @returns A reader sharing pending work and results for five seconds per runtime.
  */
 export function createInventoryReader(
-    collect: () => Promise<InfrastructureInventory>,
+    collect: (
+        previous: InfrastructureInventory | undefined
+    ) => Promise<InfrastructureInventory>,
     now: () => number = () => performance.now()
 ): () => Promise<InfrastructureInventory> {
+    let previous: InfrastructureInventory | undefined;
     let cached:
         | {
               startedAt: number;
@@ -23,7 +26,12 @@ export function createInventoryReader(
         const entry = {
             startedAt: now(),
             pending: true,
-            result: Promise.resolve().then(collect),
+            result: Promise.resolve()
+                .then(() => collect(previous))
+                .then((inventory) => {
+                    previous = inventory;
+                    return inventory;
+                }),
         };
         entry.result = entry.result.finally(() => {
             entry.pending = false;

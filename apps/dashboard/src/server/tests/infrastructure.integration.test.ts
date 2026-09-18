@@ -3,9 +3,119 @@ import { expect, mock, test } from "bun:test";
 import type { InfrastructureInventory } from "@homelab/contracts/infrastructure";
 
 import { appRouter } from "../api/router";
+import { inventoryQueries } from "../integrations/metrics/catalog";
 import { buildHosts } from "../integrations/metrics/hosts";
 import { createInventoryReader } from "../integrations/metrics/liveInventory";
+import { readSavedInventory } from "../integrations/metrics/snapshot";
+import { createOperationsRuntime } from "../operations/runtime";
 import { expectOperationFailure, operationFixture } from "../testing/operations";
+
+const metric = (labels: Record<string, string>, value: string) => ({
+    metric: labels,
+    value: [1, value],
+});
+
+test("worker and restarted live runtime retain saved identities through successful API responses with failed scrapes", async () => {
+    const fixture = await operationFixture();
+    let available = true;
+    let deleted = false;
+    const server = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        fetch: (request) => {
+            const query = new URL(request.url).searchParams.get("query");
+            let result = [metric({}, "2")];
+            if (Object.values(inventoryQueries).includes(query ?? "")) result = [];
+            if (query === inventoryQueries.node)
+                result = [
+                    metric(
+                        {
+                            __name__: "up",
+                            host: "cluster",
+                            instance: "cluster-a",
+                            job: "pve",
+                        },
+                        available ? "1" : "0"
+                    ),
+                ];
+            if (query === inventoryQueries.pve && available && !deleted)
+                result = [
+                    metric(
+                        {
+                            __name__: "pve_guest_info",
+                            host: "cluster",
+                            instance: "cluster-a",
+                            id: "qemu/100",
+                            name: "guest",
+                        },
+                        "1"
+                    ),
+                    metric(
+                        { __name__: "pve_up", instance: "cluster-a", id: "qemu/100" },
+                        "1"
+                    ),
+                ];
+            return Response.json({
+                status: "success",
+                data: { resultType: "vector", result },
+            });
+        },
+    });
+    const configuration = {
+        databaseUrl: fixture.url,
+        metricsUrl: `http://127.0.0.1:${server.port}`,
+        metricsToken: undefined,
+        concurrency: 1,
+        retentionDays: 30,
+    };
+    const worker = createOperationsRuntime(configuration);
+    const live = createOperationsRuntime(configuration);
+    try {
+        const handler = worker.registry.get("infrastructure.metrics");
+        if (!handler || !live.readInventory)
+            throw new Error("Missing metrics integration");
+        const execute = () =>
+            handler.execute(
+                {},
+                {
+                    runId: Bun.randomUUIDv7(),
+                    leaseToken: Bun.randomUUIDv7(),
+                    signal: AbortSignal.timeout(5000),
+                    commit: async (write) => {
+                        await worker.client.begin(write);
+                        return true;
+                    },
+                }
+            );
+        await execute();
+        const first = await readSavedInventory(fixture.client);
+        expect(first?.hosts[0]).toMatchObject({ kind: "vm", state: "healthy" });
+        available = false;
+        // A new dashboard process must seed retention from PostgreSQL, not an empty in-memory cache.
+        const polled = await live.readInventory();
+        expect(polled.hosts[0]).toMatchObject({
+            id: first?.hosts[0]?.id,
+            state: "unknown",
+        });
+        expect(await readSavedInventory(fixture.client)).toEqual(first);
+        await execute();
+        const failed = await readSavedInventory(fixture.client);
+        expect(failed?.hosts[0]).toMatchObject({
+            id: first?.hosts[0]?.id,
+            state: "unknown",
+        });
+        available = true;
+        deleted = true;
+        await execute();
+        const recovered = await readSavedInventory(fixture.client);
+        expect(recovered?.hosts).toEqual([]);
+    } finally {
+        await worker.client.close();
+        await live.client.close();
+        await server.stop(true);
+        await fixture.close();
+    }
+});
 
 test("authorized readers receive shared live inventory without persisting polling snapshots", async () => {
     const fixture = await operationFixture();

@@ -14,6 +14,12 @@ The browser polls current inventory every five seconds while visible. The server
 shares in-flight collection and caches each attempt for five seconds per process;
 it does not persist every poll or create background jobs while the page is closed.
 Collection failures remain errors rather than passing old values off as fresh.
+When the API succeeds but a known exporter is down, the last successful inventory
+retains that source's resource identities with unknown health and null measurements.
+Fresh sources continue to update and remain authoritative for actual deletions.
+Live reads retain their successful baseline in memory; restarted dashboard processes
+and workers seed it from the saved snapshot. No historical measurements are copied
+forward and polling still performs no database writes.
 Without configured monitoring, the API can still read the saved worker snapshot.
 Opening a host or application
 queries only that resource's historical measurements, polled once per minute.
