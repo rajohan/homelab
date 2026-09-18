@@ -3,7 +3,6 @@ import {
     Button,
     Card,
     ConfirmDialog,
-    ErrorNotice,
     LoadingState,
     SectionHeader,
     VirtualList,
@@ -72,9 +71,6 @@ export function AutomationAccess() {
                 }
             />
             {inventory.isPending && <LoadingState label="Loading automation accounts…" />}
-            {inventory.isError && !inventory.data && (
-                <ErrorNotice error={inventory.error} />
-            )}
             <VirtualList
                 label="Automation accounts"
                 rows={

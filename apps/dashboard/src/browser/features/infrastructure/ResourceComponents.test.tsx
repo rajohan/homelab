@@ -278,6 +278,7 @@ test("a stale inventory remains visibly historical and a host opens its own scop
 
 test("virtual interfaces are opt-in and retain missing values", async () => {
     renderSized(<HostResources host={host} inventory={inventory} section="network" />);
+    expect(screen.queryByText(/five-minute averages/)).not.toBeInTheDocument();
     expect(screen.getByText("eth0")).toBeVisible();
     expect(screen.queryByText("br0")).not.toBeInTheDocument();
     await userEvent

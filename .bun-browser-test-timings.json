@@ -35,6 +35,7 @@
     "packages/ui/src/components/Virtualizer/VirtualList.test.tsx": 12,
     "packages/ui/src/components/InfiniteScrollTrigger/InfiniteScrollTrigger.test.tsx": 11,
     "apps/dashboard/src/browser/features/automation/TokenLifetime.test.tsx": 9,
-    "packages/ui/src/components/Button/CopyTextButton.test.tsx": 6
+    "packages/ui/src/components/Button/CopyTextButton.test.tsx": 6,
+    "apps/dashboard/src/browser/features/automation/AutomationAccess.test.tsx": 158
   }
 }

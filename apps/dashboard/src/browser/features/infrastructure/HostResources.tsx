@@ -107,7 +107,7 @@ export function HostResources({
                 />
                 <p className="text-sm text-primary-400">
                     Traffic is per interface; bridges and their member interfaces can
-                    represent the same packets. Rates are five-minute averages.
+                    represent the same packets.
                 </p>
                 <DataTable
                     label={`${host.name} interfaces`}
