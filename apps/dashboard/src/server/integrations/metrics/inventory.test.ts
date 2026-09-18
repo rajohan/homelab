@@ -222,6 +222,25 @@ describe("resource normalization", () => {
         input.up?.push(sample(1, { host: "remote", job: "node" }));
         expect(buildHosts(input).map((host) => host.name)).toEqual(["guest", "remote"]);
     });
+
+    test("templates and unusable rows cannot make a valid guest name ambiguous", () => {
+        const input = fixture();
+        input.pve_guest_info?.push(
+            sample(1, { ...pve, id: "qemu/999", name: "guest", template: "1" }),
+            sample(1, { ...pve, id: "", name: "guest" }),
+            sample(1, { ...pve, instance: "", name: "guest" }),
+            sample(1, { ...pve, id: "qemu/998", name: "" })
+        );
+        const hosts = buildHosts(input);
+        expect(hosts).toHaveLength(1);
+        expect(hosts[0]).toMatchObject({
+            kind: "vm",
+            host: "guest",
+            guestMetricsAvailable: true,
+            memoryUsed: 2000,
+            cpuPercent: 10,
+        });
+    });
     test("uses container allocation rather than host-wide CPU counters", () => {
         const input = fixture();
         for (const [key, rows] of Object.entries(input))
@@ -455,6 +474,61 @@ describe("resource tables", () => {
         expect(result.networks[1]?.virtual).toBe(true);
         expect(result.disks).toHaveLength(1);
         expect(buildResources({ ...input, up: [] }).networks[0]?.receive).toBeNull();
+    });
+
+    test("single-scrape device identities remain selectable before rates exist", () => {
+        const node = { host: "guest", device: "eth0" };
+        const input: MetricSamples = {
+            ...fixture(),
+            node_network_up: [
+                sample(1, node),
+                sample(0, { ...node, device: "eth1" }),
+                sample(1, { ...node, device: "lo" }),
+            ],
+            node_network_speed_bytes: [
+                sample(125_000_000, node),
+                sample(100, { ...node, device: "speed-only" }),
+            ],
+            node_network_receive_bytes_total: [
+                sample(2000, node),
+                sample(0, { ...node, device: "counter-only" }),
+                sample(10, { device: "missing-host" }),
+            ],
+            node_disk_read_bytes_total: [
+                sample(2000, { host: "guest", device: "sda" }),
+                sample(0, { host: "guest", device: "loop0" }),
+            ],
+        };
+        const first = buildResources(input);
+        expect(first.networks).toHaveLength(4);
+        expect(first.networks[0]).toMatchObject({
+            host: "guest",
+            device: "eth0",
+            up: true,
+            speed: 125_000_000,
+            receive: null,
+            transmit: null,
+        });
+        expect(first.networks[1]).toMatchObject({
+            device: "eth1",
+            up: false,
+            receive: null,
+        });
+        expect(first.networks.every((network) => network.receive === null)).toBe(true);
+        expect(first.disks).toHaveLength(1);
+        expect(first.disks[0]).toMatchObject({ device: "sda", read: null, write: null });
+        const next = buildResources({
+            ...input,
+            receive: [sample(0, node)],
+            read: [sample(25, { host: "guest", device: "sda" })],
+        });
+        expect(next.networks.map((network) => network.id)).toEqual(
+            first.networks.map((network) => network.id)
+        );
+        expect(next.networks[0]?.receive).toBe(0);
+        expect(next.disks[0]).toMatchObject({ id: first.disks[0]?.id, read: 25 });
+        expect(inventoryQueries.node).toContain("node_network_receive_bytes_total");
+        expect(inventoryQueries.node).toContain("node_disk_read_bytes_total");
     });
     test.each(["dir", "zfspool", "nfs", "pbs"])(
         "reports upstream %s pool type and capacity without aggregating aliases",

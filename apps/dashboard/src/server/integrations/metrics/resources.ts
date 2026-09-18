@@ -18,6 +18,17 @@ import {
     type MetricSamples,
 } from "./samples";
 
+function deviceIdentities(samples: MetricSamples, names: readonly string[]) {
+    const devices = new Map<string, { host: string; device: string }>();
+    for (const name of names) {
+        for (const sample of samples[name] ?? []) {
+            const { host, device } = sample.labels;
+            if (host && device) devices.set(resourceKey(host, device), { host, device });
+        }
+    }
+    return devices.values();
+}
+
 /**
  * Collect capacity, network and I/O per device without summing overlapping mounts or bridges.
  * @param samples - The validated monitoring inventory.
@@ -59,9 +70,13 @@ export function buildResources(samples: MetricSamples) {
             readOnly: readOnly === null ? null : readOnly === 1,
         });
     }
-    for (const sample of samples.receive ?? []) {
-        const { host, device } = sample.labels;
-        if (!host || !device || device === "lo") continue;
+    for (const { host, device } of deviceIdentities(samples, [
+        "node_network_up",
+        "node_network_speed_bytes",
+        "node_network_receive_bytes_total",
+        "receive",
+    ])) {
+        if (device === "lo") continue;
         const labels = { host, device };
         const value = (name: string) =>
             exporterAvailable(samples, host, "node")
@@ -82,9 +97,11 @@ export function buildResources(samples: MetricSamples) {
             drops: value("drops"),
         });
     }
-    for (const sample of samples.read ?? []) {
-        const { host, device } = sample.labels;
-        if (!host || !device || /^(loop|ram)/.test(device)) continue;
+    for (const { host, device } of deviceIdentities(samples, [
+        "node_disk_read_bytes_total",
+        "read",
+    ])) {
+        if (/^(loop|ram)/.test(device)) continue;
         const value = (name: string) =>
             exporterAvailable(samples, host, "node")
                 ? measurement(samples, name, { host, device })

@@ -37,6 +37,8 @@ export const inventoryQueries: Readonly<Record<string, string>> = {
         "node_filesystem_device_error",
         "node_network_up",
         "node_network_speed_bytes",
+        "node_network_receive_bytes_total",
+        "node_disk_read_bytes_total",
         "homeassistant_sensor_data_size_gib",
         "homeassistant_entity_available",
     ]),

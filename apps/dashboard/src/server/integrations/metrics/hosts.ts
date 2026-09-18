@@ -19,12 +19,17 @@ function hostInventory(
     const inventory = [
         ...(samples.pve_node_info ?? []),
         ...(samples.pve_guest_info ?? []),
-    ];
+    ].filter(
+        ({ labels }) =>
+            Boolean(labels.id && labels.instance && labels.name) &&
+            labels.template !== "1"
+    );
     for (const host of previous) {
         const { guestId: id, pveInstance: instance, name, node } = host;
         if (
             !id ||
             !instance ||
+            !name ||
             inventory.some(
                 (row) => row.labels.id === id && row.labels.instance === instance
             )
@@ -121,7 +126,7 @@ export function buildHosts(
     const linked = new Set<string>();
     for (const sample of inventory) {
         const { id, instance, name, node, host: sourceHost } = sample.labels;
-        if (!id || !instance || !name || sample.labels.template === "1") continue;
+        if (!id || !instance || !name) continue;
         const unique = inventory.filter((item) => item.labels.name === name).length === 1;
         const host = unique ? name : null;
         if (host) linked.add(host);
