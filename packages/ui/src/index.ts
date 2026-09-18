@@ -1,4 +1,6 @@
 export { Badge } from "./components/Badge/Badge";
+export { TimeSeriesChart } from "./components/Chart/TimeSeriesChart";
+export { formatMetric, utilization, type MetricUnit } from "./lib/formatMetric";
 export { Button } from "./components/Button/Button";
 export { ActionGroup } from "./components/Button/ActionGroup";
 export { Card } from "./components/Card/Card";
@@ -23,6 +25,7 @@ export { ErrorState } from "./components/Error/ErrorState";
 export { AppErrorBoundary } from "./components/Error/AppErrorBoundary";
 
 export { Input } from "./components/Input/Input";
+export { SearchInput } from "./components/SearchInput/SearchInput";
 
 export { Form } from "./components/Form/Form";
 export { Fieldset } from "./components/Form/Fieldset";
@@ -33,6 +36,7 @@ export { Redirect } from "./components/Redirect/Redirect";
 
 export { DataTable, type DataColumn } from "./components/DataTable/DataTable";
 export { Virtualizer } from "./components/Virtualizer/Virtualizer";
+export { VirtualList } from "./components/Virtualizer/VirtualList";
 export {
     InfiniteScrollTrigger,
     type InfiniteScrollContinuation,
@@ -55,3 +59,4 @@ export {
     DropdownMenu,
     type DropdownMenuAction,
 } from "./components/DropdownMenu/DropdownMenu";
+export { queryRefresh } from "./lib/queryRefresh";

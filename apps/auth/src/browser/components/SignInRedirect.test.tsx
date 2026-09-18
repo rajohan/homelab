@@ -64,9 +64,9 @@ test("a failed handoff stays on auth and retries only when requested", async () 
         />
     );
     try {
-        await userEvent
-            .setup()
-            .click(await screen.findByRole("button", { name: "Try again" }));
+        const retry = await screen.findByRole("button", { name: "Try again" });
+        expect(retry).toHaveClass("w-full");
+        await userEvent.setup().click(retry);
         await waitFor(() => expect(navigate).toHaveBeenCalledTimes(1));
         expect(request).toHaveBeenCalledTimes(2);
     } finally {
@@ -133,15 +133,55 @@ test("an account that cannot complete a handoff can switch accounts", async () =
     }
 });
 
-test("an expired interaction offers a new dashboard sign-in instead of repeating a dead request", async () => {
+test("an expired interaction automatically restarts from its registered app without retrying the dead request", async () => {
+    sessionStorage.removeItem("homelab.sign-in-restart");
     const client = new IdentityClient();
-    const request = spyOn(client, "request").mockRejectedValue(
-        new IdentityError(
-            "INTERACTION_EXPIRED",
-            410,
-            "This sign-in request has expired. Start a new sign-in to continue."
+    const request = spyOn(client, "request")
+        .mockRejectedValueOnce(
+            new IdentityError(
+                "INTERACTION_EXPIRED",
+                410,
+                "This sign-in request has expired. Start a new sign-in to continue."
+            )
         )
+        .mockResolvedValueOnce({ redirect: "https://dashboard.example.test/" });
+    const navigate = spyOn(globalThis.location, "replace").mockImplementation(() => {});
+    const view = render(
+        <SignInRedirect
+            client={client}
+            address={
+                new URL(
+                    "https://auth.example.test/sign-in?interaction=expired&client=dashboard"
+                )
+            }
+            onSignedOut={() => Promise.resolve()}
+        />
     );
+    try {
+        await waitFor(() =>
+            expect(navigate).toHaveBeenCalledWith("https://dashboard.example.test/")
+        );
+        expect(
+            screen.queryByRole("button", { name: "Try again" })
+        ).not.toBeInTheDocument();
+        expect(request).toHaveBeenCalledTimes(2);
+        expect(request).toHaveBeenLastCalledWith("/api/sign-in/restart", {
+            clientId: "dashboard",
+        });
+    } finally {
+        view.unmount();
+        request.mockRestore();
+        navigate.mockRestore();
+        sessionStorage.removeItem("homelab.sign-in-restart");
+    }
+});
+
+test("repeated expired handoffs stop rather than looping and still allow an explicit restart", async () => {
+    sessionStorage.setItem("homelab.sign-in-restart", String(Date.now()));
+    const client = new IdentityClient();
+    const request = spyOn(client, "request")
+        .mockRejectedValueOnce(new IdentityError("INTERACTION_EXPIRED", 410, "Expired"))
+        .mockResolvedValueOnce({ redirect: "https://auth.example.test/account" });
     const navigate = spyOn(globalThis.location, "replace").mockImplementation(() => {});
     const view = render(
         <SignInRedirect
@@ -154,15 +194,15 @@ test("an expired interaction offers a new dashboard sign-in instead of repeating
         await userEvent
             .setup()
             .click(await screen.findByRole("button", { name: "Start a new sign-in" }));
-        expect(
-            screen.queryByRole("button", { name: "Try again" })
-        ).not.toBeInTheDocument();
-        expect(navigate).toHaveBeenCalledWith("/account");
-        expect(request).toHaveBeenCalledTimes(1);
+        await waitFor(() =>
+            expect(navigate).toHaveBeenCalledWith("https://auth.example.test/account")
+        );
+        expect(request).toHaveBeenCalledTimes(2);
     } finally {
         view.unmount();
         request.mockRestore();
         navigate.mockRestore();
+        sessionStorage.removeItem("homelab.sign-in-restart");
     }
 });
 
@@ -287,7 +327,8 @@ test.each(["INTERACTION_EXPIRED", "CONSENT_CONFLICT"])(
         const client = new IdentityClient();
         const request = spyOn(client, "request")
             .mockResolvedValueOnce({ consent })
-            .mockRejectedValueOnce(new IdentityError(code, 409, "Start a new sign-in."));
+            .mockRejectedValueOnce(new IdentityError(code, 409, "Start a new sign-in."))
+            .mockResolvedValueOnce({ redirect: "https://auth.example.test/account" });
         const navigate = spyOn(globalThis.location, "replace").mockImplementation(
             () => {}
         );
@@ -310,8 +351,13 @@ test.each(["INTERACTION_EXPIRED", "CONSENT_CONFLICT"])(
                 screen.queryByRole("button", { name: "Approve" })
             ).not.toBeInTheDocument();
             await user.click(restart);
-            expect(navigate).toHaveBeenCalledWith("/account");
-            expect(request).toHaveBeenCalledTimes(2);
+            await waitFor(() =>
+                expect(navigate).toHaveBeenCalledWith("https://auth.example.test/account")
+            );
+            expect(request).toHaveBeenCalledTimes(3);
+            expect(request).toHaveBeenLastCalledWith("/api/sign-in/restart", {
+                clientId: null,
+            });
         } finally {
             view.unmount();
             request.mockRestore();

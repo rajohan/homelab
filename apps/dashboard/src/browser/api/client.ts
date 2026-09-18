@@ -1,3 +1,4 @@
+import { queryRefresh } from "@homelab/ui";
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
 import superjson from "superjson";
 
@@ -17,5 +18,6 @@ export const systemStatusQuery = {
     queryKey: ["system", "status"] as const,
     queryFn: () => api.system.status.query(),
     staleTime: 30_000,
+    ...queryRefresh("slow"),
     retry: 1,
 };

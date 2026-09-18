@@ -124,9 +124,9 @@ test("unverified email and exhausted recovery codes retain warning states", () =
             />
         </>
     );
-    expect(screen.getByText("Unverified")).toHaveClass("text-red-300");
+    expect(screen.getByText("Unverified")).toHaveClass("text-amber-300");
     expect(screen.getByRole("button", { name: "Verify email" })).toBeEnabled();
-    expect(screen.getByText("0 unused")).toHaveClass("text-red-300");
+    expect(screen.getByText("0 unused")).toHaveClass("text-amber-300");
 });
 
 test("approved applications expose permissions and an app-specific revocation action", () => {

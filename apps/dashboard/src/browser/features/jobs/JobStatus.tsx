@@ -5,8 +5,8 @@ const tones = {
     queued: "neutral",
     running: "neutral",
     succeeded: "positive",
-    failed: "warning",
-    timed_out: "warning",
+    failed: "danger",
+    timed_out: "danger",
     cancelled: "neutral",
 } as const;
 

@@ -8,6 +8,7 @@ import {
     ErrorNotice,
     LoadingState,
     SectionHeader,
+    queryRefresh,
     formatDateTime,
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
@@ -29,7 +30,7 @@ export function WorkerPanel() {
     const query = useQuery({
         queryKey: ["operations", "worker"],
         queryFn: ({ signal }) => api.worker.overview.query(undefined, { signal }),
-        refetchInterval: 5000,
+        ...queryRefresh("fast"),
         retry: false,
     });
     const toggle = useOperation((input: { version: number; paused: boolean }, signal) =>

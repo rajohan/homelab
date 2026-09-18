@@ -5,6 +5,7 @@ services:
     environment:
       HOMELAB_DASHBOARD_DATABASE_URL:
       HOMELAB_DASHBOARD_METRICS_URL:
+      HOMELAB_DASHBOARD_METRICS_TOKEN:
       HOMELAB_DASHBOARD_JOB_RETENTION_DAYS:
   worker:
     image: ${HOMELAB_DASHBOARD_IMAGE:?Set the dashboard digest reference from container-images.json}

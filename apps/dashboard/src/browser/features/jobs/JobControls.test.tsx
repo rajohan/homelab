@@ -13,7 +13,6 @@ import { JobHistory } from "./JobHistory";
 import { JobRunTable } from "./JobRunTable";
 import { JobStatus } from "./JobStatus";
 import { RunDetailDialog } from "./RunDetailDialog";
-import { ScheduleActions } from "./ScheduleActions";
 import { ScheduleDialog } from "./ScheduleDialog";
 import { SchedulesPanel } from "./SchedulesPanel";
 import { WorkerPanel } from "./WorkerPanel";
@@ -143,8 +142,9 @@ test("worker view includes zero counts and explains pause without treating it as
     }
 });
 
-test("schedule history opens in a modal without duplicate details or a second scroll container", async () => {
-    const cleanup = fixture(<ScheduleActions schedule={schedule} />, (query) => {
+test("schedule history opens from its row while menu actions stay independent", async () => {
+    const cleanup = fixture(<SchedulesPanel />, (query) => {
+        query.setQueryData(["operations", "schedules"], [schedule]);
         query.setQueryDefaults(["operations", "jobs"], { enabled: false });
     });
     try {
@@ -156,9 +156,26 @@ test("schedule history opens in a modal without duplicate details or a second sc
         expect(screen.getByRole("menuitem", { name: "Run now" })).toBeVisible();
         expect(screen.getByRole("menuitem", { name: "Edit schedule" })).toBeVisible();
         expect(screen.getByRole("menuitem", { name: "Disable schedule" })).toBeVisible();
-        await user.click(screen.getByRole("menuitem", { name: "History" }));
-        const dialog = screen.getByRole("dialog", { name: "History" });
+        expect(
+            screen.queryByRole("menuitem", { name: "History" })
+        ).not.toBeInTheDocument();
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+        await user.click(screen.getByRole("menuitem", { name: "Edit schedule" }));
+        expect(screen.getByRole("dialog", { name: "Edit schedule" })).toBeVisible();
+        expect(
+            screen.queryByRole("dialog", { name: schedule.label })
+        ).not.toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "Cancel" }));
+        const row = screen.getByRole("button", {
+            name: "Open history for Clean up history",
+        });
+        await user.click(row);
+        const dialog = screen.getByRole("dialog", { name: schedule.label });
         expect(dialog).toBeVisible();
+        expect(dialog).toHaveAccessibleDescription(
+            "Run history, execution status and recorded events."
+        );
+        expect(screen.getByRole("heading", { name: schedule.label })).toBeVisible();
         expect(screen.queryByText(/Next run:/)).not.toBeInTheDocument();
         expect(
             screen.queryByRole("heading", { name: "Run history" })
@@ -166,6 +183,13 @@ test("schedule history opens in a modal without duplicate details or a second sc
         expect(dialog.querySelectorAll(".overflow-y-auto")).toHaveLength(1);
         await user.click(screen.getByRole("button", { name: "Close dialog" }));
         expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+        row.focus();
+        await user.keyboard("{Enter}");
+        expect(screen.getByRole("dialog", { name: schedule.label })).toBeVisible();
+        await user.click(screen.getByRole("button", { name: "Close dialog" }));
+        row.focus();
+        await user.keyboard(" ");
+        expect(screen.getByRole("dialog", { name: schedule.label })).toBeVisible();
     } finally {
         cleanup();
     }
@@ -326,6 +350,20 @@ test.each([false, true])(
     async (completed) => {
         const id = "019959a7-4600-7000-8000-000000000006";
         const close = mock(() => {});
+        // Modal content is portalled outside the fixture's measured container.
+        const height = Object.getOwnPropertyDescriptor(
+            HTMLElement.prototype,
+            "offsetHeight"
+        );
+        const width = Object.getOwnPropertyDescriptor(
+            HTMLElement.prototype,
+            "offsetWidth"
+        );
+        if (!height || !width) throw new Error("Expected browser dimension accessors");
+        Object.defineProperties(HTMLElement.prototype, {
+            offsetHeight: { configurable: true, value: 288 },
+            offsetWidth: { configurable: true, value: 480 },
+        });
         const cleanup = fixture(<RunDetailDialog id={id} onClose={close} />, (query) => {
             query.setQueryData(["operations", "jobs", "detail", id], {
                 pages: [
@@ -370,28 +408,29 @@ test.each([false, true])(
             ).toBeVisible();
             expect(screen.getByText("30 seconds")).toBeVisible();
             expect(screen.getByText(completed ? "Yes" : "No")).toBeVisible();
-            expect(screen.getByRole("list", { name: "Run events" })).toHaveClass(
+            expect(screen.getByRole("region", { name: "Run events" })).toHaveClass(
                 "bg-primary-950/40"
             );
             expect(screen.getByText("jobs.enqueue")).toBeVisible();
             if (completed) {
                 expect(screen.getByText("Execution failed.")).toBeVisible();
-                expect(
-                    screen.getByRole("button", { name: "Load older events" })
-                ).toBeEnabled();
             } else {
                 expect(screen.getByText("Not started")).toBeVisible();
                 expect(screen.getByText("Not finished")).toBeVisible();
-                expect(
-                    screen.queryByRole("button", { name: "Load older events" })
-                ).not.toBeInTheDocument();
             }
+            expect(
+                screen.queryByRole("button", { name: /Load older/ })
+            ).not.toBeInTheDocument();
             await userEvent
                 .setup()
                 .click(screen.getByRole("button", { name: "Close dialog" }));
             expect(close).toHaveBeenCalledTimes(1);
         } finally {
             cleanup();
+            Object.defineProperties(HTMLElement.prototype, {
+                offsetHeight: height,
+                offsetWidth: width,
+            });
         }
     }
 );

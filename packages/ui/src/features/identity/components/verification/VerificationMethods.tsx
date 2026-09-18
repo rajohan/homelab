@@ -39,7 +39,9 @@ export function VerificationMethods({
         return frame(
             <div className="space-y-3">
                 <ErrorNotice error={methods.error} />
-                <Button onClick={() => void methods.refetch()}>Try again</Button>
+                <Button fullWidth onClick={() => void methods.refetch()}>
+                    Try again
+                </Button>
             </div>
         );
     const available = methods.data.methods;

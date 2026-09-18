@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
+import { queryRefresh } from "../../../lib/queryRefresh";
 import type { IdentityClient } from "../api/IdentityClient";
 import type { AccountAction, AccountNotice } from "../types";
 import { actionSection } from "../validation/actionSection";
@@ -17,6 +18,7 @@ export function useAccountSettings(client: IdentityClient) {
         queryFn: () => client.snapshot(),
         retry: false,
         staleTime: 0,
+        ...queryRefresh("slow"),
     });
     const [action, setAction] = useState<AccountAction>();
     const [notice, setNotice] = useState<AccountNotice>();

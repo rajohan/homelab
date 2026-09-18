@@ -1,5 +1,6 @@
 import { expect, spyOn, test } from "bun:test";
 
+import { VerificationMethods } from "@homelab/ui/identity";
 import { IdentityClient } from "@homelab/ui/identity/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -7,6 +8,55 @@ import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
 
 import { SignInPage } from "./SignInPage";
+
+test.each(["session", "verification"] as const)(
+    "%s failures offer a full-width retry and recover without navigation",
+    async (step) => {
+        const client = new IdentityClient();
+        const session = spyOn(client, "session")
+            .mockRejectedValueOnce(new Error("Synthetic session failure"))
+            .mockResolvedValue({
+                authenticated: false,
+                mfaRequired: false,
+                methods: ["totp"],
+            });
+        const query = new QueryClient({
+            defaultOptions: { queries: { retry: false, gcTime: 0 } },
+        });
+        const view = render(
+            <QueryClientProvider client={query}>
+                {step === "session" ? (
+                    <SignInPage
+                        client={client}
+                        address={new URL("https://auth.example.test/sign-in")}
+                        token={null}
+                    />
+                ) : (
+                    <VerificationMethods client={client} onVerified={() => {}} />
+                )}
+            </QueryClientProvider>
+        );
+        try {
+            const retry = await screen.findByRole("button", { name: "Try again" });
+            expect(retry).toHaveClass("w-full");
+            await userEvent.setup().click(retry);
+            if (step === "session")
+                expect(await screen.findByLabelText("Username")).toBeVisible();
+            else
+                expect(
+                    await screen.findByRole("button", { name: "Use authenticator app" })
+                ).toBeVisible();
+            expect(session).toHaveBeenCalledTimes(2);
+            expect(
+                screen.queryByRole("button", { name: "Try again" })
+            ).not.toBeInTheDocument();
+        } finally {
+            view.unmount();
+            query.clear();
+            session.mockRestore();
+        }
+    }
+);
 
 test("a direct authenticated auth visit keeps the account menu and signs out in place", async () => {
     const client = new IdentityClient();

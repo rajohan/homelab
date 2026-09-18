@@ -20,6 +20,7 @@ export function Modal({
     children,
     onClose,
     description,
+    titleAccessory,
     dismissible = true,
     size = "md",
 }: {
@@ -27,6 +28,7 @@ export function Modal({
     children: ReactNode;
     onClose: () => void;
     description?: string;
+    titleAccessory?: ReactNode;
     dismissible?: boolean;
     size?: "md" | "wide";
 }) {
@@ -53,9 +55,14 @@ export function Modal({
                     >
                         <div className="flex items-start justify-between gap-3 rounded-t-xl border-b border-primary-700 bg-primary-900/40 px-5 py-4">
                             <div className="min-w-0 flex-1">
-                                <DialogTitle className="text-lg font-semibold wrap-anywhere">
-                                    {title}
-                                </DialogTitle>
+                                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                                    <DialogTitle className="text-lg font-semibold wrap-anywhere">
+                                        {title}
+                                    </DialogTitle>
+                                    {titleAccessory && (
+                                        <div className="shrink-0">{titleAccessory}</div>
+                                    )}
+                                </div>
                                 {description && (
                                     <Description className="mt-1 text-sm leading-6 wrap-anywhere text-primary-400">
                                         {description}

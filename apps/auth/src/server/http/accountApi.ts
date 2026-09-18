@@ -8,6 +8,7 @@ import * as v from "valibot";
 
 import { revokeClientApproval } from "../oidc/approvals";
 import { tokenPrincipal } from "../oidc/provider";
+import { signInRestartTarget } from "../oidc/restart";
 import { type Accounts, type Principal } from "../security/accounts";
 import { accountActivity } from "../security/activity";
 import { disableMfa } from "../security/disableMfa";
@@ -215,6 +216,19 @@ export async function accountApi(
         return secureJson({ ok: true });
     }
     const principal = await requestPrincipal(request, services);
+    if (path === "/api/sign-in/restart") {
+        if (origin !== configuration.issuer || request.headers.has("authorization"))
+            denied();
+        const input = v.parse(v.strictObject({ clientId: v.nullable(text(100)) }), body);
+        await accounts.requireAuthenticated(principal);
+        return secureJson({
+            redirect: signInRestartTarget(
+                configuration,
+                input.clientId,
+                principal.user.groups
+            ),
+        });
+    }
     if (path === "/api/account/authorize") {
         v.parse(v.strictObject({}), body);
         await accounts.requireFresh(principal);

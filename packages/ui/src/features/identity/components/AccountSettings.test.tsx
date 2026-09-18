@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within, waitFor } from "@testing-library/react";
+import { act, render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { IdentityClient, IdentityError, type AccountSnapshot } from "../client";
@@ -69,9 +69,29 @@ function renderSettings() {
         request.mockRestore();
         read.mockRestore();
     });
-    return { client, request };
+    return { client, request, query, read };
 }
 describe("account security modal", () => {
+    test("background refresh preserves an open form and its unsaved input", async () => {
+        const user = userEvent.setup();
+        const { query, read } = renderSettings();
+        await user.click(await screen.findByRole("button", { name: "Change email" }));
+        await user.clear(screen.getByLabelText("Email address"));
+        await user.type(screen.getByLabelText("Email address"), "unsaved@example.test");
+        read.mockResolvedValue({ ...snapshot, recoveryCodesRemaining: 7 });
+        await act(() => query.invalidateQueries({ queryKey: ["identity", "account"] }));
+        expect(screen.getByLabelText("Email address")).toHaveValue(
+            "unsaved@example.test"
+        );
+        expect(query.getQueryData(["identity", "account"])).toMatchObject({
+            recoveryCodesRemaining: 7,
+        });
+        read.mockRejectedValueOnce(new Error("Temporary read failure"));
+        await act(() => query.invalidateQueries({ queryKey: ["identity", "account"] }));
+        expect(screen.getByLabelText("Email address")).toHaveValue(
+            "unsaved@example.test"
+        );
+    });
     test("preserves the email form, verifies in a modal and replays the original action", async () => {
         const user = userEvent.setup();
         const { request } = renderSettings();

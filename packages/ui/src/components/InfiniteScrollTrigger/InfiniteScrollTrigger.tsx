@@ -10,7 +10,6 @@ export interface InfiniteScrollContinuation {
     readonly error?: unknown;
     readonly onLoadMore: () => void;
     readonly loadingLabel?: string;
-    readonly loadMoreLabel?: string;
     readonly retryLabel?: string;
 }
 
@@ -20,29 +19,25 @@ export interface InfiniteScrollContinuation {
  */
 export function InfiniteScrollTrigger({
     rootRef,
+    itemCount,
     hasMore,
     loading,
     error,
     onLoadMore,
     loadingLabel = "Loading more…",
-    loadMoreLabel = "Load more",
     retryLabel = "Try again",
 }: InfiniteScrollContinuation & {
     readonly rootRef: RefObject<HTMLElement | null>;
+    readonly itemCount: number;
 }) {
     const sentinel = useRef<HTMLDivElement>(null);
     const load = useEffectEvent(onLoadMore);
     useEffect(() => {
-        if (
-            !sentinel.current ||
-            !hasMore ||
-            loading ||
-            error ||
-            typeof IntersectionObserver === "undefined"
-        )
-            return;
+        const Observer =
+            sentinel.current?.ownerDocument.defaultView?.IntersectionObserver;
+        if (!sentinel.current || !hasMore || loading || error || !Observer) return;
         let requested = false;
-        const observer = new IntersectionObserver(
+        const observer = new Observer(
             (entries) => {
                 if (!requested && entries.some((entry) => entry.isIntersecting)) {
                     requested = true;
@@ -53,17 +48,16 @@ export function InfiniteScrollTrigger({
         );
         observer.observe(sentinel.current);
         return () => observer.disconnect();
-    }, [rootRef, hasMore, loading, error]);
+    }, [rootRef, hasMore, loading, error, itemCount]);
     if (!hasMore && !error) return null;
     return (
         <div ref={sentinel} className="space-y-2 p-3">
-            {loading ? (
-                <LoadingState label={loadingLabel} />
-            ) : (
+            {loading && <LoadingState label={loadingLabel} />}
+            {!loading && error !== undefined && (
                 <>
-                    {error !== undefined && <ErrorNotice error={error} />}
+                    <ErrorNotice error={error} />
                     <Button size="sm" variant="secondary" onClick={onLoadMore}>
-                        {error ? retryLabel : loadMoreLabel}
+                        {retryLabel}
                     </Button>
                 </>
             )}

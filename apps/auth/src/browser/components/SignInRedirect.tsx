@@ -4,6 +4,7 @@ import { IdentityError, type IdentityClient } from "@homelab/ui/identity/client"
 import { useEffect, useRef, useState } from "react";
 
 import { AuthLayout } from "../layout/AuthLayout";
+import { restartSignIn } from "../navigation/restartSignIn";
 import { signInDestination } from "../navigation/signInDestination";
 import { submitOidcConsent } from "../navigation/submitOidcConsent";
 import { AccountActions } from "./AccountActions";
@@ -92,7 +93,13 @@ export function SignInRedirect({
                     ["INTERACTION_EXPIRED", "CONSENT_CONFLICT"].includes(failure.code) ? (
                         <Button
                             fullWidth
-                            onClick={() => globalThis.location.replace("/account")}
+                            onClick={() => {
+                                setFailure(undefined);
+                                void restartSignIn(client, address).then(
+                                    setDestination,
+                                    (error: unknown) => setFailure(error)
+                                );
+                            }}
                         >
                             Start a new sign-in
                         </Button>

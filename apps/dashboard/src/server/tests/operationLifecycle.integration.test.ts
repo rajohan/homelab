@@ -60,7 +60,7 @@ test("metrics job commits a real JSON snapshot and stale ownership rejects repla
         fetch: () =>
             Response.json({
                 status: "success",
-                data: { resultType: "vector", result: [{ value: [1, "2"] }] },
+                data: { resultType: "vector", result: [{ metric: {}, value: [1, "2"] }] },
             }),
     });
     const handler = metricsJob({
@@ -92,6 +92,11 @@ test("metrics job commits a real JSON snapshot and stale ownership rejects repla
             totalTargets: 2,
             reachableTargets: 2,
             firingAlerts: 2,
+        });
+        expect(await caller.infrastructure.inventory()).toMatchObject({
+            hosts: [],
+            applications: [],
+            storage: [],
         });
         await fixture.client`UPDATE job_runs SET lease_expires_at = now() - interval '1 second' WHERE id = ${run.id}`;
         await expectOperationFailure(handler.execute({}, context), "ownership changed");

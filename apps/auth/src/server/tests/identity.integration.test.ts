@@ -2356,6 +2356,29 @@ describe("security invariants against the isolated database", () => {
             message: "This sign-in request has expired. Start a new sign-in to continue.",
         });
         expect(response.headers.get("cache-control")).toBe("no-store");
+        const restarted = await post("/api/sign-in/restart", { clientId: "dashboard" });
+        expect(restarted.status).toBe(200);
+        expect(await restarted.json()).toEqual({ redirect: issuer + "/account" });
+        const arbitraryRedirect = await post("/api/sign-in/restart", {
+            clientId: null,
+            redirect: "https://attacker.example",
+        });
+        expect(arbitraryRedirect.status).toBe(400);
+        const rejected = await browser("/api/sign-in/restart", {
+            method: "POST",
+            headers: {
+                "content-type": "application/json",
+                origin: "https://attacker.example",
+            },
+            body: JSON.stringify({ clientId: "dashboard" }),
+        });
+        expect(rejected.status).toBe(403);
+        const signedOut = await browser("/api/sign-in/restart", {
+            method: "POST",
+            headers: { "content-type": "application/json", origin: issuer, cookie: "" },
+            body: JSON.stringify({ clientId: "dashboard" }),
+        });
+        expect(signedOut.status).toBe(401);
     });
 
     test.each(["settings", "direct", "oidc"] as const)(

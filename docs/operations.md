@@ -14,7 +14,7 @@ Store credentials in the existing scoped Doppler delivery, not in a committed `.
 | -------------------------------------- | --------------------------------------------------------------- | ------------ |
 | `HOMELAB_DASHBOARD_DATABASE_URL`       | Dashboard PostgreSQL connection with verified TLS in production | Unconfigured |
 | `HOMELAB_DASHBOARD_METRICS_URL`        | Prometheus-compatible API base URL, including any tenant prefix | Disabled     |
-| `HOMELAB_DASHBOARD_METRICS_TOKEN`      | Optional read-only bearer credential, worker only               | None         |
+| `HOMELAB_DASHBOARD_METRICS_TOKEN`      | Optional read-only bearer credential for dashboard and worker   | None         |
 | `HOMELAB_DASHBOARD_WORKER_CONCURRENCY` | Concurrent job handlers per worker, 1–16                        | 3            |
 | `HOMELAB_DASHBOARD_JOB_RETENTION_DAYS` | Completed jobs and operational audit retention, 1–365 days      | 30           |
 | `HOMELAB_DASHBOARD_WORKER_HOST`        | Private health/metrics bind address                             | `127.0.0.1`  |

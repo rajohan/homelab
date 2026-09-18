@@ -101,7 +101,9 @@ export function SignInPage({ client, address }: AuthPageProps) {
             {session.isError && (
                 <div className="space-y-3">
                     <ErrorNotice error={session.error} />
-                    <Button onClick={() => void refresh()}>Try again</Button>
+                    <Button fullWidth onClick={() => void refresh()}>
+                        Try again
+                    </Button>
                 </div>
             )}
             {!session.isError && session.data?.authenticated && (

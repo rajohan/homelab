@@ -1,4 +1,11 @@
-import { Button, ErrorNotice, LoadingState, Modal, formatDateTime } from "@homelab/ui";
+import {
+    VirtualList,
+    queryRefresh,
+    ErrorNotice,
+    LoadingState,
+    Modal,
+    formatDateTime,
+} from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
 
 import { api } from "../../api/client";
@@ -25,7 +32,7 @@ export function RunDetailDialog({
                 { signal }
             ),
         getNextPageParam: (page) => page.nextCursor ?? undefined,
-        refetchInterval: 5000,
+        ...queryRefresh("fast"),
         retry: false,
     });
     const run = query.data?.pages[0]?.run;
@@ -37,7 +44,7 @@ export function RunDetailDialog({
         >
             <div className="space-y-4">
                 {query.isPending && <LoadingState label="Loading run…" />}
-                {query.isError && <ErrorNotice error={query.error} />}
+                {query.isError && !run && <ErrorNotice error={query.error} />}
                 {run && (
                     <>
                         <JobStatus state={run.state} />
@@ -77,31 +84,31 @@ export function RunDetailDialog({
                             </p>
                         )}
                         <h3 className="font-medium">Run events</h3>
-                        <ol
-                            aria-label="Run events"
+                        <VirtualList
+                            label="Run events"
                             className="max-h-72 space-y-3 overflow-y-auto rounded-lg border border-primary-700 bg-primary-950/40 p-3 text-sm"
-                        >
-                            {query.data?.pages
-                                .flatMap((page) => page.events)
-                                .map((event) => (
-                                    <li key={event.id}>
-                                        <p className="wrap-anywhere">{event.action}</p>
-                                        <p className="text-xs wrap-anywhere text-primary-400">
-                                            {formatDateTime(event.createdAt)} ·{" "}
-                                            {formatJobActor(event.actor)}
-                                        </p>
-                                    </li>
-                                ))}
-                        </ol>
-                        {query.hasNextPage && (
-                            <Button
-                                variant="secondary"
-                                busy={query.isFetchingNextPage}
-                                onClick={() => void query.fetchNextPage()}
-                            >
-                                Load older events
-                            </Button>
-                        )}
+                            rows={query.data?.pages.flatMap((page) => page.events) ?? []}
+                            getKey={(event) => event.id}
+                            continuation={{
+                                hasMore: query.hasNextPage,
+                                loading: query.isFetching,
+                                error: query.isError ? query.error : undefined,
+                                loadingLabel: "Loading older events…",
+                                onLoadMore: () =>
+                                    void (query.isRefetchError
+                                        ? query.refetch()
+                                        : query.fetchNextPage()),
+                            }}
+                            renderItem={(event) => (
+                                <div>
+                                    <p className="wrap-anywhere">{event.action}</p>
+                                    <p className="text-xs wrap-anywhere text-primary-400">
+                                        {formatDateTime(event.createdAt)} ·{" "}
+                                        {formatJobActor(event.actor)}
+                                    </p>
+                                </div>
+                            )}
+                        />
                     </>
                 )}
             </div>

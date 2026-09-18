@@ -1,6 +1,8 @@
 import { oidcInteractionSchema, type OidcConsent } from "@homelab/contracts";
-import type { IdentityClient } from "@homelab/ui/identity/client";
+import { IdentityError, type IdentityClient } from "@homelab/ui/identity/client";
 import * as v from "valibot";
+
+import { claimSignInRestart, restartSignIn } from "./restartSignIn";
 /**
  * Complete the pending SSO or OIDC handoff and validate its return destination.
  * @param client - The authenticated browser identity client.
@@ -28,10 +30,19 @@ export async function signInDestination(
             throw new Error("Invalid return address.");
         return destination.href;
     } else if (address.searchParams.has("interaction")) {
-        const result = v.parse(
-            oidcInteractionSchema,
-            await client.request("/sign-in/complete", {})
-        );
+        let response: unknown;
+        try {
+            response = await client.request("/sign-in/complete", {});
+        } catch (error) {
+            if (
+                error instanceof IdentityError &&
+                error.code === "INTERACTION_EXPIRED" &&
+                claimSignInRestart()
+            )
+                return restartSignIn(client, address);
+            throw error;
+        }
+        const result = v.parse(oidcInteractionSchema, response);
         if ("consent" in result) return result.consent;
         const destination = new URL(result.redirect, address.origin);
         if (destination.origin !== address.origin)

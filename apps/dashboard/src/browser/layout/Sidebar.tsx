@@ -49,15 +49,15 @@ export function Sidebar({
                     onNavigate={onNavigate}
                 />
                 <NavigationLink
-                    to="/settings"
-                    label="Settings"
-                    icon={Settings}
-                    onNavigate={onNavigate}
-                />
-                <NavigationLink
                     to="/jobs"
                     label="Jobs"
                     icon={ListChecks}
+                    onNavigate={onNavigate}
+                />
+                <NavigationLink
+                    to="/settings"
+                    label="Settings"
+                    icon={Settings}
                     onNavigate={onNavigate}
                 />
             </nav>

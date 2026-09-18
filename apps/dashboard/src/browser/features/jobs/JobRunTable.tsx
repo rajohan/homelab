@@ -1,5 +1,11 @@
 import type { JobSummary } from "@homelab/contracts/operations";
-import { IconButton, DataTable, ConfirmDialog, formatDateTime } from "@homelab/ui";
+import {
+    IconButton,
+    DataTable,
+    ConfirmDialog,
+    formatDateTime,
+    type InfiniteScrollContinuation,
+} from "@homelab/ui";
 import { Square } from "lucide-react";
 import { useState } from "react";
 
@@ -15,9 +21,11 @@ import { JobStatus } from "./JobStatus";
 export function JobRunTable({
     rows,
     onSelect,
+    continuation,
 }: {
     readonly rows: readonly JobSummary[];
     readonly onSelect: (id: string) => void;
+    readonly continuation?: InfiniteScrollContinuation;
 }) {
     const [stopping, setStopping] = useState<JobSummary>();
     const cancel = useOperation((id: string, signal) =>
@@ -34,6 +42,7 @@ export function JobRunTable({
                     onSelect: (run) => onSelect(run.id),
                 }}
                 rows={rows}
+                {...(continuation ? { continuation } : {})}
                 getKey={(run) => run.id}
                 columns={[
                     {

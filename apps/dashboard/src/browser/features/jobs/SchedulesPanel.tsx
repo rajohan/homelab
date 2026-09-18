@@ -1,4 +1,4 @@
-import { describeSchedule } from "@homelab/contracts/operations";
+import { describeSchedule, type ScheduleSummary } from "@homelab/contracts/operations";
 import {
     Badge,
     Card,
@@ -6,23 +6,27 @@ import {
     ErrorNotice,
     LoadingState,
     SectionHeader,
+    queryRefresh,
     formatDateTime,
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 import { CalendarClock } from "lucide-react";
+import { useState } from "react";
 
 import { api } from "../../api/client";
 import { ScheduleActions } from "./ScheduleActions";
+import { ScheduleHistory } from "./ScheduleHistory";
 
 /**
  * List registered jobs with scheduling intent, manual actions and a per-job inspector.
  * @returns A live schedule inventory; disabled schedules are neutral, not failures.
  */
 export function SchedulesPanel() {
+    const [selected, setSelected] = useState<ScheduleSummary>();
     const query = useQuery({
         queryKey: ["operations", "schedules"],
         queryFn: ({ signal }) => api.schedules.list.query(undefined, { signal }),
-        refetchInterval: 5000,
+        ...queryRefresh("fast"),
         retry: false,
     });
     return (
@@ -39,6 +43,10 @@ export function SchedulesPanel() {
                     <DataTable
                         label="Job schedules"
                         compact
+                        rowAction={{
+                            label: (row) => `Open history for ${row.label}`,
+                            onSelect: setSelected,
+                        }}
                         rows={query.data}
                         getKey={(row) => row.id}
                         columns={[
@@ -93,6 +101,12 @@ export function SchedulesPanel() {
                     />
                 )}
             </Card>
+            {selected && (
+                <ScheduleHistory
+                    schedule={selected}
+                    onClose={() => setSelected(undefined)}
+                />
+            )}
         </>
     );
 }

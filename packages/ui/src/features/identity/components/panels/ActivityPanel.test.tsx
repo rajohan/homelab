@@ -1,13 +1,16 @@
 import { expect, spyOn, test } from "bun:test";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, within, waitFor } from "@testing-library/react";
 
+import { intersectionFixture } from "../../../../../../../tests/intersectionFixture";
 import { IdentityClient } from "../../api/IdentityClient";
 import { ActivityPanel } from "./ActivityPanel";
 
 test("activity pages expose account and timestamp columns, retry without dropping rows, and use server cursors", async () => {
     const client = new IdentityClient();
+    const fixture = intersectionFixture();
+    const screen = within(fixture.container);
     let fail = true;
     const event = {
         id: "event-one",
@@ -30,7 +33,8 @@ test("activity pages expose account and timestamp columns, retry without droppin
     const view = render(
         <QueryClientProvider client={query}>
             <ActivityPanel client={client} accountId="fixture" />
-        </QueryClientProvider>
+        </QueryClientProvider>,
+        { container: fixture.container }
     );
     try {
         expect(
@@ -38,14 +42,15 @@ test("activity pages expose account and timestamp columns, retry without droppin
         ).toBeVisible();
         expect(screen.getByRole("columnheader", { name: "Who" })).toBeVisible();
         expect(screen.getByRole("columnheader", { name: "Time" })).toBeVisible();
-        fireEvent.click(screen.getByRole("button", { name: "Load older events" }));
+        act(() => fixture.intersect());
         expect(await screen.findByText("Synthetic page failure")).toBeVisible();
         expect(screen.getByRole("table", { name: "Security activity" })).toBeVisible();
         fail = false;
         fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+        await waitFor(() => expect(read).toHaveBeenCalledTimes(3));
         await waitFor(() =>
             expect(
-                screen.queryByRole("button", { name: "Load older events" })
+                screen.queryByRole("button", { name: "Try again" })
             ).not.toBeInTheDocument()
         );
         expect(read.mock.calls.map(([cursor]) => cursor)).toEqual([
@@ -57,5 +62,6 @@ test("activity pages expose account and timestamp columns, retry without droppin
         view.unmount();
         query.clear();
         read.mockRestore();
+        fixture.close();
     }
 });
