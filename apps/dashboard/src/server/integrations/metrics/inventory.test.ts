@@ -125,8 +125,11 @@ describe("resource normalization", () => {
     test.each(["vm", "container"] as const)(
         "agentless %s history uses upstream PVE counters rather than deprecated gauges",
         (kind) => {
-            const host = buildHosts(fixture())[0];
+            const input = fixture();
+            input.up = input.up?.filter((row) => row.labels.job !== "node") ?? [];
+            const host = buildHosts(input)[0];
             if (!host) throw new Error("Missing fixture host");
+            expect(host.guestMetricsConfigured).toBe(false);
             const id = kind === "vm" ? "qemu/100" : "lxc/100";
             const selection = `instance="cluster-a",id="${id}"`;
             const history = historyExpressions(
@@ -187,6 +190,7 @@ describe("resource normalization", () => {
             memorySource: "hypervisor",
             cpuPercent: 25,
             guestMetricsAvailable: false,
+            guestMetricsConfigured: true,
         });
     });
     test("does not report stale measurements for stopped guests or unreachable hypervisors", () => {
@@ -203,6 +207,54 @@ describe("resource normalization", () => {
             cpuPercent: null,
             memoryUsed: null,
         });
+    });
+    test.each(["vm", "container", "node", "host"] as const)(
+        "%s history keeps its source and device selections while the exporter is down",
+        (kind) => {
+            const input = fixture();
+            const healthy = buildHosts(input)[0];
+            if (!healthy) throw new Error("Missing fixture host");
+            input.up =
+                input.up?.map((row) =>
+                    row.labels.job === "node" ? { ...row, value: 0 } : row
+                ) ?? [];
+            const unavailable = buildHosts(input)[0];
+            if (!unavailable) throw new Error("Missing unavailable host");
+            expect(unavailable.guestMetricsAvailable).toBe(false);
+            expect(unavailable.guestMetricsConfigured).toBe(true);
+            const before = historyExpressions({ ...healthy, kind }, "eth0", "sda");
+            const after = historyExpressions({ ...unavailable, kind }, "eth0", "sda");
+            expect(after).toEqual(before);
+            expect(after.memory).toContain("node_memory_MemAvailable_bytes");
+            expect(after.receive).toContain('device="eth0"');
+            expect(after.read).toContain('device="sda"');
+            const other = historyExpressions({ ...unavailable, kind }, "eth1", "sdb");
+            expect(other.receive).not.toBe(after.receive);
+            expect(other.read).not.toBe(after.read);
+            const ambiguous = historyExpressions(
+                { ...unavailable, host: null },
+                "eth0",
+                "sda"
+            );
+            expect(ambiguous.receive).toContain("pve_network_receive_bytes_total");
+            expect(ambiguous.memory).toContain("pve_memory_usage_bytes");
+        }
+    );
+    test("stopped guests retain configured node history while legacy snapshots honor selected devices", () => {
+        const input = fixture();
+        input.pve_up = [sample(0, pve)];
+        const host = buildHosts(input)[0];
+        if (!host) throw new Error("Missing stopped host");
+        expect(host.guestMetricsAvailable).toBe(false);
+        expect(historyExpressions(host, null, null).memory).toContain("node_memory_");
+        const { guestMetricsConfigured: _configured, ...legacy } = host;
+        const history = historyExpressions(legacy, "eth0", "sda");
+        expect(history.receive).toContain(
+            'node_network_receive_bytes_total{host="guest",device="eth0"}'
+        );
+        expect(history.read).toContain(
+            'node_disk_read_bytes_total{host="guest",device="sda"}'
+        );
     });
     test("does not merge ambiguous guest names across clusters", () => {
         const input = fixture();
@@ -621,11 +673,18 @@ describe("resource tables", () => {
             'node_memory_MemTotal_bytes{host="guest\\\"},secret=\\\"x"}'
         );
         expect(
-            historyExpressions({ ...host, guestMetricsAvailable: false }, null, null)
-                .memoryCapacity
+            historyExpressions(
+                { ...host, guestMetricsAvailable: false, guestMetricsConfigured: false },
+                null,
+                null
+            ).memoryCapacity
         ).toBe('pve_memory_size_bytes{instance="cluster-a",id="qemu/100"}');
         expect(
-            historyExpressions({ ...host, guestMetricsAvailable: false }, null, null).read
+            historyExpressions(
+                { ...host, guestMetricsAvailable: false, guestMetricsConfigured: false },
+                null,
+                null
+            ).read
         ).toContain("pve_disk_read_bytes_total");
     });
 });

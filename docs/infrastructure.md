@@ -29,6 +29,12 @@ queries only that resource's historical measurements, polled once per minute.
 Focus and reconnect also refresh the view. Supported windows are 1 hour, 6 hours, 24 hours and 7 days. History stays in
 the monitoring system, not a second dashboard time-series database.
 
+Historical source selection uses configured exporter identity, not its current
+health. A node-exporter outage keeps OS history and the selected interface/block
+device, with gaps where samples are missing; it does not relabel aggregate PVE
+traffic as device traffic. Agentless guests still use hypervisor history, and LXC
+CPU remains sourced from PVE. Current-value fallback is independent of history.
+
 Both processes use `HOMELAB_DASHBOARD_METRICS_URL` and, where required,
 `HOMELAB_DASHBOARD_METRICS_TOKEN`. The worker needs these for collection; the web
 process needs them for historical queries. A scoped read-only monitoring proxy

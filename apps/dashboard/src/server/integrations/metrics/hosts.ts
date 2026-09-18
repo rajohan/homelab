@@ -108,6 +108,11 @@ function hostMeasurements(
                 : Math.max(0, Date.now() / 1000 - boot),
         provisionedDisk: pveCapacity("pve_disk_size_bytes"),
         guestMetricsAvailable: guest,
+        guestMetricsConfigured:
+            host !== null &&
+            (samples.up ?? []).some(
+                (sample) => sample.labels.host === host && sample.labels.job === "node"
+            ),
     };
 }
 

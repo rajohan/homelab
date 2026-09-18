@@ -94,13 +94,15 @@ export function HostHistory({
                     />
                 )}
             </div>
-            {!host.guestMetricsAvailable && (
-                <p className="text-sm text-primary-400">
-                    Hypervisor measurements. Memory includes guest caches and is not the
-                    available-memory estimate inside the guest. Network and disk I/O cover
-                    the virtual machine, not individual devices.
-                </p>
-            )}
+            {!(host.guestMetricsConfigured ?? host.guestMetricsAvailable) &&
+                networks.length === 0 &&
+                disks.length === 0 && (
+                    <p className="text-sm text-primary-400">
+                        Hypervisor measurements. Memory includes guest caches and is not
+                        the available-memory estimate inside the guest. Network and disk
+                        I/O cover the virtual machine, not individual devices.
+                    </p>
+                )}
             {query.isPending && <LoadingState label="Loading resource history…" />}
             {query.isError && <ErrorNotice error={query.error} />}
             {query.data && (

@@ -12,6 +12,7 @@ import type { ReactNode } from "react";
 import { Infrastructure } from "../../pages/Infrastructure";
 import { ApplicationInventory } from "./ApplicationInventory";
 import { ApplicationMemory } from "./ApplicationMemory";
+import { HostHistory } from "./HostHistory";
 import { HostInventory } from "./HostInventory";
 import { HostResources } from "./HostResources";
 import { HostStorageUsage } from "./HostStorageUsage";
@@ -270,6 +271,36 @@ test("a stale inventory remains visibly historical and a host opens its own scop
         );
         await user.click(screen.getByRole("button", { name: "Close dialog" }));
         expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    } finally {
+        view.unmount();
+        client.clear();
+    }
+});
+
+test("history retains device selectors without claiming aggregate PVE data during a node outage", () => {
+    const client = new QueryClient({
+        defaultOptions: { queries: { enabled: false, retry: false } },
+    });
+    const view = render(
+        <QueryClientProvider client={client}>
+            <HostHistory
+                host={{
+                    ...host,
+                    guestMetricsAvailable: false,
+                    guestMetricsConfigured: true,
+                }}
+                inventory={inventory}
+            />
+        </QueryClientProvider>
+    );
+    try {
+        expect(
+            screen.getByRole("button", { name: "Network interface" })
+        ).toHaveTextContent("eth0");
+        expect(screen.getByRole("button", { name: "Block device" })).toHaveTextContent(
+            "sda"
+        );
+        expect(screen.queryByText(/Hypervisor measurements/)).not.toBeInTheDocument();
     } finally {
         view.unmount();
         client.clear();

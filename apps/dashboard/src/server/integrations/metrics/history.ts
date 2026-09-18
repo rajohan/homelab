@@ -14,6 +14,12 @@ const ranges: Readonly<Record<HistoryRange, { duration: string; step: number }>>
     "7d": { duration: "7d", step: 1800 },
 };
 
+function usesGuestHistory(host: InfrastructureHost) {
+    return (
+        host.host !== null && (host.guestMetricsConfigured ?? host.guestMetricsAvailable)
+    );
+}
+
 /**
  * Build expressions only from resource identities previously saved by the worker.
  * @param host - A saved inventory host, never arbitrary browser labels.
@@ -29,7 +35,7 @@ export function historyExpressions(
     const label = JSON.stringify;
     const selector = `host=${label(host.host)}`;
     const pve = `instance=${label(host.pveInstance)},id=${label(host.guestId)}`;
-    const node = host.guestMetricsAvailable && host.host !== null;
+    const node = usesGuestHistory(host);
     const hasPve = host.pveInstance !== null && host.guestId !== null;
     const virtualMachine = hasPve && host.kind !== "node";
     const fallback = {
@@ -45,26 +51,33 @@ export function historyExpressions(
         read: virtualMachine ? `rate(pve_disk_read_bytes_total{${pve}}[5m])` : null,
         write: virtualMachine ? `rate(pve_disk_written_bytes_total{${pve}}[5m])` : null,
     };
-    if (!node) return fallback;
     return {
         cpu:
-            host.kind === "container"
+            !node || host.kind === "container"
                 ? fallback.cpu
                 : `100 * (1 - avg(rate(node_cpu_seconds_total{${selector},mode="idle"}[5m])))`,
-        memory: `node_memory_MemTotal_bytes{${selector}} - node_memory_MemAvailable_bytes{${selector}}`,
-        memoryCapacity: `node_memory_MemTotal_bytes{${selector}}`,
-        receive: network
-            ? `rate(node_network_receive_bytes_total{${selector},device=${label(network)}}[5m])`
-            : fallback.receive,
-        transmit: network
-            ? `rate(node_network_transmit_bytes_total{${selector},device=${label(network)}}[5m])`
-            : fallback.transmit,
-        read: disk
-            ? `rate(node_disk_read_bytes_total{${selector},device=${label(disk)}}[5m])`
-            : fallback.read,
-        write: disk
-            ? `rate(node_disk_written_bytes_total{${selector},device=${label(disk)}}[5m])`
-            : fallback.write,
+        memory: node
+            ? `node_memory_MemTotal_bytes{${selector}} - node_memory_MemAvailable_bytes{${selector}}`
+            : fallback.memory,
+        memoryCapacity: node
+            ? `node_memory_MemTotal_bytes{${selector}}`
+            : fallback.memoryCapacity,
+        receive:
+            host.host !== null && network
+                ? `rate(node_network_receive_bytes_total{${selector},device=${label(network)}}[5m])`
+                : fallback.receive,
+        transmit:
+            host.host !== null && network
+                ? `rate(node_network_transmit_bytes_total{${selector},device=${label(network)}}[5m])`
+                : fallback.transmit,
+        read:
+            host.host !== null && disk
+                ? `rate(node_disk_read_bytes_total{${selector},device=${label(disk)}}[5m])`
+                : fallback.read,
+        write:
+            host.host !== null && disk
+                ? `rate(node_disk_written_bytes_total{${selector},device=${label(disk)}}[5m])`
+                : fallback.write,
     };
 }
 
@@ -89,8 +102,7 @@ export async function collectHistory(
     );
     const labels: Readonly<Record<string, string>> = {
         cpu: "CPU",
-        memory:
-            resource.host.memorySource === "guest" ? "Used memory" : "Hypervisor memory",
+        memory: usesGuestHistory(resource.host) ? "Used memory" : "Hypervisor memory",
         memoryCapacity: "Capacity",
         receive: "Received",
         transmit: "Sent",

@@ -83,69 +83,97 @@ test("collects finite derived rates even when a compatible backend preserves met
     }
 });
 
-test("historical queries retain gaps, null invalid values and reject duplicate resource series", async () => {
-    const host = buildHosts({
-        up: [{ labels: { host: "test", job: "node" }, value: 1 }],
-    })[0];
-    if (!host) throw new Error("Missing host fixture");
-    let duplicate = false;
-    const queries: string[] = [];
-    const offsets: (string | null)[] = [];
-    const server = Bun.serve({
-        hostname: "127.0.0.1",
-        port: 0,
-        fetch(request) {
-            queries.push(new URL(request.url).searchParams.get("query") ?? "");
-            offsets.push(new URL(request.url).searchParams.get("latency_offset"));
-            const row = {
-                metric: {},
-                values: [
-                    [100, "0"],
-                    [130, "NaN"],
-                    [145, "3"],
-                ],
+test.each([1, 0])(
+    "historical queries retain device sources, gaps and ambiguity checks (exporter up: %s)",
+    async (available) => {
+        const host = buildHosts({
+            up: [
+                { labels: { host: "test", job: "node" }, value: available },
+                { labels: { host: "cluster", job: "pve" }, value: 1 },
+            ],
+            pve_guest_info: [
+                {
+                    labels: {
+                        host: "cluster",
+                        instance: "cluster-a",
+                        id: "qemu/100",
+                        name: "test",
+                    },
+                    value: 1,
+                },
+            ],
+            pve_up: [{ labels: { instance: "cluster-a", id: "qemu/100" }, value: 1 }],
+            pve_memory_usage_bytes: [
+                { labels: { instance: "cluster-a", id: "qemu/100" }, value: 42 },
+            ],
+        })[0];
+        if (!host) throw new Error("Missing host fixture");
+        let duplicate = false;
+        const queries: string[] = [];
+        const offsets: (string | null)[] = [];
+        const server = Bun.serve({
+            hostname: "127.0.0.1",
+            port: 0,
+            fetch(request) {
+                queries.push(new URL(request.url).searchParams.get("query") ?? "");
+                offsets.push(new URL(request.url).searchParams.get("latency_offset"));
+                const row = {
+                    metric: {},
+                    values: [
+                        [100, "0"],
+                        [130, "NaN"],
+                        [145, "3"],
+                    ],
+                };
+                return Response.json({
+                    status: "success",
+                    data: {
+                        resultType: "matrix",
+                        result: duplicate ? [row, row] : [row],
+                    },
+                });
+            },
+        });
+        try {
+            const configuration = {
+                url: `http://127.0.0.1:${server.port}`,
+                token: "synthetic-read-token",
             };
-            return Response.json({
-                status: "success",
-                data: { resultType: "matrix", result: duplicate ? [row, row] : [row] },
-            });
-        },
-    });
-    try {
-        const configuration = {
-            url: `http://127.0.0.1:${server.port}`,
-            token: "synthetic-read-token",
-        };
-        const selection = { host, network: "eth0", disk: "sda" };
-        const result = await collectHistory(
-            configuration,
-            selection,
-            "1h",
-            AbortSignal.timeout(2000)
-        );
-        expect(result.cpu[0]?.points).toEqual([
-            { time: 100_000, value: 0 },
-            { time: 115_000, value: null },
-            { time: 130_000, value: null },
-            { time: 145_000, value: 3 },
-        ]);
-        expect(queries).toHaveLength(7);
-        expect(result.memory.map((series) => series.key)).toEqual([
-            "memory",
-            "memoryCapacity",
-        ]);
-        expect(queries.every((query) => query.endsWith("[1h:15s]"))).toBe(true);
-        expect(offsets.every((offset) => offset === null)).toBe(true);
-        duplicate = true;
-        const failure = await collectHistory(
-            configuration,
-            selection,
-            "7d",
-            AbortSignal.timeout(2000)
-        ).catch((error: unknown) => error);
-        expect(failure).toBeInstanceOf(Error);
-        expect(failure).toHaveProperty("message", "Historical resource is ambiguous");
-    } finally {
-        await server.stop(true);
+            const selection = { host, network: "eth0", disk: "sda" };
+            const result = await collectHistory(
+                configuration,
+                selection,
+                "1h",
+                AbortSignal.timeout(2000)
+            );
+            expect(result.cpu[0]?.points).toEqual([
+                { time: 100_000, value: 0 },
+                { time: 115_000, value: null },
+                { time: 130_000, value: null },
+                { time: 145_000, value: 3 },
+            ]);
+            expect(queries).toHaveLength(7);
+            expect(queries.every((query) => !query.includes("pve_"))).toBe(true);
+            expect(queries.some((query) => query.includes('device="eth0"'))).toBe(true);
+            expect(queries.some((query) => query.includes('device="sda"'))).toBe(true);
+            expect(result.memory[0]?.label).toBe("Used memory");
+            expect(result.memory.map((series) => series.key)).toEqual([
+                "memory",
+                "memoryCapacity",
+            ]);
+            expect(queries.every((query) => query.endsWith("[1h:15s]"))).toBe(true);
+            expect(offsets.every((offset) => offset === null)).toBe(true);
+            duplicate = true;
+            const failure = await collectHistory(
+                configuration,
+                selection,
+                "7d",
+                AbortSignal.timeout(2000)
+            ).catch((error: unknown) => error);
+            expect(failure).toBeInstanceOf(Error);
+            expect(failure).toHaveProperty("message", "Historical resource is ambiguous");
+        } finally {
+            await server.stop(true);
+        }
     }
-});
+);

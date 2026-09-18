@@ -22,6 +22,8 @@ export interface InfrastructureHost {
     readonly uptime: number | null;
     readonly provisionedDisk: number | null;
     readonly guestMetricsAvailable: boolean;
+    /** Node-exporter identity exists independently of scrape health; absent in older snapshots. */
+    readonly guestMetricsConfigured?: boolean;
 }
 
 export interface FilesystemMetric {
