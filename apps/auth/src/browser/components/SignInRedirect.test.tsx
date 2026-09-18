@@ -64,9 +64,9 @@ test("a failed handoff stays on auth and retries only when requested", async () 
         />
     );
     try {
-        await userEvent
-            .setup()
-            .click(await screen.findByRole("button", { name: "Try again" }));
+        const retry = await screen.findByRole("button", { name: "Try again" });
+        expect(retry).toHaveClass("w-full");
+        await userEvent.setup().click(retry);
         await waitFor(() => expect(navigate).toHaveBeenCalledTimes(1));
         expect(request).toHaveBeenCalledTimes(2);
     } finally {
