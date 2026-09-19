@@ -19,12 +19,14 @@ export const applicationsRouter = trpc.router({
         runOperation(async () => {
             const { operations } = authorizedOperations(ctx, "applications:read");
             const targets = operations.applicationTargets ?? [];
+            const snapshot = await readApplicationInventory(operations.client);
             const inventory = filterApplicationInventory(
-                await readApplicationInventory(operations.client),
+                snapshot?.inventory ?? null,
                 targets
             );
             return {
                 configured: targets.length > 0,
+                fresh: snapshot?.fresh ?? false,
                 inventory,
                 logHosts: operations.logs
                     ? targets.filter((target) => target.logs).map((target) => target.id)
@@ -88,14 +90,16 @@ export const applicationsRouter = trpc.router({
                 >`SELECT id FROM job_runs WHERE idempotency_key=${key}`;
                 let label = definition.label;
                 if (!existing) {
+                    const snapshot = await readApplicationInventory(transaction);
                     const inventory = filterApplicationInventory(
-                        await readApplicationInventory(transaction),
+                        snapshot?.inventory ?? null,
                         operations.applicationTargets ?? []
                     );
                     const selected = selectApplications(
                         inventory,
                         input.host,
-                        input.selection
+                        input.selection,
+                        snapshot?.fresh ?? false
                     );
                     if (selectionRevision(selected, input.selection) !== input.revision)
                         throw new OperationFailure(

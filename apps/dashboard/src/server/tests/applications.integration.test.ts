@@ -7,10 +7,138 @@ import { performApplicationAction } from "../integrations/applications/actions";
 import { createDockerPort } from "../integrations/applications/docker";
 import { collectApplications } from "../integrations/applications/inventory";
 import { applicationJobs } from "../integrations/applications/jobs";
-import { selectionRevision } from "../integrations/applications/selection";
+import {
+    readApplicationInventory,
+    selectionRevision,
+} from "../integrations/applications/selection";
 import { createJobRegistry } from "../jobs/registry";
 import { createApplicationFixture } from "../testing/applications";
 import { operationFixture, expectOperationFailure } from "../testing/operations";
+
+test("snapshot admission and reported freshness use database time, not serialized worker timestamps", async () => {
+    const database = await operationFixture(),
+        docker = createApplicationFixture();
+    try {
+        const operations = {
+            ...database,
+            applicationTargets: [docker.target],
+            registry: createJobRegistry(
+                applicationJobs([docker.target], database.client)
+            ),
+        };
+        const inventory = await collectApplications(
+            [docker.target],
+            (target) => createDockerPort(target, {}),
+            AbortSignal.timeout(3000)
+        );
+        const application = inventory.hosts[0]?.applications[0];
+        if (!application) throw new Error("Missing fixture application");
+        const principal = { kind: "human" as const, id: "operator", capabilities };
+        const caller = appRouter.createCaller({
+            operations,
+            principal,
+            verifyHuman: () => Promise.resolve(principal),
+        });
+        for (const [ageSeconds, clockOffsetSeconds, fresh] of [
+            [-121, 600, false],
+            [600, 600, false],
+            [0, -600, true],
+            [0, 600, true],
+        ] as const) {
+            const serialized = {
+                ...inventory,
+                capturedAt: new Date(
+                    Date.now() + clockOffsetSeconds * 1000
+                ).toISOString(),
+            };
+            await database.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES ('applications.inventory',${JSON.stringify(serialized)}::text::jsonb,now()+${ageSeconds}::int*interval '1 second') ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,captured_at=EXCLUDED.captured_at`;
+            const snapshot = await caller.applications.inventory();
+            expect(snapshot.fresh).toBe(fresh);
+            expect(snapshot.inventory?.hosts[0]?.applications).toHaveLength(2);
+            const input = {
+                host: "demo",
+                selection: {
+                    kind: "container" as const,
+                    target: application.containerId,
+                },
+                revision: application.revision,
+                operation: "restart" as const,
+                requestId: crypto.randomUUID(),
+            };
+            if (fresh)
+                expect(await caller.applications.request(input)).toHaveProperty("id");
+            else
+                await expectOperationFailure(caller.applications.request(input), "stale");
+        }
+        expect(await database.client`SELECT id FROM job_runs`).toHaveLength(2);
+        expect(docker.calls).toEqual([]);
+    } finally {
+        await docker.close();
+        await database.close();
+    }
+});
+
+test("a clock-skewed discovery worker persists freshness using the database timestamp", async () => {
+    const database = await operationFixture(),
+        docker = createApplicationFixture();
+    try {
+        // Change only the child worker's clock; parallel suites keep the real clock.
+        const worker = Bun.spawn(
+            [
+                process.execPath,
+                "--no-env-file",
+                "--eval",
+                `
+            import { SQL } from "bun";
+            import { applicationJobs } from ${JSON.stringify(new URL("../integrations/applications/jobs.ts", import.meta.url).href)};
+            const input = await Bun.stdin.json();
+            const RealDate = Date;
+            globalThis.Date = class extends RealDate {
+                constructor(value) { super(value === undefined ? RealDate.now() + 600_000 : value); }
+                static now() { return RealDate.now() + 600_000; }
+            };
+            const client = new SQL(input.url);
+            try {
+                const handler = applicationJobs([input.target], client).find((entry) => entry.definition.key === "applications.discover");
+                await handler.execute({}, { runId: "synthetic", leaseToken: "synthetic",
+                    signal: AbortSignal.timeout(3000), reportProgress: async () => {},
+                    commit: async (write) => { await client.begin(write); return true; },
+                });
+            } finally { await client.close(); }
+        `,
+            ],
+            {
+                stdin: new Blob([
+                    JSON.stringify({ url: database.url, target: docker.target }),
+                ]),
+                stdout: "pipe",
+                stderr: "pipe",
+            }
+        );
+        const [exitCode] = await Promise.all([
+            worker.exited,
+            new Response(worker.stdout).text(),
+            new Response(worker.stderr).text(),
+        ]);
+        expect(exitCode).toBe(0);
+        const [row] = await database.client<
+            { databaseFresh: boolean; workerAhead: boolean }[]
+        >`
+            SELECT captured_at BETWEEN now()-interval '1 minute' AND now() AS "databaseFresh",
+            (value->>'capturedAt')::timestamptz > now()+interval '9 minutes' AS "workerAhead"
+            FROM operation_snapshots WHERE key='applications.inventory'`;
+        expect(row).toEqual({ databaseFresh: true, workerAhead: true });
+        const snapshot = await readApplicationInventory(database.client);
+        expect(snapshot?.fresh).toBe(true);
+        await database.client`UPDATE operation_snapshots SET captured_at=now()-interval '121 seconds' WHERE key='applications.inventory'`;
+        const expired = await readApplicationInventory(database.client);
+        expect(expired?.fresh).toBe(false);
+        expect(docker.calls).toEqual([]);
+    } finally {
+        await docker.close();
+        await database.close();
+    }
+});
 
 test.each(["start", "stop", "restart"] as const)(
     "%s run titles identify the confirmed selection and survive replay without inventory",

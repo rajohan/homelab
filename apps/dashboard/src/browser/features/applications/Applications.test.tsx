@@ -43,7 +43,22 @@ function fixture(content: ReactNode, seed?: (query: QueryClient) => void) {
     seed?.(query);
     const view = render(
         <QueryClientProvider client={query}>
-            <IdentityClientContext value={identity}>{content}</IdentityClientContext>
+            <IdentityClientContext value={identity}>
+                <div
+                    ref={(element) => {
+                        // Happy DOM has no layout; supply each local virtual table's viewport.
+                        for (const viewport of element?.querySelectorAll(
+                            "section[aria-label]"
+                        ) ?? [])
+                            Object.defineProperties(viewport, {
+                                offsetHeight: { value: 520, configurable: true },
+                                offsetWidth: { value: 960, configurable: true },
+                            });
+                    }}
+                >
+                    {content}
+                </div>
+            </IdentityClientContext>
         </QueryClientProvider>
     );
     return () => {
@@ -176,7 +191,7 @@ test("the applications workspace reports disabled provisioning without implying 
             inventory: null,
             projects: [],
             logHosts: [],
-            observedAt: 1,
+            fresh: false,
         })
     );
     try {
@@ -189,3 +204,40 @@ test("the applications workspace reports disabled provisioning without implying 
         cleanup();
     }
 });
+
+test.each([true, false])(
+    "application controls honor server freshness (%s), independent of browser date comparisons",
+    (fresh) => {
+        const cleanup = fixture(<Applications />, (query) =>
+            query.setQueryData(["operations", "applications", "inventory"], {
+                configured: true,
+                fresh,
+                logHosts: [],
+                inventory: {
+                    capturedAt: fresh ? "2000-01-01T00:00:00Z" : "2099-01-01T00:00:00Z",
+                    hosts: [
+                        {
+                            id: "demo",
+                            label: "Demo",
+                            available: true,
+                            applications: [application],
+                        },
+                    ],
+                },
+                projects: [
+                    { host: "demo", name: "demo", revision: application.revision },
+                ],
+            })
+        );
+        try {
+            expect(
+                screen.getByText(fresh ? "Live inventory" : "Stale inventory")
+            ).toBeVisible();
+            const action = screen.getByRole("button", { name: "Actions for demo" });
+            if (fresh) expect(action).toBeEnabled();
+            else expect(action).toBeDisabled();
+        } finally {
+            cleanup();
+        }
+    }
+);

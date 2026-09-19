@@ -26,10 +26,7 @@ export function Applications() {
     const [search, setSearch] = useState("");
     const [selected, setSelected] = useState<string>();
     const inventory = query.data?.inventory;
-    const stale =
-        !inventory ||
-        (query.data?.observedAt ?? 0) - Date.parse(inventory.capturedAt) > 120_000 ||
-        query.isError;
+    const stale = !inventory || !query.data?.fresh || query.isError;
     const applications = inventory?.hosts.flatMap((host) => host.applications) ?? [];
     const active = applications.find((item) => item.id === selected);
     const matches = (value: string) => value.toLowerCase().includes(search.toLowerCase());

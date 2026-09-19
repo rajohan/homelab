@@ -23,7 +23,7 @@ function persist(
     return context.commit(async (transaction) => {
         const previous = await readApplicationInventory(transaction);
         for (const host of inventory.hosts) {
-            const before = previous?.hosts.find((item) => item.id === host.id);
+            const before = previous?.inventory.hosts.find((item) => item.id === host.id);
             if (before?.available === host.available || (!before && host.available))
                 continue;
             await publishNotification(transaction, "applications", {
@@ -36,7 +36,7 @@ function persist(
                 destination: "applications",
             });
         }
-        await transaction`INSERT INTO operation_snapshots(key,value,captured_at) VALUES ('applications.inventory',${JSON.stringify(inventory)}::text::jsonb,${new Date(inventory.capturedAt)}) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,captured_at=EXCLUDED.captured_at`;
+        await transaction`INSERT INTO operation_snapshots(key,value,captured_at) VALUES ('applications.inventory',${JSON.stringify(inventory)}::text::jsonb,statement_timestamp()) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,captured_at=EXCLUDED.captured_at`;
     });
 }
 
@@ -74,11 +74,12 @@ export function applicationJobs(
                 await context.reportProgress(
                     "Reading application inventory from the configured hosts."
                 );
+                const previous = await readApplicationInventory(client);
                 const inventory = await collectApplications(
                     targets,
                     connect,
                     context.signal,
-                    await readApplicationInventory(client)
+                    previous?.inventory
                 );
                 if (!(await persist(inventory, context)))
                     throw new Error("Application snapshot ownership changed");
@@ -132,11 +133,12 @@ export function applicationJobs(
                     // Failed health checks can leave changed container states too.
                     // Cancellation loses the write fence; scheduled discovery handles it later.
                     if (!context.signal.aborted) {
+                        const previous = await readApplicationInventory(client);
                         const inventory = await collectApplications(
                             targets,
                             connect,
                             context.signal,
-                            await readApplicationInventory(client)
+                            previous?.inventory
                         );
                         persisted = await persist(inventory, context);
                     }

@@ -208,7 +208,8 @@ test("legacy oversized inventory is rejected in the database before transfer", a
     try {
         const inventory = { capturedAt: new Date().toISOString(), hosts: [] };
         await fixture.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES ('applications.inventory', ${JSON.stringify(inventory)}::text::jsonb,now())`;
-        expect(await readApplicationInventory(fixture.client)).toEqual(inventory);
+        const stored = await readApplicationInventory(fixture.client);
+        expect(stored).toMatchObject({ inventory: { hosts: [] }, fresh: true });
         const oversized = JSON.stringify({
             ...inventory,
             legacy: "x".repeat(applicationInventoryByteLimit * 2),
@@ -329,7 +330,7 @@ test("health-only transitions invalidate container and project confirmations bef
                 AbortSignal.timeout(3000)
             );
             const revision = selectionRevision(
-                selectApplications(inventory, "demo", selection),
+                selectApplications(inventory, "demo", selection, true),
                 selection
             );
             detail.State.Health = { Status: "unhealthy" };
@@ -437,7 +438,12 @@ test("Docker discovery strips secret fields, retains unavailable identities and 
         expect(unavailable.hosts[0]?.available).toBe(false);
         expect(unavailable.hosts[0]?.applications).toHaveLength(2);
         expect(() =>
-            selectApplications(unavailable, "demo", { kind: "project", target: "demo" })
+            selectApplications(
+                unavailable,
+                "demo",
+                { kind: "project", target: "demo" },
+                true
+            )
         ).toThrow("unavailable");
         expect(filterApplicationInventory(inventory, [])?.hosts).toEqual([]);
         expect(

@@ -12,17 +12,22 @@ import { applicationInventoryByteLimit, applicationRevision } from "./inventory"
 /**
  * Read the last worker snapshot without giving the web process Docker credentials.
  * @param client - Dashboard database connection or current queue transaction.
- * @returns The stored application snapshot, if a worker has collected one.
+ * @returns The stored inventory and freshness computed entirely by the database clock.
  */
 export async function readApplicationInventory(
     client: SQL | Transaction
-): Promise<ApplicationInventory | null> {
+): Promise<{ inventory: ApplicationInventory; fresh: boolean } | null> {
     // Reject older oversized snapshots before transferring them; JSONB's text rendering
     // includes whitespace, so allow twice the collector's compact JSON byte budget here.
     const [row] = await client<
-        { value: ApplicationInventory }[]
-    >`SELECT value FROM operation_snapshots WHERE key='applications.inventory' AND octet_length(value::text) <= ${applicationInventoryByteLimit * 2}`;
-    return row?.value ?? null;
+        { value: ApplicationInventory; capturedAt: Date; fresh: boolean }[]
+    >`SELECT value, captured_at AS "capturedAt", captured_at > statement_timestamp() - interval '2 minutes' AND captured_at <= statement_timestamp() AS fresh FROM operation_snapshots WHERE key='applications.inventory' AND octet_length(value::text) <= ${applicationInventoryByteLimit * 2}`;
+    return row
+        ? {
+              inventory: { ...row.value, capturedAt: row.capturedAt.toISOString() },
+              fresh: row.fresh,
+          }
+        : null;
 }
 
 /**
@@ -30,19 +35,17 @@ export async function readApplicationInventory(
  * @param inventory - Worker-owned, nonsecret metadata.
  * @param hostId - Registered host identity.
  * @param selection - Exact container or Compose project selection.
+ * @param fresh - Freshness from the database read in the current admission transaction.
  * @returns The bounded selected applications; missing or stale state fails closed.
  */
 export function selectApplications(
     inventory: ApplicationInventory | null,
     hostId: string,
-    selection: ApplicationSelection
+    selection: ApplicationSelection,
+    fresh: boolean
 ): readonly ManagedApplication[] {
     const host = inventory?.hosts.find((item) => item.id === hostId);
-    if (
-        !inventory ||
-        !host?.available ||
-        Date.now() - Date.parse(inventory.capturedAt) > 120_000
-    )
+    if (!inventory || !host?.available || !fresh)
         throw new OperationFailure(
             "PRECONDITION_FAILED",
             "Application state is unavailable or stale. Refresh before trying again."

@@ -25,6 +25,9 @@ failures must be inspected before a new request is made.
 
 Inventory is refreshed every 60 seconds and after successful actions. The UI reads it every five
 seconds while foregrounded. Snapshots older than two minutes and unavailable hosts disable control.
+Snapshot persistence and freshness checks use the database clock, including rejection of future
+timestamps from older writers. The web API exposes that freshness decision to the browser;
+worker, web-server and browser clock differences cannot extend the control window.
 The API re-filters snapshots against current configuration, preventing removed projects from
 remaining readable. Environment variables and arbitrary labels never reach the browser.
 Hosts are discovered concurrently with separate 20-second budgets and at most four concurrent
@@ -94,6 +97,8 @@ an optional configured prefix. Check those labels against ingestion; do not use 
 service labels shared across hosts/projects. Searches are escaped literal text, with a maximum
 24-hour range, two-megabyte response budget and timestamp-safe cursor pages. Large timestamp
 groups fail explicitly rather than silently dropping records. Retention remains Loki's policy.
+Loki log ranges include `start` and exclude `end`. A complete same-timestamp group is read with
+`[timestamp, timestamp + 1 ns)`; the next page ends at that timestamp so it cannot repeat the group.
 
 Live updates poll every five seconds. Loading older history pauses live updates to preserve the
 reading position; enabling live updates returns to the newest page. Only an open log view queries

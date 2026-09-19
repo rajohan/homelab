@@ -19,8 +19,8 @@ export const applicationLogsProcedure = trpc.procedure
                     "PRECONDITION_FAILED",
                     "Application logs have not been configured."
                 );
-            const inventory = await readApplicationInventory(operations.client);
-            const application = inventory?.hosts
+            const snapshot = await readApplicationInventory(operations.client);
+            const application = snapshot?.inventory.hosts
                 .find((host) => host.id === input.host)
                 ?.applications.find(
                     (item) =>

@@ -17,12 +17,28 @@ test("Loki history uses escaped exact selectors, exclusive cursors and complete 
                 message: `<b>Untrusted event ${index}</b> text" |= "injected`,
                 level: "info",
             })),
-            { timestamp: String(BigInt(timestamp) - 1n), message: "older", level: "info" }
+            {
+                timestamp: String(BigInt(timestamp) - 1n),
+                message: "older",
+                level: "info",
+            },
+            {
+                timestamp: String(BigInt(timestamp) + 1n),
+                message: 'Excluded end boundary text" |= "injected',
+                level: "info",
+            }
         );
         const first = await readApplicationLogs(
             configuration,
             { host: 'demo"', service: "demo-web" },
-            { range: "1h", search: 'text" |= "injected' },
+            {
+                range: "1h",
+                search: 'text" |= "injected',
+                cursor: {
+                    since: String(BigInt(timestamp) - 1n),
+                    before: String(BigInt(timestamp) + 1n),
+                },
+            },
             AbortSignal.timeout(2000)
         );
         expect(first.entries).toHaveLength(250);
@@ -38,6 +54,20 @@ test("Loki history uses escaped exact selectors, exclusive cursors and complete 
         );
         expect(second.entries.map((entry) => entry.message)).toEqual(["older"]);
         expect(second.nextCursor).toBeNull();
+        expect(
+            new Set([...first.entries, ...second.entries].map((entry) => entry.id)).size
+        ).toBe(251);
+        const terminalGroup = await readApplicationLogs(
+            configuration,
+            { host: "demo" },
+            {
+                range: "1h",
+                cursor: { since: timestamp, before: String(BigInt(timestamp) + 1n) },
+            },
+            AbortSignal.timeout(2000)
+        );
+        expect(terminalGroup.entries).toHaveLength(250);
+        expect(terminalGroup.nextCursor).toBeNull();
         const filtered = await readApplicationLogs(
             configuration,
             { host: "demo", service: "demo-web" },

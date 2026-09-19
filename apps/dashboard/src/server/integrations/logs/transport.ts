@@ -129,6 +129,9 @@ export async function readApplicationLogs(
             entries: complete,
             nextCursor: { since: String(since), before: String(BigInt(boundary) + 1n) },
         };
+    // Loki log ranges are [start, end), not metric-style inclusive bounds:
+    // https://grafana.com/docs/loki/latest/reference/loki-http-api/#query-logs-within-a-range-of-time
+    // One nanosecond covers exactly this timestamp; the next page excludes it.
     const group = await query(BigInt(boundary), BigInt(boundary) + 1n, 1001);
     if (group.length > 1000)
         throw new Error(
