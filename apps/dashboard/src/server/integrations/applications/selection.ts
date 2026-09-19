@@ -1,0 +1,78 @@
+import type {
+    ApplicationInventory,
+    ApplicationSelection,
+    ManagedApplication,
+} from "@homelab/contracts/applications";
+import type { SQL } from "bun";
+
+import type { Transaction } from "../../database/connection";
+import { OperationFailure } from "../../operations/errors";
+import { applicationRevision } from "./inventory";
+
+/**
+ * Read the last worker snapshot without giving the web process Docker credentials.
+ * @param client - Dashboard database connection or current queue transaction.
+ * @returns The stored application snapshot, if a worker has collected one.
+ */
+export async function readApplicationInventory(
+    client: SQL | Transaction
+): Promise<ApplicationInventory | null> {
+    const [row] = await client<
+        { value: ApplicationInventory }[]
+    >`SELECT value FROM operation_snapshots WHERE key='applications.inventory'`;
+    return row?.value ?? null;
+}
+
+/**
+ * Resolve a saved selection only when the host is available and its snapshot is fresh.
+ * @param inventory - Worker-owned, nonsecret metadata.
+ * @param hostId - Registered host identity.
+ * @param selection - Exact container or Compose project selection.
+ * @returns The bounded selected applications; missing or stale state fails closed.
+ */
+export function selectApplications(
+    inventory: ApplicationInventory | null,
+    hostId: string,
+    selection: ApplicationSelection
+): readonly ManagedApplication[] {
+    const host = inventory?.hosts.find((item) => item.id === hostId);
+    if (
+        !inventory ||
+        !host?.available ||
+        Date.now() - Date.parse(inventory.capturedAt) > 120_000
+    )
+        throw new OperationFailure(
+            "PRECONDITION_FAILED",
+            "Application state is unavailable or stale. Refresh before trying again."
+        );
+    const rows = host.applications.filter((item) =>
+        selection.kind === "container"
+            ? item.containerId === selection.target
+            : item.project === selection.target
+    );
+    if (rows.length === 0 || rows.length > 50)
+        throw new OperationFailure(
+            "NOT_FOUND",
+            "The selected application group is unavailable or exceeds the action limit."
+        );
+    return rows;
+}
+
+/**
+ * Bind an operation to exact observed container identities and generations.
+ * @param applications - The complete selected group.
+ * @param selection - Whether one container or the whole project is being confirmed.
+ * @returns A stable revision changing when a container is replaced or changes state.
+ */
+export function selectionRevision(
+    applications: readonly ManagedApplication[],
+    selection: ApplicationSelection
+): string {
+    return selection.kind === "container"
+        ? (applications[0]?.revision ?? "")
+        : applicationRevision(
+              applications
+                  .map((item) => [item.containerId, item.revision])
+                  .toSorted((a, b) => (a[0] ?? "").localeCompare(b[0] ?? ""))
+          );
+}

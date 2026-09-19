@@ -3,18 +3,22 @@ import { expect, mock, test } from "bun:test";
 import type { JobSummary, ScheduleSummary } from "@homelab/contracts/operations";
 import { IdentityClient } from "@homelab/ui/identity/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { act, render, renderHook, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 
 import { IdentityClientContext } from "../../identity/IdentityClientContext";
 import { DisableScheduleDialog } from "./DisableScheduleDialog";
+import { JobActivity } from "./JobActivity";
+import { JobActivityContext } from "./JobActivityContext";
+import { JobActivityItem } from "./JobActivityItem";
 import { JobHistory } from "./JobHistory";
 import { JobRunTable } from "./JobRunTable";
 import { JobStatus } from "./JobStatus";
 import { RunDetailDialog } from "./RunDetailDialog";
 import { ScheduleDialog } from "./ScheduleDialog";
 import { SchedulesPanel } from "./SchedulesPanel";
+import { useJobOperation } from "./useJobOperation";
 import { WorkerPanel } from "./WorkerPanel";
 
 const schedule: ScheduleSummary = {
@@ -33,6 +37,22 @@ const schedule: ScheduleSummary = {
     schedule: { kind: "interval", intervalSeconds: 3600 },
     nextRunAt: "2026-09-20T10:00:00Z",
     version: 1,
+};
+
+const activityRun: JobSummary = {
+    id: "019959a7-4600-7000-8000-000000000009",
+    action: "applications.restart",
+    label: "Restart web",
+    resourceClass: "light",
+    state: "running",
+    attempt: 1,
+    attemptLimit: 1,
+    requestedBy: "human:test",
+    createdAt: "2026-09-17T10:00:00Z",
+    startedAt: "2026-09-17T10:00:01Z",
+    finishedAt: null,
+    message: "Waiting for web to become healthy.",
+    cancelRequested: false,
 };
 
 function fixture(children: ReactNode, configure?: (query: QueryClient) => void) {
@@ -67,6 +87,210 @@ function fixture(children: ReactNode, configure?: (query: QueryClient) => void) 
         query.clear();
     };
 }
+
+function measurePortals() {
+    // Portalled panels and dialogs are outside the fixture's measured container.
+    const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight");
+    const width = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetWidth");
+    if (!height || !width) throw new Error("Expected browser dimension accessors");
+    Object.defineProperties(HTMLElement.prototype, {
+        offsetHeight: { configurable: true, value: 288 },
+        offsetWidth: { configurable: true, value: 480 },
+    });
+    return () =>
+        Object.defineProperties(HTMLElement.prototype, {
+            offsetHeight: height,
+            offsetWidth: width,
+        });
+}
+
+test("job activity opens details on demand, survives closing them and dismisses completed results", async () => {
+    const restoreMeasurements = measurePortals();
+    let queries: QueryClient | undefined;
+    const cleanup = fixture(<JobActivity />, (query) => {
+        queries = query;
+        query.setQueryData(["operations", "jobs", "activity"], { runs: [activityRun] });
+        query.setQueryData(["operations", "jobs", "detail", activityRun.id], {
+            pages: [
+                {
+                    run: {
+                        ...activityRun,
+                        timeoutMs: 30_000,
+                        retrySafe: false,
+                        resourceKeys: [],
+                    },
+                    events: [],
+                    nextCursor: null,
+                },
+            ],
+            pageParams: [undefined],
+        });
+    });
+    try {
+        const user = userEvent.setup();
+        const trigger = screen.getByRole("button", {
+            name: "Worker activity, 1 running, 0 queued",
+        });
+        expect(trigger).toHaveAttribute("aria-expanded", "false");
+        expect(trigger.querySelector("svg")?.getAttribute("class")).toContain(
+            "motion-safe:animate-"
+        );
+        expect(
+            screen.queryByRole("region", { name: "Your job activity" })
+        ).not.toBeInTheDocument();
+        await user.click(trigger);
+        const activity = screen.getByRole("region", { name: "Your job activity" });
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+        expect(
+            within(activity).getByText("Waiting for web to become healthy.")
+        ).toBeVisible();
+        expect(
+            screen.queryByRole("button", { name: "Dismiss Restart web" })
+        ).not.toBeInTheDocument();
+        for (let index = 0; index < 2; index += 1) {
+            await user.click(screen.getByRole("button", { name: "View Restart web" }));
+            expect(screen.getByRole("dialog", { name: "Restart web" })).toBeVisible();
+            await user.click(screen.getByRole("button", { name: "Close dialog" }));
+            expect(trigger).toHaveAttribute("aria-expanded", "false");
+            await user.click(trigger);
+            expect(
+                screen.getByRole("region", { name: "Your job activity" })
+            ).toBeVisible();
+        }
+        await user.click(trigger);
+        await act(() => {
+            queries?.setQueryData(["operations", "jobs", "activity"], {
+                runs: [{ ...activityRun, state: "succeeded", message: null }],
+            });
+            return Promise.resolve();
+        });
+        expect(trigger).toHaveAttribute("aria-expanded", "false");
+        expect(
+            await screen.findByRole("button", {
+                name: "Worker activity, 0 running, 0 queued",
+            })
+        ).toBe(trigger);
+        expect(trigger.querySelector("svg")?.getAttribute("class") ?? "").not.toContain(
+            "animate-"
+        );
+        await user.click(trigger);
+        await user.click(
+            await screen.findByRole("button", { name: "Dismiss Restart web" })
+        );
+        expect(
+            screen.queryByRole("region", { name: "Your job activity" })
+        ).not.toBeInTheDocument();
+        expect(screen.getByText("No active or recently completed jobs.")).toBeVisible();
+    } finally {
+        cleanup();
+        restoreMeasurements();
+    }
+});
+
+test.each([true, false])(
+    "manual job activity opens only after successful admission (%s)",
+    async (accepted) => {
+        const identity = new IdentityClient();
+        const queries = new QueryClient({
+            defaultOptions: { mutations: { retry: false } },
+        });
+        const reveal = mock(() => {});
+        const view = renderHook(
+            () =>
+                useJobOperation(() =>
+                    accepted
+                        ? Promise.resolve({ id: activityRun.id })
+                        : Promise.reject(new Error("Rejected"))
+                ),
+            {
+                wrapper: ({ children }) => (
+                    <QueryClientProvider client={queries}>
+                        <IdentityClientContext value={identity}>
+                            <JobActivityContext value={reveal}>
+                                {children}
+                            </JobActivityContext>
+                        </IdentityClientContext>
+                    </QueryClientProvider>
+                ),
+            }
+        );
+        try {
+            let result: string | undefined;
+            await act(async () => {
+                result = await view.result.current.mutateAsync(undefined).then(
+                    () => "accepted",
+                    () => "rejected"
+                );
+            });
+            expect(result).toBe(accepted ? "accepted" : "rejected");
+            expect(reveal).toHaveBeenCalledTimes(accepted ? 1 : 0);
+        } finally {
+            view.unmount();
+            queries.clear();
+            identity.cancelActions();
+        }
+    }
+);
+
+test.each([
+    "queued",
+    "running",
+    "succeeded",
+    "failed",
+    "timed_out",
+    "cancelled",
+] as const)(
+    "job activity presents %s without embedding controls inside its run button",
+    async (state) => {
+        const select = mock(() => {}),
+            dismiss = mock(() => {});
+        const cleanup = fixture(
+            <JobActivityItem
+                run={{ ...activityRun, state, message: null }}
+                unavailable={false}
+                onSelect={select}
+                onDismiss={dismiss}
+            />
+        );
+        try {
+            const user = userEvent.setup();
+            const button = screen.getByRole("button", { name: "View Restart web" });
+            expect(button.querySelector("button")).toBeNull();
+            await user.click(button);
+            expect(select).toHaveBeenCalledTimes(1);
+            await user.keyboard("{Enter}");
+            expect(select).toHaveBeenCalledTimes(2);
+            if (state !== "queued" && state !== "running") {
+                await user.click(
+                    screen.getByRole("button", { name: "Dismiss Restart web" })
+                );
+                expect(dismiss).toHaveBeenCalledTimes(1);
+                expect(select).toHaveBeenCalledTimes(2);
+            }
+        } finally {
+            cleanup();
+        }
+    }
+);
+
+test("unavailable activity does not present cached work as a live status", () => {
+    const cleanup = fixture(
+        <JobActivityItem
+            run={{ ...activityRun, cancelRequested: true }}
+            unavailable
+            onSelect={() => {}}
+            onDismiss={() => {}}
+        />
+    );
+    try {
+        expect(screen.getByText("Status unavailable")).toBeVisible();
+        expect(screen.getByText("Cancellation requested.")).toBeVisible();
+        expect(screen.queryByText("running")).not.toBeInTheDocument();
+        expect(document.querySelector(String.raw`.motion-safe\:animate-spin`)).toBeNull();
+    } finally {
+        cleanup();
+    }
+});
 
 test("schedule dialog switches between daily, interval and cron without a time-zone field", async () => {
     const close = mock(() => {});
@@ -350,20 +574,7 @@ test.each([false, true])(
     async (completed) => {
         const id = "019959a7-4600-7000-8000-000000000006";
         const close = mock(() => {});
-        // Modal content is portalled outside the fixture's measured container.
-        const height = Object.getOwnPropertyDescriptor(
-            HTMLElement.prototype,
-            "offsetHeight"
-        );
-        const width = Object.getOwnPropertyDescriptor(
-            HTMLElement.prototype,
-            "offsetWidth"
-        );
-        if (!height || !width) throw new Error("Expected browser dimension accessors");
-        Object.defineProperties(HTMLElement.prototype, {
-            offsetHeight: { configurable: true, value: 288 },
-            offsetWidth: { configurable: true, value: 480 },
-        });
+        const restoreMeasurements = measurePortals();
         const cleanup = fixture(<RunDetailDialog id={id} onClose={close} />, (query) => {
             query.setQueryData(["operations", "jobs", "detail", id], {
                 pages: [
@@ -387,10 +598,22 @@ test.each([false, true])(
                             retrySafe: completed,
                         },
                         events: [
+                            ...(completed
+                                ? [
+                                      {
+                                          id: "019959a7-4600-7000-8000-000000000008",
+                                          actor: "system:worker",
+                                          action: "jobs.failed",
+                                          message: "Execution failed.",
+                                          createdAt: "2026-09-17T10:00:02Z",
+                                      },
+                                  ]
+                                : []),
                             {
                                 id: "019959a7-4600-7000-8000-000000000007",
                                 actor: "human:test",
                                 action: "jobs.enqueue",
+                                message: null,
                                 createdAt: "2026-09-17T10:00:00Z",
                             },
                         ],
@@ -411,9 +634,18 @@ test.each([false, true])(
             expect(screen.getByRole("region", { name: "Run events" })).toHaveClass(
                 "bg-primary-950/40"
             );
-            expect(screen.getByText("jobs.enqueue")).toBeVisible();
+            expect(
+                within(screen.getByRole("region", { name: "Run events" })).getByText(
+                    "Queued"
+                )
+            ).toBeVisible();
             if (completed) {
-                expect(screen.getByText("Execution failed.")).toBeVisible();
+                expect(
+                    within(screen.getByRole("region", { name: "Run events" })).getByText(
+                        "Execution failed."
+                    )
+                ).toBeVisible();
+                expect(screen.getAllByText("Execution failed.")).toHaveLength(1);
             } else {
                 expect(screen.getByText("Not started")).toBeVisible();
                 expect(screen.getByText("Not finished")).toBeVisible();
@@ -427,10 +659,7 @@ test.each([false, true])(
             expect(close).toHaveBeenCalledTimes(1);
         } finally {
             cleanup();
-            Object.defineProperties(HTMLElement.prototype, {
-                offsetHeight: height,
-                offsetWidth: width,
-            });
+            restoreMeasurements();
         }
     }
 );

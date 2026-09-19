@@ -1,6 +1,6 @@
 import { Brand, IconButton } from "@homelab/ui";
 import { Link } from "@tanstack/react-router";
-import { LayoutDashboard, Server, Settings, X, ListChecks } from "lucide-react";
+import { LayoutDashboard, Server, Settings, X, ListChecks, Boxes } from "lucide-react";
 
 import { NavigationLink } from "./NavigationLink";
 
@@ -52,6 +52,12 @@ export function Sidebar({
                     to="/jobs"
                     label="Jobs"
                     icon={ListChecks}
+                    onNavigate={onNavigate}
+                />
+                <NavigationLink
+                    to="/applications"
+                    label="Applications"
+                    icon={Boxes}
                     onNavigate={onNavigate}
                 />
                 <NavigationLink

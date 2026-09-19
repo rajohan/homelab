@@ -1,10 +1,66 @@
 import { expect, test } from "bun:test";
 
+import { capabilities } from "@homelab/contracts/operations";
+
 import { runWorker } from "../../worker/runtime";
+import { appRouter } from "../api/router";
 import { claimJob, commitClaim, renewClaim, settleClaim } from "../jobs/claims";
 import { maintenanceJob } from "../jobs/maintenance";
+import { reportJobProgress } from "../jobs/progress";
 import { enqueueJob, listJobs, lockQueue, scheduleDueJobs } from "../jobs/queue";
 import { expectOperationFailure, operationFixture } from "../testing/operations";
+
+test("global activity includes only the caller's active and recent jobs, including long-running work", async () => {
+    const fixture = await operationFixture();
+    try {
+        const definition = maintenanceJob(30).definition;
+        const ids = await fixture.client.begin(async (transaction) => {
+            await lockQueue(transaction);
+            const own = await enqueueJob(
+                transaction,
+                definition,
+                "human:operator",
+                "own"
+            );
+            const completed = await enqueueJob(
+                transaction,
+                definition,
+                "human:operator",
+                "completed"
+            );
+            const old = await enqueueJob(
+                transaction,
+                definition,
+                "human:operator",
+                "old"
+            );
+            await enqueueJob(transaction, definition, "human:someone-else", "other");
+            await enqueueJob(transaction, definition, "system:scheduler", "scheduled");
+            await enqueueJob(transaction, definition, "automation:operator", "machine");
+            return { own, completed, old };
+        });
+        await fixture.client`UPDATE job_runs SET created_at=now()-interval '1 day' WHERE id=${ids.own}`;
+        await fixture.client`UPDATE job_runs SET state='succeeded', finished_at=now() WHERE id=${ids.completed}`;
+        await fixture.client`UPDATE job_runs SET state='failed', finished_at=now()-interval '16 minutes' WHERE id=${ids.old}`;
+        const caller = appRouter.createCaller({
+            operations: fixture,
+            principal: { kind: "human", id: "operator", capabilities },
+        });
+        const activity = await caller.jobs.activity();
+        expect(activity.runs.map((run) => run.id)).toEqual([ids.own, ids.completed]);
+        await expectOperationFailure(
+            appRouter
+                .createCaller({
+                    operations: fixture,
+                    principal: { kind: "human", id: "operator", capabilities: [] },
+                })
+                .jobs.activity(),
+            "permission"
+        );
+    } finally {
+        await fixture.close();
+    }
+});
 
 test("concurrent enqueue replays once and conflicting idempotency is rejected", async () => {
     const fixture = await operationFixture();
@@ -29,6 +85,60 @@ test("concurrent enqueue replays once and conflicting idempotency is rejected", 
                 );
             }),
             "different job"
+        );
+    } finally {
+        await fixture.close();
+    }
+});
+
+test("progress is bounded, deduplicated and fenced by the live uncancelled claim", async () => {
+    const fixture = await operationFixture();
+    try {
+        const definition = maintenanceJob(30).definition;
+        await fixture.client.begin(async (transaction) => {
+            await lockQueue(transaction);
+            await enqueueJob(transaction, definition, "test", "progress");
+        });
+        const run = await claimJob(fixture.client, Bun.randomUUIDv7(), [definition.key]);
+        if (!run) throw new Error("Missing progress claim");
+        await reportJobProgress(fixture.client, run, "Reading source data.");
+        await reportJobProgress(fixture.client, run, "Reading source data.");
+        expect(
+            await fixture.client`SELECT id FROM operation_audit WHERE action='jobs.progress'`
+        ).toHaveLength(1);
+        for (const message of ["", "x".repeat(501), "raw\noutput"])
+            await expectOperationFailure(
+                reportJobProgress(fixture.client, run, message),
+                "Invalid"
+            );
+        await expectOperationFailure(
+            reportJobProgress(
+                fixture.client,
+                { ...run, lease_token: Bun.randomUUIDv7() },
+                "Stale write"
+            ),
+            "ownership changed"
+        );
+        await fixture.client`INSERT INTO operation_audit(id,actor,action,target,message,created_at) SELECT gen_random_uuid(),'system:worker','jobs.progress',${run.id},'Earlier step',now() FROM generate_series(1,999)`;
+        await reportJobProgress(fixture.client, run, "Final step after the history cap.");
+        expect(
+            await fixture.client`SELECT id FROM operation_audit WHERE action='jobs.progress'`
+        ).toHaveLength(1000);
+        const current = await listJobs(fixture.client, 1, undefined);
+        expect(current[0]?.message).toBe("Final step after the history cap.");
+        await fixture.client`UPDATE job_runs SET cancel_requested=true WHERE id=${run.id}`;
+        await expectOperationFailure(
+            reportJobProgress(fixture.client, run, "Cancelled write"),
+            "ownership changed"
+        );
+        await settleClaim(fixture.client, run, "interrupted");
+        const [event] = await fixture.client<
+            { message: string }[]
+        >`SELECT message FROM operation_audit WHERE target=${run.id} AND action='jobs.cancelled'`;
+        expect(event?.message).toBe("Execution was interrupted.");
+        await expectOperationFailure(
+            reportJobProgress(fixture.client, run, "Settled write"),
+            "ownership changed"
         );
     } finally {
         await fixture.close();
@@ -132,10 +242,13 @@ test("worker performs real queued work then drains without leaving active claims
     let completed = false;
     const handler = {
         ...maintenanceJob(30),
-        execute: () => {
+        execute: async (
+            _payload: unknown,
+            context: Parameters<ReturnType<typeof maintenanceJob>["execute"]>[1]
+        ) => {
+            await context.reportProgress("Processing a generic worker task.");
             completed = true;
             controller.abort();
-            return Promise.resolve();
         },
     };
     try {
@@ -147,6 +260,11 @@ test("worker performs real queued work then drains without leaving active claims
             version: "test",
         });
         expect(completed).toBe(true);
+        expect(
+            await fixture.client<
+                { message: string }[]
+            >`SELECT message FROM operation_audit WHERE action='jobs.progress'`
+        ).toEqual([{ message: "Processing a generic worker task." }]);
         const runs = await listJobs(fixture.client, 30, undefined);
         expect(runs.some((row) => row.state === "running")).toBe(false);
     } finally {

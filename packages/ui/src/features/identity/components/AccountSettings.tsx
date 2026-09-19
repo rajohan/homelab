@@ -16,7 +16,6 @@ import { ProfilePanel } from "./panels/ProfilePanel";
 import { RecoveryCodesPanel } from "./panels/RecoveryCodesPanel";
 import { SecurityKeysPanel } from "./panels/SecurityKeysPanel";
 import { SessionsPanel } from "./panels/SessionsPanel";
-import { SecurityPrompt } from "./verification/SecurityPrompt";
 /**
  * Load account security settings and coordinate dialogs, notices and session changes.
  * @returns The component's rendered content for its current state.
@@ -142,7 +141,6 @@ export function AccountSettings({
                     onClose={() => state.setRecovery(undefined)}
                 />
             )}
-            <SecurityPrompt client={client} />
         </div>
     );
 }

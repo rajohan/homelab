@@ -9,12 +9,40 @@ import * as v from "valibot";
 
 import { runOperation, trpc } from "../api/trpc";
 import { requireCapability } from "../automation/authentication";
+import { notifyJobOutcome } from "../notifications/jobOutcome";
 import { auditOperation } from "../operations/audit";
 import { authorizedOperations } from "../operations/authorization";
 import { OperationFailure } from "../operations/errors";
 import { enqueueJob, listJobs, lockQueue } from "./queue";
 
 export const jobsRouter = trpc.router({
+    activity: trpc.procedure.query(({ ctx }) =>
+        runOperation(async () => {
+            const { operations, principal } = authorizedOperations(ctx, "jobs:read");
+            const requestedBy = `${principal.kind}:${principal.id}`;
+            // The queue has at most 1,000 active runs; recent completion history is separate.
+            const [active, recent] = await Promise.all([
+                listJobs(operations.client, 1000, undefined, {
+                    view: "active",
+                    requestedBy,
+                }),
+                listJobs(operations.client, 5, undefined, {
+                    view: "recent",
+                    requestedBy,
+                }),
+            ]);
+            return {
+                runs: [
+                    ...active,
+                    ...recent.filter(
+                        (run) =>
+                            run.finishedAt &&
+                            Date.parse(run.finishedAt) > Date.now() - 15 * 60_000
+                    ),
+                ],
+            };
+        })
+    ),
     list: trpc.procedure.input(runFilterSchema).query(({ ctx, input }) =>
         runOperation(async () => {
             const { operations } = authorizedOperations(ctx, "jobs:read");
@@ -49,8 +77,14 @@ export const jobsRouter = trpc.router({
                         "This run was not found or its history has expired."
                     );
                 const events = await operations.client<
-                    { id: string; actor: string; action: string; createdAt: string }[]
-                >`SELECT id, actor, action, created_at::text AS "createdAt" FROM operation_audit WHERE target = ${input.id} AND (${input.before ?? null}::uuid IS NULL OR id < ${input.before ?? null}::uuid) ORDER BY id DESC LIMIT ${input.limit}`;
+                    {
+                        id: string;
+                        actor: string;
+                        action: string;
+                        message: string | null;
+                        createdAt: string;
+                    }[]
+                >`SELECT id, actor, action, message, created_at::text AS "createdAt" FROM operation_audit WHERE target = ${input.id} AND (${input.before ?? null}::uuid IS NULL OR id < ${input.before ?? null}::uuid) ORDER BY id DESC LIMIT ${input.limit}`;
                 return {
                     run,
                     events,
@@ -67,6 +101,11 @@ export const jobsRouter = trpc.router({
             const definition = operations.registry.get(input.action)?.definition;
             if (!definition)
                 throw new OperationFailure("NOT_FOUND", "This job is not registered.");
+            if (definition.admission === "integration")
+                throw new OperationFailure(
+                    "FORBIDDEN",
+                    "This action requires confirmation through its application controls."
+                );
             requireCapability(principal, definition.capability);
             return operations.client.begin(async (transaction) => {
                 await lockQueue(transaction);
@@ -102,6 +141,7 @@ export const jobsRouter = trpc.router({
                             "jobs.cancel_requested",
                             input.id
                         );
+                    if (rows[0]) await notifyJobOutcome(transaction, input.id);
                 });
                 return { ok: true };
             })

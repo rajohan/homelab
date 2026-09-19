@@ -6,6 +6,7 @@ import { appRouter } from "../api/router";
 import { metricsJob } from "../integrations/metrics/job";
 import { claimJob, commitClaim } from "../jobs/claims";
 import { maintenanceJob } from "../jobs/maintenance";
+import { reportJobProgress } from "../jobs/progress";
 import { enqueueJob, lockQueue, scheduleDueJobs } from "../jobs/queue";
 import { expectOperationFailure, operationFixture } from "../testing/operations";
 
@@ -79,6 +80,8 @@ test("metrics job commits a real JSON snapshot and stale ownership rejects repla
         const context = {
             runId: run.id,
             leaseToken: run.lease_token,
+            reportProgress: (message: string) =>
+                reportJobProgress(fixture.client, run, message),
             signal: AbortSignal.timeout(1000),
             commit: (write: Parameters<typeof commitClaim>[2]) =>
                 commitClaim(fixture.client, run, write),
@@ -129,6 +132,8 @@ test("retention removes only aged completed history and preserves queued and cur
             {
                 runId: run.id,
                 leaseToken: run.lease_token,
+                reportProgress: (message) =>
+                    reportJobProgress(fixture.client, run, message),
                 signal: AbortSignal.timeout(1000),
                 commit: (write) => commitClaim(fixture.client, run, write),
             }

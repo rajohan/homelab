@@ -11,6 +11,7 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import { formatJobActor } from "./formatJobActor";
 import { JobStatus } from "./JobStatus";
+import { RunEvent } from "./RunEvent";
 
 /**
  * Show one run's immutable policy snapshot and bounded audit history, never its payload.
@@ -32,7 +33,13 @@ export function RunDetailDialog({
                 { signal }
             ),
         getNextPageParam: (page) => page.nextCursor ?? undefined,
-        ...queryRefresh("fast"),
+        ...queryRefresh("progress"),
+        refetchInterval: (current) => {
+            const state = current.state.data?.pages[0]?.run.state;
+            return !state || state === "queued" || state === "running"
+                ? queryRefresh("progress").refetchInterval
+                : false;
+        },
         retry: false,
     });
     const run = query.data?.pages[0]?.run;
@@ -78,11 +85,6 @@ export function RunDetailDialog({
                                     : "Not finished"}
                             </dd>
                         </dl>
-                        {run.message && (
-                            <p className="rounded-lg border border-primary-700 p-3 text-sm">
-                                {run.message}
-                            </p>
-                        )}
                         <h3 className="font-medium">Run events</h3>
                         <VirtualList
                             label="Run events"
@@ -99,15 +101,7 @@ export function RunDetailDialog({
                                         ? query.refetch()
                                         : query.fetchNextPage()),
                             }}
-                            renderItem={(event) => (
-                                <div>
-                                    <p className="wrap-anywhere">{event.action}</p>
-                                    <p className="text-xs wrap-anywhere text-primary-400">
-                                        {formatDateTime(event.createdAt)} ·{" "}
-                                        {formatJobActor(event.actor)}
-                                    </p>
-                                </div>
-                            )}
+                            renderItem={(event) => <RunEvent event={event} />}
                         />
                     </>
                 )}

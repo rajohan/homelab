@@ -2,9 +2,10 @@
 
 A modular home infrastructure dashboard with an independently deployable identity service.
 
-**Current milestone: identity preview.** Account security, OIDC and ForwardAuth are implemented.
-Production Authelia has not been replaced. A PR, successful build or green readiness check is
-not approval to migrate existing accounts or routes.
+Account security, OIDC, ForwardAuth, background jobs, automation access and infrastructure
+monitoring are implemented. New application controls and the notification inbox are developed
+independently of production rollout. A PR, successful build or green readiness check is not
+approval to change live services, identities or routes.
 
 ## Start developing
 
@@ -22,6 +23,9 @@ synthetic account: **developer / Development-only-password-123!**. Open
 `http://localhost:3100`. Development emails appear only in the local terminal, never in Resend.
 Use synthetic data only. Ctrl+C closes both apps and removes the exact temporary database;
 nothing is imported from production or retained as a second backup.
+
+The preview also serves synthetic Docker/Loki APIs and sample inbox notifications. Application
+controls affect only in-memory demo containers, never the Docker daemon hosting the preview.
 
 When developing on Main, forward **both ports with the same numbers**, because OIDC origins
 and callbacks must match:
@@ -51,6 +55,15 @@ iPhone/NFC acceptance needs private HTTPS origins reachable by the actual device
 
 [Security design](docs/identity-security.md) documents limitations and trust boundaries.
 [Operations and cutover](docs/identity-operations.md) covers recovery, Doppler and production gates.
+
+## Operations workspace
+
+- Infrastructure inventory and resource history from the existing monitoring backend.
+- Durable background work, schedule controls, per-run events and narrowly scoped automation tokens.
+- [Application controls](docs/applications.md): existing-container and project lifecycle operations,
+  bounded safe metadata and allowlisted Loki history. Production control is opt-in.
+- [Notifications](docs/notifications.md): durable producer events, personal acknowledgements,
+  filters and virtualized history. Existing Alertmanager/Pushover delivery is unchanged.
 
 ## Verification
 
@@ -111,7 +124,7 @@ explicitly requested release candidates.
 Read [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md),
 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), [architecture](docs/architecture.md),
 [release workflow](docs/releases.md) and [dependency policy](docs/dependencies.md).
-Release-please remains configured; no release is required for this milestone.
+Release-please coordinates versioning; image publication runs with the approved release workflow.
 
 Developed with AI assistance, retaining selected conventions and security-flow behavior from
 [Mira-Dashboard](https://github.com/rajohan/Mira-Dashboard), without importing production

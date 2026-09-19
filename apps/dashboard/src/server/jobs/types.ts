@@ -2,6 +2,7 @@ import type { Capability, ResourceClass } from "@homelab/contracts/operations";
 import type { TransactionSQL } from "bun";
 
 export interface JobDefinition {
+    readonly admission?: "integration";
     readonly key: string;
     readonly label: string;
     readonly description: string;
@@ -18,6 +19,8 @@ export interface JobExecution {
     readonly signal: AbortSignal;
     readonly runId: string;
     readonly leaseToken: string;
+    /** Publish a bounded, code-owned status message while this run owns its live claim. Never pass raw errors, credentials or provider responses. */
+    readonly reportProgress: (message: string) => Promise<void>;
     /** Persist a result only while the job still owns its live claim. */
     readonly commit: (
         write: (transaction: TransactionSQL) => Promise<void>

@@ -1,4 +1,12 @@
+import {
+    parseApplicationTargets,
+    type ApplicationTarget,
+} from "../integrations/applications/configuration";
+import type { LogsConfiguration } from "../integrations/logs/transport";
+
 export interface OperationsConfiguration {
+    readonly applicationTargets?: readonly ApplicationTarget[];
+    readonly logs?: LogsConfiguration | undefined;
     readonly databaseUrl: string;
     readonly metricsUrl: string | undefined;
     readonly metricsToken: string | undefined;
@@ -24,6 +32,18 @@ export function parseOperationsConfiguration(
     )
         throw new Error("A dashboard PostgreSQL database is required");
     const metricsUrl = environment.HOMELAB_DASHBOARD_METRICS_URL;
+    const logsUrl = environment.HOMELAB_DASHBOARD_LOGS_URL;
+    if (logsUrl) {
+        const target = new URL(logsUrl);
+        if (
+            !["http:", "https:"].includes(target.protocol) ||
+            target.username ||
+            target.password ||
+            target.search ||
+            target.hash
+        )
+            throw new Error("Logs URL must be a credential-free HTTP(S) base URL");
+    }
     if (metricsUrl) {
         const target = new URL(metricsUrl);
         if (
@@ -47,6 +67,13 @@ export function parseOperationsConfiguration(
     )
         throw new Error("Invalid worker concurrency or retention policy");
     return {
+        logs: logsUrl
+            ? { url: logsUrl, token: environment.HOMELAB_DASHBOARD_LOGS_TOKEN }
+            : undefined,
+        applicationTargets: parseApplicationTargets(
+            environment.HOMELAB_DASHBOARD_APPLICATION_TARGETS,
+            ["test", "development"].includes(environment.NODE_ENV ?? "")
+        ),
         databaseUrl,
         metricsUrl,
         metricsToken: environment.HOMELAB_DASHBOARD_METRICS_TOKEN,

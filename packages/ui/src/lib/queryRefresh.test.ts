@@ -4,6 +4,7 @@ import { queryRefresh } from "./queryRefresh";
 
 test("live queries share bounded foreground intervals and refresh on resume", () => {
     for (const [cadence, interval] of [
+        ["progress", 1000],
         ["fast", 5000],
         ["normal", 15_000],
         ["slow", 30_000],

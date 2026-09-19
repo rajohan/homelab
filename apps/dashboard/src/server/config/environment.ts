@@ -1,5 +1,6 @@
 import { isIP } from "node:net";
 
+import type { ApplicationTarget } from "../integrations/applications/configuration";
 import { parseDashboardAuthConfiguration } from "./auth";
 import { parseOperationsConfiguration } from "./operations";
 
@@ -44,6 +45,19 @@ export function dashboardAuthConfiguration() {
  */
 export function dashboardOperationsConfiguration() {
     return parseOperationsConfiguration(process.env);
+}
+
+/**
+ * Resolve only the configured worker TLS references when an executor opens its transport.
+ * @param target - Validated Docker target containing secret names, not values.
+ * @returns The referenced credential values; callers must never persist or serialize them.
+ */
+export function applicationClientEnvironment(
+    target: ApplicationTarget
+): Readonly<Record<string, string | undefined>> {
+    return Object.fromEntries(
+        Object.values(target.tls ?? {}).map((name) => [name, process.env[name]])
+    );
 }
 
 /**

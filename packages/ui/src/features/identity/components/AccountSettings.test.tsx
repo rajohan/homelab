@@ -6,6 +6,7 @@ import userEvent from "@testing-library/user-event";
 
 import { IdentityClient, IdentityError, type AccountSnapshot } from "../client";
 import { AccountSettings } from "./AccountSettings";
+import { SecurityPrompt } from "./verification/SecurityPrompt";
 
 const snapshot: AccountSnapshot = {
     user: {
@@ -61,6 +62,7 @@ function renderSettings() {
     render(
         <QueryClientProvider client={query}>
             <AccountSettings client={client} />
+            <SecurityPrompt client={client} />
         </QueryClientProvider>
     );
     cleanups.push(() => {

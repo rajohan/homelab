@@ -34,12 +34,16 @@ export function metricsJob(
             validate: (input) => v.parse(v.strictObject({}), input),
         },
         execute: async (_payload, context) => {
+            await context.reportProgress(
+                "Collecting infrastructure measurements and inventory."
+            );
             const [snapshot, inventory] = await Promise.all([
                 collectMetrics(configuration, context.signal),
                 previous().then((inventory) =>
                     collectInventory(configuration, context.signal, inventory)
                 ),
             ]);
+            await context.reportProgress("Saving the infrastructure snapshot.");
             if (
                 !(await context.commit(async (transaction) => {
                     await transaction`INSERT INTO operation_snapshots (key, value, captured_at) VALUES ('infrastructure', ${JSON.stringify(snapshot)}::text::jsonb, ${new Date(snapshot.capturedAt)}) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, captured_at = EXCLUDED.captured_at`;

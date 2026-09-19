@@ -29,6 +29,7 @@ export async function lockQueue(transaction: Transaction): Promise<void> {
  * @param actor - Authenticated caller identity or scheduler identity.
  * @param key - Caller-scoped idempotency key.
  * @param input - Job-specific input validated by its registered handler, empty by default.
+ * @param label - Optional server-derived display name; replay preserves the original name.
  * @returns The existing or newly inserted run ID.
  */
 export async function enqueueJob(
@@ -36,7 +37,8 @@ export async function enqueueJob(
     definition: JobDefinition,
     actor: string,
     key: string,
-    input: unknown = {}
+    input: unknown = {},
+    label: string = definition.label
 ): Promise<string> {
     let payload: Record<string, unknown>;
     try {
@@ -68,7 +70,7 @@ export async function enqueueJob(
         );
     const id = Bun.randomUUIDv7();
     await transaction`INSERT INTO job_runs (id, action, label, resource_class, state, payload, fingerprint, idempotency_key, requested_by, attempt_limit, retry_safe, timeout_ms, resource_keys)
-        VALUES (${id}, ${definition.key}, ${definition.label}, ${definition.resourceClass}, 'queued', ${JSON.stringify(payload)}::text::jsonb, ${fingerprint}, ${key}, ${actor}, ${definition.attemptLimit}, ${definition.retrySafe}, ${definition.timeoutMs}, ${transaction.array([...definition.resourceKeys], "TEXT")})`;
+        VALUES (${id}, ${definition.key}, ${label}, ${definition.resourceClass}, 'queued', ${JSON.stringify(payload)}::text::jsonb, ${fingerprint}, ${key}, ${actor}, ${definition.attemptLimit}, ${definition.retrySafe}, ${definition.timeoutMs}, ${transaction.array([...definition.resourceKeys], "TEXT")})`;
     await auditOperation(transaction, actor, "jobs.enqueue", id);
     return id;
 }
@@ -168,11 +170,12 @@ export async function listJobs(
     filters: {
         action?: string | undefined;
         view?: "all" | "active" | "recent" | undefined;
+        requestedBy?: string | undefined;
     } = {}
 ): Promise<JobSummary[]> {
     return client<
         JobSummary[]
-    >`SELECT id, action, label, resource_class AS "resourceClass", state, attempt, attempt_limit AS "attemptLimit", requested_by AS "requestedBy", created_at::text AS "createdAt", started_at::text AS "startedAt", finished_at::text AS "finishedAt", message, cancel_requested AS "cancelRequested" FROM job_runs WHERE (${before ?? null}::uuid IS NULL OR id < ${before ?? null}::uuid) AND (${filters.action ?? null}::text IS NULL OR action = ${filters.action ?? null}) AND (${filters.view ?? "all"} = 'all' OR (${filters.view ?? "all"} = 'active' AND state IN ('queued','running')) OR (${filters.view ?? "all"} = 'recent' AND state NOT IN ('queued','running'))) ORDER BY id DESC LIMIT ${limit}`;
+    >`SELECT id, action, label, resource_class AS "resourceClass", state, attempt, attempt_limit AS "attemptLimit", requested_by AS "requestedBy", created_at::text AS "createdAt", started_at::text AS "startedAt", finished_at::text AS "finishedAt", message, cancel_requested AS "cancelRequested" FROM job_runs WHERE (${before ?? null}::uuid IS NULL OR id < ${before ?? null}::uuid) AND (${filters.action ?? null}::text IS NULL OR action = ${filters.action ?? null}) AND (${filters.requestedBy ?? null}::text IS NULL OR requested_by = ${filters.requestedBy ?? null}) AND (${filters.view ?? "all"} = 'all' OR (${filters.view ?? "all"} = 'active' AND state IN ('queued','running')) OR (${filters.view ?? "all"} = 'recent' AND state NOT IN ('queued','running'))) ORDER BY id DESC LIMIT ${limit}`;
 }
 
 /**

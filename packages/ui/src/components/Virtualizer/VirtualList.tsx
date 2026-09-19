@@ -18,6 +18,8 @@ export function VirtualList<T>({
     renderItem,
     continuation,
     className,
+    itemClassName,
+    scrollbarGap = false,
 }: {
     readonly label: string;
     readonly rows: readonly T[];
@@ -25,6 +27,8 @@ export function VirtualList<T>({
     readonly renderItem: (row: T) => ReactNode;
     readonly continuation?: InfiniteScrollContinuation;
     readonly className?: string;
+    readonly itemClassName?: string;
+    readonly scrollbarGap?: boolean;
 }) {
     const scrollRef = useRef<HTMLElement>(null);
     return (
@@ -45,8 +49,14 @@ export function VirtualList<T>({
                     return row === undefined ? String(index) : getKey(row);
                 }}
             >
-                {({ items, totalSize, measureElement }) => (
-                    <ul>
+                {({ items, totalSize, viewportHeight, measureElement }) => (
+                    <ul
+                        className={
+                            scrollbarGap && totalSize > viewportHeight
+                                ? "pe-2"
+                                : undefined
+                        }
+                    >
                         <li aria-hidden="true" style={{ height: items[0]?.start ?? 0 }} />
                         {items.map((item) => {
                             const row = rows[item.index];
@@ -55,7 +65,7 @@ export function VirtualList<T>({
                                     key={item.key}
                                     data-index={item.index}
                                     ref={measureElement}
-                                    className="pb-3"
+                                    className={cn("pb-3", itemClassName)}
                                 >
                                     {renderItem(row)}
                                 </li>

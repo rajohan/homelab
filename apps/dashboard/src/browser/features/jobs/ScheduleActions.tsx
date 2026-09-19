@@ -7,6 +7,7 @@ import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
 import { DisableScheduleDialog } from "./DisableScheduleDialog";
 import { ScheduleDialog } from "./ScheduleDialog";
+import { useJobOperation } from "./useJobOperation";
 
 /**
  * Group a schedule's manual run, editing and disable intent actions.
@@ -18,7 +19,7 @@ export function ScheduleActions({ schedule }: { readonly schedule: ScheduleSumma
         schedule: ScheduleSummary;
     }>();
     const [requestId, setRequestId] = useState(() => crypto.randomUUID());
-    const run = useOperation((id: string, signal) =>
+    const run = useJobOperation((id: string, signal) =>
         api.jobs.run.mutate({ action: schedule.action, requestId: id }, { signal })
     );
     const enable = useOperation((version: number, signal) =>

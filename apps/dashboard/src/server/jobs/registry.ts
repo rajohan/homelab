@@ -25,6 +25,8 @@ export function createJobRegistry(handlers: readonly JobHandler[]) {
             definition.attemptLimit < 1 ||
             definition.attemptLimit > 10 ||
             (!definition.retrySafe && definition.attemptLimit !== 1) ||
+            (definition.admission === "integration" &&
+                definition.intervalSeconds !== null) ||
             definition.resourceKeys.some((key) => !/^[a-z0-9:._-]{1,120}$/.test(key)) ||
             new Set(definition.resourceKeys).size !== definition.resourceKeys.length ||
             (definition.intervalSeconds !== null &&

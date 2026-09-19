@@ -1,6 +1,7 @@
 import type { SQL } from "bun";
 
 import type { Transaction } from "../database/connection";
+import { notifyJobOutcome } from "../notifications/jobOutcome";
 import { auditOperation } from "../operations/audit";
 import { lockQueue } from "./queue";
 import type { ClaimedJob } from "./types";
@@ -36,7 +37,14 @@ export async function claimJob(
             const state = run.cancel_requested ? "cancelled" : retryState;
             await transaction`DELETE FROM resource_leases WHERE run_id = ${run.id}`;
             await transaction`UPDATE job_runs SET state = ${state}, worker_id = NULL, lease_token = NULL, lease_expires_at = NULL, available_at = now() + interval '5 seconds', finished_at = CASE WHEN ${state} = 'queued' THEN NULL ELSE now() END, message = 'Worker ownership expired; external outcome may be unknown.' WHERE id = ${run.id}`;
-            await auditOperation(transaction, "system:recovery", `jobs.${state}`, run.id);
+            await auditOperation(
+                transaction,
+                "system:recovery",
+                `jobs.${state}`,
+                run.id,
+                "Worker ownership expired; external outcome may be unknown."
+            );
+            await notifyJobOutcome(transaction, run.id);
         }
         const [control] = await transaction<
             { paused: boolean }[]
@@ -123,6 +131,13 @@ export async function settleClaim(
         const message = messages[outcome];
         await transaction`UPDATE job_runs SET state = ${state}, lease_token = NULL, lease_expires_at = NULL, worker_id = NULL, finished_at = CASE WHEN ${state} = 'queued' THEN NULL ELSE now() END, available_at = now() + ${Math.min(60, 2 ** run.attempt)} * interval '1 second', message = ${message} WHERE id = ${run.id}`;
         await transaction`DELETE FROM resource_leases WHERE run_id = ${run.id} AND lease_token = ${run.lease_token}`;
-        await auditOperation(transaction, "system:worker", `jobs.${state}`, run.id);
+        await auditOperation(
+            transaction,
+            "system:worker",
+            `jobs.${state}`,
+            run.id,
+            message
+        );
+        await notifyJobOutcome(transaction, run.id);
     });
 }

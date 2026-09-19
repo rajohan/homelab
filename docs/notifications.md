@@ -1,0 +1,32 @@
+# Notifications
+
+The dashboard inbox is separate from Alertmanager, Pushover and the identity email outbox. It
+does not install a second push pipeline or change existing delivery. The header bell reads only
+counts until opened; the panel provides server-filtered read state and severity, virtualized
+cursor history, per-item read/unread/dismiss and bounded bulk actions.
+
+`server/notifications/publish.ts` is the producer boundary. A source and stable source key identify
+an immutable event; identical replays return the existing ID, conflicting content is rejected.
+Titles/messages are bounded plain text. Destinations are fixed dashboard sections, not arbitrary
+URLs. Publication joins the caller's transaction where appropriate. Tokens with
+`notifications:publish` may publish through the automation API; their source is fixed to their
+account identity. Reading requires `notifications:read`; personal acknowledgements are human-only.
+
+`dashboard_notifications` stores producer events. `notification_receipts` stores read/dismissed
+state per operator. Dismissal preserves a receipt so a producer replay cannot resurrect an event.
+Bulk actions capture an upper ID boundary and process 100 records per transaction; arrivals after
+the click are not consumed. UI processing stops after 10,000 records with explicit continuation
+instructions. Counts are always server-derived, never guessed from loaded pages.
+
+Final manual job outcomes and final scheduled failures/timeouts publish once with the run ID.
+Retries do not emit premature failures; regular successful scheduled runs do not flood the inbox.
+Application host availability publishes on transitions, not on every poll. Other integrations
+can call the same producer without coupling themselves to React or a delivery provider.
+
+Notifications and their receipts follow `HOMELAB_DASHBOARD_JOB_RETENTION_DAYS` (default 30 days).
+Idempotency is guaranteed within that retention window, not after an event has been purged.
+The inbox is currently an administrator workspace: read-capable principals can read operational
+events, so producers must never include credentials, payload secrets or private identity data.
+
+Verification covers immutable publication, per-operator receipts, filtered keyset pages, bounded
+bulk cutoffs, capabilities, retries and atomic final outcomes against disposable PostgreSQL.
