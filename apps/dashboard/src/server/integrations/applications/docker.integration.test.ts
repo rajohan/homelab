@@ -565,6 +565,97 @@ test.each(["healthy", "unhealthy"] as const)(
     }
 );
 
+test.each(
+    (["start", "restart"] as const).flatMap((operation) =>
+        (
+            ["exited", "unhealthy", "completion restarted", "completion failed"] as const
+        ).map((regression) => [operation, regression] as const)
+    )
+)(
+    "%s rejects an earlier %s service after a later service finishes initializing",
+    async (operation, regression) => {
+        const fixture = createApplicationFixture();
+        try {
+            const database = fixture.containers.get("a".repeat(64));
+            const web = fixture.containers.get("b".repeat(64));
+            if (!database || !web) throw new Error("Missing readiness fixture");
+            const completed = regression.startsWith("completion");
+            if (completed)
+                web.Config.Labels = {
+                    ...web.Config.Labels,
+                    "com.docker.compose.depends_on":
+                        "database:service_completed_successfully:false",
+                };
+            const port = createDockerPort(fixture.target, {});
+            const selection = { kind: "project" as const, target: "demo" };
+            const revision = selectionRevision(
+                [...fixture.containers.values()].map((detail) =>
+                    mapDockerApplication(fixture.target, detail)
+                ),
+                selection
+            );
+            let waitingForWeb = false;
+            const regressing: DockerPort = {
+                ...port,
+                act: async (id, action, signal) => {
+                    await port.act(id, action, signal);
+                    if (id === database.Id && action === "start" && completed)
+                        database.State.Status = "exited";
+                },
+                inspect: async (id, signal) => {
+                    const current = await port.inspect(id, signal);
+                    if (
+                        waitingForWeb &&
+                        id === web.Id &&
+                        current.State.Health?.Status === "starting"
+                    ) {
+                        database.State.Status =
+                            regression === "exited" || regression === "completion failed"
+                                ? "exited"
+                                : "running";
+                        database.State.ExitCode = 1;
+                        database.State.Health = {
+                            Status: regression === "unhealthy" ? "unhealthy" : "healthy",
+                        };
+                        web.State.Health = { Status: "healthy" };
+                    }
+                    return current;
+                },
+            };
+            const messages: string[] = [];
+            await expectOperationFailure(
+                performApplicationAction(
+                    fixture.target,
+                    regressing,
+                    { selection, revision, operation },
+                    AbortSignal.timeout(3000),
+                    (message) => {
+                        messages.push(message);
+                        if (message === "Waiting for demo-web to become healthy.") {
+                            waitingForWeb = true;
+                            web.State.Health = { Status: "starting" };
+                        }
+                        return Promise.resolve();
+                    }
+                ),
+                "no longer meets the requested state"
+            );
+            expect(waitingForWeb).toBe(true);
+            expect(web.State.Health?.Status).toBe("healthy");
+            expect(messages).not.toContain(
+                "All selected containers reached the requested state."
+            );
+            expect(fixture.calls).toEqual(
+                operation === "restart"
+                    ? ["stop:web", "stop:database", "start:database", "start:web"]
+                    : ["start:database", "start:web"]
+            );
+        } finally {
+            await fixture.close();
+        }
+    }
+);
+
 test("project operations never list or inspect unrelated allowlisted projects", async () => {
     const fixture = createApplicationFixture();
     try {

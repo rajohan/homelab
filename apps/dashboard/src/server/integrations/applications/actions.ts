@@ -8,6 +8,7 @@ import {
     orderApplicationDependencies,
     waitForApplicationDependencies,
     isCompletionDependency,
+    isApplicationReady,
     waitForApplicationReady,
 } from "./dependencies";
 import type { DockerDetail, DockerPort } from "./docker";
@@ -117,8 +118,8 @@ export async function performApplicationAction(
             mutated.add(detail.Id);
         }
     }
-    for (const detail of ordered) {
-        if (intent.operation !== "stop") {
+    if (intent.operation !== "stop")
+        for (const detail of ordered) {
             await waitForApplicationReady(
                 detail,
                 port,
@@ -126,12 +127,25 @@ export async function performApplicationAction(
                 report,
                 project && isCompletionDependency(detail, details)
             );
-            continue;
         }
-        const current = await port.inspect(detail.Id, signal);
-        if (!["exited", "created"].includes(current.State.Status))
-            throw new Error("Container has not reached the requested state");
-    }
     await revalidateMembership();
+    // Read every selected container again after all readiness waits. Earlier
+    // readiness observations can be invalidated while a later service initializes.
+    for (let offset = 0; offset < ordered.length; offset += 4) {
+        signal.throwIfAborted();
+        const ready = await Promise.all(
+            ordered.slice(offset, offset + 4).map(async (detail) => {
+                const current = await port.inspect(detail.Id, signal);
+                return intent.operation === "stop"
+                    ? ["exited", "created"].includes(current.State.Status)
+                    : isApplicationReady(
+                          current,
+                          project && isCompletionDependency(detail, details)
+                      );
+            })
+        );
+        if (ready.some((value) => !value))
+            throw new Error("A selected container no longer meets the requested state");
+    }
     await report("All selected containers reached the requested state.");
 }

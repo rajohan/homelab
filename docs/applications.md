@@ -42,6 +42,10 @@ waits or earlier operations. The project's exact membership is re-listed before 
 including the start phase of a restart, and before reporting completion. Added, removed or replaced
 members fail closed; listing order does not matter. Docker has no conditional compare-and-mutate
 API, so this narrows the race window but cannot make external mutations atomic.
+After all readiness waits, every selected container is inspected again with at most four concurrent
+requests before success is reported. A service that regressed while a later service initialized
+fails this final check; declared one-shot dependencies must still have exited successfully.
+These are fresh observations, not an atomic snapshot or a guarantee of future availability.
 
 Discovery accepts at most 20 hosts and 200 containers per host. Each inspect response is
 limited to 512 KiB, with at most 32 networks, 128 exposed ports, eight bindings per port and

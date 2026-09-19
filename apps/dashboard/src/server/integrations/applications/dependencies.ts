@@ -137,6 +137,20 @@ export async function waitForApplicationDependencies(
 }
 
 /**
+ * Evaluate the same observed readiness state during waits and final verification.
+ * @param item - Fresh inspection of the exact selected container.
+ * @param completed - Whether the project requires this one-shot service to exit successfully.
+ * @returns True only for successful completion or a running, healthy long-lived service.
+ */
+export function isApplicationReady(item: DockerDetail, completed: boolean): boolean {
+    if (completed) return item.State.Status === "exited" && item.State.ExitCode === 0;
+    return (
+        item.State.Status === "running" &&
+        (!item.State.Health || item.State.Health.Status === "healthy")
+    );
+}
+
+/**
  * Wait for a started container's configured health check under the existing job deadline.
  * @param item - Exact container selected before execution.
  * @param port - The same worker-owned Docker transport.
@@ -160,18 +174,7 @@ export async function waitForApplicationReady(
     for (;;) {
         signal.throwIfAborted();
         const current = await port.inspect(item.Id, signal);
-        if (
-            !allowCompleted &&
-            current.State.Status === "running" &&
-            (!current.State.Health || current.State.Health.Status === "healthy")
-        )
-            return;
-        if (
-            allowCompleted &&
-            current.State.Status === "exited" &&
-            current.State.ExitCode === 0
-        )
-            return;
+        if (isApplicationReady(current, allowCompleted)) return;
         if (
             ["dead", "exited", "paused"].includes(current.State.Status) ||
             (!allowCompleted && current.State.Health?.Status === "unhealthy")
