@@ -1,35 +1,14 @@
-import {
-    Badge,
-    Card,
-    ErrorNotice,
-    LoadingState,
-    PageHeader,
-    queryRefresh,
-} from "@homelab/ui";
-import { useQuery } from "@tanstack/react-query";
+import { Badge, Card, ErrorNotice, LoadingState, PageHeader } from "@homelab/ui";
 
-import { api } from "../api/client";
 import { InfrastructureOverview } from "../features/infrastructure/InfrastructureOverview";
+import { useInfrastructure } from "../features/infrastructure/useInfrastructure";
 
 /**
  * Show the read-only infrastructure integration without coupling it to authentication.
  * @returns The current read-only inventory with loading, freshness and failure states.
  */
 export function Infrastructure() {
-    const query = useQuery({
-        queryKey: ["operations", "infrastructure", "inventory"],
-        queryFn: async ({ signal }) => ({
-            inventory: await api.infrastructure.inventory.query(undefined, { signal }),
-            checkedAt: Date.now(),
-        }),
-        ...queryRefresh("fast"),
-        retry: false,
-    });
-    const inventory = query.data?.inventory;
-    const stale =
-        query.isError ||
-        (inventory &&
-            Date.parse(inventory.capturedAt) < (query.data?.checkedAt ?? 0) - 180_000);
+    const { query, inventory, stale } = useInfrastructure();
     return (
         <>
             <PageHeader

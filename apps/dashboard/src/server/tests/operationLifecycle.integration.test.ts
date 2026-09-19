@@ -127,6 +127,12 @@ test("retention removes only aged completed history and preserves queued and cur
             handler.definition.key,
         ]);
         if (!run) throw new Error("Maintenance claim missing");
+        const stopped = crypto.randomUUID();
+        const abandoned = crypto.randomUUID();
+        const recent = crypto.randomUUID();
+        const active = crypto.randomUUID();
+        await fixture.client`INSERT INTO workers (id, version, heartbeat_at, capacity, draining) VALUES (${stopped}, 'test', now(), 3, true), (${abandoned}, 'test', now() - interval '25 hours', 3, false), (${recent}, 'test', now() - interval '1 minute', 3, false), (${active}, 'test', now() - interval '25 hours', 3, true)`;
+        await fixture.client`UPDATE job_runs SET worker_id = ${active} WHERE id = ${run.id}`;
         await fixture.client`INSERT INTO dashboard_notifications (id, source, source_key, title, message, severity, created_at) SELECT gen_random_uuid(), 'retention-test', number::text, 'Expired', 'Expired event', 'info', now() - interval '31 days' FROM generate_series(1, 2505) AS number`;
         await fixture.client`INSERT INTO notification_receipts (notification_id, actor, read_at) SELECT id, 'human:operator', now() FROM dashboard_notifications`;
         const current = crypto.randomUUID();
@@ -146,6 +152,12 @@ test("retention removes only aged completed history and preserves queued and cur
         expect(remaining).toHaveLength(2);
         expect(remaining.some((row) => row.id === old)).toBe(false);
         expect(remaining.some((row) => row.id === run.id)).toBe(true);
+        const registrations = await fixture.client<
+            { id: string }[]
+        >`SELECT id FROM workers`;
+        expect(registrations.map((worker) => worker.id).toSorted()).toEqual(
+            [recent, active].toSorted()
+        );
         expect(
             await fixture.client<{ id: string }[]>`SELECT id FROM dashboard_notifications`
         ).toEqual([{ id: current }]);

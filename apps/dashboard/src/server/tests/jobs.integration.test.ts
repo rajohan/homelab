@@ -347,6 +347,7 @@ test("worker performs real queued work then drains without leaving active claims
         ).toEqual([{ message: "Processing a generic worker task." }]);
         const runs = await listJobs(fixture.client, 30, undefined);
         expect(runs.some((row) => row.state === "running")).toBe(false);
+        expect(await fixture.client`SELECT id FROM workers`).toHaveLength(0);
     } finally {
         controller.abort();
         await fixture.close();

@@ -6,7 +6,9 @@ import {
 } from "@tanstack/react-router";
 
 import { Shell } from "./layout/Shell";
+import { Alerts } from "./pages/Alerts";
 import { Applications } from "./pages/Applications";
+import { Backups } from "./pages/Backups";
 import { Identity } from "./pages/Identity";
 import { Infrastructure } from "./pages/Infrastructure";
 import { Jobs } from "./pages/Jobs";
@@ -14,6 +16,7 @@ import { NotFound } from "./pages/NotFound";
 import { Overview } from "./pages/Overview";
 import { RouteError } from "./pages/RouteError";
 import { Settings } from "./pages/Settings";
+import { Updates } from "./pages/Updates";
 
 /**
  * Build the dashboard route tree with shared layout and error handling.
@@ -43,6 +46,21 @@ export function createDashboardRouter(history?: RouterHistory) {
     return createRouter({
         defaultErrorComponent: RouteError,
         routeTree: root.addChildren([
+            createRoute({
+                getParentRoute: () => root,
+                path: "/alerts",
+                component: Alerts,
+            }),
+            createRoute({
+                getParentRoute: () => root,
+                path: "/backups",
+                component: Backups,
+            }),
+            createRoute({
+                getParentRoute: () => root,
+                path: "/updates",
+                component: Updates,
+            }),
             overview,
             identity,
             infrastructure,

@@ -69,6 +69,16 @@ PgBouncer transaction pooling; no session locks or LISTEN connection are require
 - Missed schedule intervals coalesce, and active runs prevent overlapping scheduled copies.
 - User request IDs deduplicate while the run is retained, not forever after cleanup.
 - Completed history is removed in bounded hourly batches. Active work is never pruned.
+- An orderly worker shutdown retires its registration after claims settle. Bounded
+  maintenance also removes stopped registrations and registrations silent for a day,
+  but never while a running claim still references them. A process whose registration
+  expired exits rather than silently accepting more work. Job history is independent.
+
+Monitoring incidents, backup protection and software observations are documented in
+[Monitoring operations](monitoring-operations.md). They use separate registered jobs,
+permissions and source-freshness states.
+
+- Each worker process has a unique registration, not a permanent host identity. Orderly shutdown removes its registration after all claims settle. Hourly maintenance removes older stopped registrations and unresponsive registrations after 24 hours, only when they own no running jobs. Job and audit history remains independent of these temporary registrations.
 
 ## Scheduling and worker control
 

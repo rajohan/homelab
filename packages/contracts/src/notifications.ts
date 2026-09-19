@@ -3,6 +3,7 @@ import * as v from "valibot";
 export const notificationSeverities = ["info", "success", "warning", "error"] as const;
 export const notificationSeveritySchema = v.picklist(notificationSeverities);
 export const notificationDestinationSchema = v.picklist([
+    "alerts",
     "jobs",
     "applications",
     "infrastructure",

@@ -24,6 +24,11 @@ import { startDashboardServer } from "../apps/dashboard/src/server/index";
 import { publishNotification } from "../apps/dashboard/src/server/notifications/publish";
 import { createOperationsRuntime } from "../apps/dashboard/src/server/operations/runtime";
 import { createApplicationFixture } from "../apps/dashboard/src/server/testing/applications";
+import {
+    createMonitoringFixture,
+    seedMonitoringPreview,
+    previewUpdateSources,
+} from "../apps/dashboard/src/server/testing/monitoring";
 import { runWorker } from "../apps/dashboard/src/worker/runtime";
 
 async function docker(...arguments_: string[]): Promise<string> {
@@ -63,6 +68,7 @@ export async function main(): Promise<void> {
     let worker: Promise<void> | undefined;
     let operations: ReturnType<typeof createOperationsRuntime> | undefined;
     let applications: ReturnType<typeof createApplicationFixture> | undefined;
+    let monitoring: ReturnType<typeof createMonitoringFixture> | undefined;
     const lifecycle = new AbortController();
     let stopRequested = false;
     let serverShutdownFailed: boolean;
@@ -158,19 +164,28 @@ export async function main(): Promise<void> {
             healthDelayMs: 4000,
             includeFailure: true,
         });
+        monitoring = createMonitoringFixture();
         const operationConfiguration = parseOperationsConfiguration({
             NODE_ENV: "development",
             HOMELAB_DASHBOARD_APPLICATION_TARGETS: JSON.stringify([applications.target]),
             HOMELAB_DASHBOARD_LOGS_URL: applications.url,
+            HOMELAB_DASHBOARD_ALERTMANAGER_URL: monitoring.url,
+            HOMELAB_DASHBOARD_RULES_URL: monitoring.url,
+            HOMELAB_DASHBOARD_PBS_URL: monitoring.url,
+            HOMELAB_DASHBOARD_PBS_TOKEN: "demo@pbs!reader=synthetic-only",
+            HOMELAB_DASHBOARD_PBS_STORES: JSON.stringify([{ datastore: "demo-backups" }]),
+            HOMELAB_DASHBOARD_UPDATE_SOURCES: JSON.stringify(previewUpdateSources),
             HOMELAB_DASHBOARD_DATABASE_URL: dashboardUrl.href,
             // Optional read-only telemetry; identity and operational state remain disposable.
-            HOMELAB_DASHBOARD_METRICS_URL: process.env.HOMELAB_PREVIEW_METRICS_URL,
+            HOMELAB_DASHBOARD_METRICS_URL:
+                process.env.HOMELAB_PREVIEW_METRICS_URL ?? monitoring.url,
         });
         if (!operationConfiguration)
             throw new Error("Invalid isolated dashboard configuration");
         const dashboardConnection = connectDashboardDatabase(dashboardUrl.href);
         try {
             await migrateDashboard(dashboardConnection);
+            await seedMonitoringPreview(dashboardConnection.client, monitoring.url);
             await dashboardConnection.client.begin(async (transaction) => {
                 for (const [index, severity] of (
                     ["success", "warning", "info", "error"] as const
@@ -297,6 +312,7 @@ export async function main(): Promise<void> {
                     if (created) await docker("stop", "--time", "5", container);
                 } finally {
                     await applications?.close();
+                    await monitoring?.close();
                 }
             }
         }

@@ -17,6 +17,8 @@ const logConfiguration = v.strictObject({
     ),
     serviceLabel: labelName,
     servicePrefix: v.optional(v.pipe(v.string(), v.maxLength(80)), ""),
+    serviceValue: v.optional(v.picklist(["container", "service"])),
+    projectLabel: v.optional(labelName),
 });
 const schema = v.pipe(
     v.array(
@@ -73,6 +75,12 @@ export function parseApplicationTargets(
             throw new Error("Application project allowlists must be unique");
         if (target.logs && Object.hasOwn(target.logs.labels, target.logs.serviceLabel))
             throw new Error("Log service label conflicts with fixed host selectors");
+        if (
+            target.logs?.projectLabel &&
+            (target.logs.projectLabel === target.logs.serviceLabel ||
+                Object.hasOwn(target.logs.labels, target.logs.projectLabel))
+        )
+            throw new Error("Log project label conflicts with other selectors");
     }
     return targets;
 }

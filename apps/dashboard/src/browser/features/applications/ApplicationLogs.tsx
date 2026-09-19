@@ -24,7 +24,7 @@ export function ApplicationLogs({
 }: {
     readonly application: ManagedApplication;
 }) {
-    const [range, setRange] = useState<"15m" | "1h" | "6h" | "24h">("1h");
+    const [range, setRange] = useState<"15m" | "1h" | "6h" | "24h" | "7d">("24h");
     const [search, setSearch] = useState("");
     const [live, setLive] = useState(true);
     const [generation, setGeneration] = useState(0);
@@ -74,7 +74,7 @@ export function ApplicationLogs({
                     label="Time range"
                     value={range}
                     onChange={setRange}
-                    options={["15m", "1h", "6h", "24h"].map((value) => ({
+                    options={["15m", "1h", "6h", "24h", "7d"].map((value) => ({
                         value: value as typeof range,
                         label: `Last ${value}`,
                     }))}
@@ -92,7 +92,8 @@ export function ApplicationLogs({
             {query.isError && rows.length === 0 && <ErrorNotice error={query.error} />}
             {!query.isPending && !query.isError && rows.length === 0 && (
                 <p className="rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm text-primary-400">
-                    No matching log entries.
+                    No matching entries in this time range. Try a wider range or clear the
+                    search.
                 </p>
             )}
             {rows.length > 0 && (

@@ -100,10 +100,15 @@ access; it does not need Docker keys. Loki itself does not enforce authorization
 listener/proxy accordingly. Only expose a reviewed, redacted stream: the dashboard escapes log
 text but cannot reliably remove secrets from arbitrary raw application output.
 
-Each host supplies exact fixed labels plus a label mapped to the **Docker container name**, with
-an optional configured prefix. Check those labels against ingestion; do not use ambiguous
-service labels shared across hosts/projects. Searches are escaped literal text, with a maximum
-24-hour range, two-megabyte response budget and timestamp-safe cursor pages. Large timestamp
+Each host supplies exact fixed labels plus a label mapped to the **Docker container name**
+by default. Set `serviceValue: "service"` to select the Compose service name instead,
+for example `serviceLabel: "service"` and `servicePrefix: "app-"`. This includes
+retained service history from older container instances and service replicas.
+Use `projectLabel` where the same service name occurs across projects; ambiguous
+managed service names are rejected without that label. Verify the actual ingestion
+labels before changing configuration. Host selection stays exact and server-owned.
+Searches are escaped literal text, with a maximum seven-day range (one day by default),
+two-megabyte response budget and timestamp-safe cursor pages. Large timestamp
 groups fail explicitly rather than silently dropping records. Retention remains Loki's policy.
 Loki log ranges include `start` and exclude `end`. A complete same-timestamp group is read with
 `[timestamp, timestamp + 1 ns)`; the next page ends at that timestamp so it cannot repeat the group.
@@ -111,6 +116,10 @@ Loki log ranges include `start` and exclude `end`. A complete same-timestamp gro
 Live updates poll every five seconds. Loading older history pauses live updates to preserve the
 reading position; enabling live updates returns to the newest page. Only an open log view queries
 Loki. Browser HTTP responses remain private and non-cacheable through the existing API boundary.
+An empty range is not itself an ingestion failure: quiet applications may have no
+retained events. Widen the range to distinguish this from a wrong selector, failed
+collector or a logging driver whose output is not being shipped. Keep existing
+redaction and retention; do not bypass them by exposing raw Docker output.
 
 The disposable preview uses repository-owned loopback fixture APIs and synthetic metadata/logs.
 The `demo` project contains a database and dependent web container. Actions take two seconds,

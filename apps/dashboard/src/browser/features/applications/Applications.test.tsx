@@ -122,16 +122,17 @@ test("application inspector avoids exposing raw config and keeps log fetching be
 test("log controls pause live refresh and present empty history without load-more buttons", async () => {
     const cleanup = fixture(<ApplicationLogs application={application} />, (query) =>
         query.setQueryData(
-            ["operations", "applications", "logs", application.id, "1h", "", 0],
+            ["operations", "applications", "logs", application.id, "24h", "", 0],
             { pages: [{ entries: [], nextCursor: null }], pageParams: [undefined] }
         )
     );
     try {
         const user = userEvent.setup();
-        expect(screen.getByText("No matching log entries.")).toHaveClass(
-            "border",
-            "bg-primary-950/40"
-        );
+        expect(
+            screen.getByText(
+                "No matching entries in this time range. Try a wider range or clear the search."
+            )
+        ).toHaveClass("border", "bg-primary-950/40");
         await user.click(screen.getByRole("switch", { name: "Live updates" }));
         expect(screen.getByRole("switch", { name: "Live updates" })).not.toBeChecked();
         await user.type(
