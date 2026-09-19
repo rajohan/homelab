@@ -6,6 +6,41 @@ import type {
 import type { ApplicationTarget } from "./configuration";
 import type { DockerDetail, DockerPort } from "./docker";
 
+export const applicationInventoryByteLimit = 8 * 1024 * 1024;
+const containerByteLimit = 32 * 1024;
+const hostByteLimit = 1024 * 1024;
+
+function metadataBytes(value: unknown): number {
+    return new TextEncoder().encode(JSON.stringify(value)).byteLength;
+}
+
+function boundedInventory(inventory: ApplicationInventory): ApplicationInventory {
+    const emptyHosts = inventory.hosts.map((host) => ({
+        ...host,
+        available: false,
+        applications: [],
+    }));
+    let bytes = metadataBytes({ ...inventory, hosts: emptyHosts });
+    return {
+        ...inventory,
+        hosts: inventory.hosts.map((host, index) => {
+            const empty = emptyHosts[index];
+            if (!empty) throw new Error("Missing inventory host envelope");
+            if (host.applications.length > 200) return empty;
+            let hostBytes = 2;
+            for (const application of host.applications) {
+                const size = metadataBytes(application);
+                hostBytes += size + 1;
+                if (size > containerByteLimit || hostBytes > hostByteLimit) return empty;
+            }
+            const additionalBytes = metadataBytes(host) - metadataBytes(empty);
+            if (bytes + additionalBytes > applicationInventoryByteLimit) return empty;
+            bytes += additionalBytes;
+            return host;
+        }),
+    };
+}
+
 /**
  * Reapply today's allowlist to snapshots written by an earlier configuration.
  * @param inventory - Last stored snapshot, possibly from before a configuration change.
@@ -17,7 +52,7 @@ export function filterApplicationInventory(
     targets: readonly ApplicationTarget[]
 ): ApplicationInventory | null {
     if (!inventory) return null;
-    return {
+    return boundedInventory({
         ...inventory,
         hosts: inventory.hosts.flatMap((host) => {
             const target = targets.find((item) => item.id === host.id);
@@ -33,7 +68,7 @@ export function filterApplicationInventory(
                   ]
                 : [];
         }),
-    };
+    });
 }
 
 /**
@@ -55,7 +90,7 @@ export function mapDockerApplication(
     target: ApplicationTarget,
     detail: DockerDetail
 ): ManagedApplication {
-    return {
+    const application: ManagedApplication = {
         id: `${target.id}:${detail.Id}`,
         host: target.id,
         containerId: detail.Id,
@@ -93,6 +128,9 @@ export function mapDockerApplication(
                 }))
         ),
     };
+    if (metadataBytes(application) > containerByteLimit)
+        throw new Error("Container metadata exceeds its budget");
+    return application;
 }
 
 /**
@@ -112,6 +150,7 @@ export async function collectApplications(
     hostTimeoutMs = 20_000
 ): Promise<ApplicationInventory> {
     signal.throwIfAborted();
+    if (targets.length > 20) throw new Error("Host inventory exceeds its budget");
     const hosts = await Promise.all(
         targets.map(async (target) => {
             const hostSignal = AbortSignal.any([
@@ -122,6 +161,9 @@ export async function collectApplications(
                 const port = connect(target);
                 const applications: ManagedApplication[] = [];
                 const ids = await port.list(hostSignal);
+                if (ids.length > 200)
+                    throw new Error("Application inventory exceeds its budget");
+                let hostBytes = 2;
                 for (let offset = 0; offset < ids.length; offset += 4) {
                     hostSignal.throwIfAborted();
                     const rows = await Promise.all(
@@ -134,7 +176,12 @@ export async function collectApplications(
                                 )
                             )
                     );
-                    applications.push(...rows);
+                    for (const row of rows) {
+                        hostBytes += metadataBytes(row) + 1;
+                        if (hostBytes > hostByteLimit)
+                            throw new Error("Host metadata exceeds its budget");
+                        applications.push(row);
+                    }
                 }
                 return {
                     id: target.id,
@@ -160,5 +207,6 @@ export async function collectApplications(
         })
     );
     signal.throwIfAborted();
-    return { capturedAt: new Date().toISOString(), hosts };
+    // Apply the same byte limits to retained metadata and whole-host aggregate admission.
+    return boundedInventory({ capturedAt: new Date().toISOString(), hosts });
 }

@@ -160,8 +160,8 @@ export async function scheduleDueJobs(
  * @param client - The dashboard database pool.
  * @param limit - Validated page size.
  * @param before - Optional UUIDv7 cursor from the previous page.
- * @param filters - Independent action and active/completed filters, applied before pagination.
- * @returns Runs ordered newest first with no payloads, tokens or raw errors.
+ * @param filters - Filters applied before pagination; a completion window selects an unpaginated activity sample.
+ * @returns Runs ordered by completion within an activity window, otherwise by creation ID.
  */
 export async function listJobs(
     client: SQL,
@@ -171,11 +171,14 @@ export async function listJobs(
         action?: string | undefined;
         view?: "all" | "active" | "recent" | undefined;
         requestedBy?: string | undefined;
+        completedWithinSeconds?: number | undefined;
     } = {}
 ): Promise<JobSummary[]> {
+    if (filters.completedWithinSeconds !== undefined && before !== undefined)
+        throw new Error("Completion activity does not support creation-order cursors");
     return client<
         JobSummary[]
-    >`SELECT id, action, label, resource_class AS "resourceClass", state, attempt, attempt_limit AS "attemptLimit", requested_by AS "requestedBy", created_at::text AS "createdAt", started_at::text AS "startedAt", finished_at::text AS "finishedAt", message, cancel_requested AS "cancelRequested" FROM job_runs WHERE (${before ?? null}::uuid IS NULL OR id < ${before ?? null}::uuid) AND (${filters.action ?? null}::text IS NULL OR action = ${filters.action ?? null}) AND (${filters.requestedBy ?? null}::text IS NULL OR requested_by = ${filters.requestedBy ?? null}) AND (${filters.view ?? "all"} = 'all' OR (${filters.view ?? "all"} = 'active' AND state IN ('queued','running')) OR (${filters.view ?? "all"} = 'recent' AND state NOT IN ('queued','running'))) ORDER BY id DESC LIMIT ${limit}`;
+    >`SELECT id, action, label, resource_class AS "resourceClass", state, attempt, attempt_limit AS "attemptLimit", requested_by AS "requestedBy", created_at::text AS "createdAt", started_at::text AS "startedAt", finished_at::text AS "finishedAt", message, cancel_requested AS "cancelRequested" FROM job_runs WHERE (${before ?? null}::uuid IS NULL OR id < ${before ?? null}::uuid) AND (${filters.action ?? null}::text IS NULL OR action = ${filters.action ?? null}) AND (${filters.requestedBy ?? null}::text IS NULL OR requested_by = ${filters.requestedBy ?? null}) AND (${filters.view ?? "all"} = 'all' OR (${filters.view ?? "all"} = 'active' AND state IN ('queued','running')) OR (${filters.view ?? "all"} = 'recent' AND state NOT IN ('queued','running'))) AND (${filters.completedWithinSeconds ?? null}::int IS NULL OR finished_at > now() - ${filters.completedWithinSeconds ?? null}::int * interval '1 second') ORDER BY CASE WHEN ${filters.completedWithinSeconds ?? null}::int IS NOT NULL THEN finished_at END DESC, id DESC LIMIT ${limit}`;
 }
 
 /**

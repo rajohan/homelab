@@ -29,17 +29,11 @@ export const jobsRouter = trpc.router({
                 listJobs(operations.client, 5, undefined, {
                     view: "recent",
                     requestedBy,
+                    completedWithinSeconds: 15 * 60,
                 }),
             ]);
             return {
-                runs: [
-                    ...active,
-                    ...recent.filter(
-                        (run) =>
-                            run.finishedAt &&
-                            Date.parse(run.finishedAt) > Date.now() - 15 * 60_000
-                    ),
-                ],
+                runs: [...active, ...recent],
             };
         })
     ),
@@ -76,6 +70,8 @@ export const jobsRouter = trpc.router({
                         "NOT_FOUND",
                         "This run was not found or its history has expired."
                     );
+                // Retained runs predate event messages. Only their final outcome inherits the
+                // safe run explanation, never an earlier attempt or an arbitrary page's last event.
                 const events = await operations.client<
                     {
                         id: string;
@@ -84,7 +80,7 @@ export const jobsRouter = trpc.router({
                         message: string | null;
                         createdAt: string;
                     }[]
-                >`SELECT id, actor, action, message, created_at::text AS "createdAt" FROM operation_audit WHERE target = ${input.id} AND (${input.before ?? null}::uuid IS NULL OR id < ${input.before ?? null}::uuid) ORDER BY id DESC LIMIT ${input.limit}`;
+                >`SELECT id, actor, action, COALESCE(message, CASE WHEN ${run.state} IN ('failed', 'timed_out', 'cancelled') AND id = (SELECT id FROM operation_audit WHERE target = ${input.id} AND action = ${`jobs.${run.state}`} ORDER BY created_at DESC, id DESC LIMIT 1) THEN ${run.message}::text END) AS message, created_at::text AS "createdAt" FROM operation_audit WHERE target = ${input.id} AND (${input.before ?? null}::uuid IS NULL OR id < ${input.before ?? null}::uuid) ORDER BY id DESC LIMIT ${input.limit}`;
                 return {
                     run,
                     events,

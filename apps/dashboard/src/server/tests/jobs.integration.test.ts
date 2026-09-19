@@ -91,6 +91,86 @@ test("concurrent enqueue replays once and conflicting idempotency is rejected", 
     }
 });
 
+test("activity limits by database completion time, not creation order or worker clock", async () => {
+    const fixture = await operationFixture();
+    try {
+        const ids = await fixture.client.begin(async (transaction) => {
+            await lockQueue(transaction);
+            const runs: string[] = [];
+            for (let index = 0; index < 8; index += 1)
+                runs.push(
+                    await enqueueJob(
+                        transaction,
+                        maintenanceJob(30).definition,
+                        "human:operator",
+                        `completion-${index}`
+                    )
+                );
+            return runs;
+        });
+        const longRun = ids[0];
+        if (!longRun) throw new Error("Missing long-running fixture");
+        await fixture.client`UPDATE job_runs SET state='succeeded', finished_at=now()-interval '5 minutes'`;
+        await fixture.client`UPDATE job_runs SET created_at=now()-interval '1 day', finished_at=now() WHERE id=${longRun}`;
+        // The newest-created job is outside the completion window and must not consume a slot.
+        await fixture.client`UPDATE job_runs SET finished_at=now()-interval '16 minutes' WHERE id=${ids.at(-1)}`;
+        const caller = appRouter.createCaller({
+            operations: fixture,
+            principal: { kind: "human", id: "operator", capabilities },
+        });
+        const activity = await caller.jobs.activity();
+        expect(activity.runs.map((run) => run.id)).toEqual([
+            longRun,
+            ...ids.slice(1, -1).toReversed().slice(0, 4),
+        ]);
+        // Ordinary history retains its creation-order cursor contract.
+        const history = await caller.jobs.list({ limit: 2 });
+        expect(history.runs.map((run) => run.id)).toEqual(ids.slice(-2).toReversed());
+        await expectOperationFailure(
+            listJobs(fixture.client, 5, longRun, { completedWithinSeconds: 900 }),
+            "cursors"
+        );
+    } finally {
+        await fixture.close();
+    }
+});
+
+test.each(["failed", "timed_out", "cancelled"] as const)(
+    "retained %s run details recover only the final event's missing explanation",
+    async (state) => {
+        const fixture = await operationFixture();
+        try {
+            const run = await fixture.client.begin(async (transaction) => {
+                await lockQueue(transaction);
+                return enqueueJob(
+                    transaction,
+                    maintenanceJob(30).definition,
+                    "human:operator",
+                    `retained-${state}`
+                );
+            });
+            const earlier = Bun.randomUUIDv7(),
+                final = Bun.randomUUIDv7();
+            const message = "Execution exceeded its time limit.";
+            await fixture.client`UPDATE job_runs SET state=${state}, finished_at=now(), message=${message} WHERE id=${run}`;
+            await fixture.client`INSERT INTO operation_audit(id,actor,action,target,created_at) VALUES (${earlier},'system:worker',${`jobs.${state}`},${run},now()-interval '1 hour'), (${final},'system:worker',${`jobs.${state}`},${run},now())`;
+            const caller = appRouter.createCaller({
+                operations: fixture,
+                principal: { kind: "human", id: "operator", capabilities },
+            });
+            const latest = await caller.jobs.detail({ id: run, limit: 1 });
+            expect(latest.events[0]).toMatchObject({ id: final, message });
+            const older = await caller.jobs.detail({ id: run, limit: 1, before: final });
+            expect(older.events[0]).toMatchObject({ id: earlier, message: null });
+            await fixture.client`UPDATE operation_audit SET message='Recorded outcome.' WHERE id=${final}`;
+            const recorded = await caller.jobs.detail({ id: run, limit: 1 });
+            expect(recorded.events[0]?.message).toBe("Recorded outcome.");
+        } finally {
+            await fixture.close();
+        }
+    }
+);
+
 test("progress is bounded, deduplicated and fenced by the live uncancelled claim", async () => {
     const fixture = await operationFixture();
     try {

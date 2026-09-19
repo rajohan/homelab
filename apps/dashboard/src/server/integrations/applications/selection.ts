@@ -7,7 +7,7 @@ import type { SQL } from "bun";
 
 import type { Transaction } from "../../database/connection";
 import { OperationFailure } from "../../operations/errors";
-import { applicationRevision } from "./inventory";
+import { applicationInventoryByteLimit, applicationRevision } from "./inventory";
 
 /**
  * Read the last worker snapshot without giving the web process Docker credentials.
@@ -17,9 +17,11 @@ import { applicationRevision } from "./inventory";
 export async function readApplicationInventory(
     client: SQL | Transaction
 ): Promise<ApplicationInventory | null> {
+    // Reject older oversized snapshots before transferring them; JSONB's text rendering
+    // includes whitespace, so allow twice the collector's compact JSON byte budget here.
     const [row] = await client<
         { value: ApplicationInventory }[]
-    >`SELECT value FROM operation_snapshots WHERE key='applications.inventory'`;
+    >`SELECT value FROM operation_snapshots WHERE key='applications.inventory' AND octet_length(value::text) <= ${applicationInventoryByteLimit * 2}`;
     return row?.value ?? null;
 }
 

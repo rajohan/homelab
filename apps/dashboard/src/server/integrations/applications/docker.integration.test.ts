@@ -4,15 +4,221 @@ import {
     createApplicationFixture,
     applicationFixtureDetail,
 } from "../../testing/applications";
-import { expectOperationFailure } from "../../testing/operations";
+import { expectOperationFailure, operationFixture } from "../../testing/operations";
 import { performApplicationAction } from "./actions";
 import { createDockerPort, type DockerPort } from "./docker";
 import {
     collectApplications,
     filterApplicationInventory,
     mapDockerApplication,
+    applicationInventoryByteLimit,
 } from "./inventory";
-import { selectionRevision, selectApplications } from "./selection";
+import {
+    readApplicationInventory,
+    selectionRevision,
+    selectApplications,
+} from "./selection";
+
+function largeFixtureDetail(id: string) {
+    const detail = applicationFixtureDetail(id, "large-metadata");
+    detail.Mounts = Array.from({ length: 10 }, () => ({
+        Type: "volume",
+        Source: "ø".repeat(1000),
+        Destination: "/data",
+        RW: true,
+    }));
+    return detail;
+}
+
+test.each(["networks", "ports", "bindings", "mounts", "body"] as const)(
+    "Docker inspect bounds %s before retaining metadata",
+    async (field) => {
+        const fixture = createApplicationFixture();
+        try {
+            const detail = applicationFixtureDetail("a".repeat(64), "bounded");
+            if (field === "networks")
+                detail.NetworkSettings.Networks = Object.fromEntries(
+                    Array.from({ length: 33 }, (_, index) => [`network-${index}`, {}])
+                );
+            if (field === "ports")
+                detail.NetworkSettings.Ports = Object.fromEntries(
+                    Array.from({ length: 129 }, (_, index) => [`${index}/tcp`, null])
+                );
+            if (field === "bindings")
+                detail.NetworkSettings.Ports = {
+                    "80/tcp": Array.from({ length: 9 }, () => ({
+                        HostIp: "127.0.0.1",
+                        HostPort: "80",
+                    })),
+                };
+            if (field === "mounts")
+                detail.Mounts = Array.from({ length: 65 }, () => ({
+                    Type: "volume",
+                    Source: "/data",
+                    Destination: "/data",
+                    RW: true,
+                }));
+            if (field === "body")
+                detail.Config.Labels = {
+                    ...detail.Config.Labels,
+                    ignored: "x".repeat(512 * 1024),
+                };
+            fixture.containers.set(detail.Id, detail);
+            const port = createDockerPort(fixture.target, {});
+            expect(
+                await port
+                    .inspect(detail.Id, AbortSignal.timeout(3000))
+                    .catch((error: unknown) => error)
+            ).toBeInstanceOf(Error);
+            expect(fixture.calls).toEqual([]);
+        } finally {
+            await fixture.close();
+        }
+    }
+);
+
+test("container and host metadata byte budgets fail closed without retaining partial projects", async () => {
+    const fixture = createApplicationFixture();
+    try {
+        const detail = largeFixtureDetail("a".repeat(64));
+        const oversized = { ...detail, Mounts: [...detail.Mounts, ...detail.Mounts] };
+        fixture.containers.set(detail.Id, oversized);
+        const port = createDockerPort(fixture.target, {});
+        const inspected = await port.inspect(detail.Id, AbortSignal.timeout(3000));
+        expect(() => mapDockerApplication(fixture.target, inspected)).toThrow("metadata");
+        const retained = mapDockerApplication(fixture.target, detail);
+        const largePort: DockerPort = {
+            ...port,
+            list: () =>
+                Promise.resolve(
+                    Array.from({ length: 200 }, (_, index) =>
+                        index.toString(16).padStart(64, "0")
+                    )
+                ),
+            inspect: (id) => Promise.resolve(largeFixtureDetail(id)),
+        };
+        const inventory = await collectApplications(
+            [fixture.target],
+            () => largePort,
+            AbortSignal.timeout(3000)
+        );
+        expect(inventory.hosts[0]).toMatchObject({ available: false, applications: [] });
+        for (const applications of [
+            Array.from({ length: 201 }, () => retained),
+            Array.from({ length: 100 }, () => retained),
+            [{ ...retained, networks: ["ø".repeat(20_000)] }],
+        ]) {
+            const previous = {
+                capturedAt: new Date().toISOString(),
+                hosts: [
+                    {
+                        id: fixture.target.id,
+                        label: fixture.target.label,
+                        available: true,
+                        applications,
+                    },
+                ],
+            };
+            const snapshot = await collectApplications(
+                [fixture.target],
+                () => largePort,
+                AbortSignal.timeout(3000),
+                previous
+            );
+            expect(snapshot.hosts[0]).toMatchObject({
+                available: false,
+                applications: [],
+            });
+            expect(
+                filterApplicationInventory(previous, [fixture.target])?.hosts[0]
+            ).toMatchObject({ available: false, applications: [] });
+        }
+    } finally {
+        await fixture.close();
+    }
+});
+
+test("aggregate snapshot budget admits complete hosts only, including unavailable retained hosts", async () => {
+    const fixture = createApplicationFixture();
+    try {
+        const targets = Array.from({ length: 10 }, (_, index) => ({
+            ...fixture.target,
+            id: `host-${index}`,
+        }));
+        const port: DockerPort = {
+            ...createDockerPort(fixture.target, {}),
+            list: () =>
+                Promise.resolve(
+                    Array.from({ length: 45 }, (_, index) =>
+                        index.toString(16).padStart(64, "0")
+                    )
+                ),
+            inspect: (id) => Promise.resolve(largeFixtureDetail(id)),
+        };
+        const inventory = await collectApplications(
+            targets,
+            () => port,
+            AbortSignal.timeout(5000)
+        );
+        expect(inventory.hosts.some((host) => host.available)).toBe(true);
+        expect(inventory.hosts.some((host) => !host.available)).toBe(true);
+        expect(
+            new TextEncoder().encode(JSON.stringify(inventory)).byteLength
+        ).toBeLessThanOrEqual(applicationInventoryByteLimit);
+        for (const host of inventory.hosts)
+            expect(host.applications).toHaveLength(host.available ? 45 : 0);
+        const retained = await collectApplications(
+            targets,
+            () => ({ ...port, list: () => Promise.reject(new Error("Unavailable")) }),
+            AbortSignal.timeout(5000),
+            inventory
+        );
+        expect(retained.hosts.every((host) => !host.available)).toBe(true);
+        expect(
+            new TextEncoder().encode(JSON.stringify(retained)).byteLength
+        ).toBeLessThanOrEqual(applicationInventoryByteLimit);
+        await expectOperationFailure(
+            collectApplications(
+                [...targets, ...targets, fixture.target],
+                () => port,
+                AbortSignal.timeout(1000)
+            ),
+            "Host inventory"
+        );
+        const oversizedList = await collectApplications(
+            [fixture.target],
+            () => ({
+                ...port,
+                list: () =>
+                    Promise.resolve(Array.from({ length: 201 }, () => "a".repeat(64))),
+            }),
+            AbortSignal.timeout(1000)
+        );
+        expect(oversizedList.hosts[0]).toMatchObject({
+            available: false,
+            applications: [],
+        });
+    } finally {
+        await fixture.close();
+    }
+});
+
+test("legacy oversized inventory is rejected in the database before transfer", async () => {
+    const fixture = await operationFixture();
+    try {
+        const inventory = { capturedAt: new Date().toISOString(), hosts: [] };
+        await fixture.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES ('applications.inventory', ${JSON.stringify(inventory)}::text::jsonb,now())`;
+        expect(await readApplicationInventory(fixture.client)).toEqual(inventory);
+        const oversized = JSON.stringify({
+            ...inventory,
+            legacy: "x".repeat(applicationInventoryByteLimit * 2),
+        });
+        await fixture.client`UPDATE operation_snapshots SET value=${oversized}::text::jsonb WHERE key='applications.inventory'`;
+        expect(await readApplicationInventory(fixture.client)).toBeNull();
+    } finally {
+        await fixture.close();
+    }
+});
 
 test.each(["start", "stop", "restart"] as const)(
     "%s revalidates later containers after earlier operations and readiness waits",

@@ -7,7 +7,13 @@ import type { ApplicationTarget } from "./configuration";
 const id = v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/));
 const text = v.pipe(v.string(), v.maxLength(2000));
 const labels = v.record(v.string(), v.string());
-const portBindings = v.nullable(v.array(v.object({ HostIp: text, HostPort: text })));
+const networkText = v.pipe(v.string(), v.maxLength(256));
+const portBindings = v.nullable(
+    v.pipe(
+        v.array(v.object({ HostIp: networkText, HostPort: networkText })),
+        v.maxLength(8)
+    )
+);
 const detailSchema = v.object({
     Id: id,
     Name: text,
@@ -21,14 +27,14 @@ const detailSchema = v.object({
         Health: v.optional(v.object({ Status: text })),
     }),
     NetworkSettings: v.object({
-        Ports: v.nullable(v.record(text, portBindings)),
-        Networks: v.record(text, v.unknown()),
+        Ports: v.nullable(v.pipe(v.record(networkText, portBindings), v.maxEntries(128))),
+        Networks: v.pipe(v.record(networkText, v.unknown()), v.maxEntries(32)),
     }),
     Mounts: v.pipe(
         v.array(
             v.object({ Type: text, Source: text, Destination: text, RW: v.boolean() })
         ),
-        v.maxLength(200)
+        v.maxLength(64)
     ),
 });
 export type DockerDetail = v.InferOutput<typeof detailSchema>;
@@ -107,7 +113,8 @@ export function createDockerPort(
             const detail = v.parse(
                 detailSchema,
                 await readBoundedJson(
-                    await request(`/containers/${container}/json`, signal)
+                    await request(`/containers/${container}/json`, signal),
+                    512 * 1024
                 )
             );
             if (

@@ -36,6 +36,13 @@ Each container is revalidated again immediately before its first mutation, after
 waits or earlier operations. Docker has no conditional compare-and-mutate API, so this narrows
 the race window but cannot make external mutations atomic.
 
+Discovery accepts at most 20 hosts and 200 containers per host. Each inspect response is
+limited to 512 KiB, with at most 32 networks, 128 exposed ports, eight bindings per port and
+64 mounts. Selected browser metadata is limited to 32 KiB per container, 1 MiB per host and
+8 MiB per complete snapshot. A host exceeding these limits is marked unavailable as a whole,
+never exposed as a partially actionable project. Retained snapshots follow the same limits;
+oversized retained metadata is discarded. The database read also rejects oversized legacy snapshots.
+
 ## Opt-in production configuration
 
 `HOMELAB_DASHBOARD_APPLICATION_TARGETS` is JSON containing host IDs, labels, exact HTTPS origins,
@@ -123,7 +130,11 @@ polling or scheduled work. Closing it never cancels work or stops status polling
 Each entry opens the existing run inspector and shows the latest worker-reported progress.
 Completed entries can be dismissed for the current dashboard session without deleting history.
 The panel is not application-specific: manually requested jobs of any registered type appear.
+Recent completions are selected by database completion time before applying the five-run limit,
+so an older-created long-running job still appears when it finishes.
 
 Application run titles snapshot the confirmed container/project name, for example `Restart web`.
 Replays keep the original title even after inventory changes. Terminal failure explanations are
 recorded in Run events instead of repeated in a separate status box above the event list.
+For retained runs created before event messages existed, only the final matching outcome event
+inherits the saved run explanation; earlier attempts and explicitly recorded messages are unchanged.
