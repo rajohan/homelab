@@ -1,7 +1,5 @@
 import * as v from "valibot";
 
-import { idSchema } from "./operations";
-
 export const notificationSeverities = ["info", "success", "warning", "error"] as const;
 export const notificationSeveritySchema = v.picklist(notificationSeverities);
 export const notificationDestinationSchema = v.picklist([
@@ -11,6 +9,11 @@ export const notificationDestinationSchema = v.picklist([
 ]);
 const boundedText = (maximum: number) =>
     v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(maximum));
+const publicationCursor = v.pipe(
+    v.string(),
+    v.regex(/^[1-9]\d{0,18}$/),
+    v.check((value) => value.length < 19 || value <= "9223372036854775807")
+);
 
 export const publishNotificationSchema = v.strictObject({
     key: boundedText(160),
@@ -25,7 +28,7 @@ export const notificationFilterSchema = v.strictObject({
 });
 export const notificationPageSchema = v.strictObject({
     ...notificationFilterSchema.entries,
-    before: v.optional(idSchema),
+    before: v.optional(publicationCursor),
     limit: v.optional(
         v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(100)),
         30
@@ -33,11 +36,7 @@ export const notificationPageSchema = v.strictObject({
 });
 export const notificationBulkSchema = v.strictObject({
     ...v.omit(notificationFilterSchema, ["state"]).entries,
-    through: v.pipe(
-        v.string(),
-        v.regex(/^[1-9]\d{0,18}$/),
-        v.check((value) => value.length < 19 || value <= "9223372036854775807")
-    ),
+    through: publicationCursor,
     action: v.picklist(["read", "dismissRead"]),
 });
 

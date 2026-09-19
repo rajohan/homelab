@@ -1,3 +1,5 @@
+import * as v from "valibot";
+
 import type { ApplicationTarget } from "../integrations/applications/configuration";
 import type { DockerDetail } from "../integrations/applications/docker";
 
@@ -145,10 +147,26 @@ export function createApplicationFixture(
                     },
                 });
             }
-            if (url.pathname === "/v1.47/containers/json" && request.method === "GET")
-                return Response.json(
-                    [...containers.values()].map((detail) => ({ Id: detail.Id }))
+            if (url.pathname === "/v1.47/containers/json" && request.method === "GET") {
+                const filters = v.parse(
+                    v.object({ label: v.array(v.string()) }),
+                    JSON.parse(url.searchParams.get("filters") ?? "{}")
                 );
+                return Response.json(
+                    [...containers.values()]
+                        .filter((detail) =>
+                            filters.label.every((label) => {
+                                const separator = label.indexOf("=");
+                                return (
+                                    separator > 0 &&
+                                    detail.Config.Labels?.[label.slice(0, separator)] ===
+                                        label.slice(separator + 1)
+                                );
+                            })
+                        )
+                        .map((detail) => ({ Id: detail.Id }))
+                );
+            }
             const match =
                 /^\/v1\.47\/containers\/([a-f0-9]{64})\/(json|start|stop|restart)$/.exec(
                     url.pathname

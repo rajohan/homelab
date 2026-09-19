@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 
-import { createApplicationFixture } from "../../testing/applications";
+import {
+    createApplicationFixture,
+    applicationFixtureDetail,
+} from "../../testing/applications";
 import { expectOperationFailure } from "../../testing/operations";
 import { performApplicationAction } from "./actions";
 import { createDockerPort, type DockerPort } from "./docker";
@@ -10,6 +13,98 @@ import {
     mapDockerApplication,
 } from "./inventory";
 import { selectionRevision, selectApplications } from "./selection";
+
+test.each(["start", "stop", "restart"] as const)(
+    "%s revalidates later containers after earlier operations and readiness waits",
+    async (operation) => {
+        const fixture = createApplicationFixture();
+        try {
+            const port = createDockerPort(fixture.target, {});
+            const details = [...fixture.containers.values()];
+            const selection = { kind: "project" as const, target: "demo" };
+            const revision = selectionRevision(
+                details.map((detail) => mapDockerApplication(fixture.target, detail)),
+                selection
+            );
+            const laterId = (operation === "start" ? "b" : "a").repeat(64);
+            const later = fixture.containers.get(laterId);
+            if (!later) throw new Error("Missing later fixture container");
+            await expectOperationFailure(
+                performApplicationAction(
+                    fixture.target,
+                    port,
+                    { selection, revision, operation },
+                    AbortSignal.timeout(3000),
+                    (message) => {
+                        if (
+                            message ===
+                            (operation === "start"
+                                ? "Starting demo-web."
+                                : "Stopping demo-database.")
+                        )
+                            later.State.Health = { Status: "unhealthy" };
+                        return Promise.resolve();
+                    }
+                ),
+                "changed"
+            );
+            expect(fixture.calls).toEqual(
+                operation === "start" ? ["start:database"] : ["stop:web"]
+            );
+        } finally {
+            await fixture.close();
+        }
+    }
+);
+
+test("project operations never list or inspect unrelated allowlisted projects", async () => {
+    const fixture = createApplicationFixture();
+    try {
+        const target = { ...fixture.target, projects: ["demo", "unrelated"] };
+        const port = createDockerPort(target, {});
+        const selection = { kind: "project" as const, target: "demo" };
+        const revision = selectionRevision(
+            [...fixture.containers.values()].map((detail) =>
+                mapDockerApplication(target, detail)
+            ),
+            selection
+        );
+        for (let index = 0; index < 200; index += 1) {
+            const detail = applicationFixtureDetail(
+                (index + 1).toString(16).padStart(64, "0"),
+                `unrelated-${index}`
+            );
+            detail.Config.Labels = {
+                ...detail.Config.Labels,
+                "com.docker.compose.project": "unrelated",
+            };
+            fixture.containers.set(detail.Id, detail);
+        }
+        const signal = AbortSignal.timeout(3000);
+        await expectOperationFailure(port.list(signal), "budget");
+        await expectOperationFailure(port.list(signal, "not-allowed"), "outside");
+        const inspected: string[] = [];
+        const scoped: DockerPort = {
+            ...port,
+            inspect: (id, requestSignal) => {
+                inspected.push(id);
+                if (!["a".repeat(64), "b".repeat(64)].includes(id))
+                    return Promise.reject(new Error("Unrelated container disappeared"));
+                return port.inspect(id, requestSignal);
+            },
+        };
+        await performApplicationAction(
+            target,
+            scoped,
+            { selection, revision, operation: "stop" },
+            signal
+        );
+        expect(new Set(inspected)).toEqual(new Set(["a".repeat(64), "b".repeat(64)]));
+        expect(fixture.calls).toEqual(["stop:web", "stop:database"]);
+    } finally {
+        await fixture.close();
+    }
+});
 
 test("health-only transitions invalidate container and project confirmations before any mutation", async () => {
     const fixture = createApplicationFixture();
@@ -252,7 +347,7 @@ test("dependency failures, changed project membership and aborted intents preven
                 { selection, revision: revision(), operation: "stop" },
                 signal
             ),
-            "outside"
+            "changed"
         );
         expect(fixture.calls).toEqual([]);
         for (const option of ["redirect", "large", "unavailable"] as const) {

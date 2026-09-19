@@ -70,7 +70,7 @@ test("clearing read notifications requires confirmation and preserves the operat
                     ...empty,
                     readCount: 2,
                     unreadCount: 1,
-                    through: "019959a7-4600-7000-8000-000000000001",
+                    through: "1",
                 },
             ],
             pageParams: [undefined],

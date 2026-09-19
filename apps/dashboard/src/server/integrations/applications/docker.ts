@@ -33,7 +33,8 @@ const detailSchema = v.object({
 });
 export type DockerDetail = v.InferOutput<typeof detailSchema>;
 export interface DockerPort {
-    readonly list: (signal: AbortSignal) => Promise<readonly string[]>;
+    /** Limit discovery to one allowlisted project when supplied; otherwise list the configured host inventory. */
+    readonly list: (signal: AbortSignal, project?: string) => Promise<readonly string[]>;
     readonly inspect: (container: string, signal: AbortSignal) => Promise<DockerDetail>;
     readonly act: (
         container: string,
@@ -73,9 +74,16 @@ export function createDockerPort(
             ...(tls ? { tls } : {}),
         });
     return {
-        async list(signal) {
+        async list(signal, selectedProject) {
+            if (
+                selectedProject !== undefined &&
+                !target.projects.includes(selectedProject)
+            )
+                throw new Error("Project is outside the managed inventory");
             const result: string[] = [];
-            for (const project of target.projects) {
+            for (const project of selectedProject === undefined
+                ? target.projects
+                : [selectedProject]) {
                 const query = new URLSearchParams({
                     all: "true",
                     filters: JSON.stringify({

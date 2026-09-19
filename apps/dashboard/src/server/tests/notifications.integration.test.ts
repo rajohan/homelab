@@ -149,6 +149,20 @@ test("filtered notification pages and bounded bulk actions do not swallow new ar
         // Simulate publication on a worker whose clock lags behind the web process.
         const skewed = "00000000-0000-7000-8000-000000000001";
         await fixture.client`UPDATE dashboard_notifications SET id = ${skewed} WHERE id = ${arriving}`;
+        const refreshed = await caller.notifications.list({
+            limit: 1,
+            severity: "success",
+        });
+        expect(refreshed.notifications.map((item) => item.id)).toEqual([skewed]);
+        expect(refreshed.nextCursor).toMatch(/^[1-9]\d*$/);
+        const continuation = await caller.notifications.list({
+            limit: 100,
+            severity: "success",
+            before: page.nextCursor,
+        });
+        expect(continuation.notifications.map((item) => item.id)).toEqual(
+            older.notifications.map((item) => item.id)
+        );
         const input = {
             through: page.through,
             severity: "success" as const,

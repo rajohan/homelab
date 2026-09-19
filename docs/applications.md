@@ -19,7 +19,7 @@ Start/stop/restart require `jobs:run` plus their respective `applications:start`
 `applications:stop` or `applications:restart` capability. Reading requires `applications:read`;
 logs require `applications:logs`. Machine tokens must explicitly receive these capabilities.
 The generic jobs endpoint cannot bypass application confirmation. Accepted jobs expire before
-execution after two minutes; cancelling/revoking credentials does not roll back already accepted
+execution after two minutes, measured against the database clock; cancelling/revoking credentials does not roll back already accepted
 external effects. Docker offers no transactional rollback or exactly-once operations; ambiguous
 failures must be inspected before a new request is made.
 
@@ -31,6 +31,10 @@ Hosts are discovered concurrently with separate 20-second budgets and at most fo
 inspections per host. One unavailable host retains its previous identities without preventing
 fresh snapshots for reachable hosts. Whole-job cancellation still aborts collection. Confirmation
 revisions include health status, so health-only changes also invalidate stale lifecycle intents.
+Project actions list only the selected allowlisted project, without inspecting unrelated projects.
+Each container is revalidated again immediately before its first mutation, after any dependency
+waits or earlier operations. Docker has no conditional compare-and-mutate API, so this narrows
+the race window but cannot make external mutations atomic.
 
 ## Opt-in production configuration
 

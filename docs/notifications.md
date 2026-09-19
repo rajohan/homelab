@@ -16,7 +16,8 @@ account identity. Reading requires `notifications:read`; personal acknowledgemen
 state per operator. Dismissal preserves a receipt so a producer replay cannot resurrect an event.
 Bulk actions capture a database-generated publication sequence boundary and process 100 records
 per transaction; later publications are not consumed even when producer clocks differ. UUIDs
-remain event identities, not bulk cutoffs. UI processing stops after 10,000 records with explicit continuation
+remain event identities only: newest-first pagination and cursors also use publication order,
+so producer clock skew cannot hide new events below old pages. UI processing stops after 10,000 records with explicit continuation
 instructions. Counts are always server-derived, never guessed from loaded pages.
 
 Final manual job outcomes and final scheduled failures/timeouts publish once with the run ID.

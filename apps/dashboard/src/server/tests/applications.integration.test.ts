@@ -262,6 +262,55 @@ test("application admissions require scoped permissions, recent human proof and 
         await database.client`UPDATE job_runs SET created_at=now()-interval '3 minutes' WHERE id=${first.id}`;
         await expectOperationFailure(handler.execute(payload, context), "expired");
         expect(docker.calls).toHaveLength(1);
+        // Skew only the synthetic worker process, not the shared parallel test runtime.
+        const worker = Bun.spawn(
+            [
+                process.execPath,
+                "--no-env-file",
+                "--eval",
+                `
+            import { SQL } from "bun";
+            import { applicationJobs } from ${JSON.stringify(new URL("../integrations/applications/jobs.ts", import.meta.url).href)};
+            const input = await Bun.stdin.json();
+            const realNow = Date.now;
+            Date.now = () => realNow() - 600_000;
+            const client = new SQL(input.url);
+            try {
+                const handler = applicationJobs([input.target], client).find((entry) => entry.definition.key === "applications.restart");
+                await handler.execute(input.payload, {
+                    runId: input.id, leaseToken: "synthetic", signal: AbortSignal.timeout(3000),
+                    reportProgress: async () => {},
+                    commit: async (write) => { await client.begin(write); return true; },
+                });
+                process.exitCode = 1;
+            } catch (error) {
+                if (error instanceof Error && error.message === "Application authorization expired or target changed")
+                    console.info("Expired using database time");
+                else process.exitCode = 1;
+            } finally { await client.close(); }
+        `,
+            ],
+            {
+                stdin: new Blob([
+                    JSON.stringify({
+                        url: database.url,
+                        target: docker.target,
+                        payload,
+                        id: first.id,
+                    }),
+                ]),
+                stdout: "pipe",
+                stderr: "pipe",
+            }
+        );
+        const [exitCode, output] = await Promise.all([
+            worker.exited,
+            new Response(worker.stdout).text(),
+            new Response(worker.stderr).text(),
+        ]);
+        expect(exitCode).toBe(0);
+        expect(output.trim()).toBe("Expired using database time");
+        expect(docker.calls).toHaveLength(1);
         expect(handler.definition).toMatchObject({
             retrySafe: false,
             attemptLimit: 1,

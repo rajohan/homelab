@@ -107,14 +107,9 @@ export function applicationJobs(
                 const intent = v.parse(payloadSchema, input);
                 const target = targets.find((item) => item.id === intent.host);
                 const [run] = await client<
-                    { created_at: Date }[]
-                >`SELECT created_at FROM job_runs WHERE id=${context.runId}`;
-                if (
-                    !target ||
-                    intent.operation !== operation ||
-                    !run ||
-                    Date.now() - run.created_at.getTime() > 120_000
-                )
+                    { eligible: boolean }[]
+                >`SELECT created_at >= now() - interval '2 minutes' AS eligible FROM job_runs WHERE id=${context.runId}`;
+                if (!target || intent.operation !== operation || !run?.eligible)
                     throw new Error(
                         "Application authorization expired or target changed"
                     );

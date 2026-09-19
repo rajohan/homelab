@@ -38,7 +38,9 @@ export async function performApplicationAction(
     const ids =
         intent.selection.kind === "container"
             ? [intent.selection.target]
-            : await port.list(signal);
+            : await port.list(signal, intent.selection.target);
+    if (ids.length === 0 || ids.length > 50)
+        throw new Error("Application selection changed before execution");
     const details: DockerDetail[] = [];
     for (const id of ids) {
         const detail = await port.inspect(id, signal);
@@ -60,15 +62,27 @@ export async function performApplicationAction(
         throw new Error("Application selection changed before execution");
     const project = intent.selection.kind === "project";
     const ordered = project ? orderApplicationDependencies(details) : details;
+    const mutated = new Set<string>();
+    const revalidate = async (detail: DockerDetail) => {
+        signal.throwIfAborted();
+        const current = await port.inspect(detail.Id, signal);
+        if (
+            !mutated.has(detail.Id) &&
+            mapDockerApplication(target, current).revision !==
+                mapDockerApplication(target, detail).revision
+        )
+            throw new Error("Application selection changed before execution");
+    };
     if (
         intent.operation === "stop" ||
         (intent.operation === "restart" && intent.selection.kind === "project")
     ) {
         for (const detail of ordered.toReversed()) {
             signal.throwIfAborted();
-            await port.inspect(detail.Id, signal);
             await report(`Stopping ${detail.Name.replace(/^\//, "").slice(0, 100)}.`);
+            await revalidate(detail);
             await port.act(detail.Id, "stop", signal);
+            mutated.add(detail.Id);
         }
     }
     if (intent.operation !== "stop") {
@@ -84,11 +98,12 @@ export async function performApplicationAction(
                     signal,
                     report
                 );
-            await port.inspect(detail.Id, signal);
             await report(
                 `${operation === "restart" ? "Restarting" : "Starting"} ${detail.Name.replace(/^\//, "").slice(0, 100)}.`
             );
+            await revalidate(detail);
             await port.act(detail.Id, operation, signal);
+            mutated.add(detail.Id);
         }
     }
     for (const detail of ordered) {
