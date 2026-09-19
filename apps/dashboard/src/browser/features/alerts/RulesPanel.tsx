@@ -31,7 +31,7 @@ export function RulesPanel() {
         retry: false,
     });
     const data = query.data;
-    const stale = query.isError || (data?.stale ?? true);
+    const stale = !data?.configured || query.isError || (data?.stale ?? true);
     const rows = (data?.inventory?.rules ?? []).filter(
         (rule) =>
             `${rule.name} ${rule.group}`.toLowerCase().includes(search.toLowerCase()) &&

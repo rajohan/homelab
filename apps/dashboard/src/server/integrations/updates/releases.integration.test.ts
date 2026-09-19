@@ -132,6 +132,27 @@ test.each([
         "example/web",
     ],
     ["ghcr.io/example/web:latest", "ghcr.io", "ghcr.io", "ghcr.io", "example/web"],
+    [
+        "index.docker.io/library/nginx:latest",
+        "registry-1.docker.io",
+        "auth.docker.io",
+        "registry.docker.io",
+        "library/nginx",
+    ],
+    [
+        "index.docker.io/nginx:latest",
+        "registry-1.docker.io",
+        "auth.docker.io",
+        "registry.docker.io",
+        "library/nginx",
+    ],
+    [
+        "index.docker.io/example/web:latest",
+        "registry-1.docker.io",
+        "auth.docker.io",
+        "registry.docker.io",
+        "example/web",
+    ],
 ])(
     "registry %s uses only its exact configured hosts and pull scope",
     async (reference, host, authHost, service, repository) => {
@@ -202,6 +223,8 @@ test.each([
     "evil-docker.io/web:latest",
     "registry-1.docker.io.attacker.example/web:latest",
     "ghcr.io.attacker.example/web:latest",
+    "index.docker.io.attacker.example/web:latest",
+    "evil-index.docker.io/web:latest",
 ])("lookalike registry %s never makes an outbound request", async (reference) => {
     const request: typeof fetch = Object.assign(
         () => {

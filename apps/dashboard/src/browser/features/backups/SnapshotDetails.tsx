@@ -1,11 +1,9 @@
 import type { BackupGroup } from "@homelab/contracts/backups";
 import {
     Badge,
-    DataTable,
     ErrorNotice,
     LoadingState,
     Modal,
-    formatDateTime,
     formatMetric,
     queryRefresh,
 } from "@homelab/ui";
@@ -13,7 +11,7 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 
 import { api } from "../../api/client";
 import { MetricStat } from "../infrastructure/MetricStat";
-import { SnapshotStatus } from "./SnapshotStatus";
+import { SnapshotTable } from "./SnapshotTable";
 
 /**
  * Inspect retained snapshot metadata with automatic bounded continuation, never archive access.
@@ -66,11 +64,9 @@ export function SnapshotDetails({
                 {query.isError && <ErrorNotice error={query.error} />}
                 {unavailable && <Badge tone="warning">Snapshot status unavailable</Badge>}
                 {rows.length > 0 ? (
-                    <DataTable
-                        label="Backup snapshots"
-                        compact
-                        rows={rows}
-                        getKey={(row) => row.id}
+                    <SnapshotTable
+                        snapshots={rows}
+                        unavailable={unavailable}
                         continuation={{
                             hasMore: query.hasNextPage,
                             loading: query.isFetching,
@@ -81,31 +77,6 @@ export function SnapshotDetails({
                                     : query.fetchNextPage()),
                             loadingLabel: "Loading snapshots…",
                         }}
-                        columns={[
-                            {
-                                id: "created",
-                                label: "Created",
-                                mobile: "title",
-                                render: (row) => formatDateTime(row.createdAt),
-                            },
-                            {
-                                id: "size",
-                                label: "Logical size",
-                                render: (row) => formatMetric(row.sizeBytes, "bytes"),
-                            },
-                            {
-                                id: "verification",
-                                label: "Verification",
-                                render: (row) => (
-                                    <SnapshotStatus snapshot={row} stale={unavailable} />
-                                ),
-                            },
-                            {
-                                id: "protected",
-                                label: "Protected",
-                                render: (row) => (row.protected ? "Yes" : "No"),
-                            },
-                        ]}
                     />
                 ) : (
                     !query.isPending && (

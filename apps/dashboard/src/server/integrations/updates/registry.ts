@@ -37,7 +37,10 @@ export async function latestImage(
     const fields = match?.groups;
     if (!fields?.repository) return null;
     const registry = fields.registry ?? "docker.io";
-    const dockerHub = registry === "docker.io" || registry === "registry-1.docker.io";
+    const dockerHub =
+        registry === "docker.io" ||
+        registry === "registry-1.docker.io" ||
+        registry === "index.docker.io";
     if (!dockerHub && registry !== "ghcr.io") return null;
     const origin = dockerHub ? "https://registry-1.docker.io" : "https://ghcr.io";
     const repository =

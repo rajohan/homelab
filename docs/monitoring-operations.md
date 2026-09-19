@@ -63,6 +63,12 @@ The value goes in `HOMELAB_DASHBOARD_UPDATE_SOURCES`. IDs and publisher accounts
 must be unique. The authenticated publisher determines the source; the submitted
 body cannot select another host. Human sessions cannot publish reports.
 
+Reports use POST `/api/automation/updates.publish`, with a 950,000-byte body limit
+matching the native publisher, including the transport envelope. Ordinary API
+requests retain their 65,536-byte limit. Both declared and streamed bodies are
+bounded; the transport also has a 1 MiB ceiling. Authentication, source binding
+and item-count validation still apply to the larger report route.
+
 `deploy/monitoring/update_inventory.py` reads APT's installed/candidate versions
 using python3-apt, explicitly configured runtime executables, an OpenClaw package
 manifest and optional allowlisted local Docker projects. It never runs
@@ -152,7 +158,9 @@ neither is inferred from firing incidents or backup task history.
   recorded verification status and protection state. Logical size is not physical
   datastore usage: PBS deduplication/compression makes these different quantities.
   File lists, owner names, comments and backup content are never retained.
-  Catalogs older than fifteen minutes remain visibly stale. Failed/partial reads do
+  Catalogs older than fifteen minutes remain visibly stale. Stale or unconfigured
+  catalogs and failed detail queries show unknown verification and protection state.
+  Removed rule configuration also makes retained rule health unavailable. Failed/partial reads do
   not replace a previously complete catalog. Maximum 5,000 snapshots and 2 MB per
   upstream response; exceeding a bound fails visibly rather than truncating counts.
 

@@ -32,7 +32,7 @@ export function SnapshotsPanel() {
         retry: false,
     });
     const data = query.data;
-    const stale = query.isError || (data?.stale ?? true);
+    const stale = !data?.configured || query.isError || (data?.stale ?? true);
     const groups = data?.inventory?.groups ?? [];
     const group = groups.find((row) => row.id === selected);
     const rows = groups.filter((row) =>
