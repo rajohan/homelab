@@ -53,10 +53,8 @@ export const notificationsRouter = trpc.router({
                     "Only an authorized automation account can publish external notifications."
                 );
             return {
-                id: await publishNotification(
-                    operations.client,
-                    `automation:${principal.id}`,
-                    input
+                id: await operations.client.begin((transaction) =>
+                    publishNotification(transaction, `automation:${principal.id}`, input)
                 ),
             };
         })

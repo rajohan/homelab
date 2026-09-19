@@ -75,10 +75,11 @@ export async function acknowledgeNotificationBatch(
     return client.begin(async (transaction) => {
         const rows = await transaction<
             { id: string }[]
-        >`SELECT n.id FROM dashboard_notifications n LEFT JOIN notification_receipts r ON r.notification_id = n.id AND r.actor = ${actor} WHERE n.publication_order <= ${input.through}::bigint AND r.dismissed_at IS NULL AND (${input.severity ?? null}::text IS NULL OR n.severity = ${input.severity ?? null}) AND ((${input.action} = 'read' AND r.read_at IS NULL) OR (${input.action} = 'dismissRead' AND r.read_at IS NOT NULL)) ORDER BY n.publication_order DESC LIMIT 100 FOR UPDATE OF n`;
-        for (const { id } of rows) {
+        >`SELECT n.id FROM dashboard_notifications n LEFT JOIN notification_receipts r ON r.notification_id = n.id AND r.actor = ${actor} WHERE n.publication_order <= ${input.through}::bigint AND r.dismissed_at IS NULL AND (${input.severity ?? null}::text IS NULL OR n.severity = ${input.severity ?? null}) AND ((${input.action} = 'read' AND r.read_at IS NULL) OR (${input.action} = 'dismissRead' AND r.read_at IS NOT NULL)) ORDER BY n.publication_order DESC LIMIT 101 FOR UPDATE OF n`;
+        const batch = rows.slice(0, 100);
+        for (const { id } of batch) {
             await transaction`INSERT INTO notification_receipts (notification_id, actor, read_at, dismissed_at) VALUES (${id}, ${actor}, now(), CASE WHEN ${input.action} = 'dismissRead' THEN now() ELSE NULL END) ON CONFLICT (notification_id, actor) DO UPDATE SET read_at = COALESCE(notification_receipts.read_at, now()), dismissed_at = CASE WHEN ${input.action} = 'dismissRead' THEN now() ELSE notification_receipts.dismissed_at END`;
         }
-        return { affected: rows.length, remaining: rows.length === 100 };
+        return { affected: batch.length, remaining: rows.length > batch.length };
     });
 }

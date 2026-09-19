@@ -8,7 +8,10 @@ cursor history, per-item read/unread/dismiss and bounded bulk actions.
 `server/notifications/publish.ts` is the producer boundary. A source and stable source key identify
 an immutable event; identical replays return the existing ID, conflicting content is rejected.
 Titles/messages are bounded plain text. Destinations are fixed dashboard sections, not arbitrary
-URLs. Publication joins the caller's transaction where appropriate. Tokens with
+URLs. Publication requires the caller's active transaction; the automation endpoint opens its own.
+A database-local transaction lock serializes sequence allocation through commit, so a delayed
+producer cannot appear beneath a newer, already visible bulk cutoff. Rollback releases the lock
+without publishing an event. Tokens with
 `notifications:publish` may publish through the automation API; their source is fixed to their
 account identity. Reading requires `notifications:read`; personal acknowledgements are human-only.
 
@@ -17,8 +20,10 @@ state per operator. Dismissal preserves a receipt so a producer replay cannot re
 Bulk actions capture a database-generated publication sequence boundary and process 100 records
 per transaction; later publications are not consumed even when producer clocks differ. UUIDs
 remain event identities only: newest-first pagination and cursors also use publication order,
-so producer clock skew cannot hide new events below old pages. UI processing stops after 10,000 records with explicit continuation
-instructions. Counts are always server-derived, never guessed from loaded pages.
+so producer clock skew cannot hide new events below old pages. Each batch reads one extra matching
+record to distinguish a full final batch from actual remaining work. UI processing stops after
+10,000 records, showing continuation instructions only if matching records remain. Counts are
+always server-derived, never guessed from loaded pages.
 
 Final manual job outcomes and final scheduled failures/timeouts publish once with the run ID.
 Retries do not emit premature failures; regular successful scheduled runs do not flood the inbox.
@@ -34,5 +39,6 @@ The inbox is currently an administrator workspace: read-capable principals can r
 events, so producers must never include credentials, payload secrets or private identity data.
 
 Verification covers immutable publication, per-operator receipts, filtered keyset pages, bounded
-clock-skew-safe bulk cutoffs, multi-batch retention and lease loss, capabilities, retries and atomic
-final outcomes against disposable PostgreSQL.
+clock-skew-safe bulk cutoffs, concurrent commits and rollback, exact 100/10,000/10,001-record batch
+boundaries, multi-batch retention and lease loss, capabilities, retries and atomic final outcomes
+against disposable PostgreSQL.

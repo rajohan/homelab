@@ -171,24 +171,26 @@ export async function main(): Promise<void> {
         const dashboardConnection = connectDashboardDatabase(dashboardUrl.href);
         try {
             await migrateDashboard(dashboardConnection);
-            for (const [index, severity] of (
-                ["success", "warning", "info", "error"] as const
-            ).entries()) {
-                await publishNotification(dashboardConnection.client, "preview", {
-                    key: String(index),
-                    severity,
-                    title:
-                        [
-                            "Application restart completed",
-                            "Application host unavailable",
-                            "Scheduled maintenance finished",
-                            "Application health check failed",
-                        ][index] ?? "Development notification",
-                    message:
-                        "This is a synthetic preview notification. No production application or alert has changed.",
-                    destination: "applications",
-                });
-            }
+            await dashboardConnection.client.begin(async (transaction) => {
+                for (const [index, severity] of (
+                    ["success", "warning", "info", "error"] as const
+                ).entries()) {
+                    await publishNotification(transaction, "preview", {
+                        key: String(index),
+                        severity,
+                        title:
+                            [
+                                "Application restart completed",
+                                "Application host unavailable",
+                                "Scheduled maintenance finished",
+                                "Application health check failed",
+                            ][index] ?? "Development notification",
+                        message:
+                            "This is a synthetic preview notification. No production application or alert has changed.",
+                        destination: "applications",
+                    });
+                }
+            });
         } finally {
             await dashboardConnection.client.close();
         }

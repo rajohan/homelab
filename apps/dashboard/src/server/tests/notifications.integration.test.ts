@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 
+import type { PublishNotification } from "@homelab/contracts/notifications";
 import { capabilities } from "@homelab/contracts/operations";
+import type { SQL } from "bun";
 
 import { appRouter } from "../api/router";
 import { claimJob, settleClaim } from "../jobs/claims";
@@ -17,6 +19,10 @@ const content = {
     destination: "jobs" as const,
 };
 
+function publishCommitted(client: SQL, source: string, input: PublishNotification) {
+    return client.begin((transaction) => publishNotification(transaction, source, input));
+}
+
 test("notification publication is immutable and deduplicated while acknowledgements belong to one operator", async () => {
     const fixture = await operationFixture();
     const caller = (id: string) =>
@@ -25,10 +31,10 @@ test("notification publication is immutable and deduplicated while acknowledgeme
             principal: { kind: "human", id, capabilities },
         });
     try {
-        const id = await publishNotification(fixture.client, "test", content);
-        expect(await publishNotification(fixture.client, "test", content)).toBe(id);
+        const id = await publishCommitted(fixture.client, "test", content);
+        expect(await publishCommitted(fixture.client, "test", content)).toBe(id);
         await expectOperationFailure(
-            publishNotification(fixture.client, "test", {
+            publishCommitted(fixture.client, "test", {
                 ...content,
                 message: "Different content",
             }),
@@ -44,7 +50,7 @@ test("notification publication is immutable and deduplicated while acknowledgeme
         await first.notifications.acknowledge({ id, action: "unread" });
         expect(await first.notifications.list({})).toMatchObject({ unreadCount: 1 });
         await first.notifications.acknowledge({ id, action: "dismiss" });
-        await publishNotification(fixture.client, "test", content);
+        await publishCommitted(fixture.client, "test", content);
         await first.notifications.acknowledge({ id, action: "read" });
         expect(await first.notifications.list({})).toMatchObject({ notifications: [] });
         const secondPage = await second.notifications.list({});
@@ -117,11 +123,11 @@ test("filtered notification pages and bounded bulk actions do not swallow new ar
     const fixture = await operationFixture();
     try {
         for (let index = 0; index < 105; index += 1)
-            await publishNotification(fixture.client, "batch", {
+            await publishCommitted(fixture.client, "batch", {
                 ...content,
                 key: String(index),
             });
-        await publishNotification(fixture.client, "batch", {
+        await publishCommitted(fixture.client, "batch", {
             ...content,
             key: "warning",
             severity: "warning",
@@ -142,7 +148,7 @@ test("filtered notification pages and bounded bulk actions do not swallow new ar
         });
         expect(older.notifications).toHaveLength(5);
         expect(older.nextCursor).toBeNull();
-        const arriving = await publishNotification(fixture.client, "batch", {
+        const arriving = await publishCommitted(fixture.client, "batch", {
             ...content,
             key: "arriving",
         });
@@ -194,6 +200,166 @@ test("filtered notification pages and bounded bulk actions do not swallow new ar
         await fixture.close();
     }
 });
+
+test("publication cursors cannot advance past an uncommitted producer", async () => {
+    const fixture = await operationFixture();
+    const release = Promise.withResolvers<void>();
+    const inserted = Promise.withResolvers<void>();
+    let first: Promise<string> | undefined;
+    let second: Promise<{ id: string }> | undefined;
+    let observedSecond = Promise.resolve(false);
+    try {
+        const initial = await publishCommitted(fixture.client, "concurrent", content);
+        const reader = appRouter.createCaller({
+            operations: fixture,
+            principal: { kind: "human", id: "reader", capabilities },
+        });
+        first = fixture.client.begin(async (transaction) => {
+            const id = await publishNotification(transaction, "concurrent", {
+                ...content,
+                key: "held-open",
+            });
+            inserted.resolve();
+            await release.promise;
+            return id;
+        });
+        await Promise.race([inserted.promise, first]);
+        // The independent automation endpoint must acquire the same lock inside
+        // its own transaction, not on a pool connection in autocommit mode.
+        second = appRouter
+            .createCaller({
+                operations: fixture,
+                principal: { kind: "automation", id: "publisher", capabilities },
+            })
+            .notifications.publish({ ...content, key: "second" });
+        let secondFinished = false;
+        observedSecond = second.then(
+            () => {
+                secondFinished = true;
+                return true;
+            },
+            () => {
+                secondFinished = true;
+                return true;
+            }
+        );
+        let waiting = false;
+        const deadline = performance.now() + 2000;
+        while (!waiting && !secondFinished && performance.now() < deadline) {
+            const [row] = await fixture.client<{ waiting: boolean }[]>`
+                SELECT EXISTS (
+                    SELECT 1 FROM pg_locks WHERE locktype = 'advisory'
+                    AND classid = 1869440354 AND objid = 2 AND NOT granted
+                    AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+                ) AS waiting`;
+            waiting = row?.waiting ?? false;
+            if (!waiting) await Bun.sleep(10);
+        }
+        expect(waiting).toBe(true);
+        const page = await reader.notifications.list({});
+        expect(page.notifications.map((item) => item.id)).toEqual([initial]);
+        if (!page.through) throw new Error("Missing committed cursor");
+        release.resolve();
+        const [firstId, { id: secondId }] = await Promise.all([first, second]);
+        const refreshed = await reader.notifications.list({});
+        expect(refreshed.notifications.map((item) => item.id)).toEqual([
+            secondId,
+            firstId,
+            initial,
+        ]);
+        expect(
+            await reader.notifications.acknowledgeBatch({
+                through: page.through,
+                action: "read",
+            })
+        ).toEqual({ affected: 1, remaining: false });
+        const unread = await reader.notifications.list({ state: "unread" });
+        expect(unread.notifications.map((item) => item.id)).toEqual([secondId, firstId]);
+    } finally {
+        release.resolve();
+        await Promise.allSettled([first, second, observedSecond]);
+        await fixture.close();
+    }
+});
+
+test("rolling back a producer releases publication ordering without leaking a notification", async () => {
+    const fixture = await operationFixture();
+    try {
+        await expectOperationFailure(
+            fixture.client.begin(async (transaction) => {
+                await publishNotification(transaction, "rollback", content);
+                throw new Error("Producer rolled back");
+            }),
+            "Producer rolled back"
+        );
+        expect(await fixture.client`SELECT id FROM dashboard_notifications`).toHaveLength(
+            0
+        );
+        const ids = await Promise.all(
+            Array.from({ length: 3 }, () =>
+                publishCommitted(fixture.client, "rollback", content)
+            )
+        );
+        expect(new Set(ids).size).toBe(1);
+        expect(await fixture.client`SELECT id FROM dashboard_notifications`).toHaveLength(
+            1
+        );
+    } finally {
+        await fixture.close();
+    }
+});
+
+test.each([100, 10_000, 10_001])(
+    "notification batches report actual remaining work for %i records",
+    async (count) => {
+        const fixture = await operationFixture();
+        try {
+            await fixture.client`INSERT INTO dashboard_notifications (id, source, source_key, title, message, severity) SELECT gen_random_uuid(), 'bulk-fixture', number::text, 'Completed', 'Recorded event', 'success' FROM generate_series(1, ${count}::int) AS number`;
+            const caller = appRouter.createCaller({
+                operations: fixture,
+                principal: { kind: "human", id: "operator", capabilities },
+            });
+            const page = await caller.notifications.list({ severity: "success" });
+            if (!page.through) throw new Error("Missing bulk cursor");
+            await publishCommitted(fixture.client, "bulk-fixture", {
+                ...content,
+                key: "new-arrival",
+            });
+            for (const action of ["read", "dismissRead"] as const) {
+                let affected = 0;
+                let remaining = true;
+                let batches = 0;
+                while (remaining && batches < 100) {
+                    const result = await caller.notifications.acknowledgeBatch({
+                        through: page.through,
+                        severity: "success",
+                        action,
+                    });
+                    affected += result.affected;
+                    remaining = result.remaining;
+                    batches += 1;
+                }
+                expect(affected).toBe(Math.min(count, 10_000));
+                expect(batches).toBe(Math.min(Math.ceil(count / 100), 100));
+                expect(remaining).toBe(count > 10_000);
+                if (remaining)
+                    expect(
+                        await caller.notifications.acknowledgeBatch({
+                            through: page.through,
+                            severity: "success",
+                            action,
+                        })
+                    ).toEqual({ affected: 1, remaining: false });
+            }
+            const remaining = await caller.notifications.list({});
+            expect(remaining.unreadCount).toBe(1);
+            expect(remaining.notifications).toHaveLength(1);
+        } finally {
+            await fixture.close();
+        }
+    },
+    30_000
+);
 
 test("final job notifications share settlement and retries do not report premature failure", async () => {
     const fixture = await operationFixture();
