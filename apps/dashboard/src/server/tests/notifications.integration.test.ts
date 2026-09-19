@@ -5,10 +5,12 @@ import { capabilities } from "@homelab/contracts/operations";
 import type { SQL } from "bun";
 
 import { appRouter } from "../api/router";
+import type { Transaction } from "../database/connection";
 import { claimJob, settleClaim } from "../jobs/claims";
 import { maintenanceJob } from "../jobs/maintenance";
 import { enqueueJob, lockQueue } from "../jobs/queue";
 import { publishNotification } from "../notifications/publish";
+import { listNotifications, acknowledgeNotification } from "../notifications/repository";
 import { operationFixture, expectOperationFailure } from "../testing/operations";
 
 const content = {
@@ -22,6 +24,91 @@ const content = {
 function publishCommitted(client: SQL, source: string, input: PublishNotification) {
     return client.begin((transaction) => publishNotification(transaction, source, input));
 }
+
+function interceptNotificationReads<T extends SQL>(
+    client: T,
+    afterRead: () => Promise<void>
+): T {
+    // Keep real PostgreSQL reads/transactions while deterministically committing
+    // another connection's work between the page and aggregate queries.
+    return new Proxy(client, {
+        apply(target, receiver: unknown, argumentsList: unknown[]) {
+            const query: unknown = Reflect.apply(target, receiver, argumentsList);
+            return Promise.resolve(query).then(async (result: unknown) => {
+                await afterRead();
+                return result;
+            });
+        },
+        get(target, property, receiver: unknown): unknown {
+            if (property === "begin")
+                return (
+                    options: string,
+                    run: (transaction: Transaction) => Promise<unknown>
+                ) =>
+                    target.begin(options, (transaction) =>
+                        run(interceptNotificationReads(transaction, afterRead))
+                    );
+            const value: unknown = Reflect.get(target, property, receiver);
+            return value;
+        },
+    });
+}
+
+test("notification rows, receipts, counts and bulk cutoff share one database snapshot", async () => {
+    const fixture = await operationFixture();
+    try {
+        const initial = await publishCommitted(fixture.client, "snapshot", content);
+        const before = await listNotifications(fixture.client, "human:reader", {
+            state: "all",
+            limit: 20,
+        });
+        let reads = 0;
+        const reader = interceptNotificationReads(fixture.client, async () => {
+            reads += 1;
+            if (reads === 1) {
+                await publishCommitted(fixture.client, "snapshot", {
+                    ...content,
+                    key: "arriving",
+                });
+                await acknowledgeNotification(
+                    fixture.client,
+                    "human:reader",
+                    initial,
+                    "read"
+                );
+            }
+        });
+        const page = await listNotifications(reader, "human:reader", {
+            state: "all",
+            limit: 20,
+        });
+        expect(reads).toBe(2);
+        expect(page).toEqual(before);
+        const refreshed = await listNotifications(fixture.client, "human:reader", {
+            state: "all",
+            limit: 20,
+        });
+        expect(refreshed.notifications).toHaveLength(2);
+        expect(refreshed).toMatchObject({ unreadCount: 1, readCount: 1 });
+        expect(refreshed.through).not.toBe(page.through);
+        if (!page.through) throw new Error("Missing snapshot cutoff");
+        const caller = appRouter.createCaller({
+            operations: fixture,
+            principal: { kind: "human", id: "reader", capabilities },
+        });
+        expect(
+            await caller.notifications.acknowledgeBatch({
+                through: page.through,
+                action: "read",
+            })
+        ).toEqual({ affected: 0, remaining: false });
+        expect(await caller.notifications.list({ state: "unread" })).toMatchObject({
+            unreadCount: 1,
+        });
+    } finally {
+        await fixture.close();
+    }
+});
 
 test("notification publication is immutable and deduplicated while acknowledgements belong to one operator", async () => {
     const fixture = await operationFixture();

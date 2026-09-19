@@ -63,6 +63,16 @@ export async function performApplicationAction(
     const project = intent.selection.kind === "project";
     const ordered = project ? orderApplicationDependencies(details) : details;
     const mutated = new Set<string>();
+    const selectedIds = new Set(details.map((detail) => detail.Id));
+    const revalidateMembership = async () => {
+        if (intent.selection.kind !== "project") return;
+        const currentIds = await port.list(signal, intent.selection.target);
+        if (
+            currentIds.length !== selectedIds.size ||
+            currentIds.some((id) => !selectedIds.has(id))
+        )
+            throw new Error("Application project membership changed before execution");
+    };
     const revalidate = async (detail: DockerDetail) => {
         signal.throwIfAborted();
         const current = await port.inspect(detail.Id, signal);
@@ -72,6 +82,7 @@ export async function performApplicationAction(
                 mapDockerApplication(target, detail).revision
         )
             throw new Error("Application selection changed before execution");
+        await revalidateMembership();
     };
     if (
         intent.operation === "stop" ||
@@ -121,5 +132,6 @@ export async function performApplicationAction(
         if (!["exited", "created"].includes(current.State.Status))
             throw new Error("Container has not reached the requested state");
     }
+    await revalidateMembership();
     await report("All selected containers reached the requested state.");
 }

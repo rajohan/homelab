@@ -113,6 +113,7 @@ export async function waitForApplicationDependencies(
                     break;
                 if (
                     dependency.condition === "service_healthy" &&
+                    current.State.Status === "running" &&
                     current.State.Health?.Status === "healthy"
                 )
                     break;
@@ -123,9 +124,10 @@ export async function waitForApplicationDependencies(
                 )
                     break;
                 if (
-                    current.State.Health?.Status === "unhealthy" ||
                     ["dead", "exited"].includes(current.State.Status) ||
-                    (dependency.condition === "service_healthy" && !current.State.Health)
+                    (dependency.condition === "service_healthy" &&
+                        (!current.State.Health ||
+                            current.State.Health.Status === "unhealthy"))
                 )
                     throw new Error("Application dependency did not become ready");
                 await pause(signal);
@@ -141,7 +143,7 @@ export async function waitForApplicationDependencies(
  * @param signal - Cancellation and bounded execution deadline.
  * @param report - Shared job progress publisher; no provider error text is forwarded.
  * @param allowCompleted - Whether this project expects a successful one-shot dependency.
- * @returns Once the container is running and healthy, or has completed as declared.
+ * @returns Once a long-running container is ready, or a completion dependency exits successfully.
  */
 export async function waitForApplicationReady(
     item: DockerDetail,
@@ -150,13 +152,16 @@ export async function waitForApplicationReady(
     report: (message: string) => Promise<void>,
     allowCompleted: boolean
 ): Promise<void> {
+    const runningState = item.State.Health ? "become healthy" : "reach its ready state";
+    const expectedState = allowCompleted ? "complete successfully" : runningState;
     await report(
-        `Waiting for ${item.Name.replace(/^\//, "").slice(0, 100)} to ${item.State.Health ? "become healthy" : "reach its ready state"}.`
+        `Waiting for ${item.Name.replace(/^\//, "").slice(0, 100)} to ${expectedState}.`
     );
     for (;;) {
         signal.throwIfAborted();
         const current = await port.inspect(item.Id, signal);
         if (
+            !allowCompleted &&
             current.State.Status === "running" &&
             (!current.State.Health || current.State.Health.Status === "healthy")
         )
@@ -169,7 +174,7 @@ export async function waitForApplicationReady(
             return;
         if (
             ["dead", "exited", "paused"].includes(current.State.Status) ||
-            current.State.Health?.Status === "unhealthy"
+            (!allowCompleted && current.State.Health?.Status === "unhealthy")
         ) {
             await report(
                 `${item.Name.replace(/^\//, "").slice(0, 100)} failed its readiness check.`

@@ -6,6 +6,7 @@ import {
 } from "../../testing/applications";
 import { expectOperationFailure, operationFixture } from "../../testing/operations";
 import { performApplicationAction } from "./actions";
+import { waitForApplicationReady } from "./dependencies";
 import { createDockerPort, type DockerPort } from "./docker";
 import {
     collectApplications,
@@ -258,6 +259,306 @@ test.each(["start", "stop", "restart"] as const)(
             expect(fixture.calls).toEqual(
                 operation === "start" ? ["start:database"] : ["stop:web"]
             );
+        } finally {
+            await fixture.close();
+        }
+    }
+);
+
+test("a container added during initial inspection invalidates the project action before any write", async () => {
+    const fixture = createApplicationFixture();
+    try {
+        const port = createDockerPort(fixture.target, {});
+        const selection = { kind: "project" as const, target: "demo" };
+        const revision = selectionRevision(
+            [...fixture.containers.values()].map((detail) =>
+                mapDockerApplication(fixture.target, detail)
+            ),
+            selection
+        );
+        const changed: DockerPort = {
+            ...port,
+            inspect: async (id, signal) => {
+                const detail = await port.inspect(id, signal);
+                const added = applicationFixtureDetail("e".repeat(64), "added");
+                fixture.containers.set(added.Id, added);
+                return detail;
+            },
+        };
+        await expectOperationFailure(
+            performApplicationAction(
+                fixture.target,
+                changed,
+                { selection, revision, operation: "stop" },
+                AbortSignal.timeout(3000)
+            ),
+            "membership changed"
+        );
+        expect(fixture.calls).toEqual([]);
+    } finally {
+        await fixture.close();
+    }
+});
+
+test.each(["start", "stop", "restart"] as const)(
+    "%s stops remaining mutations when project membership changes after preceding work",
+    async (operation) => {
+        const fixture = createApplicationFixture();
+        try {
+            const port = createDockerPort(fixture.target, {});
+            const selection = { kind: "project" as const, target: "demo" };
+            const revision = selectionRevision(
+                [...fixture.containers.values()].map((detail) =>
+                    mapDockerApplication(fixture.target, detail)
+                ),
+                selection
+            );
+            await expectOperationFailure(
+                performApplicationAction(
+                    fixture.target,
+                    port,
+                    { selection, revision, operation },
+                    AbortSignal.timeout(3000),
+                    (message) => {
+                        if (
+                            message ===
+                            (operation === "start"
+                                ? "Starting demo-web."
+                                : "Stopping demo-database.")
+                        ) {
+                            const added = applicationFixtureDetail(
+                                "e".repeat(64),
+                                "added"
+                            );
+                            fixture.containers.set(added.Id, added);
+                        }
+                        return Promise.resolve();
+                    }
+                ),
+                "membership changed"
+            );
+            expect(fixture.calls).toEqual(
+                operation === "start" ? ["start:database"] : ["stop:web"]
+            );
+        } finally {
+            await fixture.close();
+        }
+    }
+);
+
+test("project restart rechecks membership even before restarting already-stopped members", async () => {
+    const fixture = createApplicationFixture();
+    try {
+        const port = createDockerPort(fixture.target, {});
+        const selection = { kind: "project" as const, target: "demo" };
+        const revision = selectionRevision(
+            [...fixture.containers.values()].map((detail) =>
+                mapDockerApplication(fixture.target, detail)
+            ),
+            selection
+        );
+        await expectOperationFailure(
+            performApplicationAction(
+                fixture.target,
+                port,
+                { selection, revision, operation: "restart" },
+                AbortSignal.timeout(3000),
+                (message) => {
+                    if (message === "Starting demo-database.") {
+                        fixture.containers.delete("b".repeat(64));
+                        const replacement = applicationFixtureDetail(
+                            "e".repeat(64),
+                            "web"
+                        );
+                        fixture.containers.set(replacement.Id, replacement);
+                    }
+                    return Promise.resolve();
+                }
+            ),
+            "membership changed"
+        );
+        expect(fixture.calls).toEqual(["stop:web", "stop:database"]);
+    } finally {
+        await fixture.close();
+    }
+});
+
+test("project membership comparison ignores listing order but catches additions during the final call", async () => {
+    const fixture = createApplicationFixture();
+    try {
+        const port = createDockerPort(fixture.target, {});
+        const selection = { kind: "project" as const, target: "demo" };
+        const revision = selectionRevision(
+            [...fixture.containers.values()].map((detail) =>
+                mapDockerApplication(fixture.target, detail)
+            ),
+            selection
+        );
+        let listings = 0;
+        const reordered: DockerPort = {
+            ...port,
+            list: async (signal, project) => {
+                const ids = await port.list(signal, project);
+                listings += 1;
+                return listings % 2 === 0 ? ids.toReversed() : ids;
+            },
+            act: async (id, operation, signal) => {
+                await port.act(id, operation, signal);
+                if (fixture.calls.length === 2) {
+                    const added = applicationFixtureDetail("e".repeat(64), "added");
+                    fixture.containers.set(added.Id, added);
+                }
+            },
+        };
+        await expectOperationFailure(
+            performApplicationAction(
+                fixture.target,
+                reordered,
+                { selection, revision, operation: "stop" },
+                AbortSignal.timeout(3000)
+            ),
+            "membership changed"
+        );
+        expect(fixture.calls).toEqual(["stop:web", "stop:database"]);
+        expect(listings).toBe(4);
+    } finally {
+        await fixture.close();
+    }
+});
+
+test.each(["success", "nonzero", "dead"] as const)(
+    "completion-only dependencies ignore transient unhealthy state and honor %s terminal status",
+    async (outcome) => {
+        const fixture = createApplicationFixture();
+        try {
+            const database = fixture.containers.get("a".repeat(64));
+            const web = fixture.containers.get("b".repeat(64));
+            if (!database || !web) throw new Error("Missing dependency fixture");
+            database.State.Health = { Status: "unhealthy" };
+            web.Config.Labels = {
+                ...web.Config.Labels,
+                "com.docker.compose.depends_on":
+                    "database:service_completed_successfully:false",
+            };
+            const port = createDockerPort(fixture.target, {});
+            const selection = { kind: "project" as const, target: "demo" };
+            const revision = selectionRevision(
+                [...fixture.containers.values()].map((detail) =>
+                    mapDockerApplication(fixture.target, detail)
+                ),
+                selection
+            );
+            let unhealthyReads = 0;
+            const completing: DockerPort = {
+                ...port,
+                inspect: async (id, signal) => {
+                    const current = await port.inspect(id, signal);
+                    if (
+                        id === database.Id &&
+                        fixture.calls.length > 0 &&
+                        current.State.Status === "running"
+                    ) {
+                        unhealthyReads += 1;
+                        database.State.Status = outcome === "dead" ? "dead" : "exited";
+                        database.State.ExitCode = outcome === "nonzero" ? 1 : 0;
+                    }
+                    return current;
+                },
+            };
+            const operation = performApplicationAction(
+                fixture.target,
+                completing,
+                { selection, revision, operation: "start" },
+                AbortSignal.timeout(3000)
+            );
+            await (outcome === "success"
+                ? operation
+                : expectOperationFailure(operation, "did not become ready"));
+            expect(unhealthyReads).toBe(1);
+            expect(fixture.calls).toEqual(
+                outcome === "success"
+                    ? ["start:database", "start:web"]
+                    : ["start:database"]
+            );
+        } finally {
+            await fixture.close();
+        }
+    }
+);
+
+test.each(["exited", "dead"] as const)(
+    "a healthy dependency must still be running rather than %s",
+    async (status) => {
+        const fixture = createApplicationFixture();
+        try {
+            const database = fixture.containers.get("a".repeat(64));
+            if (!database) throw new Error("Missing dependency fixture");
+            const port = createDockerPort(fixture.target, {});
+            const selection = { kind: "project" as const, target: "demo" };
+            const revision = selectionRevision(
+                [...fixture.containers.values()].map((detail) =>
+                    mapDockerApplication(fixture.target, detail)
+                ),
+                selection
+            );
+            const terminated: DockerPort = {
+                ...port,
+                inspect: (id, signal) => {
+                    if (id === database.Id && fixture.calls.length > 0)
+                        database.State.Status = status;
+                    return port.inspect(id, signal);
+                },
+            };
+            await expectOperationFailure(
+                performApplicationAction(
+                    fixture.target,
+                    terminated,
+                    { selection, revision, operation: "start" },
+                    AbortSignal.timeout(3000)
+                ),
+                "did not become ready"
+            );
+            expect(fixture.calls).toEqual(["start:database"]);
+        } finally {
+            await fixture.close();
+        }
+    }
+);
+
+test.each(["healthy", "unhealthy"] as const)(
+    "final completion readiness waits for exit even while a one-shot is %s",
+    async (health) => {
+        const fixture = createApplicationFixture();
+        try {
+            const item = fixture.containers.get("a".repeat(64));
+            if (!item) throw new Error("Missing completion fixture");
+            item.State.Health = { Status: health };
+            const port = createDockerPort(fixture.target, {});
+            let inspections = 0;
+            const completing: DockerPort = {
+                ...port,
+                inspect: async (id, signal) => {
+                    const current = await port.inspect(id, signal);
+                    inspections += 1;
+                    item.State.Status = "exited";
+                    return current;
+                },
+            };
+            const messages: string[] = [];
+            await waitForApplicationReady(
+                item,
+                completing,
+                AbortSignal.timeout(3000),
+                (message) => {
+                    messages.push(message);
+                    return Promise.resolve();
+                },
+                true
+            );
+            expect(inspections).toBe(2);
+            expect(messages).toEqual([
+                "Waiting for demo-database to complete successfully.",
+            ]);
         } finally {
             await fixture.close();
         }

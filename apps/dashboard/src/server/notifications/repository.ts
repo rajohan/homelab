@@ -20,23 +20,30 @@ export async function listNotifications(
     actor: string,
     input: NotificationPageInput
 ): Promise<NotificationPage> {
-    const rows = await client<
-        (NotificationRecord & { cursor: string })[]
-    >`SELECT n.id, n.publication_order::text AS cursor, n.source, n.title, n.message, n.severity, n.destination, n.created_at::text AS "createdAt", r.read_at::text AS "readAt" FROM dashboard_notifications n LEFT JOIN notification_receipts r ON r.notification_id = n.id AND r.actor = ${actor} WHERE r.dismissed_at IS NULL AND (${input.before ?? null}::bigint IS NULL OR n.publication_order < ${input.before ?? null}::bigint) AND (${input.severity ?? null}::text IS NULL OR n.severity = ${input.severity ?? null}) AND (${input.state} = 'all' OR (${input.state} = 'read' AND r.read_at IS NOT NULL) OR (${input.state} = 'unread' AND r.read_at IS NULL)) ORDER BY n.publication_order DESC LIMIT ${input.limit + 1}`;
-    const [counts] = await client<
-        { unreadCount: number; readCount: number; through: string | null }[]
-    >`SELECT count(*) FILTER (WHERE r.read_at IS NULL)::int AS "unreadCount", count(*) FILTER (WHERE r.read_at IS NOT NULL)::int AS "readCount", max(n.publication_order)::text AS through FROM dashboard_notifications n LEFT JOIN notification_receipts r ON r.notification_id = n.id AND r.actor = ${actor} WHERE r.dismissed_at IS NULL AND (${input.severity ?? null}::text IS NULL OR n.severity = ${input.severity ?? null})`;
-    const notifications = rows.slice(0, input.limit);
-    return {
-        notifications: notifications.map(
-            ({ cursor: _cursor, ...notification }) => notification
-        ),
-        nextCursor:
-            rows.length > input.limit ? (notifications.at(-1)?.cursor ?? null) : null,
-        unreadCount: counts?.unreadCount ?? 0,
-        readCount: counts?.readCount ?? 0,
-        through: counts?.through ?? null,
-    };
+    return client.begin(
+        "ISOLATION LEVEL REPEATABLE READ READ ONLY",
+        async (transaction) => {
+            const rows = await transaction<
+                (NotificationRecord & { cursor: string })[]
+            >`SELECT n.id, n.publication_order::text AS cursor, n.source, n.title, n.message, n.severity, n.destination, n.created_at::text AS "createdAt", r.read_at::text AS "readAt" FROM dashboard_notifications n LEFT JOIN notification_receipts r ON r.notification_id = n.id AND r.actor = ${actor} WHERE r.dismissed_at IS NULL AND (${input.before ?? null}::bigint IS NULL OR n.publication_order < ${input.before ?? null}::bigint) AND (${input.severity ?? null}::text IS NULL OR n.severity = ${input.severity ?? null}) AND (${input.state} = 'all' OR (${input.state} = 'read' AND r.read_at IS NOT NULL) OR (${input.state} = 'unread' AND r.read_at IS NULL)) ORDER BY n.publication_order DESC LIMIT ${input.limit + 1}`;
+            const [counts] = await transaction<
+                { unreadCount: number; readCount: number; through: string | null }[]
+            >`SELECT count(*) FILTER (WHERE r.read_at IS NULL)::int AS "unreadCount", count(*) FILTER (WHERE r.read_at IS NOT NULL)::int AS "readCount", max(n.publication_order)::text AS through FROM dashboard_notifications n LEFT JOIN notification_receipts r ON r.notification_id = n.id AND r.actor = ${actor} WHERE r.dismissed_at IS NULL AND (${input.severity ?? null}::text IS NULL OR n.severity = ${input.severity ?? null})`;
+            const notifications = rows.slice(0, input.limit);
+            return {
+                notifications: notifications.map(
+                    ({ cursor: _cursor, ...notification }) => notification
+                ),
+                nextCursor:
+                    rows.length > input.limit
+                        ? (notifications.at(-1)?.cursor ?? null)
+                        : null,
+                unreadCount: counts?.unreadCount ?? 0,
+                readCount: counts?.readCount ?? 0,
+                through: counts?.through ?? null,
+            };
+        }
+    );
 }
 
 /**

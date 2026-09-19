@@ -4,8 +4,10 @@ Applications manages **existing** Docker containers and Compose-labelled project
 and restart never pull images, rebuild, recreate, prune, delete data or execute arbitrary commands.
 Project operations use Docker's API with Compose dependency labels; this is not a replacement
 for `docker compose up`. Missing/unsupported dependencies and cycles fail before writes.
-Readiness conditions are respected when starting dependents; failures can leave a project partly
-changed. Such operations are never automatically retried.
+Readiness conditions are respected when starting dependents: `service_healthy` requires a running,
+healthy container, while `service_completed_successfully` waits for exit code zero independently
+of transient health-check failures. Final checks likewise require declared one-shot dependencies
+to complete. Failures can leave a project partly changed. Such operations are never automatically retried.
 
 ## Boundaries
 
@@ -36,8 +38,10 @@ fresh snapshots for reachable hosts. Whole-job cancellation still aborts collect
 revisions include health status, so health-only changes also invalidate stale lifecycle intents.
 Project actions list only the selected allowlisted project, without inspecting unrelated projects.
 Each container is revalidated again immediately before its first mutation, after any dependency
-waits or earlier operations. Docker has no conditional compare-and-mutate API, so this narrows
-the race window but cannot make external mutations atomic.
+waits or earlier operations. The project's exact membership is re-listed before every mutation,
+including the start phase of a restart, and before reporting completion. Added, removed or replaced
+members fail closed; listing order does not matter. Docker has no conditional compare-and-mutate
+API, so this narrows the race window but cannot make external mutations atomic.
 
 Discovery accepts at most 20 hosts and 200 containers per host. Each inspect response is
 limited to 512 KiB, with at most 32 networks, 128 exposed ports, eight bindings per port and

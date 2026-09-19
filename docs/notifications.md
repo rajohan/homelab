@@ -17,6 +17,8 @@ account identity. Reading requires `notifications:read`; personal acknowledgemen
 
 `dashboard_notifications` stores producer events. `notification_receipts` stores read/dismissed
 state per operator. Dismissal preserves a receipt so a producer replay cannot resurrect an event.
+Page rows, receipts, counts and the bulk cutoff share one read-only, repeatable-read transaction;
+a concurrent commit cannot advance the returned cutoff beyond that page's database snapshot.
 Bulk actions capture a database-generated publication sequence boundary and process 100 records
 per transaction; later publications are not consumed even when producer clocks differ. UUIDs
 remain event identities only: newest-first pagination and cursors also use publication order,
@@ -39,6 +41,7 @@ The inbox is currently an administrator workspace: read-capable principals can r
 events, so producers must never include credentials, payload secrets or private identity data.
 
 Verification covers immutable publication, per-operator receipts, filtered keyset pages, bounded
-clock-skew-safe bulk cutoffs, concurrent commits and rollback, exact 100/10,000/10,001-record batch
+clock-skew-safe bulk cutoffs, publication/receipt changes between page and count reads, concurrent
+commits and rollback, exact 100/10,000/10,001-record batch
 boundaries, multi-batch retention and lease loss, capabilities, retries and atomic final outcomes
 against disposable PostgreSQL.
