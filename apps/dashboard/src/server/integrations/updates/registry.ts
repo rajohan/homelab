@@ -37,11 +37,11 @@ export async function latestImage(
     const fields = match?.groups;
     if (!fields?.repository) return null;
     const registry = fields.registry ?? "docker.io";
-    if (!["docker.io", "registry-1.docker.io", "ghcr.io"].includes(registry)) return null;
-    const origin =
-        registry === "ghcr.io" ? "https://ghcr.io" : "https://registry-1.docker.io";
+    const dockerHub = registry === "docker.io" || registry === "registry-1.docker.io";
+    if (!dockerHub && registry !== "ghcr.io") return null;
+    const origin = dockerHub ? "https://registry-1.docker.io" : "https://ghcr.io";
     const repository =
-        origin.includes("docker.io") && !fields.repository.includes("/")
+        dockerHub && !fields.repository.includes("/")
             ? "library/" + fields.repository
             : fields.repository;
     let token: string | undefined;
@@ -61,14 +61,14 @@ export async function latestImage(
             const challenge = response.headers.get("www-authenticate") ?? "";
             await response.body?.cancel();
             const realm = /realm="([^"]+)"/.exec(challenge)?.[1];
-            const expected = origin.includes("docker.io")
+            const expected = dockerHub
                 ? "https://auth.docker.io/token"
                 : "https://ghcr.io/token";
             if (!/^Bearer /i.test(challenge) || realm !== expected)
                 throw new Error("Unsupported registry authentication challenge");
             const auth = new URL(expected);
             auth.search = new URLSearchParams({
-                service: origin.includes("docker.io") ? "registry.docker.io" : "ghcr.io",
+                service: dockerHub ? "registry.docker.io" : "ghcr.io",
                 scope: `repository:${repository}:pull`,
             }).toString();
             const result = v.parse(
