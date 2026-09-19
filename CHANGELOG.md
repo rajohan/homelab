@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/rajohan/homelab/compare/v0.3.0...v0.4.0) (2026-09-19)
+
+
+### Features
+
+* **dashboard:** add application operations and notification inbox ([#13](https://github.com/rajohan/homelab/issues/13)) ([ccb2c18](https://github.com/rajohan/homelab/commit/ccb2c18c647f7369051229497d91709660344929))
+
 ## [0.3.0](https://github.com/rajohan/homelab/compare/v0.2.0...v0.3.0) (2026-09-18)
 
 
