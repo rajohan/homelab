@@ -8,6 +8,7 @@ export const systemStatusSchema = v.strictObject({
     phase: v.literal("operations"),
     authenticationImplemented: v.literal(true),
     integrationsImplemented: v.literal(true),
+    operationsConfigured: v.boolean(),
     auth: v.strictObject({
         provider: v.literal("homelab"),
     }),

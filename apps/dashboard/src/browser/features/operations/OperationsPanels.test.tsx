@@ -248,43 +248,64 @@ test("incident views keep alert state independent from notification receipts", a
     }
 });
 
-test("backup inventory exposes dated results and never keeps healthy status on a stale observation", async () => {
-    const cleanup = fixture(<BackupsPanel />, (query) =>
-        query.setQueryData(["operations", "backups"], {
-            configured: true,
-            stale: true,
-            inventory: {
-                capturedAt: "2026-09-01T10:00:00Z",
-                backups: [
-                    {
-                        id: "demo",
-                        host: "demo",
-                        task: "postgres-logical",
-                        state: "healthy",
-                        lastSuccessAt: "2026-09-01T10:00:00Z",
-                        lastFailureAt: null,
-                        maximumAgeSeconds: 86_400,
-                    },
-                ],
-            },
-        })
-    );
-    try {
-        expect(screen.getByText("Stale data")).toBeVisible();
-        expect(screen.getByText("postgres-logical")).toBeVisible();
-        const user = userEvent.setup();
-        await user.type(
-            screen.getByRole("searchbox", { name: "Search backups" }),
-            "missing"
+test.each([
+    [true, true, "Stale data"],
+    [false, false, "Not configured"],
+] as const)(
+    "backup inventory configuration %s and stale %s never claim retained health",
+    async (configured, stale, label) => {
+        const cleanup = fixture(<BackupsPanel />, (query) =>
+            query.setQueryData(["operations", "backups"], {
+                configured,
+                stale,
+                inventory: {
+                    capturedAt: "2026-09-01T10:00:00Z",
+                    backups: [
+                        {
+                            id: "demo",
+                            host: "demo",
+                            task: "postgres-logical",
+                            state: "healthy",
+                            lastSuccessAt: "2026-09-01T10:00:00Z",
+                            lastFailureAt: null,
+                            maximumAgeSeconds: 86_400,
+                        },
+                    ],
+                },
+            })
         );
-        expect(screen.getByText("No matching backup tasks.")).toBeVisible();
-        expect(
-            screen.queryByRole("button", { name: /restore|delete/i })
-        ).not.toBeInTheDocument();
-    } finally {
-        cleanup();
+        try {
+            expect(screen.getByText(label)).toBeVisible();
+            expect(
+                screen.getByText("Healthy", { selector: "dt" }).nextElementSibling
+            ).toHaveTextContent("—");
+            expect(
+                screen.getByText("Needs attention", { selector: "dt" }).nextElementSibling
+            ).toHaveTextContent("—");
+            expect(
+                screen.getByText("Unknown", { selector: "dt" }).nextElementSibling
+            ).toHaveTextContent("1");
+            expect(screen.getByText("Unknown", { selector: "span" })).toHaveClass(
+                "text-amber-300"
+            );
+            expect(
+                screen.queryByText("Healthy", { selector: "span" })
+            ).not.toBeInTheDocument();
+            expect(screen.getByText("postgres-logical")).toBeVisible();
+            const user = userEvent.setup();
+            await user.type(
+                screen.getByRole("searchbox", { name: "Search backups" }),
+                "missing"
+            );
+            expect(screen.getByText("No matching backup tasks.")).toBeVisible();
+            expect(
+                screen.queryByRole("button", { name: /restore|delete/i })
+            ).not.toBeInTheDocument();
+        } finally {
+            cleanup();
+        }
     }
-});
+);
 
 test("software views show source coverage, held security updates and read-only paginated lists", () => {
     const cleanup = fixture(<UpdatesPanel />, (query) => {

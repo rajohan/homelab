@@ -11,7 +11,7 @@ import { jobsRouter } from "../jobs/routes";
 import { schedulesRouter } from "../jobs/scheduleRoutes";
 import { workerRouter } from "../jobs/workerRoutes";
 import { notificationsRouter } from "../notifications/routes";
-import { readSystemStatus, SystemStatusLive } from "./system";
+import { createSystemStatusLayer, readSystemStatus } from "./system";
 import { trpc } from "./trpc";
 
 export const appRouter = trpc.router({
@@ -28,8 +28,12 @@ export const appRouter = trpc.router({
     system: trpc.router({
         status: trpc.procedure
             .output(systemStatusSchema)
-            .query(() =>
-                Effect.runPromise(readSystemStatus.pipe(Effect.provide(SystemStatusLive)))
+            .query(({ ctx }) =>
+                Effect.runPromise(
+                    readSystemStatus.pipe(
+                        Effect.provide(createSystemStatusLayer(Boolean(ctx.operations)))
+                    )
+                )
             ),
     }),
 });

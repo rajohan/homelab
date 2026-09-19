@@ -32,7 +32,7 @@ export function BackupsPanel({ compact = false }: { readonly compact?: boolean }
         retry: false,
     });
     const data = query.data;
-    const stale = query.isError || (data?.stale ?? true);
+    const stale = !data?.configured || query.isError || (data?.stale ?? true);
     const rows = data?.inventory?.backups ?? [];
     const filtered = rows.filter((row) =>
         `${row.host} ${row.task}`.toLowerCase().includes(search.toLowerCase())

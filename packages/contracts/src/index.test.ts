@@ -14,6 +14,7 @@ describe("system status contract", () => {
             phase: "operations",
             authenticationImplemented: true,
             integrationsImplemented: true,
+            operationsConfigured: false,
             auth: { provider: "homelab", replacementEnabled: true },
         });
 

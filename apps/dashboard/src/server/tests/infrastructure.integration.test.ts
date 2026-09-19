@@ -15,6 +15,19 @@ const metric = (labels: Record<string, string>, value: string) => ({
     value: [1, value],
 });
 
+test("system status distinguishes the optional operations runtime without requiring collected metrics", async () => {
+    const fixture = await operationFixture();
+    try {
+        const configured = appRouter.createCaller({ operations: fixture });
+        const present = await configured.system.status();
+        const absent = await appRouter.createCaller({}).system.status();
+        expect(present.operationsConfigured).toBe(true);
+        expect(absent.operationsConfigured).toBe(false);
+    } finally {
+        await fixture.close();
+    }
+});
+
 test("worker and restarted live runtime retain saved identities through successful API responses with failed scrapes", async () => {
     const fixture = await operationFixture();
     let available = true;
