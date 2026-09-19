@@ -3,13 +3,114 @@ import { expect, test } from "bun:test";
 import { createApplicationFixture } from "../../testing/applications";
 import { expectOperationFailure } from "../../testing/operations";
 import { performApplicationAction } from "./actions";
-import { createDockerPort } from "./docker";
+import { createDockerPort, type DockerPort } from "./docker";
 import {
     collectApplications,
     filterApplicationInventory,
     mapDockerApplication,
 } from "./inventory";
 import { selectionRevision, selectApplications } from "./selection";
+
+test("health-only transitions invalidate container and project confirmations before any mutation", async () => {
+    const fixture = createApplicationFixture();
+    try {
+        const detail = fixture.containers.get("a".repeat(64));
+        if (!detail) throw new Error("Missing fixture");
+        const port = createDockerPort(fixture.target, {});
+        for (const selection of [
+            { kind: "container" as const, target: detail.Id },
+            { kind: "project" as const, target: "demo" },
+        ]) {
+            detail.State.Health = { Status: "healthy" };
+            const inventory = await collectApplications(
+                [fixture.target],
+                () => port,
+                AbortSignal.timeout(3000)
+            );
+            const revision = selectionRevision(
+                selectApplications(inventory, "demo", selection),
+                selection
+            );
+            detail.State.Health = { Status: "unhealthy" };
+            await expectOperationFailure(
+                performApplicationAction(
+                    fixture.target,
+                    port,
+                    { selection, revision, operation: "restart" },
+                    AbortSignal.timeout(3000)
+                ),
+                "changed"
+            );
+            expect(fixture.calls).toEqual([]);
+        }
+    } finally {
+        await fixture.close();
+    }
+});
+
+test("discovery isolates slow hosts with individual deadlines and still honors whole-job cancellation", async () => {
+    const fixture = createApplicationFixture();
+    try {
+        const port = createDockerPort(fixture.target, {});
+        const targets = [
+            ...Array.from({ length: 8 }, (_, index) => ({
+                ...fixture.target,
+                id: `slow-${index}`,
+            })),
+            fixture.target,
+        ];
+        const started: string[] = [];
+        const startedAtTimeout: number[] = [];
+        const waitUntilAborted = (signal: AbortSignal): Promise<never> =>
+            new Promise((_resolve, reject) => {
+                signal.throwIfAborted();
+                signal.addEventListener(
+                    "abort",
+                    () => {
+                        startedAtTimeout.push(started.length);
+                        reject(new Error("Host deadline reached"));
+                    },
+                    { once: true }
+                );
+            });
+        const connect = (target: typeof fixture.target): DockerPort => {
+            started.push(target.id);
+            return target.id === "demo"
+                ? port
+                : {
+                      ...port,
+                      list: (signal) =>
+                          target.id === "slow-0"
+                              ? Promise.resolve(["a".repeat(64)])
+                              : waitUntilAborted(signal),
+                      inspect: (_id, signal) => waitUntilAborted(signal),
+                  };
+        };
+        const snapshot = await collectApplications(
+            targets,
+            connect,
+            AbortSignal.timeout(2000),
+            null,
+            50
+        );
+        expect(snapshot.hosts.filter((host) => !host.available)).toHaveLength(8);
+        expect(snapshot.hosts.at(-1)).toMatchObject({ id: "demo", available: true });
+        expect(snapshot.hosts.at(-1)?.applications).toHaveLength(2);
+        expect(startedAtTimeout).toEqual(Array.from({ length: 8 }, () => 9));
+        await expectOperationFailure(
+            collectApplications(
+                targets,
+                connect,
+                AbortSignal.timeout(20),
+                snapshot,
+                2000
+            ),
+            "timed out"
+        );
+    } finally {
+        await fixture.close();
+    }
+});
 
 test("Docker discovery strips secret fields, retains unavailable identities and reapplies current allowlists", async () => {
     const fixture = createApplicationFixture();

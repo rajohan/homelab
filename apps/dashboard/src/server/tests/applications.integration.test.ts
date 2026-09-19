@@ -217,6 +217,20 @@ test("application admissions require scoped permissions, recent human proof and 
             caller.applications.request({ ...input, revision: "0".repeat(64) }),
             "changed"
         );
+        const changed = docker.containers.get(application.containerId);
+        if (!changed) throw new Error("Missing fixture container");
+        const originalHealth = changed.State.Health;
+        changed.State.Health = { Status: "unhealthy" };
+        const changedInventory = await collectApplications(
+            [docker.target],
+            (target) => createDockerPort(target, {}),
+            AbortSignal.timeout(2000)
+        );
+        await database.client`UPDATE operation_snapshots SET value=${JSON.stringify(changedInventory)}::text::jsonb WHERE key='applications.inventory'`;
+        await expectOperationFailure(caller.applications.request(input), "changed");
+        expect(await database.client`SELECT id FROM job_runs`).toHaveLength(0);
+        changed.State.Health = originalHealth;
+        await database.client`UPDATE operation_snapshots SET value=${JSON.stringify(inventory)}::text::jsonb WHERE key='applications.inventory'`;
         const first = await caller.applications.request(input);
         expect(await caller.applications.request(input)).toEqual(first);
         expect(proofs).toBeGreaterThan(1);

@@ -73,6 +73,7 @@ export function mapDockerApplication(
             detail.Id,
             detail.Image,
             detail.State.Status,
+            detail.State.Health?.Status ?? null,
             detail.State.StartedAt,
             detail.State.FinishedAt,
         ]),
@@ -100,51 +101,64 @@ export function mapDockerApplication(
  * @param connect - Worker-owned provider factory, replaceable with loopback fixtures.
  * @param signal - Job deadline and cancellation signal.
  * @param previous - Last successful identities retained when a configured host is unavailable.
+ * @param hostTimeoutMs - Independent host budget, below the discovery job's overall deadline.
  * @returns One snapshot with per-host availability and only allowlisted applications.
  */
 export async function collectApplications(
     targets: readonly ApplicationTarget[],
     connect: (target: ApplicationTarget) => DockerPort,
     signal: AbortSignal,
-    previous?: ApplicationInventory | null
+    previous?: ApplicationInventory | null,
+    hostTimeoutMs = 20_000
 ): Promise<ApplicationInventory> {
-    const hosts = [];
-    for (const target of targets) {
-        try {
-            const port = connect(target);
-            const applications: ManagedApplication[] = [];
-            const ids = await port.list(signal);
-            for (let offset = 0; offset < ids.length; offset += 4) {
-                const rows = await Promise.all(
-                    ids
-                        .slice(offset, offset + 4)
-                        .map(async (id) =>
-                            mapDockerApplication(target, await port.inspect(id, signal))
-                        )
-                );
-                applications.push(...rows);
+    signal.throwIfAborted();
+    const hosts = await Promise.all(
+        targets.map(async (target) => {
+            const hostSignal = AbortSignal.any([
+                signal,
+                AbortSignal.timeout(hostTimeoutMs),
+            ]);
+            try {
+                const port = connect(target);
+                const applications: ManagedApplication[] = [];
+                const ids = await port.list(hostSignal);
+                for (let offset = 0; offset < ids.length; offset += 4) {
+                    hostSignal.throwIfAborted();
+                    const rows = await Promise.all(
+                        ids
+                            .slice(offset, offset + 4)
+                            .map(async (id) =>
+                                mapDockerApplication(
+                                    target,
+                                    await port.inspect(id, hostSignal)
+                                )
+                            )
+                    );
+                    applications.push(...rows);
+                }
+                return {
+                    id: target.id,
+                    label: target.label,
+                    available: true,
+                    applications,
+                };
+            } catch {
+                signal.throwIfAborted();
+                const applications =
+                    previous?.hosts
+                        .find((host) => host.id === target.id)
+                        ?.applications.filter((item) =>
+                            target.projects.includes(item.project)
+                        ) ?? [];
+                return {
+                    id: target.id,
+                    label: target.label,
+                    available: false,
+                    applications: [...applications],
+                };
             }
-            hosts.push({
-                id: target.id,
-                label: target.label,
-                available: true,
-                applications,
-            });
-        } catch {
-            signal.throwIfAborted();
-            const applications =
-                previous?.hosts
-                    .find((host) => host.id === target.id)
-                    ?.applications.filter((item) =>
-                        target.projects.includes(item.project)
-                    ) ?? [];
-            hosts.push({
-                id: target.id,
-                label: target.label,
-                available: false,
-                applications: [...applications],
-            });
-        }
-    }
+        })
+    );
+    signal.throwIfAborted();
     return { capturedAt: new Date().toISOString(), hosts };
 }

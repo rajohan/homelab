@@ -14,8 +14,9 @@ account identity. Reading requires `notifications:read`; personal acknowledgemen
 
 `dashboard_notifications` stores producer events. `notification_receipts` stores read/dismissed
 state per operator. Dismissal preserves a receipt so a producer replay cannot resurrect an event.
-Bulk actions capture an upper ID boundary and process 100 records per transaction; arrivals after
-the click are not consumed. UI processing stops after 10,000 records with explicit continuation
+Bulk actions capture a database-generated publication sequence boundary and process 100 records
+per transaction; later publications are not consumed even when producer clocks differ. UUIDs
+remain event identities, not bulk cutoffs. UI processing stops after 10,000 records with explicit continuation
 instructions. Counts are always server-derived, never guessed from loaded pages.
 
 Final manual job outcomes and final scheduled failures/timeouts publish once with the run ID.
@@ -24,9 +25,13 @@ Application host availability publishes on transitions, not on every poll. Other
 can call the same producer without coupling themselves to React or a delivery provider.
 
 Notifications and their receipts follow `HOMELAB_DASHBOARD_JOB_RETENTION_DAYS` (default 30 days).
+Hourly maintenance drains expired notifications in independently fenced 1,000-row transactions,
+checking cancellation between batches. Its job deadline bounds each run; committed batches remain
+removed if a deadline or lease loss interrupts the remainder, which a retry can continue.
 Idempotency is guaranteed within that retention window, not after an event has been purged.
 The inbox is currently an administrator workspace: read-capable principals can read operational
 events, so producers must never include credentials, payload secrets or private identity data.
 
 Verification covers immutable publication, per-operator receipts, filtered keyset pages, bounded
-bulk cutoffs, capabilities, retries and atomic final outcomes against disposable PostgreSQL.
+clock-skew-safe bulk cutoffs, multi-batch retention and lease loss, capabilities, retries and atomic
+final outcomes against disposable PostgreSQL.

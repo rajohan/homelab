@@ -818,6 +818,28 @@
             "table": "dashboard_notifications"
         },
         {
+            "type": "bigint",
+            "typeSchema": null,
+            "notNull": true,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": {
+                "type": "always",
+                "name": "dashboard_notifications_publication_order_seq",
+                "increment": "1",
+                "startWith": "1",
+                "minValue": "1",
+                "maxValue": "9223372036854775807",
+                "cache": 1,
+                "cycle": false
+            },
+            "name": "publication_order",
+            "entityType": "columns",
+            "schema": "public",
+            "table": "dashboard_notifications"
+        },
+        {
             "type": "text",
             "typeSchema": null,
             "notNull": true,
@@ -1332,6 +1354,27 @@
             "method": "btree",
             "concurrently": false,
             "name": "dashboard_notifications_source_key",
+            "entityType": "indexes",
+            "schema": "public",
+            "table": "dashboard_notifications"
+        },
+        {
+            "nameExplicit": true,
+            "columns": [
+                {
+                    "value": "publication_order",
+                    "isExpression": false,
+                    "asc": true,
+                    "nullsFirst": false,
+                    "opclass": null
+                }
+            ],
+            "isUnique": true,
+            "where": null,
+            "with": "",
+            "method": "btree",
+            "concurrently": false,
+            "name": "dashboard_notifications_publication_order",
             "entityType": "indexes",
             "schema": "public",
             "table": "dashboard_notifications"

@@ -27,6 +27,10 @@ Inventory is refreshed every 60 seconds and after successful actions. The UI rea
 seconds while foregrounded. Snapshots older than two minutes and unavailable hosts disable control.
 The API re-filters snapshots against current configuration, preventing removed projects from
 remaining readable. Environment variables and arbitrary labels never reach the browser.
+Hosts are discovered concurrently with separate 20-second budgets and at most four concurrent
+inspections per host. One unavailable host retains its previous identities without preventing
+fresh snapshots for reachable hosts. Whole-job cancellation still aborts collection. Confirmation
+revisions include health status, so health-only changes also invalidate stale lifecycle intents.
 
 ## Opt-in production configuration
 

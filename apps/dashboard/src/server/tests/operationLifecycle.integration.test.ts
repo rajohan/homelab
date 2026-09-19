@@ -127,6 +127,10 @@ test("retention removes only aged completed history and preserves queued and cur
             handler.definition.key,
         ]);
         if (!run) throw new Error("Maintenance claim missing");
+        await fixture.client`INSERT INTO dashboard_notifications (id, source, source_key, title, message, severity, created_at) SELECT gen_random_uuid(), 'retention-test', number::text, 'Expired', 'Expired event', 'info', now() - interval '31 days' FROM generate_series(1, 2505) AS number`;
+        await fixture.client`INSERT INTO notification_receipts (notification_id, actor, read_at) SELECT id, 'human:operator', now() FROM dashboard_notifications`;
+        const current = crypto.randomUUID();
+        await fixture.client`INSERT INTO dashboard_notifications (id, source, source_key, title, message, severity) VALUES (${current}, 'retention-test', 'current', 'Current', 'Current event', 'info')`;
         await handler.execute(
             {},
             {
@@ -134,7 +138,7 @@ test("retention removes only aged completed history and preserves queued and cur
                 leaseToken: run.lease_token,
                 reportProgress: (message) =>
                     reportJobProgress(fixture.client, run, message),
-                signal: AbortSignal.timeout(1000),
+                signal: AbortSignal.timeout(5000),
                 commit: (write) => commitClaim(fixture.client, run, write),
             }
         );
@@ -142,6 +146,45 @@ test("retention removes only aged completed history and preserves queued and cur
         expect(remaining).toHaveLength(2);
         expect(remaining.some((row) => row.id === old)).toBe(false);
         expect(remaining.some((row) => row.id === run.id)).toBe(true);
+        expect(
+            await fixture.client<{ id: string }[]>`SELECT id FROM dashboard_notifications`
+        ).toEqual([{ id: current }]);
+        expect(
+            await fixture.client`SELECT notification_id FROM notification_receipts`
+        ).toHaveLength(0);
+    } finally {
+        await fixture.close();
+    }
+});
+
+test("notification retention stops between committed batches when its lease is lost", async () => {
+    const fixture = await operationFixture();
+    try {
+        await fixture.client`INSERT INTO dashboard_notifications (id, source, source_key, title, message, severity, created_at) SELECT gen_random_uuid(), 'retention-test', number::text, 'Expired', 'Expired event', 'info', now() - interval '31 days' FROM generate_series(1, 2005) AS number`;
+        let commits = 0;
+        await expectOperationFailure(
+            maintenanceJob(30).execute(
+                {},
+                {
+                    runId: crypto.randomUUID(),
+                    leaseToken: crypto.randomUUID(),
+                    signal: AbortSignal.timeout(5000),
+                    reportProgress: () => Promise.resolve(),
+                    commit: async (write) => {
+                        commits += 1;
+                        if (commits === 3) return false;
+                        await fixture.client.begin(write);
+                        return true;
+                    },
+                }
+            ),
+            "ownership changed"
+        );
+        expect(commits).toBe(3);
+        const [remaining] = await fixture.client<
+            { count: number }[]
+        >`SELECT count(*)::int AS count FROM dashboard_notifications`;
+        expect(remaining?.count).toBe(1005);
     } finally {
         await fixture.close();
     }

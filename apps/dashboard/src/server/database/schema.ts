@@ -7,6 +7,7 @@ import type {
 } from "@homelab/contracts/operations";
 import { sql } from "drizzle-orm";
 import {
+    bigint,
     boolean,
     check,
     index,
@@ -161,6 +162,9 @@ export const notifications = pgTable(
     "dashboard_notifications",
     {
         id: uuid().primaryKey(),
+        publicationOrder: bigint("publication_order", {
+            mode: "bigint",
+        }).generatedAlwaysAsIdentity(),
         source: text().notNull(),
         sourceKey: text("source_key").notNull(),
         title: text().notNull(),
@@ -170,6 +174,9 @@ export const notifications = pgTable(
         createdAt: time("created_at").notNull().defaultNow(),
     },
     (table) => [
+        uniqueIndex("dashboard_notifications_publication_order").on(
+            table.publicationOrder
+        ),
         uniqueIndex("dashboard_notifications_source_key").on(
             table.source,
             table.sourceKey

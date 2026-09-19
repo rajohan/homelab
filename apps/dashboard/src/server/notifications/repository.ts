@@ -25,7 +25,7 @@ export async function listNotifications(
     >`SELECT n.id, n.source, n.title, n.message, n.severity, n.destination, n.created_at::text AS "createdAt", r.read_at::text AS "readAt" FROM dashboard_notifications n LEFT JOIN notification_receipts r ON r.notification_id = n.id AND r.actor = ${actor} WHERE r.dismissed_at IS NULL AND (${input.before ?? null}::uuid IS NULL OR n.id < ${input.before ?? null}::uuid) AND (${input.severity ?? null}::text IS NULL OR n.severity = ${input.severity ?? null}) AND (${input.state} = 'all' OR (${input.state} = 'read' AND r.read_at IS NOT NULL) OR (${input.state} = 'unread' AND r.read_at IS NULL)) ORDER BY n.id DESC LIMIT ${input.limit + 1}`;
     const [counts] = await client<
         { unreadCount: number; readCount: number; through: string | null }[]
-    >`SELECT count(*) FILTER (WHERE r.read_at IS NULL)::int AS "unreadCount", count(*) FILTER (WHERE r.read_at IS NOT NULL)::int AS "readCount", max(n.id::text) AS through FROM dashboard_notifications n LEFT JOIN notification_receipts r ON r.notification_id = n.id AND r.actor = ${actor} WHERE r.dismissed_at IS NULL AND (${input.severity ?? null}::text IS NULL OR n.severity = ${input.severity ?? null})`;
+    >`SELECT count(*) FILTER (WHERE r.read_at IS NULL)::int AS "unreadCount", count(*) FILTER (WHERE r.read_at IS NOT NULL)::int AS "readCount", max(n.publication_order)::text AS through FROM dashboard_notifications n LEFT JOIN notification_receipts r ON r.notification_id = n.id AND r.actor = ${actor} WHERE r.dismissed_at IS NULL AND (${input.severity ?? null}::text IS NULL OR n.severity = ${input.severity ?? null})`;
     const notifications = rows.slice(0, input.limit);
     return {
         notifications,
@@ -72,7 +72,7 @@ export async function acknowledgeNotificationBatch(
     return client.begin(async (transaction) => {
         const rows = await transaction<
             { id: string }[]
-        >`SELECT n.id FROM dashboard_notifications n LEFT JOIN notification_receipts r ON r.notification_id = n.id AND r.actor = ${actor} WHERE n.id <= ${input.through} AND r.dismissed_at IS NULL AND (${input.severity ?? null}::text IS NULL OR n.severity = ${input.severity ?? null}) AND ((${input.action} = 'read' AND r.read_at IS NULL) OR (${input.action} = 'dismissRead' AND r.read_at IS NOT NULL)) ORDER BY n.id DESC LIMIT 100 FOR UPDATE OF n`;
+        >`SELECT n.id FROM dashboard_notifications n LEFT JOIN notification_receipts r ON r.notification_id = n.id AND r.actor = ${actor} WHERE n.publication_order <= ${input.through}::bigint AND r.dismissed_at IS NULL AND (${input.severity ?? null}::text IS NULL OR n.severity = ${input.severity ?? null}) AND ((${input.action} = 'read' AND r.read_at IS NULL) OR (${input.action} = 'dismissRead' AND r.read_at IS NOT NULL)) ORDER BY n.publication_order DESC LIMIT 100 FOR UPDATE OF n`;
         for (const { id } of rows) {
             await transaction`INSERT INTO notification_receipts (notification_id, actor, read_at, dismissed_at) VALUES (${id}, ${actor}, now(), CASE WHEN ${input.action} = 'dismissRead' THEN now() ELSE NULL END) ON CONFLICT (notification_id, actor) DO UPDATE SET read_at = COALESCE(notification_receipts.read_at, now()), dismissed_at = CASE WHEN ${input.action} = 'dismissRead' THEN now() ELSE notification_receipts.dismissed_at END`;
         }

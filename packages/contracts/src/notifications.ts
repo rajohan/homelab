@@ -33,7 +33,11 @@ export const notificationPageSchema = v.strictObject({
 });
 export const notificationBulkSchema = v.strictObject({
     ...v.omit(notificationFilterSchema, ["state"]).entries,
-    through: idSchema,
+    through: v.pipe(
+        v.string(),
+        v.regex(/^[1-9]\d{0,18}$/),
+        v.check((value) => value.length < 19 || value <= "9223372036854775807")
+    ),
     action: v.picklist(["read", "dismissRead"]),
 });
 

@@ -83,7 +83,10 @@ test("notification permissions separate automation producers from personal ackno
             "signed-in operator"
         );
         await expectOperationFailure(
-            producer.notifications.acknowledgeBatch({ through: id, action: "read" }),
+            producer.notifications.acknowledgeBatch({
+                through: producerPage.through ?? "1",
+                action: "read",
+            }),
             "signed-in operator"
         );
         const human = appRouter.createCaller({
@@ -143,6 +146,9 @@ test("filtered notification pages and bounded bulk actions do not swallow new ar
             ...content,
             key: "arriving",
         });
+        // Simulate publication on a worker whose clock lags behind the web process.
+        const skewed = "00000000-0000-7000-8000-000000000001";
+        await fixture.client`UPDATE dashboard_notifications SET id = ${skewed} WHERE id = ${arriving}`;
         const input = {
             through: page.through,
             severity: "success" as const,
@@ -160,7 +166,8 @@ test("filtered notification pages and bounded bulk actions do not swallow new ar
             state: "unread",
             severity: "success",
         });
-        expect(unreadSuccess.notifications.map((n) => n.id)).toEqual([arriving]);
+        expect(unreadSuccess.notifications.map((n) => n.id)).toEqual([skewed]);
+        await caller.notifications.acknowledge({ id: skewed, action: "read" });
         expect(
             await caller.notifications.list({ state: "unread", severity: "warning" })
         ).toMatchObject({ unreadCount: 1 });
@@ -168,6 +175,7 @@ test("filtered notification pages and bounded bulk actions do not swallow new ar
         await caller.notifications.acknowledgeBatch({ ...input, action: "dismissRead" });
         const remaining = await caller.notifications.list({});
         expect(remaining.notifications).toHaveLength(2);
+        expect(remaining.notifications.map((n) => n.id)).toContain(skewed);
     } finally {
         await fixture.close();
     }
