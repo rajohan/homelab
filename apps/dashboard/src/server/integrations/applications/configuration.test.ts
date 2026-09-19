@@ -26,6 +26,14 @@ test("application targets require explicit unique projects, secure origins and c
         { tls: undefined },
         { projects: [] },
         { projects: ["demo", "demo"] },
+        {
+            projects: ["demo", "other"],
+            logs: {
+                labels: { host: "main" },
+                serviceLabel: "service",
+                serviceValue: "service",
+            },
+        },
         { tls: { ...target.tls, key: "PRIVATE_KEY" } },
         { logs: { labels: { service: "other" }, serviceLabel: "service" } },
         {

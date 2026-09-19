@@ -44,6 +44,7 @@ test("rule inventory includes normal and heartbeat rules but excludes recording 
         { ...rule, name: "Old", lastEvaluation: "2020-01-01T00:00:00Z" },
         { ...rule, name: "recorded", type: "recording" },
     ];
+    let files = ["/private/first.yml"];
     const server = Bun.serve({
         hostname: "127.0.0.1",
         port: 0,
@@ -52,7 +53,14 @@ test("rule inventory includes normal and heartbeat rules but excludes recording 
             expect(request.headers.get("authorization")).toBe("Bearer synthetic");
             return Response.json({
                 status: "success",
-                data: { groups: [{ name: "health", interval: 30, rules }] },
+                data: {
+                    groups: files.map((file) => ({
+                        name: "health",
+                        file,
+                        interval: 30,
+                        rules,
+                    })),
+                },
             });
         },
     });
@@ -71,6 +79,17 @@ test("rule inventory includes normal and heartbeat rules but excludes recording 
         expect(result.rules.find((row) => row.name === "Broken")?.health).toBe("error");
         expect(JSON.stringify(result)).not.toContain("private");
         rules = [rule, rule];
+        files = ["/private/first.yml", "/private/second.yml"];
+        const repeated = await readRules(configuration, AbortSignal.timeout(2000));
+        expect(repeated.rules).toHaveLength(4);
+        expect(new Set(repeated.rules.map((item) => item.id)).size).toBe(4);
+        expect(JSON.stringify(repeated)).not.toContain("private");
+        files.reverse();
+        const reordered = await readRules(configuration, AbortSignal.timeout(2000));
+        expect(reordered.rules.map((item) => item.id).toSorted()).toEqual(
+            repeated.rules.map((item) => item.id).toSorted()
+        );
+        files = ["/private/first.yml", "/private/first.yml"];
         await expectOperationFailure(
             readRules(configuration, AbortSignal.timeout(2000)),
             "Invalid monitoring"
@@ -246,7 +265,7 @@ test("snapshot jobs preserve complete inventories on read failure and reject exp
             await lockQueue(transaction);
             await enqueueJob(transaction, handler.definition, "test", "snapshot-poll");
         });
-        const run = await claimJob(fixture.client, crypto.randomUUID(), [
+        const run = await claimJob(fixture.client, await fixture.registerWorker(), [
             handler.definition.key,
         ]);
         if (!run) throw new Error("Missing claim");
@@ -375,6 +394,68 @@ test("incident reconciliation is idempotent, atomic, permissioned and independen
     }
 });
 
+test("resolved history orders by resolution time with stable microsecond and ID cursor boundaries", async () => {
+    const fixture = await operationFixture();
+    const caller = appRouter.createCaller({
+        operations: fixture,
+        principal: { kind: "human", id: "operator", capabilities },
+    });
+    try {
+        const older = "00000000-0000-7000-8000-000000000001";
+        const tieLow = "00000000-0000-7000-8000-000000000002";
+        const tieHigh = "00000000-0000-7000-8000-000000000003";
+        const newestOpened = "00000000-0000-7000-8000-000000000004";
+        for (const [id, resolved] of [
+            [older, "2026-09-19T10:00:00.123457Z"],
+            [tieLow, "2026-09-19T10:00:00.123456Z"],
+            [tieHigh, "2026-09-19T10:00:00.123456Z"],
+            [newestOpened, "2026-09-18T10:00:00.000000Z"],
+        ]) {
+            await fixture.client`INSERT INTO operational_incidents (id, source_key, name, severity, state, started_at, resolved_at) VALUES (${id}, ${id}, 'Synthetic', 'warning', 'resolved', '2026-09-01T00:00:00Z', ${resolved}::timestamptz)`;
+        }
+        const first = await caller.alerts.list({ state: "resolved", limit: 1 });
+        expect(first.incidents.map((row) => row.id)).toEqual([older]);
+        expect(first.nextCursor).toEqual({
+            id: older,
+            resolvedAt: "2026-09-19T10:00:00.123457Z",
+        });
+        // Pagination must not depend on the boundary record surviving retention.
+        await fixture.client`DELETE FROM operational_incidents WHERE id = ${older}`;
+        const second = await caller.alerts.list({
+            state: "resolved",
+            limit: 1,
+            before: first.nextCursor ?? undefined,
+        });
+        expect(second.incidents.map((row) => row.id)).toEqual([tieHigh]);
+        const third = await caller.alerts.list({
+            state: "resolved",
+            limit: 1,
+            before: second.nextCursor ?? undefined,
+        });
+        expect(third.incidents.map((row) => row.id)).toEqual([tieLow]);
+        const fourth = await caller.alerts.list({
+            state: "resolved",
+            limit: 1,
+            before: third.nextCursor ?? undefined,
+        });
+        expect(fourth.incidents.map((row) => row.id)).toEqual([newestOpened]);
+        expect(fourth.nextCursor).toBeNull();
+        await expectOperationFailure(
+            caller.alerts.list({ state: "resolved", before: { id: older } }),
+            "cursor"
+        );
+        await expectOperationFailure(
+            caller.alerts.list({
+                state: "current",
+                before: first.nextCursor ?? undefined,
+            }),
+            "cursor"
+        );
+    } finally {
+        await fixture.close();
+    }
+});
+
 test("Alertmanager transport strips private metadata, includes suppressed alerts and rejects bad inventory", async () => {
     let fail = false;
     const server = Bun.serve({
@@ -454,7 +535,7 @@ test("a failed or superseded alert poll cannot resolve incidents or advance fres
             await lockQueue(transaction);
             await enqueueJob(transaction, handler.definition, "test", "alert-poll");
         });
-        const run = await claimJob(fixture.client, crypto.randomUUID(), [
+        const run = await claimJob(fixture.client, await fixture.registerWorker(), [
             handler.definition.key,
         ]);
         if (!run) throw new Error("Missing claim");

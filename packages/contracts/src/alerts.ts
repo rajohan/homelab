@@ -2,14 +2,29 @@ import * as v from "valibot";
 
 export const incidentStates = ["active", "suppressed", "resolved"] as const;
 export const incidentStateSchema = v.picklist(incidentStates);
-export const incidentPageSchema = v.strictObject({
-    state: v.optional(v.picklist(["current", "resolved"]), "current"),
-    before: v.optional(v.pipe(v.string(), v.uuid())),
-    limit: v.optional(
-        v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(100)),
-        30
-    ),
+const incidentCursorSchema = v.strictObject({
+    id: v.pipe(v.string(), v.uuid()),
+    resolvedAt: v.optional(v.pipe(v.string(), v.isoTimestamp())),
 });
+export type IncidentCursor = v.InferOutput<typeof incidentCursorSchema>;
+export const incidentPageSchema = v.pipe(
+    v.strictObject({
+        state: v.optional(v.picklist(["current", "resolved"]), "current"),
+        before: v.optional(incidentCursorSchema),
+        limit: v.optional(
+            v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(100)),
+            30
+        ),
+    }),
+    v.check(
+        (input) =>
+            !input.before ||
+            (input.state === "resolved"
+                ? Boolean(input.before.resolvedAt)
+                : input.before.resolvedAt === undefined),
+        "Incident cursor must match the selected history"
+    )
+);
 export interface Incident {
     readonly id: string;
     readonly name: string;

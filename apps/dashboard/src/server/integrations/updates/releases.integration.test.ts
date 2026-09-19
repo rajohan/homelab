@@ -196,6 +196,8 @@ test.each([
 );
 
 test.each([
+    "localhost/web:latest",
+    "localhost:5000/web:latest",
     "docker.io.attacker.example/web:latest",
     "evil-docker.io/web:latest",
     "registry-1.docker.io.attacker.example/web:latest",

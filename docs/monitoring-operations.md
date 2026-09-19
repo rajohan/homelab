@@ -19,6 +19,8 @@ alerts are included. A fingerprint plus its start time identifies an episode.
 New episodes and observed resolution create deduplicated notifications, atomically
 with incident state under the worker's live claim. Read/dismiss receipts affect
 only that person's notification inbox, never the incident.
+Resolved history sorts by resolution time, with the incident ID breaking ties.
+Cursor timestamps preserve PostgreSQL microseconds, including across retention deletions.
 
 A failed, oversized, malformed or cancelled poll does not resolve anything or
 advance freshness. Three minutes without a successful observation is stale.
@@ -94,6 +96,8 @@ local daemon access, which is security-sensitive even for read-only commands.
 Do not grant it merely to enable this collector; qualify host access separately.
 Non-APT appliances require a publisher implementing the same validated report
 contract. Unsupported sources remain absent/unknown, not falsely current.
+The native publisher reports success only after the API explicitly accepts the observation.
+Rejected out-of-order timestamps and malformed receipts fail delivery rather than reporting success.
 
 The hourly `updates.releases` job compares Bun, current Node, OpenClaw and GitHub CLI
 against fixed official release feeds. Stable latest releases are used, not project

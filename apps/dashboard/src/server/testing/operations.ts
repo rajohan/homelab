@@ -24,6 +24,15 @@ export async function operationFixture() {
         ...connection,
         url: allocation.url,
         registry: createJobRegistry([maintenanceJob(30)]),
+        /**
+         * Register a live synthetic worker for a test's direct claim operations.
+         * @returns A fresh registration ID confined to this disposable database.
+         */
+        async registerWorker(): Promise<string> {
+            const id = Bun.randomUUIDv7();
+            await connection.client`INSERT INTO workers (id, version, heartbeat_at, capacity) VALUES (${id}, 'test', now(), 3)`;
+            return id;
+        },
         async close() {
             await connection.client.close();
             await allocation.close();

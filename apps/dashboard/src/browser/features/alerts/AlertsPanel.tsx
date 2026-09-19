@@ -1,4 +1,4 @@
-import type { Incident } from "@homelab/contracts/alerts";
+import type { Incident, IncidentCursor } from "@homelab/contracts/alerts";
 import {
     Card,
     DataTable,
@@ -30,7 +30,7 @@ export function AlertsPanel({ compact = false }: { readonly compact?: boolean })
     const [selected, setSelected] = useState<Incident | null>(null);
     const query = useInfiniteQuery({
         queryKey: ["operations", "alerts", state],
-        initialPageParam: undefined as string | undefined,
+        initialPageParam: undefined as IncidentCursor | undefined,
         queryFn: ({ pageParam, signal }) =>
             api.alerts.list.query(
                 { state, ...(pageParam ? { before: pageParam } : {}) },

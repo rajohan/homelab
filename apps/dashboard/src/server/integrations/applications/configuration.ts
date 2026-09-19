@@ -73,6 +73,14 @@ export function parseApplicationTargets(
             );
         if (new Set(target.projects).size !== target.projects.length)
             throw new Error("Application project allowlists must be unique");
+        if (
+            target.logs?.serviceValue === "service" &&
+            target.projects.length > 1 &&
+            !target.logs.projectLabel
+        )
+            throw new Error(
+                "Service logs covering multiple projects require a project log label"
+            );
         if (target.logs && Object.hasOwn(target.logs.labels, target.logs.serviceLabel))
             throw new Error("Log service label conflicts with fixed host selectors");
         if (

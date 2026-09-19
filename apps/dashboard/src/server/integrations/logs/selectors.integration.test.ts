@@ -15,12 +15,13 @@ test("service log selectors include existing history and reject ambiguous cross-
     const provider = createApplicationFixture();
     const target = {
         ...provider.target,
-        projects: ["demo", "other"],
+        projects: ["demo"],
         logs: {
             labels: { host: "demo" },
             serviceLabel: "service",
             servicePrefix: "demo-",
             serviceValue: "service" as const,
+            projectLabel: undefined as string | undefined,
         },
     };
     const application = mapDockerApplication(
@@ -63,6 +64,16 @@ test("service log selectors include existing history and reject ambiguous cross-
         });
         expect(data.entries.length).toBeGreaterThan(0);
         expect(provider.queries[0]).toBe('{host="demo",service="demo-web"}');
+        target.projects.push("other");
+        await expectOperationFailure(
+            caller.applications.logs({
+                host: target.id,
+                container: application.containerId,
+                range: "1h",
+            }),
+            "multiple projects"
+        );
+        expect(provider.queries).toHaveLength(1);
         await save(true);
         await expectOperationFailure(
             caller.applications.logs({
@@ -71,6 +82,24 @@ test("service log selectors include existing history and reject ambiguous cross-
                 range: "1h",
             }),
             "multiple projects"
+        );
+        await save(false);
+        await expectOperationFailure(
+            caller.applications.logs({
+                host: target.id,
+                container: application.containerId,
+                range: "1h",
+            }),
+            "multiple projects"
+        );
+        target.logs.projectLabel = "project";
+        await caller.applications.logs({
+            host: target.id,
+            container: application.containerId,
+            range: "1h",
+        });
+        expect(provider.queries.at(-1)).toBe(
+            '{host="demo",project="demo",service="demo-web"}'
         );
     } finally {
         await provider.close();

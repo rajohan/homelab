@@ -159,7 +159,10 @@ def main():
     request = urllib.request.Request(origin.rstrip("/") + "/api/automation/updates.publish", data=body, method="POST", headers={"Content-Type": "application/json", "Authorization": "Bearer " + token})
     with urllib.request.build_opener(NoRedirect()).open(request, timeout=20) as response:
         result = json.loads(response.read(65_537))
-        if not isinstance(result, dict) or "result" not in result:
+        envelope = result.get("result") if isinstance(result, dict) else None
+        data = envelope.get("data") if isinstance(envelope, dict) else None
+        payload = data.get("json") if isinstance(data, dict) else None
+        if not isinstance(payload, dict) or payload.get("accepted") is not True:
             raise RuntimeError("Inventory delivery failed")
     print("Update inventory delivered.")
 

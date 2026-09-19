@@ -21,7 +21,7 @@ import { ObservationBadge } from "../operations/ObservationBadge";
  * @returns Physical resource visibility and application/probe health from the existing inventory.
  */
 export function InfrastructureHealth() {
-    const { query, inventory, stale } = useInfrastructure();
+    const { query, inventory, stale, configured } = useInfrastructure();
     const hosts =
         inventory?.hosts.filter((host) => host.kind === "node" || host.kind === "host") ??
         [];
@@ -35,7 +35,7 @@ export function InfrastructureHealth() {
                 icon={Server}
                 actions={
                     <ObservationBadge
-                        configured
+                        configured={configured}
                         available={Boolean(inventory)}
                         stale={stale}
                     />

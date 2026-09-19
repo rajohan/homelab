@@ -19,6 +19,7 @@ const ruleSchema = v.object({
 });
 const groupSchema = v.object({
     name: text,
+    file: v.optional(v.pipe(v.string(), v.maxLength(4096)), ""),
     interval: v.pipe(nonnegative, v.minValue(1)),
     rules: v.pipe(v.array(ruleSchema), v.maxLength(2000)),
 });
@@ -47,7 +48,7 @@ export async function readRules(
     const data = v.parse(schema, await readBoundedJson(response));
     const rules: MonitoringRule[] = [];
     for (const group of data.data.groups) {
-        for (const rule of group.rules) {
+        for (const [position, rule] of group.rules.entries()) {
             if (rule.type !== "alerting") continue;
             const at = Date.parse(rule.lastEvaluation ?? "");
             const recent =
@@ -64,7 +65,15 @@ export async function readRules(
                 state = rule.state as "inactive" | "pending" | "firing";
             rules.push({
                 id: new Bun.CryptoHasher("sha256")
-                    .update(JSON.stringify([configuration.url, group.name, rule.name]))
+                    .update(
+                        JSON.stringify([
+                            configuration.url,
+                            group.file,
+                            group.name,
+                            rule.name,
+                            position,
+                        ])
+                    )
                     .digest("hex"),
                 name: rule.name,
                 group: group.name,

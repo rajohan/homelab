@@ -31,7 +31,7 @@ export async function latestImage(
 ): Promise<string | null> {
     if (!item.image || !item.platform || item.image.includes("@")) return null;
     const match =
-        /^(?:(?<registry>[a-z0-9.-]+\.[a-z]+)\/)?(?<repository>[a-z0-9]+(?:[._-][a-z0-9]+)*(?:\/[a-z0-9]+(?:[._-][a-z0-9]+)*)*)(?::(?<tag>[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}))?$/.exec(
+        /^(?:(?<registry>localhost|[a-z0-9.-]+\.[a-z]+)\/)?(?<repository>[a-z0-9]+(?:[._-][a-z0-9]+)*(?:\/[a-z0-9]+(?:[._-][a-z0-9]+)*)*)(?::(?<tag>[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}))?$/.exec(
             item.image
         );
     const fields = match?.groups;

@@ -104,8 +104,11 @@ Each host supplies exact fixed labels plus a label mapped to the **Docker contai
 by default. Set `serviceValue: "service"` to select the Compose service name instead,
 for example `serviceLabel: "service"` and `servicePrefix: "app-"`. This includes
 retained service history from older container instances and service replicas.
-Use `projectLabel` where the same service name occurs across projects; ambiguous
-managed service names are rejected without that label. Verify the actual ingestion
+Service-name selectors covering multiple configured projects require `projectLabel`,
+even when only one matching service is currently running: retained streams outlive
+containers. A single-project scope without that label requires deployment verification
+that its fixed labels and service prefix cannot match another project's retained streams.
+Never infer historical uniqueness from the live inventory. Verify the actual ingestion
 labels before changing configuration. Host selection stays exact and server-owned.
 Searches are escaped literal text, with a maximum seven-day range (one day by default),
 two-megabyte response budget and timestamp-safe cursor pages. Large timestamp

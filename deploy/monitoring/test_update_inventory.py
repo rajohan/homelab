@@ -2,7 +2,7 @@
 import json
 import types
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, mock_open, MagicMock
 
 import update_inventory as inventory
 
@@ -57,6 +57,32 @@ class UpdateInventoryTests(unittest.TestCase):
     def test_publisher_refuses_redirecting_a_bearer_credential(self):
         redirect = inventory.NoRedirect()
         self.assertIsNone(redirect.redirect_request(None, None, 302, "Found", {}, "https://other.example.test"))
+
+    def test_publisher_requires_explicit_accepted_receipt(self):
+        envelopes = [
+            {"result": {"data": {"json": {"accepted": True}}}},
+            {"result": {"data": {"json": {"accepted": False}}}},
+            {"result": {"data": {"json": {"accepted": "true"}}}},
+            {"result": {"data": {"json": {}}}},
+            {"result": {}},
+            {"result": []},
+            {"error": {"message": "private upstream failure"}},
+            [],
+        ]
+        for index, payload in enumerate(envelopes):
+            with self.subTest(payload=payload):
+                response = MagicMock()
+                response.__enter__.return_value.read.return_value = json.dumps(payload).encode()
+                opener = MagicMock()
+                opener.open.return_value = response
+                with patch("builtins.open", mock_open(read_data="{}")), patch.object(inventory, "collect", return_value={"capturedAt": "synthetic"}), patch.dict(inventory.os.environ, {"HOMELAB_DASHBOARD_ORIGIN": "https://dashboard.example.test", "HOMELAB_DASHBOARD_UPDATE_TOKEN": "synthetic"}), patch("sys.argv", ["update_inventory.py", "--config", "/synthetic.json"]), patch.object(inventory.urllib.request, "build_opener", return_value=opener), patch("builtins.print") as output:
+                    if index == 0:
+                        inventory.main()
+                        output.assert_called_once_with("Update inventory delivered.")
+                    else:
+                        with self.assertRaisesRegex(RuntimeError, "Inventory delivery failed"):
+                            inventory.main()
+                        output.assert_not_called()
 
 
 if __name__ == "__main__":

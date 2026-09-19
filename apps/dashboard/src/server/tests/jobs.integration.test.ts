@@ -10,6 +10,97 @@ import { reportJobProgress } from "../jobs/progress";
 import { enqueueJob, listJobs, lockQueue, scheduleDueJobs } from "../jobs/queue";
 import { expectOperationFailure, operationFixture } from "../testing/operations";
 
+test("claims require a live non-draining registration before changing queue ownership", async () => {
+    const fixture = await operationFixture();
+    try {
+        const definition = maintenanceJob(30).definition;
+        await fixture.client.begin(async (transaction) => {
+            await lockQueue(transaction);
+            await enqueueJob(transaction, definition, "test", "registration");
+        });
+        await expectOperationFailure(
+            claimJob(fixture.client, Bun.randomUUIDv7(), [definition.key]),
+            "registration"
+        );
+        const worker = await fixture.registerWorker();
+        await fixture.client`UPDATE workers SET draining = true WHERE id = ${worker}`;
+        await expectOperationFailure(
+            claimJob(fixture.client, worker, [definition.key]),
+            "registration"
+        );
+        await fixture.client`UPDATE workers SET draining = false, heartbeat_at = now() - interval '31 seconds' WHERE id = ${worker}`;
+        await expectOperationFailure(
+            claimJob(fixture.client, worker, [definition.key]),
+            "registration"
+        );
+        await fixture.client`DELETE FROM workers WHERE id = ${worker}`;
+        await expectOperationFailure(
+            claimJob(fixture.client, worker, [definition.key]),
+            "registration"
+        );
+        expect(
+            await fixture.client`SELECT id FROM job_runs WHERE state = 'running'`
+        ).toHaveLength(0);
+        expect(await fixture.client`SELECT key FROM resource_leases`).toHaveLength(0);
+        expect(
+            await fixture.client`SELECT id FROM operation_audit WHERE action = 'jobs.started'`
+        ).toHaveLength(0);
+        expect(
+            await claimJob(fixture.client, await fixture.registerWorker(), [
+                definition.key,
+            ])
+        ).toBeDefined();
+    } finally {
+        await fixture.close();
+    }
+});
+
+test("concurrent retirement fences an acquisition waiting for the registration lock", async () => {
+    const fixture = await operationFixture();
+    const retirement = await fixture.client.reserve();
+    let transactionOpen = false;
+    let claim: Promise<unknown> | undefined;
+    try {
+        const definition = maintenanceJob(30).definition;
+        await fixture.client.begin(async (transaction) => {
+            await lockQueue(transaction);
+            await enqueueJob(transaction, definition, "test", "retirement-race");
+        });
+        const worker = await fixture.registerWorker();
+        await retirement`BEGIN`;
+        transactionOpen = true;
+        await retirement`SELECT id FROM workers WHERE id = ${worker} FOR UPDATE`;
+        claim = claimJob(fixture.client, worker, [definition.key]).catch(
+            (error: unknown) => error
+        );
+        let waiting = false;
+        for (let attempt = 0; attempt < 100 && !waiting; attempt += 1) {
+            const [row] = await fixture.client<
+                { waiting: boolean }[]
+            >`SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE 'SELECT id FROM workers%') AS waiting`;
+            waiting = row?.waiting ?? false;
+            if (!waiting) await Bun.sleep(10);
+        }
+        expect(waiting).toBe(true);
+        await retirement`DELETE FROM workers WHERE id = ${worker}`;
+        await retirement`COMMIT`;
+        transactionOpen = false;
+        expect(await claim).toHaveProperty(
+            "message",
+            expect.stringContaining("registration")
+        );
+        expect(
+            await fixture.client`SELECT id FROM job_runs WHERE state = 'queued'`
+        ).toHaveLength(1);
+        expect(await fixture.client`SELECT key FROM resource_leases`).toHaveLength(0);
+    } finally {
+        if (transactionOpen) await retirement`ROLLBACK`;
+        retirement.release();
+        await claim;
+        await fixture.close();
+    }
+});
+
 test("global activity includes only the caller's active and recent jobs, including long-running work", async () => {
     const fixture = await operationFixture();
     try {
@@ -179,7 +270,9 @@ test("progress is bounded, deduplicated and fenced by the live uncancelled claim
             await lockQueue(transaction);
             await enqueueJob(transaction, definition, "test", "progress");
         });
-        const run = await claimJob(fixture.client, Bun.randomUUIDv7(), [definition.key]);
+        const run = await claimJob(fixture.client, await fixture.registerWorker(), [
+            definition.key,
+        ]);
         if (!run) throw new Error("Missing progress claim");
         await reportJobProgress(fixture.client, run, "Reading source data.");
         await reportJobProgress(fixture.client, run, "Reading source data.");
@@ -235,8 +328,8 @@ test("resource leases exclude parallel conflicts and stale owners cannot commit"
             await enqueueJob(transaction, definition, "test", "second");
         });
         const claims = await Promise.all([
-            claimJob(fixture.client, Bun.randomUUIDv7(), [definition.key]),
-            claimJob(fixture.client, Bun.randomUUIDv7(), [definition.key]),
+            claimJob(fixture.client, await fixture.registerWorker(), [definition.key]),
+            claimJob(fixture.client, await fixture.registerWorker(), [definition.key]),
         ]);
         expect(claims.filter(Boolean)).toHaveLength(1);
         const first = claims.find((claim) => claim !== undefined);
@@ -252,7 +345,9 @@ test("resource leases exclude parallel conflicts and stale owners cannot commit"
         ).toBe(false);
         await settleClaim(fixture.client, first, "succeeded");
         expect(
-            await claimJob(fixture.client, Bun.randomUUIDv7(), [definition.key])
+            await claimJob(fixture.client, await fixture.registerWorker(), [
+                definition.key,
+            ])
         ).toBeDefined();
         const [row] = await fixture.client<
             { count: number }[]
@@ -279,12 +374,19 @@ test("expired ownership recovers safe work but never automatically retries unsaf
             await enqueueJob(transaction, safe, "test", "safe");
             await enqueueJob(transaction, unsafe, "test", "unsafe");
         });
-        const first = await claimJob(fixture.client, Bun.randomUUIDv7(), [safe.key]);
-        const second = await claimJob(fixture.client, Bun.randomUUIDv7(), [unsafe.key]);
+        const first = await claimJob(fixture.client, await fixture.registerWorker(), [
+            safe.key,
+        ]);
+        const second = await claimJob(fixture.client, await fixture.registerWorker(), [
+            unsafe.key,
+        ]);
         expect(first).toBeDefined();
         expect(second).toBeDefined();
         await fixture.client`UPDATE job_runs SET lease_expires_at = now() - interval '1 second' WHERE state = 'running'`;
-        await claimJob(fixture.client, Bun.randomUUIDv7(), [safe.key, unsafe.key]);
+        await claimJob(fixture.client, await fixture.registerWorker(), [
+            safe.key,
+            unsafe.key,
+        ]);
         const rows = await listJobs(fixture.client, 30, undefined);
         expect(rows.find((row) => row.id === first?.id)?.state).toBe("queued");
         expect(rows.find((row) => row.id === second?.id)?.state).toBe("failed");
@@ -365,8 +467,14 @@ test("independent resources claim concurrently and cancellation prevents result 
             await enqueueJob(transaction, second, "test", "two");
         });
         const claims = await Promise.all([
-            claimJob(fixture.client, Bun.randomUUIDv7(), [first.key, second.key]),
-            claimJob(fixture.client, Bun.randomUUIDv7(), [first.key, second.key]),
+            claimJob(fixture.client, await fixture.registerWorker(), [
+                first.key,
+                second.key,
+            ]),
+            claimJob(fixture.client, await fixture.registerWorker(), [
+                first.key,
+                second.key,
+            ]),
         ]);
         expect(claims.filter(Boolean)).toHaveLength(2);
         const run = claims[0];

@@ -461,7 +461,7 @@ test("final job notifications share settlement and retries do not report prematu
                 "notification-test"
             );
         });
-        const first = await claimJob(fixture.client, crypto.randomUUID(), [
+        const first = await claimJob(fixture.client, await fixture.registerWorker(), [
             definition.key,
         ]);
         if (!first) throw new Error("Missing first claim");
@@ -470,7 +470,7 @@ test("final job notifications share settlement and retries do not report prematu
             0
         );
         await fixture.client`UPDATE job_runs SET available_at=now() WHERE id=${id}`;
-        const second = await claimJob(fixture.client, crypto.randomUUID(), [
+        const second = await claimJob(fixture.client, await fixture.registerWorker(), [
             definition.key,
         ]);
         if (!second) throw new Error("Missing second claim");

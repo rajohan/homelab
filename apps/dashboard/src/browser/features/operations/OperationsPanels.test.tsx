@@ -2,6 +2,12 @@ import { expect, test } from "bun:test";
 
 import type { Incident } from "@homelab/contracts/alerts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+    createMemoryHistory,
+    createRootRoute,
+    createRouter,
+    RouterProvider,
+} from "@tanstack/react-router";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
@@ -13,6 +19,7 @@ import { RuleStatus } from "../alerts/RuleStatus";
 import { BackupsPanel } from "../backups/BackupsPanel";
 import { SnapshotsPanel } from "../backups/SnapshotsPanel";
 import { ResourceUsage } from "../infrastructure/ResourceUsage";
+import { InfrastructureHealth } from "../overview/InfrastructureHealth";
 import { UpdatesPanel } from "../updates/UpdatesPanel";
 import { ObservationBadge } from "./ObservationBadge";
 
@@ -56,6 +63,44 @@ const incident: Incident = {
     startedAt: "2026-09-01T10:00:00Z",
     resolvedAt: null,
 };
+
+test.each([
+    [false, false, "Not configured"],
+    [false, true, "Not configured"],
+    [true, false, "Awaiting data"],
+    [true, true, "Live data"],
+] as const)(
+    "infrastructure configuration %s and retained data %s show %s",
+    async (configured, retained, label) => {
+        const router = createRouter({
+            routeTree: createRootRoute({ component: InfrastructureHealth }),
+            history: createMemoryHistory({ initialEntries: ["/"] }),
+        });
+        await router.load();
+        const cleanup = fixture(<RouterProvider router={router} />, (query) =>
+            query.setQueryData(["operations", "infrastructure", "inventory"], {
+                configured,
+                checkedAt: Date.now(),
+                inventory: retained
+                    ? {
+                          capturedAt: new Date().toISOString(),
+                          hosts: [],
+                          applications: [],
+                          services: [],
+                      }
+                    : null,
+            })
+        );
+        try {
+            expect(await screen.findByText(label)).toBeVisible();
+            if (!configured)
+                expect(screen.queryByText("Live data")).not.toBeInTheDocument();
+        } finally {
+            cleanup();
+            router.history.destroy();
+        }
+    }
+);
 
 test("all monitoring rules remain searchable while inactive rules do not become incidents", async () => {
     const rule = {

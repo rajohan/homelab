@@ -35,17 +35,11 @@ export const applicationLogsProcedure = trpc.procedure
             if (
                 target.logs.serviceValue === "service" &&
                 !target.logs.projectLabel &&
-                snapshot?.inventory.hosts
-                    .find((host) => host.id === input.host)
-                    ?.applications.some(
-                        (item) =>
-                            item.name === application.name &&
-                            item.project !== application.project
-                    )
+                target.projects.length > 1
             )
                 throw new OperationFailure(
                     "PRECONDITION_FAILED",
-                    "This service name occurs in multiple projects; configure a project log label."
+                    "Service logs cover multiple projects; configure a project log label."
                 );
             return readApplicationLogs(
                 operations.logs,
