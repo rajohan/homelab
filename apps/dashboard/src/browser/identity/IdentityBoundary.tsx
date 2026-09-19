@@ -1,5 +1,5 @@
 import { AuthFrame, Button, LoadingState, Redirect } from "@homelab/ui";
-import { useIdentitySession } from "@homelab/ui/identity";
+import { SecurityPrompt, useIdentitySession } from "@homelab/ui/identity";
 import { IdentityClient } from "@homelab/ui/identity/client";
 import { useState, type ReactNode } from "react";
 
@@ -59,6 +59,7 @@ export function IdentityBoundary({ children }: { children: ReactNode }) {
             }
         >
             {children}
+            <SecurityPrompt client={client} />
         </IdentityClientContext>
     );
 }

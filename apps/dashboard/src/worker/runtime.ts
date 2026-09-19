@@ -2,6 +2,7 @@ import type { SQL } from "bun";
 
 import { claimJob, commitClaim, renewClaim, settleClaim } from "../server/jobs/claims";
 import { readWorkerControl } from "../server/jobs/control";
+import { reportJobProgress } from "../server/jobs/progress";
 import { listSchedules, scheduleDueJobs } from "../server/jobs/queue";
 import type { ClaimedJob, JobHandler } from "../server/jobs/types";
 import { createWorkerState, type WorkerState } from "./health";
@@ -58,6 +59,10 @@ async function execute(
             signal: executionSignal,
             runId: run.id,
             leaseToken: run.lease_token,
+            reportProgress: async (message) => {
+                executionSignal.throwIfAborted();
+                await reportJobProgress(client, run, message);
+            },
             commit: (write) =>
                 executionSignal.aborted
                     ? Promise.resolve(false)

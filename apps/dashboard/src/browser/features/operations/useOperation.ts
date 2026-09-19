@@ -6,10 +6,12 @@ import { useIdentityClient } from "../../identity/IdentityClientContext";
 /**
  * Run an explicit user action with shared step-up and invalidate operational read models.
  * @param operation - Typed API operation; retries are limited to explicit proof rejections.
+ * @param onAccepted - Optional UI acknowledgement after the operation succeeds.
  * @returns Mutation state and controls without automatic network-error replay.
  */
 export function useOperation<T, R>(
-    operation: (input: T, signal: AbortSignal) => Promise<R>
+    operation: (input: T, signal: AbortSignal) => Promise<R>,
+    onAccepted?: () => void
 ) {
     const identity = useIdentityClient();
     const queries = useQueryClient();
@@ -21,8 +23,10 @@ export function useOperation<T, R>(
                     error instanceof TRPCClientError &&
                     error.message === "STEP_UP_REQUIRED"
             ),
-        onSuccess: async () => {
-            await queries.invalidateQueries({ queryKey: ["operations"] });
+        onSuccess: () => {
+            // Show an accepted run immediately; unrelated read-model refreshes may be slow.
+            void queries.invalidateQueries({ queryKey: ["operations"] });
+            onAccepted?.();
         },
         retry: false,
     });

@@ -24,6 +24,9 @@ export function maintenanceJob(retentionDays: number): JobHandler {
             validate: (input) => v.parse(v.strictObject({}), input),
         },
         execute: async (_payload, context) => {
+            await context.reportProgress(
+                "Removing expired operational history and stale worker metadata."
+            );
             if (
                 !(await context.commit(async (transaction) => {
                     await transaction`DELETE FROM job_runs WHERE id IN (SELECT id FROM job_runs WHERE state IN ('succeeded','failed','timed_out','cancelled') AND finished_at < now() - ${retentionDays} * interval '1 day' LIMIT 1000)`;
@@ -33,6 +36,21 @@ export function maintenanceJob(retentionDays: number): JobHandler {
                 }))
             )
                 throw new Error("Maintenance ownership changed");
+            let removed: number;
+            do {
+                context.signal.throwIfAborted();
+                removed = 0;
+                if (
+                    !(await context.commit(async (transaction) => {
+                        const rows = await transaction<
+                            { id: string }[]
+                        >`DELETE FROM dashboard_notifications WHERE id IN (SELECT id FROM dashboard_notifications WHERE created_at < now() - ${retentionDays} * interval '1 day' ORDER BY id LIMIT 1000) RETURNING id`;
+                        removed = rows.length;
+                    }))
+                )
+                    throw new Error("Maintenance ownership changed");
+            } while (removed === 1000);
+            await context.reportProgress("Operational history cleanup completed.");
         },
     };
 }

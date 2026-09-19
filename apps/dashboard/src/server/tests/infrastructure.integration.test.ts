@@ -83,6 +83,7 @@ test("worker and restarted live runtime retain saved identities through successf
                 {
                     runId: Bun.randomUUIDv7(),
                     leaseToken: Bun.randomUUIDv7(),
+                    reportProgress: async () => {},
                     signal: AbortSignal.timeout(5000),
                     commit: async (write) => {
                         await worker.client.begin(write);

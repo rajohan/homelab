@@ -63,8 +63,16 @@ enforces compiler-owned memoization. Ordinary callbacks and event handlers are u
 The compiler optimizes eligible components; it is not a guarantee that every function is
 memoized, and correctness must never depend on memoization.
 
-Infrastructure screens remain clearly marked as unconnected. This milestone does not invent
-monitoring data or give the dashboard administrative host access.
+Infrastructure reads the configured monitoring backend and preserves unavailable/stale states.
+Application metadata is collected by the worker into the separate dashboard database. The web
+process reads snapshots and admits narrowly defined jobs; only the worker receives optional
+Docker mTLS credentials. Auth never receives them. Loki queries use configured exact selectors,
+not browser-provided query expressions. See [application operations](applications.md).
+
+Notifications are an independent persistence and presentation module. Producers publish bounded,
+immutable events with an idempotency key. Personal acknowledgements are separate receipts;
+acknowledging an event cannot hide it for another operator. Job outcomes publish in the settlement
+transaction, and application availability publishes only on transitions. See [notifications](notifications.md).
 
 ## Runtime qualification
 

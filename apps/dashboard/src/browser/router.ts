@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-router";
 
 import { Shell } from "./layout/Shell";
+import { Applications } from "./pages/Applications";
 import { Identity } from "./pages/Identity";
 import { Infrastructure } from "./pages/Infrastructure";
 import { Jobs } from "./pages/Jobs";
@@ -45,6 +46,11 @@ export function createDashboardRouter(history?: RouterHistory) {
             overview,
             identity,
             infrastructure,
+            createRoute({
+                getParentRoute: () => root,
+                path: "/applications",
+                component: Applications,
+            }),
             createRoute({ getParentRoute: () => root, path: "/jobs", component: Jobs }),
             createRoute({
                 getParentRoute: () => root,

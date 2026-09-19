@@ -1,5 +1,8 @@
 import type { OperationsConfiguration } from "../config/operations";
 import { connectDashboardDatabase } from "../database/connection";
+import type { ApplicationTarget } from "../integrations/applications/configuration";
+import { applicationJobs } from "../integrations/applications/jobs";
+import type { LogsConfiguration } from "../integrations/logs/transport";
 import { collectInventory } from "../integrations/metrics/inventory";
 import { metricsJob } from "../integrations/metrics/job";
 import { createInventoryReader } from "../integrations/metrics/liveInventory";
@@ -19,6 +22,7 @@ export function createOperationsRuntime(
     const connection = connectDashboardDatabase(configuration.databaseUrl);
     const registry = createJobRegistry([
         maintenanceJob(configuration.retentionDays),
+        ...applicationJobs(configuration.applicationTargets ?? [], connection.client),
         ...(configuration.metricsUrl
             ? [
                   metricsJob(
@@ -43,9 +47,18 @@ export function createOperationsRuntime(
               )
           )
         : undefined;
-    return { ...connection, registry, metrics, readInventory };
+    return {
+        ...connection,
+        registry,
+        metrics,
+        readInventory,
+        logs: configuration.logs,
+        applicationTargets: configuration.applicationTargets ?? [],
+    };
 }
 export type OperationsRuntime = ReturnType<typeof connectDashboardDatabase> & {
+    readonly applicationTargets?: readonly ApplicationTarget[];
+    readonly logs?: LogsConfiguration | undefined;
     readonly registry: ReturnType<typeof createJobRegistry>;
     readonly metrics?: MetricsConfiguration | undefined;
     readonly readInventory?: ReturnType<typeof createInventoryReader> | undefined;

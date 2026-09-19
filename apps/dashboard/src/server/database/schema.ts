@@ -7,12 +7,14 @@ import type {
 } from "@homelab/contracts/operations";
 import { sql } from "drizzle-orm";
 import {
+    bigint,
     boolean,
     check,
     index,
     integer,
     jsonb,
     pgTable,
+    primaryKey,
     text,
     timestamp,
     uniqueIndex,
@@ -134,9 +136,16 @@ export const auditEvents = pgTable(
         actor: text().notNull(),
         action: text().notNull(),
         target: text().notNull(),
+        message: text(),
         createdAt: time("created_at").notNull().defaultNow(),
     },
-    (table) => [index("operation_audit_target").on(table.target, table.id)]
+    (table) => [
+        index("operation_audit_target").on(table.target, table.id),
+        check(
+            "operation_audit_message_length",
+            sql`${table.message} is null or length(${table.message}) between 1 and 500`
+        ),
+    ]
 );
 export const snapshots = pgTable("operation_snapshots", {
     key: text().primaryKey(),
@@ -148,3 +157,54 @@ export const rateWindows = pgTable("operation_rate_windows", {
     count: integer().notNull(),
     expiresAt: time("expires_at").notNull(),
 });
+
+export const notifications = pgTable(
+    "dashboard_notifications",
+    {
+        id: uuid().primaryKey(),
+        publicationOrder: bigint("publication_order", {
+            mode: "bigint",
+        }).generatedAlwaysAsIdentity(),
+        source: text().notNull(),
+        sourceKey: text("source_key").notNull(),
+        title: text().notNull(),
+        message: text().notNull(),
+        severity: text().notNull(),
+        destination: text(),
+        createdAt: time("created_at").notNull().defaultNow(),
+    },
+    (table) => [
+        uniqueIndex("dashboard_notifications_publication_order").on(
+            table.publicationOrder
+        ),
+        uniqueIndex("dashboard_notifications_source_key").on(
+            table.source,
+            table.sourceKey
+        ),
+        index("dashboard_notifications_severity_id").on(table.severity, table.id),
+        check(
+            "dashboard_notifications_severity",
+            sql`${table.severity} in ('info','success','warning','error')`
+        ),
+        check(
+            "dashboard_notifications_destination",
+            sql`${table.destination} is null or ${table.destination} in ('jobs','applications','infrastructure')`
+        ),
+    ]
+);
+
+export const notificationReceipts = pgTable(
+    "notification_receipts",
+    {
+        notificationId: uuid("notification_id")
+            .notNull()
+            .references(() => notifications.id, { onDelete: "cascade" }),
+        actor: text().notNull(),
+        readAt: time("read_at"),
+        dismissedAt: time("dismissed_at"),
+    },
+    (table) => [
+        primaryKey({ columns: [table.notificationId, table.actor] }),
+        index("notification_receipts_actor").on(table.actor, table.notificationId),
+    ]
+);

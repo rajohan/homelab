@@ -1,4 +1,10 @@
-const intervals = { fast: 5000, normal: 15_000, slow: 30_000, history: 60_000 } as const;
+const intervals = {
+    progress: 1000,
+    fast: 5000,
+    normal: 15_000,
+    slow: 30_000,
+    history: 60_000,
+} as const;
 
 /**
  * Share foreground polling and immediate resume behavior across live query views.

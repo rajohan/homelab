@@ -1,6 +1,46 @@
 import * as v from "valibot";
 
 export const capabilityDetails = {
+    "applications:read": {
+        group: "Applications",
+        label: "Read application details",
+        description: "Read safe metadata for configured applications and projects.",
+    },
+    "applications:logs": {
+        group: "Applications",
+        label: "Read application logs",
+        description: "Read bounded log history for configured applications.",
+    },
+    "applications:start": {
+        group: "Applications",
+        label: "Start applications",
+        description:
+            "Queue confirmed application or project starts; also requires Run jobs.",
+    },
+    "applications:stop": {
+        group: "Applications",
+        label: "Stop applications",
+        description:
+            "Queue confirmed application or project stops; also requires Run jobs.",
+    },
+    "applications:restart": {
+        group: "Applications",
+        label: "Restart applications",
+        description:
+            "Queue confirmed application or project restarts; also requires Run jobs.",
+    },
+    "notifications:read": {
+        group: "Notifications",
+        label: "Read notifications",
+        description:
+            "Read operational notifications without changing acknowledgement state.",
+    },
+    "notifications:publish": {
+        group: "Notifications",
+        label: "Publish notifications",
+        description:
+            "Automation accounts can publish plain-text notifications in their own namespace.",
+    },
     "jobs:read": {
         group: "Jobs",
         label: "View job runs",

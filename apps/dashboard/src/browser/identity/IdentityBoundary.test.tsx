@@ -7,11 +7,97 @@ import {
 } from "@homelab/ui/identity/client";
 import * as webauthn from "@simplewebauthn/browser";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within, waitFor } from "@testing-library/react";
+import { render, screen, within, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { Settings } from "../pages/Settings";
 import { IdentityBoundary } from "./IdentityBoundary";
+
+test.each(["verify", "cancel"])(
+    "a protected action outside Settings can %s through the global security prompt",
+    async (outcome) => {
+        const clients = new Set<IdentityClient>();
+        const session = spyOn(IdentityClient.prototype, "session").mockImplementation(
+            function (this: IdentityClient) {
+                clients.add(this);
+                return Promise.resolve({
+                    authenticated: true,
+                    userId: "operator",
+                    sessionId: "first",
+                    mfaRequired: false,
+                    methods: [],
+                });
+            }
+        );
+        const request = spyOn(IdentityClient.prototype, "request").mockResolvedValue({
+            ok: true,
+        });
+        const query = new QueryClient({
+            defaultOptions: { queries: { retry: false, gcTime: 0 } },
+        });
+        const view = render(
+            <QueryClientProvider client={query}>
+                <IdentityBoundary>Applications content</IdentityBoundary>
+            </QueryClientProvider>
+        );
+        let pending: Promise<unknown> | undefined;
+        try {
+            expect(await screen.findByText("Applications content")).toBeVisible();
+            const shared = clients.values().next().value;
+            if (!shared) throw new Error("Missing shared identity client");
+            let calls = 0;
+            await act(async () => {
+                pending = shared
+                    .verifiedOperation(
+                        () => {
+                            calls += 1;
+                            return calls === 1
+                                ? Promise.reject(new Error("STEP_UP_REQUIRED"))
+                                : Promise.resolve("accepted");
+                        },
+                        (error) =>
+                            error instanceof Error && error.message === "STEP_UP_REQUIRED"
+                    )
+                    .catch((error: unknown) => error);
+                await Promise.resolve();
+            });
+            const dialog = await screen.findByRole("dialog", {
+                name: "Confirm your identity",
+            });
+            expect(screen.getAllByRole("dialog")).toHaveLength(1);
+            const user = userEvent.setup();
+            if (outcome === "verify") {
+                await user.type(
+                    await within(dialog).findByLabelText("Current password"),
+                    "Synthetic-password-123!"
+                );
+                await user.click(
+                    within(dialog).getByRole("button", { name: "Verify password" })
+                );
+                expect(await pending).toBe("accepted");
+                expect(calls).toBe(2);
+                expect(request).toHaveBeenCalledWith("/api/account/proof/password", {
+                    password: "Synthetic-password-123!",
+                });
+            } else {
+                await user.click(
+                    within(dialog).getByRole("button", { name: "Close dialog" })
+                );
+                expect(await pending).toBeInstanceOf(IdentityError);
+                expect(calls).toBe(1);
+            }
+            await waitFor(() =>
+                expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+            );
+        } finally {
+            view.unmount();
+            await pending;
+            query.clear();
+            session.mockRestore();
+            request.mockRestore();
+        }
+    }
+);
 
 test.each([
     ["Log out", "Log out this browser?", "session/revoke", "Log out", 0],

@@ -1,4 +1,5 @@
 export { Badge } from "./components/Badge/Badge";
+export { Popover, type PopoverControl } from "./components/Popover/Popover";
 export { TimeSeriesChart } from "./components/Chart/TimeSeriesChart";
 export { formatMetric, utilization, type MetricUnit } from "./lib/formatMetric";
 export { Button } from "./components/Button/Button";

@@ -11,7 +11,7 @@ export function NavigationLink({
     icon: Icon,
     onNavigate,
 }: {
-    readonly to: "/" | "/settings" | "/infrastructure" | "/jobs";
+    readonly to: "/" | "/settings" | "/infrastructure" | "/jobs" | "/applications";
     readonly label: string;
     readonly icon: LucideIcon;
     readonly onNavigate?: (() => void) | undefined;

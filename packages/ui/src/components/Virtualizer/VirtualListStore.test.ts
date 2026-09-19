@@ -20,6 +20,6 @@ test("virtual layout exposes stable snapshots and bounded visible rows for large
     listener.mockClear();
     store.configure(0, String, null);
     expect(listener).not.toHaveBeenCalled();
-    expect(store.getSnapshot()).toEqual({ items: [], totalSize: 0 });
+    expect(store.getSnapshot()).toEqual({ items: [], totalSize: 0, viewportHeight: 520 });
     store.mount()();
 });

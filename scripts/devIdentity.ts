@@ -5,15 +5,25 @@ import { migrate } from "drizzle-orm/bun-sql/migrator";
 
 import { parseAuthConfiguration } from "../apps/auth/src/server/config/configuration";
 import { connectAuthDatabase } from "../apps/auth/src/server/database/connection";
-import { users } from "../apps/auth/src/server/database/schema";
+import { users, factors } from "../apps/auth/src/server/database/schema";
 import { startAuthServer } from "../apps/auth/src/server/index";
-import { hashPassword, randomToken } from "../apps/auth/src/server/security/crypto";
+import {
+    hashPassword,
+    randomToken,
+    encryptValue,
+} from "../apps/auth/src/server/security/crypto";
+import {
+    developmentTotpSecret,
+    developmentTotpCode,
+} from "../apps/auth/src/server/testing/developmentTotp";
 import { parseDashboardAuthConfiguration } from "../apps/dashboard/src/server/config/auth";
 import { parseOperationsConfiguration } from "../apps/dashboard/src/server/config/operations";
 import { connectDashboardDatabase } from "../apps/dashboard/src/server/database/connection";
 import { migrateDashboard } from "../apps/dashboard/src/server/database/migrations";
 import { startDashboardServer } from "../apps/dashboard/src/server/index";
+import { publishNotification } from "../apps/dashboard/src/server/notifications/publish";
 import { createOperationsRuntime } from "../apps/dashboard/src/server/operations/runtime";
+import { createApplicationFixture } from "../apps/dashboard/src/server/testing/applications";
 import { runWorker } from "../apps/dashboard/src/worker/runtime";
 
 async function docker(...arguments_: string[]): Promise<string> {
@@ -46,11 +56,13 @@ export async function main(): Promise<void> {
     // or used as an identity source. Ctrl+C removes this run's exact temporary container.
     const container = `homelab-identity-dev-${crypto.randomUUID()}`;
     const password = randomToken();
+    const encryptionKey = crypto.getRandomValues(new Uint8Array(32));
     let created = false;
     let auth: Awaited<ReturnType<typeof startAuthServer>> | undefined;
     let dashboard: ReturnType<typeof startDashboardServer> | undefined;
     let worker: Promise<void> | undefined;
     let operations: ReturnType<typeof createOperationsRuntime> | undefined;
+    let applications: ReturnType<typeof createApplicationFixture> | undefined;
     const lifecycle = new AbortController();
     let stopRequested = false;
     let serverShutdownFailed: boolean;
@@ -85,13 +97,25 @@ export async function main(): Promise<void> {
                     new URL("../apps/auth/migrations", import.meta.url)
                 ),
             });
+            const userId = crypto.randomUUID();
             await connection.database.insert(users).values({
-                id: crypto.randomUUID(),
+                id: userId,
                 username: "developer",
                 email: "developer@example.test",
                 emailVerified: false,
                 passwordHash: await hashPassword("Development-only-password-123!"),
                 groups: ["admins"],
+                createdAt: new Date(),
+            });
+            const factorId = crypto.randomUUID();
+            await connection.database.insert(factors).values({
+                id: factorId,
+                userId,
+                kind: "totp",
+                label: "Disposable preview authenticator",
+                encryptedData: encryptValue(encryptionKey, `factor:${factorId}`, {
+                    secret: developmentTotpSecret,
+                }),
                 createdAt: new Date(),
             });
             await connection.client`CREATE DATABASE homelab_dashboard_dev`;
@@ -129,7 +153,15 @@ export async function main(): Promise<void> {
         await prepareDatabase(databaseUrl);
         const dashboardUrl = new URL(databaseUrl);
         dashboardUrl.pathname = "/homelab_dashboard_dev";
+        applications = createApplicationFixture({
+            actionDelayMs: 2000,
+            healthDelayMs: 4000,
+            includeFailure: true,
+        });
         const operationConfiguration = parseOperationsConfiguration({
+            NODE_ENV: "development",
+            HOMELAB_DASHBOARD_APPLICATION_TARGETS: JSON.stringify([applications.target]),
+            HOMELAB_DASHBOARD_LOGS_URL: applications.url,
             HOMELAB_DASHBOARD_DATABASE_URL: dashboardUrl.href,
             // Optional read-only telemetry; identity and operational state remain disposable.
             HOMELAB_DASHBOARD_METRICS_URL: process.env.HOMELAB_PREVIEW_METRICS_URL,
@@ -139,6 +171,26 @@ export async function main(): Promise<void> {
         const dashboardConnection = connectDashboardDatabase(dashboardUrl.href);
         try {
             await migrateDashboard(dashboardConnection);
+            await dashboardConnection.client.begin(async (transaction) => {
+                for (const [index, severity] of (
+                    ["success", "warning", "info", "error"] as const
+                ).entries()) {
+                    await publishNotification(transaction, "preview", {
+                        key: String(index),
+                        severity,
+                        title:
+                            [
+                                "Application restart completed",
+                                "Application host unavailable",
+                                "Scheduled maintenance finished",
+                                "Application health check failed",
+                            ][index] ?? "Development notification",
+                        message:
+                            "This is a synthetic preview notification. No production application or alert has changed.",
+                        destination: "applications",
+                    });
+                }
+            });
         } finally {
             await dashboardConnection.client.close();
         }
@@ -152,9 +204,8 @@ export async function main(): Promise<void> {
                 HOMELAB_AUTH_DASHBOARD_ORIGIN: "http://localhost:3100",
                 HOMELAB_AUTH_RP_ID: "localhost",
                 HOMELAB_AUTH_DATABASE_URL: databaseUrl,
-                HOMELAB_AUTH_ENCRYPTION_KEY: Buffer.from(
-                    crypto.getRandomValues(new Uint8Array(32))
-                ).toString("base64"),
+                HOMELAB_AUTH_ENCRYPTION_KEY:
+                    Buffer.from(encryptionKey).toString("base64"),
                 HOMELAB_AUTH_COOKIE_KEY: randomToken(),
                 HOMELAB_AUTH_PROXY_KEY: randomToken(),
                 HOMELAB_AUTH_JWKS: JSON.stringify({
@@ -225,6 +276,9 @@ export async function main(): Promise<void> {
             );
             console.info("Synthetic account: developer / Development-only-password-123!");
             console.info(
+                "Preview authenticator code: bun --no-env-file scripts/devIdentity.ts --code"
+            );
+            console.info(
                 "Use synthetic data only. Ctrl+C removes the temporary database and identities."
             );
             await stopped;
@@ -239,7 +293,11 @@ export async function main(): Promise<void> {
             try {
                 await operations?.client.close();
             } finally {
-                if (created) await docker("stop", "--time", "5", container);
+                try {
+                    if (created) await docker("stop", "--time", "5", container);
+                } finally {
+                    await applications?.close();
+                }
             }
         }
     }
@@ -247,4 +305,7 @@ export async function main(): Promise<void> {
         throw new Error("Development server shutdown failed after resource cleanup");
 }
 
-if (import.meta.main) await main();
+if (import.meta.main) {
+    if (Bun.argv.includes("--code")) console.info(developmentTotpCode());
+    else await main();
+}

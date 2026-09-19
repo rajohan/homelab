@@ -34,6 +34,11 @@ export function useIdentitySession(client: IdentityClient) {
                         ),
                 });
             }
+            client.bindIdentity(
+                (result.authenticated || result.mfaRequired) && result.userId
+                    ? `${result.userId}:${result.sessionId ?? "missing"}`
+                    : undefined
+            );
             return result;
         },
         retry: false,

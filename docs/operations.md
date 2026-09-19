@@ -5,6 +5,22 @@ PostgreSQL database. Auth keeps its own database and remains independent of both
 No Docker socket, root SSH access, arbitrary shell command or client-provided URL is
 exposed by this foundation.
 
+## Job progress
+
+Every handler receives `context.reportProgress(message)`. Await it before meaningful
+steps and readiness waits, using short, code-owned text rather than raw errors, secrets,
+commands or provider responses. This is shared by maintenance, telemetry and application
+jobs; no Docker-specific progress protocol is required. Handlers remain responsible for
+describing their own work, so new job types must add their appropriate messages.
+
+Progress updates are fenced by the current live, uncancelled claim. The latest message
+is stored on the run; consecutive duplicates are ignored and event history is capped at
+1,000 messages per run. Existing history retention applies. Final status and notifications
+are still produced by the worker's atomic settlement, not by a handler claiming success.
+An open active run refreshes every second in the foreground and stops polling at a
+terminal state. Closing the dialog does not cancel the job. Cancel through Jobs explicitly.
+Security confirmation is shared by the entire dashboard, including actions outside Settings.
+
 ## Configuration and rollout
 
 Use a dedicated dashboard database/role. Do not point these settings at the Auth database.
@@ -46,8 +62,9 @@ PgBouncer transaction pooling; no session locks or LISTEN connection are require
   `network` and `interactive` jobs share normal worker capacity and resource fences.
 - Only explicitly retry-safe work retries automatically. Unknown outcomes for unsafe
   effects require operator investigation; the engine does not promise exactly-once effects.
-- Database result commits recheck ownership. External integrations must honor cancellation
-  and use downstream idempotency/fencing for writes; this foundation only reads metrics.
+- Database result commits recheck ownership. External integrations honor cancellation and
+  document their downstream guarantees. Docker cannot roll back or guarantee exactly-once writes;
+  its lifecycle jobs reject stale selections and never automatically replay unsafe effects.
 - Cancellation is cooperative. Handlers must honor the supplied signal and timeout.
 - Missed schedule intervals coalesce, and active runs prevent overlapping scheduled copies.
 - User request IDs deduplicate while the run is retained, not forever after cleanup.
@@ -122,8 +139,10 @@ drive both validation and the grouped Settings picker. They are enforced indepen
 | `operations:maintain`    | Execute history cleanup with `jobs:run`                   |
 
 Choosing one permission does not silently grant the others. Future integrations must
-register and enforce their permissions together; the UI does not advertise unsupported
-Docker, terminal or filesystem permissions. Machine tokens cannot manage other accounts.
+register and enforce their permissions together. [Application controls](applications.md) add
+separate read/log/start/stop/restart permissions; [notifications](notifications.md) add read and
+publish permissions. No arbitrary terminal or filesystem authority is exposed.
+Machine tokens cannot manage other accounts.
 
 ## Monitoring and development
 
@@ -139,6 +158,8 @@ paused. Use these intent gauges to gate schedule-freshness alerts; do not alert 
 because the last successful run grows old while a schedule is deliberately disabled.
 
 `bun run dev:identity` starts disposable Auth and Dashboard databases plus the worker on
-loopback. It has no production credentials and does not query production monitoring.
+loopback, with synthetic Docker/Loki fixtures. It has no production control credentials.
+`HOMELAB_PREVIEW_METRICS_URL` may explicitly enable read-only telemetry during development;
+identity, jobs, notifications and application lifecycle state remain entirely synthetic.
 Stop with Ctrl+C to remove that exact container and all preview data. The ordinary
 integration suite also allocates a separate disposable database per test suite.
