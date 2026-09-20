@@ -103,6 +103,24 @@ updated source, not overwrite it with an old pin. Installation failures are not 
 rolled back: an application may already have migrated its persistent data. Inspect the
 failed run and service before deciding recovery; PBS remains the backup system.
 
+Projects with runtime secret delivery may configure the Docker driver's optional
+`environment` with a deployment-owned `command` argument array and an explicit
+`variables` name allowlist. The absolute command runs once on the target, under
+the target's execution identity, and must return a JSON object. It may call the
+project's existing secret-delivery entry point; Homelab does not install a helper
+or depend on a particular secret manager. Its recipe is part of the target
+fingerprint, so changing it invalidates automatic policy consent.
+
+Only the named string values are passed to the Compose subprocesses, not image
+pull/inspect commands. Values stay in target process memory: no `.env` file,
+worker response, log or database copy is created. JSON is bounded to 64 KiB, each
+value to 16 KiB, with a 30-second delivery deadline. Missing or malformed values
+fail before pulling an image or editing Compose. Process/CLI control variables
+such as `PATH`, `DOCKER_HOST`, `COMPOSE_FILE` and `LD_PRELOAD` cannot be selected.
+When this source is configured, implicit `.env` loading is disabled; supply all
+required interpolation inputs through the explicit source. Without this option,
+the existing Compose environment behavior is unchanged.
+
 ### APT
 
 Installed and repository candidate versions are checked again on the target. APT

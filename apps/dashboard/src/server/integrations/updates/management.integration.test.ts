@@ -550,6 +550,63 @@ test("version classification includes pinned Docker minors without granting late
     ).toBe("major");
 });
 
+test("Compose environment recipes are explicit, validated and invalidate automatic consent", async () => {
+    const state = await fixture();
+    try {
+        await writeUpdatePolicy(state.client, target, "operator", {
+            enabled: true,
+            version: 0,
+        });
+        const environment = {
+            command: ["/fixture/secret-reader", "json"],
+            variables: ["APP_PASSWORD"],
+        };
+        const [changed] = parseUpdateTargets(
+            JSON.stringify([{ ...target, driver: { ...target.driver, environment } }])
+        );
+        expect(changed).toBeDefined();
+        const policies = await readUpdatePolicies(state.client, [changed!]);
+        expect(policies[0]).toMatchObject({ enabled: false, configurationChanged: true });
+        expect(updateTargetRevision(changed!)).not.toBe(updateTargetRevision(target));
+        expect(JSON.stringify(policies)).not.toContain("secret-reader");
+    } finally {
+        await state.close();
+    }
+});
+
+test("Compose environment cannot override process or Docker CLI controls", () => {
+    const configured = (environment: unknown) =>
+        parseUpdateTargets(
+            JSON.stringify([{ ...target, driver: { ...target.driver, environment } }])
+        );
+    for (const name of [
+        "PATH",
+        "HOME",
+        "LD_PRELOAD",
+        "DYLD_INSERT_LIBRARIES",
+        "PYTHONPATH",
+        "BASH_ENV",
+        "SHELLOPTS",
+        "COMPOSE_FILE",
+        "DOCKER_HOST",
+        "LC_ALL",
+        "ENV",
+        "IFS",
+        "bad-name",
+    ])
+        expect(() =>
+            configured({ command: ["/fixture/reader"], variables: [name] })
+        ).toThrow();
+    for (const environment of [
+        { command: ["relative-reader"], variables: ["APP_PASSWORD"] },
+        { command: [], variables: ["APP_PASSWORD"] },
+        { command: ["/fixture/reader"], variables: [] },
+        { command: ["/fixture/reader"], variables: ["APP_PASSWORD", "APP_PASSWORD"] },
+        { command: ["/fixture/reader"], variables: ["APP_PASSWORD"], extra: true },
+    ])
+        expect(() => configured(environment)).toThrow();
+});
+
 test("SSH update transport pins trust and deployment configuration rejects ambiguous targets", () => {
     const args = updateSshArguments(target);
     expect(args).toContain("StrictHostKeyChecking=yes");

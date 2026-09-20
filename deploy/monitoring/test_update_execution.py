@@ -19,7 +19,7 @@ SPEC.loader.exec_module(remote)
 class UpdateExecutionTests(unittest.TestCase):
     """Cover exact image pins, source fencing, package boundaries and private error handling."""
 
-    def docker_fixture(self, mode="running", mutate=False, fail=False):
+    def docker_fixture(self, mode="running", mutate=False, fail=False, with_environment=False):
         with tempfile.TemporaryDirectory(prefix="homelab-updater-fixture-") as temporary:
             directory = Path(temporary).resolve()
             source = directory / "compose.yaml"
@@ -28,13 +28,23 @@ class UpdateExecutionTests(unittest.TestCase):
             original = ("services:\n  web:\n    image: " + old + "\n    environment:\n      PRIVATE: synthetic-private-value\n").encode()
             source.write_bytes(original)
             driver = {"kind": "docker", "name": "demo-web-1", "project": "demo", "service": "web", "directory": str(directory), "file": str(source), "imageFile": str(source)}
+            if with_environment:
+                driver["environment"] = {"command": ["/fixture/environment", "json"], "variables": ["PRIVATE"]}
             item = {"id": "docker:" + "c" * 64, "image": old, "installed": "sha256:" + "d" * 64, "available": "sha256:" + "e" * 64, "availableImage": new}
             calls = []
             installed = False
 
-            def command(arguments, timeout=120):
+            def command(arguments, timeout=120, environment=None, output_limit=2_000_000):
                 nonlocal installed
                 calls.append(arguments)
+                if arguments[0] == "/fixture/environment":
+                    self.assertIsNone(environment)
+                    self.assertEqual(output_limit, 65_536)
+                    return json.dumps({"PRIVATE": "synthetic-private-value", "DOCKER_HOST": "http://untrusted.invalid", "UNSELECTED": "not-forwarded"})
+                if arguments[1] == "compose" and with_environment:
+                    self.assertEqual(environment, {"PRIVATE": "synthetic-private-value", "COMPOSE_DISABLE_ENV_FILE": "1"})
+                else:
+                    self.assertIsNone(environment)
                 if arguments[1] == "inspect":
                     values = ["/demo-web-1", new if installed else old, item["available"] if installed else item["installed"], "created" if installed and mode != "running" else mode, "demo", "web"]
                     return ",".join(json.dumps(value) for value in values)
@@ -61,6 +71,8 @@ class UpdateExecutionTests(unittest.TestCase):
                 else:
                     self.assertEqual(remote.docker_update(driver, item, True), item["available"])
             contents = source.read_bytes()
+            if with_environment:
+                self.assertEqual(sum(call[0] == "/fixture/environment" for call in calls), 1)
             self.assertIn(b"synthetic-private-value", contents)
             self.assertFalse(list(directory.glob(".homelab-update-*")))
             if mutate:
@@ -79,6 +91,30 @@ class UpdateExecutionTests(unittest.TestCase):
 
     def test_stopped_image_update_does_not_start_the_service(self):
         self.docker_fixture(mode="exited")
+
+    def test_scoped_environment_is_loaded_once_and_only_passed_to_compose(self):
+        self.docker_fixture(with_environment=True)
+
+    def test_scoped_environment_preserves_stopped_state_and_source_fencing(self):
+        self.docker_fixture(with_environment=True, mode="exited")
+        self.docker_fixture(with_environment=True, mutate=True)
+
+    def test_environment_rejects_missing_invalid_oversized_and_control_values(self):
+        source = {"environment": {"command": ["/fixture/environment"], "variables": ["PRIVATE"]}}
+        for value in ({}, [], {"PRIVATE": None}, {"PRIVATE": 3}, {"PRIVATE": "nul\x00byte"}, {"PRIVATE": "x" * 16_385}, {"PRIVATE": "ok", "unused": "x" * 65_536}):
+            with self.subTest(value_type=type(value).__name__), patch.object(remote, "command", return_value=json.dumps(value)):
+                with self.assertRaises(RuntimeError):
+                    remote.compose_environment(source)
+        for name in ("PATH", "HOME", "LD_PRELOAD", "DYLD_INSERT_LIBRARIES", "PYTHONPATH", "BASH_ENV", "SHELLOPTS", "COMPOSE_FILE", "DOCKER_HOST", "LC_ALL", "ENV", "IFS", "bad-name"):
+            with self.subTest(name=name), patch.object(remote, "command", return_value=json.dumps({name: "unused"})):
+                with self.assertRaises(RuntimeError):
+                    remote.compose_environment({"environment": {"command": ["/fixture/environment"], "variables": [name]}})
+
+    def test_real_command_bounds_private_environment_output(self):
+        script = "import os; print('ok' if os.environ.get('PRIVATE') == 'synthetic-private-value' else 'missing')"
+        self.assertEqual(remote.command([sys.executable, "-c", script], environment={"PRIVATE": "synthetic-private-value"}), "ok")
+        with self.assertRaisesRegex(RuntimeError, "budget"):
+            remote.command([sys.executable, "-c", "print('synthetic-private-value' * 4000)"], output_limit=65_536)
 
     def test_external_compose_edit_is_not_overwritten(self):
         self.docker_fixture(mutate=True)
