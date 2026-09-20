@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/rajohan/homelab/compare/v0.5.0...v0.6.0) (2026-09-20)
+
+
+### Features
+
+* **updates:** add controlled software and automatic updates ([#17](https://github.com/rajohan/homelab/issues/17)) ([99610f1](https://github.com/rajohan/homelab/commit/99610f10ea97f0fe6dac4e179d1c7c2399338223))
+
 ## [0.5.0](https://github.com/rajohan/homelab/compare/v0.4.0...v0.5.0) (2026-09-20)
 
 
