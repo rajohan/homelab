@@ -8,6 +8,11 @@ const logLabels = v.record(
     labelName,
     v.pipe(v.string(), v.minLength(1), v.maxLength(160))
 );
+const legacyServiceSchema = v.strictObject({
+    project: projectName,
+    service: projectName,
+    value: v.pipe(v.string(), v.minLength(1), v.maxLength(160)),
+});
 const logConfiguration = v.strictObject({
     labels: v.pipe(
         logLabels,
@@ -19,6 +24,17 @@ const logConfiguration = v.strictObject({
     servicePrefix: v.optional(v.pipe(v.string(), v.maxLength(80)), ""),
     serviceValue: v.optional(v.picklist(["container", "service"])),
     projectLabel: v.optional(labelName),
+    legacy: v.optional(
+        v.strictObject({
+            until: v.pipe(v.string(), v.isoTimestamp()),
+            serviceLabel: labelName,
+            services: v.pipe(
+                v.array(legacyServiceSchema),
+                v.minLength(1),
+                v.maxLength(100)
+            ),
+        })
+    ),
 });
 const schema = v.pipe(
     v.array(
@@ -89,6 +105,27 @@ export function parseApplicationTargets(
                 Object.hasOwn(target.logs.labels, target.logs.projectLabel))
         )
             throw new Error("Log project label conflicts with other selectors");
+        const legacy = target.logs?.legacy;
+        if (
+            legacy &&
+            target.logs &&
+            (target.logs.serviceValue === "service" ||
+                legacy.serviceLabel === target.logs.serviceLabel ||
+                legacy.serviceLabel === target.logs.projectLabel ||
+                Object.hasOwn(target.logs.labels, legacy.serviceLabel) ||
+                Date.parse(legacy.until) > Date.now() ||
+                legacy.services.some(
+                    (entry) => !target.projects.includes(entry.project)
+                ) ||
+                new Set(
+                    legacy.services.map((entry) => `${entry.project}/${entry.service}`)
+                ).size !== legacy.services.length ||
+                new Set(legacy.services.map((entry) => entry.value)).size !==
+                    legacy.services.length)
+        )
+            throw new Error(
+                "Legacy logs require unique project/service mappings and a past cutoff without conflicting labels"
+            );
     }
     return targets;
 }

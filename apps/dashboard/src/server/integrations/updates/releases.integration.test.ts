@@ -1,8 +1,11 @@
 import { expect, test } from "bun:test";
 
-import type { UpdateItem } from "@homelab/contracts/updates";
+import { updateChange, type UpdateItem } from "@homelab/contracts/updates";
 
-import { latestImage } from "./registry";
+import { dockerHubVersionTag } from "./dockerHubTags";
+import { publicImageReference, imageVersionTag } from "./imageReference";
+import { resolveUpdates } from "./job";
+import { latestImage, resolveImageUpdate } from "./registry";
 import { compareRelease, latestRelease } from "./releases";
 
 const image: UpdateItem = {
@@ -74,7 +77,7 @@ test("public registry checks enforce fixed pull scopes and compare the correct p
         expect(await latestImage(image, AbortSignal.timeout(2000), request)).toBe(
             "sha256:" + "d".repeat(64)
         );
-        expect(requests).toHaveLength(4);
+        expect(requests).toHaveLength(6);
         expect(requests[1]?.authorization).toBeNull();
         expect(
             await latestImage(
@@ -96,7 +99,7 @@ test("public registry checks enforce fixed pull scopes and compare the correct p
                 AbortSignal.timeout(2000),
                 request
             )
-        ).toBeNull();
+        ).toBe("sha256:" + "d".repeat(64));
         expect(
             await latestImage(
                 { ...image, platform: { os: "windows", architecture: "amd64" } },
@@ -107,6 +110,207 @@ test("public registry checks enforce fixed pull scopes and compare the correct p
     } finally {
         await server.stop(true);
     }
+});
+
+test("pinned stable image versions discover newer same-flavor tags without following pagination URLs", async () => {
+    const requests: string[] = [];
+    const resultDigest = "sha256:" + "e".repeat(64);
+    const manifestDigest = "sha256:" + "f".repeat(64);
+    const request: typeof fetch = Object.assign(
+        (input: Parameters<typeof fetch>[0]) => {
+            const url = new URL(input instanceof Request ? input.url : input);
+            requests.push(url.href);
+            expect(url.origin).toBe("https://ghcr.io");
+            if (url.pathname.endsWith("/tags/list")) {
+                if (!url.searchParams.has("last"))
+                    return Promise.resolve(
+                        Response.json(
+                            {
+                                tags: [
+                                    "v1.2.3-alpine",
+                                    "v1.3.0-alpine",
+                                    "v9.0.0-bookworm",
+                                    "v9.0.0-rc.1",
+                                ],
+                            },
+                            {
+                                headers: {
+                                    Link: '<http://localhost/private>; rel="next"',
+                                },
+                            }
+                        )
+                    );
+                expect(url.searchParams.get("last")).toBe("v9.0.0-rc.1");
+                return Promise.resolve(Response.json({ tags: ["v2.0.0-alpine"] }));
+            }
+            expect(url.pathname).toBe("/v2/example/web/manifests/v2.0.0-alpine");
+            return Promise.resolve(
+                Response.json(
+                    { config: { digest: resultDigest } },
+                    { headers: { "Docker-Content-Digest": manifestDigest } }
+                )
+            );
+        },
+        { preconnect: fetch.preconnect }
+    );
+    const result = await resolveImageUpdate(
+        { ...image, image: "ghcr.io/example/web:v1.2.3-alpine@sha256:" + "a".repeat(64) },
+        AbortSignal.timeout(2000),
+        request
+    );
+    expect(result).toEqual({
+        imageId: resultDigest,
+        reference: `ghcr.io/example/web:v2.0.0-alpine@${manifestDigest}`,
+        installedVersion: "1.2.3",
+        availableVersion: "2.0.0",
+    });
+    expect(requests).toHaveLength(3);
+});
+
+test("explicit tracking tags avoid release scans and malformed pins never reach a registry", async () => {
+    const paths: string[] = [];
+    const request: typeof fetch = Object.assign(
+        (input: Parameters<typeof fetch>[0]) => {
+            paths.push(new URL(input instanceof Request ? input.url : input).pathname);
+            return Promise.resolve(
+                Response.json({ config: { digest: "sha256:" + "e".repeat(64) } })
+            );
+        },
+        { preconnect: fetch.preconnect }
+    );
+    await latestImage(
+        {
+            ...image,
+            image: "example/web:1.0.0@sha256:" + "a".repeat(64),
+            imageTag: "stable",
+        },
+        AbortSignal.timeout(2000),
+        request
+    );
+    expect(paths).toEqual([
+        "/v2/example/web/manifests/stable",
+        "/v2/example/web/blobs/sha256:" + "e".repeat(64),
+    ]);
+    expect(publicImageReference("example/web@broken")).toBeNull();
+    expect(
+        publicImageReference("example/web@sha256:" + "a".repeat(64) + "@other")
+    ).toBeNull();
+    expect(publicImageReference("example/web", "https://private")).toBeNull();
+    expect(imageVersionTag("1.2.3-beta.1")).toBeNull();
+    expect(imageVersionTag("latest")).toBeNull();
+});
+
+test("incomplete image tag catalogs fail instead of being reported as current", async () => {
+    const request: typeof fetch = Object.assign(
+        () =>
+            Promise.resolve(
+                Response.json(
+                    { tags: ["1.0.0"] },
+                    { headers: { Link: '<ignored>; rel="next"' } }
+                )
+            ),
+        { preconnect: fetch.preconnect }
+    );
+    const failure = await latestImage(
+        { ...image, image: "ghcr.io/example/web:1.0.0" },
+        AbortSignal.timeout(2000),
+        request
+    ).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect(String(failure)).toContain("pagination did not advance");
+});
+
+test("large Hub catalogs expose a newer pinned-image candidate without following remote next URLs", async () => {
+    const requests: URL[] = [];
+    const request: typeof fetch = Object.assign(
+        (input: Parameters<typeof fetch>[0], options?: Parameters<typeof fetch>[1]) => {
+            const url = new URL(input instanceof Request ? input.url : input);
+            requests.push(url);
+            expect(options?.redirect).toBe("error");
+            expect(new Headers(options?.headers).has("authorization")).toBe(false);
+            if (url.hostname === "hub.docker.com") {
+                expect(url.pathname).toBe("/v2/namespaces/example/repositories/web/tags");
+                expect(url.searchParams.get("page_size")).toBe("100");
+                return Promise.resolve(
+                    Response.json({
+                        next: "http://localhost/private",
+                        results: ["2.4.1", "2.5.0", "3.0.0-rc.1", "9.0.0-alpine"].map(
+                            (name) => ({ name })
+                        ),
+                    })
+                );
+            }
+            expect(url.origin).toBe("https://registry-1.docker.io");
+            expect(url.pathname).toBe("/v2/example/web/manifests/2.5.0");
+            return Promise.resolve(
+                Response.json({ config: { digest: "sha256:" + "d".repeat(64) } })
+            );
+        },
+        { preconnect: fetch.preconnect }
+    );
+    const result = await resolveImageUpdate(
+        { ...image, image: "example/web:2.4.0@sha256:" + "a".repeat(64) },
+        AbortSignal.timeout(2000),
+        request
+    );
+    expect(result?.reference).toBe("docker.io/example/web:2.5.0");
+    expect(requests).toHaveLength(2);
+});
+
+test("partial Hub catalogs never claim current and stop at the fixed page budget", async () => {
+    let count = 0;
+    const request: typeof fetch = Object.assign(
+        (input: Parameters<typeof fetch>[0]) => {
+            const url = new URL(input instanceof Request ? input.url : input);
+            count += 1;
+            expect(url.hostname).toBe("hub.docker.com");
+            expect(url.searchParams.get("page")).toBe(String(count));
+            return Promise.resolve(
+                Response.json({
+                    next: "https://private.invalid",
+                    results: [{ name: `0.1.${count}` }],
+                })
+            );
+        },
+        { preconnect: fetch.preconnect }
+    );
+    const failure = await dockerHubVersionTag(
+        "example/web",
+        "1.0.0",
+        AbortSignal.timeout(2000),
+        request
+    ).catch((error: unknown) => error);
+    expect(String(failure)).toContain("exceeds the lookup budget");
+    expect(count).toBe(5);
+});
+
+test("complete Hub catalogs preserve an up-to-date tag without accepting arbitrary repository paths", async () => {
+    let count = 0;
+    const request: typeof fetch = Object.assign(
+        () => {
+            count += 1;
+            return Promise.resolve(
+                Response.json({ next: null, results: [{ name: "1.0.0" }] })
+            );
+        },
+        { preconnect: fetch.preconnect }
+    );
+    expect(
+        await dockerHubVersionTag(
+            "example/web",
+            "1.0.0",
+            AbortSignal.timeout(2000),
+            request
+        )
+    ).toBe("1.0.0");
+    const failure = await dockerHubVersionTag(
+        "../private",
+        "1.0.0",
+        AbortSignal.timeout(2000),
+        request
+    ).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect(count).toBe(1);
 });
 
 test.each([
@@ -171,7 +375,11 @@ test.each([
                     expect(request.headers.has("authorization")).toBe(false);
                     return Response.json({ token: "synthetic-read-token" });
                 }
-                expect(url.pathname).toBe(`/v2/${repository}/manifests/latest`);
+                expect([
+                    `/v2/${repository}/manifests/latest`,
+                    `/v2/${repository}/blobs/${image.installed}`,
+                    `/v2/${repository}/blobs/${resultDigest}`,
+                ]).toContain(url.pathname);
                 if (!request.headers.has("authorization"))
                     return new Response("", {
                         status: 401,
@@ -182,6 +390,18 @@ test.each([
                 expect(request.headers.get("authorization")).toBe(
                     "Bearer synthetic-read-token"
                 );
+                if (url.pathname.includes("/blobs/"))
+                    return Response.json({
+                        config: {
+                            Labels: {
+                                "org.opencontainers.image.version": url.pathname.endsWith(
+                                    image.installed
+                                )
+                                    ? "1.2.0"
+                                    : "1.3.0",
+                            },
+                        },
+                    });
                 return Response.json({ config: { digest: resultDigest } });
             },
         });
@@ -208,7 +428,13 @@ test.each([
                     request
                 )
             ).toBe(resultDigest);
-            expect(requests.map((url) => url.hostname)).toEqual([host, authHost, host]);
+            expect(requests.map((url) => url.hostname)).toEqual([
+                host,
+                authHost,
+                host,
+                host,
+                host,
+            ]);
             expect(requests.every((url) => url.protocol === "https:")).toBe(true);
         } finally {
             await server.stop(true);
@@ -248,6 +474,77 @@ test.each([
             request
         )
     ).toBeNull();
+});
+
+test("shared mutable-tag lookups retain each installed digest's actual version", async () => {
+    const secondDigest = "sha256:" + "b".repeat(64);
+    const nextDigest = "sha256:" + "c".repeat(64);
+    const lookups: string[] = [];
+    const server = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        fetch: (request) => {
+            const path = new URL(request.url).pathname;
+            lookups.push(path);
+            if (path.endsWith("/manifests/latest"))
+                return Response.json(
+                    { config: { digest: nextDigest } },
+                    {
+                        headers: { "Docker-Content-Digest": "sha256:" + "d".repeat(64) },
+                    }
+                );
+            let version = "1.3.0";
+            if (path.endsWith(image.installed)) version = "1.2.0";
+            else if (path.endsWith(secondDigest)) version = "2.0.0";
+            return Response.json({
+                config: { Labels: { "org.opencontainers.image.version": version } },
+            });
+        },
+    });
+    const request: typeof fetch = Object.assign(
+        (input: Parameters<typeof fetch>[0], options?: Parameters<typeof fetch>[1]) => {
+            const upstream = new URL(input instanceof Request ? input.url : input);
+            expect(upstream.origin).toBe("https://registry-1.docker.io");
+            return fetch(new URL(upstream.pathname, server.url), options);
+        },
+        { preconnect: fetch.preconnect }
+    );
+    try {
+        const result = await resolveUpdates(
+            {
+                capturedAt: new Date().toISOString(),
+                repositoryMetadataAt: null,
+                complete: true,
+                coveredKinds: ["container"],
+                items: [
+                    image,
+                    { ...image, id: "second", installed: secondDigest },
+                    { ...image, id: "duplicate" },
+                ],
+            },
+            AbortSignal.timeout(5000),
+            new Map(),
+            request
+        );
+        expect(result.items.map((item) => item.installedVersion)).toEqual([
+            "1.2.0",
+            "2.0.0",
+            "1.2.0",
+        ]);
+        expect(result.items.map(updateChange)).toEqual(["minor", "unknown", "minor"]);
+        expect(
+            result.items.every(
+                (item) => item.candidateVerified && item.available === nextDigest
+            )
+        ).toBe(true);
+        expect(lookups.filter((path) => path.endsWith("/manifests/latest"))).toHaveLength(
+            2
+        );
+        expect(lookups.filter((path) => path.endsWith(image.installed))).toHaveLength(1);
+        expect(lookups.filter((path) => path.endsWith(secondDigest))).toHaveLength(1);
+    } finally {
+        await server.stop(true);
+    }
 });
 
 test("release feeds use semantic order and discard arbitrary remote URLs", async () => {

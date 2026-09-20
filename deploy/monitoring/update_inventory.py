@@ -12,6 +12,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from native_inventory import collect_native
+
 
 def timestamp(seconds=None):
     """Format UTC observation timestamps without local-time ambiguity."""
@@ -19,12 +21,13 @@ def timestamp(seconds=None):
     return instant.isoformat().replace("+00:00", "Z")
 
 
-def command(arguments):
+def command(arguments, version=False):
     """Run a fixed read-only program invocation; never propagate raw failure output."""
     result = subprocess.run(arguments, capture_output=True, text=True, timeout=15, check=False, env={"PATH": "/usr/local/bin:/usr/bin:/bin", "LC_ALL": "C", "HOME": "/nonexistent"})
-    if result.returncode or len(result.stdout) > 2_000_000:
+    output = result.stdout + (result.stderr if version else "")
+    if result.returncode or len(output) > 2_000_000:
         raise RuntimeError("A local inventory source is unavailable")
-    return result.stdout
+    return output
 
 
 def apt_inventory():
@@ -78,7 +81,7 @@ def runtime_inventory(configuration):
     return rows
 
 
-def docker_inventory(projects):
+def docker_inventory(projects, tracking=None):
     """Read only explicit Compose projects and local image metadata; never pull or control containers."""
     rows = []
     for project in projects:
@@ -93,7 +96,10 @@ def docker_inventory(projects):
             name, image, image_id = metadata
             platform = json.loads("[" + command(["/usr/bin/docker", "image", "inspect", "--format", '{{json .Os}},{{json .Architecture}},{{json .Variant}}', image_id]).strip() + "]")
             os_name, architecture, variant = platform
-            rows.append({"id": "docker:" + container_id, "name": name.lstrip("/"), "kind": "container", "installed": image_id, "available": None, "status": "unknown", "image": image, "held": "@" in image, "platform": {"os": os_name, "architecture": architecture, **({"variant": variant} if variant else {})}})
+            channel = (tracking or {}).get(name.lstrip("/"))
+            if channel is not None and (not isinstance(channel, str) or not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}", channel)):
+                raise ValueError("Invalid image tracking tag")
+            rows.append({"id": "docker:" + container_id, "name": name.lstrip("/"), "kind": "container", "installed": image_id, "available": None, "status": "unknown", "image": image, "held": False, "pinned": "@" in image, **({"imageTag": channel} if channel is not None else {}), "platform": {"os": os_name, "architecture": architecture, **({"variant": variant} if variant else {})}})
     return rows
 
 
@@ -117,16 +123,23 @@ def collect(configuration):
             report["complete"] = False
     if configuration.get("executables"):
         report["coveredKinds"].append("runtime")
-    if configuration.get("openclawManifest"):
+    if configuration.get("openclawManifest") or configuration.get("nativeApplications"):
         report["coveredKinds"].append("application")
     try:
         report["items"].extend(runtime_inventory(configuration))
     except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
         report["complete"] = False
+    if configuration.get("nativeApplications"):
+        try:
+            rows, complete = collect_native(configuration["nativeApplications"], lambda arguments: command(arguments, version=True))
+            report["items"].extend(rows)
+            report["complete"] = report["complete"] and complete
+        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+            report["complete"] = False
     if configuration.get("dockerProjects"):
         report["coveredKinds"].append("container")
         try:
-            report["items"].extend(docker_inventory(configuration["dockerProjects"]))
+            report["items"].extend(docker_inventory(configuration["dockerProjects"], configuration.get("imageTrackingTags")))
         except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
             report["complete"] = False
     if not report["coveredKinds"] or len(report["items"]) > 5000:

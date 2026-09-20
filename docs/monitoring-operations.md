@@ -69,7 +69,7 @@ requests retain their 65,536-byte limit. Both declared and streamed bodies are
 bounded; the transport also has a 1 MiB ceiling. Authentication, source binding
 and item-count validation still apply to the larger report route.
 
-`deploy/monitoring/update_inventory.py` reads APT's installed/candidate versions
+`deploy/monitoring/update_inventory.py` and its sibling `native_inventory.py` read APT's installed/candidate versions
 using python3-apt, explicitly configured runtime executables, an OpenClaw package
 manifest and optional allowlisted local Docker projects. It never runs
 `apt update`, installs packages, pulls image layers or controls containers.
@@ -92,7 +92,12 @@ repository or a plaintext backup. The JSON contains nonsecret paths only:
 {
     "apt": true,
     "executables": { "bun": "/usr/local/bin/bun" },
-    "dockerProjects": []
+    "dockerProjects": ["example"],
+    "imageTrackingTags": { "example-web-1": "stable" },
+    "nativeApplications": [
+        { "provider": "adguard-home", "path": "/opt/AdGuardHome/AdGuardHome" },
+        { "provider": "node-exporter", "path": "/usr/local/bin/node_exporter" }
+    ]
 }
 ```
 
@@ -102,22 +107,49 @@ local daemon access, which is security-sensitive even for read-only commands.
 Do not grant it merely to enable this collector; qualify host access separately.
 Non-APT appliances require a publisher implementing the same validated report
 contract. Unsupported sources remain absent/unknown, not falsely current.
+Deploy both Python files together. Native entries use explicit nonsecret installation
+paths and fixed provider-owned version arguments, not arbitrary command arrays.
+Supported providers are AdGuard Home/Sync, Node/SMART/Blackbox exporters,
+Alertmanager, VictoriaMetrics (also vmalert/vmbackup using distinct `id` and `name`),
+Alloy, Loki, Traefik, Code Server and Codex CLI. `pgadmin` and `pve-exporter` read
+the installed Python distribution's `METADATA`; `nextcloud` reads `version.php`
+without executing PHP or loading credentials. A failed native observation retains
+an unknown row and marks the report incomplete; it does not hide the installation.
+APT observations already include PostgreSQL, PgBouncer, Valkey and other installed
+packages when APT owns them. The default attention filter hides current packages;
+select **All observed software** to see them. A successful report only asserts
+coverage of its configured sources, not discovery of every possible private binary,
+appliance, Python environment or application extension.
 The native publisher reports success only after the API explicitly accepts the observation.
 Rejected out-of-order timestamps and malformed receipts fail delivery rather than reporting success.
 
-The hourly `updates.releases` job compares Bun, current Node, OpenClaw and GitHub CLI
-against fixed official release feeds. Stable latest releases are used, not project
+The hourly `updates.releases` job compares runtimes and registered native applications
+against fixed official GitHub, npm and PyPI release feeds. Feed lookups are shared
+across hosts within a worker run to avoid repeated anonymous API requests.
+Stable latest releases are used, not project
 dependency RC channels. Public Docker Hub/GHCR tag checks compare the correct
 platform's image configuration digest with the locally observed image ID.
-No images are pulled. Private registries, unsupported registries and digest pins
-are explicitly unchecked. A tag check detects movement of that tag; it does not
-guess a newer version tag or suggest replacing a deliberate pin.
+No images are pulled. Private and unsupported registries remain explicitly unchecked.
+Digest pins are checked, not treated as package holds. A digest-only image follows
+its repository's implicit `latest` tag; `imageTrackingTags` can explicitly select
+another channel. A stable full version tag without a channel override checks newer
+stable tags with the same version prefix and supported distro flavor. Prereleases
+and unrelated flavors are excluded. Enumeration uses fixed origins and bounded
+pages rather than following server-supplied URLs; incomplete catalogs with no verified
+result fail visibly. Returned manifest digests are retained in candidate references.
+Tracking-tag updates without comparable semantic versions cannot be classified as
+patch/minor. Fixed-origin image-config lookups also check OCI version labels; missing
+or inaccessible metadata leaves installation manual. Availability
+is independent of permission to install. This collector and comparison job do not
+install anything or enable automatic updates.
 Lookups have bounded concurrency, response sizes and deadlines. Least-recently
 checked sources are processed first; unavailable feeds remain unknown.
 
 Source summaries exclude package arrays. Software lists fetch at most 100 items
 per request with automatic cursor continuation and shared virtual scrolling.
 Permissions separate read, publish and manually triggering collection jobs.
+See [Update management](update-management.md) for separately authorized installers,
+per-target patch/minor automatic policies and production qualification requirements.
 
 ## Deployment and acceptance
 

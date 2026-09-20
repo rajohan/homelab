@@ -2,6 +2,7 @@ import type {
     ApplicationIntent,
     ApplicationSelection,
 } from "@homelab/contracts/applications";
+import { availableApplicationOperations } from "@homelab/contracts/applications";
 import { ConfirmDialog, DropdownMenu } from "@homelab/ui";
 import { Play, Square, RotateCw } from "lucide-react";
 import { useState } from "react";
@@ -11,8 +12,8 @@ import { useJobOperation } from "../jobs/useJobOperation";
 
 const operations = [
     { id: "start", label: "Start", icon: Play },
-    { id: "stop", label: "Stop", icon: Square },
     { id: "restart", label: "Restart", icon: RotateCw },
+    { id: "stop", label: "Stop", icon: Square },
 ] as const;
 
 /**
@@ -24,15 +25,18 @@ export function ApplicationActions({
     selection,
     revision,
     name,
+    states,
     disabled = false,
 }: {
     readonly host: string;
     readonly selection: ApplicationSelection;
     readonly revision: string;
     readonly name: string;
+    readonly states: readonly string[];
     readonly disabled?: boolean;
 }) {
     const [intent, setIntent] = useState<ApplicationIntent>();
+    const available = availableApplicationOperations(states);
     const request = useJobOperation((input: ApplicationIntent, signal) =>
         api.applications.request.mutate(input, { signal })
     );
@@ -43,18 +47,20 @@ export function ApplicationActions({
         <>
             <DropdownMenu
                 label={`Actions for ${name}`}
-                disabled={disabled || request.isPending}
-                actions={operations.map((operation) => ({
-                    ...operation,
-                    onSelect: () =>
-                        setIntent({
-                            host,
-                            selection,
-                            revision,
-                            operation: operation.id,
-                            requestId: crypto.randomUUID(),
-                        }),
-                }))}
+                disabled={disabled || request.isPending || available.length === 0}
+                actions={operations
+                    .filter((operation) => available.includes(operation.id))
+                    .map((operation) => ({
+                        ...operation,
+                        onSelect: () =>
+                            setIntent({
+                                host,
+                                selection,
+                                revision,
+                                operation: operation.id,
+                                requestId: crypto.randomUUID(),
+                            }),
+                    }))}
             />
             {intent && (
                 <ConfirmDialog
@@ -68,6 +74,10 @@ export function ApplicationActions({
                     confirmLabel={verb}
                     onClose={() => setIntent(undefined)}
                     onConfirm={async () => {
+                        if (!available.includes(intent.operation))
+                            throw new Error(
+                                "Application state changed. Close this dialog and choose an available action."
+                            );
                         await request.mutateAsync(intent);
                         setIntent(undefined);
                     }}

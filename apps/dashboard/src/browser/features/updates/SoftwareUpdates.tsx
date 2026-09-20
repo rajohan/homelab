@@ -10,12 +10,14 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { api } from "../../api/client";
+import { UpdateAction } from "./UpdateAction";
 import { UpdateStatus } from "./UpdateStatus";
+import { updateVersion } from "./updateVersion";
 
 /**
  * Browse a source's software with bounded network pages and shared virtual scrolling.
  * @param props - Configured source selected by the operator.
- * @returns Version comparison without modification controls.
+ * @returns Version comparison with separately authorized, confirmed installation controls.
  */
 export function SoftwareUpdates({ source }: { readonly source: string }) {
     const [search, setSearch] = useState("");
@@ -66,22 +68,41 @@ export function SoftwareUpdates({ source }: { readonly source: string }) {
                             id: "name",
                             label: "Software",
                             mobile: "title",
-                            render: (item) => item.name,
+                            render: (item) => (
+                                <div>
+                                    {item.name}
+                                    {item.pinned && (
+                                        <p className="text-xs text-primary-400">
+                                            Digest pinned
+                                        </p>
+                                    )}
+                                </div>
+                            ),
                         },
                         { id: "kind", label: "Type", render: (item) => item.kind },
                         {
                             id: "installed",
                             label: "Installed",
                             render: (item) => (
-                                <span className="wrap-anywhere">{item.installed}</span>
+                                <span
+                                    className="wrap-anywhere"
+                                    title={item.image ?? item.installed}
+                                >
+                                    {updateVersion(item, "installed")}
+                                </span>
                             ),
                         },
                         {
                             id: "available",
                             label: "Available",
                             render: (item) => (
-                                <span className="wrap-anywhere">
-                                    {item.available ?? "Not checked"}
+                                <span
+                                    className="wrap-anywhere"
+                                    title={
+                                        item.availableImage ?? item.available ?? undefined
+                                    }
+                                >
+                                    {updateVersion(item, "available")}
                                 </span>
                             ),
                         },
@@ -97,6 +118,22 @@ export function SoftwareUpdates({ source }: { readonly source: string }) {
                                     }
                                 />
                             ),
+                        },
+                        {
+                            id: "actions",
+                            label: "Actions",
+                            mobile: "footer-actions",
+                            render: (item) =>
+                                item.control ? (
+                                    <UpdateAction
+                                        item={item}
+                                        control={item.control}
+                                        disabled={
+                                            query.isError ||
+                                            (query.data?.pages[0]?.stale ?? true)
+                                        }
+                                    />
+                                ) : null,
                         },
                     ]}
                     continuation={{

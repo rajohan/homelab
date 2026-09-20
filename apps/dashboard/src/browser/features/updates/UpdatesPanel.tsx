@@ -17,11 +17,12 @@ import { useState } from "react";
 import { api } from "../../api/client";
 import { MetricStat } from "../infrastructure/MetricStat";
 import { ObservationBadge } from "../operations/ObservationBadge";
+import { AutomaticUpdates } from "./AutomaticUpdates";
 import { SoftwareUpdates } from "./SoftwareUpdates";
 
 /**
- * Present read-only update inventory with explicit source freshness and coverage.
- * @returns Version comparison without install, pull or restart controls.
+ * Present update observations separately from confirmed manual and opt-in automatic installation.
+ * @returns Source freshness, software versions and explicitly configured update policies.
  */
 export function UpdatesPanel({ compact = false }: { readonly compact?: boolean }) {
     const [source, setSource] = useState("");
@@ -38,7 +39,7 @@ export function UpdatesPanel({ compact = false }: { readonly compact?: boolean }
         <Card className="space-y-4">
             <SectionHeader
                 title="Available updates"
-                description="Observed versions and read-only update checks."
+                description="Installed versions, available updates and update policies."
                 icon={PackageCheck}
                 actions={
                     <ObservationBadge
@@ -155,6 +156,7 @@ export function UpdatesPanel({ compact = false }: { readonly compact?: boolean }
                                         }))}
                                     />
                                     <SoftwareUpdates source={selected} />
+                                    <AutomaticUpdates source={selected} />
                                 </>
                             ) : (
                                 !query.isError && (

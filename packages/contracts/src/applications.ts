@@ -25,6 +25,24 @@ export const applicationIntentSchema = v.strictObject({
     requestId: idSchema,
 });
 export type ApplicationOperation = v.InferOutput<typeof applicationOperationSchema>;
+
+/**
+ * Select meaningful lifecycle actions from observed container states.
+ * @param states - All states in the selected container or Compose project.
+ * @returns Actions in display order; mixed projects can start stopped members or stop running ones.
+ */
+export function availableApplicationOperations(
+    states: readonly string[]
+): readonly ApplicationOperation[] {
+    const operations: ApplicationOperation[] = [];
+    if (states.some((state) => ["created", "exited"].includes(state)))
+        operations.push("start");
+    if (states.some((state) => ["running", "restarting"].includes(state)))
+        operations.push("restart");
+    if (states.some((state) => ["running", "restarting", "paused"].includes(state)))
+        operations.push("stop");
+    return operations;
+}
 export type ApplicationSelection = v.InferOutput<typeof applicationTargetSchema>;
 export type ApplicationIntent = v.InferOutput<typeof applicationIntentSchema>;
 

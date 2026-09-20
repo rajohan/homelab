@@ -89,14 +89,17 @@ export async function renewClaim(client: SQL, run: ClaimedJob): Promise<boolean>
  * @param client - The dashboard database pool.
  * @param run - The current job fence.
  * @param write - A bounded database-only result writer.
+ * @param queueAdmission - Acquire the queue lock before the claim when admitting dependent jobs.
  * @returns False if ownership or cancellation prevents the commit.
  */
 export async function commitClaim(
     client: SQL,
     run: ClaimedJob,
-    write: (transaction: Transaction) => Promise<void>
+    write: (transaction: Transaction) => Promise<void>,
+    queueAdmission = false
 ): Promise<boolean> {
     return client.begin(async (transaction) => {
+        if (queueAdmission) await lockQueue(transaction);
         const rows = await transaction<
             { id: string }[]
         >`SELECT id FROM job_runs WHERE id = ${run.id} AND state = 'running' AND lease_token = ${run.lease_token} AND lease_expires_at > now() AND NOT cancel_requested FOR UPDATE`;

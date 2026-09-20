@@ -3,22 +3,28 @@ import type { SQL } from "bun";
 import * as v from "valibot";
 
 import type { JobHandler } from "../../jobs/types";
-import { latestImage } from "./registry";
+import { resolveImageUpdate, type ImageUpdate } from "./registry";
 import { compareRelease, latestRelease } from "./releases";
 
 /**
  * Compare observed versions with official releases, isolating individual lookup failures.
  * @param report - Installed inventory from a registered read-only publisher.
  * @param signal - Job deadline and cancellation.
+ * @param releases - Per-job feed cache shared across hosts, never across worker runs.
+ * @param request - HTTP boundary replaceable with isolated registry/feed fixtures.
  * @returns A new report with unavailable feeds explicit, never guessed up to date.
  */
 export async function resolveUpdates(
     report: UpdateReport,
-    signal: AbortSignal
+    signal: AbortSignal,
+    releases: Map<string, Promise<string>> = new Map(),
+    request: typeof fetch = fetch
 ): Promise<UpdateReport> {
-    const releases = new Map<string, Promise<string>>();
-    const images = new Map<string, Promise<string | null>>();
-    const items: UpdateItem[] = [...report.items];
+    const images = new Map<string, Promise<ImageUpdate | null>>();
+    const items: UpdateItem[] = report.items.map((item) => ({
+        ...item,
+        candidateVerified: false,
+    }));
     const started = Date.now();
     let index = 0;
     const lane = async () => {
@@ -35,31 +41,74 @@ export async function resolveUpdates(
                     throw new Error("Source lookup budget reached");
                 const deadline = AbortSignal.any([signal, AbortSignal.timeout(8000)]);
                 let available: string | null;
+                let availableImage: string | undefined;
+                let installedVersion: string | undefined;
+                let availableVersion: string | undefined;
                 if (item.release) {
                     let promise = releases.get(item.release);
                     if (!promise) {
-                        promise = latestRelease(item.release, deadline);
+                        promise = latestRelease(item.release, deadline, request);
                         releases.set(item.release, promise);
                     }
                     available = await promise;
                 } else {
-                    const key = JSON.stringify([item.image, item.platform]);
+                    const key = JSON.stringify([
+                        item.image,
+                        item.installed,
+                        item.imageTag,
+                        item.platform,
+                    ]);
                     let promise = images.get(key);
                     if (!promise) {
-                        promise = latestImage(item, deadline);
+                        promise = resolveImageUpdate(item, deadline, request);
                         images.set(key, promise);
                     }
-                    available = await promise;
+                    const candidate = await promise;
+                    available = candidate?.imageId ?? null;
+                    availableImage = candidate?.reference;
+                    installedVersion = candidate?.installedVersion;
+                    availableVersion = candidate?.availableVersion;
                 }
                 let status: UpdateItem["status"] = "unknown";
                 if (available !== null)
                     status = available === item.installed ? "current" : "available";
                 if (available !== null && item.release)
                     status = compareRelease(item.installed, available);
-                items[position] = { ...item, available, status };
+                const {
+                    availableImage: _previous,
+                    installedVersion: _installed,
+                    availableVersion: _version,
+                    ...observation
+                } = item;
+                items[position] = {
+                    ...observation,
+                    available,
+                    status,
+                    candidateVerified: available !== null,
+                    ...(installedVersion ? { installedVersion } : {}),
+                    ...(availableVersion ? { availableVersion } : {}),
+                    ...(item.kind === "container" && item.image?.includes("@")
+                        ? {
+                              pinned: true,
+                              held: item.pinned === undefined ? false : item.held,
+                          }
+                        : {}),
+                    ...(availableImage ? { availableImage } : {}),
+                };
             } catch {
                 signal.throwIfAborted();
-                items[position] = { ...item, available: null, status: "unknown" };
+                const {
+                    availableImage: _previous,
+                    installedVersion: _installed,
+                    availableVersion: _version,
+                    ...observation
+                } = item;
+                items[position] = {
+                    ...observation,
+                    candidateVerified: false,
+                    available: null,
+                    status: "unknown",
+                };
             }
         }
     };
@@ -90,6 +139,7 @@ export function updatesJob(sources: readonly UpdateSource[], client: SQL): JobHa
             validate: (input) => v.parse(v.strictObject({}), input),
         },
         execute: async (_payload, context) => {
+            const releases = new Map<string, Promise<string>>();
             const history = await client<
                 { key: string; time: number }[]
             >`SELECT key, extract(epoch FROM captured_at)::float8 AS time FROM operation_snapshots WHERE key LIKE 'updates.resolved:%'`;
@@ -105,7 +155,7 @@ export function updatesJob(sources: readonly UpdateSource[], client: SQL): JobHa
                 await context.reportProgress(
                     `Checking available versions for ${source.label}.`
                 );
-                const report = await resolveUpdates(row.value, context.signal);
+                const report = await resolveUpdates(row.value, context.signal, releases);
                 if (
                     !(await context.commit(async (transaction) => {
                         await transaction`INSERT INTO operation_snapshots (key, value, captured_at) SELECT ${`updates.resolved:${source.id}`}, ${JSON.stringify(report)}::text::jsonb, now() WHERE EXISTS (SELECT 1 FROM operation_snapshots WHERE key = ${`updates:${source.id}`} AND value->>'capturedAt' = ${report.capturedAt}) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, captured_at = EXCLUDED.captured_at`;

@@ -1,5 +1,17 @@
 # Application operations
 
+## Legacy log labels
+
+Container selectors remain exact by default. When retained logs predate container
+labels, deployment configuration can add `logs.legacy` with a fixed past `until`
+timestamp, a `serviceLabel` and explicit `services` entries containing `project`,
+`service` and the old label `value`. Each alias must map to exactly one approved
+project/service, and its provenance must be verified by the operator. No current
+inventory heuristic guesses ownership of historical names. The old query requires
+an absent/empty container label, preserves the fixed host selectors, and ends at
+the cutoff. It cannot include newer unlabeled logs or another current container.
+Both streams share the same bounded cursor and timestamp collision handling.
+
 Applications manages **existing** Docker containers and Compose-labelled projects. Start, stop
 and restart never pull images, rebuild, recreate, prune, delete data or execute arbitrary commands.
 Project operations use Docker's API with Compose dependency labels; this is not a replacement

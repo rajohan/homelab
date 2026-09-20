@@ -23,7 +23,8 @@ export interface JobExecution {
     readonly reportProgress: (message: string) => Promise<void>;
     /** Persist a result only while the job still owns its live claim. */
     readonly commit: (
-        write: (transaction: TransactionSQL) => Promise<void>
+        write: (transaction: TransactionSQL) => Promise<void>,
+        queueAdmission?: boolean
     ) => Promise<boolean>;
 }
 export interface JobHandler {

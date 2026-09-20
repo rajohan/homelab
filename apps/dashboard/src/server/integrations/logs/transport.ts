@@ -22,6 +22,10 @@ export interface LogsConfiguration {
     readonly url: string;
     readonly token: string | undefined;
 }
+export interface LegacyLogSelection {
+    readonly labels: Readonly<Record<string, string>>;
+    readonly until: string;
+}
 const periods = {
     "15m": 15 * 60,
     "1h": 3600,
@@ -29,6 +33,16 @@ const periods = {
     "24h": 24 * 3600,
     "7d": 7 * 24 * 3600,
 } as const;
+
+function selector(values: Readonly<Record<string, string>>): string {
+    return Object.entries(values)
+        .map(([name, value]) => {
+            if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name))
+                throw new Error("Invalid configured log label");
+            return `${name}=${JSON.stringify(value)}`;
+        })
+        .join(",");
+}
 
 function entries(value: v.InferOutput<typeof responseSchema>): LogEntry[] {
     const occurrences = new Map<string, number>();
@@ -69,13 +83,15 @@ function entries(value: v.InferOutput<typeof responseSchema>): LogEntry[] {
  * @param labels - Exact allowlisted application selectors.
  * @param input - Fixed window and validated continuation cursor.
  * @param signal - Request cancellation/deadline.
+ * @param legacy - Server-owned historical mapping ending at a fixed migration cutoff.
  * @returns Complete timestamp groups, so pagination never silently skips colliding timestamps.
  */
 export async function readApplicationLogs(
     configuration: LogsConfiguration,
     labels: Readonly<Record<string, string>>,
     input: { range: keyof typeof periods; cursor?: LogCursor; search?: string },
-    signal: AbortSignal
+    signal: AbortSignal,
+    legacy?: LegacyLogSelection
 ): Promise<LogPage> {
     const now = BigInt(Date.now()) * 1_000_000n;
     const since = input.cursor
@@ -89,20 +105,18 @@ export async function readApplicationLogs(
         before - since > 168n * 3600n * 1_000_000_000n
     )
         throw new Error("Log cursor is outside the allowed window");
-    const selector = Object.entries(labels)
-        .map(([name, value]) => {
-            if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name))
-                throw new Error("Invalid configured log label");
-            return `${name}=${JSON.stringify(value)}`;
-        })
-        .join(",");
-    if (!selector) throw new Error("Application log selectors are required");
-    const query = async (start: bigint, end: bigint, limit: number) => {
+    if (!selector(labels)) throw new Error("Application log selectors are required");
+    const read = async (
+        selectedLabels: Readonly<Record<string, string>>,
+        start: bigint,
+        end: bigint,
+        limit: number
+    ) => {
         const url = new URL(
             configuration.url.replace(/\/$/, "") + "/loki/api/v1/query_range"
         );
         url.search = new URLSearchParams({
-            query: `{${selector}}${input.search ? ` |= ${JSON.stringify(input.search)}` : ""}`,
+            query: `{${selector(selectedLabels)}}${input.search ? ` |= ${JSON.stringify(input.search)}` : ""}`,
             start: String(start),
             end: String(end),
             direction: "backward",
@@ -124,6 +138,27 @@ export async function readApplicationLogs(
         )
             throw new Error("Log service returned an invalid result window");
         return rows;
+    };
+    const legacyTime = legacy ? Date.parse(legacy.until) : null;
+    if (legacyTime !== null && (!Number.isFinite(legacyTime) || legacyTime > Date.now()))
+        throw new Error("Invalid legacy log cutoff");
+    const query = async (start: bigint, end: bigint, limit: number) => {
+        const cutoff = legacyTime === null ? start : BigInt(legacyTime) * 1_000_000n;
+        const historicalEnd = cutoff < end ? cutoff : end;
+        const pages = await Promise.all([
+            read(labels, start, end, limit),
+            legacy && historicalEnd > start
+                ? read(legacy.labels, start, historicalEnd, limit)
+                : Promise.resolve([]),
+        ]);
+        return pages
+            .flat()
+            .toSorted(
+                (left, right) =>
+                    right.timestamp.localeCompare(left.timestamp) ||
+                    left.id.localeCompare(right.id)
+            )
+            .slice(0, limit);
     };
     const rows = await query(since, before, 201);
     if (rows.length < 201) return { entries: rows, nextCursor: null };

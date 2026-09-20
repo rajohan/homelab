@@ -12,7 +12,7 @@ export interface DataColumn<T> {
     readonly id: string;
     readonly label: string;
     readonly render: (row: T) => ReactNode;
-    readonly mobile?: "title" | "wide" | "actions";
+    readonly mobile?: "title" | "wide" | "actions" | "footer-actions";
     readonly hideLabel?: boolean;
     readonly width?: string;
 }

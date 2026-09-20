@@ -336,35 +336,59 @@ test("disable dialog captures a reason and offers an explicit future resume time
     }
 });
 
-test("worker view includes zero counts and explains pause without treating it as failure", async () => {
-    const cleanup = fixture(<WorkerPanel />, (query) =>
-        query.setQueryData(["operations", "worker"], {
-            workers: [],
-            counts: [],
-            oldestQueuedAt: null,
-            control: {
-                paused: true,
-                version: 2,
-                updatedAt: null,
-                updatedBy: "human:test",
-            },
-        })
-    );
-    try {
-        const user = userEvent.setup();
-        expect(screen.getAllByText("0")).toHaveLength(6);
-        expect(screen.getByText("timed out")).toBeVisible();
-        expect(screen.getByRole("heading", { name: "Worker" })).toBeVisible();
-        expect(screen.queryByText(/execution slots/)).not.toBeInTheDocument();
-        expect(screen.getByText("queued")).toBeVisible();
-        expect(screen.getByText("running")).toBeVisible();
-        await user.click(screen.getByRole("button", { name: "Resume worker" }));
-        expect(screen.getByRole("dialog", { name: "Resume worker?" })).toBeVisible();
-        expect(screen.getByText(/Missed schedule occurrences/)).toBeVisible();
-    } finally {
-        cleanup();
+test.each([false, true])(
+    "worker view has one shared footer control and zero counts when paused is %s",
+    async (paused) => {
+        const cleanup = fixture(<WorkerPanel />, (query) =>
+            query.setQueryData(["operations", "worker"], {
+                workers: [],
+                counts: [],
+                oldestQueuedAt: null,
+                control: {
+                    paused,
+                    version: 2,
+                    updatedAt: null,
+                    updatedBy: "human:test",
+                },
+            })
+        );
+        try {
+            const user = userEvent.setup();
+            expect(screen.getAllByText("0")).toHaveLength(6);
+            expect(screen.getByText("timed out")).toBeVisible();
+            expect(screen.getByRole("heading", { name: "Worker" })).toBeVisible();
+            expect(screen.queryByText(/execution slots/)).not.toBeInTheDocument();
+            expect(screen.getByText("queued")).toBeVisible();
+            expect(screen.getByText("running")).toBeVisible();
+            const actionLabel = paused ? "Resume worker" : "Pause worker";
+            const control = screen.getByRole("button", { name: actionLabel });
+            expect(screen.getAllByRole("button", { name: actionLabel })).toHaveLength(1);
+            expect(control).toHaveClass(
+                "w-full",
+                "@min-[48rem]:col-start-2",
+                "@min-[48rem]:row-start-1",
+                "@min-[48rem]:w-auto"
+            );
+            expect(
+                screen.getByText(/The setting is shared by all workers/)
+            ).toBeVisible();
+            expect(control.previousElementSibling).toContainElement(
+                screen.getByRole("region", { name: "Workers" })
+            );
+            await user.click(control);
+            expect(screen.getByRole("dialog", { name: `${actionLabel}?` })).toBeVisible();
+            expect(
+                screen.getByText(
+                    paused
+                        ? /Missed schedule occurrences/
+                        : /Pause new work across all workers/
+                )
+            ).toBeVisible();
+        } finally {
+            cleanup();
+        }
     }
-});
+);
 
 test("schedule history opens from its row while menu actions stay independent", async () => {
     const cleanup = fixture(<SchedulesPanel />, (query) => {
