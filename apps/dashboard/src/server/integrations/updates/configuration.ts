@@ -20,6 +20,24 @@ const command = v.pipe(
     v.maxLength(30),
     v.check((parts) => parts[0]?.startsWith("/") === true)
 );
+const environmentVariable = v.pipe(
+    v.string(),
+    v.regex(/^[A-Z_][A-Z0-9_]{0,99}$/),
+    v.check(
+        (name) =>
+            !/^(?:COMPOSE_|DOCKER_|LD_|DYLD_|PYTHON|BASH|SHELL)/.test(name) &&
+            !["PATH", "HOME", "ENV", "IFS", "LC_ALL", "LANG"].includes(name)
+    )
+);
+const composeEnvironment = v.strictObject({
+    command,
+    variables: v.pipe(
+        v.array(environmentVariable),
+        v.minLength(1),
+        v.maxLength(100),
+        v.check((names) => new Set(names).size === names.length)
+    ),
+});
 const driverSchema = v.variant("kind", [
     v.strictObject({ kind: v.literal("apt") }),
     v.strictObject({
@@ -31,6 +49,7 @@ const driverSchema = v.variant("kind", [
         file: path,
         imageFile: path,
         trackingTag: updateItemSchema.entries.imageTag,
+        environment: v.optional(composeEnvironment),
     }),
     v.strictObject({
         kind: v.literal("native"),

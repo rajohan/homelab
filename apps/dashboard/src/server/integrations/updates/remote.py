@@ -18,10 +18,13 @@ import tempfile
 import time
 
 
-def command(arguments, timeout=120):
+def command(arguments, timeout=120, environment=None, output_limit=2_000_000):
     """Execute argv without a shell, bounding output, runtime and child lifetime."""
+    selected_environment = {"PATH": "/usr/local/bin:/usr/bin:/bin", "LC_ALL": "C", "HOME": "/nonexistent", "DEBIAN_FRONTEND": "noninteractive"}
+    if environment is not None:
+        selected_environment.update(environment)
     process = subprocess.Popen(arguments, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                               start_new_session=True, env={"PATH": "/usr/local/bin:/usr/bin:/bin", "LC_ALL": "C", "HOME": "/nonexistent", "DEBIAN_FRONTEND": "noninteractive"})
+                               start_new_session=True, env=selected_environment)
     output = bytearray()
     deadline = time.monotonic() + timeout
     try:
@@ -36,7 +39,7 @@ def command(arguments, timeout=120):
                         selector.unregister(key.fd)
                     else:
                         output.extend(chunk)
-                        if len(output) > 2_000_000:
+                        if len(output) > output_limit:
                             raise RuntimeError("Command output exceeded its budget")
         if process.wait(timeout=max(0.1, deadline - time.monotonic())) != 0:
             raise RuntimeError("Update command failed")
@@ -84,6 +87,28 @@ def inspect_container(identity):
     return json.loads("[" + command(["/usr/bin/docker", "inspect", "--format", template, identity]) + "]")
 
 
+def compose_environment(driver):
+    """Load explicitly selected interpolation values on the target, never into a file or receipt."""
+    source = driver.get("environment")
+    if source is None:
+        return None
+    raw = command(source["command"], timeout=30, output_limit=65_536)
+    if len(raw.encode("utf-8")) > 65_536:
+        raise RuntimeError("Compose environment exceeds its budget")
+    values = json.loads(raw)
+    if not isinstance(values, dict):
+        raise RuntimeError("Compose environment must be a JSON object")
+    selected = {"COMPOSE_DISABLE_ENV_FILE": "1"}
+    for name in source["variables"]:
+        if not re.fullmatch(r"[A-Z_][A-Z0-9_]{0,99}", name) or re.match(r"^(?:COMPOSE_|DOCKER_|LD_|DYLD_|PYTHON|BASH|SHELL)", name) or name in {"PATH", "HOME", "ENV", "IFS", "LC_ALL", "LANG"}:
+            raise RuntimeError("Unsafe Compose environment variable")
+        value = values.get(name)
+        if not isinstance(value, str) or "\x00" in value or len(value.encode("utf-8")) > 16_384:
+            raise RuntimeError("A required Compose environment value is invalid")
+        selected[name] = value
+    return selected
+
+
 @contextmanager
 def locked_directory(directory):
     """Serialize our Compose edits without leaving a lock or backup file behind."""
@@ -125,7 +150,10 @@ def docker_update(driver, item, automatic=False):
         if before[:3] != ["/" + driver["name"], item["image"], item["installed"]] or before[4:] != [driver["project"], driver["service"]] or before[3] not in {"running", "exited", "created"}:
             raise RuntimeError("The observed application changed")
         original = path.read_bytes()
-        config = json.loads(command(base + ["config", "--format", "json"]))
+        environment = compose_environment(driver)
+        def compose(arguments, timeout=120):
+            return command(base + arguments, timeout=timeout, environment=environment)
+        config = json.loads(compose(["config", "--format", "json"]))
         if config.get("services", {}).get(driver["service"], {}).get("image") != item["image"]:
             raise RuntimeError("Compose and the observed image differ")
         pattern = re.compile(rb"(?m)^([ \t]+image:[ \t]*)([\"']?)" + re.escape(item["image"].encode()) + rb"\2([ \t]*(?:#[^\r\n]*)?\r?)$")
@@ -145,21 +173,21 @@ def docker_update(driver, item, automatic=False):
             new = image_version(candidate, pulled)
             if not old or not new or old[0] != new[0] or new < old:
                 raise RuntimeError("This image change requires manual approval")
-        if inspect_container(identity) != before or json.loads(command(base + ["config", "--format", "json"])) != config:
+        if inspect_container(identity) != before or json.loads(compose(["config", "--format", "json"])) != config:
             raise RuntimeError("Application or Compose configuration changed during preparation")
         progress("configuring")
         atomic_content(path, updated, original)
         try:
             expected = copy.deepcopy(config)
             expected["services"][driver["service"]]["image"] = candidate
-            if json.loads(command(base + ["config", "--format", "json"])) != expected:
+            if json.loads(compose(["config", "--format", "json"])) != expected:
                 raise RuntimeError("The Compose edit changed more than the selected image")
         except Exception:
             atomic_content(path, original, updated)
             raise
         progress("installing")
         state = ["--wait", "--wait-timeout", "120"] if before[3] == "running" else ["--no-start"]
-        command(base + ["up", "--detach", "--no-deps", "--no-build", "--pull", "never"] + state + [driver["service"]], timeout=180)
+        compose(["up", "--detach", "--no-deps", "--no-build", "--pull", "never"] + state + [driver["service"]], timeout=180)
         progress("verifying")
         after = inspect_container(driver["name"])
         if after[1:3] != [candidate, item["available"]] or after[4:] != before[4:] or (before[3] == "running" and after[3] != "running") or (before[3] != "running" and after[3] == "running"):
