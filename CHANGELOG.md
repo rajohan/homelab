@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/rajohan/homelab/compare/v0.4.0...v0.5.0) (2026-09-20)
+
+
+### Features
+
+* **dashboard:** add operations overview and monitoring inventories ([#15](https://github.com/rajohan/homelab/issues/15)) ([544efcc](https://github.com/rajohan/homelab/commit/544efccc0fe2efc402227934c1c2495b3e8dcc49))
+
 ## [0.4.0](https://github.com/rajohan/homelab/compare/v0.3.0...v0.4.0) (2026-09-19)
 
 
