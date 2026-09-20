@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/rajohan/homelab/compare/v0.6.0...v0.6.1) (2026-09-20)
+
+
+### Bug Fixes
+
+* **updates:** load scoped Compose environment on the target ([#19](https://github.com/rajohan/homelab/issues/19)) ([544cb01](https://github.com/rajohan/homelab/commit/544cb012ad3963da0550deea4ae6cd4e3d6fb009))
+
 ## [0.6.0](https://github.com/rajohan/homelab/compare/v0.5.0...v0.6.0) (2026-09-20)
 
 
