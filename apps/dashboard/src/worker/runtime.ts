@@ -96,7 +96,7 @@ async function execute(
 /**
  * Run concurrent job lanes plus scheduling/heartbeat until orderly process shutdown.
  * @param options - Process-owned database, registry, concurrency and lifecycle signal.
- * @returns Completion only after active handlers settle and the worker is marked draining.
+ * @returns Completion after handlers settle and the registration is retired; unresolved claims retain it for recovery.
  */
 export async function runWorker(options: {
     client: SQL;
@@ -132,7 +132,13 @@ export async function runWorker(options: {
     };
     const control = async () => {
         while (!signal.aborted) {
-            await client`UPDATE workers SET heartbeat_at = now() WHERE id = ${id}`;
+            const registered = await client<
+                { id: string }[]
+            >`UPDATE workers SET heartbeat_at = now() WHERE id = ${id} AND NOT draining RETURNING id`;
+            if (registered.length !== 1)
+                throw new Error(
+                    "Worker registration expired; restart before accepting more work"
+                );
             await scheduleDueJobs(client, registry);
             const controlState = await readWorkerControl(client);
             const schedules = await listSchedules(client, registry);
@@ -165,5 +171,6 @@ export async function runWorker(options: {
         lifecycle.abort();
         state.draining = true;
         await client`UPDATE workers SET draining = true, heartbeat_at = now() WHERE id = ${id}`;
+        await client`DELETE FROM workers WHERE id = ${id} AND draining AND NOT EXISTS (SELECT 1 FROM job_runs WHERE worker_id = workers.id AND state = 'running')`;
     }
 }

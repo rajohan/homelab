@@ -79,7 +79,7 @@ test("timeout retries remain queued and explicit cancellation still takes preced
             await lockQueue(transaction);
             await enqueueJob(transaction, definition, "human:test", "retry");
         });
-        const first = await claimJob(fixture.client, Bun.randomUUIDv7(), [
+        const first = await claimJob(fixture.client, await fixture.registerWorker(), [
             definition.key,
         ]);
         if (!first) throw new Error("Missing first claim");
@@ -87,7 +87,7 @@ test("timeout retries remain queued and explicit cancellation still takes preced
         const queued = await listJobs(fixture.client, 10, undefined);
         expect(queued[0]?.state).toBe("queued");
         await fixture.client`UPDATE job_runs SET available_at = now() WHERE id = ${first.id}`;
-        const second = await claimJob(fixture.client, Bun.randomUUIDv7(), [
+        const second = await claimJob(fixture.client, await fixture.registerWorker(), [
             definition.key,
         ]);
         if (!second) throw new Error("Missing retry claim");

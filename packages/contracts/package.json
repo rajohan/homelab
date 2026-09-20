@@ -8,6 +8,9 @@
         "./notifications": "./src/notifications.ts",
         "./applications": "./src/applications.ts",
         "./logs": "./src/logs.ts",
+        "./alerts": "./src/alerts.ts",
+        "./backups": "./src/backups.ts",
+        "./updates": "./src/updates.ts",
         "./infrastructure": "./src/infrastructure.ts"
     },
     "dependencies": {

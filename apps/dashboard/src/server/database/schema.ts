@@ -22,6 +22,37 @@ import {
 } from "drizzle-orm/pg-core";
 
 const time = (name: string) => timestamp(name, { withTimezone: true });
+export const operationalIncidents = pgTable(
+    "operational_incidents",
+    {
+        id: uuid().primaryKey(),
+        sourceKey: text("source_key").notNull().unique(),
+        name: text().notNull(),
+        host: text(),
+        service: text(),
+        severity: text().notNull(),
+        state: text().notNull(),
+        startedAt: time("started_at").notNull(),
+        resolvedAt: time("resolved_at"),
+        observedAt: time("observed_at").notNull().defaultNow(),
+    },
+    (table) => [
+        index("operational_incidents_state_id").on(table.state, table.id),
+        index("operational_incidents_resolution").on(
+            table.state,
+            table.resolvedAt.desc(),
+            table.id.desc()
+        ),
+        check(
+            "operational_incidents_state",
+            sql`${table.state} in ('active','suppressed','resolved')`
+        ),
+        check(
+            "operational_incidents_severity",
+            sql`${table.severity} in ('info','warning','error')`
+        ),
+    ]
+);
 export const jobRuns = pgTable(
     "job_runs",
     {
@@ -188,7 +219,7 @@ export const notifications = pgTable(
         ),
         check(
             "dashboard_notifications_destination",
-            sql`${table.destination} is null or ${table.destination} in ('jobs','applications','infrastructure')`
+            sql`${table.destination} is null or ${table.destination} in ('jobs','applications','infrastructure','alerts')`
         ),
     ]
 );

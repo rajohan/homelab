@@ -9,6 +9,10 @@
 **/data
 **/appdata
 **/backups
+!apps/dashboard/src/server/integrations/backups
+!apps/dashboard/src/server/integrations/backups/**
+!apps/dashboard/src/browser/features/backups
+!apps/dashboard/src/browser/features/backups/**
 .github
 docs
 

@@ -80,7 +80,10 @@ export const infrastructureRouter = trpc.router({
     inventory: trpc.procedure.query(({ ctx }) =>
         runOperation(async () => {
             const { operations } = authorizedOperations(ctx, "infrastructure:read");
-            return readInventory(operations);
+            return {
+                configured: Boolean(operations.metrics),
+                inventory: await readInventory(operations),
+            };
         })
     ),
     history: trpc.procedure

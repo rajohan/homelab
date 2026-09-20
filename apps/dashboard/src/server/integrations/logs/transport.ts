@@ -22,7 +22,13 @@ export interface LogsConfiguration {
     readonly url: string;
     readonly token: string | undefined;
 }
-const periods = { "15m": 15 * 60, "1h": 3600, "6h": 6 * 3600, "24h": 24 * 3600 } as const;
+const periods = {
+    "15m": 15 * 60,
+    "1h": 3600,
+    "6h": 6 * 3600,
+    "24h": 24 * 3600,
+    "7d": 7 * 24 * 3600,
+} as const;
 
 function entries(value: v.InferOutput<typeof responseSchema>): LogEntry[] {
     const occurrences = new Map<string, number>();
@@ -77,10 +83,10 @@ export async function readApplicationLogs(
         : now - BigInt(periods[input.range]) * 1_000_000_000n;
     const before = input.cursor ? BigInt(input.cursor.before) : now;
     if (
-        since < now - 25n * 3600n * 1_000_000_000n ||
+        since < now - 169n * 3600n * 1_000_000_000n ||
         before > now + 60n * 1_000_000_000n ||
         before < since ||
-        before - since > 24n * 3600n * 1_000_000_000n
+        before - since > 168n * 3600n * 1_000_000_000n
     )
         throw new Error("Log cursor is outside the allowed window");
     const selector = Object.entries(labels)

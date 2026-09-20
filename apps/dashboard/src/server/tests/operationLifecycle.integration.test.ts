@@ -73,7 +73,7 @@ test("metrics job commits a real JSON snapshot and stale ownership rejects repla
             await lockQueue(transaction);
             await enqueueJob(transaction, handler.definition, "test", "snapshot");
         });
-        const run = await claimJob(fixture.client, Bun.randomUUIDv7(), [
+        const run = await claimJob(fixture.client, await fixture.registerWorker(), [
             handler.definition.key,
         ]);
         if (!run) throw new Error("Snapshot claim missing");
@@ -97,9 +97,12 @@ test("metrics job commits a real JSON snapshot and stale ownership rejects repla
             firingAlerts: 2,
         });
         expect(await caller.infrastructure.inventory()).toMatchObject({
-            hosts: [],
-            applications: [],
-            storage: [],
+            configured: false,
+            inventory: {
+                hosts: [],
+                applications: [],
+                storage: [],
+            },
         });
         await fixture.client`UPDATE job_runs SET lease_expires_at = now() - interval '1 second' WHERE id = ${run.id}`;
         await expectOperationFailure(handler.execute({}, context), "ownership changed");
@@ -123,10 +126,15 @@ test("retention removes only aged completed history and preserves queued and cur
             await enqueueJob(transaction, handler.definition, "test", "current");
             await enqueueJob(transaction, handler.definition, "test", "queued");
         });
-        const run = await claimJob(fixture.client, Bun.randomUUIDv7(), [
-            handler.definition.key,
-        ]);
+        const worker = await fixture.registerWorker();
+        const run = await claimJob(fixture.client, worker, [handler.definition.key]);
         if (!run) throw new Error("Maintenance claim missing");
+        const stopped = crypto.randomUUID();
+        const abandoned = crypto.randomUUID();
+        const recent = crypto.randomUUID();
+        const active = crypto.randomUUID();
+        await fixture.client`INSERT INTO workers (id, version, heartbeat_at, capacity, draining) VALUES (${stopped}, 'test', now(), 3, true), (${abandoned}, 'test', now() - interval '25 hours', 3, false), (${recent}, 'test', now() - interval '1 minute', 3, false), (${active}, 'test', now() - interval '25 hours', 3, true)`;
+        await fixture.client`UPDATE job_runs SET worker_id = ${active} WHERE id = ${run.id}`;
         await fixture.client`INSERT INTO dashboard_notifications (id, source, source_key, title, message, severity, created_at) SELECT gen_random_uuid(), 'retention-test', number::text, 'Expired', 'Expired event', 'info', now() - interval '31 days' FROM generate_series(1, 2505) AS number`;
         await fixture.client`INSERT INTO notification_receipts (notification_id, actor, read_at) SELECT id, 'human:operator', now() FROM dashboard_notifications`;
         const current = crypto.randomUUID();
@@ -146,6 +154,12 @@ test("retention removes only aged completed history and preserves queued and cur
         expect(remaining).toHaveLength(2);
         expect(remaining.some((row) => row.id === old)).toBe(false);
         expect(remaining.some((row) => row.id === run.id)).toBe(true);
+        const registrations = await fixture.client<
+            { id: string }[]
+        >`SELECT id FROM workers`;
+        expect(registrations.map((worker) => worker.id).toSorted()).toEqual(
+            [recent, active, worker].toSorted()
+        );
         expect(
             await fixture.client<{ id: string }[]>`SELECT id FROM dashboard_notifications`
         ).toEqual([{ id: current }]);
@@ -153,6 +167,44 @@ test("retention removes only aged completed history and preserves queued and cur
             await fixture.client`SELECT notification_id FROM notification_receipts`
         ).toHaveLength(0);
     } finally {
+        await fixture.close();
+    }
+});
+
+test("retention skips a locked recovering worker and retains its refreshed registration", async () => {
+    const fixture = await operationFixture();
+    const recovery = await fixture.client.reserve();
+    let transactionOpen = false;
+    try {
+        const worker = await fixture.registerWorker();
+        await fixture.client`UPDATE workers SET heartbeat_at = now() - interval '25 hours' WHERE id = ${worker}`;
+        await recovery`BEGIN`;
+        transactionOpen = true;
+        await recovery`UPDATE workers SET heartbeat_at = now() WHERE id = ${worker}`;
+        const handler = maintenanceJob(30);
+        const context = {
+            runId: crypto.randomUUID(),
+            leaseToken: crypto.randomUUID(),
+            signal: AbortSignal.timeout(5000),
+            reportProgress: () => Promise.resolve(),
+            commit: async (write: Parameters<typeof commitClaim>[2]) => {
+                await fixture.client.begin(async (transaction) => {
+                    await transaction`SET LOCAL lock_timeout = '1s'`;
+                    await write(transaction);
+                });
+                return true;
+            },
+        };
+        await handler.execute({}, context);
+        await recovery`COMMIT`;
+        transactionOpen = false;
+        await handler.execute({}, context);
+        expect(
+            await fixture.client`SELECT id FROM workers WHERE id = ${worker}`
+        ).toHaveLength(1);
+    } finally {
+        if (transactionOpen) await recovery`ROLLBACK`;
+        recovery.release();
         await fixture.close();
     }
 });

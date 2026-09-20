@@ -32,12 +32,27 @@ export const applicationLogsProcedure = trpc.procedure
                     "NOT_FOUND",
                     "This application is not in the managed inventory."
                 );
+            if (
+                target.logs.serviceValue === "service" &&
+                !target.logs.projectLabel &&
+                target.projects.length > 1
+            )
+                throw new OperationFailure(
+                    "PRECONDITION_FAILED",
+                    "Service logs cover multiple projects; configure a project log label."
+                );
             return readApplicationLogs(
                 operations.logs,
                 {
                     ...target.logs.labels,
+                    ...(target.logs.projectLabel
+                        ? { [target.logs.projectLabel]: application.project }
+                        : {}),
                     [target.logs.serviceLabel]:
-                        target.logs.servicePrefix + application.containerName,
+                        target.logs.servicePrefix +
+                        (target.logs.serviceValue === "service"
+                            ? application.name
+                            : application.containerName),
                 },
                 input,
                 AbortSignal.any([

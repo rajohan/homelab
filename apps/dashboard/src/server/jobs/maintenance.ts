@@ -31,8 +31,18 @@ export function maintenanceJob(retentionDays: number): JobHandler {
                 !(await context.commit(async (transaction) => {
                     await transaction`DELETE FROM job_runs WHERE id IN (SELECT id FROM job_runs WHERE state IN ('succeeded','failed','timed_out','cancelled') AND finished_at < now() - ${retentionDays} * interval '1 day' LIMIT 1000)`;
                     await transaction`DELETE FROM operation_audit WHERE id IN (SELECT id FROM operation_audit WHERE created_at < now() - ${retentionDays} * interval '1 day' LIMIT 5000)`;
-                    await transaction`DELETE FROM workers WHERE heartbeat_at < now() - interval '7 days' AND NOT EXISTS (SELECT 1 FROM job_runs WHERE worker_id = workers.id AND state = 'running')`;
+                    const retired = await transaction<
+                        { id: string }[]
+                    >`SELECT id FROM workers WHERE (draining OR heartbeat_at < now() - interval '1 day') ORDER BY heartbeat_at LIMIT 1000 FOR UPDATE SKIP LOCKED`;
+                    // A fresh statement snapshot sees claims committed before the row lock.
+                    // Locked rows exclude new claims until this transaction completes.
+                    if (retired.length > 0)
+                        await transaction`DELETE FROM workers WHERE id = ANY(${transaction.array(
+                            retired.map((worker) => worker.id),
+                            "UUID"
+                        )}) AND (draining OR heartbeat_at < now() - interval '1 day') AND NOT EXISTS (SELECT 1 FROM job_runs WHERE worker_id = workers.id AND state = 'running')`;
                     await transaction`DELETE FROM operation_rate_windows WHERE expires_at < now() - interval '1 day'`;
+                    await transaction`DELETE FROM operational_incidents WHERE id IN (SELECT id FROM operational_incidents WHERE state = 'resolved' AND resolved_at < now() - ${retentionDays} * interval '1 day' ORDER BY id LIMIT 1000)`;
                 }))
             )
                 throw new Error("Maintenance ownership changed");

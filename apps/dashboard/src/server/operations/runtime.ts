@@ -1,13 +1,26 @@
+import type { UpdateSource } from "@homelab/contracts/updates";
+
 import type { OperationsConfiguration } from "../config/operations";
 import { connectDashboardDatabase } from "../database/connection";
+import { alertsJob } from "../integrations/alerts/job";
+import { readRules, type RulesConfiguration } from "../integrations/alerts/rules";
+import type { AlertsConfiguration } from "../integrations/alerts/transport";
 import type { ApplicationTarget } from "../integrations/applications/configuration";
 import { applicationJobs } from "../integrations/applications/jobs";
+import {
+    readBackupCatalog,
+    type BackupCatalogConfiguration,
+} from "../integrations/backups/catalog";
+import { backupsJob } from "../integrations/backups/job";
+import { readBackupInventory } from "../integrations/backups/routes";
 import type { LogsConfiguration } from "../integrations/logs/transport";
 import { collectInventory } from "../integrations/metrics/inventory";
 import { metricsJob } from "../integrations/metrics/job";
 import { createInventoryReader } from "../integrations/metrics/liveInventory";
 import { readSavedInventory } from "../integrations/metrics/snapshot";
 import type { MetricsConfiguration } from "../integrations/metrics/transport";
+import { snapshotJob } from "../integrations/snapshots/job";
+import { updatesJob } from "../integrations/updates/job";
 import { maintenanceJob } from "../jobs/maintenance";
 import { createJobRegistry } from "../jobs/registry";
 
@@ -21,7 +34,37 @@ export function createOperationsRuntime(
 ): OperationsRuntime {
     const connection = connectDashboardDatabase(configuration.databaseUrl);
     const registry = createJobRegistry([
+        ...(configuration.rules
+            ? [
+                  snapshotJob({
+                      key: "monitoring.rules",
+                      label: "Refresh monitoring rules",
+                      description: "Read rule states and evaluation health.",
+                      capability: "alerts:refresh",
+                      intervalSeconds: 60,
+                      read: (signal) => readRules(configuration.rules!, signal),
+                  }),
+              ]
+            : []),
+        ...(configuration.backupCatalog
+            ? [
+                  snapshotJob({
+                      key: "backups.catalog",
+                      label: "Refresh backup snapshots",
+                      description:
+                          "Read snapshot sizes, protection and verification metadata.",
+                      capability: "backups:refresh",
+                      intervalSeconds: 300,
+                      read: (signal) =>
+                          readBackupCatalog(configuration.backupCatalog!, signal),
+                  }),
+              ]
+            : []),
         maintenanceJob(configuration.retentionDays),
+        ...(configuration.updateSources?.length
+            ? [updatesJob(configuration.updateSources, connection.client)]
+            : []),
+        ...(configuration.alerts ? [alertsJob(configuration.alerts)] : []),
         ...applicationJobs(configuration.applicationTargets ?? [], connection.client),
         ...(configuration.metricsUrl
             ? [
@@ -31,6 +74,13 @@ export function createOperationsRuntime(
                           token: configuration.metricsToken,
                       },
                       () => readSavedInventory(connection.client)
+                  ),
+                  backupsJob(
+                      {
+                          url: configuration.metricsUrl,
+                          token: configuration.metricsToken,
+                      },
+                      () => readBackupInventory(connection.client)
                   ),
               ]
             : []),
@@ -48,8 +98,12 @@ export function createOperationsRuntime(
           )
         : undefined;
     return {
+        rules: configuration.rules,
+        backupCatalog: configuration.backupCatalog,
         ...connection,
         registry,
+        updateSources: configuration.updateSources ?? [],
+        alerts: configuration.alerts,
         metrics,
         readInventory,
         logs: configuration.logs,
@@ -57,6 +111,10 @@ export function createOperationsRuntime(
     };
 }
 export type OperationsRuntime = ReturnType<typeof connectDashboardDatabase> & {
+    readonly rules?: RulesConfiguration | undefined;
+    readonly backupCatalog?: BackupCatalogConfiguration | undefined;
+    readonly updateSources?: readonly UpdateSource[];
+    readonly alerts?: AlertsConfiguration | undefined;
     readonly applicationTargets?: readonly ApplicationTarget[];
     readonly logs?: LogsConfiguration | undefined;
     readonly registry: ReturnType<typeof createJobRegistry>;

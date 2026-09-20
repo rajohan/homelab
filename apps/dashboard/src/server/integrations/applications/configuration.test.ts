@@ -26,8 +26,30 @@ test("application targets require explicit unique projects, secure origins and c
         { tls: undefined },
         { projects: [] },
         { projects: ["demo", "demo"] },
+        {
+            projects: ["demo", "other"],
+            logs: {
+                labels: { host: "main" },
+                serviceLabel: "service",
+                serviceValue: "service",
+            },
+        },
         { tls: { ...target.tls, key: "PRIVATE_KEY" } },
         { logs: { labels: { service: "other" }, serviceLabel: "service" } },
+        {
+            logs: {
+                labels: { host: "main" },
+                serviceLabel: "service",
+                serviceValue: "command",
+            },
+        },
+        {
+            logs: {
+                labels: { host: "main" },
+                serviceLabel: "service",
+                projectLabel: "host",
+            },
+        },
     ]) {
         expect(() =>
             parseApplicationTargets(JSON.stringify([{ ...target, ...change }]))
@@ -39,4 +61,20 @@ test("application targets require explicit unique projects, secure origins and c
     const local = { ...target, tls: undefined, endpoint: "http://127.0.0.1:1234" };
     expect(parseApplicationTargets(JSON.stringify([local]), true)).toHaveLength(1);
     expect(() => parseApplicationTargets(JSON.stringify([local]))).toThrow();
+    expect(
+        parseApplicationTargets(
+            JSON.stringify([
+                {
+                    ...target,
+                    logs: {
+                        labels: { host: "main" },
+                        serviceLabel: "service",
+                        serviceValue: "service",
+                        servicePrefix: "app-",
+                        projectLabel: "project",
+                    },
+                },
+            ])
+        )[0]?.logs
+    ).toMatchObject({ serviceValue: "service", projectLabel: "project" });
 });

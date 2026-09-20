@@ -15,6 +15,19 @@ const metric = (labels: Record<string, string>, value: string) => ({
     value: [1, value],
 });
 
+test("system status distinguishes the optional operations runtime without requiring collected metrics", async () => {
+    const fixture = await operationFixture();
+    try {
+        const configured = appRouter.createCaller({ operations: fixture });
+        const present = await configured.system.status();
+        const absent = await appRouter.createCaller({}).system.status();
+        expect(present.operationsConfigured).toBe(true);
+        expect(absent.operationsConfigured).toBe(false);
+    } finally {
+        await fixture.close();
+    }
+});
+
 test("worker and restarted live runtime retain saved identities through successful API responses with failed scrapes", async () => {
     const fixture = await operationFixture();
     let available = true;
@@ -135,7 +148,11 @@ test("authorized readers receive shared live inventory without persisting pollin
         diskHealth: [],
     };
     const collect = mock(() => Promise.resolve(inventory));
-    const operations = { ...fixture, readInventory: createInventoryReader(collect) };
+    const operations = {
+        ...fixture,
+        metrics: { url: "https://metrics.example.test", token: undefined },
+        readInventory: createInventoryReader(collect),
+    };
     try {
         const denied = appRouter.createCaller({
             operations,
@@ -155,7 +172,10 @@ test("authorized readers receive shared live inventory without persisting pollin
             reader.infrastructure.inventory(),
             reader.infrastructure.inventory(),
         ]);
-        expect(results).toEqual([inventory, inventory]);
+        expect(results).toEqual([
+            { configured: true, inventory },
+            { configured: true, inventory },
+        ]);
         expect(collect).toHaveBeenCalledTimes(1);
         const rows = await fixture.client<
             { key: string }[]
@@ -190,7 +210,26 @@ test("infrastructure reads require a live principal and the exact read capabilit
                 capabilities: ["infrastructure:read"],
             },
         });
-        expect(await reader.infrastructure.inventory()).toBeNull();
+        expect(await reader.infrastructure.inventory()).toEqual({
+            configured: false,
+            inventory: null,
+        });
+        const retained = {
+            capturedAt: new Date().toISOString(),
+            hosts: [],
+            applications: [],
+            filesystems: [],
+            disks: [],
+            networks: [],
+            services: [],
+            storage: [],
+            diskHealth: [],
+        };
+        await fixture.client`INSERT INTO operation_snapshots (key, value, captured_at) VALUES ('infrastructure.inventory', ${JSON.stringify(retained)}::text::jsonb, now())`;
+        expect(await reader.infrastructure.inventory()).toEqual({
+            configured: false,
+            inventory: retained,
+        });
         await expectOperationFailure(
             reader.infrastructure.applicationHistory({ id: "app", range: "1h" }),
             "not been configured"

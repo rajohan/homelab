@@ -26,6 +26,9 @@ export function Shell() {
         "/infrastructure": "Infrastructure",
         "/jobs": "Jobs",
         "/applications": "Applications",
+        "/alerts": "Incidents",
+        "/backups": "Backups",
+        "/updates": "Updates",
         "/identity": "Identity",
     };
     const title = titles[location.pathname] ?? "Overview";

@@ -13,6 +13,7 @@ describe("dashboard system API", () => {
         expect(result.authenticationImplemented).toBe(true);
         expect(result.auth).toEqual({ provider: "homelab" });
         expect(result.phase).toBe("operations");
+        expect(result.operationsConfigured).toBe(false);
     });
 
     test("the Effect service has a replaceable dependency boundary", async () => {

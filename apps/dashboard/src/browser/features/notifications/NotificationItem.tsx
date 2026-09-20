@@ -9,6 +9,7 @@ const tones = {
     error: "danger",
 } as const;
 const destinations = {
+    alerts: "/alerts",
     jobs: "/jobs",
     applications: "/applications",
     infrastructure: "/infrastructure",

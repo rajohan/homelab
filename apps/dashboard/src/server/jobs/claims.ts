@@ -22,6 +22,13 @@ export async function claimJob(
 ): Promise<ClaimedJob | undefined> {
     return client.begin(async (transaction) => {
         await lockQueue(transaction);
+        const registration = await transaction<
+            { id: string }[]
+        >`SELECT id FROM workers WHERE id = ${workerId} AND NOT draining AND heartbeat_at > now() - interval '30 seconds' FOR UPDATE`;
+        if (registration.length !== 1)
+            throw new Error(
+                "Worker registration is not live; restart before claiming work"
+            );
         const expired = await transaction<
             {
                 id: string;

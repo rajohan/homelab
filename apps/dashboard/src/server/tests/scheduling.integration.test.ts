@@ -16,7 +16,7 @@ test("durable pause blocks claims and scheduled submissions but lets current wor
     const fixture = await operationFixture();
     try {
         await scheduleDueJobs(fixture.client, fixture.registry);
-        const run = await claimJob(fixture.client, Bun.randomUUIDv7(), [
+        const run = await claimJob(fixture.client, await fixture.registerWorker(), [
             ...fixture.registry.keys(),
         ]);
         if (!run) throw new Error("Missing running job");
@@ -35,7 +35,7 @@ test("durable pause blocks claims and scheduled submissions but lets current wor
         await scheduleDueJobs(fixture.client, fixture.registry);
         expect(await listJobs(fixture.client, 30, undefined)).toHaveLength(1);
         expect(
-            await claimJob(fixture.client, Bun.randomUUIDv7(), [
+            await claimJob(fixture.client, await fixture.registerWorker(), [
                 ...fixture.registry.keys(),
             ])
         ).toBeUndefined();
@@ -50,7 +50,7 @@ test("durable pause blocks claims and scheduled submissions but lets current wor
         await scheduleDueJobs(fixture.client, fixture.registry);
         expect(await listJobs(fixture.client, 30, undefined)).toHaveLength(2);
         expect(
-            await claimJob(fixture.client, Bun.randomUUIDv7(), [
+            await claimJob(fixture.client, await fixture.registerWorker(), [
                 ...fixture.registry.keys(),
             ])
         ).toBeDefined();
@@ -255,23 +255,39 @@ test("work sizes enforce exclusive execution and a single heavy job without bloc
             "test.heavy-two",
             "test.light",
         ];
-        const exclusive = await claimJob(fixture.client, Bun.randomUUIDv7(), actions);
+        const exclusive = await claimJob(
+            fixture.client,
+            await fixture.registerWorker(),
+            actions
+        );
         if (!exclusive) throw new Error("Missing exclusive claim");
         expect(exclusive.action).toBe("test.exclusive");
         expect(
-            await claimJob(fixture.client, Bun.randomUUIDv7(), actions)
+            await claimJob(fixture.client, await fixture.registerWorker(), actions)
         ).toBeUndefined();
         await settleClaim(fixture.client, exclusive, "succeeded");
-        const heavy = await claimJob(fixture.client, Bun.randomUUIDv7(), actions);
+        const heavy = await claimJob(
+            fixture.client,
+            await fixture.registerWorker(),
+            actions
+        );
         expect(heavy?.action).toBe("test.heavy-one");
-        const light = await claimJob(fixture.client, Bun.randomUUIDv7(), actions);
+        const light = await claimJob(
+            fixture.client,
+            await fixture.registerWorker(),
+            actions
+        );
         expect(light?.action).toBe("test.light");
         expect(
-            await claimJob(fixture.client, Bun.randomUUIDv7(), actions)
+            await claimJob(fixture.client, await fixture.registerWorker(), actions)
         ).toBeUndefined();
         if (!heavy) throw new Error("Missing heavy claim");
         await settleClaim(fixture.client, heavy, "succeeded");
-        const next = await claimJob(fixture.client, Bun.randomUUIDv7(), actions);
+        const next = await claimJob(
+            fixture.client,
+            await fixture.registerWorker(),
+            actions
+        );
         expect(next?.action).toBe("test.heavy-two");
     } finally {
         await fixture.close();

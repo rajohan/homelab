@@ -6,7 +6,7 @@ const nanoseconds = v.pipe(v.string(), v.regex(/^[0-9]{19}$/));
 export const applicationLogsSchema = v.strictObject({
     host: applicationHostSchema,
     container: v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/)),
-    range: v.optional(v.picklist(["15m", "1h", "6h", "24h"]), "1h"),
+    range: v.optional(v.picklist(["15m", "1h", "6h", "24h", "7d"]), "24h"),
     search: v.optional(v.pipe(v.string(), v.maxLength(160)), ""),
     cursor: v.optional(v.strictObject({ since: nanoseconds, before: nanoseconds })),
 });

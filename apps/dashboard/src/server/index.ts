@@ -7,6 +7,7 @@ import {
     dashboardOperationsConfiguration,
 } from "./config/environment";
 import { assertDashboardSchema } from "./database/migrations";
+import { boundedDashboardRequest, dashboardTransportBodyLimit } from "./http/requestBody";
 import { isSameOriginApiRequest } from "./http/requestOrigin";
 import {
     dashboardApiRequest,
@@ -40,8 +41,15 @@ export function startDashboardServer(options: DashboardServerOptions = {}) {
         ? createOperationsRuntime(operationalConfiguration)
         : undefined;
 
-    async function api(request: Request): Promise<Response> {
+    async function api(incoming: Request): Promise<Response> {
         try {
+            const request = await boundedDashboardRequest(incoming);
+            if (!request)
+                return json(
+                    "PAYLOAD_TOO_LARGE",
+                    "Request body exceeds its size limit.",
+                    413
+                );
             const path = new URL(request.url).pathname;
             if (path === "/api/automation" || path.startsWith("/api/automation/")) {
                 if (!operations)
@@ -159,7 +167,7 @@ export function startDashboardServer(options: DashboardServerOptions = {}) {
         hostname: options.hostname ?? bindOptions.hostname,
         port: options.port ?? bindOptions.port,
         development: options.development ?? dashboardDevelopment(),
-        maxRequestBodySize: 65_536,
+        maxRequestBodySize: dashboardTransportBodyLimit,
         routes: {
             "/health/live": { GET: dashboardHealthResponse },
             "/health/ready": api,

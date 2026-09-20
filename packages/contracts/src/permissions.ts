@@ -1,6 +1,44 @@
 import * as v from "valibot";
 
 export const capabilityDetails = {
+    "updates:read": {
+        group: "Updates",
+        label: "Read update inventory",
+        description: "Read installed versions, available updates and collection status.",
+    },
+    "updates:publish": {
+        group: "Updates",
+        label: "Publish update inventory",
+        description:
+            "Publish read-only inventory for the source assigned to this automation account.",
+    },
+    "updates:refresh": {
+        group: "Updates",
+        label: "Check available versions",
+        description: "Allow read-only release and image checks; also requires Run jobs.",
+    },
+    "alerts:read": {
+        group: "Monitoring",
+        label: "Read monitoring incidents",
+        description:
+            "Read active, suppressed and resolved incidents without changing alert delivery.",
+    },
+    "alerts:refresh": {
+        group: "Monitoring",
+        label: "Refresh monitoring incidents",
+        description: "Allow incident synchronization; also requires Run jobs.",
+    },
+    "backups:read": {
+        group: "Backups",
+        label: "Read backup status",
+        description:
+            "Read backup completion and verification status, without backup data or restore access.",
+    },
+    "backups:refresh": {
+        group: "Backups",
+        label: "Refresh backup status",
+        description: "Allow backup status collection; also requires Run jobs.",
+    },
     "applications:read": {
         group: "Applications",
         label: "Read application details",
