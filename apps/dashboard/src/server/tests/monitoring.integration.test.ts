@@ -121,7 +121,7 @@ test("PBS catalog reads exact namespaces, distinguishes missing size from zero a
             expect(url.pathname).toBe("/api2/json/admin/datastore/backups/snapshots");
             expect(url.searchParams.get("ns")).toBe("nested/scope");
             expect(request.headers.get("authorization")).toBe(
-                "PBSAPIToken=demo@pbs!audit=synthetic"
+                "PBSAPIToken=demo@pbs!audit:synthetic"
             );
             if (mode === "failed") return new Response("private", { status: 403 });
             if (mode === "duplicate") return Response.json({ data: [row, row] });
@@ -149,7 +149,7 @@ test("PBS catalog reads exact namespaces, distinguishes missing size from zero a
     });
     const configuration = {
         url: server.url.origin,
-        token: "demo@pbs!audit=synthetic",
+        token: "demo@pbs!audit:synthetic",
         stores: [{ datastore: "backups", namespace: "nested/scope" }],
     };
     try {
@@ -183,7 +183,7 @@ test("catalog and rule routes enforce permissions, page without duplicates and m
     const monitoring = createMonitoringFixture();
     const configuration = {
         url: monitoring.url,
-        token: "demo@pbs!reader=synthetic-only",
+        token: "demo@pbs!reader:synthetic-only",
         stores: [{ datastore: "demo-backups", namespace: "" }],
     };
     const operations = {
@@ -414,6 +414,10 @@ test("resolved history orders by resolution time with stable microsecond and ID 
             await fixture.client`INSERT INTO operational_incidents (id, source_key, name, severity, state, started_at, resolved_at) VALUES (${id}, ${id}, 'Synthetic', 'warning', 'resolved', '2026-09-01T00:00:00Z', ${resolved}::timestamptz)`;
         }
         const first = await caller.alerts.list({ state: "resolved", limit: 1 });
+        const indexes = await fixture.client<
+            { indexdef: string }[]
+        >`SELECT indexdef FROM pg_indexes WHERE tablename = 'operational_incidents' AND indexname = 'operational_incidents_resolution'`;
+        expect(indexes[0]?.indexdef).toContain("(state, resolved_at DESC, id DESC)");
         expect(first.incidents.map((row) => row.id)).toEqual([older]);
         expect(first.nextCursor).toEqual({
             id: older,
@@ -457,6 +461,7 @@ test("resolved history orders by resolution time with stable microsecond and ID 
 });
 
 test("Alertmanager transport strips private metadata, includes suppressed alerts and rejects bad inventory", async () => {
+    const fixture = await operationFixture();
     let fail = false;
     const server = Bun.serve({
         hostname: "127.0.0.1",
@@ -503,6 +508,32 @@ test("Alertmanager transport strips private metadata, includes suppressed alerts
             severity: "error",
         });
         expect(JSON.stringify(data)).not.toContain("private");
+        const equivalent = await readAlerts(
+            { ...configuration, url: server.url.origin + "/" },
+            AbortSignal.timeout(2000)
+        );
+        expect(equivalent).toEqual(data);
+        await fixture.client.begin((transaction) => synchronizeAlerts(transaction, data));
+        const before: { id: string; source_key: string; state: string }[] =
+            await fixture.client`SELECT id, source_key, state FROM operational_incidents`;
+        const notifications: { id: string }[] =
+            await fixture.client`SELECT id FROM dashboard_notifications`;
+        await fixture.client.begin((transaction) =>
+            synchronizeAlerts(transaction, equivalent)
+        );
+        expect(
+            await fixture.client<
+                { id: string; source_key: string; state: string }[]
+            >`SELECT id, source_key, state FROM operational_incidents`
+        ).toEqual(before);
+        expect(
+            await fixture.client<{ id: string }[]>`SELECT id FROM dashboard_notifications`
+        ).toEqual(notifications);
+        const otherSource = await readAlerts(
+            { ...configuration, url: server.url.origin + "/other" },
+            AbortSignal.timeout(2000)
+        );
+        expect(otherSource[0]?.key).not.toBe(data[0]?.key);
         fail = true;
         await expectOperationFailure(
             readAlerts(configuration, AbortSignal.timeout(2000)),
@@ -510,6 +541,7 @@ test("Alertmanager transport strips private metadata, includes suppressed alerts
         );
     } finally {
         await server.stop(true);
+        await fixture.close();
     }
 });
 

@@ -6,17 +6,24 @@ test("snapshot catalogs require encrypted scoped audit access and reject duplica
     const base = {
         HOMELAB_DASHBOARD_DATABASE_URL: "postgres://localhost/dashboard",
         HOMELAB_DASHBOARD_PBS_URL: "https://pbs.example.test",
-        HOMELAB_DASHBOARD_PBS_TOKEN: "demo@pbs!audit=synthetic-only",
+        HOMELAB_DASHBOARD_PBS_TOKEN: "demo@pbs!audit:synthetic-only",
         HOMELAB_DASHBOARD_PBS_STORES: '[{"datastore":"backups"}]',
         HOMELAB_DASHBOARD_RULES_URL: "https://monitor.example.test/rules",
     };
     expect(parseOperationsConfiguration(base)?.backupCatalog?.stores).toEqual([
         { datastore: "backups", namespace: "" },
     ]);
+    expect(parseOperationsConfiguration(base)?.backupCatalog?.token).toBe(
+        "demo@pbs!audit:synthetic-only"
+    );
     for (const override of [
         { HOMELAB_DASHBOARD_PBS_URL: "http://pbs.example.test" },
         { HOMELAB_DASHBOARD_PBS_TOKEN: "" },
         { HOMELAB_DASHBOARD_PBS_TOKEN: "invalid" },
+        { HOMELAB_DASHBOARD_PBS_TOKEN: "demo@pbs!audit=synthetic-only" },
+        { HOMELAB_DASHBOARD_PBS_TOKEN: "demo@pbs!audit:" },
+        { HOMELAB_DASHBOARD_PBS_TOKEN: "demo@pbs!:synthetic-only" },
+        { HOMELAB_DASHBOARD_PBS_TOKEN: "demo@pbs!audit:synthetic\nonly" },
         { HOMELAB_DASHBOARD_PBS_STORES: "[]" },
         {
             HOMELAB_DASHBOARD_PBS_STORES:

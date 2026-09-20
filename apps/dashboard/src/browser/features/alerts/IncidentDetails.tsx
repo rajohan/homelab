@@ -9,17 +9,22 @@ import { IncidentStatus } from "./IncidentStatus";
  */
 export function IncidentDetails({
     incident,
+    unavailable,
     onClose,
 }: {
     readonly incident: Incident;
+    readonly unavailable: boolean;
     readonly onClose: () => void;
 }) {
+    const unresolved = unavailable ? "Unknown" : "Not resolved";
     return (
         <Modal
             title={incident.name}
             description="Monitoring status and affected resources."
             onClose={onClose}
-            titleAccessory={<IncidentStatus incident={incident} />}
+            titleAccessory={
+                <IncidentStatus incident={incident} unavailable={unavailable} />
+            }
         >
             <dl className="grid grid-cols-2 gap-4 text-sm">
                 <div>
@@ -43,7 +48,7 @@ export function IncidentDetails({
                     <dd className="mt-1">
                         {incident.resolvedAt
                             ? formatDateTime(incident.resolvedAt)
-                            : "Not resolved"}
+                            : unresolved}
                     </dd>
                 </div>
             </dl>

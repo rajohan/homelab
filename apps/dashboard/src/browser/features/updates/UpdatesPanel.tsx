@@ -42,7 +42,11 @@ export function UpdatesPanel({ compact = false }: { readonly compact?: boolean }
                 icon={PackageCheck}
                 actions={
                     <ObservationBadge
-                        configured={sources.length > 0}
+                        configured={
+                            query.data === undefined ||
+                            query.isError ||
+                            sources.length > 0
+                        }
                         available={sources.some((item) => item.report)}
                         stale={query.isError || sources.some((item) => item.stale)}
                     />
@@ -56,7 +60,7 @@ export function UpdatesPanel({ compact = false }: { readonly compact?: boolean }
                         <MetricStat
                             label="Available"
                             value={
-                                sources.length > 0
+                                sources.length > 0 && !query.isError
                                     ? sources.reduce(
                                           (sum, item) =>
                                               sum +
@@ -71,7 +75,7 @@ export function UpdatesPanel({ compact = false }: { readonly compact?: boolean }
                         <MetricStat
                             label="Security"
                             value={
-                                sources.length > 0
+                                sources.length > 0 && !query.isError
                                     ? sources.reduce(
                                           (sum, item) =>
                                               sum +
@@ -86,7 +90,7 @@ export function UpdatesPanel({ compact = false }: { readonly compact?: boolean }
                         <MetricStat
                             label="Missing / stale sources"
                             value={
-                                sources.length > 0
+                                sources.length > 0 && !query.isError
                                     ? sources.filter((item) => item.stale || !item.report)
                                           .length
                                     : "—"
@@ -132,7 +136,7 @@ export function UpdatesPanel({ compact = false }: { readonly compact?: boolean }
                                                 <ObservationBadge
                                                     configured
                                                     available={Boolean(item.report)}
-                                                    stale={item.stale}
+                                                    stale={query.isError || item.stale}
                                                 />
                                             ),
                                         },
@@ -153,9 +157,11 @@ export function UpdatesPanel({ compact = false }: { readonly compact?: boolean }
                                     <SoftwareUpdates source={selected} />
                                 </>
                             ) : (
-                                <p className="rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm text-primary-400">
-                                    No update sources are configured.
-                                </p>
+                                !query.isError && (
+                                    <p className="rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm text-primary-400">
+                                        No update sources are configured.
+                                    </p>
+                                )
                             )}
                         </>
                     )}

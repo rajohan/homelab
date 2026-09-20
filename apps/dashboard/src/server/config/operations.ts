@@ -82,7 +82,10 @@ export function parseOperationsConfiguration(
             throw new Error("Backup catalog requires HTTPS");
     }
     const pbsToken = environment.HOMELAB_DASHBOARD_PBS_TOKEN;
-    if (pbsUrl && (!pbsToken || !/^[^\s=]+@[^\s=!]+![^\s=]+=[^\s]+$/.test(pbsToken)))
+    if (
+        pbsUrl &&
+        (!pbsToken || !/^[^\s@!:=]+@[^\s@!:=]+![^\s@!:=]+:[^\s:]+$/.test(pbsToken))
+    )
         throw new Error("Backup catalog requires a PBS audit token");
     const stores = v.parse(
         v.pipe(v.array(storeSchema), v.maxLength(20)),

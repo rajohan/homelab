@@ -1572,6 +1572,41 @@
             "table": "operational_incidents"
         },
         {
+            "nameExplicit": true,
+            "columns": [
+                {
+                    "value": "state",
+                    "isExpression": false,
+                    "asc": true,
+                    "nullsFirst": false,
+                    "opclass": null
+                },
+                {
+                    "value": "resolved_at",
+                    "isExpression": false,
+                    "asc": false,
+                    "nullsFirst": false,
+                    "opclass": null
+                },
+                {
+                    "value": "id",
+                    "isExpression": false,
+                    "asc": false,
+                    "nullsFirst": false,
+                    "opclass": null
+                }
+            ],
+            "isUnique": false,
+            "where": null,
+            "with": "",
+            "method": "btree",
+            "concurrently": false,
+            "name": "operational_incidents_resolution",
+            "entityType": "indexes",
+            "schema": "public",
+            "table": "operational_incidents"
+        },
+        {
             "nameExplicit": false,
             "columns": ["account_id"],
             "schemaTo": "public",

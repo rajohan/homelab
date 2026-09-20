@@ -30,18 +30,27 @@ export async function latestImage(
     request: typeof fetch = fetch
 ): Promise<string | null> {
     if (!item.image || !item.platform || item.image.includes("@")) return null;
-    const match =
-        /^(?:(?<registry>localhost|[a-z0-9.-]+\.[a-z]+)\/)?(?<repository>[a-z0-9]+(?:[._-][a-z0-9]+)*(?:\/[a-z0-9]+(?:[._-][a-z0-9]+)*)*)(?::(?<tag>[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}))?$/.exec(
-            item.image
-        );
-    const fields = match?.groups;
-    if (!fields?.repository) return null;
-    const registry = fields.registry ?? "docker.io";
+    const slash = item.image.indexOf("/");
+    const first = item.image.slice(0, slash);
+    const explicitRegistry =
+        slash !== -1 &&
+        (first.includes(".") ||
+            first.includes(":") ||
+            first === "localhost" ||
+            first !== first.toLowerCase());
+    const registry = explicitRegistry ? first : "docker.io";
+    const reference = explicitRegistry ? item.image.slice(slash + 1) : item.image;
     const dockerHub =
         registry === "docker.io" ||
         registry === "registry-1.docker.io" ||
         registry === "index.docker.io";
     if (!dockerHub && registry !== "ghcr.io") return null;
+    const match =
+        /^(?<repository>[a-z0-9]+(?:[._-][a-z0-9]+)*(?:\/[a-z0-9]+(?:[._-][a-z0-9]+)*)*)(?::(?<tag>[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}))?$/.exec(
+            reference
+        );
+    const fields = match?.groups;
+    if (!fields?.repository) return null;
     const origin = dockerHub ? "https://registry-1.docker.io" : "https://ghcr.io";
     const repository =
         dockerHub && !fields.repository.includes("/")

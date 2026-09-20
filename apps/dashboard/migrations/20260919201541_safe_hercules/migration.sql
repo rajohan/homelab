@@ -14,4 +14,5 @@ CREATE TABLE "operational_incidents" (
 );
 --> statement-breakpoint
 CREATE INDEX "operational_incidents_state_id" ON "operational_incidents" ("state","id");--> statement-breakpoint
+CREATE INDEX "operational_incidents_resolution" ON "operational_incidents" ("state","resolved_at" DESC,"id" DESC);--> statement-breakpoint
 ALTER TABLE "dashboard_notifications" DROP CONSTRAINT "dashboard_notifications_destination", ADD CONSTRAINT "dashboard_notifications_destination" CHECK ("destination" is null or "destination" in ('jobs','applications','infrastructure','alerts'));

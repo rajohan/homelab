@@ -51,7 +51,8 @@ export async function readAlerts(
     configuration: AlertsConfiguration,
     signal: AbortSignal
 ): Promise<ObservedAlert[]> {
-    const url = new URL(configuration.url.replace(/\/$/, "") + "/api/v2/alerts");
+    const base = new URL(configuration.url).href.replace(/\/$/, "");
+    const url = new URL(base + "/api/v2/alerts");
     url.search = new URLSearchParams({
         active: "true",
         silenced: "true",
@@ -73,9 +74,7 @@ export async function readAlerts(
         .filter((alert) => !configuration.excludedNames.includes(alert.labels.alertname))
         .map((alert) => ({
             key: new Bun.CryptoHasher("sha256")
-                .update(
-                    JSON.stringify([configuration.url, alert.fingerprint, alert.startsAt])
-                )
+                .update(JSON.stringify([base, alert.fingerprint, alert.startsAt]))
                 .digest("hex"),
             name: alert.labels.alertname,
             host: alert.labels.host ?? null,

@@ -159,7 +159,7 @@ export async function seedMonitoringPreview(client: SQL, url: string): Promise<v
     const catalog = await readBackupCatalog(
         {
             url,
-            token: "demo@pbs!reader=synthetic-only",
+            token: "demo@pbs!reader:synthetic-only",
             stores: [{ datastore: "demo-backups", namespace: "" }],
         },
         AbortSignal.timeout(5000)

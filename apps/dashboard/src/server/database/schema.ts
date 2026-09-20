@@ -38,6 +38,11 @@ export const operationalIncidents = pgTable(
     },
     (table) => [
         index("operational_incidents_state_id").on(table.state, table.id),
+        index("operational_incidents_resolution").on(
+            table.state,
+            table.resolvedAt.desc(),
+            table.id.desc()
+        ),
         check(
             "operational_incidents_state",
             sql`${table.state} in ('active','suppressed','resolved')`

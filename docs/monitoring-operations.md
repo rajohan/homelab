@@ -148,7 +148,9 @@ neither is inferred from firing incidents or backup task history.
   Unloaded/disabled rules cannot be inferred from this API. Raw expressions,
   annotations, labels and provider error messages are not stored or displayed.
 - `HOMELAB_DASHBOARD_PBS_URL` is a trusted HTTPS PBS origin.
-  `HOMELAB_DASHBOARD_PBS_TOKEN` contains `user@realm!token=secret` from Doppler.
+  `HOMELAB_DASHBOARD_PBS_TOKEN` contains `user@realm!token:secret` from Doppler,
+  sent as `Authorization: PBSAPIToken=user@realm!token:secret` following the
+  [PBS API token format](https://pbs.proxmox.com/docs/user-management.html#api-tokens).
   Use a dedicated audit-only account/token, scoped to the selected datastores;
   do not grant backup, prune, modify or restore permissions.
   `HOMELAB_DASHBOARD_PBS_STORES` explicitly lists the datastores and namespaces,

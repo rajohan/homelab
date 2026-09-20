@@ -8,7 +8,7 @@ import {
     createRouter,
     RouterProvider,
 } from "@tanstack/react-router";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 
@@ -283,7 +283,9 @@ test.each([true, false])(
 );
 
 test("incident views keep alert state independent from notification receipts", async () => {
+    let client: QueryClient | undefined;
     const cleanup = fixture(<AlertsPanel />, (query) => {
+        client = query;
         const page = {
             incidents: [incident],
             nextCursor: null,
@@ -312,6 +314,26 @@ test("incident views keep alert state independent from notification receipts", a
                 name: /resolve|silence|dismiss notification/i,
             })
         ).not.toBeInTheDocument();
+        client?.setQueryData(["operations", "alerts", "current"], {
+            pages: [
+                {
+                    configured: true,
+                    stale: false,
+                    capturedAt: "2026-09-01T11:01:00Z",
+                    counts: [],
+                    incidents: [],
+                    nextCursor: null,
+                },
+            ],
+            pageParams: [undefined],
+        });
+        await waitFor(() =>
+            expect(
+                within(screen.getByRole("dialog", { name: /HostDown/ })).getAllByText(
+                    "Unknown"
+                )
+            ).toHaveLength(2)
+        );
         await user.keyboard("{Escape}");
         await user.click(screen.getByRole("button", { name: "Incident history" }));
         await user.click(screen.getByRole("option", { name: "Resolved incidents" }));
@@ -325,6 +347,124 @@ test("incident views keep alert state independent from notification receipts", a
         cleanup();
     }
 });
+
+test.each([
+    [true, false, false, false],
+    [false, false, false, false],
+    [true, true, false, false],
+    [true, false, true, false],
+    [true, false, false, true],
+] as const)(
+    "incident current state respects configured=%s, stale=%s, page stale=%s and failed=%s",
+    async (configured, stale, pageStale, failed) => {
+        const unavailable = !configured || stale || pageStale || failed;
+        const cleanup = fixture(<AlertsPanel />, (query) => {
+            const page = {
+                configured,
+                stale,
+                capturedAt: "2026-09-01T11:00:00Z",
+                nextCursor: null,
+                counts: [
+                    { state: "active", count: 3 },
+                    { state: "suppressed", count: 1 },
+                    { state: "resolved", count: 2 },
+                ],
+            };
+            query.setQueryData(["operations", "alerts", "current"], {
+                pages: [
+                    { ...page, incidents: [incident] },
+                    {
+                        ...page,
+                        stale: pageStale,
+                        incidents: [
+                            {
+                                ...incident,
+                                id: "warning",
+                                name: "WarningHost",
+                                severity: "warning",
+                            },
+                            {
+                                ...incident,
+                                id: "info",
+                                name: "InfoHost",
+                                severity: "info",
+                            },
+                            {
+                                ...incident,
+                                id: "suppressed",
+                                name: "SuppressedHost",
+                                state: "suppressed",
+                            },
+                        ],
+                    },
+                ],
+                pageParams: [undefined, "next"],
+            });
+            query.setQueryData(["operations", "alerts", "resolved"], {
+                pages: [
+                    {
+                        ...page,
+                        incidents: [
+                            {
+                                ...incident,
+                                state: "resolved",
+                                resolvedAt: "2026-09-01T11:00:00Z",
+                            },
+                        ],
+                    },
+                ],
+                pageParams: [undefined],
+            });
+            if (failed)
+                query
+                    .getQueryCache()
+                    .find({ queryKey: ["operations", "alerts", "current"] })
+                    ?.setState({
+                        status: "error",
+                        error: new Error("Synthetic monitoring failure"),
+                    });
+        });
+        try {
+            expect(
+                screen.getByText("Active", { selector: "dt" }).nextElementSibling
+            ).toHaveTextContent(unavailable ? "—" : "3");
+            expect(
+                screen.getByText("Suppressed", { selector: "dt" }).nextElementSibling
+            ).toHaveTextContent(unavailable ? "—" : "1");
+            expect(
+                screen.getByText("Resolved", { selector: "dt" }).nextElementSibling
+            ).toHaveTextContent("2");
+            for (const label of ["Critical", "Warning", "Active", "Suppressed"]) {
+                const badge = screen.queryByText(label, { selector: "span" });
+                if (unavailable) expect(badge).not.toBeInTheDocument();
+                else expect(badge).toBeVisible();
+            }
+            if (unavailable) expect(screen.getAllByText("Unknown")).toHaveLength(4);
+            const user = userEvent.setup();
+            await user.click(screen.getByRole("button", { name: "Inspect HostDown" }));
+            const dialog = within(screen.getByRole("dialog", { name: /HostDown/ }));
+            if (unavailable) {
+                expect(dialog.getAllByText("Unknown")).toHaveLength(2);
+                expect(dialog.queryByText("Not resolved")).not.toBeInTheDocument();
+            } else expect(dialog.getByText("Not resolved")).toBeVisible();
+            await user.keyboard("{Escape}");
+            await user.click(screen.getByRole("button", { name: "Incident history" }));
+            await user.click(screen.getByRole("option", { name: "Resolved incidents" }));
+            expect(
+                screen.getByText("Resolved", { selector: "span.text-emerald-300" })
+            ).toBeVisible();
+            await user.click(screen.getByRole("button", { name: "Inspect HostDown" }));
+            expect(
+                within(screen.getByRole("dialog", { name: /HostDown/ })).getByText(
+                    "Resolved",
+                    { selector: "span" }
+                )
+            ).toBeVisible();
+        } finally {
+            cleanup();
+        }
+    }
+);
 
 test.each([
     [true, true, "Stale data"],
@@ -440,12 +580,69 @@ test("software views show source coverage, held security updates and read-only p
     }
 });
 
+test.each([
+    "pending",
+    "failed",
+    "empty",
+    "cached-empty-failed",
+    "cached-failed",
+] as const)("update source configuration is not inferred from %s requests", (state) => {
+    const cleanup = fixture(<UpdatesPanel />, (query) => {
+        const key = ["operations", "updates"];
+        if (state === "empty" || state === "cached-empty-failed")
+            query.setQueryData(key, []);
+        if (state === "cached-failed")
+            query.setQueryData(key, [
+                {
+                    id: "demo",
+                    label: "Demo Main",
+                    stale: false,
+                    report: {
+                        capturedAt: "2026-09-01T10:00:00Z",
+                        coveredKinds: ["os"],
+                        available: 2,
+                        security: 1,
+                    },
+                },
+            ]);
+        if (state.includes("failed"))
+            query
+                .getQueryCache()
+                .build(query, { queryKey: key })
+                .setState({
+                    status: "error",
+                    error: new Error("Synthetic inventory failure"),
+                });
+    });
+    try {
+        if (state === "empty") {
+            expect(screen.getByText("Not configured")).toBeVisible();
+            expect(screen.getByText("No update sources are configured.")).toBeVisible();
+        } else {
+            expect(screen.queryByText("Not configured")).not.toBeInTheDocument();
+            expect(
+                screen.queryByText("No update sources are configured.")
+            ).not.toBeInTheDocument();
+            if (state === "cached-failed") {
+                expect(screen.getAllByText("Stale data")).toHaveLength(2);
+                expect(screen.queryByText("Live data")).not.toBeInTheDocument();
+                expect(
+                    screen.getByText("Available", { selector: "dt" }).nextElementSibling
+                ).toHaveTextContent("—");
+            } else expect(screen.getByText("Awaiting data")).toBeVisible();
+        }
+    } finally {
+        cleanup();
+    }
+});
+
 test("freshness and incident detail fallbacks stay explicit without action controls", () => {
     const view = render(
         <>
             <ObservationBadge configured={false} available={false} stale />
             <ObservationBadge configured available={false} stale />
             <IncidentDetails
+                unavailable
                 incident={{
                     ...incident,
                     host: null,

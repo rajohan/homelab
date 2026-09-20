@@ -42,14 +42,19 @@ export function AlertsPanel({ compact = false }: { readonly compact?: boolean })
     });
     const data = query.data?.pages[0];
     const rows = query.data?.pages.flatMap((page) => page.incidents) ?? [];
+    const unavailable =
+        query.isError ||
+        !data?.capturedAt ||
+        query.data?.pages.some((page) => !page.configured || page.stale) === true;
     const count = (value: string) =>
         data?.counts.find((item) => item.state === value)?.count ?? 0;
     let emptyMessage = "No current incidents.";
     if (state === "resolved") emptyMessage = "No resolved incidents in retained history.";
-    if (data?.stale || query.isError)
+    if (state === "current" && unavailable)
         emptyMessage = "Current incident status is unavailable.";
-    if (!data?.capturedAt) emptyMessage = "Waiting for the first monitoring observation.";
-    if (!data?.configured)
+    if (state === "current" && !data?.capturedAt && !query.isError)
+        emptyMessage = "Waiting for the first monitoring observation.";
+    if (state === "current" && data?.configured === false)
         emptyMessage = "Monitoring incident collection is not configured.";
     return (
         <Card className="space-y-4">
@@ -61,7 +66,7 @@ export function AlertsPanel({ compact = false }: { readonly compact?: boolean })
                     <ObservationBadge
                         configured={data?.configured ?? true}
                         available={Boolean(data?.capturedAt)}
-                        stale={query.isError || (data?.stale ?? true)}
+                        stale={unavailable}
                     />
                 }
             />
@@ -72,11 +77,11 @@ export function AlertsPanel({ compact = false }: { readonly compact?: boolean })
                     <dl className="grid grid-cols-3 gap-3">
                         <MetricStat
                             label="Active"
-                            value={data.capturedAt ? count("active") : "—"}
+                            value={unavailable ? "—" : count("active")}
                         />
                         <MetricStat
                             label="Suppressed"
-                            value={data.capturedAt ? count("suppressed") : "—"}
+                            value={unavailable ? "—" : count("suppressed")}
                         />
                         <MetricStat
                             label="Resolved"
@@ -122,7 +127,12 @@ export function AlertsPanel({ compact = false }: { readonly compact?: boolean })
                                 {
                                     id: "state",
                                     label: "Status",
-                                    render: (row) => <IncidentStatus incident={row} />,
+                                    render: (row) => (
+                                        <IncidentStatus
+                                            incident={row}
+                                            unavailable={unavailable}
+                                        />
+                                    ),
                                 },
                                 {
                                     id: "time",
@@ -164,6 +174,9 @@ export function AlertsPanel({ compact = false }: { readonly compact?: boolean })
             {selected && (
                 <IncidentDetails
                     incident={rows.find((row) => row.id === selected.id) ?? selected}
+                    unavailable={
+                        unavailable || !rows.some((row) => row.id === selected.id)
+                    }
                     onClose={() => setSelected(null)}
                 />
             )}

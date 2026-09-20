@@ -172,7 +172,7 @@ export async function main(): Promise<void> {
             HOMELAB_DASHBOARD_ALERTMANAGER_URL: monitoring.url,
             HOMELAB_DASHBOARD_RULES_URL: monitoring.url,
             HOMELAB_DASHBOARD_PBS_URL: monitoring.url,
-            HOMELAB_DASHBOARD_PBS_TOKEN: "demo@pbs!reader=synthetic-only",
+            HOMELAB_DASHBOARD_PBS_TOKEN: "demo@pbs!reader:synthetic-only",
             HOMELAB_DASHBOARD_PBS_STORES: JSON.stringify([{ datastore: "demo-backups" }]),
             HOMELAB_DASHBOARD_UPDATE_SOURCES: JSON.stringify(previewUpdateSources),
             HOMELAB_DASHBOARD_DATABASE_URL: dashboardUrl.href,
