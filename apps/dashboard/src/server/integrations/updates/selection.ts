@@ -54,6 +54,15 @@ export function updateControl(
         reason = "Refresh the software inventory before installing an update.";
     else if (item.held)
         reason = "This package is held. Remove the hold on its host before updating.";
+    else if (target.driver.kind === "native" && item.release !== target.driver.release)
+        reason =
+            "The reported release provider does not match the configured update target.";
+    else if (
+        target.driver.kind === "docker" &&
+        (item.release !== undefined || item.imageTag !== target.driver.trackingTag)
+    )
+        reason =
+            "The reported image channel does not match the configured update target.";
     else if (item.kind !== "os" && (!report.checkedAt || !item.candidateVerified))
         reason = "The worker must verify the available version before installation.";
     else if (item.status !== "available" || !item.available)

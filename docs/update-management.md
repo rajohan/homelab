@@ -12,6 +12,10 @@ All automatic policies default to **off**, including Docker and digest-pinned im
   require recent step-up verification. Automation accounts require explicit scopes.
 - `updates:configure` changes automatic policy and requires a recently verified human.
 - Every request binds the source observation, versions, target and recipe to a digest.
+  Native targets own their required `release` provider. Docker targets own their
+  optional `trackingTag`; when omitted, only the installed image's own tag/flavor
+  may be followed. A publisher's different provider or tracking override cannot
+  authorize a manual or automatic install, even after a successful release lookup.
   The worker rechecks it immediately before execution. Queued authority expires after
   five minutes; expired work must be confirmed again. Changing a target invalidates its
   previous automatic consent. Disabling a policy stops queued automatic work, not an
@@ -55,7 +59,8 @@ worker mounts. Do not put private key contents in this JSON or repository.
 ```
 
 An APT target uses `"driver": {"kind":"apt"}` and owns the source's APT packages.
-A native target uses `kind: "native"`, an exact inventory `item`, and fixed `inspect`,
+A native target uses `kind: "native"`, an exact inventory `item`, a required registered
+`release` (for example `adguard-home`), and fixed `inspect`,
 `install`, `health` argument arrays. Executables must be absolute. The install argv
 must contain `{version}`, replaced by the exact approved stable version. No shell,
 browser-supplied command or remote script URL is accepted. Recipes must be reviewed

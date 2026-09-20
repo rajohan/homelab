@@ -14,7 +14,11 @@ import { createJobRegistry } from "../../jobs/registry";
 import type { JobHandler } from "../../jobs/types";
 import { operationFixture, expectOperationFailure } from "../../testing/operations";
 import { updateActionJobs } from "./actions";
-import { parseUpdateTargets, updateTargetRevision } from "./configuration";
+import {
+    parseUpdateTargets,
+    updateTargetRevision,
+    type UpdateTarget,
+} from "./configuration";
 import { updateSshArguments } from "./execution";
 import { readUpdateReport } from "./inventory";
 import { readUpdatePolicies, writeUpdatePolicy } from "./policies";
@@ -59,11 +63,14 @@ const item: UpdateItem = {
     platform: { os: "linux", architecture: "amd64" },
 };
 
-async function fixture() {
+async function fixture(
+    selectedTarget: UpdateTarget = target,
+    observedItem: UpdateItem = item
+) {
     const state = await operationFixture();
     const calls: { item: UpdateItem; automatic: boolean }[] = [];
     const handlers = updateActionJobs(
-        [target],
+        [selectedTarget],
         state.client,
         async (_target, software, automatic, _signal, report) => {
             calls.push({ item: software, automatic });
@@ -78,7 +85,7 @@ async function fixture() {
     const operations = {
         ...state,
         registry: createJobRegistry(handlers),
-        updateTargets: [target],
+        updateTargets: [selectedTarget],
         updateSources: [{ id: "demo", label: "Demo", publisher: crypto.randomUUID() }],
     };
     const principal = { kind: "human" as const, id: "operator", capabilities };
@@ -92,8 +99,8 @@ async function fixture() {
         checkedAt: new Date().toISOString(),
         repositoryMetadataAt: null,
         complete: true,
-        coveredKinds: ["container"],
-        items: [item],
+        coveredKinds: [observedItem.kind],
+        items: [observedItem],
     };
     await state.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES ('updates:demo',${JSON.stringify(report)}::text::jsonb,now())`;
     await state.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES ('updates.resolved:demo',${JSON.stringify(report)}::text::jsonb,now())`;
@@ -367,6 +374,138 @@ test("publisher fields cannot impersonate a worker-verified Docker candidate", a
     }
 });
 
+test.each(["docker-channel", "docker-provider", "native-provider"] as const)(
+    "worker-verified off-target candidates cannot authorize manual, queued or automatic installs (%s)",
+    async (mode) => {
+        const native = mode === "native-provider";
+        const configured = parseUpdateTargets(
+            JSON.stringify([
+                {
+                    ...target,
+                    driver: native
+                        ? {
+                              kind: "native",
+                              item: "runtime:demo",
+                              release: "bun",
+                              inspect: ["/bin/demo", "--version"],
+                              install: ["/bin/demo", "install", "{version}"],
+                              health: ["/bin/demo", "health"],
+                          }
+                        : { ...target.driver, trackingTag: "stable" },
+                },
+            ])
+        )[0]!;
+        const original: UpdateItem = native
+            ? {
+                  id: "runtime:demo",
+                  name: "Demo runtime",
+                  kind: "runtime",
+                  installed: "1.2.3",
+                  available: "1.3.0",
+                  status: "available",
+                  security: false,
+                  held: false,
+                  candidateVerified: true,
+                  release: "bun",
+              }
+            : { ...item, imageTag: "stable" };
+        const state = await fixture(configured, original);
+        try {
+            const control = updateControl(configured, state.report, original);
+            expect(control.allowed).toBe(true);
+            await state.caller.updates.request({
+                target: configured.id,
+                item: original.id,
+                revision: control.revision,
+                requestId: crypto.randomUUID(),
+            });
+            const candidate: UpdateItem = {
+                ...original,
+                ...(mode === "docker-channel"
+                    ? { imageTag: "alpine" }
+                    : { release: "node" as const }),
+            };
+            const observation = { ...state.report, items: [candidate] };
+            await state.client`UPDATE operation_snapshots SET value=${JSON.stringify(observation)}::text::jsonb WHERE key IN ('updates:demo','updates.resolved:demo')`;
+            const rejected = updateControl(configured, observation, candidate);
+            expect(rejected.change).toBe("minor");
+            expect(rejected.allowed).toBe(false);
+            await expectOperationFailure(
+                state.caller.updates.request({
+                    target: configured.id,
+                    item: candidate.id,
+                    revision: rejected.revision,
+                    requestId: crypto.randomUUID(),
+                }),
+                "configured update target"
+            );
+            await expectOperationFailure(state.run(state.handlers[0]!), "changed");
+            await writeUpdatePolicy(state.client, configured, "human:operator", {
+                enabled: true,
+                version: 0,
+            });
+            const automatic = state.handlers.find(
+                (handler) => handler.definition.key === "updates.automatic"
+            )!;
+            await state.client.begin(async (transaction) => {
+                await lockQueue(transaction);
+                await enqueueJob(
+                    transaction,
+                    automatic.definition,
+                    "system:test",
+                    crypto.randomUUID()
+                );
+            });
+            await state.run(automatic);
+            const [queued] = await state.client<
+                { count: number }[]
+            >`SELECT count(*)::int AS count FROM job_runs WHERE action=${state.handlers[0]!.definition.key} AND state='queued'`;
+            expect(queued?.count).toBe(0);
+            expect(state.calls).toHaveLength(0);
+        } finally {
+            await state.close();
+        }
+    }
+);
+
+test("deployment-owned channel changes invalidate policy consent and native providers are required", async () => {
+    const state = await fixture();
+    try {
+        await writeUpdatePolicy(state.client, target, "human:operator", {
+            enabled: true,
+            version: 0,
+        });
+        const [changed] = parseUpdateTargets(
+            JSON.stringify([
+                { ...target, driver: { ...target.driver, trackingTag: "stable" } },
+            ])
+        );
+        const policies = await readUpdatePolicies(state.client, [changed!]);
+        expect(policies[0]).toMatchObject({ enabled: false, configurationChanged: true });
+        expect(
+            updateControl(target, state.report, { ...item, imageTag: "stable" }).allowed
+        ).toBe(false);
+        expect(() =>
+            parseUpdateTargets(
+                JSON.stringify([
+                    {
+                        ...target,
+                        driver: {
+                            kind: "native",
+                            item: "runtime:demo",
+                            inspect: ["/bin/demo", "--version"],
+                            install: ["/bin/demo", "install", "{version}"],
+                            health: ["/bin/demo", "health"],
+                        },
+                    },
+                ])
+            )
+        ).toThrow();
+    } finally {
+        await state.close();
+    }
+});
+
 test("version classification includes pinned Docker minors without granting latest tags or prereleases automatic major bypass", () => {
     expect(updateChange(item)).toBe("minor");
     expect(updateChange({ ...item, availableImage: item.image })).toBe("patch");
@@ -435,6 +574,7 @@ test("SSH update transport pins trust and deployment configuration rejects ambig
                     driver: {
                         kind: "native",
                         item: "runtime:demo",
+                        release: "bun",
                         inspect: ["/bin/demo", "--version"],
                         install: ["/bin/demo", "upgrade"],
                         health: ["/bin/demo", "health"],

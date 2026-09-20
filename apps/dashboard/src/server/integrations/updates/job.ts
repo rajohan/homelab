@@ -11,12 +11,14 @@ import { compareRelease, latestRelease } from "./releases";
  * @param report - Installed inventory from a registered read-only publisher.
  * @param signal - Job deadline and cancellation.
  * @param releases - Per-job feed cache shared across hosts, never across worker runs.
+ * @param request - HTTP boundary replaceable with isolated registry/feed fixtures.
  * @returns A new report with unavailable feeds explicit, never guessed up to date.
  */
 export async function resolveUpdates(
     report: UpdateReport,
     signal: AbortSignal,
-    releases: Map<string, Promise<string>> = new Map()
+    releases: Map<string, Promise<string>> = new Map(),
+    request: typeof fetch = fetch
 ): Promise<UpdateReport> {
     const images = new Map<string, Promise<ImageUpdate | null>>();
     const items: UpdateItem[] = report.items.map((item) => ({
@@ -45,19 +47,20 @@ export async function resolveUpdates(
                 if (item.release) {
                     let promise = releases.get(item.release);
                     if (!promise) {
-                        promise = latestRelease(item.release, deadline);
+                        promise = latestRelease(item.release, deadline, request);
                         releases.set(item.release, promise);
                     }
                     available = await promise;
                 } else {
                     const key = JSON.stringify([
                         item.image,
+                        item.installed,
                         item.imageTag,
                         item.platform,
                     ]);
                     let promise = images.get(key);
                     if (!promise) {
-                        promise = resolveImageUpdate(item, deadline);
+                        promise = resolveImageUpdate(item, deadline, request);
                         images.set(key, promise);
                     }
                     const candidate = await promise;

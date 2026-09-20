@@ -1,3 +1,4 @@
+import { updateItemSchema } from "@homelab/contracts/updates";
 import * as v from "valibot";
 
 const identifier = v.pipe(v.string(), v.regex(/^[a-z][a-z0-9-]{0,47}$/));
@@ -29,10 +30,12 @@ const driverSchema = v.variant("kind", [
         directory: path,
         file: path,
         imageFile: path,
+        trackingTag: updateItemSchema.entries.imageTag,
     }),
     v.strictObject({
         kind: v.literal("native"),
         item: v.pipe(v.string(), v.minLength(1), v.maxLength(200)),
+        release: v.unwrap(updateItemSchema.entries.release),
         inspect: command,
         install: command,
         health: command,

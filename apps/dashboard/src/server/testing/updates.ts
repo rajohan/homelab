@@ -43,6 +43,7 @@ export const previewUpdateTargets = parseUpdateTargets(
             driver: {
                 kind: "native",
                 item: "application:demo-failure",
+                release: "bun",
                 inspect: ["/nonexistent/demo", "--version"],
                 install: ["/nonexistent/demo", "install", "{version}"],
                 health: ["/nonexistent/demo", "health"],
@@ -70,6 +71,7 @@ export const previewUpdateItems: readonly UpdateItem[] = [
     },
     {
         id: "application:demo-failure",
+        release: "bun",
         name: "Demo failed update",
         kind: "application",
         installed: "1.0.0",

@@ -1,9 +1,10 @@
 import { expect, test } from "bun:test";
 
-import type { UpdateItem } from "@homelab/contracts/updates";
+import { updateChange, type UpdateItem } from "@homelab/contracts/updates";
 
 import { dockerHubVersionTag } from "./dockerHubTags";
 import { publicImageReference, imageVersionTag } from "./imageReference";
+import { resolveUpdates } from "./job";
 import { latestImage, resolveImageUpdate } from "./registry";
 import { compareRelease, latestRelease } from "./releases";
 
@@ -473,6 +474,77 @@ test.each([
             request
         )
     ).toBeNull();
+});
+
+test("shared mutable-tag lookups retain each installed digest's actual version", async () => {
+    const secondDigest = "sha256:" + "b".repeat(64);
+    const nextDigest = "sha256:" + "c".repeat(64);
+    const lookups: string[] = [];
+    const server = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        fetch: (request) => {
+            const path = new URL(request.url).pathname;
+            lookups.push(path);
+            if (path.endsWith("/manifests/latest"))
+                return Response.json(
+                    { config: { digest: nextDigest } },
+                    {
+                        headers: { "Docker-Content-Digest": "sha256:" + "d".repeat(64) },
+                    }
+                );
+            let version = "1.3.0";
+            if (path.endsWith(image.installed)) version = "1.2.0";
+            else if (path.endsWith(secondDigest)) version = "2.0.0";
+            return Response.json({
+                config: { Labels: { "org.opencontainers.image.version": version } },
+            });
+        },
+    });
+    const request: typeof fetch = Object.assign(
+        (input: Parameters<typeof fetch>[0], options?: Parameters<typeof fetch>[1]) => {
+            const upstream = new URL(input instanceof Request ? input.url : input);
+            expect(upstream.origin).toBe("https://registry-1.docker.io");
+            return fetch(new URL(upstream.pathname, server.url), options);
+        },
+        { preconnect: fetch.preconnect }
+    );
+    try {
+        const result = await resolveUpdates(
+            {
+                capturedAt: new Date().toISOString(),
+                repositoryMetadataAt: null,
+                complete: true,
+                coveredKinds: ["container"],
+                items: [
+                    image,
+                    { ...image, id: "second", installed: secondDigest },
+                    { ...image, id: "duplicate" },
+                ],
+            },
+            AbortSignal.timeout(5000),
+            new Map(),
+            request
+        );
+        expect(result.items.map((item) => item.installedVersion)).toEqual([
+            "1.2.0",
+            "2.0.0",
+            "1.2.0",
+        ]);
+        expect(result.items.map(updateChange)).toEqual(["minor", "unknown", "minor"]);
+        expect(
+            result.items.every(
+                (item) => item.candidateVerified && item.available === nextDigest
+            )
+        ).toBe(true);
+        expect(lookups.filter((path) => path.endsWith("/manifests/latest"))).toHaveLength(
+            2
+        );
+        expect(lookups.filter((path) => path.endsWith(image.installed))).toHaveLength(1);
+        expect(lookups.filter((path) => path.endsWith(secondDigest))).toHaveLength(1);
+    } finally {
+        await server.stop(true);
+    }
 });
 
 test("release feeds use semantic order and discard arbitrary remote URLs", async () => {
