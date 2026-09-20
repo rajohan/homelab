@@ -13,7 +13,6 @@ import { enqueueJob, lockQueue } from "../../jobs/queue";
 import { createJobRegistry } from "../../jobs/registry";
 import type { JobHandler } from "../../jobs/types";
 import { operationFixture, expectOperationFailure } from "../../testing/operations";
-import { applicationJobs } from "../applications/jobs";
 import { updateActionJobs } from "./actions";
 import { updateBatchKey } from "./batch";
 import {
@@ -65,13 +64,13 @@ const item: UpdateItem = {
     platform: { os: "linux", architecture: "amd64" },
 };
 
-async function batchFixture(fail = false, withDocker = false) {
+async function batchFixture(fail = false, withDocker = false, sharedHost = false) {
     const state = await operationFixture();
     const targets: UpdateTarget[] = ["alpha", "beta"].map((source) => ({
         ...target,
         id: source,
         source,
-        host: `${source}.invalid`,
+        host: sharedHost ? "shared.invalid" : `${source}.invalid`,
         label: source,
         driver: { kind: "apt" as const },
     }));
@@ -231,30 +230,6 @@ test.each([false, true])(
             expect(second).toBeDefined();
             expect(first!.timeout_ms).toBe((withDocker ? 69 : 68) * 1_530_000 + 60_000);
             expect(first!.timeout_ms).toBeGreaterThan(3_600_000);
-            const lifecycle = applicationJobs(
-                [
-                    {
-                        id: "alpha",
-                        label: "Alpha",
-                        endpoint: "https://alpha.invalid",
-                        projects: ["demo"],
-                    },
-                ],
-                state.client
-            );
-            const stop = lifecycle.find(
-                (handler) => handler.definition.key === "applications.stop"
-            )!;
-            expect(
-                stop.definition.resourceKeys.some((key) =>
-                    first!.resource_keys.includes(key)
-                )
-            ).toBe(true);
-            expect(
-                stop.definition.resourceKeys.some((key) =>
-                    second!.resource_keys.includes(key)
-                )
-            ).toBe(false);
             const entry = plan.entries.find(
                 (candidate) => candidate.source === "alpha" && candidate.reason === null
             )!;
@@ -290,6 +265,106 @@ test.each([false, true])(
                     report?.items.filter((software) => software.status === "current")
                 ).toHaveLength(withDocker ? 69 : 68);
             }
+        } finally {
+            await state.close();
+        }
+    }
+);
+
+test.each([
+    "success",
+    "idle",
+    "actor",
+    "request",
+    "revision",
+    "scope",
+    "overlap",
+    "budget",
+    "host",
+    "failed",
+    "cancelled",
+    "timed_out",
+] as const)(
+    "serialized source aliases credit only their successful shared confirmation runtime (%s)",
+    async (scenario) => {
+        const state = await batchFixture(false, false, scenario !== "host");
+        try {
+            for (const source of ["alpha", "beta"]) {
+                const report = await readUpdateReport(state.client, source);
+                await state.client`UPDATE operation_snapshots SET value=${JSON.stringify({ ...report, items: report!.items.slice(2, 6) })}::text::jsonb WHERE key=${`updates:${source}`}`;
+            }
+            const plan = await state.caller.updates.batchPlan({});
+            await state.caller.updates.batchRequest({
+                revision: plan.revision,
+                requestId: crypto.randomUUID(),
+            });
+            const alpha = state.registry.get(updateBatchKey("alpha"))!,
+                beta = state.registry.get(updateBatchKey("beta"))!;
+            const worker = await state.registerWorker();
+            const first = await claimJob(state.client, worker, [alpha.definition.key]);
+            if (!first) throw new Error("Expected first alias claim");
+            if (scenario !== "host")
+                expect(
+                    await claimJob(state.client, worker, [beta.definition.key])
+                ).toBeUndefined();
+            await alpha.execute(first.payload, {
+                runId: first.id,
+                leaseToken: first.lease_token,
+                signal: AbortSignal.timeout(5000),
+                reportProgress: () => Promise.resolve(),
+                commit: (write, queue) => commitClaim(state.client, first, write, queue),
+            });
+            await settleClaim(state.client, first, "succeeded");
+            await state.client`UPDATE job_runs SET created_at=now()-interval '100 minutes'`;
+            await state.client`UPDATE job_runs SET started_at=now()-interval '97 minutes', finished_at=now()-interval '2 minutes' WHERE id=${first.id}`;
+            if (scenario === "idle")
+                await state.client`UPDATE job_runs SET created_at=now()-interval '160 minutes'`;
+            if (scenario === "actor")
+                await state.client`UPDATE job_runs SET requested_by='human:someone-else' WHERE id=${first.id}`;
+            if (scenario === "scope")
+                await state.client`UPDATE job_runs SET payload=jsonb_set(payload,'{scope}','"alpha"'::jsonb) WHERE id=${first.id}`;
+            if (scenario === "budget")
+                await state.client`UPDATE job_runs SET timeout_ms=1000 WHERE id=${first.id}`;
+            if (scenario === "overlap") {
+                const duplicate = await state.client.begin(async (transaction) => {
+                    await lockQueue(transaction);
+                    return enqueueJob(
+                        transaction,
+                        alpha.definition,
+                        "human:operator",
+                        crypto.randomUUID(),
+                        first.payload
+                    );
+                });
+                await state.client`UPDATE job_runs SET state='succeeded', started_at=now()-interval '97 minutes', finished_at=now()-interval '2 minutes' WHERE id=${duplicate}`;
+                await state.client`UPDATE job_runs SET created_at=now()-interval '200 minutes'`;
+            }
+            if (scenario === "request" || scenario === "revision")
+                await state.client`UPDATE job_runs SET payload=jsonb_set(payload,${state.client.array([scenario === "request" ? "requestId" : "revision"], "TEXT")},${JSON.stringify(crypto.randomUUID())}::text::jsonb) WHERE id=${first.id}`;
+            const blocked =
+                scenario === "failed" ||
+                scenario === "cancelled" ||
+                scenario === "timed_out";
+            if (blocked)
+                await state.client`UPDATE job_runs SET state=${scenario} WHERE id=${first.id}`;
+            const second = await claimJob(state.client, worker, [beta.definition.key]);
+            if (!second) throw new Error("Expected second alias claim");
+            const execution = beta.execute(second.payload, {
+                runId: second.id,
+                leaseToken: second.lease_token,
+                signal: AbortSignal.timeout(5000),
+                reportProgress: () => Promise.resolve(),
+                commit: (write, queue) => commitClaim(state.client, second, write, queue),
+            });
+            await (scenario === "success"
+                ? execution
+                : expectOperationFailure(
+                      execution,
+                      blocked ? "remaining updates were not started" : "expired"
+                  ));
+            expect(state.calls.filter((call) => call.source === "beta")).toHaveLength(
+                scenario === "success" ? 4 : 0
+            );
         } finally {
             await state.close();
         }

@@ -17,7 +17,8 @@ All automatic policies default to **off**, including Docker and digest-pinned im
   may be followed. A publisher's different provider or tracking override cannot
   authorize a manual or automatic install, even after a successful release lookup.
   The worker rechecks it immediately before execution. Individual queued authority expires after
-  five minutes; a confirmed bulk host job must start within one hour. Expired work must be confirmed again. Changing a target invalidates its
+  five minutes; a confirmed bulk host job has one hour of queue-wait time, excluding
+  successful execution on the same host from the same confirmation. Expired work must be confirmed again. Changing a target invalidates its
   previous automatic consent. Disabling a policy stops queued automatic work, not an
   installation already executing on the host.
 - Automatic admission accepts comparable stable patch/minor versions only. Majors,
@@ -41,11 +42,18 @@ job per host/source. Work on different hosts may run concurrently; packages and
 applications on each host run in sequence. A shared host lease prevents overlap with
 individual installers, including targets using different source IDs for the same SSH
 hostname. Configure one canonical hostname per physical host, shared by SSH update
-targets and Docker control endpoints. Lifecycle actions hold these host keys too;
+targets and Docker control endpoints. Lifecycle admission adds only the selected
+target's host key, which is rechecked against the worker's configuration before execution;
 read-only inventory refreshes do not block installations. A failure stops the
 remaining entries on that host, while other host jobs are independent. Every entry
 rechecks its observation and target before execution. A package already installed at
 the approved version by an earlier package dependency is verified without reinstalling.
+
+Source aliases sharing a host do not expire merely because an earlier job in the same
+confirmed plan ran for more than an hour. Only successful execution intervals from the
+same actor, request, scope and plan revision count against queue-wait time; overlapping
+intervals count once and idle gaps or unrelated jobs do not renew consent. A failed,
+cancelled or timed-out sibling prevents the remaining same-host aliases from starting.
 
 Each installation retains its 25-minute deadline. A host job gets that budget plus
 30 seconds of coordination per entry and one minute of batch overhead, rather than
@@ -122,7 +130,8 @@ Blob reads follow at most four redirects to exact Docker/GitHub CDN origins. Reg
 bearer tokens are never forwarded to storage origins. Manifest and token redirects
 remain disabled; unavailable optional version labels cannot fabricate availability.
 The raw local store identity remains the execution fence and post-pull verification
-uses that store's identity representation. The host verifies
+uses that store's identity representation: config, image index and platform manifest
+remain distinct, including when a manifest was reached through a multi-platform index. The host verifies
 the exact container, installed image identity, repository and Compose project/service.
 It pulls the approved immutable digest, verifies the platform image ID, then changes
 one unambiguous literal `image:` line in the configured source. Symlinked sources,

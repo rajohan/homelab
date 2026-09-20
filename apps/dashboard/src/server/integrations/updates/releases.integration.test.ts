@@ -614,6 +614,12 @@ test.each([
         sameIndex: false,
         sameContent: false,
     },
+    {
+        label: "platform manifest unchanged by another architecture",
+        store: "manifest",
+        sameIndex: false,
+        sameContent: true,
+    },
 ])(
     "image identities: $label compares platform content and retains the post-pull ID kind",
     async ({ store, sameIndex, sameContent }) => {
@@ -686,7 +692,9 @@ test.each([
             const item = result.items[0]!;
             expect(item.status).toBe(sameContent ? "current" : "available");
             expect(item.installed).toBe(local);
-            expect(item.available).toBe(store === "config" ? nextConfig : nextIndex);
+            expect(item.available).toBe(
+                { config: nextConfig, manifest: nextManifest, index: nextIndex }[store]
+            );
             expect(item.availableImage).toBe("ghcr.io/example/web:latest@" + nextIndex);
             expect(item.installedVersion).toBe("1.2.0");
             expect(item.availableVersion).toBe(sameContent ? "1.2.0" : "1.3.0");

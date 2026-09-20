@@ -226,11 +226,11 @@ export async function resolveImageUpdate(
     // Normalize content for availability, but preserve the daemon's identity kind
     // for the worker's exact post-pull check and its subsequent observation.
     let installedConfig = item.installed;
-    let manifestIdentity = false;
+    let identityKind: "config" | "index" | "manifest" = "config";
     if (item.installed !== manifest.config.digest) {
         if (item.installed === selected.digest || item.installed === platformDigest) {
             installedConfig = manifest.config.digest;
-            manifestIdentity = true;
+            identityKind = item.installed === platformDigest ? "manifest" : "index";
         } else {
             try {
                 v.parse(
@@ -244,17 +244,19 @@ export async function resolveImageUpdate(
             } catch {
                 signal.throwIfAborted();
                 const response = await readManifest(item.installed);
-                const installed = await platformManifest(
-                    v.parse(manifestSchema, response.body),
-                    item.installed
-                );
+                const value = v.parse(manifestSchema, response.body);
+                const installed = await platformManifest(value, item.installed);
                 if (!installed?.manifest.config) return null;
                 installedConfig = installed.manifest.config.digest;
-                manifestIdentity = true;
+                identityKind = value.manifests ? "index" : "manifest";
             }
         }
     }
-    const imageId = manifestIdentity ? selected.digest : manifest.config.digest;
+    const imageId = {
+        index: selected.digest,
+        manifest: platformDigest,
+        config: manifest.config.digest,
+    }[identityKind];
     if (!imageId) return null;
     const labelVersion = async (identity: string): Promise<string | undefined> => {
         if (!v.safeParse(digest, identity).success) return undefined;

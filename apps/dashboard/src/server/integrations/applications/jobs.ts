@@ -94,14 +94,7 @@ export function applicationJobs(
                     "Apply an explicitly confirmed lifecycle operation to the exact observed application selection.",
                 resourceClass: "interactive" as const,
                 capability: `applications:${operation}` as const,
-                resourceKeys: [
-                    "applications:inventory",
-                    ...new Set(
-                        targets.map((target) =>
-                            hostResourceKey(new URL(target.endpoint).hostname)
-                        )
-                    ),
-                ],
+                resourceKeys: ["applications:inventory"],
                 timeoutMs: 300_000,
                 attemptLimit: 1,
                 retrySafe: false,
@@ -117,7 +110,7 @@ export function applicationJobs(
                 const target = targets.find((item) => item.id === intent.host);
                 const [run] = await client<
                     { eligible: boolean }[]
-                >`SELECT created_at >= now() - interval '2 minutes' AS eligible FROM job_runs WHERE id=${context.runId}`;
+                >`SELECT created_at >= now() - interval '2 minutes' AND ${target ? hostResourceKey(new URL(target.endpoint).hostname) : "unconfigured"} = ANY(resource_keys) AS eligible FROM job_runs WHERE id=${context.runId}`;
                 if (!target || intent.operation !== operation || !run?.eligible)
                     throw new Error(
                         "Application authorization expired or target changed"

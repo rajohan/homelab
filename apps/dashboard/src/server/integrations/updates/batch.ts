@@ -38,6 +38,34 @@ const payloadSchema = v.strictObject({
 const digest = (value: unknown) =>
     new Bun.CryptoHasher("sha256").update(JSON.stringify(value)).digest("hex");
 
+async function checkBatchAdmission(client: SQL, runId: string): Promise<void> {
+    // Only successful execution on an overlapping host in this exact confirmation
+    // suspends the queue-wait clock. Idle gaps and unrelated work do not renew consent.
+    const [run] = await client<{ fresh: boolean; blocked: boolean | null }[]>`
+        WITH admission AS (SELECT * FROM job_runs WHERE id=${runId}), related AS (
+        SELECT peer.*, greatest(peer.started_at, own.created_at) AS credit_start,
+            least(peer.finished_at, peer.started_at + peer.timeout_ms * interval '1 millisecond', now()) AS credit_end
+        FROM admission own JOIN job_runs peer ON peer.id <> own.id
+            AND peer.action LIKE 'updates.batch.%'
+            AND peer.requested_by = own.requested_by
+            AND peer.payload->>'requestId' = own.payload->>'requestId'
+            AND peer.payload->>'revision' = own.payload->>'revision'
+            AND (peer.payload->>'scope') IS NOT DISTINCT FROM (own.payload->>'scope')
+            AND peer.resource_keys && ARRAY(SELECT key FROM unnest(own.resource_keys) AS resource(key) WHERE key LIKE 'host:%')
+        ), credited AS (
+            SELECT range_agg(tstzrange(credit_start, credit_end, '[)')) AS periods FROM related
+            WHERE state='succeeded' AND started_at IS NOT NULL AND finished_at <= now() AND credit_end > credit_start
+        ) SELECT own.created_at >= now() - interval '1 hour' - coalesce(
+            (SELECT sum(upper(period)-lower(period)) FROM credited, unnest(periods) AS credit(period)), interval '0 seconds') AS fresh,
+            (SELECT bool_or(state IN ('failed','timed_out','cancelled')) FROM related) AS blocked
+        FROM admission own`;
+    if (run?.blocked)
+        throw new Error(
+            "Another batch in this confirmation failed or was cancelled on this host; remaining updates were not started"
+        );
+    if (!run?.fresh) throw new Error("Batch update authorization expired");
+}
+
 /**
  * Derive a bounded job key for a configured reporting source.
  * @param source - Exact source identity, never a browser-supplied action name.
@@ -163,11 +191,9 @@ export function updateBatchJobs(
             },
             execute: async (value, context) => {
                 const input = v.parse(payloadSchema, value);
-                const [run] = await client<
-                    { fresh: boolean }[]
-                >`SELECT created_at >= now() - interval '1 hour' AS fresh FROM job_runs WHERE id=${context.runId}`;
-                if (!run?.fresh || input.source !== source)
+                if (input.source !== source)
                     throw new Error("Batch update authorization expired");
+                await checkBatchAdmission(client, context.runId);
                 for (const [index, entry] of input.items.entries()) {
                     context.signal.throwIfAborted();
                     const target = owned.find(
