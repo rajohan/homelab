@@ -22,6 +22,16 @@ import {
 } from "drizzle-orm/pg-core";
 
 const time = (name: string) => timestamp(name, { withTimezone: true });
+export const updatePolicies = pgTable(
+    "update_policies",
+    {
+        target: text().primaryKey(),
+        enabled: boolean().notNull().default(false),
+        version: integer().notNull().default(1),
+        configuration: text().notNull(),
+    },
+    (table) => [check("update_policies_version", sql`${table.version} >= 1`)]
+);
 export const operationalIncidents = pgTable(
     "operational_incidents",
     {

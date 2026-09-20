@@ -21,6 +21,7 @@ import { parseOperationsConfiguration } from "../apps/dashboard/src/server/confi
 import { connectDashboardDatabase } from "../apps/dashboard/src/server/database/connection";
 import { migrateDashboard } from "../apps/dashboard/src/server/database/migrations";
 import { startDashboardServer } from "../apps/dashboard/src/server/index";
+import { createJobRegistry } from "../apps/dashboard/src/server/jobs/registry";
 import { publishNotification } from "../apps/dashboard/src/server/notifications/publish";
 import { createOperationsRuntime } from "../apps/dashboard/src/server/operations/runtime";
 import { createApplicationFixture } from "../apps/dashboard/src/server/testing/applications";
@@ -29,6 +30,10 @@ import {
     seedMonitoringPreview,
     previewUpdateSources,
 } from "../apps/dashboard/src/server/testing/monitoring";
+import {
+    previewUpdateJobs,
+    previewUpdateTargets,
+} from "../apps/dashboard/src/server/testing/updates";
 import { runWorker } from "../apps/dashboard/src/worker/runtime";
 
 async function docker(...arguments_: string[]): Promise<string> {
@@ -175,6 +180,7 @@ export async function main(): Promise<void> {
             HOMELAB_DASHBOARD_PBS_TOKEN: "demo@pbs!reader:synthetic-only",
             HOMELAB_DASHBOARD_PBS_STORES: JSON.stringify([{ datastore: "demo-backups" }]),
             HOMELAB_DASHBOARD_UPDATE_SOURCES: JSON.stringify(previewUpdateSources),
+            HOMELAB_DASHBOARD_UPDATE_TARGETS: JSON.stringify(previewUpdateTargets),
             HOMELAB_DASHBOARD_DATABASE_URL: dashboardUrl.href,
             // Optional read-only telemetry; identity and operational state remain disposable.
             HOMELAB_DASHBOARD_METRICS_URL:
@@ -276,7 +282,9 @@ export async function main(): Promise<void> {
             operations = createOperationsRuntime(operationConfiguration);
             worker = runWorker({
                 client: operations.client,
-                registry: operations.registry,
+                registry: createJobRegistry(
+                    previewUpdateJobs(operations.registry, operations.client)
+                ),
                 concurrency: operationConfiguration.concurrency,
                 signal: lifecycle.signal,
                 version: "development",

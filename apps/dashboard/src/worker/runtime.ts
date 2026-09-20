@@ -63,10 +63,10 @@ async function execute(
                 executionSignal.throwIfAborted();
                 await reportJobProgress(client, run, message);
             },
-            commit: (write) =>
+            commit: (write, queueAdmission) =>
                 executionSignal.aborted
                     ? Promise.resolve(false)
-                    : commitClaim(client, run, write),
+                    : commitClaim(client, run, write, queueAdmission),
         });
         outcome = "succeeded";
     } catch {

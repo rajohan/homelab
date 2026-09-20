@@ -9,6 +9,10 @@ import {
 } from "../integrations/applications/configuration";
 import type { BackupCatalogConfiguration } from "../integrations/backups/catalog";
 import type { LogsConfiguration } from "../integrations/logs/transport";
+import {
+    parseUpdateTargets,
+    type UpdateTarget,
+} from "../integrations/updates/configuration";
 
 const storeSchema = v.strictObject({
     datastore: v.pipe(v.string(), v.regex(/^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,99}$/)),
@@ -25,6 +29,7 @@ const storeSchema = v.strictObject({
 });
 
 export interface OperationsConfiguration {
+    readonly updateTargets?: readonly UpdateTarget[];
     readonly rules?: RulesConfiguration | undefined;
     readonly backupCatalog?: BackupCatalogConfiguration | undefined;
     readonly updateSources?: readonly UpdateSource[];
@@ -172,7 +177,17 @@ export function parseOperationsConfiguration(
         retentionDays > 365
     )
         throw new Error("Invalid worker concurrency or retention policy");
+    const updateTargets = parseUpdateTargets(
+        environment.HOMELAB_DASHBOARD_UPDATE_TARGETS
+    );
+    if (
+        updateTargets.some(
+            (target) => !updateSources.some((source) => source.id === target.source)
+        )
+    )
+        throw new Error("Every update target requires a configured reporting source");
     return {
+        updateTargets,
         rules: rulesUrl
             ? { url: rulesUrl, token: environment.HOMELAB_DASHBOARD_RULES_TOKEN }
             : undefined,

@@ -11,8 +11,38 @@ export const updateItemSchema = v.strictObject({
     status: v.picklist(["current", "available", "unknown"]),
     security: v.optional(v.boolean(), false),
     held: v.optional(v.boolean(), false),
-    release: v.optional(v.picklist(["bun", "node", "openclaw", "github-cli"])),
+    release: v.optional(
+        v.picklist([
+            "bun",
+            "node",
+            "openclaw",
+            "github-cli",
+            "adguard-home",
+            "adguardhome-sync",
+            "node-exporter",
+            "smartctl-exporter",
+            "blackbox-exporter",
+            "alertmanager",
+            "victoriametrics",
+            "alloy",
+            "loki",
+            "traefik",
+            "pve-exporter",
+            "pgadmin",
+            "nextcloud",
+            "code-server",
+            "codex",
+        ])
+    ),
     image: v.optional(text(300)),
+    pinned: v.optional(v.boolean()),
+    availableImage: v.optional(text(300)),
+    installedVersion: v.optional(text(100)),
+    availableVersion: v.optional(text(100)),
+    candidateVerified: v.optional(v.boolean()),
+    imageTag: v.optional(
+        v.pipe(v.string(), v.regex(/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/))
+    ),
     platform: v.optional(
         v.strictObject({
             os: text(32),
@@ -60,4 +90,80 @@ export interface UpdateSourceStatus {
               readonly total: number;
           })
         | null;
+}
+
+export const updateRequestSchema = v.strictObject({
+    target: text(64),
+    item: text(200),
+    revision: v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/)),
+    requestId: v.pipe(v.string(), v.uuid()),
+});
+export const updatePolicySchema = v.strictObject({
+    target: text(64),
+    version: v.pipe(v.number(), v.integer(), v.minValue(0)),
+    enabled: v.boolean(),
+});
+export type UpdateChange = "patch" | "minor" | "major" | "unknown";
+export interface UpdateControl {
+    readonly target: string;
+    readonly revision: string;
+    readonly change: UpdateChange;
+    readonly allowed: boolean;
+    readonly reason: string | null;
+}
+export interface UpdatePolicy {
+    readonly target: string;
+    readonly label: string;
+    readonly source: string;
+    readonly enabled: boolean;
+    readonly version: number;
+    readonly configurationChanged: boolean;
+}
+
+function versionParts(value: string | undefined, debian: boolean): number[] | null {
+    if (!value) return null;
+    const normalized = debian
+        ? value.replace(/^\d+:/, "").replace(/-\d[^-]*$/, "")
+        : value;
+    const match = /^(?:v)?(\d+)\.(\d+)(?:\.(\d+))?(?:\+[a-zA-Z0-9.]+)?$/.exec(normalized);
+    if (!match) return null;
+    const numbers = [Number(match[1]), Number(match[2]), Number(match[3] ?? 0)];
+    return numbers.every((number) => Number.isSafeInteger(number)) ? numbers : null;
+}
+
+function imageVersion(reference: string | undefined): string | undefined {
+    const unpinned = reference?.split("@")[0];
+    const tag = unpinned?.slice(unpinned.lastIndexOf(":") + 1);
+    return tag?.replace(/-(?:alpine|bookworm|bullseye|trixie|slim)[\d.-]*$/, "");
+}
+
+/**
+ * Classify comparable stable versions without assuming an opaque tag is a safe update.
+ * @param item - Installed and resolved candidate metadata; digests are never versions.
+ * @returns Patch/minor/major, or unknown for downgrade, prerelease or unversioned channels.
+ */
+export function updateChange(item: UpdateItem): UpdateChange {
+    const installed = versionParts(
+        item.kind === "container"
+            ? (item.installedVersion ?? imageVersion(item.image))
+            : item.installed,
+        item.kind === "os"
+    );
+    const available = versionParts(
+        item.kind === "container"
+            ? (item.availableVersion ?? imageVersion(item.availableImage))
+            : (item.available ?? undefined),
+        item.kind === "os"
+    );
+    if (!installed || !available) return "unknown";
+    for (let index = 0; index < 3; index += 1) {
+        const before = installed[index]!;
+        const after = available[index]!;
+        if (after < before) return "unknown";
+        if (after > before) {
+            if (index === 0) return "major";
+            return index === 1 ? "minor" : "patch";
+        }
+    }
+    return "patch";
 }

@@ -20,6 +20,8 @@ import { createInventoryReader } from "../integrations/metrics/liveInventory";
 import { readSavedInventory } from "../integrations/metrics/snapshot";
 import type { MetricsConfiguration } from "../integrations/metrics/transport";
 import { snapshotJob } from "../integrations/snapshots/job";
+import { updateActionJobs } from "../integrations/updates/actions";
+import type { UpdateTarget } from "../integrations/updates/configuration";
 import { updatesJob } from "../integrations/updates/job";
 import { maintenanceJob } from "../jobs/maintenance";
 import { createJobRegistry } from "../jobs/registry";
@@ -34,6 +36,7 @@ export function createOperationsRuntime(
 ): OperationsRuntime {
     const connection = connectDashboardDatabase(configuration.databaseUrl);
     const registry = createJobRegistry([
+        ...updateActionJobs(configuration.updateTargets ?? [], connection.client),
         ...(configuration.rules
             ? [
                   snapshotJob({
@@ -98,6 +101,7 @@ export function createOperationsRuntime(
           )
         : undefined;
     return {
+        updateTargets: configuration.updateTargets ?? [],
         rules: configuration.rules,
         backupCatalog: configuration.backupCatalog,
         ...connection,
@@ -111,6 +115,7 @@ export function createOperationsRuntime(
     };
 }
 export type OperationsRuntime = ReturnType<typeof connectDashboardDatabase> & {
+    readonly updateTargets?: readonly UpdateTarget[];
     readonly rules?: RulesConfiguration | undefined;
     readonly backupCatalog?: BackupCatalogConfiguration | undefined;
     readonly updateSources?: readonly UpdateSource[];

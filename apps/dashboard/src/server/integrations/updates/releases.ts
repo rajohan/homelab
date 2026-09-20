@@ -18,6 +18,63 @@ const providers = {
         url: "https://api.github.com/repos/cli/cli/releases/latest",
         field: "tag_name",
     },
+    "adguard-home": {
+        url: "https://api.github.com/repos/AdguardTeam/AdGuardHome/releases/latest",
+        field: "tag_name",
+    },
+    "adguardhome-sync": {
+        url: "https://api.github.com/repos/bakito/adguardhome-sync/releases/latest",
+        field: "tag_name",
+    },
+    "node-exporter": {
+        url: "https://api.github.com/repos/prometheus/node_exporter/releases/latest",
+        field: "tag_name",
+    },
+    "smartctl-exporter": {
+        url: "https://api.github.com/repos/prometheus-community/smartctl_exporter/releases/latest",
+        field: "tag_name",
+    },
+    "blackbox-exporter": {
+        url: "https://api.github.com/repos/prometheus/blackbox_exporter/releases/latest",
+        field: "tag_name",
+    },
+    alertmanager: {
+        url: "https://api.github.com/repos/prometheus/alertmanager/releases/latest",
+        field: "tag_name",
+    },
+    victoriametrics: {
+        url: "https://api.github.com/repos/VictoriaMetrics/VictoriaMetrics/releases/latest",
+        field: "tag_name",
+    },
+    alloy: {
+        url: "https://api.github.com/repos/grafana/alloy/releases/latest",
+        field: "tag_name",
+    },
+    loki: {
+        url: "https://api.github.com/repos/grafana/loki/releases/latest",
+        field: "tag_name",
+    },
+    traefik: {
+        url: "https://api.github.com/repos/traefik/traefik/releases/latest",
+        field: "tag_name",
+    },
+    "pve-exporter": {
+        url: "https://pypi.org/pypi/prometheus-pve-exporter/json",
+        field: "version",
+    },
+    pgadmin: { url: "https://pypi.org/pypi/pgadmin4/json", field: "version" },
+    nextcloud: {
+        url: "https://api.github.com/repos/nextcloud/server/releases/latest",
+        field: "tag_name",
+    },
+    "code-server": {
+        url: "https://api.github.com/repos/coder/code-server/releases/latest",
+        field: "tag_name",
+    },
+    codex: {
+        url: "https://api.github.com/repos/openai/codex/releases/latest",
+        field: "tag_name",
+    },
 } as const;
 
 /**
@@ -50,10 +107,23 @@ export async function latestRelease(
                   body
               )[0]
             : body;
-    const value = v.parse(v.record(v.string(), v.unknown()), data)[source.field];
-    return v
-        .parse(version, typeof value === "string" ? value.replace(/^bun-v/, "") : value)
-        .replace(/^v/, "");
+    const record = v.parse(v.record(v.string(), v.unknown()), data);
+    const value = (
+        provider === "pve-exporter" || provider === "pgadmin"
+            ? v.parse(v.record(v.string(), v.unknown()), record.info)
+            : record
+    )[source.field];
+    let normalized =
+        typeof value === "string"
+            ? value.replace(/^(?:bun|rust)-v/, "").replace(/^v/, "")
+            : value;
+    if (
+        provider === "pgadmin" &&
+        typeof normalized === "string" &&
+        /^\d+\.\d+$/.test(normalized)
+    )
+        normalized += ".0";
+    return v.parse(version, normalized).replace(/^v/, "");
 }
 
 /**
@@ -66,7 +136,10 @@ export function compareRelease(
     installed: string,
     available: string
 ): UpdateItem["status"] {
-    const current = v.safeParse(version, installed);
+    const current = v.safeParse(
+        version,
+        /^v?\d+\.\d+$/.test(installed) ? installed + ".0" : installed
+    );
     const next = v.safeParse(version, available);
     if (!current.success || !next.success) return "unknown";
     return Bun.semver.order(

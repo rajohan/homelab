@@ -41,6 +41,12 @@ export const applicationLogsProcedure = trpc.procedure
                     "PRECONDITION_FAILED",
                     "Service logs cover multiple projects; configure a project log label."
                 );
+            const legacy = target.logs.legacy;
+            const mapping = legacy?.services.find(
+                (entry) =>
+                    entry.project === application.project &&
+                    entry.service === application.name
+            );
             return readApplicationLogs(
                 operations.logs,
                 {
@@ -58,7 +64,20 @@ export const applicationLogsProcedure = trpc.procedure
                 AbortSignal.any([
                     ...(signal ? [signal] : []),
                     AbortSignal.timeout(10_000),
-                ])
+                ]),
+                mapping && legacy
+                    ? {
+                          until: legacy.until,
+                          labels: {
+                              ...target.logs.labels,
+                              ...(target.logs.projectLabel
+                                  ? { [target.logs.projectLabel]: "" }
+                                  : {}),
+                              [target.logs.serviceLabel]: "",
+                              [legacy.serviceLabel]: mapping.value,
+                          },
+                      }
+                    : undefined
             );
         })
     );

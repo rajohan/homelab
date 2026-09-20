@@ -1,11 +1,88 @@
-import { updateReportSchema, updateListSchema } from "@homelab/contracts/updates";
+import type { Capability } from "@homelab/contracts/operations";
+import {
+    updateReportSchema,
+    updateListSchema,
+    updateRequestSchema,
+    updatePolicySchema,
+} from "@homelab/contracts/updates";
 
 import { runOperation, trpc } from "../../api/trpc";
+import { requireCapability } from "../../automation/authentication";
 import { authorizedOperations } from "../../operations/authorization";
+import type { OperationsContext } from "../../operations/context";
 import { OperationFailure } from "../../operations/errors";
+import { requestUpdate } from "./actions";
 import { readUpdateSources, readUpdateReport, staleUpdateReport } from "./inventory";
+import { readUpdatePolicies, writeUpdatePolicy } from "./policies";
+import { matchesUpdateTarget, updateControl } from "./selection";
+
+async function verifyOperator(context: OperationsContext, capability: Capability) {
+    const { principal } = authorizedOperations(context, capability);
+    if (principal.kind !== "human" || !context.verifyHuman)
+        throw new OperationFailure(
+            "FORBIDDEN",
+            "A recently verified operator is required."
+        );
+    const current = await context.verifyHuman();
+    if (current.kind !== "human" || current.id !== principal.id)
+        throw new OperationFailure("UNAUTHORIZED", "The signed-in account changed.");
+    requireCapability(current, capability);
+}
 
 export const updatesRouter = trpc.router({
+    policies: trpc.procedure.query(({ ctx }) =>
+        runOperation(async () => {
+            const { operations } = authorizedOperations(ctx, "updates:read");
+            return readUpdatePolicies(operations.client, operations.updateTargets ?? []);
+        })
+    ),
+    policy: trpc.procedure.input(updatePolicySchema).mutation(({ ctx, input }) =>
+        runOperation(async () => {
+            const { operations, principal } = authorizedOperations(
+                ctx,
+                "updates:configure"
+            );
+            await verifyOperator(ctx, "updates:configure");
+            const target = operations.updateTargets?.find(
+                (item) => item.id === input.target
+            );
+            if (!target)
+                throw new OperationFailure(
+                    "NOT_FOUND",
+                    "This update target is not configured."
+                );
+            await writeUpdatePolicy(
+                operations.client,
+                target,
+                `${principal.kind}:${principal.id}`,
+                input
+            );
+            return { updated: true };
+        })
+    ),
+    request: trpc.procedure.input(updateRequestSchema).mutation(({ ctx, input }) =>
+        runOperation(async () => {
+            const { operations, principal } = authorizedOperations(ctx, "updates:apply");
+            requireCapability(principal, "jobs:run");
+            if (principal.kind === "human") await verifyOperator(ctx, "updates:apply");
+            const target = operations.updateTargets?.find(
+                (item) => item.id === input.target
+            );
+            const handler = operations.registry.get(`updates.install.${input.target}`);
+            if (!target || !handler)
+                throw new OperationFailure(
+                    "PRECONDITION_FAILED",
+                    "This update target is not configured for installation."
+                );
+            return requestUpdate(
+                operations.client,
+                target,
+                handler,
+                `${principal.kind}:${principal.id}`,
+                input
+            );
+        })
+    ),
     inventory: trpc.procedure.query(({ ctx }) =>
         runOperation(async () => {
             const { operations } = authorizedOperations(ctx, "updates:read");
@@ -32,7 +109,20 @@ export const updatesRouter = trpc.router({
                 .toSorted((left, right) => (left.id < right.id ? -1 : 1));
             const items = matches.slice(0, input.limit);
             return {
-                items,
+                items: items.map((item) => {
+                    const targets = (operations.updateTargets ?? []).filter(
+                        (target) =>
+                            target.source === input.source &&
+                            matchesUpdateTarget(target, item)
+                    );
+                    return {
+                        ...item,
+                        control:
+                            report && targets.length === 1 && targets[0]
+                                ? updateControl(targets[0], report, item)
+                                : null,
+                    };
+                }),
                 stale,
                 nextCursor:
                     matches.length > input.limit ? (items.at(-1)?.id ?? null) : null,
@@ -72,9 +162,22 @@ export const updatesRouter = trpc.router({
                     "BAD_REQUEST",
                     "Update report timestamps or item identities are invalid."
                 );
+            const observation = {
+                ...input,
+                items: input.items.map((item) => {
+                    const {
+                        availableImage: _image,
+                        installedVersion: _installed,
+                        availableVersion: _version,
+                        candidateVerified: _verified,
+                        ...software
+                    } = item;
+                    return software;
+                }),
+            };
             const [row] = await operations.client<
                 { key: string }[]
-            >`INSERT INTO operation_snapshots (key, value, captured_at) VALUES (${`updates:${source.id}`}, ${JSON.stringify(input)}::text::jsonb, ${new Date(time)}) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, captured_at = EXCLUDED.captured_at WHERE operation_snapshots.captured_at < EXCLUDED.captured_at RETURNING key`;
+            >`INSERT INTO operation_snapshots (key, value, captured_at) VALUES (${`updates:${source.id}`}, ${JSON.stringify(observation)}::text::jsonb, ${new Date(time)}) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, captured_at = EXCLUDED.captured_at WHERE operation_snapshots.captured_at < EXCLUDED.captured_at RETURNING key`;
             return { accepted: Boolean(row) };
         })
     ),

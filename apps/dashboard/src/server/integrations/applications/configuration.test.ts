@@ -14,6 +14,38 @@ const target = {
     },
 };
 
+test("historical log mappings are explicit, bounded and cannot overlap other projects", () => {
+    const legacy = {
+        until: "2026-01-01T00:00:00Z",
+        serviceLabel: "service",
+        services: [{ project: "demo", service: "web", value: "app-web" }],
+    };
+    const logs = { labels: { host: "main" }, serviceLabel: "container", legacy };
+    expect(
+        parseApplicationTargets(JSON.stringify([{ ...target, logs }]))[0]?.logs?.legacy
+    ).toEqual(legacy);
+    for (const change of [
+        { until: "2099-01-01T00:00:00Z" },
+        { serviceLabel: "host" },
+        { serviceLabel: "container" },
+        { services: [{ project: "other", service: "web", value: "app-web" }] },
+        { services: [...legacy.services, ...legacy.services] },
+        {
+            services: [
+                ...legacy.services,
+                { project: "demo", service: "other", value: "app-web" },
+            ],
+        },
+    ])
+        expect(() =>
+            parseApplicationTargets(
+                JSON.stringify([
+                    { ...target, logs: { ...logs, legacy: { ...legacy, ...change } } },
+                ])
+            )
+        ).toThrow();
+});
+
 test("application targets require explicit unique projects, secure origins and credential references", () => {
     expect(parseApplicationTargets(undefined)).toEqual([]);
     expect(parseApplicationTargets(JSON.stringify([target]))).toEqual([target]);

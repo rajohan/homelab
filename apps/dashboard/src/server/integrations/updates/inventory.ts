@@ -3,7 +3,7 @@ import type {
     UpdateSource,
     UpdateSourceStatus,
 } from "@homelab/contracts/updates";
-import type { SQL } from "bun";
+import type { SQL, TransactionSQL } from "bun";
 
 /**
  * Read bounded source summaries without transferring complete package lists.
@@ -70,13 +70,14 @@ export function staleUpdateReport(report: Omit<UpdateReport, "items"> | null): b
  * @returns At most one bounded publisher report.
  */
 export async function readUpdateReport(
-    client: SQL,
+    client: SQL | TransactionSQL,
     source: string
-): Promise<UpdateReport | null> {
-    const [row] = await client<{ value: UpdateReport }[]>`
+): Promise<(UpdateReport & { readonly checkedAt: string | null }) | null> {
+    const [row] = await client<{ value: UpdateReport; checkedAt: string | null }[]>`
         SELECT CASE WHEN resolved.value->>'capturedAt' = observed.value->>'capturedAt' AND resolved.captured_at > now() - interval '26 hours'
-          THEN resolved.value ELSE observed.value END AS value
+          THEN resolved.value ELSE observed.value END AS value,
+          CASE WHEN resolved.value->>'capturedAt' = observed.value->>'capturedAt' AND resolved.captured_at > now() - interval '26 hours' THEN resolved.captured_at::text ELSE NULL END AS "checkedAt"
         FROM operation_snapshots observed LEFT JOIN operation_snapshots resolved ON resolved.key = ${`updates.resolved:${source}`}
         WHERE observed.key = ${`updates:${source}`}`;
-    return row?.value ?? null;
+    return row ? { ...row.value, checkedAt: row.checkedAt } : null;
 }

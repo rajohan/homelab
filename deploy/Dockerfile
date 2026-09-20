@@ -8,6 +8,8 @@ RUN bun run build "$APP"
 RUN mkdir /output && cp -a "apps/$APP/dist/." /output/
 
 FROM oven/bun:1.4.2-slim AS runtime
+ARG APP
+RUN if [ "$APP" = dashboard ]; then apt-get update && apt-get install -y --no-install-recommends openssh-client && rm -rf /var/lib/apt/lists/*; fi
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build --chown=bun:bun /output/ ./

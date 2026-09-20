@@ -2,6 +2,8 @@ import type { UpdateItem } from "@homelab/contracts/updates";
 import * as v from "valibot";
 
 import { readBoundedJson } from "../http/readJson";
+import { dockerHubVersionTag } from "./dockerHubTags";
+import { imageVersionTag, publicImageReference } from "./imageReference";
 
 const digest = v.pipe(v.string(), v.regex(/^sha256:[a-f0-9]{64}$/));
 const platformSchema = v.object({
@@ -14,53 +16,45 @@ const manifestSchema = v.object({
     config: v.optional(v.object({ digest })),
     manifests: v.optional(v.pipe(v.array(manifestEntrySchema), v.maxLength(100))),
 });
+const imageConfigSchema = v.object({
+    config: v.object({
+        Labels: v.optional(v.nullable(v.record(v.string(), v.unknown()))),
+    }),
+});
+const tagsSchema = v.object({
+    tags: v.nullable(
+        v.pipe(v.array(v.pipe(v.string(), v.maxLength(128))), v.maxLength(100))
+    ),
+});
 const accept =
     "application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json";
 
+export interface ImageUpdate {
+    readonly imageId: string;
+    readonly reference: string;
+    readonly installedVersion?: string;
+    readonly availableVersion?: string;
+}
+
 /**
- * Resolve a public image's selected platform to its configuration digest without pulling layers.
- * @param item - Local image ID, configured image reference and actual platform.
- * @param signal - Per-image deadline.
- * @param request - HTTP boundary, replaceable in tests.
- * @returns The remote image ID, or null for pins, unsupported registries and ambiguous platforms.
+ * Resolve public tags or newer stable versions without pulling layers or changing pins.
+ * @param item - Installed image, optional tracking tag and actual platform.
+ * @param signal - Shared deadline; tag enumeration also has a page bound.
+ * @param request - HTTP boundary replaceable by fixtures.
+ * @returns Platform image ID and candidate reference, or null if unsupported or ambiguous.
  */
-export async function latestImage(
+export async function resolveImageUpdate(
     item: UpdateItem,
     signal: AbortSignal,
     request: typeof fetch = fetch
-): Promise<string | null> {
-    if (!item.image || !item.platform || item.image.includes("@")) return null;
-    const slash = item.image.indexOf("/");
-    const first = item.image.slice(0, slash);
-    const explicitRegistry =
-        slash !== -1 &&
-        (first.includes(".") ||
-            first.includes(":") ||
-            first === "localhost" ||
-            first !== first.toLowerCase());
-    const registry = explicitRegistry ? first : "docker.io";
-    const reference = explicitRegistry ? item.image.slice(slash + 1) : item.image;
-    const dockerHub =
-        registry === "docker.io" ||
-        registry === "registry-1.docker.io" ||
-        registry === "index.docker.io";
-    if (!dockerHub && registry !== "ghcr.io") return null;
-    const match =
-        /^(?<repository>[a-z0-9]+(?:[._-][a-z0-9]+)*(?:\/[a-z0-9]+(?:[._-][a-z0-9]+)*)*)(?::(?<tag>[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}))?$/.exec(
-            reference
-        );
-    const fields = match?.groups;
-    if (!fields?.repository) return null;
-    const origin = dockerHub ? "https://registry-1.docker.io" : "https://ghcr.io";
-    const repository =
-        dockerHub && !fields.repository.includes("/")
-            ? "library/" + fields.repository
-            : fields.repository;
+): Promise<ImageUpdate | null> {
+    if (!item.image || !item.platform) return null;
+    const source = publicImageReference(item.image, item.imageTag);
+    if (!source) return null;
     let token: string | undefined;
-    const read = async (reference: string) => {
-        const url = `${origin}/v2/${repository}/manifests/${encodeURIComponent(reference)}`;
+    const read = async (path: string) => {
         const send = () =>
-            request(url, {
+            request(source.origin + path, {
                 signal,
                 redirect: "error",
                 headers: {
@@ -72,16 +66,15 @@ export async function latestImage(
         if (response.status === 401 && !token) {
             const challenge = response.headers.get("www-authenticate") ?? "";
             await response.body?.cancel();
-            const realm = /realm="([^"]+)"/.exec(challenge)?.[1];
-            const expected = dockerHub
-                ? "https://auth.docker.io/token"
-                : "https://ghcr.io/token";
-            if (!/^Bearer /i.test(challenge) || realm !== expected)
+            if (
+                !/^Bearer /i.test(challenge) ||
+                /realm="([^"]+)"/.exec(challenge)?.[1] !== source.authOrigin
+            )
                 throw new Error("Unsupported registry authentication challenge");
-            const auth = new URL(expected);
+            const auth = new URL(source.authOrigin);
             auth.search = new URLSearchParams({
-                service: dockerHub ? "registry.docker.io" : "ghcr.io",
-                scope: `repository:${repository}:pull`,
+                service: source.authService,
+                scope: `repository:${source.repository}:pull`,
             }).toString();
             const result = v.parse(
                 v.object({
@@ -95,9 +88,72 @@ export async function latestImage(
                 throw new Error("Registry read token unavailable");
             response = await send();
         }
-        return v.parse(manifestSchema, await readBoundedJson(response));
+        const contentDigest = v.safeParse(
+            digest,
+            response.headers.get("docker-content-digest")
+        );
+        const hasNext = response.headers.has("link");
+        const body = await readBoundedJson(response);
+        return {
+            body,
+            hasNext,
+            digest: contentDigest.success ? contentDigest.output : null,
+        };
     };
-    let manifest = await read(fields.tag ?? "latest");
+    let selectedTag = source.tag;
+    const current = imageVersionTag(source.tag);
+    if (
+        current &&
+        item.imageTag === undefined &&
+        source.origin === "https://registry-1.docker.io"
+    ) {
+        selectedTag = await dockerHubVersionTag(
+            source.repository,
+            source.tag,
+            signal,
+            request
+        );
+    } else if (current && item.imageTag === undefined) {
+        let last: string | undefined;
+        let complete = false;
+        let selected = current;
+        for (let page = 0; page < 20; page += 1) {
+            signal.throwIfAborted();
+            const parameters = new URLSearchParams({
+                n: "100",
+                ...(last ? { last } : {}),
+            });
+            const response = await read(
+                `/v2/${source.repository}/tags/list?${parameters.toString()}`
+            );
+            const tags = v.parse(tagsSchema, response.body).tags ?? [];
+            for (const tag of tags) {
+                const candidate = imageVersionTag(tag);
+                if (
+                    candidate &&
+                    candidate.flavor === current.flavor &&
+                    candidate.prefix === current.prefix &&
+                    Bun.semver.order(candidate.version, selected.version) > 0
+                ) {
+                    selectedTag = tag;
+                    selected = candidate;
+                }
+            }
+            if (!response.hasNext) {
+                complete = true;
+                break;
+            }
+            const next = tags.at(-1);
+            if (!next || next === last)
+                throw new Error("Registry tag pagination did not advance");
+            last = next;
+        }
+        if (!complete) throw new Error("Registry tag catalog exceeds the lookup budget");
+    }
+    const readManifest = (reference: string) =>
+        read(`/v2/${source.repository}/manifests/${encodeURIComponent(reference)}`);
+    const selected = await readManifest(selectedTag);
+    let manifest = v.parse(manifestSchema, selected.body);
     if (manifest.manifests) {
         const compatible = manifest.manifests.filter(
             (entry) =>
@@ -106,7 +162,53 @@ export async function latestImage(
                 (entry.platform?.variant ?? "") === (item.platform?.variant ?? "")
         );
         if (compatible.length !== 1 || !compatible[0]) return null;
-        manifest = await read(compatible[0].digest);
+        const platform = await readManifest(compatible[0].digest);
+        manifest = v.parse(manifestSchema, platform.body);
     }
-    return manifest.config?.digest ?? null;
+    const labelVersion = async (identity: string): Promise<string | undefined> => {
+        if (!v.safeParse(digest, identity).success) return undefined;
+        try {
+            const response = await read(`/v2/${source.repository}/blobs/${identity}`);
+            const config = v.parse(imageConfigSchema, response.body);
+            const label = config.config.Labels?.["org.opencontainers.image.version"];
+            return typeof label === "string"
+                ? imageVersionTag(label)?.version
+                : undefined;
+        } catch {
+            signal.throwIfAborted();
+            // Optional version metadata can disable automatic admission, never image availability.
+            return undefined;
+        }
+    };
+    const installedTag = publicImageReference(item.image)?.tag;
+    const installedVersion =
+        (installedTag ? imageVersionTag(installedTag)?.version : undefined) ??
+        (await labelVersion(item.installed));
+    const availableVersion =
+        imageVersionTag(selectedTag)?.version ??
+        (manifest.config ? await labelVersion(manifest.config.digest) : undefined);
+    return manifest.config
+        ? {
+              imageId: manifest.config.digest,
+              reference: `${source.prefix}:${selectedTag}${selected.digest ? `@${selected.digest}` : ""}`,
+              ...(installedVersion ? { installedVersion } : {}),
+              ...(availableVersion ? { availableVersion } : {}),
+          }
+        : null;
+}
+
+/**
+ * Compare a selected platform's image ID, including configured digest pins.
+ * @param item - Local observation.
+ * @param signal - Bounded lookup deadline.
+ * @param request - HTTP boundary replaceable by fixtures.
+ * @returns Remote image ID, or null if comparison is unsupported.
+ */
+export async function latestImage(
+    item: UpdateItem,
+    signal: AbortSignal,
+    request: typeof fetch = fetch
+): Promise<string | null> {
+    const candidate = await resolveImageUpdate(item, signal, request);
+    return candidate?.imageId ?? null;
 }

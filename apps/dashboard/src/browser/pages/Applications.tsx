@@ -116,6 +116,13 @@ export function Applications() {
                                             }}
                                             revision={row.revision}
                                             name={row.name}
+                                            states={applications
+                                                .filter(
+                                                    (item) =>
+                                                        item.host === row.host &&
+                                                        item.project === row.name
+                                                )
+                                                .map((item) => item.state)}
                                             disabled={unavailable(row.host)}
                                         />
                                     ),
@@ -191,6 +198,7 @@ export function Applications() {
                                             }}
                                             revision={row.revision}
                                             name={row.name}
+                                            states={[row.state]}
                                             disabled={unavailable(row.host)}
                                         />
                                     ),

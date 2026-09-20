@@ -1,6 +1,18 @@
 import * as v from "valibot";
 
 export const capabilityDetails = {
+    "updates:apply": {
+        group: "Updates",
+        label: "Install software updates",
+        description:
+            "Queue confirmed updates for explicitly configured targets; also requires Run jobs.",
+    },
+    "updates:configure": {
+        group: "Updates",
+        label: "Manage automatic updates",
+        description:
+            "Verified operators can enable patch/minor updates for configured targets. Major updates and host reboots remain manual.",
+    },
     "updates:read": {
         group: "Updates",
         label: "Read update inventory",

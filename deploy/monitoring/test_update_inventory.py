@@ -5,9 +5,36 @@ import unittest
 from unittest.mock import patch, mock_open, MagicMock
 
 import update_inventory as inventory
+from native_inventory import collect_native
 
 
 class UpdateInventoryTests(unittest.TestCase):
+    def test_native_failures_are_retained_and_do_not_hide_later_installations(self):
+        sources = [{"provider": "adguard-home", "path": "/opt/AdGuardHome/AdGuardHome"}, {"provider": "node-exporter", "path": "/usr/local/bin/node_exporter"}]
+        command = MagicMock(side_effect=[RuntimeError("private"), "node_exporter, version 1.10.0"])
+        rows, complete = collect_native(sources, command)
+        self.assertFalse(complete)
+        self.assertEqual([row["installed"] for row in rows], ["Not reported", "1.10.0"])
+        self.assertNotIn("private", json.dumps(rows))
+        self.assertEqual(command.call_args_list[0].args[0], ["/opt/AdGuardHome/AdGuardHome", "--version"])
+
+    def test_native_metadata_is_read_not_executed(self):
+        with patch.object(inventory.Path, "stat", return_value=types.SimpleNamespace(st_size=100)), patch.object(inventory.Path, "read_text", return_value="Name: pgadmin4\nVersion: 9.8\n"):
+            command = MagicMock()
+            rows, complete = collect_native([{"provider": "pgadmin", "path": "/opt/venv/pgadmin4.dist-info/METADATA"}], command)
+        self.assertTrue(complete)
+        self.assertEqual(rows[0]["installed"], "9.8")
+        command.assert_not_called()
+
+    def test_digest_pin_is_not_a_package_hold(self):
+        identifier = "a" * 64
+        responses = [identifier, '"/demo-web","example/web@sha256:' + "c" * 64 + '","sha256:' + "b" * 64 + '"', '"linux","amd64",""']
+        with patch.object(inventory, "command", side_effect=responses):
+            rows = inventory.docker_inventory(["demo"], {"demo-web": "stable"})
+        self.assertTrue(rows[0]["pinned"])
+        self.assertFalse(rows[0]["held"])
+        self.assertEqual(rows[0]["imageTag"], "stable")
+
     def test_runtime_versions_use_fixed_arguments_and_no_identity_state(self):
         with patch.object(inventory, "command", return_value="bun 1.4.2\n") as command:
             report = inventory.collect({"apt": False, "executables": {"bun": "/usr/local/bin/bun"}})

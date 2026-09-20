@@ -9,6 +9,70 @@ import {
 } from "../../testing/applications";
 import { operationFixture, expectOperationFailure } from "../../testing/operations";
 import { mapDockerApplication } from "../applications/inventory";
+import { readApplicationLogs } from "./transport";
+
+test("legacy log reads preserve the fixed migration cutoff and merge chronology without opening new unlabeled streams", async () => {
+    const cutoff = Date.now() - 60_000;
+    const currentTime = String(BigInt(cutoff + 1000) * 1_000_000n);
+    const legacyTime = String(BigInt(cutoff - 1000) * 1_000_000n);
+    const requests: URL[] = [];
+    const server = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        fetch: (request) => {
+            const url = new URL(request.url);
+            requests.push(url);
+            const historical = url.searchParams.get("query")?.includes('container=""');
+            return Response.json({
+                status: "success",
+                data: {
+                    resultType: "streams",
+                    result: [
+                        {
+                            stream: {
+                                host: "demo",
+                                container: historical ? "" : "demo-web-1",
+                                service: "app-web",
+                            },
+                            values: [
+                                [
+                                    historical ? legacyTime : currentTime,
+                                    historical ? "Old safe event" : "New safe event",
+                                ],
+                            ],
+                        },
+                    ],
+                },
+            });
+        },
+    });
+    try {
+        const data = await readApplicationLogs(
+            { url: server.url.href, token: undefined },
+            { host: "demo", container: "demo-web-1" },
+            { range: "1h" },
+            AbortSignal.timeout(2000),
+            {
+                until: new Date(cutoff).toISOString(),
+                labels: { host: "demo", container: "", service: "app-web" },
+            }
+        );
+        expect(data.entries.map((entry) => entry.message)).toEqual([
+            "New safe event",
+            "Old safe event",
+        ]);
+        expect(requests.map((url) => url.searchParams.get("query"))).toEqual([
+            '{host="demo",container="demo-web-1"}',
+            '{host="demo",container="",service="app-web"}',
+        ]);
+        expect(requests[1]?.searchParams.get("end")).toBe(
+            String(BigInt(cutoff) * 1_000_000n)
+        );
+        expect(data.nextCursor).toBeNull();
+    } finally {
+        await server.stop(true);
+    }
+});
 
 test("service log selectors include existing history and reject ambiguous cross-project names", async () => {
     const fixture = await operationFixture();

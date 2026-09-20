@@ -5,6 +5,7 @@ import { readRules } from "../integrations/alerts/rules";
 import { synchronizeAlerts } from "../integrations/alerts/synchronize";
 import { readAlerts } from "../integrations/alerts/transport";
 import { readBackupCatalog } from "../integrations/backups/catalog";
+import { previewUpdateItems } from "./updates";
 
 export const previewUpdateSources = [
     {
@@ -191,8 +192,9 @@ export async function seedMonitoringPreview(client: SQL, url: string): Promise<v
                 capturedAt: new Date().toISOString(),
                 repositoryMetadataAt: new Date().toISOString(),
                 complete: true,
-                coveredKinds: ["os", "runtime", "container"],
+                coveredKinds: ["os", "runtime", "container", "application"],
                 items: [
+                    ...previewUpdateItems,
                     {
                         id: "apt:openssl",
                         name: "openssl",
@@ -236,6 +238,7 @@ export async function seedMonitoringPreview(client: SQL, url: string): Promise<v
                 ],
             };
             await transaction`INSERT INTO operation_snapshots (key, value, captured_at) VALUES (${`updates:${source.id}`}, ${JSON.stringify(report)}::text::jsonb, now())`;
+            await transaction`INSERT INTO operation_snapshots (key, value, captured_at) VALUES (${`updates.resolved:${source.id}`}, ${JSON.stringify(report)}::text::jsonb, now())`;
         }
     });
 }

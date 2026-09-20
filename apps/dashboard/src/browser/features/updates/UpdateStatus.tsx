@@ -16,7 +16,7 @@ export function UpdateStatus({
     if (item.held)
         return (
             <Badge tone={item.status === "available" ? "warning" : "neutral"}>
-                {item.status === "available" ? "Held update" : "Pinned / held"}
+                {item.status === "available" ? "Held update" : "Held"}
             </Badge>
         );
     if (item.status === "available")

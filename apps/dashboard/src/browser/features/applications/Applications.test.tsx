@@ -75,6 +75,7 @@ test("application lifecycle menus require an explicit cancellable confirmation",
             selection={{ kind: "container", target: application.containerId }}
             revision={application.revision}
             name="web"
+            states={["running", "exited"]}
         />
     );
     try {
@@ -89,6 +90,34 @@ test("application lifecycle menus require an explicit cancellable confirmation",
             await user.click(screen.getByRole("button", { name: "Cancel" }));
             expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
         }
+    } finally {
+        cleanup();
+    }
+});
+
+test.each([
+    { states: ["running"], actions: ["Restart", "Stop"] },
+    { states: ["exited"], actions: ["Start"] },
+    { states: ["created"], actions: ["Start"] },
+    { states: ["paused"], actions: ["Stop"] },
+    { states: ["running", "exited"], actions: ["Start", "Restart", "Stop"] },
+])("lifecycle menus reflect current states ($states)", async ({ states, actions }) => {
+    const cleanup = fixture(
+        <ApplicationActions
+            host="demo"
+            selection={{ kind: "container", target: application.containerId }}
+            revision={application.revision}
+            name="web"
+            states={states}
+        />
+    );
+    try {
+        await userEvent
+            .setup()
+            .click(screen.getByRole("button", { name: "Actions for web" }));
+        expect(
+            screen.getAllByRole("menuitem").map((item) => item.textContent ?? "")
+        ).toEqual([...actions]);
     } finally {
         cleanup();
     }
