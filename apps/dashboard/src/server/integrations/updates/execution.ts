@@ -2,10 +2,16 @@ import type { UpdateItem } from "@homelab/contracts/updates";
 import * as v from "valibot";
 
 import type { UpdateTarget } from "./configuration";
-import program from "./remote.py" with { type: "text" };
+import nativeProgram from "./native.py" with { type: "text" };
+import remoteProgram from "./remote.py" with { type: "text" };
+
+// Both modules travel in one transient interpreter; no helper is installed on a host.
+const program = nativeProgram + "\n" + remoteProgram;
 
 const phases = {
     checking: "Checking the installed version and update target.",
+    downloading: "Downloading and verifying the approved application release.",
+    restarting: "Restarting the application and checking its health.",
     pulling: "Downloading the approved image without changing the running application.",
     configuring: "Saving the new image pin in Compose.",
     installing: "Installing the approved version.",

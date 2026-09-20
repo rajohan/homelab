@@ -44,11 +44,21 @@ export async function resolveUpdates(
                 let availableImage: string | undefined;
                 let installedVersion: string | undefined;
                 let availableVersion: string | undefined;
+                let imageCurrent: boolean | undefined;
                 if (item.release) {
-                    let promise = releases.get(item.release);
+                    const key =
+                        item.release === "nextcloud"
+                            ? JSON.stringify([item.release, item.installed])
+                            : item.release;
+                    let promise = releases.get(key);
                     if (!promise) {
-                        promise = latestRelease(item.release, deadline, request);
-                        releases.set(item.release, promise);
+                        promise = latestRelease(
+                            item.release,
+                            deadline,
+                            request,
+                            item.installed
+                        );
+                        releases.set(key, promise);
                     }
                     available = await promise;
                 } else {
@@ -68,10 +78,14 @@ export async function resolveUpdates(
                     availableImage = candidate?.reference;
                     installedVersion = candidate?.installedVersion;
                     availableVersion = candidate?.availableVersion;
+                    imageCurrent = candidate?.current;
                 }
                 let status: UpdateItem["status"] = "unknown";
                 if (available !== null)
-                    status = available === item.installed ? "current" : "available";
+                    status =
+                        (imageCurrent ?? available === item.installed)
+                            ? "current"
+                            : "available";
                 if (available !== null && item.release)
                     status = compareRelease(item.installed, available);
                 const {

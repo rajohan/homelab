@@ -38,6 +38,14 @@ export const previewUpdateTargets = parseUpdateTargets(
         },
         {
             ...connection,
+            source: "demo-sentinel",
+            host: "preview-sentinel.invalid",
+            id: "demo-sentinel-packages",
+            label: "Demo Sentinel OS packages",
+            driver: { kind: "apt" },
+        },
+        {
+            ...connection,
             id: "demo-failure",
             label: "Demo failed update",
             driver: {
@@ -99,7 +107,13 @@ export const executePreviewUpdate: UpdateExecutor = async (
     signal,
     report
 ) => {
-    if (target.host !== "preview.invalid" || target.source !== "demo-main")
+    if (
+        !(
+            (target.host === "preview.invalid" && target.source === "demo-main") ||
+            (target.host === "preview-sentinel.invalid" &&
+                target.source === "demo-sentinel")
+        )
+    )
         throw new Error("Only synthetic update targets are permitted in this fixture");
     for (const message of [
         "Checking the installed version and update target.",

@@ -19,6 +19,7 @@ import { MetricStat } from "../infrastructure/MetricStat";
 import { ObservationBadge } from "../operations/ObservationBadge";
 import { AutomaticUpdates } from "./AutomaticUpdates";
 import { SoftwareUpdates } from "./SoftwareUpdates";
+import { UpdateBatchAction } from "./UpdateBatchAction";
 
 /**
  * Present update observations separately from confirmed manual and opt-in automatic installation.
@@ -41,7 +42,7 @@ export function UpdatesPanel({ compact = false }: { readonly compact?: boolean }
                 title="Available updates"
                 description="Installed versions, available updates and update policies."
                 icon={PackageCheck}
-                actions={
+                badge={
                     <ObservationBadge
                         configured={
                             query.data === undefined ||
@@ -51,6 +52,20 @@ export function UpdatesPanel({ compact = false }: { readonly compact?: boolean }
                         available={sources.some((item) => item.report)}
                         stale={query.isError || sources.some((item) => item.stale)}
                     />
+                }
+                actions={
+                    !compact && (
+                        <UpdateBatchAction
+                            disabled={
+                                query.isError ||
+                                !sources.some(
+                                    (item) =>
+                                        !item.stale && (item.report?.available ?? 0) > 0
+                                )
+                            }
+                            className="min-[30rem]:w-auto"
+                        />
+                    )
                 }
             />
             {query.isPending && <LoadingState label="Loading update inventory…" />}
@@ -114,6 +129,16 @@ export function UpdatesPanel({ compact = false }: { readonly compact?: boolean }
                                             render: (item) => item.label,
                                         },
                                         {
+                                            id: "updates",
+                                            label: "Updates",
+                                            render: (item) =>
+                                                !query.isError &&
+                                                !item.stale &&
+                                                item.report
+                                                    ? item.report.available
+                                                    : "—",
+                                        },
+                                        {
                                             id: "coverage",
                                             label: "Checks",
                                             render: (item) =>
@@ -138,6 +163,24 @@ export function UpdatesPanel({ compact = false }: { readonly compact?: boolean }
                                                     configured
                                                     available={Boolean(item.report)}
                                                     stale={query.isError || item.stale}
+                                                />
+                                            ),
+                                        },
+                                        {
+                                            id: "actions",
+                                            label: "Actions",
+                                            width: "w-40",
+                                            mobile: "footer-actions",
+                                            render: (item) => (
+                                                <UpdateBatchAction
+                                                    source={item.id}
+                                                    label={item.label}
+                                                    disabled={
+                                                        query.isError ||
+                                                        item.stale ||
+                                                        (item.report?.available ?? 0) ===
+                                                            0
+                                                    }
                                                 />
                                             ),
                                         },

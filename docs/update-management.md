@@ -16,8 +16,8 @@ All automatic policies default to **off**, including Docker and digest-pinned im
   optional `trackingTag`; when omitted, only the installed image's own tag/flavor
   may be followed. A publisher's different provider or tracking override cannot
   authorize a manual or automatic install, even after a successful release lookup.
-  The worker rechecks it immediately before execution. Queued authority expires after
-  five minutes; expired work must be confirmed again. Changing a target invalidates its
+  The worker rechecks it immediately before execution. Individual queued authority expires after
+  five minutes; a confirmed bulk host job must start within one hour. Expired work must be confirmed again. Changing a target invalidates its
   previous automatic consent. Disabling a policy stops queued automatic work, not an
   installation already executing on the host.
 - Automatic admission accepts comparable stable patch/minor versions only. Majors,
@@ -27,6 +27,23 @@ All automatic policies default to **off**, including Docker and digest-pinned im
   notifications and worker-activity UI. An installer has **one attempt**, not retries.
   A failed/expired automatic candidate is not silently requeued while its run remains
   in retained history. Hosts are never rebooted automatically.
+
+## Bulk updates
+
+The global **Update all** action and each source's **Update all** action open the same
+confirmation plan. Source rows show the full available count, not the current page or
+search results. The plan lists included and excluded software with exact versions and
+reasons. Major upgrades require a separate individual confirmation; held, stale,
+unverified and unconfigured targets are not silently installed.
+
+Admission checks the complete plan revision in a transaction and queues one nonretryable
+job per host/source. Work on different hosts may run concurrently; packages and
+applications on each host run in sequence. A shared host lease prevents overlap with
+individual installers, including targets using different source IDs for the same SSH
+hostname. Configure one canonical hostname per physical host. A failure stops the
+remaining entries on that host, while other host jobs are independent. Every entry
+rechecks its observation and target before execution. A package already installed at
+the approved version by an earlier package dependency is verified without reinstalling.
 
 ## Deployment-owned targets
 
@@ -84,8 +101,13 @@ OpenSSH for the worker; the auth image does not.
 
 ### Docker Compose
 
-The worker independently resolves a fixed public registry candidate. The host verifies
-the exact container, installed config digest, repository and Compose project/service.
+The worker independently resolves a fixed public registry candidate. Classic Docker
+config IDs, containerd image-index IDs and platform-manifest IDs are normalized to the
+selected platform's content before comparing them. Metadata or other-platform changes
+alone are not software updates. Unresolvable installed identities become unknown.
+The raw local store identity remains the execution fence and post-pull verification
+uses that store's identity representation. The host verifies
+the exact container, installed image identity, repository and Compose project/service.
 It pulls the approved immutable digest, verifies the platform image ID, then changes
 one unambiguous literal `image:` line in the configured source. Symlinked sources,
 interpolated/ambiguous image declarations and concurrent source edits fail closed.
@@ -139,6 +161,70 @@ is inferred from discovery. Qualify separate recipes for different installers, s
 owners and health checks. Appliance firmware, HAOS and application extensions require
 their own supported adapter; they must not be presented as managed merely because a
 version is visible.
+
+Three built-in recipes are also available. Replace the command recipe's `inspect`
+and `install` fields with `recipe`; keep `kind: "native"`, the exact inventory `item`,
+matching `release` and a deployment-owned `health` command. These use the same manual,
+bulk and opt-in automatic queues, permissions, version fences and receipts.
+
+```json
+{
+    "kind": "native",
+    "item": "application:adguard-home",
+    "release": "adguard-home",
+    "recipe": {
+        "application": "adguard-home",
+        "binary": "/opt/AdGuardHome/AdGuardHome",
+        "service": "AdGuardHome.service"
+    },
+    "health": [
+        "/usr/bin/curl",
+        "--fail",
+        "--silent",
+        "--max-time",
+        "10",
+        "http://127.0.0.1:3000/"
+    ]
+}
+```
+
+- **AdGuard Home:** downloads the exact official amd64/arm64 archive and its SHA-256
+  checksum. It extracts no archive paths, stages and checks one binary, then replaces
+  only the existing executable with ownership/mode preserved. Configuration and data
+  stay untouched. Temporary staging is removed even on failure. Only a previously
+  running service is restarted; an inactive service remains inactive.
+- **OpenClaw:** `recipe` contains `application: "openclaw"`, a fixed `command` argv
+  prefix and the existing systemd `service`. The prefix must enter the actual owning
+  account and its runtime/environment (for example the existing `runuser`/`env` entry
+  point); do not run an unrelated root/global installation. The official updater gets
+  `update --tag <approved-version> --yes --no-restart`. It does not change channels or
+  accept new plugin capabilities. Homelab verifies the exact version and restarts only
+  a previously active service, then invokes the configured health check.
+- **Nextcloud:** `recipe` contains `application: "nextcloud"`, installation `directory`,
+  absolute `php` executable and service `user`.
+  The release checker prefers the installed major's latest stable point release before
+  proposing the next major; its cache is specific to the installed version. Missing
+  release series in the bounded official catalog are unknown, never a guessed jump.
+  Before mutation it checks status, core
+  integrity and absence of unfinished updater state. The official stable update feed
+  must offer the exact approved version for this installation/PHP combination, with
+  its signature and canonical release archive. It invokes the installed updater with
+  that pinned URL/signature, never `--no-verify` or `--ignore-state`. Unsupported
+  candidate hops and modified core files fail before installation. Nextcloud's own
+  updater preserves non-shipped apps/configuration and performs its database upgrade;
+  Homelab verifies both resulting version and completed maintenance/database state.
+  The invocation uses `--no-backup`: a current, tested PBS backup is a prerequisite to
+  activation, not a second unmanaged local backup. No automatic rollback of migrated
+  application data is attempted. Vendor updater logs/recovery state are not deleted.
+
+For stopped services, successful installation means the on-disk version was verified;
+online health is checked only for running services. A failed restart or health check
+is a failed job, never a successful receipt. Third-party updater recovery state may
+remain after a failed operation and requires operator inspection.
+
+Vendor references: [AdGuard Home updates](https://github.com/AdguardTeam/AdGuardHome/wiki/Getting-Started#update),
+[OpenClaw update CLI](https://docs.openclaw.ai/cli/update), and
+[Nextcloud signed updater](https://docs.nextcloud.com/server/latest/admin_manual/maintenance/update.html).
 
 ## Acceptance before activation
 

@@ -32,6 +32,7 @@ const accept =
 export interface ImageUpdate {
     readonly imageId: string;
     readonly reference: string;
+    readonly current: boolean;
     readonly installedVersion?: string;
     readonly availableVersion?: string;
 }
@@ -41,7 +42,7 @@ export interface ImageUpdate {
  * @param item - Installed image, optional tracking tag and actual platform.
  * @param signal - Shared deadline; tag enumeration also has a page bound.
  * @param request - HTTP boundary replaceable by fixtures.
- * @returns Platform image ID and candidate reference, or null if unsupported or ambiguous.
+ * @returns A storage-compatible image ID, platform-content comparison and immutable candidate.
  */
 export async function resolveImageUpdate(
     item: UpdateItem,
@@ -153,23 +154,77 @@ export async function resolveImageUpdate(
     const readManifest = (reference: string) =>
         read(`/v2/${source.repository}/manifests/${encodeURIComponent(reference)}`);
     const selected = await readManifest(selectedTag);
-    let manifest = v.parse(manifestSchema, selected.body);
-    if (manifest.manifests) {
-        const compatible = manifest.manifests.filter(
+    const platformManifest = async (
+        value: v.InferOutput<typeof manifestSchema>,
+        identity: string | null
+    ) => {
+        if (!value.manifests) return { manifest: value, digest: identity };
+        const compatible = value.manifests.filter(
             (entry) =>
                 entry.platform?.os === item.platform?.os &&
                 entry.platform?.architecture === item.platform?.architecture &&
                 (entry.platform?.variant ?? "") === (item.platform?.variant ?? "")
         );
         if (compatible.length !== 1 || !compatible[0]) return null;
-        const platform = await readManifest(compatible[0].digest);
-        manifest = v.parse(manifestSchema, platform.body);
+        const response = await readManifest(compatible[0].digest);
+        return {
+            manifest: v.parse(manifestSchema, response.body),
+            digest: compatible[0].digest,
+        };
+    };
+    const resolved = await platformManifest(
+        v.parse(manifestSchema, selected.body),
+        selected.digest
+    );
+    if (!resolved) return null;
+    const { manifest, digest: platformDigest } = resolved;
+    if (!manifest.config) return null;
+    const configurations = new Map<string, unknown>();
+    const readConfiguration = async (identity: string): Promise<unknown> => {
+        if (!configurations.has(identity)) {
+            const response = await read(`/v2/${source.repository}/blobs/${identity}`);
+            configurations.set(identity, response.body);
+        }
+        return configurations.get(identity);
+    };
+    // Classic Docker stores config IDs. Containerd stores manifest/index IDs.
+    // Normalize content for availability, but preserve the daemon's identity kind
+    // for the worker's exact post-pull check and its subsequent observation.
+    let installedConfig = item.installed;
+    let manifestIdentity = false;
+    if (item.installed !== manifest.config.digest) {
+        if (item.installed === selected.digest || item.installed === platformDigest) {
+            installedConfig = manifest.config.digest;
+            manifestIdentity = true;
+        } else {
+            try {
+                v.parse(
+                    v.object({
+                        os: v.literal(item.platform.os),
+                        architecture: v.literal(item.platform.architecture),
+                        config: imageConfigSchema.entries.config,
+                    }),
+                    await readConfiguration(item.installed)
+                );
+            } catch {
+                signal.throwIfAborted();
+                const response = await readManifest(item.installed);
+                const installed = await platformManifest(
+                    v.parse(manifestSchema, response.body),
+                    item.installed
+                );
+                if (!installed?.manifest.config) return null;
+                installedConfig = installed.manifest.config.digest;
+                manifestIdentity = true;
+            }
+        }
     }
+    const imageId = manifestIdentity ? selected.digest : manifest.config.digest;
+    if (!imageId) return null;
     const labelVersion = async (identity: string): Promise<string | undefined> => {
         if (!v.safeParse(digest, identity).success) return undefined;
         try {
-            const response = await read(`/v2/${source.repository}/blobs/${identity}`);
-            const config = v.parse(imageConfigSchema, response.body);
+            const config = v.parse(imageConfigSchema, await readConfiguration(identity));
             const label = config.config.Labels?.["org.opencontainers.image.version"];
             return typeof label === "string"
                 ? imageVersionTag(label)?.version
@@ -183,26 +238,25 @@ export async function resolveImageUpdate(
     const installedTag = publicImageReference(item.image)?.tag;
     const installedVersion =
         (installedTag ? imageVersionTag(installedTag)?.version : undefined) ??
-        (await labelVersion(item.installed));
+        (await labelVersion(installedConfig));
     const availableVersion =
         imageVersionTag(selectedTag)?.version ??
         (manifest.config ? await labelVersion(manifest.config.digest) : undefined);
-    return manifest.config
-        ? {
-              imageId: manifest.config.digest,
-              reference: `${source.prefix}:${selectedTag}${selected.digest ? `@${selected.digest}` : ""}`,
-              ...(installedVersion ? { installedVersion } : {}),
-              ...(availableVersion ? { availableVersion } : {}),
-          }
-        : null;
+    return {
+        imageId,
+        current: installedConfig === manifest.config.digest,
+        reference: `${source.prefix}:${selectedTag}${selected.digest ? `@${selected.digest}` : ""}`,
+        ...(installedVersion ? { installedVersion } : {}),
+        ...(availableVersion ? { availableVersion } : {}),
+    };
 }
 
 /**
- * Compare a selected platform's image ID, including configured digest pins.
+ * Resolve a candidate using the observed daemon's config or manifest identity kind.
  * @param item - Local observation.
  * @param signal - Bounded lookup deadline.
  * @param request - HTTP boundary replaceable by fixtures.
- * @returns Remote image ID, or null if comparison is unsupported.
+ * @returns The expected Docker image ID after pulling, or null when unsupported.
  */
 export async function latestImage(
     item: UpdateItem,

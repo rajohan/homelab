@@ -102,7 +102,7 @@ export function JobActivity({
                             />
                         )}
                         {!query.isPending && !query.isError && runs.length === 0 && (
-                            <p className="rounded-lg border border-primary-700 bg-primary-950 p-4 text-sm text-primary-400">
+                            <p className="rounded-lg border border-primary-700 bg-primary-900 p-4 text-sm text-primary-400">
                                 No active or recently completed jobs.
                             </p>
                         )}

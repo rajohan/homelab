@@ -223,6 +223,11 @@ def apt_update(item, automatic):
         raise RuntimeError("Invalid package identity")
     cache = apt.Cache()
     package = cache[name]
+    # An earlier package in the same confirmed host batch may have installed this dependency.
+    # A fresh local inspection is sufficient for a no-op; never reinstall or accept another version.
+    if package.installed and package.installed.version == item["available"]:
+        progress("verifying")
+        return package.installed.version
     if not package.installed or not package.candidate or package.installed.version != item["installed"] or package.candidate.version != item["available"] or package._pkg.selected_state == apt_pkg.SELSTATE_HOLD:
         raise RuntimeError("Package state or repository candidate changed")
     package.mark_install(auto_fix=True, auto_inst=True, from_user=False)
@@ -252,6 +257,8 @@ def apt_update(item, automatic):
 
 def native_update(driver, item):
     """Execute a deployment-reviewed native recipe with one exact version parameter."""
+    if "recipe" in driver:
+        return install_native_recipe(driver, item, command, progress, atomic_content, locked_directory)
     def version():
         output = command(driver["inspect"])
         values = re.findall(r"(?<![0-9])v?(\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?)", output)
