@@ -1,6 +1,8 @@
 import { updateItemSchema } from "@homelab/contracts/updates";
 import * as v from "valibot";
 
+import { hostResourceKey } from "../../jobs/resources";
+
 const identifier = v.pipe(v.string(), v.regex(/^[a-z][a-z0-9-]{0,47}$/));
 const path = v.pipe(
     v.string(),
@@ -162,12 +164,5 @@ export function updateTargetRevision(target: UpdateTarget): string {
  * @returns Queue resources held by both individual and batched installations.
  */
 export function updateResourceKeys(target: UpdateTarget): string[] {
-    const host = new Bun.CryptoHasher("sha256")
-        .update(target.host.toLowerCase())
-        .digest("hex");
-    return [
-        `updates:${target.source}`,
-        `updates:host:${host}`,
-        ...(target.driver.kind === "docker" ? ["applications:inventory"] : []),
-    ];
+    return [`updates:${target.source}`, hostResourceKey(target.host)];
 }

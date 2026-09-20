@@ -13,6 +13,7 @@ import { enqueueJob, lockQueue } from "../../jobs/queue";
 import { createJobRegistry } from "../../jobs/registry";
 import type { JobHandler } from "../../jobs/types";
 import { operationFixture, expectOperationFailure } from "../../testing/operations";
+import { applicationJobs } from "../applications/jobs";
 import { updateActionJobs } from "./actions";
 import { updateBatchKey } from "./batch";
 import {
@@ -64,9 +65,9 @@ const item: UpdateItem = {
     platform: { os: "linux", architecture: "amd64" },
 };
 
-async function batchFixture(fail = false) {
+async function batchFixture(fail = false, withDocker = false) {
     const state = await operationFixture();
-    const targets = ["alpha", "beta"].map((source) => ({
+    const targets: UpdateTarget[] = ["alpha", "beta"].map((source) => ({
         ...target,
         id: source,
         source,
@@ -74,6 +75,15 @@ async function batchFixture(fail = false) {
         label: source,
         driver: { kind: "apt" as const },
     }));
+    if (withDocker)
+        targets.push(
+            ...["alpha", "beta"].map((source) => ({
+                ...target,
+                id: source + "-docker",
+                source,
+                host: `${source}.invalid`,
+            }))
+        );
     const calls: { source: string; item: string }[] = [];
     const registry = createJobRegistry(
         updateActionJobs(targets, state.client, (selected, software) => {
@@ -89,11 +99,13 @@ async function batchFixture(fail = false) {
         ...state,
         registry,
         updateTargets: targets,
-        updateSources: targets.map((selected) => ({
-            id: selected.source,
-            label: selected.label,
-            publisher: crypto.randomUUID(),
-        })),
+        updateSources: targets
+            .filter((selected) => selected.driver.kind === "apt")
+            .map((selected) => ({
+                id: selected.source,
+                label: selected.label,
+                publisher: crypto.randomUUID(),
+            })),
     };
     const principal = { kind: "human" as const, id: "operator", capabilities };
     const caller = appRouter.createCaller({
@@ -105,8 +117,13 @@ async function batchFixture(fail = false) {
         capturedAt: new Date().toISOString(),
         repositoryMetadataAt: new Date().toISOString(),
         complete: true,
-        coveredKinds: ["os", "application"],
+        coveredKinds: [
+            "os",
+            "application",
+            ...(withDocker ? ["container" as const] : []),
+        ],
         items: [
+            ...(withDocker ? [item] : []),
             ...Array.from({ length: 70 }, (_, index) => ({
                 id: `apt:package-${String(index).padStart(3, "0")}`,
                 name: `Package ${index}`,
@@ -127,8 +144,11 @@ async function batchFixture(fail = false) {
             },
         ],
     };
-    for (const source of targets)
-        await state.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES (${`updates:${source.source}`},${JSON.stringify(report)}::text::jsonb,now())`;
+    for (const source of operations.updateSources) {
+        await state.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES (${`updates:${source.id}`},${JSON.stringify(report)}::text::jsonb,now())`;
+        if (withDocker)
+            await state.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES (${`updates.resolved:${source.id}`},${JSON.stringify(report)}::text::jsonb,now())`;
+    }
     return { ...state, targets, calls, operations, caller, principal, registry };
 }
 
@@ -165,6 +185,22 @@ test("bulk plans cover every page, expose exclusions and preserve host scope and
         );
         const queued = await state.caller.updates.batchRequest(request);
         expect(queued.ids).toHaveLength(2);
+        const [budget] = await state.client<
+            { timeout_ms: number }[]
+        >`SELECT timeout_ms FROM job_runs WHERE id=${queued.id}`;
+        expect(budget?.timeout_ms).toBe(68 * 1_530_000 + 60_000);
+        await expectOperationFailure(
+            state.client`UPDATE job_runs SET retry_safe=true WHERE id=${queued.id}`,
+            "job_runs_attempts"
+        );
+        await expectOperationFailure(
+            state.client`UPDATE job_runs SET timeout_ms=604800001 WHERE id=${queued.id}`,
+            "job_runs_attempts"
+        );
+        await expectOperationFailure(
+            state.client`UPDATE job_runs SET attempt_limit=2 WHERE id=${queued.id}`,
+            "job_runs_attempts"
+        );
         expect(await state.caller.updates.batchRequest(request)).toEqual(queued);
         await expectOperationFailure(
             state.caller.updates.batchRequest({ ...request, source: "alpha" }),
@@ -176,53 +212,109 @@ test("bulk plans cover every page, expose exclusions and preserve host scope and
     }
 });
 
-test("host batches share leases with single updates and execute different hosts concurrently", async () => {
+test.each([false, true])(
+    "host batches share leases and run concurrently with Docker=%s",
+    async (withDocker) => {
+        const state = await batchFixture(false, withDocker);
+        try {
+            const plan = await state.caller.updates.batchPlan({});
+            await state.caller.updates.batchRequest({
+                revision: plan.revision,
+                requestId: crypto.randomUUID(),
+            });
+            const alpha = state.registry.get(updateBatchKey("alpha"))!,
+                beta = state.registry.get(updateBatchKey("beta"))!;
+            const worker = await state.registerWorker();
+            const first = await claimJob(state.client, worker, [alpha.definition.key]);
+            const second = await claimJob(state.client, worker, [beta.definition.key]);
+            expect(first).toBeDefined();
+            expect(second).toBeDefined();
+            expect(first!.timeout_ms).toBe((withDocker ? 69 : 68) * 1_530_000 + 60_000);
+            expect(first!.timeout_ms).toBeGreaterThan(3_600_000);
+            const lifecycle = applicationJobs(
+                [
+                    {
+                        id: "alpha",
+                        label: "Alpha",
+                        endpoint: "https://alpha.invalid",
+                        projects: ["demo"],
+                    },
+                ],
+                state.client
+            );
+            const stop = lifecycle.find(
+                (handler) => handler.definition.key === "applications.stop"
+            )!;
+            expect(
+                stop.definition.resourceKeys.some((key) =>
+                    first!.resource_keys.includes(key)
+                )
+            ).toBe(true);
+            expect(
+                stop.definition.resourceKeys.some((key) =>
+                    second!.resource_keys.includes(key)
+                )
+            ).toBe(false);
+            const entry = plan.entries.find(
+                (candidate) => candidate.source === "alpha" && candidate.reason === null
+            )!;
+            await state.caller.updates.request({
+                target: entry.control!.target,
+                item: entry.item.id,
+                revision: entry.control!.revision,
+                requestId: crypto.randomUUID(),
+            });
+            expect(
+                await claimJob(state.client, worker, ["updates.install.alpha"])
+            ).toBeUndefined();
+            const run = async (claim: NonNullable<typeof first>, handler: JobHandler) => {
+                await handler.execute(claim.payload, {
+                    runId: claim.id,
+                    leaseToken: claim.lease_token,
+                    signal: AbortSignal.timeout(20_000),
+                    reportProgress: () => Promise.resolve(),
+                    commit: (write, queue) =>
+                        commitClaim(state.client, claim, write, queue),
+                });
+                await settleClaim(state.client, claim, "succeeded");
+            };
+            await Promise.all([run(first!, alpha), run(second!, beta)]);
+            for (const source of ["alpha", "beta"]) {
+                const calls = state.calls.filter((call) => call.source === source);
+                expect(calls).toHaveLength(withDocker ? 69 : 68);
+                expect(calls.findLast((call) => call.item.startsWith("apt:"))?.item).toBe(
+                    "apt:package-069"
+                );
+                const report = await readUpdateReport(state.client, source);
+                expect(
+                    report?.items.filter((software) => software.status === "current")
+                ).toHaveLength(withDocker ? 69 : 68);
+            }
+        } finally {
+            await state.close();
+        }
+    }
+);
+
+test("bulk deadlines bound large confirmations before any job is admitted", async () => {
     const state = await batchFixture();
     try {
-        const plan = await state.caller.updates.batchPlan({});
-        await state.caller.updates.batchRequest({
-            revision: plan.revision,
-            requestId: crypto.randomUUID(),
-        });
-        const alpha = state.registry.get(updateBatchKey("alpha"))!,
-            beta = state.registry.get(updateBatchKey("beta"))!;
-        const worker = await state.registerWorker();
-        const first = await claimJob(state.client, worker, [alpha.definition.key]);
-        const second = await claimJob(state.client, worker, [beta.definition.key]);
-        expect(first).toBeDefined();
-        expect(second).toBeDefined();
-        const entry = plan.entries.find(
-            (candidate) => candidate.source === "alpha" && candidate.reason === null
-        )!;
-        await state.caller.updates.request({
-            target: entry.control!.target,
-            item: entry.item.id,
-            revision: entry.control!.revision,
-            requestId: crypto.randomUUID(),
-        });
-        expect(
-            await claimJob(state.client, worker, ["updates.install.alpha"])
-        ).toBeUndefined();
-        const run = async (claim: NonNullable<typeof first>, handler: JobHandler) => {
-            await handler.execute(claim.payload, {
-                runId: claim.id,
-                leaseToken: claim.lease_token,
-                signal: AbortSignal.timeout(20_000),
-                reportProgress: () => Promise.resolve(),
-                commit: (write, queue) => commitClaim(state.client, claim, write, queue),
-            });
-            await settleClaim(state.client, claim, "succeeded");
-        };
-        await Promise.all([run(first!, alpha), run(second!, beta)]);
-        for (const source of ["alpha", "beta"]) {
-            const calls = state.calls.filter((call) => call.source === source);
-            expect(calls).toHaveLength(68);
-            expect(calls.at(-1)?.item).toBe("apt:package-069");
-            const report = await readUpdateReport(state.client, source);
-            expect(
-                report?.items.filter((software) => software.status === "current")
-            ).toHaveLength(68);
-        }
+        const report = await readUpdateReport(state.client, "alpha");
+        const seed = report!.items[2]!;
+        const replace = (length: number) =>
+            state.client`UPDATE operation_snapshots SET value=${JSON.stringify({ ...report, items: Array.from({ length }, (_, index) => ({ ...seed, id: `apt:large-${index}` })) })}::text::jsonb WHERE key='updates:alpha'`;
+        await replace(395);
+        const plan = await state.caller.updates.batchPlan({ source: "alpha" });
+        expect(plan.eligible).toBe(395);
+        await replace(396);
+        await expectOperationFailure(
+            state.caller.updates.batchPlan({ source: "alpha" }),
+            "at most 395"
+        );
+        const [count] = await state.client<
+            { count: number }[]
+        >`SELECT count(*)::int AS count FROM job_runs`;
+        expect(count?.count).toBe(0);
     } finally {
         await state.close();
     }

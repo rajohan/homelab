@@ -101,7 +101,7 @@ export const jobRuns = pgTable(
         ),
         check(
             "job_runs_attempts",
-            sql`${table.attempt} >= 0 and ${table.attemptLimit} between 1 and 10 and ${table.timeoutMs} between 1000 and 3600000`
+            sql`${table.attempt} >= 0 and ${table.attemptLimit} between 1 and 10 and (${table.timeoutMs} between 1000 and 3600000 or (${table.timeoutMs} between 3600001 and 604800000 and ${table.attemptLimit} = 1 and not ${table.retrySafe}))`
         ),
     ]
 );

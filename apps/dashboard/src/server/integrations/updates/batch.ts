@@ -9,13 +9,20 @@ import type { SQL, TransactionSQL } from "bun";
 import * as v from "valibot";
 
 import { enqueueJob, lockQueue } from "../../jobs/queue";
+import { maximumIntegrationTimeoutMs } from "../../jobs/registry";
 import type { JobHandler } from "../../jobs/types";
 import { OperationFailure } from "../../operations/errors";
-import { applyUpdate } from "./apply";
+import { applyUpdate, updateTimeoutMs } from "./apply";
 import { updateResourceKeys, type UpdateTarget } from "./configuration";
 import type { UpdateExecutor } from "./execution";
 import { readUpdateReport } from "./inventory";
 import { matchesUpdateTarget, updateControl } from "./selection";
+
+const entryBudgetMs = updateTimeoutMs + 30_000;
+const batchOverheadMs = 60_000;
+const maximumBatchItems = Math.floor(
+    (maximumIntegrationTimeoutMs - batchOverheadMs) / entryBudgetMs
+);
 
 const payloadSchema = v.strictObject({
     source: v.pipe(v.string(), v.minLength(1), v.maxLength(100)),
@@ -25,7 +32,7 @@ const payloadSchema = v.strictObject({
     items: v.pipe(
         v.array(v.omit(updateRequestSchema, ["requestId"])),
         v.minLength(1),
-        v.maxLength(5000)
+        v.maxLength(maximumBatchItems)
     ),
 });
 const digest = (value: unknown) =>
@@ -103,6 +110,16 @@ export async function readUpdateBatchPlan(
             "There are too many updates for one confirmation. Select an individual host."
         );
     const eligible = entries.filter((entry) => entry.reason === null);
+    for (const source of sources) {
+        if (
+            eligible.filter((entry) => entry.source === source.id).length >
+            maximumBatchItems
+        )
+            throw new OperationFailure(
+                "TOO_MANY_REQUESTS",
+                `A host can include at most ${maximumBatchItems} updates in one batch. Install some updates individually before confirming this host.`
+            );
+    }
     return {
         revision: digest([scope ?? null, entries]),
         entries,
@@ -137,7 +154,7 @@ export function updateBatchJobs(
                 resourceKeys: [
                     ...new Set(owned.flatMap((target) => updateResourceKeys(target))),
                 ],
-                timeoutMs: 3_600_000,
+                timeoutMs: maximumBatchItems * entryBudgetMs + batchOverheadMs,
                 attemptLimit: 1,
                 retrySafe: false,
                 intervalSeconds: null,
@@ -277,7 +294,10 @@ export async function requestUpdateBatch(
             ids.push(
                 await enqueueJob(
                     transaction,
-                    handler.definition,
+                    {
+                        ...handler.definition,
+                        timeoutMs: items.length * entryBudgetMs + batchOverheadMs,
+                    },
                     actor,
                     prefix + source.id,
                     {

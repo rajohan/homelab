@@ -54,10 +54,11 @@ export async function resolveImageUpdate(
     if (!source) return null;
     let token: string | undefined;
     const read = async (path: string) => {
+        const blob = path.startsWith(`/v2/${source.repository}/blobs/`);
         const send = () =>
             request(source.origin + path, {
                 signal,
-                redirect: "error",
+                redirect: blob ? "manual" : "error",
                 headers: {
                     Accept: accept,
                     ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -88,6 +89,40 @@ export async function resolveImageUpdate(
             if (!token || token.length > 16_384)
                 throw new Error("Registry read token unavailable");
             response = await send();
+        }
+        // Registry blobs may live on a CDN. Follow only fixed vendor origins and
+        // never forward the repository's bearer token outside its registry.
+        let location = new URL(source.origin + path);
+        for (
+            let hop = 0;
+            blob && [301, 302, 303, 307, 308].includes(response.status);
+            hop += 1
+        ) {
+            const next = response.headers.get("location");
+            await response.body?.cancel();
+            if (!next || hop >= 4)
+                throw new Error("Registry blob redirect budget exceeded");
+            location = new URL(next, location);
+            const origins =
+                source.origin === "https://registry-1.docker.io"
+                    ? [
+                          "https://production.cloudfront.docker.com",
+                          "https://production.cloudflare.docker.com",
+                          "https://docker-images-prod.6aa30f8b08e16409b46e0173d6de2f56.r2.cloudflarestorage.com",
+                      ]
+                    : ["https://pkg-containers.githubusercontent.com"];
+            if (
+                location.username ||
+                location.password ||
+                location.hash ||
+                !origins.includes(location.origin)
+            )
+                throw new Error("Unsupported registry blob redirect");
+            response = await request(location, {
+                signal,
+                redirect: "manual",
+                headers: { Accept: "application/json" },
+            });
         }
         const contentDigest = v.safeParse(
             digest,

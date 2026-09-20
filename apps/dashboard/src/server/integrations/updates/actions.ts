@@ -5,7 +5,7 @@ import * as v from "valibot";
 import { enqueueJob, lockQueue } from "../../jobs/queue";
 import type { JobHandler } from "../../jobs/types";
 import { OperationFailure } from "../../operations/errors";
-import { applyUpdate } from "./apply";
+import { applyUpdate, updateTimeoutMs } from "./apply";
 import { updateBatchJobs } from "./batch";
 import {
     updateTargetRevision,
@@ -45,7 +45,7 @@ export function updateActionJobs(
             resourceClass: "interactive",
             capability: "updates:apply",
             resourceKeys: updateResourceKeys(target),
-            timeoutMs: 1_500_000,
+            timeoutMs: updateTimeoutMs,
             attemptLimit: 1,
             retrySafe: false,
             intervalSeconds: null,

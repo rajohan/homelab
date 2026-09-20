@@ -40,10 +40,23 @@ Admission checks the complete plan revision in a transaction and queues one nonr
 job per host/source. Work on different hosts may run concurrently; packages and
 applications on each host run in sequence. A shared host lease prevents overlap with
 individual installers, including targets using different source IDs for the same SSH
-hostname. Configure one canonical hostname per physical host. A failure stops the
+hostname. Configure one canonical hostname per physical host, shared by SSH update
+targets and Docker control endpoints. Lifecycle actions hold these host keys too;
+read-only inventory refreshes do not block installations. A failure stops the
 remaining entries on that host, while other host jobs are independent. Every entry
 rechecks its observation and target before execution. A package already installed at
 the approved version by an earlier package dependency is verified without reinstalling.
+
+Each installation retains its 25-minute deadline. A host job gets that budget plus
+30 seconds of coordination per entry and one minute of batch overhead, rather than
+one fixed hour for the entire list. At most 395 entries per host fit the seven-day
+absolute integration-job ceiling; larger confirmations are rejected before admission.
+The seven-day ceiling applies only to code-owned, one-attempt, integration-only jobs;
+ordinary jobs retain their one-hour maximum. Cancellation, lease loss, stale or changed
+observations can still stop a batch; extra time does not extend update consent.
+Deployments must apply the forward `bounded_batch_deadlines` migration before running
+the new web/worker release. It widens only the existing job constraint for one-attempt,
+non-retryable work and preserves existing jobs and history. Released migrations are unchanged.
 
 ## Deployment-owned targets
 
@@ -105,6 +118,9 @@ The worker independently resolves a fixed public registry candidate. Classic Doc
 config IDs, containerd image-index IDs and platform-manifest IDs are normalized to the
 selected platform's content before comparing them. Metadata or other-platform changes
 alone are not software updates. Unresolvable installed identities become unknown.
+Blob reads follow at most four redirects to exact Docker/GitHub CDN origins. Registry
+bearer tokens are never forwarded to storage origins. Manifest and token redirects
+remain disabled; unavailable optional version labels cannot fabricate availability.
 The raw local store identity remains the execution fence and post-pull verification
 uses that store's identity representation. The host verifies
 the exact container, installed image identity, repository and Compose project/service.
@@ -190,7 +206,10 @@ bulk and opt-in automatic queues, permissions, version fences and receipts.
 
 - **AdGuard Home:** downloads the exact official amd64/arm64 archive and its SHA-256
   checksum. It extracts no archive paths, stages and checks one binary, then replaces
-  only the existing executable with ownership/mode preserved. Configuration and data
+  only the existing executable with ownership/mode preserved. Special mode bits and
+  extended attributes (including capabilities, ACLs and security labels) are rejected
+  before replacement, including metadata changes during preparation. Such installations
+  need a separately qualified recipe; required metadata is never silently discarded. Configuration and data
   stay untouched. Temporary staging is removed even on failure. Only a previously
   running service is restarted; an inactive service remains inactive.
 - **OpenClaw:** `recipe` contains `application: "openclaw"`, a fixed `command` argv
@@ -205,12 +224,13 @@ bulk and opt-in automatic queues, permissions, version fences and receipts.
   The release checker prefers the installed major's latest stable point release before
   proposing the next major; its cache is specific to the installed version. Missing
   release series in the bounded official catalog are unknown, never a guessed jump.
-  Before mutation it checks status, core
+  Before mutation it checks that the installed updater's help advertises `--url`,
+  `--signature`, `--no-backup` and `--no-interaction`, as well as status, core
   integrity and absence of unfinished updater state. The official stable update feed
   must offer the exact approved version for this installation/PHP combination, with
   its signature and canonical release archive. It invokes the installed updater with
   that pinned URL/signature, never `--no-verify` or `--ignore-state`. Unsupported
-  candidate hops and modified core files fail before installation. Nextcloud's own
+  candidate hops, legacy updaters without these options and modified core files fail before installation. Nextcloud's own
   updater preserves non-shipped apps/configuration and performs its database upgrade;
   Homelab verifies both resulting version and completed maintenance/database state.
   The invocation uses `--no-backup`: a current, tested PBS backup is a prerequisite to

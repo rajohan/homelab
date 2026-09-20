@@ -6,6 +6,7 @@ import type { SQL } from "bun";
 import * as v from "valibot";
 
 import { applicationClientEnvironment } from "../../config/environment";
+import { hostResourceKey } from "../../jobs/resources";
 import type { JobHandler } from "../../jobs/types";
 import { publishNotification } from "../../notifications/publish";
 import { performApplicationAction } from "./actions";
@@ -93,7 +94,14 @@ export function applicationJobs(
                     "Apply an explicitly confirmed lifecycle operation to the exact observed application selection.",
                 resourceClass: "interactive" as const,
                 capability: `applications:${operation}` as const,
-                resourceKeys: ["applications:inventory"],
+                resourceKeys: [
+                    "applications:inventory",
+                    ...new Set(
+                        targets.map((target) =>
+                            hostResourceKey(new URL(target.endpoint).hostname)
+                        )
+                    ),
+                ],
                 timeoutMs: 300_000,
                 attemptLimit: 1,
                 retrySafe: false,

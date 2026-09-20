@@ -65,6 +65,8 @@ def atomic_content(path, contents, expected):
     if path.is_symlink() or path.resolve() != path or path.read_bytes() != expected:
         raise RuntimeError("Update source changed")
     metadata = path.stat()
+    if metadata.st_mode & 0o7000 or os.listxattr(path, follow_symlinks=False):
+        raise RuntimeError("Update source metadata requires deployment review")
     descriptor, temporary = tempfile.mkstemp(prefix=".homelab-update-", dir=path.parent)
     try:
         with os.fdopen(descriptor, "wb") as output:
@@ -73,7 +75,7 @@ def atomic_content(path, contents, expected):
             os.fchmod(output.fileno(), metadata.st_mode & 0o777)
             os.fchown(output.fileno(), metadata.st_uid, metadata.st_gid)
             os.fsync(output.fileno())
-        if path.is_symlink() or path.stat().st_ino != metadata.st_ino or path.read_bytes() != expected:
+        if path.is_symlink() or path.stat().st_ino != metadata.st_ino or path.stat().st_ctime_ns != metadata.st_ctime_ns or path.read_bytes() != expected:
             raise RuntimeError("Update source changed")
         os.replace(temporary, path)
     finally:

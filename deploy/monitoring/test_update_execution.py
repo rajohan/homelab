@@ -4,6 +4,7 @@ import importlib.util
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -207,12 +208,16 @@ class UpdateExecutionTests(unittest.TestCase):
 class NativeRecipeTests(unittest.TestCase):
     """Exercise bundled vendor recipes with synthetic files, metadata and subprocesses."""
 
-    def adguard_fixture(self, *, bad_hash=False, wrong_version=False, active=True, changed=False):
+    def adguard_fixture(self, *, bad_hash=False, wrong_version=False, active=True, changed=False, special_mode=False, attributes=False, changed_metadata=False):
         with tempfile.TemporaryDirectory(prefix="homelab-native-fixture-") as temporary:
             directory = Path(temporary).resolve()
             binary = directory / "AdGuardHome"
             binary.write_bytes(b"old")
             binary.chmod(0o755)
+            if special_mode:
+                binary.chmod(0o4755)
+            if attributes:
+                os.setxattr(binary, "user.homelab-test", b"preserve me")
             (directory / "AdGuardHome.yaml").write_text("private fixture configuration")
             archive = io.BytesIO()
             with tarfile.open(fileobj=archive, mode="w:gz") as package:
@@ -244,9 +249,12 @@ class NativeRecipeTests(unittest.TestCase):
                     return (checksum + "  ./AdGuardHome_linux_amd64.tar.gz\n").encode()
                 if changed:
                     binary.write_bytes(b"concurrent change")
+                if changed_metadata:
+                    os.setxattr(binary, "user.homelab-test", b"concurrent metadata")
                 return content
             with patch.object(remote, "native_download", side_effect=download), patch.object(remote, "progress"):
-                if bad_hash or wrong_version or changed:
+                refused = bad_hash or wrong_version or changed or special_mode or attributes or changed_metadata
+                if refused:
                     with self.assertRaises(RuntimeError):
                         remote.install_native_recipe(driver, item, run, remote.progress, remote.atomic_content, remote.locked_directory)
                 else:
@@ -255,10 +263,14 @@ class NativeRecipeTests(unittest.TestCase):
             self.assertFalse(list(directory.glob(".homelab-*")))
             self.assertEqual({entry.name for entry in directory.iterdir()}, {"AdGuardHome", "AdGuardHome.yaml"})
             restarts = [args for args in calls if "restart" in args]
-            self.assertEqual(len(restarts), int(active and not (bad_hash or wrong_version or changed)))
-            self.assertEqual(["/fixture/health"] in calls, active and not (bad_hash or wrong_version or changed))
-            if bad_hash or wrong_version:
+            self.assertEqual(len(restarts), int(active and not refused))
+            self.assertEqual(["/fixture/health"] in calls, active and not refused)
+            if refused and not changed:
                 self.assertEqual(binary.read_bytes(), b"old")
+            if special_mode:
+                self.assertEqual(binary.stat().st_mode & 0o7777, 0o4755)
+            if attributes:
+                self.assertEqual(os.getxattr(binary, "user.homelab-test"), b"preserve me")
 
     def test_adguard_updates_only_binary_with_hash_version_and_health_verification(self):
         self.adguard_fixture()
@@ -274,6 +286,15 @@ class NativeRecipeTests(unittest.TestCase):
 
     def test_adguard_concurrent_edits_are_preserved(self):
         self.adguard_fixture(changed=True)
+
+    def test_adguard_refuses_special_executable_modes_before_replacement(self):
+        self.adguard_fixture(special_mode=True)
+
+    def test_adguard_refuses_extended_metadata_before_replacement(self):
+        self.adguard_fixture(attributes=True)
+
+    def test_adguard_rechecks_metadata_after_downloading(self):
+        self.adguard_fixture(changed_metadata=True)
 
     def test_openclaw_uses_exact_tag_and_preserves_service_state(self):
         for active in (False, True):
@@ -292,7 +313,7 @@ class NativeRecipeTests(unittest.TestCase):
                 self.assertIn(["/fixture/openclaw", "update", "--tag", "2026.9.2", "--yes", "--no-restart"], calls)
                 self.assertEqual(sum("restart" in call for call in calls), int(active))
 
-    def nextcloud_fixture(self, *, offered="33.0.1.1", wrong_url=False, modified=False, pending=False, failed_database=False):
+    def nextcloud_fixture(self, *, offered="33.0.1.1", wrong_url=False, modified=False, pending=False, failed_database=False, missing_option=None):
         with tempfile.TemporaryDirectory(prefix="homelab-nextcloud-fixture-") as temporary:
             directory = Path(temporary).resolve()
             (directory / "updater").mkdir()
@@ -304,7 +325,9 @@ class NativeRecipeTests(unittest.TestCase):
             calls = []
             def run(args, **_options):
                 calls.append(args)
-                applied = any(any(value.endswith("updater.phar") for value in call) for call in calls)
+                if "--help" in args:
+                    return "\n".join("  --" + option + "  Description" for option in ("url", "signature", "no-backup", "no-interaction") if option != missing_option)
+                applied = any("--no-interaction" in call for call in calls)
                 if "status" in args:
                     return json.dumps({"installed": True, "maintenance": False, "needsDbUpgrade": applied and failed_database, "versionstring": "33.0.1" if applied else "33.0.0"})
                 if "integrity:check-core" in args:
@@ -318,13 +341,13 @@ class NativeRecipeTests(unittest.TestCase):
             metadata = f"<nextcloud><version>{offered}</version><autoupdater>1</autoupdater><url>{url}</url><signature>{'a' * 344}</signature></nextcloud>".encode()
             recipe = {"application": "nextcloud", "directory": str(directory), "php": "/usr/bin/php", "user": "www-data"}
             with patch.object(remote, "native_download", return_value=metadata), patch.object(remote, "progress"):
-                if offered != "33.0.1.1" or wrong_url or modified or pending or failed_database:
+                if offered != "33.0.1.1" or wrong_url or modified or pending or failed_database or missing_option:
                     with self.assertRaises(RuntimeError):
                         remote.nextcloud_install(recipe, "33.0.0", "33.0.1", run, remote.progress, remote.locked_directory)
                 else:
                     self.assertTrue(remote.nextcloud_install(recipe, "33.0.0", "33.0.1", run, remote.progress, remote.locked_directory))
-            installs = [call for call in calls if any(value.endswith("updater.phar") for value in call)]
-            self.assertEqual(len(installs), int(not (offered != "33.0.1.1" or wrong_url or modified or pending)))
+            installs = [call for call in calls if "--no-interaction" in call]
+            self.assertEqual(len(installs), int(not (offered != "33.0.1.1" or wrong_url or modified or pending or missing_option)))
             if installs:
                 self.assertIn("--no-backup", installs[0])
                 self.assertNotIn("--no-verify", installs[0])
@@ -348,6 +371,11 @@ class NativeRecipeTests(unittest.TestCase):
 
     def test_nextcloud_incomplete_database_upgrade_is_not_success(self):
         self.nextcloud_fixture(failed_database=True)
+
+    def test_nextcloud_legacy_updater_is_rejected_without_mutation(self):
+        for option in ("url", "signature", "no-backup", "no-interaction"):
+            with self.subTest(option=option):
+                self.nextcloud_fixture(missing_option=option)
 
     def test_native_downgrades_and_provider_mismatch_never_invoke_a_command(self):
         driver = {"release": "openclaw", "recipe": {"application": "openclaw"}}

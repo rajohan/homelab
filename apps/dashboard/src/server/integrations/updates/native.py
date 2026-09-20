@@ -6,6 +6,7 @@ selects an exact stable version, never a command, download origin or service nam
 import hashlib
 import gzip
 import io
+import os
 from pathlib import Path
 import re
 import tarfile
@@ -75,6 +76,14 @@ def adguard_install(recipe, installed, candidate, run, emit, replace, lock):
     """Verify an official archive and replace only the existing AdGuard Home binary."""
     binary = native_file(recipe["binary"])
     with lock(binary.parent):
+        def metadata():
+            value = binary.stat()
+            # Replacing an inode would silently discard capabilities, ACLs and labels.
+            # These installations require a separately qualified deployment recipe.
+            if value.st_mode & 0o7000 or os.listxattr(binary, follow_symlinks=False):
+                raise RuntimeError("AdGuard Home executable metadata requires deployment review")
+            return value.st_ino, value.st_mode, value.st_uid, value.st_gid
+        original_metadata = metadata()
         if binary.stat().st_size > 104_857_600:
             raise RuntimeError("AdGuard Home binary exceeds its budget")
         before = binary.read_bytes()
@@ -118,6 +127,8 @@ def adguard_install(recipe, installed, candidate, run, emit, replace, lock):
                 raise RuntimeError("AdGuard Home archive version differs from approval")
             if native_service(recipe["service"], run) != active or native_version(run([str(binary), "--version"])) != installed:
                 raise RuntimeError("AdGuard Home changed during preparation")
+            if metadata() != original_metadata:
+                raise RuntimeError("AdGuard Home executable metadata changed during preparation")
             emit("installing")
             replace(binary, contents, before)
         if active:
@@ -160,6 +171,12 @@ def nextcloud_install(recipe, installed, candidate, run, emit, lock):
             raise RuntimeError("Nextcloud requires maintenance recovery before updating")
         return value
     with lock(directory):
+        # Capabilities vary independently of the server version. Never run a legacy
+        # updater unpinned or disable signature verification as a fallback.
+        help_text = run(base + [str(updater), "--help"])
+        for option in ("url", "signature", "no-backup", "no-interaction"):
+            if not re.search(r"(?m)^\s+(?:-[a-zA-Z],\s*)?--" + option + r"(?:[=\s]|$)", help_text):
+                raise RuntimeError("Installed Nextcloud updater does not support exact signed upgrades")
         if status().get("versionstring") != installed:
             raise RuntimeError("Nextcloud version changed")
         if json.loads(run(occ + ["integrity:check-core", "--output=json"])) not in ({}, []):

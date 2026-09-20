@@ -5,6 +5,9 @@ import { publishNotification } from "../../notifications/publish";
 import type { UpdateTarget } from "./configuration";
 import type { UpdateExecutor, UpdateReceipt } from "./execution";
 
+/** Maximum execution time for one installation, shared by individual and bulk jobs. */
+export const updateTimeoutMs = 1_500_000;
+
 async function recordResult(
     target: UpdateTarget,
     item: UpdateItem,
@@ -79,15 +82,21 @@ export async function applyUpdate(
     context: JobExecution,
     execute: UpdateExecutor
 ): Promise<void> {
+    const signal = AbortSignal.any([
+        context.signal,
+        AbortSignal.timeout(updateTimeoutMs),
+    ]);
+    signal.throwIfAborted();
     if (!(await context.commit(async () => {})))
         throw new Error("Update claim expired before execution");
     const receipt = await execute(
         target,
         item,
         automatic,
-        context.signal,
+        signal,
         context.reportProgress
     );
+    signal.throwIfAborted();
     if (receipt.installed !== item.available)
         throw new Error("Update receipt does not match the approved version");
     await recordResult(target, item, receipt, context);

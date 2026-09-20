@@ -260,7 +260,9 @@ test("large Hub catalogs expose a newer pinned-image candidate without following
         (input: Parameters<typeof fetch>[0], options?: Parameters<typeof fetch>[1]) => {
             const url = new URL(input instanceof Request ? input.url : input);
             requests.push(url);
-            expect(options?.redirect).toBe("error");
+            expect(options?.redirect).toBe(
+                url.pathname.includes("/blobs/") ? "manual" : "error"
+            );
             expect(new Headers(options?.headers).has("authorization")).toBe(false);
             if (url.hostname === "hub.docker.com") {
                 expect(url.pathname).toBe("/v2/namespaces/example/repositories/web/tags");
@@ -450,7 +452,9 @@ test.each([
             ) => {
                 const upstream = new URL(input instanceof Request ? input.url : input);
                 requests.push(upstream);
-                expect(options?.redirect).toBe("error");
+                expect(options?.redirect).toBe(
+                    upstream.pathname.includes("/blobs/") ? "manual" : "error"
+                );
                 return fetch(
                     new URL(upstream.pathname + upstream.search, server.url),
                     options
@@ -687,6 +691,136 @@ test.each([
             expect(item.installedVersion).toBe("1.2.0");
             expect(item.availableVersion).toBe(sameContent ? "1.2.0" : "1.3.0");
             expect(item.candidateVerified).toBe(true);
+        } finally {
+            await server.stop(true);
+        }
+    }
+);
+
+test.each([
+    ["docker.io", "https://production.cloudfront.docker.com"],
+    ["docker.io", "https://production.cloudflare.docker.com"],
+    [
+        "docker.io",
+        "https://docker-images-prod.6aa30f8b08e16409b46e0173d6de2f56.r2.cloudflarestorage.com",
+    ],
+    ["ghcr.io", "https://pkg-containers.githubusercontent.com"],
+    ["ghcr.io", "http://pkg-containers.githubusercontent.com"],
+    ["ghcr.io", "https://pkg-containers.githubusercontent.com.evil.invalid"],
+    ["ghcr.io", "https://pkg-containers.githubusercontent.com:8443"],
+    ["ghcr.io", "https://user:pass@pkg-containers.githubusercontent.com"],
+    ["ghcr.io", "https://127.0.0.1"],
+    ["ghcr.io", "https://production.cloudfront.docker.com"],
+    ["ghcr.io", "loop"],
+])(
+    "registry blob redirects preserve classic updates and credentials: %s %s",
+    async (registry, destination) => {
+        const trusted =
+            destination === "https://pkg-containers.githubusercontent.com" ||
+            registry === "docker.io";
+        const origin =
+            registry === "docker.io" ? "https://registry-1.docker.io" : "https://ghcr.io";
+        const realm =
+            registry === "docker.io"
+                ? "https://auth.docker.io/token"
+                : "https://ghcr.io/token";
+        const oldConfig = fixtureDigest("a"),
+            nextConfig = fixtureDigest("b");
+        const seen: URL[] = [];
+        const server = Bun.serve({
+            hostname: "127.0.0.1",
+            port: 0,
+            fetch: (request) => {
+                const url = new URL(request.url);
+                const upstream = url.searchParams.get("upstream");
+                if (url.pathname === "/token")
+                    return Response.json({ token: "fixture-read-only" });
+                if (url.pathname === "/blob") {
+                    expect(request.headers.has("authorization")).toBe(false);
+                    return destination === "loop"
+                        ? new Response(null, {
+                              status: 307,
+                              headers: {
+                                  Location:
+                                      "https://pkg-containers.githubusercontent.com/blob",
+                              },
+                          })
+                        : Response.json(
+                              imageConfiguration(
+                                  url.searchParams.get("digest") === oldConfig
+                                      ? "1.2.0"
+                                      : "1.3.0"
+                              )
+                          );
+                }
+                expect(upstream).toBe(origin);
+                if (!request.headers.has("authorization"))
+                    return new Response(null, {
+                        status: 401,
+                        headers: { "www-authenticate": `Bearer realm="${realm}"` },
+                    });
+                const path = decodeURIComponent(url.pathname);
+                if (path.endsWith("/manifests/latest"))
+                    return manifestResponse(
+                        { config: { digest: nextConfig } },
+                        fixtureDigest("c")
+                    );
+                if (path.includes("/blobs/"))
+                    return new Response(null, {
+                        status: 307,
+                        headers: {
+                            Location: `${destination === "loop" ? "https://pkg-containers.githubusercontent.com" : destination}/blob?digest=${path.split("/").at(-1)}`,
+                        },
+                    });
+                return new Response(null, { status: 404 });
+            },
+        });
+        const request: typeof fetch = Object.assign(
+            (
+                input: Parameters<typeof fetch>[0],
+                options?: Parameters<typeof fetch>[1]
+            ) => {
+                const url = new URL(input instanceof Request ? input.url : input);
+                seen.push(url);
+                if (url.origin !== origin && url.origin !== new URL(realm).origin) {
+                    expect(new Headers(options?.headers).has("authorization")).toBe(
+                        false
+                    );
+                    expect(url.origin).toBe(
+                        destination === "loop"
+                            ? "https://pkg-containers.githubusercontent.com"
+                            : destination
+                    );
+                }
+                const local = new URL(url.pathname + url.search, server.url);
+                local.searchParams.set("upstream", url.origin);
+                return fetch(local, options);
+            },
+            { preconnect: fetch.preconnect }
+        );
+        try {
+            const result = await resolveImageUpdate(
+                {
+                    ...image,
+                    installed: oldConfig,
+                    image: `${registry}/example/web:latest`,
+                },
+                AbortSignal.timeout(5000),
+                request
+            ).catch(() => null);
+            if (trusted)
+                expect(result).toMatchObject({
+                    current: false,
+                    imageId: nextConfig,
+                    installedVersion: "1.2.0",
+                    availableVersion: "1.3.0",
+                });
+            else {
+                expect(result).toBeNull();
+                expect(seen.filter((url) => url.pathname === "/blob")).toHaveLength(
+                    destination === "loop" ? 4 : 0
+                );
+            }
         } finally {
             await server.stop(true);
         }
