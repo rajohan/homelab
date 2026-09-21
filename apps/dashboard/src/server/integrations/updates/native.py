@@ -175,7 +175,9 @@ def nextcloud_install(recipe, installed, candidate, run, emit, lock):
         # updater unpinned or disable signature verification as a fallback.
         help_text = run(base + [str(updater), "--help"])
         for option in ("url", "signature", "no-backup", "no-interaction"):
-            if not re.search(r"(?m)^\s+(?:-[a-zA-Z],\s*)?--" + option + r"(?:[=\s]|$)", help_text):
+            # Symfony renders optional values as --url[=URL], required values
+            # as --url=URL, and flags without a value. Keep exact option boundaries.
+            if not re.search(r"(?m)^\s+(?:-[a-zA-Z],\s*)?--" + option + r"(?:\[?=|\s|$)", help_text):
                 raise RuntimeError("Installed Nextcloud updater does not support exact signed upgrades")
         if status().get("versionstring") != installed:
             raise RuntimeError("Nextcloud version changed")

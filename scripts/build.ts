@@ -71,6 +71,12 @@ export async function main(): Promise<void> {
             path.resolve(outputDirectory, "migrations"),
             { recursive: true }
         );
+        if (app === "dashboard")
+            await cp(
+                path.resolve(applicationRoot, "config"),
+                path.resolve(outputDirectory, "config"),
+                { recursive: true }
+            );
         console.info(
             `Built ${app}: ${result.outputs.length} artifacts in apps/${app}/dist.`
         );

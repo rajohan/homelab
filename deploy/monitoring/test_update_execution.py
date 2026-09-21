@@ -313,7 +313,7 @@ class NativeRecipeTests(unittest.TestCase):
                 self.assertIn(["/fixture/openclaw", "update", "--tag", "2026.9.2", "--yes", "--no-restart"], calls)
                 self.assertEqual(sum("restart" in call for call in calls), int(active))
 
-    def nextcloud_fixture(self, *, offered="33.0.1.1", wrong_url=False, modified=False, pending=False, failed_database=False, missing_option=None):
+    def nextcloud_fixture(self, *, offered="33.0.1.1", wrong_url=False, modified=False, pending=False, failed_database=False, missing_option=None, required_values=False, extra_help=""):
         with tempfile.TemporaryDirectory(prefix="homelab-nextcloud-fixture-") as temporary:
             directory = Path(temporary).resolve()
             (directory / "updater").mkdir()
@@ -326,7 +326,15 @@ class NativeRecipeTests(unittest.TestCase):
             def run(args, **_options):
                 calls.append(args)
                 if "--help" in args:
-                    return "\n".join("  --" + option + "  Description" for option in ("url", "signature", "no-backup", "no-interaction") if option != missing_option)
+                    # Match Symfony's real updater help, including optional values
+                    # and the short alias for noninteractive operation.
+                    options = {
+                        "url": "--url=URL" if required_values else "--url[=URL]",
+                        "signature": "--signature=SIGNATURE" if required_values else "--signature[=SIGNATURE]",
+                        "no-backup": "--no-backup",
+                        "no-interaction": "-n, --no-interaction",
+                    }
+                    return "\n".join("  " + declaration + "  Description" for option, declaration in options.items() if option != missing_option) + "\n" + extra_help
                 applied = any("--no-interaction" in call for call in calls)
                 if "status" in args:
                     return json.dumps({"installed": True, "maintenance": False, "needsDbUpgrade": applied and failed_database, "versionstring": "33.0.1" if applied else "33.0.0"})
@@ -353,9 +361,19 @@ class NativeRecipeTests(unittest.TestCase):
                 self.assertNotIn("--no-verify", installs[0])
                 self.assertNotIn("--ignore-state", installs[0])
                 self.assertIn("--url=https://download.nextcloud.com/server/releases/nextcloud-33.0.1.zip", installs[0])
+                self.assertIn("--signature=" + "a" * 344, installs[0])
 
     def test_nextcloud_uses_signed_exact_archive_and_checks_database_state(self):
         self.nextcloud_fixture()
+
+    def test_nextcloud_accepts_required_value_help_notation(self):
+        self.nextcloud_fixture(required_values=True)
+
+    def test_nextcloud_option_lookalikes_and_prose_do_not_grant_capabilities(self):
+        for option in ("url", "signature", "no-backup", "no-interaction"):
+            for extra in (f"  --{option}-unsafe=VALUE  Description", f"  --not-{option}  Description", f"  --{option}[IGNORED]  Description", f"  This updater does not support --{option}"):
+                with self.subTest(option=option, extra=extra):
+                    self.nextcloud_fixture(missing_option=option, extra_help=extra)
 
     def test_nextcloud_refuses_changed_feed_candidate(self):
         self.nextcloud_fixture(offered="33.0.2.1")

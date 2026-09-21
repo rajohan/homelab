@@ -70,6 +70,41 @@ function record(value: unknown): value is Record<string, unknown> {
 export async function main(): Promise<void> {
     const runtime = new BuiltRuntime();
 
+    async function checkPackagedConfiguration(): Promise<void> {
+        const source = await Bun.file(
+            new URL("../apps/dashboard/config/update-targets.json", import.meta.url)
+        ).arrayBuffer();
+        const expected = new Bun.CryptoHasher("sha256").update(source).digest("hex");
+        for (const app of ["auth", "dashboard"] as const) {
+            const script =
+                app === "dashboard"
+                    ? `const data = await Bun.file('./config/update-targets.json').arrayBuffer();
+if (new Bun.CryptoHasher('sha256').update(data).digest('hex') !== '${expected}') throw Error('Packaged configuration differs from source');
+if (!Array.isArray(JSON.parse(new TextDecoder().decode(data)))) throw Error('Invalid packaged configuration');`
+                    : `if (await Bun.file('./config/update-targets.json').exists()) throw Error('Auth must not package update authority');`;
+            const child = runtime.spawn(app, ["--no-env-file", "-e", script], {
+                NODE_ENV: "production",
+            });
+            const [code] = await bounded(
+                Promise.all([
+                    child.exited,
+                    new Response(child.stdout).text(),
+                    new Response(child.stderr).text(),
+                ]),
+                15_000,
+                `${app} packaged configuration`
+            );
+            assert.equal(
+                code,
+                0,
+                "Deployment configuration must match only the dashboard artifact."
+            );
+        }
+        console.info(
+            "PASS: versioned update configuration is packaged unchanged only in dashboard/worker."
+        );
+    }
+
     async function checkStartupFailure(app: "auth" | "dashboard"): Promise<void> {
         const child = runtime.spawn(app, ["--no-env-file", "index.js"], {
             NODE_ENV: "production",
@@ -139,6 +174,17 @@ console.log('SMOKE_PORT:' + server.port);`,
         );
         assert.equal(response.headers.get("Referrer-Policy"), "no-referrer");
         const html = await response.text();
+        for (const path of ["/config/update-targets.json", "/update-targets.json"]) {
+            const configuration = await get(origin, path);
+            assert.doesNotMatch(
+                configuration.headers.get("Content-Type") ?? "",
+                /application\/json/i
+            );
+            assert.doesNotMatch(
+                await configuration.text(),
+                /identityFile|knownHostsFile|homelab-updater/
+            );
+        }
         assert.match(html, /<title>Homelab<\/title>/);
         assert.match(html, /id=["']root["']/);
 
@@ -181,6 +227,10 @@ console.log('SMOKE_PORT:' + server.port);`,
                 );
                 const body = await asset.text();
                 assert.ok(body.length > 0, "The built asset must not be empty.");
+                assert.doesNotMatch(
+                    body,
+                    /192\.168\.1\.11|\/run\/secrets\/updates\/main/
+                );
             }
         }
 
@@ -219,6 +269,7 @@ console.log('SMOKE_PORT:' + server.port);`,
     }
 
     try {
+        await checkPackagedConfiguration();
         await Promise.all([
             checkStartupFailure("dashboard"),
             checkStartupFailure("auth"),
