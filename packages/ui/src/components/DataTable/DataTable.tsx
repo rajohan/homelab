@@ -34,6 +34,7 @@ export function DataTable<T>({
     continuation,
     compact = false,
     rowAction,
+    className,
 }: {
     readonly label: string;
     readonly rows: readonly T[];
@@ -42,6 +43,7 @@ export function DataTable<T>({
     readonly continuation?: InfiniteScrollContinuation;
     readonly compact?: boolean;
     readonly rowAction?: DataRowAction<T>;
+    readonly className?: string;
 }) {
     const scrollRef = useRef<HTMLElement>(null);
     return (
@@ -50,7 +52,10 @@ export function DataTable<T>({
                 ref={scrollRef}
                 tabIndex={0}
                 aria-label={label}
-                className="isolate max-h-[min(32.5rem,60dvh)] scrollbar-gutter-stable overflow-auto rounded-lg border border-primary-700 focus-visible:outline-2 focus-visible:outline-accent-500"
+                className={cn(
+                    "isolate max-h-[min(32.5rem,60dvh)] scrollbar-gutter-stable overflow-auto rounded-lg border border-primary-700 focus-visible:outline-2 focus-visible:outline-accent-500",
+                    className
+                )}
             >
                 <Virtualizer
                     count={rows.length}

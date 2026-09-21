@@ -1,9 +1,39 @@
 import { describe, expect, test } from "bun:test";
 
 import { maintenanceJob } from "./maintenance";
-import { createJobRegistry, jobFingerprint } from "./registry";
+import {
+    createJobRegistry,
+    jobFingerprint,
+    maximumIntegrationTimeoutMs,
+} from "./registry";
+import { hostResourceKey } from "./resources";
 
 describe("job registration", () => {
+    test("long deadlines are limited to bounded one-shot integration jobs", () => {
+        const handler = maintenanceJob(30);
+        const definition = {
+            ...handler.definition,
+            timeoutMs: maximumIntegrationTimeoutMs,
+            admission: "integration" as const,
+            retrySafe: false,
+            attemptLimit: 1,
+            intervalSeconds: null,
+        };
+        expect(createJobRegistry([{ ...handler, definition }]).size).toBe(1);
+        for (const invalid of [
+            { ...definition, timeoutMs: maximumIntegrationTimeoutMs + 1 },
+            { ...handler.definition, timeoutMs: maximumIntegrationTimeoutMs },
+            { ...definition, retrySafe: true },
+            { ...definition, attemptLimit: 2 },
+        ])
+            expect(() =>
+                createJobRegistry([{ ...handler, definition: invalid }])
+            ).toThrow();
+        expect(hostResourceKey("MAIN.internal")).toBe(hostResourceKey("main.internal"));
+        expect(hostResourceKey("main.internal")).not.toBe(
+            hostResourceKey("edge.internal")
+        );
+    });
     test("rejects duplicate actions and unsafe retry policies", () => {
         const handler = maintenanceJob(30);
         expect(() => createJobRegistry([handler, handler])).toThrow(

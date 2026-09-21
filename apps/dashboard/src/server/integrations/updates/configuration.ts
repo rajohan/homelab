@@ -1,6 +1,8 @@
 import { updateItemSchema } from "@homelab/contracts/updates";
 import * as v from "valibot";
 
+import { hostResourceKey } from "../../jobs/resources";
+
 const identifier = v.pipe(v.string(), v.regex(/^[a-z][a-z0-9-]{0,47}$/));
 const path = v.pipe(
     v.string(),
@@ -38,7 +40,21 @@ const composeEnvironment = v.strictObject({
         v.check((names) => new Set(names).size === names.length)
     ),
 });
-const driverSchema = v.variant("kind", [
+const service = v.pipe(
+    v.string(),
+    v.regex(/^[a-zA-Z0-9][a-zA-Z0-9_.@-]{0,99}\.service$/)
+);
+const nativeRecipe = v.variant("application", [
+    v.strictObject({ application: v.literal("adguard-home"), binary: path, service }),
+    v.strictObject({ application: v.literal("openclaw"), command, service }),
+    v.strictObject({
+        application: v.literal("nextcloud"),
+        directory: path,
+        php: path,
+        user: v.pipe(v.string(), v.regex(/^[a-z_][a-z0-9_-]{0,31}$/)),
+    }),
+]);
+const driverSchema = v.union([
     v.strictObject({ kind: v.literal("apt") }),
     v.strictObject({
         kind: v.literal("docker"),
@@ -57,6 +73,13 @@ const driverSchema = v.variant("kind", [
         release: v.unwrap(updateItemSchema.entries.release),
         inspect: command,
         install: command,
+        health: command,
+    }),
+    v.strictObject({
+        kind: v.literal("native"),
+        item: v.pipe(v.string(), v.minLength(1), v.maxLength(200)),
+        release: v.unwrap(updateItemSchema.entries.release),
+        recipe: nativeRecipe,
         health: command,
     }),
 ]);
@@ -110,11 +133,18 @@ export function parseUpdateTargets(value: string | undefined): UpdateTarget[] {
             );
         if (
             target.driver.kind === "native" &&
+            !("recipe" in target.driver) &&
             !target.driver.install.some((value) => value.includes("{version}"))
         )
             throw new Error(
                 "Native updater recipes must install the exact approved version"
             );
+        if (
+            driver.kind === "native" &&
+            "recipe" in driver &&
+            driver.release !== driver.recipe.application
+        )
+            throw new Error("Native recipes must match their official release provider");
     }
     return targets;
 }
@@ -126,4 +156,13 @@ export function parseUpdateTargets(value: string | undefined): UpdateTarget[] {
  */
 export function updateTargetRevision(target: UpdateTarget): string {
     return new Bun.CryptoHasher("sha256").update(JSON.stringify(target)).digest("hex");
+}
+
+/**
+ * Share installation leases across recipes and source aliases on the same SSH host.
+ * @param target - Deployment-owned host and integration metadata.
+ * @returns Queue resources held by both individual and batched installations.
+ */
+export function updateResourceKeys(target: UpdateTarget): string[] {
+    return [`updates:${target.source}`, hostResourceKey(target.host)];
 }

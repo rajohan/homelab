@@ -21,6 +21,32 @@ const image: UpdateItem = {
     platform: { os: "linux", architecture: "amd64" },
 };
 
+const imageConfiguration = (version?: string) => ({
+    os: "linux",
+    architecture: "amd64",
+    config: { Labels: version ? { "org.opencontainers.image.version": version } : {} },
+});
+
+const fixtureDigest = (letter: string) => "sha256:" + letter.repeat(64);
+const manifestResponse = (body: unknown, identity: string) =>
+    Response.json(body, { headers: { "Docker-Content-Digest": identity } });
+const indexManifestResponse = (identity: string, manifest: string) =>
+    manifestResponse(
+        {
+            manifests: [
+                {
+                    digest: manifest,
+                    platform: { os: "linux", architecture: "amd64" },
+                },
+                {
+                    digest: fixtureDigest("9"),
+                    platform: { os: "linux", architecture: "arm64" },
+                },
+            ],
+        },
+        identity
+    );
+
 test("public registry checks enforce fixed pull scopes and compare the correct platform config digest", async () => {
     const requests: { path: string; authorization: string | null }[] = [];
     const server = Bun.serve({
@@ -44,6 +70,8 @@ test("public registry checks enforce fixed pull scopes and compare the correct p
                             'Bearer realm="https://auth.docker.io/token",service="registry.docker.io",scope="repository:wrong:push"',
                     },
                 });
+            if (url.pathname.includes("/blobs/"))
+                return Response.json(imageConfiguration());
             if (url.pathname.endsWith("/latest"))
                 return Response.json({
                     manifests: [
@@ -121,6 +149,8 @@ test("pinned stable image versions discover newer same-flavor tags without follo
             const url = new URL(input instanceof Request ? input.url : input);
             requests.push(url.href);
             expect(url.origin).toBe("https://ghcr.io");
+            if (url.pathname.includes("/blobs/"))
+                return Promise.resolve(Response.json(imageConfiguration()));
             if (url.pathname.endsWith("/tags/list")) {
                 if (!url.searchParams.has("last"))
                     return Promise.resolve(
@@ -160,11 +190,12 @@ test("pinned stable image versions discover newer same-flavor tags without follo
     );
     expect(result).toEqual({
         imageId: resultDigest,
+        current: false,
         reference: `ghcr.io/example/web:v2.0.0-alpine@${manifestDigest}`,
         installedVersion: "1.2.3",
         availableVersion: "2.0.0",
     });
-    expect(requests).toHaveLength(3);
+    expect(requests).toHaveLength(4);
 });
 
 test("explicit tracking tags avoid release scans and malformed pins never reach a registry", async () => {
@@ -172,6 +203,8 @@ test("explicit tracking tags avoid release scans and malformed pins never reach 
     const request: typeof fetch = Object.assign(
         (input: Parameters<typeof fetch>[0]) => {
             paths.push(new URL(input instanceof Request ? input.url : input).pathname);
+            if (paths.at(-1)?.includes("/blobs/"))
+                return Promise.resolve(Response.json(imageConfiguration()));
             return Promise.resolve(
                 Response.json({ config: { digest: "sha256:" + "e".repeat(64) } })
             );
@@ -189,6 +222,7 @@ test("explicit tracking tags avoid release scans and malformed pins never reach 
     );
     expect(paths).toEqual([
         "/v2/example/web/manifests/stable",
+        "/v2/example/web/blobs/sha256:" + "a".repeat(64),
         "/v2/example/web/blobs/sha256:" + "e".repeat(64),
     ]);
     expect(publicImageReference("example/web@broken")).toBeNull();
@@ -226,7 +260,9 @@ test("large Hub catalogs expose a newer pinned-image candidate without following
         (input: Parameters<typeof fetch>[0], options?: Parameters<typeof fetch>[1]) => {
             const url = new URL(input instanceof Request ? input.url : input);
             requests.push(url);
-            expect(options?.redirect).toBe("error");
+            expect(options?.redirect).toBe(
+                url.pathname.includes("/blobs/") ? "manual" : "error"
+            );
             expect(new Headers(options?.headers).has("authorization")).toBe(false);
             if (url.hostname === "hub.docker.com") {
                 expect(url.pathname).toBe("/v2/namespaces/example/repositories/web/tags");
@@ -241,6 +277,8 @@ test("large Hub catalogs expose a newer pinned-image candidate without following
                 );
             }
             expect(url.origin).toBe("https://registry-1.docker.io");
+            if (url.pathname.includes("/blobs/"))
+                return Promise.resolve(Response.json(imageConfiguration()));
             expect(url.pathname).toBe("/v2/example/web/manifests/2.5.0");
             return Promise.resolve(
                 Response.json({ config: { digest: "sha256:" + "d".repeat(64) } })
@@ -254,7 +292,7 @@ test("large Hub catalogs expose a newer pinned-image candidate without following
         request
     );
     expect(result?.reference).toBe("docker.io/example/web:2.5.0");
-    expect(requests).toHaveLength(2);
+    expect(requests).toHaveLength(3);
 });
 
 test("partial Hub catalogs never claim current and stop at the fixed page budget", async () => {
@@ -392,6 +430,8 @@ test.each([
                 );
                 if (url.pathname.includes("/blobs/"))
                     return Response.json({
+                        os: "linux",
+                        architecture: "amd64",
                         config: {
                             Labels: {
                                 "org.opencontainers.image.version": url.pathname.endsWith(
@@ -412,7 +452,9 @@ test.each([
             ) => {
                 const upstream = new URL(input instanceof Request ? input.url : input);
                 requests.push(upstream);
-                expect(options?.redirect).toBe("error");
+                expect(options?.redirect).toBe(
+                    upstream.pathname.includes("/blobs/") ? "manual" : "error"
+                );
                 return fetch(
                     new URL(upstream.pathname + upstream.search, server.url),
                     options
@@ -497,6 +539,8 @@ test("shared mutable-tag lookups retain each installed digest's actual version",
             if (path.endsWith(image.installed)) version = "1.2.0";
             else if (path.endsWith(secondDigest)) version = "2.0.0";
             return Response.json({
+                os: "linux",
+                architecture: "amd64",
                 config: { Labels: { "org.opencontainers.image.version": version } },
             });
         },
@@ -542,6 +586,353 @@ test("shared mutable-tag lookups retain each installed digest's actual version",
         );
         expect(lookups.filter((path) => path.endsWith(image.installed))).toHaveLength(1);
         expect(lookups.filter((path) => path.endsWith(secondDigest))).toHaveLength(1);
+    } finally {
+        await server.stop(true);
+    }
+});
+
+test.each([
+    { label: "classic current", store: "config", sameIndex: true, sameContent: true },
+    { label: "classic update", store: "config", sameIndex: false, sameContent: false },
+    { label: "containerd current", store: "index", sameIndex: true, sameContent: true },
+    { label: "containerd update", store: "index", sameIndex: false, sameContent: false },
+    {
+        label: "another architecture changed",
+        store: "index",
+        sameIndex: false,
+        sameContent: true,
+    },
+    {
+        label: "platform manifest current",
+        store: "manifest",
+        sameIndex: true,
+        sameContent: true,
+    },
+    {
+        label: "platform manifest update",
+        store: "manifest",
+        sameIndex: false,
+        sameContent: false,
+    },
+    {
+        label: "platform manifest unchanged by another architecture",
+        store: "manifest",
+        sameIndex: false,
+        sameContent: true,
+    },
+])(
+    "image identities: $label compares platform content and retains the post-pull ID kind",
+    async ({ store, sameIndex, sameContent }) => {
+        const oldIndex = fixtureDigest("a"),
+            nextIndex = sameIndex ? oldIndex : fixtureDigest("b");
+        const oldManifest = fixtureDigest("c"),
+            nextManifest = sameContent ? oldManifest : fixtureDigest("d");
+        const oldConfig = fixtureDigest("e"),
+            nextConfig = sameContent ? oldConfig : fixtureDigest("f");
+        const manifestId = store === "manifest" ? oldManifest : oldIndex;
+        const local = store === "config" ? oldConfig : manifestId;
+        const server = Bun.serve({
+            hostname: "127.0.0.1",
+            port: 0,
+            fetch: (request) => {
+                const path = decodeURIComponent(new URL(request.url).pathname);
+                if (path.endsWith("/manifests/latest"))
+                    return indexManifestResponse(nextIndex, nextManifest);
+                if (path.endsWith("/manifests/" + oldIndex))
+                    return indexManifestResponse(oldIndex, oldManifest);
+                if (path.endsWith("/manifests/" + oldManifest))
+                    return manifestResponse(
+                        { config: { digest: oldConfig } },
+                        oldManifest
+                    );
+                if (path.endsWith("/manifests/" + nextManifest))
+                    return manifestResponse(
+                        { config: { digest: nextConfig } },
+                        nextManifest
+                    );
+                if (path.endsWith("/blobs/" + oldConfig))
+                    return Response.json(imageConfiguration("1.2.0"));
+                if (path.endsWith("/blobs/" + nextConfig))
+                    return Response.json(imageConfiguration("1.3.0"));
+                return new Response(null, { status: 404 });
+            },
+        });
+        const request: typeof fetch = Object.assign(
+            (
+                input: Parameters<typeof fetch>[0],
+                options?: Parameters<typeof fetch>[1]
+            ) => {
+                const url = new URL(input instanceof Request ? input.url : input);
+                expect(url.origin).toBe("https://ghcr.io");
+                return fetch(new URL(url.pathname + url.search, server.url), options);
+            },
+            { preconnect: fetch.preconnect }
+        );
+        try {
+            const result = await resolveUpdates(
+                {
+                    capturedAt: new Date().toISOString(),
+                    repositoryMetadataAt: null,
+                    complete: true,
+                    coveredKinds: ["container"],
+                    items: [
+                        {
+                            ...image,
+                            installed: local,
+                            image:
+                                "ghcr.io/example/web@" +
+                                (store === "manifest" ? oldManifest : oldIndex),
+                        },
+                    ],
+                },
+                AbortSignal.timeout(5000),
+                new Map(),
+                request
+            );
+            const item = result.items[0]!;
+            expect(item.status).toBe(sameContent ? "current" : "available");
+            expect(item.installed).toBe(local);
+            expect(item.available).toBe(
+                { config: nextConfig, manifest: nextManifest, index: nextIndex }[store]
+            );
+            expect(item.availableImage).toBe("ghcr.io/example/web:latest@" + nextIndex);
+            expect(item.installedVersion).toBe("1.2.0");
+            expect(item.availableVersion).toBe(sameContent ? "1.2.0" : "1.3.0");
+            expect(item.candidateVerified).toBe(true);
+        } finally {
+            await server.stop(true);
+        }
+    }
+);
+
+test.each([
+    ["docker.io", "https://production.cloudfront.docker.com"],
+    ["docker.io", "https://production.cloudflare.docker.com"],
+    [
+        "docker.io",
+        "https://docker-images-prod.6aa30f8b08e16409b46e0173d6de2f56.r2.cloudflarestorage.com",
+    ],
+    ["ghcr.io", "https://pkg-containers.githubusercontent.com"],
+    ["ghcr.io", "http://pkg-containers.githubusercontent.com"],
+    ["ghcr.io", "https://pkg-containers.githubusercontent.com.evil.invalid"],
+    ["ghcr.io", "https://pkg-containers.githubusercontent.com:8443"],
+    ["ghcr.io", "https://user:pass@pkg-containers.githubusercontent.com"],
+    ["ghcr.io", "https://127.0.0.1"],
+    ["ghcr.io", "https://production.cloudfront.docker.com"],
+    ["ghcr.io", "loop"],
+])(
+    "registry blob redirects preserve classic updates and credentials: %s %s",
+    async (registry, destination) => {
+        const trusted =
+            destination === "https://pkg-containers.githubusercontent.com" ||
+            registry === "docker.io";
+        const origin =
+            registry === "docker.io" ? "https://registry-1.docker.io" : "https://ghcr.io";
+        const realm =
+            registry === "docker.io"
+                ? "https://auth.docker.io/token"
+                : "https://ghcr.io/token";
+        const oldConfig = fixtureDigest("a"),
+            nextConfig = fixtureDigest("b");
+        const seen: URL[] = [];
+        const server = Bun.serve({
+            hostname: "127.0.0.1",
+            port: 0,
+            fetch: (request) => {
+                const url = new URL(request.url);
+                const upstream = url.searchParams.get("upstream");
+                if (url.pathname === "/token")
+                    return Response.json({ token: "fixture-read-only" });
+                if (url.pathname === "/blob") {
+                    expect(request.headers.has("authorization")).toBe(false);
+                    return destination === "loop"
+                        ? new Response(null, {
+                              status: 307,
+                              headers: {
+                                  Location:
+                                      "https://pkg-containers.githubusercontent.com/blob",
+                              },
+                          })
+                        : Response.json(
+                              imageConfiguration(
+                                  url.searchParams.get("digest") === oldConfig
+                                      ? "1.2.0"
+                                      : "1.3.0"
+                              )
+                          );
+                }
+                expect(upstream).toBe(origin);
+                if (!request.headers.has("authorization"))
+                    return new Response(null, {
+                        status: 401,
+                        headers: { "www-authenticate": `Bearer realm="${realm}"` },
+                    });
+                const path = decodeURIComponent(url.pathname);
+                if (path.endsWith("/manifests/latest"))
+                    return manifestResponse(
+                        { config: { digest: nextConfig } },
+                        fixtureDigest("c")
+                    );
+                if (path.includes("/blobs/"))
+                    return new Response(null, {
+                        status: 307,
+                        headers: {
+                            Location: `${destination === "loop" ? "https://pkg-containers.githubusercontent.com" : destination}/blob?digest=${path.split("/").at(-1)}`,
+                        },
+                    });
+                return new Response(null, { status: 404 });
+            },
+        });
+        const request: typeof fetch = Object.assign(
+            (
+                input: Parameters<typeof fetch>[0],
+                options?: Parameters<typeof fetch>[1]
+            ) => {
+                const url = new URL(input instanceof Request ? input.url : input);
+                seen.push(url);
+                if (url.origin !== origin && url.origin !== new URL(realm).origin) {
+                    expect(new Headers(options?.headers).has("authorization")).toBe(
+                        false
+                    );
+                    expect(url.origin).toBe(
+                        destination === "loop"
+                            ? "https://pkg-containers.githubusercontent.com"
+                            : destination
+                    );
+                }
+                const local = new URL(url.pathname + url.search, server.url);
+                local.searchParams.set("upstream", url.origin);
+                return fetch(local, options);
+            },
+            { preconnect: fetch.preconnect }
+        );
+        try {
+            const result = await resolveImageUpdate(
+                {
+                    ...image,
+                    installed: oldConfig,
+                    image: `${registry}/example/web:latest`,
+                },
+                AbortSignal.timeout(5000),
+                request
+            ).catch(() => null);
+            if (trusted)
+                expect(result).toMatchObject({
+                    current: false,
+                    imageId: nextConfig,
+                    installedVersion: "1.2.0",
+                    availableVersion: "1.3.0",
+                });
+            else {
+                expect(result).toBeNull();
+                expect(seen.filter((url) => url.pathname === "/blob")).toHaveLength(
+                    destination === "loop" ? 4 : 0
+                );
+            }
+        } finally {
+            await server.stop(true);
+        }
+    }
+);
+
+test("unresolvable installed content never produces an available or current image claim", async () => {
+    const hash = "sha256:" + "d".repeat(64);
+    const request: typeof fetch = Object.assign(
+        (input: Parameters<typeof fetch>[0]) => {
+            const url = new URL(input instanceof Request ? input.url : input);
+            return Promise.resolve(
+                url.pathname.endsWith("/latest")
+                    ? Response.json(
+                          { config: { digest: hash } },
+                          {
+                              headers: {
+                                  "Docker-Content-Digest": "sha256:" + "e".repeat(64),
+                              },
+                          }
+                      )
+                    : new Response(null, { status: 404 })
+            );
+        },
+        { preconnect: fetch.preconnect }
+    );
+    const result = await resolveUpdates(
+        {
+            capturedAt: new Date().toISOString(),
+            repositoryMetadataAt: null,
+            complete: true,
+            coveredKinds: ["container"],
+            items: [image],
+        },
+        AbortSignal.timeout(2000),
+        new Map(),
+        request
+    );
+    expect(result.items[0]).toMatchObject({
+        status: "unknown",
+        available: null,
+        candidateVerified: false,
+    });
+});
+
+test("Nextcloud applies branch updates before the next major without cross-host cache contamination", async () => {
+    const server = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        fetch: () =>
+            Response.json([
+                { tag_name: "v35.0.0", draft: false, prerelease: false },
+                { tag_name: "v34.0.3", draft: false, prerelease: false },
+                { tag_name: "v33.0.9", draft: false, prerelease: false },
+                { tag_name: "v32.0.12", draft: false, prerelease: false },
+                { tag_name: "v33.0.10", draft: true, prerelease: false },
+                { tag_name: "v33.1.0-rc1", draft: false, prerelease: true },
+            ]),
+    });
+    const request: typeof fetch = Object.assign(
+        (input: Parameters<typeof fetch>[0], options?: Parameters<typeof fetch>[1]) => {
+            expect(new URL(input instanceof Request ? input.url : input).href).toBe(
+                "https://api.github.com/repos/nextcloud/server/releases?per_page=100"
+            );
+            return fetch(server.url, options);
+        },
+        { preconnect: fetch.preconnect }
+    );
+    const cache = new Map<string, Promise<string>>();
+    try {
+        for (const [installed, available] of [
+            ["33.0.0", "33.0.9"],
+            ["33.0.9", "34.0.3"],
+            ["32.0.0", "32.0.12"],
+            ["35.0.0", "35.0.0"],
+            ["25.0.0", null],
+        ] as const) {
+            const result = await resolveUpdates(
+                {
+                    capturedAt: new Date().toISOString(),
+                    repositoryMetadataAt: null,
+                    complete: true,
+                    coveredKinds: ["application"],
+                    items: [
+                        {
+                            id: "application:nextcloud",
+                            name: "Nextcloud",
+                            kind: "application",
+                            release: "nextcloud",
+                            installed,
+                            available: null,
+                            status: "unknown",
+                            security: false,
+                            held: false,
+                        },
+                    ],
+                },
+                AbortSignal.timeout(2000),
+                cache,
+                request
+            );
+            expect(result.items[0]?.available).toBe(available);
+            expect(result.items[0]?.candidateVerified).toBe(available !== null);
+        }
     } finally {
         await server.stop(true);
     }

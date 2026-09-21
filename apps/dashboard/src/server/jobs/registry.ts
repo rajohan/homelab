@@ -2,6 +2,9 @@ import { capabilities, resourceClasses } from "@homelab/contracts/operations";
 
 import type { JobDefinition, JobHandler } from "./types";
 
+/** Upper bound for code-owned, non-retryable integration batches; ordinary jobs retain one hour. */
+export const maximumIntegrationTimeoutMs = 7 * 24 * 3_600_000;
+
 /**
  * Validate and index a code-owned job inventory without granting runtime shell access.
  * @param handlers - Explicitly composed integrations and maintenance actions.
@@ -20,7 +23,12 @@ export function createJobRegistry(handlers: readonly JobHandler[]) {
             !capabilities.includes(definition.capability) ||
             !Number.isInteger(definition.timeoutMs) ||
             definition.timeoutMs < 1000 ||
-            definition.timeoutMs > 3_600_000 ||
+            definition.timeoutMs >
+                (definition.admission === "integration" &&
+                !definition.retrySafe &&
+                definition.attemptLimit === 1
+                    ? maximumIntegrationTimeoutMs
+                    : 3_600_000) ||
             !Number.isInteger(definition.attemptLimit) ||
             definition.attemptLimit < 1 ||
             definition.attemptLimit > 10 ||

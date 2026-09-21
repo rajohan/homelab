@@ -181,6 +181,9 @@ test("job activity opens details on demand, survives closing them and dismisses 
             screen.queryByRole("region", { name: "Your job activity" })
         ).not.toBeInTheDocument();
         expect(screen.getByText("No active or recently completed jobs.")).toBeVisible();
+        expect(screen.getByText("No active or recently completed jobs.")).toHaveClass(
+            "bg-primary-900"
+        );
     } finally {
         cleanup();
         restoreMeasurements();
@@ -255,6 +258,11 @@ test.each([
         try {
             const user = userEvent.setup();
             const button = screen.getByRole("button", { name: "View Restart web" });
+            expect(button.parentElement).toHaveClass(
+                "bg-primary-900",
+                "hover:bg-primary-700/50"
+            );
+            expect(button.parentElement).not.toHaveClass("bg-primary-950");
             expect(button.querySelector("button")).toBeNull();
             await user.click(button);
             expect(select).toHaveBeenCalledTimes(1);

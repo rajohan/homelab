@@ -1,4 +1,4 @@
-import { ErrorNotice, LoadingState, queryRefresh } from "@homelab/ui";
+import { ErrorNotice, LoadingState, VirtualList, queryRefresh } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 
 import { api } from "../../api/client";
@@ -22,13 +22,19 @@ export function AutomaticUpdates({ source }: { readonly source: string }) {
             <h3 className="text-sm font-semibold text-primary-100">Automatic updates</h3>
             {query.isPending && <LoadingState label="Loading update policies…" />}
             {query.isError && <ErrorNotice error={query.error} />}
-            {targets.map((policy) => (
-                <UpdatePolicyControl
-                    key={policy.target}
-                    policy={policy}
-                    disabled={query.isError}
+            {targets.length > 0 && (
+                <VirtualList
+                    label="Automatic update targets"
+                    rows={targets}
+                    getKey={(policy) => policy.target}
+                    className="max-h-[min(26rem,50dvh)]"
+                    itemClassName="last-of-type:pb-0"
+                    scrollbarGap
+                    renderItem={(policy) => (
+                        <UpdatePolicyControl policy={policy} disabled={query.isError} />
+                    )}
                 />
-            ))}
+            )}
             {query.isSuccess && targets.length === 0 && (
                 <p className="rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm text-primary-400">
                     Update installation is not configured for this source.

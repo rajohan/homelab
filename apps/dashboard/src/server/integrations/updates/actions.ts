@@ -1,17 +1,18 @@
-import {
-    updateRequestSchema,
-    type UpdateItem,
-    type UpdateReport,
-} from "@homelab/contracts/updates";
+import { updateRequestSchema } from "@homelab/contracts/updates";
 import type { SQL } from "bun";
 import * as v from "valibot";
 
 import { enqueueJob, lockQueue } from "../../jobs/queue";
-import type { JobExecution, JobHandler } from "../../jobs/types";
-import { publishNotification } from "../../notifications/publish";
+import type { JobHandler } from "../../jobs/types";
 import { OperationFailure } from "../../operations/errors";
-import { updateTargetRevision, type UpdateTarget } from "./configuration";
-import { executeUpdate, type UpdateExecutor, type UpdateReceipt } from "./execution";
+import { applyUpdate, updateTimeoutMs } from "./apply";
+import { updateBatchJobs } from "./batch";
+import {
+    updateTargetRevision,
+    updateResourceKeys,
+    type UpdateTarget,
+} from "./configuration";
+import { executeUpdate, type UpdateExecutor } from "./execution";
 import { readUpdateReport, staleUpdateReport } from "./inventory";
 import { readUpdatePolicies } from "./policies";
 import { matchesUpdateTarget, updateControl } from "./selection";
@@ -21,64 +22,6 @@ const payloadSchema = v.strictObject({
     automatic: v.boolean(),
     policyVersion: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
 });
-
-async function recordResult(
-    target: UpdateTarget,
-    item: UpdateItem,
-    receipt: UpdateReceipt,
-    context: JobExecution
-) {
-    if (
-        !(await context.commit(async (transaction) => {
-            for (const key of [
-                `updates:${target.source}`,
-                `updates.resolved:${target.source}`,
-            ]) {
-                const [row] = await transaction<
-                    { value: UpdateReport }[]
-                >`SELECT value FROM operation_snapshots WHERE key=${key} FOR UPDATE`;
-                if (!row) continue;
-                const items = row.value.items.map((previous) => {
-                    if (previous.id !== item.id || previous.installed !== item.installed)
-                        return previous;
-                    return {
-                        ...previous,
-                        installed: receipt.installed,
-                        available: receipt.installed,
-                        status: "current" as const,
-                        ...(item.availableImage
-                            ? {
-                                  image: item.availableImage,
-                                  availableImage: item.availableImage,
-                                  pinned: true,
-                              }
-                            : {}),
-                        ...(receipt.containerId
-                            ? { id: `docker:${receipt.containerId}` }
-                            : {}),
-                        ...(item.availableVersion
-                            ? {
-                                  installedVersion: item.availableVersion,
-                                  availableVersion: item.availableVersion,
-                              }
-                            : {}),
-                    };
-                });
-                await transaction`UPDATE operation_snapshots SET value=${JSON.stringify({ ...row.value, items })}::text::jsonb WHERE key=${key}`;
-            }
-            if (receipt.rebootRequired)
-                await publishNotification(transaction, "updates", {
-                    key: `reboot:${context.runId}`,
-                    title: `${target.label}: restart required`,
-                    message:
-                        "The update completed. A host restart is required and has not been performed automatically.",
-                    severity: "warning",
-                    destination: "jobs",
-                });
-        }))
-    )
-        throw new Error("Update result no longer owns its job");
-}
 
 /**
  * Register separately authorized installers and a policy-gated automatic admission job.
@@ -101,11 +44,8 @@ export function updateActionJobs(
                 "Install an explicitly approved version and verify the result without rebooting the host.",
             resourceClass: "interactive",
             capability: "updates:apply",
-            resourceKeys: [
-                `updates:${target.source}`,
-                ...(target.driver.kind === "docker" ? ["applications:inventory"] : []),
-            ],
-            timeoutMs: 1_500_000,
+            resourceKeys: updateResourceKeys(target),
+            timeoutMs: updateTimeoutMs,
             attemptLimit: 1,
             retrySafe: false,
             intervalSeconds: null,
@@ -137,23 +77,12 @@ export function updateActionJobs(
             await context.reportProgress(
                 `Preparing the approved update for ${item.name}.`
             );
-            if (!(await context.commit(async () => {})))
-                throw new Error("Update claim expired before execution");
-            const receipt = await execute(
-                target,
-                item,
-                input.automatic,
-                context.signal,
-                context.reportProgress
-            );
-            if (receipt.installed !== item.available)
-                throw new Error("Update receipt does not match the approved version");
-            await recordResult(target, item, receipt, context);
-            await context.reportProgress("The installed version has been verified.");
+            await applyUpdate(target, item, input.automatic, context, execute);
         },
     }));
     return [
         ...installers,
+        ...updateBatchJobs(targets, client, execute),
         {
             definition: {
                 key: "updates.automatic",

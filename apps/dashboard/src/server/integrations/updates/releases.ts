@@ -82,13 +82,16 @@ const providers = {
  * @param provider - Code-registered release feed.
  * @param signal - Bounded collection deadline.
  * @param request - HTTP boundary, replaceable with loopback fixtures in tests.
+ * @param installed - Required for Nextcloud's supported sequential release selection.
  * @returns Latest stable/current version, without upgrading or changing configured pins.
  */
 export async function latestRelease(
     provider: NonNullable<UpdateItem["release"]>,
     signal: AbortSignal,
-    request: typeof fetch = fetch
+    request: typeof fetch = fetch,
+    installed?: string
 ): Promise<string> {
+    if (provider === "nextcloud") return nextcloudRelease(installed, signal, request);
     const source = providers[provider];
     const response = await request(source.url, {
         signal,
@@ -124,6 +127,53 @@ export async function latestRelease(
     )
         normalized += ".0";
     return v.parse(version, normalized).replace(/^v/, "");
+}
+
+async function nextcloudRelease(
+    installed: string | undefined,
+    signal: AbortSignal,
+    request: typeof fetch
+): Promise<string> {
+    const current = v
+        .parse(v.pipe(v.string(), v.regex(/^v?\d+\.\d+\.\d+$/)), installed)
+        .replace(/^v/, "");
+    const major = Number(current.split(".")[0]);
+    const response = await request(
+        "https://api.github.com/repos/nextcloud/server/releases?per_page=100",
+        {
+            signal,
+            redirect: "error",
+            headers: { Accept: "application/json" },
+        }
+    );
+    const rows = v.parse(
+        v.pipe(
+            v.array(
+                v.object({
+                    tag_name: v.string(),
+                    draft: v.boolean(),
+                    prerelease: v.boolean(),
+                })
+            ),
+            v.maxLength(100)
+        ),
+        await readBoundedJson(response)
+    );
+    const versions = rows
+        .filter(
+            (row) =>
+                !row.draft && !row.prerelease && /^v?\d+\.\d+\.\d+$/.test(row.tag_name)
+        )
+        .map((row) => row.tag_name.replace(/^v/, ""))
+        .toSorted((left, right) => Bun.semver.order(right, left));
+    const branch = versions.find((value) => Number(value.split(".")[0]) === major);
+    if (!branch)
+        throw new Error(
+            "Installed Nextcloud release series is not in the bounded stable catalog"
+        );
+    // Apply the current major's point releases before ever proposing the next major.
+    if (Bun.semver.order(branch, current) > 0) return branch;
+    return versions.find((value) => Number(value.split(".")[0]) === major + 1) ?? branch;
 }
 
 /**

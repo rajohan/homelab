@@ -98,6 +98,28 @@ export const updateRequestSchema = v.strictObject({
     revision: v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/)),
     requestId: v.pipe(v.string(), v.uuid()),
 });
+export const updateBatchScopeSchema = v.strictObject({
+    source: v.optional(text(100)),
+});
+export const updateBatchRequestSchema = v.strictObject({
+    ...updateBatchScopeSchema.entries,
+    revision: v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/)),
+    requestId: v.pipe(v.string(), v.uuid()),
+});
+export interface UpdateBatchEntry {
+    readonly source: string;
+    readonly sourceLabel: string;
+    readonly item: UpdateItem;
+    readonly control: UpdateControl | null;
+    readonly reason: string | null;
+}
+export interface UpdateBatchPlan {
+    readonly revision: string;
+    readonly entries: readonly UpdateBatchEntry[];
+    readonly eligible: number;
+    readonly excluded: number;
+    readonly hosts: number;
+}
 export const updatePolicySchema = v.strictObject({
     target: text(64),
     version: v.pipe(v.number(), v.integer(), v.minValue(0)),

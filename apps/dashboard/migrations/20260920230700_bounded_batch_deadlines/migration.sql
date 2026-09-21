@@ -1,0 +1,1 @@
+ALTER TABLE "job_runs" DROP CONSTRAINT "job_runs_attempts", ADD CONSTRAINT "job_runs_attempts" CHECK ("attempt" >= 0 and "attempt_limit" between 1 and 10 and ("timeout_ms" between 1000 and 3600000 or ("timeout_ms" between 3600001 and 604800000 and "attempt_limit" = 1 and not "retry_safe")));

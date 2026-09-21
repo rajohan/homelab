@@ -3,6 +3,7 @@ import { applicationIntentSchema } from "@homelab/contracts/applications";
 import { runOperation, trpc } from "../../api/trpc";
 import { requireCapability } from "../../automation/authentication";
 import { enqueueJob, lockQueue } from "../../jobs/queue";
+import { hostResourceKey } from "../../jobs/resources";
 import { authorizedOperations } from "../../operations/authorization";
 import { OperationFailure } from "../../operations/errors";
 import { applicationLogsProcedure } from "../logs/routes";
@@ -73,10 +74,10 @@ export const applicationsRouter = trpc.router({
             const definition = operations.registry.get(
                 `applications.${input.operation}`
             )?.definition;
-            if (
-                !definition ||
-                !operations.applicationTargets?.some((target) => target.id === input.host)
-            )
+            const target = operations.applicationTargets?.find(
+                (candidate) => candidate.id === input.host
+            );
+            if (!definition || !target)
                 throw new OperationFailure(
                     "PRECONDITION_FAILED",
                     "This application host is not configured for control."
@@ -116,7 +117,13 @@ export const applicationsRouter = trpc.router({
                 return {
                     id: await enqueueJob(
                         transaction,
-                        definition,
+                        {
+                            ...definition,
+                            resourceKeys: [
+                                ...definition.resourceKeys,
+                                hostResourceKey(new URL(target.endpoint).hostname),
+                            ],
+                        },
                         `${principal.kind}:${principal.id}`,
                         key,
                         payload,

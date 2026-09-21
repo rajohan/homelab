@@ -14,6 +14,7 @@ import { createJobRegistry } from "../../jobs/registry";
 import type { JobHandler } from "../../jobs/types";
 import { operationFixture, expectOperationFailure } from "../../testing/operations";
 import { updateActionJobs } from "./actions";
+import { updateBatchKey } from "./batch";
 import {
     parseUpdateTargets,
     updateTargetRevision,
@@ -62,6 +63,397 @@ const item: UpdateItem = {
     candidateVerified: true,
     platform: { os: "linux", architecture: "amd64" },
 };
+
+async function batchFixture(fail = false, withDocker = false, sharedHost = false) {
+    const state = await operationFixture();
+    const targets: UpdateTarget[] = ["alpha", "beta"].map((source) => ({
+        ...target,
+        id: source,
+        source,
+        host: sharedHost ? "shared.invalid" : `${source}.invalid`,
+        label: source,
+        driver: { kind: "apt" as const },
+    }));
+    if (withDocker)
+        targets.push(
+            ...["alpha", "beta"].map((source) => ({
+                ...target,
+                id: source + "-docker",
+                source,
+                host: `${source}.invalid`,
+            }))
+        );
+    const calls: { source: string; item: string }[] = [];
+    const registry = createJobRegistry(
+        updateActionJobs(targets, state.client, (selected, software) => {
+            calls.push({ source: selected.source, item: software.id });
+            if (fail) return Promise.reject(new Error("Synthetic installation failure"));
+            return Promise.resolve({
+                installed: software.available!,
+                rebootRequired: false,
+            });
+        })
+    );
+    const operations = {
+        ...state,
+        registry,
+        updateTargets: targets,
+        updateSources: targets
+            .filter((selected) => selected.driver.kind === "apt")
+            .map((selected) => ({
+                id: selected.source,
+                label: selected.label,
+                publisher: crypto.randomUUID(),
+            })),
+    };
+    const principal = { kind: "human" as const, id: "operator", capabilities };
+    const caller = appRouter.createCaller({
+        operations,
+        principal,
+        verifyHuman: () => Promise.resolve(principal),
+    });
+    const report: UpdateReport = {
+        capturedAt: new Date().toISOString(),
+        repositoryMetadataAt: new Date().toISOString(),
+        complete: true,
+        coveredKinds: [
+            "os",
+            "application",
+            ...(withDocker ? ["container" as const] : []),
+        ],
+        items: [
+            ...(withDocker ? [item] : []),
+            ...Array.from({ length: 70 }, (_, index) => ({
+                id: `apt:package-${String(index).padStart(3, "0")}`,
+                name: `Package ${index}`,
+                kind: "os" as const,
+                installed: "1.0-1",
+                available: index === 1 ? "2.0-1" : "1.1-1",
+                status: "available" as const,
+                held: index === 0,
+                security: false,
+            })),
+            {
+                ...item,
+                id: "application:unconfigured",
+                name: "Unconfigured",
+                kind: "application",
+                installed: "1.0.0",
+                available: "1.1.0",
+            },
+        ],
+    };
+    for (const source of operations.updateSources) {
+        await state.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES (${`updates:${source.id}`},${JSON.stringify(report)}::text::jsonb,now())`;
+        if (withDocker)
+            await state.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES (${`updates.resolved:${source.id}`},${JSON.stringify(report)}::text::jsonb,now())`;
+    }
+    return { ...state, targets, calls, operations, caller, principal, registry };
+}
+
+test("bulk plans cover every page, expose exclusions and preserve host scope and permissions", async () => {
+    const state = await batchFixture();
+    try {
+        const all = await state.caller.updates.batchPlan({});
+        expect(all.entries).toHaveLength(142);
+        expect(all).toMatchObject({ eligible: 136, excluded: 6, hosts: 2 });
+        const host = await state.caller.updates.batchPlan({ source: "alpha" });
+        expect(host.entries.every((entry) => entry.source === "alpha")).toBe(true);
+        expect(host).toMatchObject({ eligible: 68, excluded: 3, hosts: 1 });
+        expect(
+            host.entries.find((entry) => entry.item.id.endsWith("001"))?.reason
+        ).toContain("Major");
+        const request = { revision: all.revision, requestId: crypto.randomUUID() };
+        const noProof = appRouter.createCaller({
+            operations: state.operations,
+            principal: state.principal,
+        });
+        await expectOperationFailure(
+            noProof.updates.batchRequest(request),
+            "recently verified"
+        );
+        const noJobs = appRouter.createCaller({
+            operations: state.operations,
+            principal: { ...state.principal, capabilities: ["updates:apply"] },
+            verifyHuman: () => Promise.resolve(state.principal),
+        });
+        await expectOperationFailure(noJobs.updates.batchRequest(request), "permission");
+        await expectOperationFailure(
+            state.caller.updates.batchPlan({ source: "removed" }),
+            "not configured"
+        );
+        const queued = await state.caller.updates.batchRequest(request);
+        expect(queued.ids).toHaveLength(2);
+        const [budget] = await state.client<
+            { timeout_ms: number }[]
+        >`SELECT timeout_ms FROM job_runs WHERE id=${queued.id}`;
+        expect(budget?.timeout_ms).toBe(68 * 1_530_000 + 60_000);
+        await expectOperationFailure(
+            state.client`UPDATE job_runs SET retry_safe=true WHERE id=${queued.id}`,
+            "job_runs_attempts"
+        );
+        await expectOperationFailure(
+            state.client`UPDATE job_runs SET timeout_ms=604800001 WHERE id=${queued.id}`,
+            "job_runs_attempts"
+        );
+        await expectOperationFailure(
+            state.client`UPDATE job_runs SET attempt_limit=2 WHERE id=${queued.id}`,
+            "job_runs_attempts"
+        );
+        expect(await state.caller.updates.batchRequest(request)).toEqual(queued);
+        await expectOperationFailure(
+            state.caller.updates.batchRequest({ ...request, source: "alpha" }),
+            "another update plan"
+        );
+        expect(state.calls).toHaveLength(0);
+    } finally {
+        await state.close();
+    }
+});
+
+test.each([false, true])(
+    "host batches share leases and run concurrently with Docker=%s",
+    async (withDocker) => {
+        const state = await batchFixture(false, withDocker);
+        try {
+            const plan = await state.caller.updates.batchPlan({});
+            await state.caller.updates.batchRequest({
+                revision: plan.revision,
+                requestId: crypto.randomUUID(),
+            });
+            const alpha = state.registry.get(updateBatchKey("alpha"))!,
+                beta = state.registry.get(updateBatchKey("beta"))!;
+            const worker = await state.registerWorker();
+            const first = await claimJob(state.client, worker, [alpha.definition.key]);
+            const second = await claimJob(state.client, worker, [beta.definition.key]);
+            expect(first).toBeDefined();
+            expect(second).toBeDefined();
+            expect(first!.timeout_ms).toBe((withDocker ? 69 : 68) * 1_530_000 + 60_000);
+            expect(first!.timeout_ms).toBeGreaterThan(3_600_000);
+            const entry = plan.entries.find(
+                (candidate) => candidate.source === "alpha" && candidate.reason === null
+            )!;
+            await state.caller.updates.request({
+                target: entry.control!.target,
+                item: entry.item.id,
+                revision: entry.control!.revision,
+                requestId: crypto.randomUUID(),
+            });
+            expect(
+                await claimJob(state.client, worker, ["updates.install.alpha"])
+            ).toBeUndefined();
+            const run = async (claim: NonNullable<typeof first>, handler: JobHandler) => {
+                await handler.execute(claim.payload, {
+                    runId: claim.id,
+                    leaseToken: claim.lease_token,
+                    signal: AbortSignal.timeout(20_000),
+                    reportProgress: () => Promise.resolve(),
+                    commit: (write, queue) =>
+                        commitClaim(state.client, claim, write, queue),
+                });
+                await settleClaim(state.client, claim, "succeeded");
+            };
+            await Promise.all([run(first!, alpha), run(second!, beta)]);
+            for (const source of ["alpha", "beta"]) {
+                const calls = state.calls.filter((call) => call.source === source);
+                expect(calls).toHaveLength(withDocker ? 69 : 68);
+                expect(calls.findLast((call) => call.item.startsWith("apt:"))?.item).toBe(
+                    "apt:package-069"
+                );
+                const report = await readUpdateReport(state.client, source);
+                expect(
+                    report?.items.filter((software) => software.status === "current")
+                ).toHaveLength(withDocker ? 69 : 68);
+            }
+        } finally {
+            await state.close();
+        }
+    }
+);
+
+test.each([
+    "success",
+    "idle",
+    "actor",
+    "request",
+    "revision",
+    "scope",
+    "overlap",
+    "budget",
+    "host",
+    "failed",
+    "cancelled",
+    "timed_out",
+] as const)(
+    "serialized source aliases credit only their successful shared confirmation runtime (%s)",
+    async (scenario) => {
+        const state = await batchFixture(false, false, scenario !== "host");
+        try {
+            for (const source of ["alpha", "beta"]) {
+                const report = await readUpdateReport(state.client, source);
+                await state.client`UPDATE operation_snapshots SET value=${JSON.stringify({ ...report, items: report!.items.slice(2, 6) })}::text::jsonb WHERE key=${`updates:${source}`}`;
+            }
+            const plan = await state.caller.updates.batchPlan({});
+            await state.caller.updates.batchRequest({
+                revision: plan.revision,
+                requestId: crypto.randomUUID(),
+            });
+            const alpha = state.registry.get(updateBatchKey("alpha"))!,
+                beta = state.registry.get(updateBatchKey("beta"))!;
+            const worker = await state.registerWorker();
+            const first = await claimJob(state.client, worker, [alpha.definition.key]);
+            if (!first) throw new Error("Expected first alias claim");
+            if (scenario !== "host")
+                expect(
+                    await claimJob(state.client, worker, [beta.definition.key])
+                ).toBeUndefined();
+            await alpha.execute(first.payload, {
+                runId: first.id,
+                leaseToken: first.lease_token,
+                signal: AbortSignal.timeout(5000),
+                reportProgress: () => Promise.resolve(),
+                commit: (write, queue) => commitClaim(state.client, first, write, queue),
+            });
+            await settleClaim(state.client, first, "succeeded");
+            await state.client`UPDATE job_runs SET created_at=now()-interval '100 minutes'`;
+            await state.client`UPDATE job_runs SET started_at=now()-interval '97 minutes', finished_at=now()-interval '2 minutes' WHERE id=${first.id}`;
+            if (scenario === "idle")
+                await state.client`UPDATE job_runs SET created_at=now()-interval '160 minutes'`;
+            if (scenario === "actor")
+                await state.client`UPDATE job_runs SET requested_by='human:someone-else' WHERE id=${first.id}`;
+            if (scenario === "scope")
+                await state.client`UPDATE job_runs SET payload=jsonb_set(payload,'{scope}','"alpha"'::jsonb) WHERE id=${first.id}`;
+            if (scenario === "budget")
+                await state.client`UPDATE job_runs SET timeout_ms=1000 WHERE id=${first.id}`;
+            if (scenario === "overlap") {
+                const duplicate = await state.client.begin(async (transaction) => {
+                    await lockQueue(transaction);
+                    return enqueueJob(
+                        transaction,
+                        alpha.definition,
+                        "human:operator",
+                        crypto.randomUUID(),
+                        first.payload
+                    );
+                });
+                await state.client`UPDATE job_runs SET state='succeeded', started_at=now()-interval '97 minutes', finished_at=now()-interval '2 minutes' WHERE id=${duplicate}`;
+                await state.client`UPDATE job_runs SET created_at=now()-interval '200 minutes'`;
+            }
+            if (scenario === "request" || scenario === "revision")
+                await state.client`UPDATE job_runs SET payload=jsonb_set(payload,${state.client.array([scenario === "request" ? "requestId" : "revision"], "TEXT")},${JSON.stringify(crypto.randomUUID())}::text::jsonb) WHERE id=${first.id}`;
+            const blocked =
+                scenario === "failed" ||
+                scenario === "cancelled" ||
+                scenario === "timed_out";
+            if (blocked)
+                await state.client`UPDATE job_runs SET state=${scenario} WHERE id=${first.id}`;
+            const second = await claimJob(state.client, worker, [beta.definition.key]);
+            if (!second) throw new Error("Expected second alias claim");
+            const execution = beta.execute(second.payload, {
+                runId: second.id,
+                leaseToken: second.lease_token,
+                signal: AbortSignal.timeout(5000),
+                reportProgress: () => Promise.resolve(),
+                commit: (write, queue) => commitClaim(state.client, second, write, queue),
+            });
+            await (scenario === "success"
+                ? execution
+                : expectOperationFailure(
+                      execution,
+                      blocked ? "remaining updates were not started" : "expired"
+                  ));
+            expect(state.calls.filter((call) => call.source === "beta")).toHaveLength(
+                scenario === "success" ? 4 : 0
+            );
+        } finally {
+            await state.close();
+        }
+    }
+);
+
+test("bulk deadlines bound large confirmations before any job is admitted", async () => {
+    const state = await batchFixture();
+    try {
+        const report = await readUpdateReport(state.client, "alpha");
+        const seed = report!.items[2]!;
+        const replace = (length: number) =>
+            state.client`UPDATE operation_snapshots SET value=${JSON.stringify({ ...report, items: Array.from({ length }, (_, index) => ({ ...seed, id: `apt:large-${index}` })) })}::text::jsonb WHERE key='updates:alpha'`;
+        await replace(395);
+        const plan = await state.caller.updates.batchPlan({ source: "alpha" });
+        expect(plan.eligible).toBe(395);
+        await replace(396);
+        await expectOperationFailure(
+            state.caller.updates.batchPlan({ source: "alpha" }),
+            "at most 395"
+        );
+        const [count] = await state.client<
+            { count: number }[]
+        >`SELECT count(*)::int AS count FROM job_runs`;
+        expect(count?.count).toBe(0);
+    } finally {
+        await state.close();
+    }
+});
+
+test.each([
+    "changed-plan",
+    "changed-candidate",
+    "expired",
+    "failure",
+    "cancelled",
+] as const)("bulk updates fail closed and do not continue after %s", async (scenario) => {
+    const state = await batchFixture(scenario === "failure");
+    try {
+        const plan = await state.caller.updates.batchPlan({ source: "alpha" });
+        const request = {
+            source: "alpha",
+            revision: plan.revision,
+            requestId: crypto.randomUUID(),
+        };
+        const alter = () =>
+            state.client`UPDATE operation_snapshots SET value=jsonb_set(value, '{items,2,available}', '"1.2-1"'::jsonb) WHERE key='updates:alpha'`;
+        if (scenario === "changed-plan") {
+            await alter();
+            await expectOperationFailure(
+                state.caller.updates.batchRequest(request),
+                "plan changed"
+            );
+            const [count] = await state.client<
+                { count: number }[]
+            >`SELECT count(*)::int AS count FROM job_runs`;
+            expect(count?.count).toBe(0);
+            return;
+        }
+        const queued = await state.caller.updates.batchRequest(request);
+        if (scenario === "changed-candidate") await alter();
+        if (scenario === "expired")
+            await state.client`UPDATE job_runs SET created_at=now()-interval '61 minutes' WHERE id=${queued.id}`;
+        const handler = state.registry.get(updateBatchKey("alpha"))!;
+        const worker = await state.registerWorker();
+        const claim = await claimJob(state.client, worker, [handler.definition.key]);
+        if (!claim) throw new Error("Expected batch claim");
+        const lifecycle = new AbortController();
+        if (scenario === "cancelled") lifecycle.abort(new Error("Cancelled"));
+        await expectOperationFailure(
+            handler.execute(claim.payload, {
+                runId: claim.id,
+                leaseToken: claim.lease_token,
+                signal: lifecycle.signal,
+                reportProgress: () => Promise.resolve(),
+                commit: (write, queue) => commitClaim(state.client, claim, write, queue),
+            }),
+            {
+                expired: "expired",
+                "changed-candidate": "changed",
+                cancelled: "Cancelled",
+                failure: "Synthetic",
+            }[scenario]
+        );
+        expect(state.calls).toHaveLength(scenario === "failure" ? 1 : 0);
+    } finally {
+        await state.close();
+    }
+});
 
 async function fixture(
     selectedTarget: UpdateTarget = target,
@@ -641,3 +1033,61 @@ test("SSH update transport pins trust and deployment configuration rejects ambig
         )
     ).toThrow("exact approved version");
 });
+
+test.each([
+    {
+        application: "adguard-home",
+        binary: "/opt/AdGuardHome/AdGuardHome",
+        service: "AdGuardHome.service",
+    },
+    {
+        application: "openclaw",
+        command: ["/usr/local/bin/openclaw"],
+        service: "openclaw-gateway.service",
+    },
+    {
+        application: "nextcloud",
+        directory: "/srv/nextcloud",
+        php: "/usr/bin/php",
+        user: "www-data",
+    },
+])(
+    "native recipe $application is compact, provider-owned and part of consent",
+    (recipe) => {
+        const configured = {
+            ...target,
+            driver: {
+                kind: "native",
+                item: "application:fixture",
+                release: recipe.application,
+                recipe,
+                health: ["/usr/local/bin/check-health"],
+            },
+        };
+        const [parsed] = parseUpdateTargets(JSON.stringify([configured]));
+        expect(JSON.stringify(parsed?.driver)).toBe(JSON.stringify(configured.driver));
+        if (!parsed) throw new Error("Fixture target missing");
+        expect(updateSshArguments(parsed).at(-1)).toContain("install_native_recipe");
+        expect(() =>
+            parseUpdateTargets(
+                JSON.stringify([
+                    { ...configured, driver: { ...configured.driver, release: "bun" } },
+                ])
+            )
+        ).toThrow("official release provider");
+        const [changed] = parseUpdateTargets(
+            JSON.stringify([
+                {
+                    ...configured,
+                    driver: {
+                        ...configured.driver,
+                        health: ["/usr/local/bin/different-health"],
+                    },
+                },
+            ])
+        );
+        if (!changed) throw new Error("Fixture target missing");
+        expect(updateTargetRevision(parsed)).not.toBe(updateTargetRevision(changed));
+        expect(JSON.stringify(configured).length).toBeLessThan(1000);
+    }
+);

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import { ErrorNotice } from "../Alert/ErrorNotice";
 import { ActionGroup } from "../Button/ActionGroup";
@@ -18,6 +18,9 @@ export function ConfirmDialog({
     onConfirm,
     confirmLabel = "Confirm",
     variant = "danger",
+    children,
+    confirmDisabled = false,
+    size = "md",
 }: {
     title: string;
     description: string;
@@ -25,6 +28,9 @@ export function ConfirmDialog({
     onConfirm: () => Promise<void>;
     confirmLabel?: string;
     variant?: ButtonVariant;
+    children?: ReactNode;
+    confirmDisabled?: boolean;
+    size?: "md" | "wide";
 }) {
     const [pending, setPending] = useState(false);
     const [error, setError] = useState<unknown>();
@@ -34,11 +40,12 @@ export function ConfirmDialog({
             description={description}
             onClose={onClose}
             dismissible={!pending}
+            size={size}
         >
             <Form
                 className="space-y-4"
                 onSubmit={async () => {
-                    if (pending) return;
+                    if (pending || confirmDisabled) return;
                     setPending(true);
                     setError(undefined);
                     try {
@@ -50,9 +57,15 @@ export function ConfirmDialog({
                     }
                 }}
             >
+                {children}
                 {error !== undefined && <ErrorNotice error={error} />}
                 <ActionGroup>
-                    <Button type="submit" variant={variant} busy={pending}>
+                    <Button
+                        type="submit"
+                        variant={variant}
+                        busy={pending}
+                        disabled={confirmDisabled}
+                    >
                         {confirmLabel}
                     </Button>
                     <Button

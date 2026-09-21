@@ -4,6 +4,8 @@ import {
     updateListSchema,
     updateRequestSchema,
     updatePolicySchema,
+    updateBatchScopeSchema,
+    updateBatchRequestSchema,
 } from "@homelab/contracts/updates";
 
 import { runOperation, trpc } from "../../api/trpc";
@@ -12,6 +14,7 @@ import { authorizedOperations } from "../../operations/authorization";
 import type { OperationsContext } from "../../operations/context";
 import { OperationFailure } from "../../operations/errors";
 import { requestUpdate } from "./actions";
+import { readUpdateBatchPlan, requestUpdateBatch } from "./batch";
 import { readUpdateSources, readUpdateReport, staleUpdateReport } from "./inventory";
 import { readUpdatePolicies, writeUpdatePolicy } from "./policies";
 import { matchesUpdateTarget, updateControl } from "./selection";
@@ -30,6 +33,39 @@ async function verifyOperator(context: OperationsContext, capability: Capability
 }
 
 export const updatesRouter = trpc.router({
+    batchPlan: trpc.procedure.input(updateBatchScopeSchema).query(({ ctx, input }) =>
+        runOperation(async () => {
+            const { operations } = authorizedOperations(ctx, "updates:read");
+            return readUpdateBatchPlan(
+                operations.client,
+                operations.updateSources ?? [],
+                operations.updateTargets ?? [],
+                operations.registry,
+                input.source
+            );
+        })
+    ),
+    batchRequest: trpc.procedure
+        .input(updateBatchRequestSchema)
+        .mutation(({ ctx, input }) =>
+            runOperation(async () => {
+                const { operations, principal } = authorizedOperations(
+                    ctx,
+                    "updates:apply"
+                );
+                requireCapability(principal, "jobs:run");
+                if (principal.kind === "human")
+                    await verifyOperator(ctx, "updates:apply");
+                return requestUpdateBatch(
+                    operations.client,
+                    operations.updateSources ?? [],
+                    operations.updateTargets ?? [],
+                    operations.registry,
+                    `${principal.kind}:${principal.id}`,
+                    input
+                );
+            })
+        ),
     policies: trpc.procedure.query(({ ctx }) =>
         runOperation(async () => {
             const { operations } = authorizedOperations(ctx, "updates:read");
