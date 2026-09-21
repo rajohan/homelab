@@ -1,7 +1,8 @@
 # Update management
 
 Reporting does not grant installation access. `updates.releases` remains read-only.
-The worker registers installers only for explicit `HOMELAB_DASHBOARD_UPDATE_TARGETS`.
+The worker registers installers only for explicit `HOMELAB_DASHBOARD_UPDATE_TARGETS`
+or `HOMELAB_DASHBOARD_UPDATE_TARGETS_FILE` configuration.
 All automatic policies default to **off**, including Docker and digest-pinned images.
 
 ## Authority and lifecycle
@@ -67,6 +68,36 @@ the new web/worker release. It widens only the existing job constraint for one-a
 non-retryable work and preserves existing jobs and history. Released migrations are unchanged.
 
 ## Deployment-owned targets
+
+The versioned [target registry](../apps/dashboard/config/update-targets.json) is a
+normal nonsecret JSON configuration file. It contains this installation's reviewed
+hosts, paths, service owners, fixed recipes and secret-reference names. The dashboard
+build copies it unchanged to `dist/config/update-targets.json`; the dashboard/worker
+image includes it at `/app/config/update-targets.json`. Auth does not include it, and
+the dashboard does not serve it as a browser asset or HTTP configuration endpoint.
+
+Select it explicitly with
+`HOMELAB_DASHBOARD_UPDATE_TARGETS_FILE=/app/config/update-targets.json` for **both**
+dashboard and worker. Remove the legacy inline `HOMELAB_DASHBOARD_UPDATE_TARGETS`
+setting rather than setting it to an empty value: specifying both fails startup.
+Other installations can select their own absolute, read-only mounted JSON file or
+continue using inline JSON. Missing files, symlinks, nonregular files, invalid UTF-8,
+files exceeding 1 MiB and invalid target schemas fail closed without an inline fallback.
+
+Shipping the file does not activate targets implicitly, provision access, enable
+automatic policies or execute updates. Source publisher registration is still required.
+SSH keys, tokens and secret values remain separately delivered to the worker only.
+The environment-loader commands are fixed source code; their outputs are never part
+of this file or image. They run on the target only when an approved update executes.
+
+Changes to this registry follow the normal PR, release and image-deployment process.
+Dashboard and worker must use the same artifact/configuration. File and inline loading
+share schema defaults and target fingerprints, so switching formats alone does not
+change consent; changing any effective target still invalidates previous consent.
+Never copy a development checkout's file into production to bypass that release.
+Qualify native ownership, updater capabilities and health checks before activation,
+including a current tested PBS backup for Nextcloud. Existing automatic policies
+remain off unless separately enabled by the operator.
 
 Example nonsecret configuration; paths refer to separately provisioned, read-only
 worker mounts. Do not put private key contents in this JSON or repository.

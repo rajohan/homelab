@@ -10,7 +10,7 @@ import {
 import type { BackupCatalogConfiguration } from "../integrations/backups/catalog";
 import type { LogsConfiguration } from "../integrations/logs/transport";
 import {
-    parseUpdateTargets,
+    loadUpdateTargets,
     type UpdateTarget,
 } from "../integrations/updates/configuration";
 
@@ -177,8 +177,9 @@ export function parseOperationsConfiguration(
         retentionDays > 365
     )
         throw new Error("Invalid worker concurrency or retention policy");
-    const updateTargets = parseUpdateTargets(
-        environment.HOMELAB_DASHBOARD_UPDATE_TARGETS
+    const updateTargets = loadUpdateTargets(
+        environment.HOMELAB_DASHBOARD_UPDATE_TARGETS,
+        environment.HOMELAB_DASHBOARD_UPDATE_TARGETS_FILE
     );
     if (
         updateTargets.some(

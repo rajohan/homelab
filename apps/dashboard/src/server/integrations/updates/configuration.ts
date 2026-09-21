@@ -1,3 +1,6 @@
+import { closeSync, constants, fstatSync, openSync, readSync } from "node:fs";
+import nodePath from "node:path";
+
 import { updateItemSchema } from "@homelab/contracts/updates";
 import * as v from "valibot";
 
@@ -99,6 +102,54 @@ const targetSchema = v.strictObject({
     driver: driverSchema,
 });
 export type UpdateTarget = v.InferOutput<typeof targetSchema>;
+
+/**
+ * Load the explicitly selected inline or packaged update-target configuration.
+ * @param value - Optional legacy inline JSON; cannot be combined with a file.
+ * @param file - Optional absolute path to a read-only deployment-owned JSON file.
+ * @returns Validated targets with the same defaults and authority fingerprints.
+ * @throws {Error} Configuration is ambiguous, unreadable, oversized or invalid.
+ */
+export function loadUpdateTargets(
+    value: string | undefined,
+    file: string | undefined
+): UpdateTarget[] {
+    if (file === undefined) return parseUpdateTargets(value);
+    if (value !== undefined)
+        throw new Error("Choose inline update targets or a target file, not both");
+    if (!nodePath.isAbsolute(file) || file.includes("\0"))
+        throw new Error("Update target file must use an absolute path");
+    const limit = 1_048_576;
+    const descriptor = openSync(
+        file,
+        constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK
+    );
+    try {
+        const metadata = fstatSync(descriptor);
+        if (!metadata.isFile() || metadata.size > limit)
+            throw new Error("Update target file must be a regular file within 1 MiB");
+        const buffer = Buffer.alloc(limit + 1);
+        let length = 0;
+        while (length < buffer.length) {
+            const count = readSync(
+                descriptor,
+                buffer,
+                length,
+                buffer.length - length,
+                null
+            );
+            if (count === 0) break;
+            length += count;
+        }
+        if (length > limit) throw new Error("Update target file exceeds 1 MiB");
+        const contents = new TextDecoder("utf-8", { fatal: true }).decode(
+            buffer.subarray(0, length)
+        );
+        return parseUpdateTargets(contents);
+    } finally {
+        closeSync(descriptor);
+    }
+}
 
 /**
  * Validate deployment-owned update targets independently of read-only publishers.
