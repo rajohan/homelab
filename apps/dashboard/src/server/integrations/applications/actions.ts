@@ -86,6 +86,13 @@ export async function performApplicationAction(
     const ordered = coordinated
         ? orderApplicationDependencies(details, inspected)
         : details;
+    const untouched = details.filter(
+        (detail) =>
+            !project &&
+            intent.operation !== "start" &&
+            detail.Id !== intent.selection.target &&
+            ["created", "exited"].includes(detail.State.Status)
+    );
     const mutated = new Set<string>();
     const revalidateMembership = async () => {
         const currentIds = await port.list(signal);
@@ -179,6 +186,19 @@ export async function performApplicationAction(
         )
             throw new Error("Application selection changed before execution");
         await revalidateMembership();
+        // Stopped consumers are part of the confirmation even when they receive
+        // no action. A late external start must not retain a provider's old namespace.
+        // Refuse changed state rather than silently expanding the approved start set.
+        for (const preserved of untouched) {
+            const current = await port.inspect(preserved.Id, signal);
+            if (
+                mapDockerApplication(target, current).revision !==
+                mapDockerApplication(target, preserved).revision
+            )
+                throw new Error(
+                    "A preserved container changed state; refresh and confirm the affected group again"
+                );
+        }
     };
     if (intent.operation === "stop" || (intent.operation === "restart" && coordinated)) {
         for (const detail of ordered.toReversed()) {

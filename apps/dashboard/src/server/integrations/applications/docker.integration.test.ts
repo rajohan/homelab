@@ -20,6 +20,88 @@ import {
     selectApplications,
 } from "./selection";
 
+test.each(["NetworkMode", "PidMode", "IpcMode"] as const)(
+    "%s late starts of preserved consumers fail before provider mutation",
+    async (namespace) => {
+        for (const status of ["created", "exited"] as const) {
+            for (const operation of ["stop", "restart"] as const) {
+                const fixture = createApplicationFixture();
+                try {
+                    const provider = fixture.containers.get("a".repeat(64))!;
+                    const consumer = fixture.containers.get("b".repeat(64))!;
+                    consumer.HostConfig[namespace] = `container:${provider.Id}`;
+                    consumer.State.Status = status;
+                    const port = createDockerPort(fixture.target, {});
+                    const signal = AbortSignal.timeout(3000);
+                    const selection = { kind: "container" as const, target: provider.Id };
+                    const inventory = await collectApplications(
+                        [fixture.target],
+                        () => port,
+                        signal
+                    );
+                    const revision = selectionRevision(
+                        selectApplications(inventory, fixture.target.id, selection, true),
+                        selection
+                    );
+                    const before = provider.State.StartedAt;
+                    let changed = false;
+                    await expectOperationFailure(
+                        performApplicationAction(
+                            fixture.target,
+                            port,
+                            { selection, revision, operation },
+                            signal,
+                            (message) => {
+                                if (!changed && message.startsWith("Stopping")) {
+                                    changed = true;
+                                    consumer.State.Status = "running";
+                                    consumer.State.StartedAt = "2026-09-01T11:00:00Z";
+                                }
+                                return Promise.resolve();
+                            }
+                        ),
+                        "preserved container changed"
+                    );
+                    expect(changed).toBe(true);
+                    expect(fixture.calls).toEqual([]);
+                    expect(provider.State.StartedAt).toBe(before);
+                    expect(consumer.State.Status).toBe("running");
+                    const current = await collectApplications(
+                        [fixture.target],
+                        () => port,
+                        signal
+                    );
+                    await performApplicationAction(
+                        fixture.target,
+                        port,
+                        {
+                            selection,
+                            operation,
+                            revision: selectionRevision(
+                                selectApplications(
+                                    current,
+                                    fixture.target.id,
+                                    selection,
+                                    true
+                                ),
+                                selection
+                            ),
+                        },
+                        signal
+                    );
+                    expect(fixture.calls).toEqual(
+                        operation === "stop"
+                            ? ["stop:web", "stop:database"]
+                            : ["stop:web", "stop:database", "start:database", "start:web"]
+                    );
+                } finally {
+                    await fixture.close();
+                }
+            }
+        }
+    }
+);
+
 function largeFixtureDetail(id: string) {
     const detail = applicationFixtureDetail(id, "large-metadata");
     detail.Mounts = Array.from({ length: 10 }, () => ({

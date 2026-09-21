@@ -1,7 +1,9 @@
 import type { UpdateReport } from "@homelab/contracts/updates";
+import type { SQL } from "bun";
 
 import type { Transaction } from "../../database/connection";
 import type { ApplicationTarget } from "../applications/configuration";
+import { boundHostSources } from "../hostBindings";
 import { updateResourceKeys, type UpdateTarget } from "./configuration";
 import { updateControl } from "./selection";
 
@@ -22,30 +24,11 @@ export function updateReceiptScope(
     targets: readonly UpdateTarget[],
     applications: readonly ApplicationTarget[]
 ): UpdateReceiptScope {
-    const sources = new Set([target.source]);
-    if (target.driver.kind === "docker") {
-        const hosts = new Map<string, string[]>();
-        for (const other of [target, ...targets]) {
-            if (other.driver.kind !== "docker") continue;
-            const host = other.host.toLowerCase();
-            const bound = hosts.get(host) ?? [];
-            bound.push(other.source);
-            hosts.set(host, bound);
-        }
-        const bindings = [
-            ...hosts.values(),
-            ...applications.map(
-                (application) => application.updateSources ?? [application.id]
-            ),
-        ];
-        let previousSize: number;
-        do {
-            previousSize = sources.size;
-            for (const bound of bindings)
-                if (bound.some((source) => sources.has(source)))
-                    for (const source of bound) sources.add(source);
-        } while (sources.size !== previousSize);
-    }
+    const sources = new Set(
+        target.driver.kind === "docker"
+            ? boundHostSources([target.source], [target, ...targets], applications)
+            : [target.source]
+    );
     return {
         sources: [...sources].toSorted(),
         targets: targets.filter((other) => sources.has(other.source)),
@@ -59,6 +42,30 @@ export function updateReceiptScope(
  */
 export function updateReceiptResourceKeys(scope: UpdateReceiptScope): string[] {
     return [...new Set(scope.targets.flatMap(updateResourceKeys))].toSorted();
+}
+
+/**
+ * Refuse queued work whose saved leases no longer cover current host/receipt bindings.
+ * @param client - Operational database containing the immutable admitted resource keys.
+ * @param runId - Running install or batch claim to verify before any installer executes.
+ * @param scopes - Current receipt scopes for every selected installer, checked together.
+ * @returns After verifying all required leases; never extends a live claim's authority.
+ */
+export async function verifyUpdateReceiptLeases(
+    client: SQL,
+    runId: string,
+    scopes: readonly UpdateReceiptScope[]
+): Promise<void> {
+    const keys = [
+        ...new Set(scopes.flatMap((scope) => updateReceiptResourceKeys(scope))),
+    ];
+    const [run] = await client<{ covered: boolean }[]>`
+        SELECT resource_keys @> ${client.array(keys, "TEXT")}::text[] AS covered
+        FROM job_runs WHERE id=${runId}`;
+    if (!run?.covered)
+        throw new Error(
+            "Update host bindings changed; refresh and confirm the update again"
+        );
 }
 
 /**

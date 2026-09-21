@@ -12,7 +12,11 @@ import { updateTargetRevision, type UpdateTarget } from "./configuration";
 import { executeUpdate, type UpdateExecutor } from "./execution";
 import { readUpdateReport, staleUpdateReport } from "./inventory";
 import { readUpdatePolicies } from "./policies";
-import { updateReceiptScope, updateReceiptResourceKeys } from "./receipts";
+import {
+    updateReceiptScope,
+    updateReceiptResourceKeys,
+    verifyUpdateReceiptLeases,
+} from "./receipts";
 import { matchesUpdateTarget, updateControl } from "./selection";
 
 const payloadSchema = v.strictObject({
@@ -61,6 +65,8 @@ export function updateActionJobs(
             >`SELECT created_at >= now() - interval '5 minutes' AS fresh FROM job_runs WHERE id=${context.runId}`;
             if (!run?.fresh || input.target !== target.id)
                 throw new Error("Update authorization expired");
+            const receiptScope = updateReceiptScope(target, targets, applications);
+            await verifyUpdateReceiptLeases(client, context.runId, [receiptScope]);
             const report = await readUpdateReport(client, target.source);
             const item = report?.items.find((candidate) => candidate.id === input.item);
             if (!report || !item) throw new Error("Update observation is unavailable");
@@ -85,7 +91,7 @@ export function updateActionJobs(
                 input.automatic,
                 context,
                 execute,
-                updateReceiptScope(target, targets, applications)
+                receiptScope
             );
         },
     }));

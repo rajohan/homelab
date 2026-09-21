@@ -2,6 +2,7 @@ import { applicationHostSchema } from "@homelab/contracts/applications";
 import * as v from "valibot";
 
 import { hostResourceKey } from "../../jobs/resources";
+import { boundHostSources } from "../hostBindings";
 import { updateTargetSourceSchema } from "../updates/configuration";
 
 const secretName = v.pipe(v.string(), v.regex(/^HOMELAB_DASHBOARD_[A-Z0-9_]{1,100}$/));
@@ -94,17 +95,22 @@ export function bindApplicationHosts(
         throw new Error(
             "Docker updater sources require an explicit application host binding (matching id or updateSources)"
         );
-    return applications.map((application) => ({
-        ...application,
-        controlHosts: [
-            ...new Set([
-                new URL(application.endpoint).hostname,
-                ...updates
-                    .filter((target) => sources(application).includes(target.source))
-                    .map((target) => target.host),
-            ]),
-        ].toSorted(),
-    }));
+    return applications.map((application) => {
+        const bound = new Set(
+            boundHostSources(sources(application), updates, applications)
+        );
+        return {
+            ...application,
+            controlHosts: [
+                ...new Set([
+                    new URL(application.endpoint).hostname,
+                    ...updates
+                        .filter((target) => bound.has(target.source))
+                        .map((target) => target.host),
+                ]),
+            ].toSorted(),
+        };
+    });
 }
 
 /**

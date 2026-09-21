@@ -190,6 +190,41 @@ export async function main(): Promise<void> {
         assert.equal(await namespace(consumer), await namespace(provider));
         let observed = await state(stopped);
         assert.equal(observed.Status, "created");
+        const lateStartIntent = await intent(provider, "restart");
+        const unchangedProvider = await state(provider);
+        const unchangedConsumer = await state(consumer);
+        let lateStart = false;
+        calls.length = 0;
+        await assert.rejects(
+            performApplicationAction(
+                target,
+                port,
+                lateStartIntent,
+                signal,
+                async (message) => {
+                    if (!lateStart && message.startsWith("Stopping")) {
+                        lateStart = true;
+                        await docker("start", stopped);
+                    }
+                }
+            ),
+            /preserved container changed/
+        );
+        assert.equal(lateStart, true);
+        assert.equal(
+            calls.length,
+            0,
+            "Late consumers must be detected before any coordinated stop"
+        );
+        const lateProvider = await state(provider);
+        const lateConsumer = await state(consumer);
+        assert.equal(lateProvider.StartedAt, unchangedProvider.StartedAt);
+        assert.equal(lateConsumer.StartedAt, unchangedConsumer.StartedAt);
+        assert.equal(await namespace(stopped), await namespace(provider));
+        await act(provider, "restart");
+        assert.equal(await namespace(stopped), await namespace(provider));
+        assert.equal(await namespace(consumer), await namespace(provider));
+        await docker("stop", "--time", "1", stopped);
         await act(provider, "stop");
         observed = await state(consumer);
         assert.equal(observed.Status, "exited");

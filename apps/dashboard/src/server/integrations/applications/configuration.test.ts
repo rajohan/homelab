@@ -20,6 +20,52 @@ const target = {
     },
 };
 
+test.each([false, true])(
+    "lifecycle locks close alternating aliases without treating APT/native edges as Docker bindings, reverse=%s",
+    (reverse) => {
+        const applications = [
+            { ...target, id: "first", updateSources: ["alpha", "beta"] },
+            { ...target, id: "second", updateSources: ["gamma", "delta", "read-only"] },
+            { ...target, id: "unrelated", updateSources: ["apt-bridge", "unrelated"] },
+        ];
+        const updates = [
+            { source: "alpha", host: "first.invalid", driver: { kind: "docker" } },
+            { source: "beta", host: "shared.invalid", driver: { kind: "docker" } },
+            { source: "gamma", host: "SHARED.invalid", driver: { kind: "docker" } },
+            { source: "delta", host: "apt.invalid", driver: { kind: "apt" } },
+            { source: "delta", host: "native.invalid", driver: { kind: "native" } },
+            { source: "apt-bridge", host: "shared.invalid", driver: { kind: "apt" } },
+            {
+                source: "unrelated",
+                host: "unrelated.invalid",
+                driver: { kind: "native" },
+            },
+        ];
+        const bound = bindApplicationHosts(
+            reverse ? applications.toReversed() : applications,
+            reverse ? updates.toReversed() : updates
+        );
+        for (const id of ["first", "second"]) {
+            const actual = bound.find((application) => application.id === id)!;
+            expect(applicationHostResourceKeys(actual).toSorted()).toEqual(
+                [
+                    "docker.example",
+                    "first.invalid",
+                    "shared.invalid",
+                    "apt.invalid",
+                    "native.invalid",
+                ]
+                    .map((host) => hostResourceKey(host))
+                    .toSorted()
+            );
+            expect(actual.projects).toEqual(target.projects);
+            expect(actual.updateSources).toEqual(
+                applications.find((application) => application.id === id)!.updateSources
+            );
+        }
+    }
+);
+
 test("Docker proxy and SSH addresses share physical host locks without broadening access", () => {
     const applications = parseApplicationTargets(JSON.stringify([target]));
     const [bound] = bindApplicationHosts(applications, [

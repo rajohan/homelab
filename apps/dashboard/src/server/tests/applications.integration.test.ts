@@ -20,12 +20,20 @@ import { hostResourceKey } from "../jobs/resources";
 import { createApplicationFixture } from "../testing/applications";
 import { operationFixture, expectOperationFailure } from "../testing/operations";
 
-test.each([false, true, "explicit"] as const)(
+test.each([false, true, "explicit", "transitive-apt", "transitive-native"] as const)(
     "lifecycle admission leases its physical host across different endpoint aliases=%s",
     async (alias) => {
         const database = await operationFixture(),
             docker = createApplicationFixture();
         try {
+            const transitive =
+                typeof alias === "string" && alias.startsWith("transitive-");
+            const directTarget =
+                alias === "explicit"
+                    ? { ...docker.target, updateSources: ["ssh-demo"] }
+                    : docker.target;
+            const directSource = alias === "explicit" ? "ssh-demo" : docker.target.id;
+            const directLeaseCount = alias ? 3 : 2;
             const other = {
                 ...docker.target,
                 id: "other",
@@ -34,18 +42,43 @@ test.each([false, true, "explicit"] as const)(
             const targets = alias
                 ? bindApplicationHosts(
                       [
-                          alias === "explicit"
-                              ? { ...docker.target, updateSources: ["ssh-demo"] }
-                              : docker.target,
-                          other,
+                          transitive
+                              ? { ...docker.target, updateSources: ["alpha", "beta"] }
+                              : directTarget,
+                          transitive
+                              ? { ...other, updateSources: ["gamma", "delta"] }
+                              : other,
                       ],
                       [
                           {
-                              source:
-                                  alias === "explicit" ? "ssh-demo" : docker.target.id,
-                              host: "192.0.2.10",
+                              source: transitive ? "alpha" : directSource,
+                              host: transitive ? "first.invalid" : "192.0.2.10",
                               driver: { kind: "docker" },
                           },
+                          ...(transitive
+                              ? [
+                                    {
+                                        source: "beta",
+                                        host: "shared.invalid",
+                                        driver: { kind: "docker" },
+                                    },
+                                    {
+                                        source: "gamma",
+                                        host: "shared.invalid",
+                                        driver: { kind: "docker" },
+                                    },
+                                    {
+                                        source: "delta",
+                                        host: "192.0.2.10",
+                                        driver: {
+                                            kind:
+                                                alias === "transitive-apt"
+                                                    ? "apt"
+                                                    : "native",
+                                        },
+                                    },
+                                ]
+                              : []),
                       ]
                   )
                 : [docker.target, other];
@@ -82,7 +115,9 @@ test.each([false, true, "explicit"] as const)(
                 otherKey = hostResourceKey("other.invalid");
             expect(lifecycle.resource_keys).toContain("applications:inventory");
             expect(lifecycle.resource_keys).toContain(selectedKey);
-            expect(lifecycle.resource_keys).toHaveLength(alias ? 3 : 2);
+            expect(lifecycle.resource_keys).toHaveLength(
+                transitive ? 5 : directLeaseCount
+            );
             for (const [key, host] of [
                 ["fixture.update.selected", selectedKey],
                 ["fixture.update.other", otherKey],

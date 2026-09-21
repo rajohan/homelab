@@ -17,7 +17,11 @@ import { applyUpdate, updateTimeoutMs } from "./apply";
 import type { UpdateTarget } from "./configuration";
 import type { UpdateExecutor } from "./execution";
 import { readUpdateReport } from "./inventory";
-import { updateReceiptScope, updateReceiptResourceKeys } from "./receipts";
+import {
+    updateReceiptScope,
+    updateReceiptResourceKeys,
+    verifyUpdateReceiptLeases,
+} from "./receipts";
 import { matchesUpdateTarget, updateControl } from "./selection";
 
 const entryBudgetMs = updateTimeoutMs + 30_000;
@@ -206,6 +210,23 @@ export function updateBatchJobs(
                 if (input.source !== source)
                     throw new Error("Batch update authorization expired");
                 await checkBatchAdmission(client, context.runId);
+                // Check the whole selected batch before even its first installer.
+                const receiptScopes = new Map(
+                    input.items.map((entry) => {
+                        const target = owned.find(
+                            (candidate) => candidate.id === entry.target
+                        );
+                        if (!target)
+                            throw new Error("An approved update is no longer configured");
+                        return [
+                            target.id,
+                            updateReceiptScope(target, targets, applications),
+                        ] as const;
+                    })
+                );
+                await verifyUpdateReceiptLeases(client, context.runId, [
+                    ...receiptScopes.values(),
+                ]);
                 // Update consumers before their provider. Provider recreation then
                 // keeps their newly approved images; it cannot stale a later item ID.
                 const ordered: typeof input.items = [];
@@ -248,7 +269,10 @@ export function updateBatchJobs(
                     const item = report?.items.find(
                         (candidate) => candidate.id === entry.item
                     );
-                    if (!target || !report || !item)
+                    const receiptScope = target
+                        ? receiptScopes.get(target.id)
+                        : undefined;
+                    if (!target || !report || !item || !receiptScope)
                         throw new Error(
                             "An approved update is no longer available; remaining updates were not started"
                         );
@@ -277,7 +301,7 @@ export function updateBatchJobs(
                                     context.reportProgress(`${prefix}: ${message}`),
                             },
                             execute,
-                            updateReceiptScope(target, targets, applications)
+                            receiptScope
                         );
                     } catch (error) {
                         if (!context.signal.aborted)

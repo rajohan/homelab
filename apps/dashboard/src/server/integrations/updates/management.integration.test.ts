@@ -906,6 +906,161 @@ async function fixture(
     return { ...state, operations, caller, calls, report, handlers, run, principal };
 }
 
+test("a later batch item's new receipt leases are checked before the first APT installer", async () => {
+    const state = await batchFixture(false, true);
+    try {
+        const plan = await state.caller.updates.batchPlan({ source: "alpha" });
+        expect(plan.eligible).toBeGreaterThan(1);
+        await state.caller.updates.batchRequest({
+            source: "alpha",
+            revision: plan.revision,
+            requestId: crypto.randomUUID(),
+        });
+        const worker = await state.registerWorker();
+        const action = updateBatchKey("alpha");
+        const claim = await claimJob(state.client, worker, [action]);
+        if (!claim) throw new Error("Expected batch claim");
+        let executed = 0;
+        const handler = updateActionJobs(
+            state.targets,
+            state.client,
+            (_target, software) => {
+                executed += 1;
+                return Promise.resolve({
+                    installed: software.available!,
+                    rebootRequired: false,
+                });
+            },
+            [
+                {
+                    id: "docker",
+                    label: "Docker",
+                    endpoint: "https://docker.invalid",
+                    projects: ["demo"],
+                    updateSources: ["alpha", "beta"],
+                },
+            ]
+        ).find((candidate) => candidate.definition.key === action)!;
+        await expectOperationFailure(
+            handler.execute(claim.payload, {
+                runId: claim.id,
+                leaseToken: claim.lease_token,
+                signal: AbortSignal.timeout(5000),
+                reportProgress: () => Promise.resolve(),
+                commit: (write, queue) => commitClaim(state.client, claim, write, queue),
+            }),
+            "host bindings changed"
+        );
+        expect(executed).toBe(0);
+    } finally {
+        await state.close();
+    }
+});
+
+test.each(["install", "batch"] as const)(
+    "%s revalidates current receipt and host leases before execution",
+    async (mode) => {
+        for (const scenario of [
+            "binding",
+            "ssh",
+            "same-source",
+            "unchanged",
+            "same-keys",
+        ] as const) {
+            const state = await fixture();
+            try {
+                const action =
+                    mode === "install"
+                        ? `updates.install.${target.id}`
+                        : updateBatchKey(target.source);
+                if (mode === "install")
+                    await state.caller.updates.request({
+                        target: target.id,
+                        item: item.id,
+                        revision: updateControl(target, state.report, item).revision,
+                        requestId: crypto.randomUUID(),
+                    });
+                else {
+                    const plan = await state.caller.updates.batchPlan({
+                        source: target.source,
+                    });
+                    expect(plan.eligible).toBe(1);
+                    await state.caller.updates.batchRequest({
+                        source: target.source,
+                        revision: plan.revision,
+                        requestId: crypto.randomUUID(),
+                    });
+                }
+                const before = await state.client<
+                    { key: string; value: unknown }[]
+                >`SELECT key,value FROM operation_snapshots WHERE key LIKE 'updates%' ORDER BY key`;
+                const [admitted] = await state.client<
+                    { resource_keys: string[] }[]
+                >`SELECT resource_keys FROM job_runs WHERE action=${action}`;
+                const peer: UpdateTarget = {
+                    ...target,
+                    id: "peer",
+                    source: ["same-source", "same-keys"].includes(scenario)
+                        ? target.source
+                        : "peer",
+                    host: ["ssh", "same-keys"].includes(scenario)
+                        ? target.host
+                        : "peer.invalid",
+                };
+                const currentTargets =
+                    scenario === "unchanged" ? [target] : [peer, target];
+                const applications =
+                    scenario === "binding"
+                        ? [
+                              {
+                                  id: "docker",
+                                  label: "Docker",
+                                  endpoint: "https://docker.invalid",
+                                  projects: ["demo"],
+                                  updateSources: [target.source, peer.source],
+                              },
+                          ]
+                        : [];
+                let executed = 0;
+                const handler = updateActionJobs(
+                    currentTargets,
+                    state.client,
+                    (_target, software) => {
+                        executed += 1;
+                        return Promise.resolve({
+                            installed: software.available!,
+                            rebootRequired: false,
+                            containerId: "f".repeat(64),
+                        });
+                    },
+                    applications
+                ).find((candidate) => candidate.definition.key === action)!;
+                if (["unchanged", "same-keys"].includes(scenario)) {
+                    await state.run(handler);
+                    expect(executed).toBe(1);
+                } else {
+                    await expectOperationFailure(
+                        state.run(handler),
+                        "host bindings changed"
+                    );
+                    expect(executed).toBe(0);
+                    expect(
+                        await state.client<
+                            { key: string; value: unknown }[]
+                        >`SELECT key,value FROM operation_snapshots WHERE key LIKE 'updates%' ORDER BY key`
+                    ).toEqual(before);
+                }
+                const [after] = await state.client<
+                    { resource_keys: string[] }[]
+                >`SELECT resource_keys FROM job_runs WHERE action=${action}`;
+                expect(after!.resource_keys).toEqual(admitted!.resource_keys);
+            } finally {
+                await state.close();
+            }
+        }
+    }
+);
+
 test("manual Docker updates require current confirmation, MFA and permission and preserve idempotency", async () => {
     const state = await fixture();
     try {
