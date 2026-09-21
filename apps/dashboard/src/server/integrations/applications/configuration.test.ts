@@ -22,9 +22,9 @@ const target = {
 test("Docker proxy and SSH addresses share physical host locks without broadening access", () => {
     const applications = parseApplicationTargets(JSON.stringify([target]));
     const [bound] = bindApplicationHosts(applications, [
-        { source: "main", host: "192.0.2.10" },
-        { source: "main", host: "192.0.2.10" },
-        { source: "other", host: "192.0.2.20" },
+        { source: "main", host: "192.0.2.10", driver: { kind: "docker" } },
+        { source: "main", host: "192.0.2.10", driver: { kind: "apt" } },
+        { source: "other", host: "192.0.2.20", driver: { kind: "apt" } },
     ]);
     expect(bound).toBeDefined();
     expect(applicationHostResourceKeys(bound!)).toContain(
@@ -34,6 +34,33 @@ test("Docker proxy and SSH addresses share physical host locks without broadenin
     expect(applicationHostResourceKeys(bound!)).toHaveLength(2);
     expect(bound!.projects).toEqual(target.projects);
     expect(bound!.endpoint).toBe(target.endpoint);
+});
+
+test("Docker updater source aliases require an explicit lifecycle host binding", () => {
+    const applications = parseApplicationTargets(JSON.stringify([target]));
+    const updates = [
+        { source: "ssh-main", host: "192.0.2.10", driver: { kind: "docker" } },
+    ];
+    expect(() => bindApplicationHosts(applications, updates)).toThrow(
+        "explicit application host binding"
+    );
+    expect(bindApplicationHosts([], updates)).toEqual([]);
+    expect(bindApplicationHosts(applications, [])).toHaveLength(1);
+    const [bound] = bindApplicationHosts(
+        parseApplicationTargets(
+            JSON.stringify([{ ...target, updateSources: ["main", "ssh-main"] }])
+        ),
+        updates
+    );
+    expect(applicationHostResourceKeys(bound!)).toContain(hostResourceKey("192.0.2.10"));
+    expect(applicationHostResourceKeys(bound!)).toContain(
+        hostResourceKey("docker.example")
+    );
+    expect(bound!.projects).toEqual(target.projects);
+    for (const updateSources of [[], ["main", "main"], ["invalid source"]])
+        expect(() =>
+            parseApplicationTargets(JSON.stringify([{ ...target, updateSources }]))
+        ).toThrow();
 });
 
 test("historical log mappings are explicit, bounded and cannot overlap other projects", () => {

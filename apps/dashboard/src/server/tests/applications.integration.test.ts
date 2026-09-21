@@ -20,7 +20,7 @@ import { hostResourceKey } from "../jobs/resources";
 import { createApplicationFixture } from "../testing/applications";
 import { operationFixture, expectOperationFailure } from "../testing/operations";
 
-test.each([false, true])(
+test.each([false, true, "explicit"] as const)(
     "lifecycle admission leases its physical host across different endpoint aliases=%s",
     async (alias) => {
         const database = await operationFixture(),
@@ -33,8 +33,20 @@ test.each([false, true])(
             };
             const targets = alias
                 ? bindApplicationHosts(
-                      [docker.target, other],
-                      [{ source: docker.target.id, host: "192.0.2.10" }]
+                      [
+                          alias === "explicit"
+                              ? { ...docker.target, updateSources: ["ssh-demo"] }
+                              : docker.target,
+                          other,
+                      ],
+                      [
+                          {
+                              source:
+                                  alias === "explicit" ? "ssh-demo" : docker.target.id,
+                              host: "192.0.2.10",
+                              driver: { kind: "docker" },
+                          },
+                      ]
                   )
                 : [docker.target, other];
             const registry = createJobRegistry(applicationJobs(targets, database.client));

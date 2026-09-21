@@ -45,6 +45,9 @@ const schema = v.pipe(
             label: v.pipe(v.string(), v.minLength(1), v.maxLength(80)),
             endpoint: v.string(),
             projects: v.pipe(v.array(projectName), v.minLength(1), v.maxLength(50)),
+            updateSources: v.optional(
+                v.pipe(v.array(applicationHostSchema), v.minLength(1), v.maxLength(50))
+            ),
             tls: v.optional(
                 v.strictObject({
                     ca: secretName,
@@ -65,19 +68,38 @@ export type ApplicationTarget = v.InferOutput<typeof schema>[number] & {
  * Coordinate Docker endpoints with the SSH hosts in the same deployment-owned source.
  * @param applications - Validated endpoints and project allowlists.
  * @param updates - Configured software targets; no access is inferred or granted.
- * @returns Docker targets holding every corresponding host lock as well as their endpoint lock.
+ * @returns Docker targets holding every explicitly linked host lock plus their endpoint lock; unbound Docker updater sources are rejected when lifecycle control is configured.
  */
 export function bindApplicationHosts(
     applications: readonly ApplicationTarget[],
-    updates: readonly { readonly source: string; readonly host: string }[]
+    updates: readonly {
+        readonly source: string;
+        readonly host: string;
+        readonly driver: { readonly kind: string };
+    }[]
 ): readonly ApplicationTarget[] {
+    const sources = (application: ApplicationTarget) =>
+        application.updateSources ?? [application.id];
+    if (
+        applications.length > 0 &&
+        updates.some(
+            (target) =>
+                target.driver.kind === "docker" &&
+                !applications.some((application) =>
+                    sources(application).includes(target.source)
+                )
+        )
+    )
+        throw new Error(
+            "Docker updater sources require an explicit application host binding (matching id or updateSources)"
+        );
     return applications.map((application) => ({
         ...application,
         controlHosts: [
             ...new Set([
                 new URL(application.endpoint).hostname,
                 ...updates
-                    .filter((target) => target.source === application.id)
+                    .filter((target) => sources(application).includes(target.source))
                     .map((target) => target.host),
             ]),
         ].toSorted(),
@@ -131,6 +153,11 @@ export function parseApplicationTargets(
             );
         if (new Set(target.projects).size !== target.projects.length)
             throw new Error("Application project allowlists must be unique");
+        if (
+            target.updateSources &&
+            new Set(target.updateSources).size !== target.updateSources.length
+        )
+            throw new Error("Application update source bindings must be unique");
         if (
             target.logs?.serviceValue === "service" &&
             target.projects.length > 1 &&

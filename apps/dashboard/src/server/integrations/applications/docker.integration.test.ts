@@ -31,6 +31,92 @@ function largeFixtureDetail(id: string) {
     return detail;
 }
 
+test.each([
+    "add-same",
+    "add-other",
+    "remove-same",
+    "remove-other",
+    "vanishing-addition",
+    "new-consumer",
+    "replaced-consumer",
+    "cross-project-consumer",
+] as const)(
+    "container restart fences only its coordinated namespace group during %s",
+    async (change) => {
+        const fixture = createApplicationFixture();
+        try {
+            const target = { ...fixture.target, projects: ["demo", "other"] };
+            const provider = fixture.containers.get("a".repeat(64))!;
+            const consumer = fixture.containers.get("b".repeat(64))!;
+            consumer.HostConfig.NetworkMode = `container:${provider.Id}`;
+            const unrelated = applicationFixtureDetail("d".repeat(64), "unrelated");
+            if (change.endsWith("other"))
+                unrelated.Config.Labels!["com.docker.compose.project"] = "other";
+            fixture.containers.set(unrelated.Id, unrelated);
+            const port = createDockerPort(target, {});
+            const inventory = await collectApplications(
+                [target],
+                () => port,
+                AbortSignal.timeout(3000)
+            );
+            const selection = { kind: "container" as const, target: provider.Id };
+            const revision = selectionRevision(
+                selectApplications(inventory, target.id, selection, true),
+                selection
+            );
+            const added = applicationFixtureDetail("e".repeat(64), "added");
+            if (change === "add-other" || change === "cross-project-consumer")
+                added.Config.Labels!["com.docker.compose.project"] = "other";
+            if (change.includes("consumer"))
+                added.HostConfig.NetworkMode = `container:${provider.Id}`;
+            const changing: DockerPort = {
+                ...port,
+                inspect: async (id, signal) => {
+                    if (id === added.Id && change === "vanishing-addition")
+                        fixture.containers.delete(id);
+                    return port.inspect(id, signal);
+                },
+                act: async (id, operation, signal) => {
+                    await port.act(id, operation, signal);
+                    if (fixture.calls.length !== 1) return;
+                    if (change.startsWith("remove-"))
+                        fixture.containers.delete(unrelated.Id);
+                    else fixture.containers.set(added.Id, added);
+                    if (change === "replaced-consumer")
+                        fixture.containers.delete(consumer.Id);
+                },
+            };
+            const result = performApplicationAction(
+                target,
+                changing,
+                { selection, revision, operation: "restart" },
+                AbortSignal.timeout(3000)
+            );
+            if (change.includes("consumer")) {
+                await expectOperationFailure(
+                    result,
+                    change === "cross-project-consumer"
+                        ? "project boundaries"
+                        : "membership changed"
+                );
+                expect(fixture.calls).toEqual(["stop:web"]);
+            } else {
+                await result;
+                expect(fixture.calls).toEqual([
+                    "stop:web",
+                    "stop:database",
+                    "start:database",
+                    "start:web",
+                ]);
+                expect(provider.State.Status).toBe("running");
+                expect(consumer.State.Status).toBe("running");
+            }
+        } finally {
+            await fixture.close();
+        }
+    }
+);
+
 test.each(["NetworkMode", "PidMode", "IpcMode"] as const)(
     "%s provider restart coordinates the confirmed namespace group",
     async (kind) => {

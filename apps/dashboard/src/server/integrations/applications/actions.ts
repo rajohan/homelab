@@ -99,10 +99,48 @@ export async function performApplicationAction(
             intent.selection.kind === "project" ? intent.selection.target : undefined
         );
         if (
-            currentIds.length !== ids.length ||
-            currentIds.some((id) => !ids.includes(id))
+            project
+                ? currentIds.length !== ids.length ||
+                  currentIds.some((id) => !ids.includes(id))
+                : details.some((detail) => !currentIds.includes(detail.Id))
         )
             throw new Error("Application project membership changed before execution");
+        if (project) return;
+        // Existing container IDs bind immutable namespace membership. Only newly
+        // discovered IDs can extend the confirmed group; unrelated churn is safe.
+        const additions: DockerDetail[] = [];
+        for (const id of currentIds.filter((id) => !ids.includes(id))) {
+            try {
+                additions.push(await port.inspect(id, signal));
+            } catch (error) {
+                signal.throwIfAborted();
+                const remainingIds = await port.list(signal);
+                if (remainingIds.includes(id)) throw error;
+            }
+        }
+        const currentScope = selectApplications(
+            {
+                capturedAt: new Date().toISOString(),
+                hosts: [
+                    {
+                        id: target.id,
+                        label: target.label,
+                        available: true,
+                        applications: [...details, ...additions].map((detail) =>
+                            mapDockerApplication(target, detail)
+                        ),
+                    },
+                ],
+            },
+            target.id,
+            intent.selection,
+            true
+        );
+        if (
+            currentScope.length !== details.length ||
+            currentScope.some((item) => !scopeIds.has(item.containerId))
+        )
+            throw new Error("Application namespace membership changed before execution");
     };
     if (intent.operation !== "stop") {
         try {

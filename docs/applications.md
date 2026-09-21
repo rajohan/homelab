@@ -67,11 +67,20 @@ provider IDs are rejected before stopping a running consumer: lifecycle actions 
 not silently recreate containers or repair their configuration. Cross-project
 namespace groups fail closed.
 
-Application host IDs must match the corresponding update reporting source IDs.
-Configuration binds the Docker endpoint and that source's SSH host addresses to the
+Application host IDs default to the corresponding update reporting source IDs.
+If their names differ, set the application's explicit `updateSources` list to the
+reporting source IDs for that same physical host. With lifecycle control configured,
+every Docker updater source must have such a binding; startup rejects unbound sources.
+Update-only deployments with no lifecycle targets remain supported, and unrelated
+APT/native-only hosts do not require Docker lifecycle access.
+Configuration binds the Docker endpoint and those sources' SSH host addresses to the
 same job resource leases, even when Docker uses a bridge IP and SSH uses a LAN IP.
 Lifecycle admission acquires all these keys; execution checks that the saved job
 still holds the current keys. Unrelated hosts can execute concurrently.
+For a container action, membership checks cover its confirmed namespace group, not
+unrelated containers on the host. Newly discovered namespace consumers still invalidate
+the confirmation, including cross-project consumers. Whole-project actions continue to
+require exact project membership throughout execution.
 
 Discovery accepts at most 20 hosts and 200 containers per host. Each inspect response is
 limited to 512 KiB, with at most 32 networks, 128 exposed ports, eight bindings per port and
