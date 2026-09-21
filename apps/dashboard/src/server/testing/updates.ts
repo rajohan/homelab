@@ -4,6 +4,7 @@ import type { SQL } from "bun";
 import { updateActionJobs } from "../integrations/updates/actions";
 import { parseUpdateTargets } from "../integrations/updates/configuration";
 import type { UpdateExecutor } from "../integrations/updates/execution";
+import { restartStatusJob } from "../integrations/updates/restart";
 import type { JobHandler } from "../jobs/types";
 
 const connection = {
@@ -57,10 +58,54 @@ export const previewUpdateTargets = parseUpdateTargets(
                 health: ["/nonexistent/demo", "health"],
             },
         },
+        ...(
+            ["bun", "node", "github-cli", "codex", "adguardhome-sync", "alloy"] as const
+        ).map((release) => ({
+            ...connection,
+            id: `demo-${release}`,
+            label: {
+                bun: "Bun",
+                node: "Node.js",
+                "github-cli": "GitHub CLI",
+                codex: "Codex CLI",
+                alloy: "Grafana Alloy",
+                "adguardhome-sync": "AdGuard Home Sync",
+            }[release],
+            driver: {
+                kind: "native",
+                item: `${["bun", "node", "github-cli"].includes(release) ? "runtime" : "application"}:${release}`,
+                release,
+                inspect: ["/nonexistent/demo", "--version"],
+                install: ["/nonexistent/demo", "install", "{version}"],
+                health: ["/nonexistent/demo", "health"],
+            },
+        })),
     ])
 );
 
 export const previewUpdateItems: readonly UpdateItem[] = [
+    ...previewUpdateTargets
+        .filter(
+            (target) => target.driver.kind === "native" && target.id !== "demo-failure"
+        )
+        .map((target): UpdateItem => {
+            if (target.driver.kind !== "native")
+                throw new Error("Invalid synthetic target");
+            return {
+                id: target.driver.item,
+                release: target.driver.release,
+                name: target.label,
+                kind: target.driver.item.startsWith("runtime:")
+                    ? "runtime"
+                    : "application",
+                installed: "1.2.3",
+                available: "1.3.0",
+                status: "available",
+                security: false,
+                held: false,
+                candidateVerified: true,
+            };
+        }),
     {
         id: "docker:" + "d".repeat(64),
         name: "demo-web",
@@ -169,6 +214,12 @@ export function previewUpdateJobs(
             (job) => !job.definition.key.startsWith("updates.")
         ),
         ...updateActionJobs(previewUpdateTargets, client, executePreviewUpdate),
+        restartStatusJob(previewUpdateTargets, async (target) => {
+            const [row] = await client<
+                { required: boolean | null }[]
+            >`SELECT value->'rebootRequired' AS required FROM operation_snapshots WHERE key=${`updates:${target.source}`}`;
+            return row?.required ?? null;
+        }),
         ...[...registry.values()]
             .filter((job) => job.definition.key === "updates.releases")
             .map((job) => ({

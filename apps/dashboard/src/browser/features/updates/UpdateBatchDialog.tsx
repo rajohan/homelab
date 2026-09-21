@@ -81,6 +81,7 @@ export function UpdateBatchDialog({
                             columns={[
                                 {
                                     id: "software",
+                                    sortValue: (row) => row.item.name,
                                     label: "Software",
                                     mobile: "title",
                                     render: (entry) => (
@@ -96,23 +97,27 @@ export function UpdateBatchDialog({
                                 },
                                 {
                                     id: "source",
+                                    sortValue: (row) => row.sourceLabel,
                                     label: "Host",
                                     render: (entry) => entry.sourceLabel,
                                 },
                                 {
                                     id: "installed",
+                                    sortValue: (row) => row.item.installed,
                                     label: "Installed",
                                     render: (entry) =>
                                         updateVersion(entry.item, "installed"),
                                 },
                                 {
                                     id: "available",
+                                    sortValue: (row) => row.item.available,
                                     label: "Available",
                                     render: (entry) =>
                                         updateVersion(entry.item, "available"),
                                 },
                                 {
                                     id: "included",
+                                    sortValue: (row) => row.control?.allowed ?? false,
                                     label: "Status",
                                     render: (entry) => (
                                         <Badge

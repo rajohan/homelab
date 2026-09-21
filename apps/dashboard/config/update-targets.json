@@ -2000,5 +2000,1301 @@
                 "import json,urllib.request; s=json.load(urllib.request.urlopen('https://nextcloud.home.rajohan.no/status.php',timeout=10)); assert s.get('installed') is True and s.get('maintenance') is False and s.get('needsDbUpgrade') is False"
             ]
         }
+    },
+    {
+        "id": "main-node-exporter",
+        "label": "Node Exporter on main",
+        "source": "main",
+        "host": "192.168.1.11",
+        "user": "homelab-updater",
+        "port": 22,
+        "identityFile": "/run/secrets/updates/main",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "application:node-exporter",
+            "release": "node-exporter",
+            "recipe": {
+                "application": "node-exporter",
+                "binary": "/usr/local/bin/node_exporter",
+                "service": "node-exporter.service"
+            },
+            "health": [
+                "/usr/bin/curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--max-time",
+                "10",
+                "--retry",
+                "5",
+                "--retry-all-errors",
+                "--retry-delay",
+                "2",
+                "--output",
+                "/dev/null",
+                "http://127.0.0.1:9100/metrics"
+            ]
+        }
+    },
+    {
+        "id": "main-alloy",
+        "label": "Grafana Alloy on main",
+        "source": "main",
+        "host": "192.168.1.11",
+        "user": "homelab-updater",
+        "port": 22,
+        "identityFile": "/run/secrets/updates/main",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "application:alloy",
+            "release": "alloy",
+            "recipe": {
+                "application": "alloy",
+                "binary": "/usr/local/libexec/homelab-logging/alloy-1.19.2",
+                "service": "alloy.service"
+            },
+            "health": [
+                "/usr/bin/curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--max-time",
+                "10",
+                "--retry",
+                "5",
+                "--retry-all-errors",
+                "--retry-delay",
+                "2",
+                "--output",
+                "/dev/null",
+                "http://127.0.0.1:12345/-/ready"
+            ]
+        }
+    },
+    {
+        "id": "pve-node-exporter",
+        "label": "Node Exporter on pve",
+        "source": "pve",
+        "host": "192.168.1.3",
+        "user": "homelab-updater",
+        "port": 22,
+        "identityFile": "/run/secrets/updates/pve",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "application:node-exporter",
+            "release": "node-exporter",
+            "recipe": {
+                "application": "node-exporter",
+                "binary": "/usr/local/bin/node_exporter",
+                "service": "node-exporter.service"
+            },
+            "health": [
+                "/usr/bin/curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--max-time",
+                "10",
+                "--retry",
+                "5",
+                "--retry-all-errors",
+                "--retry-delay",
+                "2",
+                "--output",
+                "/dev/null",
+                "http://127.0.0.1:9100/metrics"
+            ]
+        }
+    },
+    {
+        "id": "pve-alloy",
+        "label": "Grafana Alloy on pve",
+        "source": "pve",
+        "host": "192.168.1.3",
+        "user": "homelab-updater",
+        "port": 22,
+        "identityFile": "/run/secrets/updates/pve",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "application:alloy",
+            "release": "alloy",
+            "recipe": {
+                "application": "alloy",
+                "binary": "/usr/local/libexec/homelab-logging/alloy-1.19.2",
+                "service": "alloy.service"
+            },
+            "health": [
+                "/usr/bin/curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--max-time",
+                "10",
+                "--retry",
+                "5",
+                "--retry-all-errors",
+                "--retry-delay",
+                "2",
+                "--output",
+                "/dev/null",
+                "http://127.0.0.1:12345/-/ready"
+            ]
+        }
+    },
+    {
+        "id": "sentinel-node-exporter",
+        "label": "Node Exporter on sentinel",
+        "source": "sentinel",
+        "host": "192.168.1.4",
+        "user": "homelab-updater",
+        "port": 22,
+        "identityFile": "/run/secrets/updates/sentinel",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "application:node-exporter",
+            "release": "node-exporter",
+            "recipe": {
+                "application": "node-exporter",
+                "binary": "/usr/local/bin/node_exporter",
+                "service": "node-exporter.service"
+            },
+            "health": [
+                "/usr/bin/curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--max-time",
+                "10",
+                "--retry",
+                "5",
+                "--retry-all-errors",
+                "--retry-delay",
+                "2",
+                "--output",
+                "/dev/null",
+                "http://127.0.0.1:9100/metrics"
+            ]
+        }
+    },
+    {
+        "id": "sentinel-alloy",
+        "label": "Grafana Alloy on sentinel",
+        "source": "sentinel",
+        "host": "192.168.1.4",
+        "user": "homelab-updater",
+        "port": 22,
+        "identityFile": "/run/secrets/updates/sentinel",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "application:alloy",
+            "release": "alloy",
+            "recipe": {
+                "application": "alloy",
+                "binary": "/usr/local/libexec/homelab-logging/alloy-1.19.2",
+                "service": "alloy.service"
+            },
+            "health": [
+                "/usr/bin/curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--max-time",
+                "10",
+                "--retry",
+                "5",
+                "--retry-all-errors",
+                "--retry-delay",
+                "2",
+                "--output",
+                "/dev/null",
+                "http://127.0.0.1:12345/-/ready"
+            ]
+        }
+    },
+    {
+        "id": "adguard-node-exporter",
+        "label": "Node Exporter on adguard",
+        "source": "adguard",
+        "host": "192.168.1.12",
+        "user": "homelab-updater",
+        "port": 22,
+        "identityFile": "/run/secrets/updates/adguard",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "application:node-exporter",
+            "release": "node-exporter",
+            "recipe": {
+                "application": "node-exporter",
+                "binary": "/usr/local/bin/node_exporter",
+                "service": "node-exporter.service"
+            },
+            "health": [
+                "/usr/bin/curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--max-time",
+                "10",
+                "--retry",
+                "5",
+                "--retry-all-errors",
+                "--retry-delay",
+                "2",
+                "--output",
+                "/dev/null",
+                "http://127.0.0.1:9100/metrics"
+            ]
+        }
+    },
+    {
+        "id": "adguard-alloy",
+        "label": "Grafana Alloy on adguard",
+        "source": "adguard",
+        "host": "192.168.1.12",
+        "user": "homelab-updater",
+        "port": 22,
+        "identityFile": "/run/secrets/updates/adguard",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "application:alloy",
+            "release": "alloy",
+            "recipe": {
+                "application": "alloy",
+                "binary": "/usr/local/libexec/homelab-logging/alloy-1.19.2",
+                "service": "alloy.service"
+            },
+            "health": [
+                "/usr/bin/curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--max-time",
+                "10",
+                "--retry",
+                "5",
+                "--retry-all-errors",
+                "--retry-delay",
+                "2",
+                "--output",
+                "/dev/null",
+                "http://127.0.0.1:12345/-/ready"
+            ]
+        }
+    },
+    {
+        "id": "pbs-node-exporter",
+        "label": "Node Exporter on pbs",
+        "source": "pbs",
+        "host": "192.168.1.13",
+        "user": "homelab-updater",
+        "port": 22,
+        "identityFile": "/run/secrets/updates/pbs",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "application:node-exporter",
+            "release": "node-exporter",
+            "recipe": {
+                "application": "node-exporter",
+                "binary": "/usr/local/bin/node_exporter",
+                "service": "node-exporter.service"
+            },
+            "health": [
+                "/usr/bin/curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--max-time",
+                "10",
+                "--retry",
+                "5",
+                "--retry-all-errors",
+                "--retry-delay",
+                "2",
+                "--output",
+                "/dev/null",
+                "http://127.0.0.1:9100/metrics"
+            ]
+        }
+    },
+    {
+        "id": "pbs-alloy",
+        "label": "Grafana Alloy on pbs",
+        "source": "pbs",
+        "host": "192.168.1.13",
+        "user": "homelab-updater",
+        "port": 22,
+        "identityFile": "/run/secrets/updates/pbs",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "application:alloy",
+            "release": "alloy",
+            "recipe": {
+                "application": "alloy",
+                "binary": "/usr/local/libexec/homelab-logging/alloy-1.19.2",
+                "service": "alloy.service"
+            },
+            "health": [
+                "/usr/bin/curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--max-time",
+                "10",
+                "--retry",
+                "5",
+                "--retry-all-errors",
+                "--retry-delay",
+                "2",
+                "--output",
+                "/dev/null",
+                "http://127.0.0.1:12345/-/ready"
+            ]
+        }
+    },
+    {
+        "id": "mesh-node-exporter",
+        "label": "Node Exporter on mesh",
+        "source": "mesh",
+        "host": "192.168.1.14",
+        "user": "homelab-updater",
+        "port": 22,
+        "identityFile": "/run/secrets/updates/mesh",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "application:node-exporter",
+            "release": "node-exporter",
+            "recipe": {
+                "application": "node-exporter",
+                "binary": "/usr/local/bin/node_exporter",
+                "service": "node-exporter.service"
+            },
+            "health": [
+                "/usr/bin/curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--max-time",
+                "10",
+                "--retry",
+                "5",
+                "--retry-all-errors",
+                "--retry-delay",
+                "2",
+                "--output",
+                "/dev/null",
+                "http://127.0.0.1:9100/metrics"
+            ]
+        }
+    },
+    {
+        "id": "mesh-alloy",
+        "label": "Grafana Alloy on mesh",
+        "source": "mesh",
+        "host": "192.168.1.14",
+        "user": "homelab-updater",
+        "port": 22,
+        "identityFile": "/run/secrets/updates/mesh",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "application:alloy",
+            "release": "alloy",
+            "recipe": {
+                "application": "alloy",
+                "binary": "/usr/local/libexec/homelab-logging/alloy-1.19.2",
+                "service": "alloy.service"
+            },
+            "health": [
+                "/usr/bin/curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--max-time",
+                "10",
+                "--retry",
+                "5",
+                "--retry-all-errors",
+                "--retry-delay",
+                "2",
+                "--output",
+                "/dev/null",
+                "http://127.0.0.1:12345/-/ready"
+            ]
+        }
+    },
+    {
+        "id": "monitor-node-exporter",
+        "label": "Node Exporter on monitor",
+        "source": "monitor",
+        "host": "192.168.1.15",
+        "user": "homelab-updater",
+        "port": 22,
+        "identityFile": "/run/secrets/updates/monitor",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "application:node-exporter",
+            "release": "node-exporter",
+            "recipe": {
+                "application": "node-exporter",
+                "binary": "/usr/local/bin/node_exporter",
+                "service": "node-exporter.service"
+            },
+            "health": [
+                "/usr/bin/curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--max-time",
+                "10",
+                "--retry",
+                "5",
+                "--retry-all-errors",
+                "--retry-delay",
+                "2",
+                "--output",
+                "/dev/null",
+                "http://127.0.0.1:9100/metrics"
+            ]
+        }
+    },
+    {
+        "id": "monitor-alloy",
+        "label": "Grafana Alloy on monitor",
+        "source": "monitor",
+        "host": "192.168.1.15",
+        "user": "homelab-updater",
+        "port": 22,
+        "identityFile": "/run/secrets/updates/monitor",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "application:alloy",
+            "release": "alloy",
+            "recipe": {
+                "application": "alloy",
+                "binary": "/usr/local/libexec/homelab-logging/alloy-1.19.2",
+                "service": "alloy.service"
+            },
+            "health": [
+                "/usr/bin/curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--max-time",
+                "10",
+                "--retry",
+                "5",
+                "--retry-all-errors",
+                "--retry-delay",
+                "2",
+                "--output",
+                "/dev/null",
+                "http://127.0.0.1:12345/-/ready"
+            ]
+        }
+    },
+    {
+        "id": "db-node-exporter",
+        "label": "Node Exporter on db",
+        "source": "db",
+        "host": "192.168.1.17",
+        "user": "homelab-updater",
+        "port": 22,
+        "identityFile": "/run/secrets/updates/db",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "application:node-exporter",
+            "release": "node-exporter",
+            "recipe": {
+                "application": "node-exporter",
+                "binary": "/usr/local/bin/node_exporter",
+                "service": "node-exporter.service"
+            },
+            "health": [
+                "/usr/bin/curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--max-time",
+                "10",
+                "--retry",
+                "5",
+                "--retry-all-errors",
+                "--retry-delay",
+                "2",
+                "--output",
+                "/dev/null",
+                "http://127.0.0.1:9100/metrics"
+            ]
+        }
+    },
+    {
+        "id": "db-alloy",
+        "label": "Grafana Alloy on db",
+        "source": "db",
+        "host": "192.168.1.17",
+        "user": "homelab-updater",
+        "port": 22,
+        "identityFile": "/run/secrets/updates/db",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "application:alloy",
+            "release": "alloy",
+            "recipe": {
+                "application": "alloy",
+                "binary": "/usr/local/libexec/homelab-logging/alloy-1.19.2",
+                "service": "alloy.service"
+            },
+            "health": [
+                "/usr/bin/curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--max-time",
+                "10",
+                "--retry",
+                "5",
+                "--retry-all-errors",
+                "--retry-delay",
+                "2",
+                "--output",
+                "/dev/null",
+                "http://127.0.0.1:12345/-/ready"
+            ]
+        }
+    },
+    {
+        "id": "edge-node-exporter",
+        "label": "Node Exporter on edge",
+        "source": "edge",
+        "host": "192.168.1.18",
+        "user": "homelab-updater",
+        "port": 22,
+        "identityFile": "/run/secrets/updates/edge",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "application:node-exporter",
+            "release": "node-exporter",
+            "recipe": {
+                "application": "node-exporter",
+                "binary": "/usr/local/bin/node_exporter",
+                "service": "node-exporter.service"
+            },
+            "health": [
+                "/usr/bin/curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--max-time",
+                "10",
+                "--retry",
+                "5",
+                "--retry-all-errors",
+                "--retry-delay",
+                "2",
+                "--output",
+                "/dev/null",
+                "http://127.0.0.1:9100/metrics"
+            ]
+        }
+    },
+    {
+        "id": "edge-alloy",
+        "label": "Grafana Alloy on edge",
+        "source": "edge",
+        "host": "192.168.1.18",
+        "user": "homelab-updater",
+        "port": 22,
+        "identityFile": "/run/secrets/updates/edge",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "application:alloy",
+            "release": "alloy",
+            "recipe": {
+                "application": "alloy",
+                "binary": "/usr/local/libexec/homelab-logging/alloy-1.19.2",
+                "service": "alloy.service"
+            },
+            "health": [
+                "/usr/bin/curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--max-time",
+                "10",
+                "--retry",
+                "5",
+                "--retry-all-errors",
+                "--retry-delay",
+                "2",
+                "--output",
+                "/dev/null",
+                "http://127.0.0.1:12345/-/ready"
+            ]
+        }
+    },
+    {
+        "id": "nas-node-exporter",
+        "label": "Node Exporter on nas",
+        "source": "nas",
+        "host": "192.168.1.19",
+        "user": "homelab-updater",
+        "port": 22,
+        "identityFile": "/run/secrets/updates/nas",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "application:node-exporter",
+            "release": "node-exporter",
+            "recipe": {
+                "application": "node-exporter",
+                "binary": "/usr/local/bin/node_exporter",
+                "service": "node-exporter.service"
+            },
+            "health": [
+                "/usr/bin/curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--max-time",
+                "10",
+                "--retry",
+                "5",
+                "--retry-all-errors",
+                "--retry-delay",
+                "2",
+                "--output",
+                "/dev/null",
+                "http://127.0.0.1:9100/metrics"
+            ]
+        }
+    },
+    {
+        "id": "nas-alloy",
+        "label": "Grafana Alloy on nas",
+        "source": "nas",
+        "host": "192.168.1.19",
+        "user": "homelab-updater",
+        "port": 22,
+        "identityFile": "/run/secrets/updates/nas",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "application:alloy",
+            "release": "alloy",
+            "recipe": {
+                "application": "alloy",
+                "binary": "/usr/local/libexec/homelab-logging/alloy-1.19.2",
+                "service": "alloy.service"
+            },
+            "health": [
+                "/usr/bin/curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--max-time",
+                "10",
+                "--retry",
+                "5",
+                "--retry-all-errors",
+                "--retry-delay",
+                "2",
+                "--output",
+                "/dev/null",
+                "http://127.0.0.1:12345/-/ready"
+            ]
+        }
+    },
+    {
+        "id": "nextcloud-node-exporter",
+        "label": "Node Exporter on nextcloud",
+        "source": "nextcloud",
+        "host": "192.168.1.21",
+        "user": "homelab-updater",
+        "port": 22,
+        "identityFile": "/run/secrets/updates/nextcloud",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "application:node-exporter",
+            "release": "node-exporter",
+            "recipe": {
+                "application": "node-exporter",
+                "binary": "/usr/local/bin/node_exporter",
+                "service": "node-exporter.service"
+            },
+            "health": [
+                "/usr/bin/curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--max-time",
+                "10",
+                "--retry",
+                "5",
+                "--retry-all-errors",
+                "--retry-delay",
+                "2",
+                "--output",
+                "/dev/null",
+                "http://127.0.0.1:9100/metrics"
+            ]
+        }
+    },
+    {
+        "id": "nextcloud-alloy",
+        "label": "Grafana Alloy on nextcloud",
+        "source": "nextcloud",
+        "host": "192.168.1.21",
+        "user": "homelab-updater",
+        "port": 22,
+        "identityFile": "/run/secrets/updates/nextcloud",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "application:alloy",
+            "release": "alloy",
+            "recipe": {
+                "application": "alloy",
+                "binary": "/usr/local/libexec/homelab-logging/alloy-1.19.2",
+                "service": "alloy.service"
+            },
+            "health": [
+                "/usr/bin/curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--max-time",
+                "10",
+                "--retry",
+                "5",
+                "--retry-all-errors",
+                "--retry-delay",
+                "2",
+                "--output",
+                "/dev/null",
+                "http://127.0.0.1:12345/-/ready"
+            ]
+        }
+    },
+    {
+        "id": "pve-smartctl-exporter",
+        "label": "SMART Exporter on pve",
+        "source": "pve",
+        "host": "192.168.1.3",
+        "user": "homelab-updater",
+        "port": 22,
+        "identityFile": "/run/secrets/updates/pve",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "application:smartctl-exporter",
+            "release": "smartctl-exporter",
+            "recipe": {
+                "application": "smartctl-exporter",
+                "binary": "/usr/local/libexec/smartctl_exporter-0.14.0",
+                "service": "smartctl-exporter.service"
+            },
+            "health": [
+                "/usr/bin/curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--max-time",
+                "10",
+                "--retry",
+                "5",
+                "--retry-all-errors",
+                "--retry-delay",
+                "2",
+                "--output",
+                "/dev/null",
+                "http://127.0.0.1:9633/metrics"
+            ]
+        }
+    },
+    {
+        "id": "adguard-adguardhome-sync",
+        "label": "AdGuard Home Sync on adguard",
+        "source": "adguard",
+        "host": "192.168.1.12",
+        "user": "homelab-updater",
+        "port": 22,
+        "identityFile": "/run/secrets/updates/adguard",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "application:adguardhome-sync",
+            "release": "adguardhome-sync",
+            "recipe": {
+                "application": "adguardhome-sync",
+                "binary": "/usr/local/bin/adguardhome-sync",
+                "service": "adguardhome-sync.service"
+            },
+            "health": ["/usr/bin/systemctl", "is-active", "adguardhome-sync.service"]
+        }
+    },
+    {
+        "id": "monitor-alertmanager",
+        "label": "Alertmanager on monitor",
+        "source": "monitor",
+        "host": "192.168.1.15",
+        "user": "homelab-updater",
+        "port": 22,
+        "identityFile": "/run/secrets/updates/monitor",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "application:alertmanager",
+            "release": "alertmanager",
+            "recipe": {
+                "application": "alertmanager",
+                "binary": "/usr/local/bin/alertmanager",
+                "service": "alertmanager.service"
+            },
+            "health": [
+                "/usr/bin/curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--max-time",
+                "10",
+                "--retry",
+                "5",
+                "--retry-all-errors",
+                "--retry-delay",
+                "2",
+                "--output",
+                "/dev/null",
+                "http://127.0.0.1:9093/-/ready"
+            ]
+        }
+    },
+    {
+        "id": "monitor-blackbox-exporter",
+        "label": "Blackbox Exporter on monitor",
+        "source": "monitor",
+        "host": "192.168.1.15",
+        "user": "homelab-updater",
+        "port": 22,
+        "identityFile": "/run/secrets/updates/monitor",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "application:blackbox-exporter",
+            "release": "blackbox-exporter",
+            "recipe": {
+                "application": "blackbox-exporter",
+                "binary": "/usr/local/bin/blackbox_exporter",
+                "service": "blackbox-exporter.service"
+            },
+            "health": [
+                "/usr/bin/curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--max-time",
+                "10",
+                "--retry",
+                "5",
+                "--retry-all-errors",
+                "--retry-delay",
+                "2",
+                "--output",
+                "/dev/null",
+                "http://127.0.0.1:9115/metrics"
+            ]
+        }
+    },
+    {
+        "id": "monitor-loki",
+        "label": "Grafana Loki on monitor",
+        "source": "monitor",
+        "host": "192.168.1.15",
+        "user": "homelab-updater",
+        "port": 22,
+        "identityFile": "/run/secrets/updates/monitor",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "application:loki",
+            "release": "loki",
+            "recipe": {
+                "application": "loki",
+                "binary": "/usr/local/libexec/homelab-logging/loki-3.7.7",
+                "service": "loki.service"
+            },
+            "health": [
+                "/usr/bin/curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--max-time",
+                "10",
+                "--retry",
+                "5",
+                "--retry-all-errors",
+                "--retry-delay",
+                "2",
+                "--output",
+                "/dev/null",
+                "http://127.0.0.1:3100/ready"
+            ]
+        }
+    },
+    {
+        "id": "edge-traefik",
+        "label": "Traefik on edge",
+        "source": "edge",
+        "host": "192.168.1.18",
+        "user": "homelab-updater",
+        "port": 22,
+        "identityFile": "/run/secrets/updates/edge",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "application:traefik",
+            "release": "traefik",
+            "recipe": {
+                "application": "traefik",
+                "binary": "/usr/local/lib/homelab-edge/traefik-3.7.12",
+                "service": "traefik-edge.service"
+            },
+            "health": [
+                "/usr/bin/curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--max-time",
+                "10",
+                "--retry",
+                "5",
+                "--retry-all-errors",
+                "--retry-delay",
+                "2",
+                "--output",
+                "/dev/null",
+                "http://127.0.0.1:8082/ping"
+            ]
+        }
+    },
+    {
+        "id": "monitor-victoriametrics",
+        "label": "victoriametrics on monitor",
+        "source": "monitor",
+        "host": "192.168.1.15",
+        "user": "homelab-updater",
+        "port": 22,
+        "identityFile": "/run/secrets/updates/monitor",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "application:victoriametrics",
+            "release": "victoriametrics",
+            "recipe": {
+                "application": "victoriametrics",
+                "component": "victoriametrics",
+                "binary": "/usr/local/bin/victoria-metrics",
+                "service": "victoriametrics.service"
+            },
+            "health": [
+                "/usr/bin/curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--max-time",
+                "10",
+                "--retry",
+                "5",
+                "--retry-all-errors",
+                "--retry-delay",
+                "2",
+                "--output",
+                "/dev/null",
+                "http://127.0.0.1:8428/health"
+            ]
+        }
+    },
+    {
+        "id": "monitor-vmalert",
+        "label": "vmalert on monitor",
+        "source": "monitor",
+        "host": "192.168.1.15",
+        "user": "homelab-updater",
+        "port": 22,
+        "identityFile": "/run/secrets/updates/monitor",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "application:vmalert",
+            "release": "victoriametrics",
+            "recipe": {
+                "application": "victoriametrics",
+                "component": "vmalert",
+                "binary": "/usr/local/bin/vmalert",
+                "service": "vmalert.service"
+            },
+            "health": [
+                "/usr/bin/curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--max-time",
+                "10",
+                "--retry",
+                "5",
+                "--retry-all-errors",
+                "--retry-delay",
+                "2",
+                "--output",
+                "/dev/null",
+                "http://127.0.0.1:8880/health"
+            ]
+        }
+    },
+    {
+        "id": "monitor-vmbackup",
+        "label": "vmbackup on monitor",
+        "source": "monitor",
+        "host": "192.168.1.15",
+        "user": "homelab-updater",
+        "port": 22,
+        "identityFile": "/run/secrets/updates/monitor",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "application:vmbackup",
+            "release": "victoriametrics",
+            "recipe": {
+                "application": "victoriametrics",
+                "component": "vmbackup",
+                "binary": "/usr/local/bin/vmbackup"
+            },
+            "health": ["/usr/local/bin/vmbackup", "-version"]
+        }
+    },
+    {
+        "id": "main-codex",
+        "label": "Codex CLI on main",
+        "source": "main",
+        "host": "192.168.1.11",
+        "user": "homelab-updater",
+        "port": 22,
+        "identityFile": "/run/secrets/updates/main",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "application:codex",
+            "release": "codex",
+            "recipe": {
+                "application": "codex",
+                "prefix": "/srv/workspaces/openclaw/.runtime",
+                "user": "openclaw",
+                "node": "/srv/runtimes/node/26.8.2/bin/node",
+                "npm": "/srv/runtimes/node/26.8.2/lib/node_modules/npm/bin/npm-cli.js"
+            },
+            "health": [
+                "/usr/sbin/runuser",
+                "-u",
+                "openclaw",
+                "--",
+                "/srv/runtimes/node/26.8.2/bin/node",
+                "/srv/workspaces/openclaw/.runtime/lib/node_modules/@openai/codex/bin/codex.js",
+                "--version"
+            ]
+        }
+    },
+    {
+        "id": "sentinel-adguard-home",
+        "label": "AdGuard Home on Sentinel",
+        "source": "sentinel",
+        "host": "192.168.1.4",
+        "user": "homelab-updater",
+        "identityFile": "/run/secrets/updates/sentinel",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "application:adguard-home",
+            "release": "adguard-home",
+            "recipe": {
+                "application": "adguard-home",
+                "binary": "/opt/AdGuardHome/AdGuardHome",
+                "service": "AdGuardHome.service"
+            },
+            "health": [
+                "/usr/bin/curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--max-time",
+                "10",
+                "--retry",
+                "5",
+                "--retry-all-errors",
+                "--retry-delay",
+                "2",
+                "--resolve",
+                "dns.home.rajohan.no:443:127.0.0.1",
+                "--output",
+                "/dev/null",
+                "https://dns.home.rajohan.no/login.html"
+            ]
+        }
+    },
+    {
+        "id": "monitor-pve-exporter",
+        "label": "PVE Exporter on Monitor",
+        "source": "monitor",
+        "host": "192.168.1.15",
+        "user": "homelab-updater",
+        "identityFile": "/run/secrets/updates/monitor",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "application:pve-exporter",
+            "release": "pve-exporter",
+            "recipe": {
+                "application": "pve-exporter",
+                "directory": "/opt/homelab-monitoring/pve-exporter-venv",
+                "service": "pve-exporter.service"
+            },
+            "health": [
+                "/usr/bin/curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--max-time",
+                "10",
+                "--retry",
+                "5",
+                "--retry-all-errors",
+                "--retry-delay",
+                "2",
+                "--output",
+                "/dev/null",
+                "http://127.0.0.1:9221/"
+            ]
+        }
+    },
+    {
+        "id": "main-bun",
+        "label": "Bun shared runtime",
+        "source": "main",
+        "host": "192.168.1.11",
+        "user": "homelab-updater",
+        "identityFile": "/run/secrets/updates/main",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "runtime:bun",
+            "release": "bun",
+            "recipe": {
+                "application": "bun",
+                "directory": "/srv/runtimes/bun",
+                "inventory": "/etc/homelab-updates/inventory.json",
+                "links": [{ "path": "/usr/local/bin/bun", "member": "bun" }]
+            },
+            "health": ["/usr/local/bin/bun", "--version"]
+        }
+    },
+    {
+        "id": "main-node",
+        "label": "Node shared runtime",
+        "source": "main",
+        "host": "192.168.1.11",
+        "user": "homelab-updater",
+        "identityFile": "/run/secrets/updates/main",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "runtime:node",
+            "release": "node",
+            "recipe": {
+                "application": "node",
+                "directory": "/srv/runtimes/node",
+                "inventory": "/etc/homelab-updates/inventory.json",
+                "links": [
+                    { "path": "/usr/local/bin/node", "member": "bin/node" },
+                    { "path": "/usr/local/bin/npm", "member": "bin/npm" },
+                    { "path": "/usr/local/bin/npx", "member": "bin/npx" }
+                ]
+            },
+            "health": ["/usr/local/bin/node", "--version"]
+        }
+    },
+    {
+        "id": "main-github-cli",
+        "label": "GitHub CLI shared runtime",
+        "source": "main",
+        "host": "192.168.1.11",
+        "user": "homelab-updater",
+        "identityFile": "/run/secrets/updates/main",
+        "knownHostsFile": "/run/secrets/update-known-hosts",
+        "sudo": true,
+        "driver": {
+            "kind": "native",
+            "item": "runtime:github-cli",
+            "release": "github-cli",
+            "recipe": {
+                "application": "github-cli",
+                "directory": "/srv/runtimes/gh",
+                "inventory": "/etc/homelab-updates/inventory.json",
+                "wrapper": "/usr/local/bin/gh",
+                "links": []
+            },
+            "health": ["/usr/local/bin/gh", "--version"]
+        }
     }
 ]

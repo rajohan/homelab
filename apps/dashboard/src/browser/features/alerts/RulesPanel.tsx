@@ -83,23 +83,33 @@ export function RulesPanel() {
                     columns={[
                         {
                             id: "name",
+                            sortValue: (row) => row.name,
                             label: "Rule",
                             mobile: "title",
                             render: (row) => row.name,
                         },
-                        { id: "group", label: "Group", render: (row) => row.group },
+                        {
+                            id: "group",
+                            sortValue: (row) => row.group,
+                            label: "Group",
+                            render: (row) => row.group,
+                        },
                         {
                             id: "state",
+                            sortValue: (row) =>
+                                stale ? null : `${row.health} ${row.state}`,
                             label: "Status",
                             render: (row) => <RuleStatus rule={row} stale={stale} />,
                         },
                         {
                             id: "cadence",
+                            sortValue: (row) => row.intervalSeconds,
                             label: "Evaluation interval",
                             render: (row) => `${row.intervalSeconds} seconds`,
                         },
                         {
                             id: "evaluated",
+                            sortValue: (row) => row.lastEvaluationAt,
                             label: "Last evaluated",
                             mobile: "wide",
                             render: (row) =>

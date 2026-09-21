@@ -23,6 +23,7 @@ import { snapshotJob } from "../integrations/snapshots/job";
 import { updateActionJobs } from "../integrations/updates/actions";
 import type { UpdateTarget } from "../integrations/updates/configuration";
 import { updatesJob } from "../integrations/updates/job";
+import { restartStatusJob } from "../integrations/updates/restart";
 import { maintenanceJob } from "../jobs/maintenance";
 import { createJobRegistry } from "../jobs/registry";
 
@@ -37,6 +38,9 @@ export function createOperationsRuntime(
     const connection = connectDashboardDatabase(configuration.databaseUrl);
     const registry = createJobRegistry([
         ...updateActionJobs(configuration.updateTargets ?? [], connection.client),
+        ...(configuration.updateTargets?.length
+            ? [restartStatusJob(configuration.updateTargets)]
+            : []),
         ...(configuration.rules
             ? [
                   snapshotJob({

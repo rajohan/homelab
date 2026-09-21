@@ -60,22 +60,44 @@ def progress(phase):
     print(json.dumps({"phase": phase}), flush=True)
 
 
+def file_digest(path):
+    """Hash a large executable incrementally rather than holding its old copy in RAM."""
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
 def atomic_content(path, contents, expected):
     """Replace one nonsymlink file only if its prior bytes and ownership still match."""
-    if path.is_symlink() or path.resolve() != path or path.read_bytes() != expected:
+    def matches():
+        return file_digest(path) == expected if isinstance(expected, str) else path.read_bytes() == expected
+    if path.is_symlink() or path.resolve() != path or not matches():
         raise RuntimeError("Update source changed")
     metadata = path.stat()
-    if metadata.st_mode & 0o7000 or os.listxattr(path, follow_symlinks=False):
+    attributes = {name: os.getxattr(path, name, follow_symlinks=False)
+                  for name in os.listxattr(path, follow_symlinks=False)}
+    # Preserve workspace access ACLs when replacing the inode. Other extended
+    # security metadata (for example capabilities) still needs qualification.
+    if metadata.st_mode & 0o7000 or set(attributes) - {"system.posix_acl_access"}:
         raise RuntimeError("Update source metadata requires deployment review")
     descriptor, temporary = tempfile.mkstemp(prefix=".homelab-update-", dir=path.parent)
     try:
         with os.fdopen(descriptor, "wb") as output:
             output.write(contents)
             output.flush()
-            os.fchmod(output.fileno(), metadata.st_mode & 0o777)
             os.fchown(output.fileno(), metadata.st_uid, metadata.st_gid)
+            os.fchmod(output.fileno(), metadata.st_mode & 0o777)
+            # The source's ACL (or its absence), not an inherited default ACL,
+            # defines access to the replacement file.
+            for name in os.listxattr(output.fileno()):
+                if name not in attributes:
+                    os.removexattr(output.fileno(), name)
+            for name, value in attributes.items():
+                os.setxattr(output.fileno(), name, value)
+            staged = os.fstat(output.fileno())
+            if (staged.st_mode & 0o777, staged.st_uid, staged.st_gid) != (metadata.st_mode & 0o777, metadata.st_uid, metadata.st_gid) or {name: os.getxattr(output.fileno(), name) for name in os.listxattr(output.fileno())} != attributes:
+                raise RuntimeError("Update source metadata could not be preserved")
             os.fsync(output.fileno())
-        if path.is_symlink() or path.stat().st_ino != metadata.st_ino or path.stat().st_ctime_ns != metadata.st_ctime_ns or path.read_bytes() != expected:
+        if path.is_symlink() or path.stat().st_ino != metadata.st_ino or path.stat().st_ctime_ns != metadata.st_ctime_ns or not matches():
             raise RuntimeError("Update source changed")
         os.replace(temporary, path)
     finally:
@@ -281,6 +303,17 @@ def native_update(driver, item):
     return item["available"]
 
 
+def reboot_required():
+    """Read the distribution flag without turning a failed observation into false."""
+    try:
+        os.stat("/var/run/reboot-required")
+        return True
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return None
+
+
 def main():
     """Dispatch one fixed update operation and return only its redacted receipt."""
     data = sys.stdin.buffer.read(65537)
@@ -297,7 +330,7 @@ def main():
         installed = native_update(driver, item)
     else:
         raise RuntimeError("Unsupported updater")
-    receipt = {"complete": True, "installed": installed, "rebootRequired": Path("/var/run/reboot-required").exists()}
+    receipt = {"complete": True, "installed": installed, "rebootRequired": reboot_required()}
     if driver["kind"] == "docker":
         receipt["containerId"] = command(["/usr/bin/docker", "inspect", "--format", "{{.Id}}", driver["name"]])
     print(json.dumps(receipt), flush=True)

@@ -218,7 +218,7 @@ owners and health checks. Appliance firmware, HAOS and application extensions re
 their own supported adapter; they must not be presented as managed merely because a
 version is visible.
 
-Three built-in recipes are also available. Replace the command recipe's `inspect`
+Built-in recipes are also available. Replace the command recipe's `inspect`
 and `install` fields with `recipe`; keep `kind: "native"`, the exact inventory `item`,
 matching `release` and a deployment-owned `health` command. These use the same manual,
 bulk and opt-in automatic queues, permissions, version fences and receipts.
@@ -281,6 +281,61 @@ For stopped services, successful installation means the on-disk version was veri
 online health is checked only for running services. A failed restart or health check
 is a failed job, never a successful receipt. Third-party updater recovery state may
 remain after a failed operation and requires operator inspection.
+
+Additional qualified recipes cover AdGuard Home Sync, Node/SMART/Blackbox exporters,
+Alertmanager, Loki, Alloy, Traefik and the VictoriaMetrics server/vmalert/vmbackup
+binaries. Official release metadata must identify the exact stable asset and its
+SHA-256 digest; supported checksum-file fallbacks are provider-owned. Archives are
+bounded and only the selected executable is read. Service state, ownership and mode
+are preserved, with concurrent version/metadata changes rejected before replacement.
+The VMBackup recipe verifies the CLI binary without starting a backup.
+
+Codex CLI uses the existing installation owner's npm prefix and pinned Node/npm
+executables. It installs the exact approved package with lifecycle scripts disabled,
+and removes its temporary package cache. PVE Exporter uses its existing virtual
+environment and an exact digest-verified PyPI wheel. An offline dry-run must prove
+that existing dependencies suffice before installation; dependency migrations require
+separate qualification. Neither recipe changes application credentials or identity.
+
+### Separate toolchains
+
+Bun, Node.js and GitHub CLI appear under the host selector's **Host · Toolchains**
+option, reusing the software table and policy list with their own manual actions and
+opt-in patch/minor policies. Ordinary **Update all** plans exclude runtime entries.
+New policies remain off until the operator confirms them.
+
+Runtime recipes install a verified official version beside existing versions, then
+change only explicitly configured shared entrypoints and the inventory's runtime
+path. Node's complete distribution preserves npm/npx. GitHub CLI preserves the
+existing credential-loading wrapper and replaces only its exact runtime reference.
+Existing project paths, lockfiles, engine pins, editor processes and preview services
+remain unchanged. Old version directories are deliberately retained because pinned
+projects may still use them; package archives, staging and caches are temporary.
+An unrelated pre-existing destination or changed shared entrypoint fails closed.
+Failed activation restores only references still owned by that attempt; it does not
+remove a version that another project may already have selected.
+
+### Restart observations and completion freshness
+
+The `updates.restart-status` job checks each configured source once a minute using
+its already-qualified SSH connection. It reads `/var/run/reboot-required`, without
+installing software, restarting services or rebooting hosts. An unreadable flag,
+failed connection, ambiguous source-to-host mapping or observation older than three
+minutes displays **Unknown**. An absent flag says **No restart reported**, not that
+every distribution/kernel guarantees a reboot is unnecessary. Distributions without
+this flag-producing mechanism need their own qualified detector.
+
+Successful installers immediately persist the exact installed version and restart
+observation. The receipt also advances a publication watermark so a report collected
+before installation cannot restore the old available-update row when delivered late.
+Release resolution compares the complete captured report before publishing its result.
+The shared worker activity refreshes update queries on terminal update jobs, including
+when the operator has navigated away from the update page.
+
+Compose replacements preserve the existing POSIX access ACL, owner and mode rather
+than rejecting normal workspace ACLs or silently dropping them. Special modes and
+other security attributes remain unqualified and are rejected; concurrent metadata
+or content changes fail before replacement.
 
 Vendor references: [AdGuard Home updates](https://github.com/AdguardTeam/AdGuardHome/wiki/Getting-Started#update),
 [OpenClaw update CLI](https://docs.openclaw.ai/cli/update), and

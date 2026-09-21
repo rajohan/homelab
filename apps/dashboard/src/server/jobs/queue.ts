@@ -167,18 +167,32 @@ export async function listJobs(
     client: SQL,
     limit: number,
     before: string | undefined,
-    filters: {
-        action?: string | undefined;
-        view?: "all" | "active" | "recent" | undefined;
-        requestedBy?: string | undefined;
-        completedWithinSeconds?: number | undefined;
-    } = {}
+    filters: JobFilters = {}
 ): Promise<JobSummary[]> {
     if (filters.completedWithinSeconds !== undefined && before !== undefined)
         throw new Error("Completion activity does not support creation-order cursors");
     return client<
         JobSummary[]
-    >`SELECT id, action, label, resource_class AS "resourceClass", state, attempt, attempt_limit AS "attemptLimit", requested_by AS "requestedBy", created_at::text AS "createdAt", started_at::text AS "startedAt", finished_at::text AS "finishedAt", message, cancel_requested AS "cancelRequested" FROM job_runs WHERE (${before ?? null}::uuid IS NULL OR id < ${before ?? null}::uuid) AND (${filters.action ?? null}::text IS NULL OR action = ${filters.action ?? null}) AND (${filters.requestedBy ?? null}::text IS NULL OR requested_by = ${filters.requestedBy ?? null}) AND (${filters.view ?? "all"} = 'all' OR (${filters.view ?? "all"} = 'active' AND state IN ('queued','running')) OR (${filters.view ?? "all"} = 'recent' AND state NOT IN ('queued','running'))) AND (${filters.completedWithinSeconds ?? null}::int IS NULL OR finished_at > now() - ${filters.completedWithinSeconds ?? null}::int * interval '1 second') ORDER BY CASE WHEN ${filters.completedWithinSeconds ?? null}::int IS NOT NULL THEN finished_at END DESC, id DESC LIMIT ${limit}`;
+    >`SELECT * FROM (${jobSummaryQuery(client, filters)}) runs WHERE (${before ?? null}::uuid IS NULL OR id < ${before ?? null}::uuid) ORDER BY CASE WHEN ${filters.completedWithinSeconds ?? null}::int IS NOT NULL THEN "finishedAt"::timestamptz END DESC, id DESC LIMIT ${limit}`;
+}
+
+interface JobFilters {
+    action?: string | undefined;
+    view?: "all" | "active" | "recent" | undefined;
+    requestedBy?: string | undefined;
+    completedWithinSeconds?: number | undefined;
+}
+
+/**
+ * Build the common redacted run projection before choosing a pagination order.
+ * @param client - Dashboard state connection.
+ * @param filters - Server-authorized action, view and optional actor boundaries.
+ * @returns A lazy, composable query retaining the same filters in every sorted view.
+ */
+export function jobSummaryQuery(client: SQL, filters: JobFilters) {
+    return client<
+        JobSummary[]
+    >`SELECT id, action, label, resource_class AS "resourceClass", state, attempt, attempt_limit AS "attemptLimit", requested_by AS "requestedBy", created_at::text AS "createdAt", started_at::text AS "startedAt", finished_at::text AS "finishedAt", message, cancel_requested AS "cancelRequested" FROM job_runs WHERE (${filters.action ?? null}::text IS NULL OR action = ${filters.action ?? null}) AND (${filters.requestedBy ?? null}::text IS NULL OR requested_by = ${filters.requestedBy ?? null}) AND (${filters.view ?? "all"} = 'all' OR (${filters.view ?? "all"} = 'active' AND state IN ('queued','running')) OR (${filters.view ?? "all"} = 'recent' AND state NOT IN ('queued','running'))) AND (${filters.completedWithinSeconds ?? null}::int IS NULL OR finished_at > now() - ${filters.completedWithinSeconds ?? null}::int * interval '1 second')`;
 }
 
 /**

@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import struct
 import sys
 import tempfile
 import tarfile
@@ -19,6 +20,8 @@ SPEC = importlib.util.spec_from_file_location("update_execution_fixture", SOURCE
 remote = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(remote)
 exec(compile(SOURCE.with_name("native.py").read_text(), str(SOURCE.with_name("native.py")), "exec"), remote.__dict__)
+exec(compile(SOURCE.with_name("binary.py").read_text(), str(SOURCE.with_name("binary.py")), "exec"), remote.__dict__)
+exec(compile(SOURCE.with_name("toolchain.py").read_text(), str(SOURCE.with_name("toolchain.py")), "exec"), remote.__dict__)
 
 
 class UpdateExecutionTests(unittest.TestCase):
@@ -156,6 +159,46 @@ class UpdateExecutionTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 remote.atomic_content(link, b"changed", b"original")
             self.assertEqual(actual.read_bytes(), b"original")
+
+    def test_atomic_replacement_preserves_real_posix_acl_and_permissions(self):
+        with tempfile.TemporaryDirectory(prefix="homelab-updater-fixture-") as temporary:
+            path = Path(temporary).resolve() / "compose.yaml"
+            path.write_bytes(b"original")
+            acl = struct.pack("<I", 2) + b"".join(struct.pack("<HHI", tag, permission, identity) for tag, permission, identity in [
+                (1, 6, 0xffffffff), (2, 4, 12345), (4, 4, 0xffffffff), (16, 6, 0xffffffff), (32, 0, 0xffffffff)])
+            os.setxattr(path, "system.posix_acl_access", acl)
+            before = path.stat()
+            remote.atomic_content(path, b"changed", b"original")
+            after = path.stat()
+            self.assertEqual(path.read_bytes(), b"changed")
+            self.assertEqual(os.getxattr(path, "system.posix_acl_access"), acl)
+            self.assertEqual((after.st_mode, after.st_uid, after.st_gid), (before.st_mode, before.st_uid, before.st_gid))
+            self.assertNotEqual(after.st_ino, before.st_ino)
+            self.assertEqual(list(path.parent.iterdir()), [path])
+
+    def test_atomic_replacement_does_not_inherit_new_directory_access(self):
+        with tempfile.TemporaryDirectory(prefix="homelab-updater-fixture-") as temporary:
+            directory = Path(temporary).resolve()
+            path = directory / "compose.yaml"
+            path.write_bytes(b"original")
+            path.chmod(0o600)
+            acl = struct.pack("<I", 2) + b"".join(struct.pack("<HHI", tag, permission, identity) for tag, permission, identity in [
+                (1, 7, 0xffffffff), (2, 7, 12345), (4, 7, 0xffffffff), (16, 7, 0xffffffff), (32, 7, 0xffffffff)])
+            os.setxattr(directory, "system.posix_acl_default", acl)
+            remote.atomic_content(path, b"changed", b"original")
+            self.assertEqual(os.listxattr(path), [])
+            self.assertEqual(path.stat().st_mode & 0o7777, 0o600)
+
+    def test_atomic_replacement_preserves_concurrent_acl_edits(self):
+        with tempfile.TemporaryDirectory(prefix="homelab-updater-fixture-") as temporary:
+            path = Path(temporary).resolve() / "compose.yaml"
+            path.write_bytes(b"original")
+            with patch.object(remote.os, "fsync", side_effect=lambda _descriptor: path.chmod(0o640)):
+                with self.assertRaisesRegex(RuntimeError, "changed"):
+                    remote.atomic_content(path, b"changed", b"original")
+            self.assertEqual(path.read_bytes(), b"original")
+            self.assertEqual(path.stat().st_mode & 0o7777, 0o640)
+            self.assertEqual(list(path.parent.iterdir()), [path])
 
     def test_native_recipe_installs_exact_version_and_requires_health(self):
         calls = []

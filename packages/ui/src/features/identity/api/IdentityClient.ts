@@ -1,3 +1,4 @@
+import type { TableSort } from "@homelab/contracts/tableSort";
 import {
     startAuthentication,
     startRegistration,
@@ -134,13 +135,21 @@ export class IdentityClient {
      * Read a cancellable page of this account's security events.
      * @param cursor - The server-supplied continuation token, or null for the newest page.
      * @param signal - Cancellation tied to the current list query.
+     * @param sort - Optional server-side ordering of the complete account history.
      * @returns Validated redacted events and the next page boundary.
      */
-    async activity(cursor: string | null, signal?: AbortSignal): Promise<ActivityPage> {
+    async activity(
+        cursor: string | null,
+        signal?: AbortSignal,
+        sort?: TableSort | null
+    ): Promise<ActivityPage> {
+        const parameters = new URLSearchParams();
+        if (cursor) parameters.set("cursor", cursor);
+        if (sort) parameters.set("sort", JSON.stringify(sort));
         return v.parse(
             activityPageSchema,
             await this.request(
-                `/api/account/activity${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`,
+                `/api/account/activity${parameters.size > 0 ? `?${parameters}` : ""}`,
                 undefined,
                 signal
             )

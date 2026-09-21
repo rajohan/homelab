@@ -18,6 +18,7 @@ import { api } from "../../api/client";
 import { MetricStat } from "../infrastructure/MetricStat";
 import { ObservationBadge } from "../operations/ObservationBadge";
 import { AutomaticUpdates } from "./AutomaticUpdates";
+import { RestartStatus } from "./RestartStatus";
 import { SoftwareUpdates } from "./SoftwareUpdates";
 import { UpdateBatchAction } from "./UpdateBatchAction";
 
@@ -26,16 +27,26 @@ import { UpdateBatchAction } from "./UpdateBatchAction";
  * @returns Source freshness, software versions and explicitly configured update policies.
  */
 export function UpdatesPanel({ compact = false }: { readonly compact?: boolean }) {
-    const [source, setSource] = useState("");
+    const [selection, setSelection] = useState("");
     const query = useQuery({
         queryKey: ["operations", "updates"],
         queryFn: ({ signal }) => api.updates.inventory.query(undefined, { signal }),
-        ...queryRefresh("slow"),
+        ...queryRefresh("normal"),
         retry: false,
     });
     const sources = query.data ?? [];
-    const selected =
-        sources.find((item) => item.id === source)?.id ?? sources[0]?.id ?? "";
+    const options = sources.flatMap((item) => {
+        const categories = item.report?.coveredKinds.includes("runtime")
+            ? (["software", "toolchains"] as const)
+            : (["software"] as const);
+        return categories.map((category) => ({
+            value: JSON.stringify([item.id, category]),
+            label: category === "toolchains" ? `${item.label} · Toolchains` : item.label,
+            source: item.id,
+            category,
+        }));
+    });
+    const selected = options.find((item) => item.value === selection) ?? options[0];
     return (
         <Card className="space-y-4">
             <SectionHeader
@@ -119,17 +130,20 @@ export function UpdatesPanel({ compact = false }: { readonly compact?: boolean }
                                 <DataTable
                                     label="Update sources"
                                     compact
+                                    className="@max-[48rem]:[&_tr[data-index]]:grid-cols-[minmax(0,1fr)_minmax(0,1.7fr)]"
                                     rows={sources}
                                     getKey={(item) => item.id}
                                     columns={[
                                         {
                                             id: "source",
+                                            sortValue: (row) => row.label,
                                             label: "Source",
                                             mobile: "title",
                                             render: (item) => item.label,
                                         },
                                         {
                                             id: "updates",
+                                            sortValue: (row) => row.report?.available,
                                             label: "Updates",
                                             render: (item) =>
                                                 !query.isError &&
@@ -140,6 +154,8 @@ export function UpdatesPanel({ compact = false }: { readonly compact?: boolean }
                                         },
                                         {
                                             id: "coverage",
+                                            sortValue: (row) =>
+                                                row.report?.coveredKinds.join(" "),
                                             label: "Checks",
                                             render: (item) =>
                                                 item.report?.coveredKinds.join(" · ") ??
@@ -147,6 +163,7 @@ export function UpdatesPanel({ compact = false }: { readonly compact?: boolean }
                                         },
                                         {
                                             id: "time",
+                                            sortValue: (row) => row.report?.capturedAt,
                                             label: "Observed",
                                             render: (item) =>
                                                 item.report
@@ -157,12 +174,38 @@ export function UpdatesPanel({ compact = false }: { readonly compact?: boolean }
                                         },
                                         {
                                             id: "state",
+                                            sortValue: (row) => row.stale,
                                             label: "Status",
                                             render: (item) => (
-                                                <ObservationBadge
-                                                    configured
-                                                    available={Boolean(item.report)}
-                                                    stale={query.isError || item.stale}
+                                                <div className="flex flex-wrap items-center gap-1.5">
+                                                    <ObservationBadge
+                                                        configured
+                                                        available={Boolean(item.report)}
+                                                        stale={
+                                                            query.isError || item.stale
+                                                        }
+                                                    />
+                                                    <span className="@min-[48rem]:hidden">
+                                                        <RestartStatus
+                                                            observation={item.restart}
+                                                            unavailable={query.isError}
+                                                        />
+                                                    </span>
+                                                </div>
+                                            ),
+                                        },
+                                        {
+                                            id: "restart",
+                                            label: "Restart",
+                                            mobile: "hidden",
+                                            sortValue: (item) =>
+                                                item.restart?.stale
+                                                    ? null
+                                                    : item.restart?.required,
+                                            render: (item) => (
+                                                <RestartStatus
+                                                    observation={item.restart}
+                                                    unavailable={query.isError}
                                                 />
                                             ),
                                         },
@@ -191,15 +234,29 @@ export function UpdatesPanel({ compact = false }: { readonly compact?: boolean }
                                 <>
                                     <Select
                                         label="Software source"
-                                        value={selected}
-                                        onChange={setSource}
-                                        options={sources.map((item) => ({
-                                            value: item.id,
-                                            label: item.label,
-                                        }))}
+                                        value={selected?.value ?? ""}
+                                        onChange={setSelection}
+                                        options={options}
                                     />
-                                    <SoftwareUpdates source={selected} />
-                                    <AutomaticUpdates source={selected} />
+                                    {selected && (
+                                        <div key={selected.value} className="space-y-4">
+                                            {selected.category === "toolchains" && (
+                                                <p className="mt-1 text-sm text-primary-400">
+                                                    Update shared runtimes separately.
+                                                    Version-pinned projects keep their
+                                                    existing runtime.
+                                                </p>
+                                            )}
+                                            <SoftwareUpdates
+                                                source={selected.source}
+                                                category={selected.category}
+                                            />
+                                            <AutomaticUpdates
+                                                source={selected.source}
+                                                category={selected.category}
+                                            />
+                                        </div>
+                                    )}
                                 </>
                             ) : (
                                 !query.isError && (

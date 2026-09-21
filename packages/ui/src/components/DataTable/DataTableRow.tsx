@@ -59,7 +59,8 @@ export function DataTableRow<T>({
                                 "py-1 @max-[48rem]:col-start-2 @max-[48rem]:row-start-1 @max-[48rem]:justify-self-end @max-[48rem]:p-0",
                             compact &&
                                 column.mobile === "footer-actions" &&
-                                "@max-[48rem]:order-last @max-[48rem]:col-span-2"
+                                "@max-[48rem]:order-last @max-[48rem]:col-span-2",
+                            column.mobile === "hidden" && "@max-[48rem]:hidden"
                         )}
                     >
                         {columnIndex === 0 && rowAction && (

@@ -11,6 +11,7 @@
         "./alerts": "./src/alerts.ts",
         "./backups": "./src/backups.ts",
         "./updates": "./src/updates.ts",
+        "./tableSort": "./src/tableSort.ts",
         "./infrastructure": "./src/infrastructure.ts"
     },
     "dependencies": {

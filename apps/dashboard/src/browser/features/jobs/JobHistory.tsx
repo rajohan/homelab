@@ -1,3 +1,4 @@
+import type { TableSort } from "@homelab/contracts/tableSort";
 import {
     Card,
     ErrorNotice,
@@ -29,19 +30,32 @@ export function JobHistory({
     readonly embedded?: boolean;
 }) {
     const [selected, setSelected] = useState<string>();
+    const [sort, setSort] = useState<TableSort | null>(null);
     const query = useInfiniteQuery({
-        queryKey: ["operations", "jobs", "history", action, view],
-        initialPageParam: undefined as string | undefined,
+        queryKey: [
+            "operations",
+            "jobs",
+            "history",
+            action,
+            view,
+            ...(sort ? [sort] : []),
+        ],
+        initialPageParam: {},
         queryFn: ({ pageParam, signal }) =>
             api.jobs.list.query(
                 {
-                    ...(pageParam ? { before: pageParam } : {}),
+                    ...pageParam,
+                    ...(sort ? { sort } : {}),
                     ...(action ? { action } : {}),
                     view,
                 },
                 { signal }
             ),
-        getNextPageParam: (page) => page.nextCursor ?? undefined,
+        getNextPageParam: (page) => {
+            if (sort)
+                return page.nextSortCursor ? { cursor: page.nextSortCursor } : undefined;
+            return page.nextCursor ? { before: page.nextCursor } : undefined;
+        },
         ...queryRefresh("fast"),
         retry: false,
     });
@@ -65,6 +79,8 @@ export function JobHistory({
             {rows.length > 0 && (
                 <JobRunTable
                     rows={rows}
+                    sort={sort}
+                    onSortChange={setSort}
                     onSelect={setSelected}
                     continuation={{
                         hasMore: query.hasNextPage,

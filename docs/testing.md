@@ -117,6 +117,21 @@ Remove the workaround once an upstream Bun/Router combination passes the same br
 
 ## Remote loopback preview
 
+Set `HOMELAB_PREVIEW_PORT=3200` when starting `bun run dev:identity` to run a second
+isolated preview without resetting the existing one. Auth uses the following port
+(3201), with matching OIDC origins/callbacks. The default remains 3100/3101. Each
+process owns its own temporary database and removes it on graceful shutdown.
+
+Preview update jobs simulate native applications and separate runtime updates as well
+as Docker/APT. Synthetic restart observations use only the demo database. None of these
+executors opens SSH, runs a package manager or contacts a production control endpoint.
+
+Shared table headers follow Mira's ascending/descending/unsorted controls. Bounded
+inventories sort raw values; paginated histories sort their complete authorized data
+before fetching a page. Regression tests cover numeric order, nulls, stable ID ties,
+removed cursor rows, account isolation and microsecond timestamp boundaries. A paged
+table must supply server-side sorting rather than sorting only its loaded rows.
+
 When forwarding the preview from Main, bind the SSH listeners to `localhost`, not
 only `127.0.0.1`. The browser may connect to `::1`; both loopback families must reach
 the same preview. An IPv4-only tunnel can make browser requests time out even when

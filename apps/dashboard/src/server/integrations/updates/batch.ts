@@ -118,6 +118,8 @@ export async function readUpdateBatchPlan(
                     "Update installation is not configured unambiguously for this software.";
             else if (control?.change === "major")
                 reason = "Major upgrades require separate confirmation.";
+            else if (item.kind === "runtime")
+                reason = "Use the separate toolchain update controls.";
             entries.push({
                 source: source.id,
                 sourceLabel: source.label,

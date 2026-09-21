@@ -1,6 +1,8 @@
 """Read-only collector regression fixtures. No daemon or package operation runs."""
 import json
 import types
+import tempfile
+from pathlib import Path
 import unittest
 from unittest.mock import patch, mock_open, MagicMock
 
@@ -9,6 +11,24 @@ from native_inventory import collect_native
 
 
 class UpdateInventoryTests(unittest.TestCase):
+    def test_restart_flag_distinguishes_present_absent_and_failed_read(self):
+        for outcome, expected in [(types.SimpleNamespace(), True), (FileNotFoundError(), False), (PermissionError(), None)]:
+            path = MagicMock()
+            if isinstance(outcome, Exception): path.stat.side_effect = outcome
+            else: path.stat.return_value = outcome
+            self.assertIs(inventory.reboot_required(path), expected)
+
+    def test_python_metadata_is_found_after_a_versioned_distribution_path_changes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            site = Path(temporary).resolve()
+            original = site / 'prometheus_pve_exporter-3.10.0.dist-info/METADATA'
+            updated = site / 'prometheus_pve_exporter-3.11.0.dist-info/METADATA'
+            updated.parent.mkdir()
+            updated.write_text('Name: prometheus-pve-exporter\nVersion: 3.11.0\n')
+            rows, complete = collect_native([{'provider':'pve-exporter','path':str(original)}], MagicMock())
+            self.assertTrue(complete)
+            self.assertEqual(rows[0]['installed'], '3.11.0')
+
     def test_native_failures_are_retained_and_do_not_hide_later_installations(self):
         sources = [{"provider": "adguard-home", "path": "/opt/AdGuardHome/AdGuardHome"}, {"provider": "node-exporter", "path": "/usr/local/bin/node_exporter"}]
         command = MagicMock(side_effect=[RuntimeError("private"), "node_exporter, version 1.10.0"])

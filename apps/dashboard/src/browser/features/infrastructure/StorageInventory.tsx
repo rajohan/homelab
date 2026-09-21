@@ -34,6 +34,7 @@ export function StorageInventory({
                 columns={[
                     {
                         id: "name",
+                        sortValue: (row) => row.name,
                         label: "Pool",
                         mobile: "title",
                         render: (row) => (
@@ -47,11 +48,13 @@ export function StorageInventory({
                     },
                     {
                         id: "state",
+                        sortValue: (row) => row.state,
                         label: "Status",
                         render: (row) => <ResourceStatus state={row.state} />,
                     },
                     {
                         id: "capacity",
+                        sortValue: (row) => row.used,
                         label: "Used / capacity",
                         render: (row) => (
                             <ResourceUsage used={row.used} total={row.size} />
@@ -70,22 +73,26 @@ export function StorageInventory({
                 columns={[
                     {
                         id: "name",
+                        sortValue: (row) => `${row.host} ${row.device}`,
                         label: "Disk",
                         mobile: "title",
                         render: (row) => `${row.host} · ${row.device}`,
                     },
                     {
                         id: "state",
+                        sortValue: (row) => row.state,
                         label: "SMART",
                         render: (row) => <ResourceStatus state={row.state} />,
                     },
                     {
                         id: "temperature",
+                        sortValue: (row) => row.temperature,
                         label: "Temperature",
                         render: (row) => formatMetric(row.temperature, "celsius"),
                     },
                     {
                         id: "wear",
+                        sortValue: (row) => row.wearPercent,
                         label: "Endurance used",
                         render: (row) => formatMetric(row.wearPercent, "percent"),
                     },

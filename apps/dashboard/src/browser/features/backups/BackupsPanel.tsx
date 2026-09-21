@@ -88,13 +88,20 @@ export function BackupsPanel({ compact = false }: { readonly compact?: boolean }
                             columns={[
                                 {
                                     id: "task",
+                                    sortValue: (row) => row.task,
                                     label: "Task",
                                     mobile: "title",
                                     render: (row) => row.task,
                                 },
-                                { id: "host", label: "Host", render: (row) => row.host },
+                                {
+                                    id: "host",
+                                    sortValue: (row) => row.host,
+                                    label: "Host",
+                                    render: (row) => row.host,
+                                },
                                 {
                                     id: "state",
+                                    sortValue: (row) => (stale ? null : row.state),
                                     label: "Status",
                                     render: (row) => (
                                         <BackupStatus
@@ -104,6 +111,7 @@ export function BackupsPanel({ compact = false }: { readonly compact?: boolean }
                                 },
                                 {
                                     id: "success",
+                                    sortValue: (row) => row.lastSuccessAt,
                                     label: "Last successful backup",
                                     render: (row) =>
                                         row.lastSuccessAt
@@ -112,6 +120,7 @@ export function BackupsPanel({ compact = false }: { readonly compact?: boolean }
                                 },
                                 {
                                     id: "failure",
+                                    sortValue: (row) => row.lastFailureAt,
                                     label: "Last failure",
                                     render: (row) =>
                                         row.lastFailureAt

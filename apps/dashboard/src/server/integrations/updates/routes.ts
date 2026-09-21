@@ -13,10 +13,12 @@ import { requireCapability } from "../../automation/authentication";
 import { authorizedOperations } from "../../operations/authorization";
 import type { OperationsContext } from "../../operations/context";
 import { OperationFailure } from "../../operations/errors";
+import { sortedInventory } from "../../operations/sortedInventory";
 import { requestUpdate } from "./actions";
 import { readUpdateBatchPlan, requestUpdateBatch } from "./batch";
 import { readUpdateSources, readUpdateReport, staleUpdateReport } from "./inventory";
 import { readUpdatePolicies, writeUpdatePolicy } from "./policies";
+import { recordRestartObservation } from "./restartObservation";
 import { matchesUpdateTarget, updateControl } from "./selection";
 
 async function verifyOperator(context: OperationsContext, capability: Capability) {
@@ -138,12 +140,30 @@ export const updatesRouter = trpc.router({
             const matches = (report?.items ?? [])
                 .filter(
                     (item) =>
+                        (input.category === "all" ||
+                            (input.category === "toolchains") ===
+                                (item.kind === "runtime")) &&
                         (input.state === "all" || item.status !== "current" || stale) &&
                         item.name.toLowerCase().includes(input.search.toLowerCase()) &&
-                        (!input.after || item.id > input.after)
+                        (input.sort || !input.after || item.id > input.after)
                 )
                 .toSorted((left, right) => (left.id < right.id ? -1 : 1));
-            const items = matches.slice(0, input.limit);
+            const sorted = input.sort
+                ? sortedInventory(
+                      matches,
+                      {
+                          name: (item) => item.name,
+                          kind: (item) => item.kind,
+                          installed: (item) => item.installed,
+                          available: (item) => item.available,
+                          status: (item) => (stale ? null : item.status),
+                      },
+                      input.sort,
+                      input.cursor,
+                      input.limit
+                  )
+                : null;
+            const items = sorted?.items ?? matches.slice(0, input.limit);
             return {
                 items: items.map((item) => {
                     const targets = (operations.updateTargets ?? []).filter(
@@ -160,6 +180,7 @@ export const updatesRouter = trpc.router({
                     };
                 }),
                 stale,
+                nextSortCursor: sorted?.nextSortCursor ?? null,
                 nextCursor:
                     matches.length > input.limit ? (items.at(-1)?.id ?? null) : null,
             };
@@ -189,6 +210,9 @@ export const updatesRouter = trpc.router({
             if (
                 time > Date.now() + 60_000 ||
                 time < Date.now() - 3_600_000 ||
+                (input.rebootObservedAt !== undefined &&
+                    (Date.parse(input.rebootObservedAt) > time ||
+                        Date.parse(input.rebootObservedAt) < time - 60_000)) ||
                 (input.repositoryMetadataAt !== null &&
                     Date.parse(input.repositoryMetadataAt) > time + 60_000) ||
                 new Set(input.items.map((item) => item.id)).size !== input.items.length ||
@@ -211,10 +235,21 @@ export const updatesRouter = trpc.router({
                     return software;
                 }),
             };
-            const [row] = await operations.client<
-                { key: string }[]
-            >`INSERT INTO operation_snapshots (key, value, captured_at) VALUES (${`updates:${source.id}`}, ${JSON.stringify(observation)}::text::jsonb, ${new Date(time)}) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, captured_at = EXCLUDED.captured_at WHERE operation_snapshots.captured_at < EXCLUDED.captured_at RETURNING key`;
-            return { accepted: Boolean(row) };
+            return operations.client.begin(async (transaction) => {
+                const [row] = await transaction<
+                    { key: string }[]
+                >`INSERT INTO operation_snapshots (key, value, captured_at) VALUES (${`updates:${source.id}`}, ${JSON.stringify(observation)}::text::jsonb, ${new Date(time)}) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, captured_at = EXCLUDED.captured_at WHERE operation_snapshots.captured_at < EXCLUDED.captured_at RETURNING key`;
+                if (row && input.rebootRequired !== undefined) {
+                    const observedAt = input.rebootObservedAt ?? input.capturedAt;
+                    await recordRestartObservation(
+                        transaction,
+                        source.id,
+                        input.rebootRequired,
+                        observedAt
+                    );
+                }
+                return { accepted: Boolean(row) };
+            });
         })
     ),
 });

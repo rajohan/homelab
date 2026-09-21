@@ -13,7 +13,8 @@ import { notifyJobOutcome } from "../notifications/jobOutcome";
 import { auditOperation } from "../operations/audit";
 import { authorizedOperations } from "../operations/authorization";
 import { OperationFailure } from "../operations/errors";
-import { enqueueJob, listJobs, lockQueue } from "./queue";
+import { sortedPage } from "../operations/sortedPage";
+import { enqueueJob, listJobs, lockQueue, jobSummaryQuery } from "./queue";
 
 export const jobsRouter = trpc.router({
     activity: trpc.procedure.query(({ ctx }) =>
@@ -40,6 +41,28 @@ export const jobsRouter = trpc.router({
     list: trpc.procedure.input(runFilterSchema).query(({ ctx, input }) =>
         runOperation(async () => {
             const { operations } = authorizedOperations(ctx, "jobs:read");
+            if (input.sort) {
+                const page = await sortedPage<JobSummary>(
+                    operations.client,
+                    jobSummaryQuery(operations.client, input),
+                    {
+                        job: "label",
+                        state: "state",
+                        size: "resourceClass",
+                        attempt: "attempt",
+                        time: "createdAt",
+                        actor: "requestedBy",
+                    },
+                    input.sort,
+                    input.cursor,
+                    input.limit
+                );
+                return {
+                    runs: page.items,
+                    nextCursor: null,
+                    nextSortCursor: page.nextSortCursor,
+                };
+            }
             const runs = await listJobs(
                 operations.client,
                 input.limit,
@@ -48,6 +71,7 @@ export const jobsRouter = trpc.router({
             );
             return {
                 runs,
+                nextSortCursor: null,
                 nextCursor:
                     runs.length === input.limit ? (runs.at(-1)?.id ?? null) : null,
             };

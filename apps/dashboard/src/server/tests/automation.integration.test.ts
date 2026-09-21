@@ -106,7 +106,11 @@ test("API grants cannot be escalated by machine tokens and human administration 
             operations: fixture,
             principal: { kind: "automation", id: "test", capabilities: ["jobs:read"] },
         });
-        expect(await machine.jobs.list({})).toEqual({ runs: [], nextCursor: null });
+        expect(await machine.jobs.list({})).toEqual({
+            runs: [],
+            nextCursor: null,
+            nextSortCursor: null,
+        });
         await expectOperationFailure(
             machine.jobs.run({
                 action: "system.retention",

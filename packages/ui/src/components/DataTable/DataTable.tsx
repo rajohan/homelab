@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 
 import { cn } from "../../lib/classNames";
 import {
@@ -7,12 +7,20 @@ import {
 } from "../InfiniteScrollTrigger/InfiniteScrollTrigger";
 import { Virtualizer } from "../Virtualizer/Virtualizer";
 import { DataTableRow } from "./DataTableRow";
+import { TableSortButton } from "./TableSortButton";
+import {
+    compareTableValues,
+    nextTableSort,
+    type TableSort,
+    type TableSortValue,
+} from "./tableSorting";
 
 export interface DataColumn<T> {
     readonly id: string;
     readonly label: string;
     readonly render: (row: T) => ReactNode;
-    readonly mobile?: "title" | "wide" | "actions" | "footer-actions";
+    readonly sortValue?: (row: T) => TableSortValue;
+    readonly mobile?: "title" | "wide" | "actions" | "footer-actions" | "hidden";
     readonly hideLabel?: boolean;
     readonly width?: string;
 }
@@ -35,6 +43,8 @@ export function DataTable<T>({
     compact = false,
     rowAction,
     className,
+    sort,
+    onSortChange,
 }: {
     readonly label: string;
     readonly rows: readonly T[];
@@ -44,8 +54,31 @@ export function DataTable<T>({
     readonly compact?: boolean;
     readonly rowAction?: DataRowAction<T>;
     readonly className?: string;
+    readonly sort?: TableSort | null;
+    readonly onSortChange?: (sort: TableSort | null) => void;
 }) {
     const scrollRef = useRef<HTMLElement>(null);
+    const [localSort, setLocalSort] = useState<TableSort | null>(null);
+    const selectedSort = sort === undefined ? localSort : sort;
+    const sortedColumn = columns.find((column) => column.id === selectedSort?.id);
+    // Paged callers own ordering on the server, across every page. Never reorder
+    // only the loaded subset and present it as a globally sorted inventory.
+    const displayedRows =
+        onSortChange || !selectedSort || !sortedColumn?.sortValue
+            ? rows
+            : rows.toSorted((left, right) =>
+                  compareTableValues(
+                      sortedColumn.sortValue!(left),
+                      sortedColumn.sortValue!(right),
+                      selectedSort.direction
+                  )
+              );
+    const selectSort = (id: string) => {
+        const next = nextTableSort(selectedSort, id);
+        if (onSortChange) onSortChange(next);
+        else setLocalSort(next);
+        scrollRef.current?.scrollTo({ top: 0 });
+    };
     return (
         <div className="@container min-w-0">
             <section
@@ -58,10 +91,10 @@ export function DataTable<T>({
                 )}
             >
                 <Virtualizer
-                    count={rows.length}
+                    count={displayedRows.length}
                     scrollRef={scrollRef}
                     getKey={(index) => {
-                        const row = rows[index];
+                        const row = displayedRows[index];
                         return row ? getKey(row) : String(index);
                     }}
                 >
@@ -76,20 +109,38 @@ export function DataTable<T>({
                                         <th
                                             key={column.id}
                                             scope="col"
+                                            aria-sort={
+                                                selectedSort?.id === column.id
+                                                    ? selectedSort.direction
+                                                    : undefined
+                                            }
                                             className={cn(
                                                 "border-b border-primary-700 p-3 font-medium",
                                                 column.width
                                             )}
                                         >
-                                            <span
-                                                className={
-                                                    column.hideLabel
-                                                        ? "sr-only"
-                                                        : undefined
-                                                }
-                                            >
-                                                {column.label}
-                                            </span>
+                                            {column.sortValue &&
+                                            (!continuation || onSortChange) ? (
+                                                <TableSortButton
+                                                    label={column.label}
+                                                    direction={
+                                                        selectedSort?.id === column.id
+                                                            ? selectedSort.direction
+                                                            : undefined
+                                                    }
+                                                    onClick={() => selectSort(column.id)}
+                                                />
+                                            ) : (
+                                                <span
+                                                    className={
+                                                        column.hideLabel
+                                                            ? "sr-only"
+                                                            : undefined
+                                                    }
+                                                >
+                                                    {column.label}
+                                                </span>
+                                            )}
                                         </th>
                                     ))}
                                 </tr>
@@ -102,7 +153,7 @@ export function DataTable<T>({
                                     />
                                 </tr>
                                 {items.map((item) => {
-                                    const row = rows[item.index];
+                                    const row = displayedRows[item.index];
                                     return row === undefined ? null : (
                                         <DataTableRow
                                             key={item.key}

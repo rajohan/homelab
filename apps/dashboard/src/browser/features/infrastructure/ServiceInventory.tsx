@@ -44,13 +44,20 @@ export function ServiceInventory({
                 columns={[
                     {
                         id: "name",
+                        sortValue: (row) => row.name,
                         label: "Check",
                         mobile: "title",
                         render: (row) => row.name,
                     },
-                    { id: "host", label: "Host / component", render: (row) => row.host },
+                    {
+                        id: "host",
+                        sortValue: (row) => row.host,
+                        label: "Host / component",
+                        render: (row) => row.host,
+                    },
                     {
                         id: "state",
+                        sortValue: (row) => row.state,
                         label: "Status",
                         render: (row) => <ResourceStatus state={row.state} />,
                     },

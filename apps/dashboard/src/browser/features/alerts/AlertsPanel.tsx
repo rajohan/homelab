@@ -1,4 +1,5 @@
-import type { Incident, IncidentCursor } from "@homelab/contracts/alerts";
+import type { Incident } from "@homelab/contracts/alerts";
+import type { TableSort } from "@homelab/contracts/tableSort";
 import {
     Card,
     DataTable,
@@ -28,15 +29,20 @@ import { IncidentStatus } from "./IncidentStatus";
 export function AlertsPanel({ compact = false }: { readonly compact?: boolean }) {
     const [state, setState] = useState<"current" | "resolved">("current");
     const [selected, setSelected] = useState<Incident | null>(null);
+    const [sort, setSort] = useState<TableSort | null>(null);
     const query = useInfiniteQuery({
-        queryKey: ["operations", "alerts", state],
-        initialPageParam: undefined as IncidentCursor | undefined,
+        queryKey: ["operations", "alerts", state, ...(sort ? [sort] : [])],
+        initialPageParam: {},
         queryFn: ({ pageParam, signal }) =>
             api.alerts.list.query(
-                { state, ...(pageParam ? { before: pageParam } : {}) },
+                { state, ...pageParam, ...(sort ? { sort } : {}) },
                 { signal }
             ),
-        getNextPageParam: (page) => page.nextCursor ?? undefined,
+        getNextPageParam: (page) => {
+            if (sort)
+                return page.nextSortCursor ? { cursor: page.nextSortCursor } : undefined;
+            return page.nextCursor ? { before: page.nextCursor } : undefined;
+        },
         ...queryRefresh("fast"),
         retry: false,
     });
@@ -104,6 +110,8 @@ export function AlertsPanel({ compact = false }: { readonly compact?: boolean })
                             label="Monitoring incidents"
                             compact
                             rows={rows}
+                            sort={sort}
+                            onSortChange={setSort}
                             getKey={(row) => row.id}
                             rowAction={{
                                 label: (row) => `Inspect ${row.name}`,
@@ -112,12 +120,14 @@ export function AlertsPanel({ compact = false }: { readonly compact?: boolean })
                             columns={[
                                 {
                                     id: "name",
+                                    sortValue: (row) => row.name,
                                     label: "Incident",
                                     mobile: "title",
                                     render: (row) => row.name,
                                 },
                                 {
                                     id: "host",
+                                    sortValue: (row) => `${row.host} ${row.service}`,
                                     label: "Host / service",
                                     render: (row) =>
                                         [row.host, row.service]
@@ -126,6 +136,7 @@ export function AlertsPanel({ compact = false }: { readonly compact?: boolean })
                                 },
                                 {
                                     id: "state",
+                                    sortValue: (row) => row.state,
                                     label: "Status",
                                     render: (row) => (
                                         <IncidentStatus
@@ -136,6 +147,10 @@ export function AlertsPanel({ compact = false }: { readonly compact?: boolean })
                                 },
                                 {
                                     id: "time",
+                                    sortValue: (row) =>
+                                        state === "resolved"
+                                            ? row.resolvedAt
+                                            : row.startedAt,
                                     label: state === "resolved" ? "Resolved" : "Started",
                                     render: (row) =>
                                         formatDateTime(row.resolvedAt ?? row.startedAt),

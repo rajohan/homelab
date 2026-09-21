@@ -5,6 +5,44 @@ import userEvent from "@testing-library/user-event";
 
 import { DataTable } from "./DataTable";
 
+test("header controls cycle raw numeric ordering without activating rows", async () => {
+    const rows = [
+        { id: "a", size: 100 },
+        { id: "b", size: 2 },
+        { id: "c", size: null },
+    ];
+    const select = mock(() => {});
+    const view = render(
+        <DataTable
+            label="Sizes"
+            rows={rows}
+            getKey={(row) => row.id}
+            rowAction={{ label: (row) => `Open ${row.id}`, onSelect: select }}
+            columns={[
+                {
+                    id: "size",
+                    label: "Size",
+                    sortValue: (row) => row.size,
+                    render: (row) => row.size ?? "Unknown",
+                },
+            ]}
+        />
+    );
+    try {
+        const user = userEvent.setup();
+        const button = screen.getByRole("button", { name: "Sort by Size: ascending" });
+        await user.click(button);
+        expect(button.closest("th")).toHaveAttribute("aria-sort", "ascending");
+        expect(select).not.toHaveBeenCalled();
+        await user.keyboard("{Enter}");
+        expect(button.closest("th")).toHaveAttribute("aria-sort", "descending");
+        await user.keyboard("{Enter}");
+        expect(button.closest("th")).not.toHaveAttribute("aria-sort");
+    } finally {
+        view.unmount();
+    }
+});
+
 test.each(["actions", "footer-actions"] as const)(
     "compact rows keep %s independent from the keyboard-accessible details surface",
     async (mobile) => {

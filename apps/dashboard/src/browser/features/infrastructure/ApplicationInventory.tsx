@@ -50,6 +50,7 @@ export function ApplicationInventory({
                 columns={[
                     {
                         id: "name",
+                        sortValue: (row) => row.name,
                         label: "Application",
                         mobile: "title",
                         render: (row) => (
@@ -61,26 +62,35 @@ export function ApplicationInventory({
                             </div>
                         ),
                     },
-                    { id: "host", label: "Host", render: (row) => row.host },
+                    {
+                        id: "host",
+                        sortValue: (row) => row.host,
+                        label: "Host",
+                        render: (row) => row.host,
+                    },
                     {
                         id: "state",
+                        sortValue: (row) => row.state,
                         label: "Status",
                         render: (row) => <ResourceStatus state={row.state} />,
                     },
                     {
                         id: "cpu",
+                        sortValue: (row) => row.resources?.cpuPercent,
                         label: "CPU",
                         render: (row) =>
                             formatMetric(row.resources?.cpuPercent ?? null, "percent"),
                     },
                     {
                         id: "memory",
+                        sortValue: (row) => row.resources?.memoryUsed,
                         label: "Memory",
                         width: "w-1/4",
                         render: (row) => <ApplicationMemory resources={row.resources} />,
                     },
                     {
                         id: "restarts",
+                        sortValue: (row) => row.restarts,
                         label: "Restarts",
                         render: (row) => row.restarts ?? "Not reported",
                     },
