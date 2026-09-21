@@ -77,6 +77,29 @@ def main():
             finally:
                 assert command(["/usr/bin/docker", "inspect", "--format", '{{index .Config.Labels "homelab.smoke"}}', rogue]) == owner
                 command(["/usr/bin/docker", "rm", "--force", "--volumes", rogue])
+            # Reproduce a new reverse edge arriving while an actual image pull is in progress.
+            rogue = None
+            def changing_command(arguments, **options):
+                nonlocal rogue
+                result = command(arguments, **options)
+                if arguments[1] == "pull":
+                    rogue = command(["/usr/bin/docker", "create", "--name", owner + "-during-pull", "--label", "homelab.smoke=" + owner, "--network", "container:" + before["provider"][0], "--entrypoint", "/bin/sleep", "postgres:18", "3600"])
+                return result
+            stable = {service: remote.namespace_snapshot(row[0]) for service, row in before.items()}
+            try:
+                remote.command = changing_command
+                try:
+                    remote.docker_update(driver, item)
+                    raise AssertionError("A namespace consumer created during pull was accepted")
+                except RuntimeError as error:
+                    assert "unapproved" in str(error)
+                assert {service: remote.namespace_snapshot(row[0]) for service, row in before.items()} == stable
+                assert original in provider_file.read_text()
+            finally:
+                remote.command = command
+                if rogue:
+                    assert command(["/usr/bin/docker", "inspect", "--format", '{{index .Config.Labels "homelab.smoke"}}', rogue]) == owner
+                    command(["/usr/bin/docker", "rm", "--force", "--volumes", rogue])
             try:
                 assert remote.docker_update(driver, item) == image["Id"]
             except RuntimeError:

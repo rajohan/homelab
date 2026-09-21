@@ -153,6 +153,7 @@ async function pause(signal: AbortSignal): Promise<void> {
  * @param port - Worker-owned transport for the same host.
  * @param signal - Overall job cancellation/deadline.
  * @param report - Shared worker progress publisher for readiness waits.
+ * @param starting - During preflight, skip dependencies that this operation will start itself.
  * @returns Once every declared dependency is ready, or rejects without starting this container.
  */
 export async function waitForApplicationDependencies(
@@ -160,9 +161,11 @@ export async function waitForApplicationDependencies(
     details: readonly DockerDetail[],
     port: DockerPort,
     signal: AbortSignal,
-    report: (message: string) => Promise<void> = async () => {}
+    report: (message: string) => Promise<void> = async () => {},
+    starting: ReadonlySet<string> = new Set()
 ): Promise<void> {
     for (const provider of namespaceProviders(item)) {
+        if (starting.has(provider)) continue;
         const current = await port.inspect(provider, signal);
         await waitForApplicationReady(current, port, signal, report, false);
     }
@@ -176,6 +179,7 @@ export async function waitForApplicationDependencies(
         if (matches.length === 0)
             throw new Error("An application dependency is missing from the project");
         for (const candidate of matches) {
+            if (starting.has(candidate.Id)) continue;
             const conditions = {
                 service_started: "start",
                 service_healthy: "become healthy",

@@ -32,6 +32,66 @@ function largeFixtureDetail(id: string) {
 }
 
 test.each([
+    ["service_started", "exited", "healthy", 0, false],
+    ["service_healthy", "running", "unhealthy", 0, false],
+    ["service_completed_successfully", "exited", "healthy", 1, false],
+    ["service_started", "running", "unhealthy", 0, true],
+    ["service_healthy", "running", "healthy", 0, true],
+    ["service_completed_successfully", "exited", "healthy", 0, true],
+] as const)(
+    "namespace restart preflights external %s dependency in %s/%s with exit %s",
+    async (condition, status, health, exitCode, allowed) => {
+        const fixture = createApplicationFixture();
+        try {
+            const provider = fixture.containers.get("a".repeat(64))!;
+            const consumer = fixture.containers.get("b".repeat(64))!;
+            consumer.HostConfig.NetworkMode = `container:${provider.Id}`;
+            consumer.Config.Labels!["com.docker.compose.depends_on"] =
+                `external:${condition}:false`;
+            const external = applicationFixtureDetail("c".repeat(64), "external");
+            external.State.Status = status;
+            external.State.Health = { Status: health };
+            external.State.ExitCode = exitCode;
+            fixture.containers.set(external.Id, external);
+            const port = createDockerPort(fixture.target, {});
+            const selection = { kind: "container" as const, target: provider.Id };
+            const inventory = await collectApplications(
+                [fixture.target],
+                () => port,
+                AbortSignal.timeout(3000)
+            );
+            const revision = selectionRevision(
+                selectApplications(inventory, "demo", selection, true),
+                selection
+            );
+            const result = performApplicationAction(
+                fixture.target,
+                port,
+                { selection, revision, operation: "restart" },
+                AbortSignal.timeout(3000)
+            );
+            if (allowed) {
+                await result;
+                expect(fixture.calls).toEqual([
+                    "stop:web",
+                    "stop:database",
+                    "start:database",
+                    "start:web",
+                ]);
+            } else {
+                await expectOperationFailure(result, "dependency did not become ready");
+                expect(fixture.calls).toEqual([]);
+                expect(provider.State.StartedAt).toBe("2026-09-01T10:00:00Z");
+                expect(consumer.State.StartedAt).toBe("2026-09-01T10:00:00Z");
+            }
+            expect(external.State.Status).toBe(status);
+        } finally {
+            await fixture.close();
+        }
+    }
+);
+
+test.each([
     "add-same",
     "add-other",
     "remove-same",

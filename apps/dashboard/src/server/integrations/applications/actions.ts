@@ -143,22 +143,31 @@ export async function performApplicationAction(
             throw new Error("Application namespace membership changed before execution");
     };
     if (intent.operation !== "stop") {
+        const starting = new Set(
+            details
+                .filter((detail) => !preservedStopped.has(detail.Id))
+                .map((detail) => detail.Id)
+        );
         try {
-            await verifyNamespaceProviders(
-                details,
-                port,
-                signal,
-                new Set(
-                    details
-                        .filter((detail) => !preservedStopped.has(detail.Id))
-                        .map((detail) => detail.Id)
-                )
-            );
+            await verifyNamespaceProviders(details, port, signal, starting);
         } catch (error) {
             await report(
                 "A shared namespace dependency is unavailable. No containers were changed; recreate the affected services before retrying."
             );
             throw error;
+        }
+        // Dependencies outside the start plan must already be ready before any
+        // running member is stopped. The execution-time waits remain in place.
+        for (const detail of ordered) {
+            if (!starting.has(detail.Id)) continue;
+            await waitForApplicationDependencies(
+                detail,
+                inspected,
+                port,
+                signal,
+                report,
+                starting
+            );
         }
     }
     const revalidate = async (detail: DockerDetail) => {

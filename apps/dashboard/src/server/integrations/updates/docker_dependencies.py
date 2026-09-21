@@ -71,9 +71,15 @@ def prepare_namespace_plan(config, driver, compose):
                 raise RuntimeError("A stopped namespace provider still has a running consumer")
             if provider[6] != driver["project"] or (provider[0] not in selected_ids and provider[4] != "running"):
                 raise RuntimeError("A namespace provider is missing, stopped or outside this project")
-    if snapshots:
-        # Inspect only namespace references outside the project, never environment
-        # values. Unexpected cross-project consumers prevent a disruptive update.
+    verify_namespace_membership(snapshots)
+    return snapshots
+
+
+def verify_namespace_membership(plan):
+    """Repeat the bounded reverse-edge scan so a pull cannot hide newly added consumers."""
+    selected_ids = {row[0] for row in plan}
+    if selected_ids:
+        # Inspect only immutable namespace references, never environment values.
         ids = command(["/usr/bin/docker", "ps", "--all", "--quiet", "--no-trunc"]).split()
         if len(ids) > 500:
             raise RuntimeError("Namespace topology exceeds its inspection budget")
@@ -83,13 +89,13 @@ def prepare_namespace_plan(config, driver, compose):
                 parts = line.split()
                 if parts[0] not in selected_ids and any(value.startswith("container:") and value[10:] in selected_ids for value in parts[1:]):
                     raise RuntimeError("An unapproved container shares the selected namespace")
-    return snapshots
 
 
 def verify_namespace_plan(plan):
     """Reject a changed consumer before stopping anything or changing a Compose pin."""
     if any(namespace_snapshot(row[0]) != row for row in plan):
         raise RuntimeError("Namespace dependencies changed during update preparation")
+    verify_namespace_membership(plan)
 
 
 def stop_namespace_consumers(plan, root, compose):

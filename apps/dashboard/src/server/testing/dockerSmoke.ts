@@ -32,7 +32,8 @@ async function docker(...args: string[]): Promise<string> {
 async function create(
     service: string,
     network: string,
-    health = "true"
+    health = "true",
+    dependencies = ""
 ): Promise<string> {
     const id = await docker(
         "create",
@@ -45,6 +46,8 @@ async function create(
         `com.docker.compose.project=${owner}`,
         "--label",
         `com.docker.compose.service=${service}`,
+        "--label",
+        `com.docker.compose.depends_on=${dependencies}`,
         "--memory",
         "64m",
         "--pids-limit",
@@ -117,6 +120,25 @@ export async function main(): Promise<void> {
     const port = createDockerPort(target, {});
     const signal = AbortSignal.timeout(180_000);
     const intent = async (id: string, operation: ApplicationOperation) => {
+        for (let attempt = 0; ; attempt += 1) {
+            const ids = await port.list(signal);
+            const details = await Promise.all(
+                ids.map((identity) => port.inspect(identity, signal))
+            );
+            if (
+                !details.some(
+                    (detail) =>
+                        detail.State.Status === "running" &&
+                        detail.State.Health?.Status === "starting"
+                )
+            )
+                break;
+            assert.ok(
+                attempt < 100,
+                "Fixture health did not stabilize before confirmation"
+            );
+            await Bun.sleep(100);
+        }
         const inventory = await collectApplications([target], () => port, signal);
         const selection = { kind: "container" as const, target: id };
         return {
@@ -186,6 +208,36 @@ export async function main(): Promise<void> {
         observed = await state(consumer);
         assert.equal(observed.Status, "exited");
         await act(consumer, "start");
+        const external = await create("external", "none");
+        await docker("start", external);
+        await docker("stop", "--time", "1", external);
+        const externalConsumer = await create(
+            "external-consumer",
+            `container:${provider}`,
+            "true",
+            "external:service_healthy:false"
+        );
+        await docker("start", externalConsumer);
+        const externalConsumerBefore = await state(externalConsumer);
+        const providerBefore = await state(provider);
+        calls.length = 0;
+        await assert.rejects(act(provider, "restart"), /dependency/);
+        assert.equal(
+            calls.length,
+            0,
+            "Unready external dependencies must be checked before a coordinated stop"
+        );
+        const externalConsumerAfter = await state(externalConsumer);
+        const providerAfter = await state(provider);
+        assert.equal(externalConsumerAfter.StartedAt, externalConsumerBefore.StartedAt);
+        assert.equal(providerAfter.StartedAt, providerBefore.StartedAt);
+        await docker("start", external);
+        await act(provider, "restart");
+        assert.equal(await namespace(externalConsumer), await namespace(provider));
+        assert.ok(
+            !calls.some((call) => call.endsWith(`:${external}`)),
+            "External dependencies must not be mutated"
+        );
         const leaf = await create("leaf", `container:${consumer}`);
         await docker("start", leaf);
         for (let attempt = 0; ; attempt += 1) {

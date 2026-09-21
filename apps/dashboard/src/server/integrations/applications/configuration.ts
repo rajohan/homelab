@@ -2,6 +2,7 @@ import { applicationHostSchema } from "@homelab/contracts/applications";
 import * as v from "valibot";
 
 import { hostResourceKey } from "../../jobs/resources";
+import { updateTargetSourceSchema } from "../updates/configuration";
 
 const secretName = v.pipe(v.string(), v.regex(/^HOMELAB_DASHBOARD_[A-Z0-9_]{1,100}$/));
 const projectName = v.pipe(v.string(), v.regex(/^[a-z0-9][a-z0-9._-]{0,79}$/));
@@ -46,7 +47,7 @@ const schema = v.pipe(
             endpoint: v.string(),
             projects: v.pipe(v.array(projectName), v.minLength(1), v.maxLength(50)),
             updateSources: v.optional(
-                v.pipe(v.array(applicationHostSchema), v.minLength(1), v.maxLength(50))
+                v.pipe(v.array(updateTargetSourceSchema), v.minLength(1), v.maxLength(50))
             ),
             tls: v.optional(
                 v.strictObject({

@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 
 import { hostResourceKey } from "../../jobs/resources";
+import { parseUpdateTargets } from "../updates/configuration";
 import {
     parseApplicationTargets,
     bindApplicationHosts,
@@ -93,6 +94,41 @@ test("historical log mappings are explicit, bounded and cannot overlap other pro
                 ])
             )
         ).toThrow();
+});
+
+test("lifecycle source bindings accept the full updater source range without enlarging host IDs", () => {
+    for (const length of [32, 33, 48]) {
+        const source = "a".repeat(length);
+        const updates = parseUpdateTargets(
+            JSON.stringify([
+                {
+                    id: "fixture",
+                    label: "Fixture",
+                    source,
+                    host: "192.0.2.10",
+                    user: "fixture",
+                    identityFile: "/fixture/key",
+                    knownHostsFile: "/fixture/hosts",
+                    driver: { kind: "apt" },
+                },
+            ])
+        );
+        const applications = parseApplicationTargets(
+            JSON.stringify([{ ...target, updateSources: [source] }])
+        );
+        expect(
+            applicationHostResourceKeys(bindApplicationHosts(applications, updates)[0]!)
+        ).toContain(hostResourceKey("192.0.2.10"));
+    }
+    for (const source of ["a".repeat(49), "invalid source", "UPPER", "-prefix"])
+        expect(() =>
+            parseApplicationTargets(
+                JSON.stringify([{ ...target, updateSources: [source] }])
+            )
+        ).toThrow();
+    expect(() =>
+        parseApplicationTargets(JSON.stringify([{ ...target, id: "a".repeat(33) }]))
+    ).toThrow();
 });
 
 test("application targets require explicit unique projects, secure origins and credential references", () => {
