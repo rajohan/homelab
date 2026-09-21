@@ -11,7 +11,7 @@ export interface UpdateReceiptScope {
 }
 
 /**
- * Limit identity reconciliation to sources explicitly bound to the installation host.
+ * Close identity reconciliation over deployment-owned host and lifecycle source bindings.
  * @param target - Installer whose verified receipt is being recorded.
  * @param targets - Deployment-owned update recipes, including same-SSH-host sources.
  * @param applications - Explicit lifecycle source bindings for alternate host addresses.
@@ -24,17 +24,27 @@ export function updateReceiptScope(
 ): UpdateReceiptScope {
     const sources = new Set([target.source]);
     if (target.driver.kind === "docker") {
-        for (const other of targets)
-            if (
-                other.driver.kind === "docker" &&
-                other.host.toLowerCase() === target.host.toLowerCase()
-            )
-                sources.add(other.source);
-        for (const application of applications) {
-            const bound = application.updateSources ?? [application.id];
-            if (bound.includes(target.source))
-                for (const source of bound) sources.add(source);
+        const hosts = new Map<string, string[]>();
+        for (const other of [target, ...targets]) {
+            if (other.driver.kind !== "docker") continue;
+            const host = other.host.toLowerCase();
+            const bound = hosts.get(host) ?? [];
+            bound.push(other.source);
+            hosts.set(host, bound);
         }
+        const bindings = [
+            ...hosts.values(),
+            ...applications.map(
+                (application) => application.updateSources ?? [application.id]
+            ),
+        ];
+        let previousSize: number;
+        do {
+            previousSize = sources.size;
+            for (const bound of bindings)
+                if (bound.some((source) => sources.has(source)))
+                    for (const source of bound) sources.add(source);
+        } while (sources.size !== previousSize);
     }
     return {
         sources: [...sources].toSorted(),

@@ -67,6 +67,9 @@ const item: UpdateItem = {
 test.each([
     "same-host",
     "bound-alias",
+    "host-then-binding",
+    "binding-then-host",
+    "alternating-chain",
     "unbound",
     "wrong-digest",
     "changed-candidate",
@@ -96,26 +99,76 @@ test.each([
                 ...target,
                 id: "consumer",
                 source: "beta",
-                host: ["bound-alias", "unbound"].includes(scenario)
+                host: [
+                    "bound-alias",
+                    "unbound",
+                    "host-then-binding",
+                    "binding-then-host",
+                    "alternating-chain",
+                ].includes(scenario)
                     ? "alias.invalid"
                     : target.host,
             };
             const providerItem = { ...item, name: "provider" };
             const consumerItem = { ...item, id: "docker:" + "b".repeat(64) };
-            const targets = [provider, consumer];
+            let bridgeSources: [string, string][] = [];
+            let bindings = [["alpha", "beta", "snapshot-only"]];
+            switch (scenario) {
+                case "host-then-binding": {
+                    bridgeSources = [["gamma", target.host]];
+                    bindings = [["gamma", "beta", "snapshot-only"], ["alpha"]];
+                    break;
+                }
+                case "binding-then-host": {
+                    bridgeSources = [["gamma", consumer.host]];
+                    bindings = [
+                        ["beta", "snapshot-only"],
+                        ["alpha", "gamma"],
+                    ];
+                    break;
+                }
+                case "alternating-chain": {
+                    bridgeSources = [
+                        ["gamma", target.host],
+                        ["delta", "middle.invalid"],
+                        ["epsilon", "middle.invalid"],
+                    ];
+                    bindings = [
+                        ["epsilon", "beta", "snapshot-only"],
+                        ["gamma", "delta"],
+                        ["alpha"],
+                    ];
+                    break;
+                }
+                case "unbound": {
+                    bindings = [];
+                    break;
+                }
+            }
+            const targets = [
+                provider,
+                consumer,
+                ...bridgeSources.map(([source, host]) => ({
+                    ...target,
+                    id: source,
+                    source,
+                    host,
+                    driver: {
+                        ...provider.driver,
+                        name: source,
+                        service: source,
+                        namespaceDependents: [],
+                    },
+                })),
+            ];
             const calls: string[] = [];
-            const applications =
-                scenario === "unbound"
-                    ? []
-                    : [
-                          {
-                              id: "docker",
-                              label: "Docker",
-                              endpoint: "https://docker.invalid",
-                              projects: ["demo"],
-                              updateSources: ["alpha", "beta", "snapshot-only"],
-                          },
-                      ];
+            const applications = bindings.map((updateSources, index) => ({
+                id: `docker-${index}`,
+                label: "Docker",
+                endpoint: "https://docker.invalid",
+                projects: ["demo"],
+                updateSources,
+            }));
             const registry = createJobRegistry(
                 updateActionJobs(
                     targets,
@@ -227,7 +280,13 @@ test.each([
             const [queued] = await state.client<
                 { payload: { items: { item: string }[] }; fingerprint: string }[]
             >`SELECT payload,fingerprint FROM job_runs WHERE id=${original.id}`;
-            const continued = ["same-host", "bound-alias"].includes(scenario);
+            const continued = [
+                "same-host",
+                "bound-alias",
+                "host-then-binding",
+                "binding-then-host",
+                "alternating-chain",
+            ].includes(scenario);
             expect(queued?.payload.items[0]?.item).toBe(
                 "docker:" + (continued ? "e" : "b").repeat(64)
             );
