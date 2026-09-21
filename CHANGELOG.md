@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/rajohan/homelab/compare/v0.7.0...v0.7.1) (2026-09-21)
+
+
+### Bug Fixes
+
+* **updates:** package target configuration and qualify native updates ([#23](https://github.com/rajohan/homelab/issues/23)) ([1e9c897](https://github.com/rajohan/homelab/commit/1e9c897df1a94f8064837ea9aba98718523a73b1))
+
 ## [0.7.0](https://github.com/rajohan/homelab/compare/v0.6.1...v0.7.0) (2026-09-21)
 
 
