@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.3](https://github.com/rajohan/homelab/compare/v0.7.2...v0.7.3) (2026-09-21)
+
+
+### Bug Fixes
+
+* **updates:** coordinate namespace dependencies and verify lifecycle operations ([#28](https://github.com/rajohan/homelab/issues/28)) ([3a22802](https://github.com/rajohan/homelab/commit/3a228028dcb6f9cf8094d904bae500c0d17ac991))
+
 ## [0.7.2](https://github.com/rajohan/homelab/compare/v0.7.1...v0.7.2) (2026-09-21)
 
 
