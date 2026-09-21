@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/rajohan/homelab/compare/v0.6.1...v0.7.0) (2026-09-21)
+
+
+### Features
+
+* **updates:** verify Docker identity and add bulk native updates ([#21](https://github.com/rajohan/homelab/issues/21)) ([a6c37db](https://github.com/rajohan/homelab/commit/a6c37db2e72d8398e9e4616129b0df05bcf94dea))
+
 ## [0.6.1](https://github.com/rajohan/homelab/compare/v0.6.0...v0.6.1) (2026-09-20)
 
 
