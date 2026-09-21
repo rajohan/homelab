@@ -966,11 +966,13 @@ test("Compose environment recipes are explicit, validated and invalidate automat
     }
 });
 
+function configuredEnvironment(environment: unknown) {
+    return parseUpdateTargets(
+        JSON.stringify([{ ...target, driver: { ...target.driver, environment } }])
+    );
+}
+
 test("Compose environment cannot override process or Docker CLI controls", () => {
-    const configured = (environment: unknown) =>
-        parseUpdateTargets(
-            JSON.stringify([{ ...target, driver: { ...target.driver, environment } }])
-        );
     for (const name of [
         "PATH",
         "HOME",
@@ -987,7 +989,7 @@ test("Compose environment cannot override process or Docker CLI controls", () =>
         "bad-name",
     ])
         expect(() =>
-            configured({ command: ["/fixture/reader"], variables: [name] })
+            configuredEnvironment({ command: ["/fixture/reader"], variables: [name] })
         ).toThrow();
     for (const environment of [
         { command: ["relative-reader"], variables: ["APP_PASSWORD"] },
@@ -996,7 +998,7 @@ test("Compose environment cannot override process or Docker CLI controls", () =>
         { command: ["/fixture/reader"], variables: ["APP_PASSWORD", "APP_PASSWORD"] },
         { command: ["/fixture/reader"], variables: ["APP_PASSWORD"], extra: true },
     ])
-        expect(() => configured(environment)).toThrow();
+        expect(() => configuredEnvironment(environment)).toThrow();
 });
 
 test("SSH update transport pins trust and deployment configuration rejects ambiguous targets", () => {

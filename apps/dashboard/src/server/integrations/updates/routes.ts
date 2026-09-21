@@ -207,9 +207,10 @@ export const updatesRouter = trpc.router({
                     "This account is not registered as an update source."
                 );
             const time = Date.parse(input.capturedAt);
+            const receivedAt = Date.now();
             if (
-                time > Date.now() + 60_000 ||
-                time < Date.now() - 3_600_000 ||
+                time > receivedAt + 60_000 ||
+                time < receivedAt - 3_600_000 ||
                 (input.rebootObservedAt !== undefined &&
                     (Date.parse(input.rebootObservedAt) > time ||
                         Date.parse(input.rebootObservedAt) < time - 60_000)) ||
@@ -240,7 +241,14 @@ export const updatesRouter = trpc.router({
                     { key: string }[]
                 >`INSERT INTO operation_snapshots (key, value, captured_at) VALUES (${`updates:${source.id}`}, ${JSON.stringify(observation)}::text::jsonb, ${new Date(time)}) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, captured_at = EXCLUDED.captured_at WHERE operation_snapshots.captured_at < EXCLUDED.captured_at RETURNING key`;
                 if (row && input.rebootRequired !== undefined) {
-                    const observedAt = input.rebootObservedAt ?? input.capturedAt;
+                    // Accepted publisher clock skew must not outrank a later local
+                    // installation receipt. Retain the publisher watermark separately.
+                    const observedAt = new Date(
+                        Math.min(
+                            Date.parse(input.rebootObservedAt ?? input.capturedAt),
+                            receivedAt
+                        )
+                    ).toISOString();
                     await recordRestartObservation(
                         transaction,
                         source.id,

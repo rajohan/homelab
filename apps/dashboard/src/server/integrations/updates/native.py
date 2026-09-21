@@ -240,7 +240,7 @@ def install_native_recipe(driver, item, run, emit, replace, lock):
     elif application == "pve-exporter":
         active = python_application_install(recipe, installed, candidate, run, emit, lock)
     elif application in {"bun", "node", "github-cli"}:
-        active = toolchain_install(recipe, installed, candidate, run, emit, replace, lock)
+        active = toolchain_install(recipe, installed, candidate, run, emit, replace, lock, lambda: run(driver["health"]))
     elif application in BINARY_RELEASES:
         active = binary_install(recipe, installed, candidate, run, emit, replace, lock)
     else:

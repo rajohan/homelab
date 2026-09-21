@@ -70,10 +70,13 @@ class ToolchainTests(unittest.TestCase):
                 def run(args, **_options):
                     if args == ['/usr/bin/uname', '-m']: return 'x86_64'
                     self.assertEqual(args[-1], '--version')
-                    return Path(args[0]).read_bytes()[4:].decode()
+                    executable = Path(args[0])
+                    if executable == wrapper and application == 'github-cli':
+                        executable = Path(wrapper.read_text().splitlines()[1].split()[1])
+                    return executable.read_bytes()[4:].decode()
                 for before, after in [('1.2.3', '1.3.0'), ('1.3.0', '1.4.0')]:
                     with patch.object(remote, 'runtime_archive', return_value=runtime_fixture(application, after)):
-                        self.assertFalse(remote.toolchain_install(recipe, before, after, run, lambda _: None, remote.atomic_content, remote.locked_directory))
+                        self.assertFalse(remote.toolchain_install(recipe, before, after, run, lambda _: None, remote.atomic_content, remote.locked_directory, lambda: None))
                     self.assertEqual(json.loads(inventory.read_text())['executables'][application], str(directory / after / member))
                     self.assertTrue(json.loads(inventory.read_text())['unrelated']['unchanged'])
                     self.assertEqual(pinned.read_bytes(), b'\x7fELF1.2.3')
@@ -95,10 +98,69 @@ class ToolchainTests(unittest.TestCase):
             def run(args, **_options): return 'x86_64' if args[-1] == '-m' else Path(args[0]).read_bytes()[4:].decode()
             with patch.object(remote, 'runtime_archive', return_value=runtime_fixture('bun', '1.3.0')):
                 with self.assertRaisesRegex(RuntimeError, 'synthetic write failure'):
-                    remote.toolchain_install(recipe, '1.2.3', '1.3.0', run, lambda _:None, lambda *_: (_ for _ in ()).throw(RuntimeError('synthetic write failure')), remote.locked_directory)
+                    remote.toolchain_install(recipe, '1.2.3', '1.3.0', run, lambda _:None, lambda *_: (_ for _ in ()).throw(RuntimeError('synthetic write failure')), remote.locked_directory, lambda: None)
             self.assertEqual(default.resolve(), pinned)
             self.assertEqual(json.loads(inventory.read_text())['executables']['bun'], str(pinned))
             self.assertEqual(pinned.read_bytes(), b'\x7fELF1.2.3')
+
+    def test_default_entrypoint_and_health_failures_restore_links_wrapper_and_inventory(self):
+        for application in ('bun', 'node', 'github-cli'):
+            for failure in ('default-version', 'default-execution', 'health', None):
+                with self.subTest(application=application, failure=failure), tempfile.TemporaryDirectory(prefix='homelab-runtime-fixture-') as temporary:
+                    root = Path(temporary).resolve()
+                    directory = root / 'runtimes'; directory.mkdir(); directory.chmod(0o755)
+                    entrypoints = root / 'bin'; entrypoints.mkdir(); entrypoints.chmod(0o755)
+                    original = directory / '1.2.3'; original.mkdir()
+                    remote.extract_runtime(*runtime_fixture(application, '1.2.3')[:4], original)
+                    member = 'bin/node' if application == 'node' else 'gh' if application == 'github-cli' else 'bun'
+                    pinned = original / member
+                    default = entrypoints / Path(member).name
+                    inventory = root / 'inventory.json'
+                    inventory.write_text(json.dumps({'executables': {application: str(pinned)}})); inventory.chmod(0o644)
+                    old_inventory = inventory.read_bytes()
+                    recipe = {'application': application, 'directory': str(directory), 'inventory': str(inventory), 'links': []}
+                    old_wrapper = None
+                    if application == 'github-cli':
+                        old_wrapper = ('#!/bin/sh\nexec ' + str(pinned) + ' "$@"\n').encode()
+                        default.write_bytes(old_wrapper); default.chmod(0o755)
+                        recipe['wrapper'] = str(default)
+                    else:
+                        default.symlink_to(pinned)
+                        recipe['links'] = [{'path': str(default), 'member': member}]
+                        if application == 'node':
+                            # Newly created auxiliary defaults must also be removed on rollback.
+                            recipe['links'].append({'path': str(entrypoints / 'npm'), 'member': 'bin/npm'})
+                    observed = []
+                    def run(args, **_options):
+                        observed.append(args)
+                        if args == ['/usr/bin/uname', '-m']: return 'x86_64'
+                        if args == ['synthetic-health']:
+                            if failure == 'health': raise RuntimeError('synthetic health failure')
+                            return 'healthy'
+                        executable = Path(args[0])
+                        if executable == default:
+                            if failure == 'default-execution': raise RuntimeError('synthetic default execution failure')
+                            if failure == 'default-version': return '1.2.3'
+                            if old_wrapper: executable = Path(default.read_text().splitlines()[1].split()[1])
+                        return executable.read_bytes()[4:].decode()
+                    driver = {'recipe': recipe, 'release': application, 'health': ['synthetic-health']}
+                    item = {'installed': '1.2.3', 'available': '1.3.0', 'release': application}
+                    with patch.object(remote, 'runtime_archive', return_value=runtime_fixture(application, '1.3.0')):
+                        if failure:
+                            with self.assertRaises(RuntimeError):
+                                remote.install_native_recipe(driver, item, run, lambda _: None, remote.atomic_content, remote.locked_directory)
+                        else:
+                            self.assertEqual(remote.install_native_recipe(driver, item, run, lambda _: None, remote.atomic_content, remote.locked_directory), '1.3.0')
+                    self.assertIn([str(default), '--version'], observed)
+                    if failure == 'health' or failure is None: self.assertIn(['synthetic-health'], observed)
+                    if failure:
+                        self.assertEqual(inventory.read_bytes(), old_inventory)
+                        if old_wrapper: self.assertEqual(default.read_bytes(), old_wrapper)
+                        else: self.assertEqual(default.resolve(), pinned)
+                        if application == 'node': self.assertFalse((entrypoints / 'npm').is_symlink())
+                    self.assertEqual(pinned.read_bytes(), b'\x7fELF1.2.3')
+                    self.assertTrue((directory / '1.3.0' / member).exists())
+                    self.assertFalse(list(root.rglob('.homelab-runtime-*')))
 
     def test_runtime_release_origin_digest_and_exact_version_are_verified(self):
         for application in ('bun', 'node', 'github-cli'):

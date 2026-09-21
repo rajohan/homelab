@@ -112,7 +112,7 @@ def runtime_link(path, target, expected):
         os.replace(link, path)
 
 
-def toolchain_install(recipe, installed, candidate, run, emit, replace, lock):
+def toolchain_install(recipe, installed, candidate, run, emit, replace, lock, verify):
     """Install beside pinned runtimes and switch only the explicitly owned default references."""
     application = recipe["application"]
     directory = Path(recipe["directory"])
@@ -141,6 +141,9 @@ def toolchain_install(recipe, installed, candidate, run, emit, replace, lock):
         original_wrapper = wrapper.read_bytes() if wrapper else None
         if wrapper and (wrapper.stat().st_uid != os.geteuid() or wrapper.stat().st_mode & 0o022 or len(original_wrapper) > 16_384 or original_wrapper.count(str(previous).encode()) != 1):
             raise RuntimeError("Runtime wrapper reference is not unambiguous")
+        entrypoints = ([wrapper] if wrapper else []) + [path for path, _, target in links if target == directory / candidate / binary_name]
+        if not entrypoints:
+            raise RuntimeError("Runtime default entrypoint is not configured")
         architecture = run(["/usr/bin/uname", "-m"])
         if architecture not in {"x86_64", "aarch64"}: raise RuntimeError("Unsupported runtime architecture")
         emit("downloading")
@@ -175,8 +178,11 @@ def toolchain_install(recipe, installed, candidate, run, emit, replace, lock):
                 runtime_link(path, target, old)
                 changed.append((path, old, target))
             replace(inventory, updated_inventory, original_inventory)
-            if native_version(run([str(destination / binary_name), "--version"])) != candidate:
-                raise RuntimeError("Runtime activation could not be verified")
+            emit("verifying")
+            for entrypoint in entrypoints:
+                if native_version(run([str(entrypoint), "--version"])) != candidate:
+                    raise RuntimeError("Runtime activation could not be verified")
+            verify()
         except Exception:
             # Restore only references still owned by this attempt. Never remove a
             # versioned runtime: a pinned project may already reference that path.

@@ -42,23 +42,23 @@ export const jobsRouter = trpc.router({
         runOperation(async () => {
             const { operations } = authorizedOperations(ctx, "jobs:read");
             if (input.sort) {
-                const page = await sortedPage<JobSummary>(
+                const page = await sortedPage<JobSummary & { actorLabel: string }>(
                     operations.client,
-                    jobSummaryQuery(operations.client, input),
+                    operations.client`SELECT runs.*, CASE WHEN starts_with("requestedBy", 'human:') THEN 'User: ' || substring("requestedBy" FROM 7) ELSE "requestedBy" END AS "actorLabel" FROM (${jobSummaryQuery(operations.client, input)}) runs`,
                     {
                         job: "label",
                         state: "state",
                         size: "resourceClass",
                         attempt: "attempt",
                         time: "createdAt",
-                        actor: "requestedBy",
+                        actor: "actorLabel",
                     },
                     input.sort,
                     input.cursor,
                     input.limit
                 );
                 return {
-                    runs: page.items,
+                    runs: page.items.map(({ actorLabel: _actorLabel, ...run }) => run),
                     nextCursor: null,
                     nextSortCursor: page.nextSortCursor,
                 };

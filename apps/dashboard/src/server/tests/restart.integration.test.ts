@@ -1,11 +1,76 @@
 import { expect, test } from "bun:test";
 
+import { appRouter } from "../api/router";
 import { readUpdateSources } from "../integrations/updates/inventory";
 import { restartStatusJob } from "../integrations/updates/restart";
 import { recordRestartObservation } from "../integrations/updates/restartObservation";
 import type { JobExecution } from "../jobs/types";
 import { operationFixture, expectOperationFailure } from "../testing/operations";
 import { previewUpdateTargets } from "../testing/updates";
+
+test.each([true, false])(
+    "future-dated publisher observations cannot mask a later installation receipt requiring restart=%s",
+    async (required) => {
+        const fixture = await operationFixture();
+        const source = {
+            id: "demo-main",
+            label: "Main",
+            publisher: "synthetic-publisher",
+        };
+        const caller = appRouter.createCaller({
+            operations: { ...fixture, updateSources: [source] },
+            principal: {
+                kind: "automation",
+                id: source.publisher,
+                capabilities: ["updates:publish"],
+            },
+        });
+        try {
+            for (const explicit of [true, false]) {
+                const capturedAt = new Date(
+                    Date.now() + (explicit ? 30_000 : 45_000)
+                ).toISOString();
+                expect(
+                    await caller.updates.publish({
+                        capturedAt,
+                        repositoryMetadataAt: null,
+                        complete: true,
+                        coveredKinds: ["os"],
+                        items: [],
+                        rebootRequired: !required,
+                        ...(explicit ? { rebootObservedAt: capturedAt } : {}),
+                    })
+                ).toEqual({ accepted: true });
+                const receivedAt = Date.now();
+                const [published] = await fixture.client<
+                    { capturedAt: Date }[]
+                >`SELECT captured_at AS "capturedAt" FROM operation_snapshots WHERE key='updates.restart:demo-main'`;
+                expect(published?.capturedAt.getTime()).toBeLessThanOrEqual(receivedAt);
+                // A receipt after publication must win even while the publisher's
+                // accepted report watermark remains ahead of the server clock.
+                const receiptAt = new Date(receivedAt + 1).toISOString();
+                await recordRestartObservation(
+                    fixture.client,
+                    source.id,
+                    required,
+                    receiptAt
+                );
+                const [inventory] = await readUpdateSources(fixture.client, [source]);
+                expect(inventory?.restart?.required).toBe(required);
+                await recordRestartObservation(
+                    fixture.client,
+                    source.id,
+                    !required,
+                    new Date(receivedAt - 1000).toISOString()
+                );
+                const afterLateProbe = await readUpdateSources(fixture.client, [source]);
+                expect(afterLateProbe[0]?.restart?.required).toBe(required);
+            }
+        } finally {
+            await fixture.close();
+        }
+    }
+);
 
 test("restart checks deduplicate application connections, clear after restart and retain explicit unknown failures", async () => {
     const fixture = await operationFixture();
