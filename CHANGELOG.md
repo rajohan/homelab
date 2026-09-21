@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.2](https://github.com/rajohan/homelab/compare/v0.7.1...v0.7.2) (2026-09-21)
+
+
+### Bug Fixes
+
+* **updates:** complete native controls and restart reporting ([#26](https://github.com/rajohan/homelab/issues/26)) ([8de1145](https://github.com/rajohan/homelab/commit/8de11458e4d51e9728cfea56b9403174ecf70714))
+
 ## [0.7.1](https://github.com/rajohan/homelab/compare/v0.7.0...v0.7.1) (2026-09-21)
 
 
