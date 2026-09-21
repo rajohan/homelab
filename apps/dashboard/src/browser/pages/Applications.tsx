@@ -84,15 +84,27 @@ export function Applications() {
                             columns={[
                                 {
                                     id: "name",
+                                    sortValue: (row) => row.name,
                                     label: "Project",
                                     mobile: "title",
                                     render: (row) => (
                                         <span className="font-semibold">{row.name}</span>
                                     ),
                                 },
-                                { id: "host", label: "Host", render: (row) => row.host },
+                                {
+                                    id: "host",
+                                    sortValue: (row) => row.host,
+                                    label: "Host",
+                                    render: (row) => row.host,
+                                },
                                 {
                                     id: "containers",
+                                    sortValue: (row) =>
+                                        applications.filter(
+                                            (item) =>
+                                                item.host === row.host &&
+                                                item.project === row.name
+                                        ).length,
                                     label: "Containers",
                                     render: (row) =>
                                         applications.filter(
@@ -152,6 +164,7 @@ export function Applications() {
                             columns={[
                                 {
                                     id: "name",
+                                    sortValue: (row) => row.name,
                                     label: "Application",
                                     mobile: "title",
                                     render: (row) => (
@@ -163,9 +176,15 @@ export function Applications() {
                                         </div>
                                     ),
                                 },
-                                { id: "host", label: "Host", render: (row) => row.host },
+                                {
+                                    id: "host",
+                                    sortValue: (row) => row.host,
+                                    label: "Host",
+                                    render: (row) => row.host,
+                                },
                                 {
                                     id: "status",
+                                    sortValue: (row) => row.state,
                                     label: "Status",
                                     render: (row) => (
                                         <ApplicationStatus
@@ -177,6 +196,7 @@ export function Applications() {
                                 },
                                 {
                                     id: "image",
+                                    sortValue: (row) => row.image,
                                     label: "Image",
                                     mobile: "wide",
                                     render: (row) => (

@@ -52,12 +52,14 @@ export function SchedulesPanel() {
                         columns={[
                             {
                                 id: "job",
+                                sortValue: (row) => row.label,
                                 label: "Job",
                                 mobile: "title",
                                 render: (row) => row.label,
                             },
                             {
                                 id: "state",
+                                sortValue: (row) => row.enabled,
                                 label: "Status",
                                 render: (row) => (
                                     <Badge tone={row.enabled ? "positive" : "neutral"}>
@@ -67,16 +69,19 @@ export function SchedulesPanel() {
                             },
                             {
                                 id: "size",
+                                sortValue: (row) => row.resourceClass,
                                 label: "Work size",
                                 render: (row) => row.resourceClass,
                             },
                             {
                                 id: "schedule",
+                                sortValue: (row) => describeSchedule(row.schedule),
                                 label: "Schedule",
                                 render: (row) => describeSchedule(row.schedule),
                             },
                             {
                                 id: "next",
+                                sortValue: (row) => row.nextRunAt,
                                 label: "Next run",
                                 render: (row) => {
                                     if (row.enabled) return formatDateTime(row.nextRunAt);
@@ -87,6 +92,7 @@ export function SchedulesPanel() {
                             },
                             {
                                 id: "reason",
+                                sortValue: (row) => row.disableReason,
                                 label: "Disable reason",
                                 mobile: "wide",
                                 render: (row) => row.disableReason ?? "—",

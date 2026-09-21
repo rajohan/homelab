@@ -110,9 +110,21 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+def reboot_required(path=Path("/var/run/reboot-required")):
+    """Observe the distribution's restart flag; unreadable does not mean absent."""
+    try:
+        path.stat()
+        return True
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return None
+
+
 def collect(configuration):
     """Collect each enabled source independently and retain failures as incomplete reports."""
     report = {"capturedAt": timestamp(), "repositoryMetadataAt": None, "complete": True, "coveredKinds": [], "items": []}
+    report.update(rebootRequired=reboot_required(), rebootObservedAt=report["capturedAt"])
     if configuration.get("apt", True):
         report["coveredKinds"].append("os")
         try:

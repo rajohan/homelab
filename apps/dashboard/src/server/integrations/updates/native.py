@@ -23,7 +23,7 @@ def native_download(url, limit):
         parsed = urllib.parse.urlsplit(value)
         return parsed.scheme == "https" and parsed.port in (None, 443) and not parsed.username and not parsed.password and parsed.hostname in {
             "github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com",
-            "updates.nextcloud.com",
+            "updates.nextcloud.com", "api.github.com", "pypi.org", "files.pythonhosted.org", "nodejs.org",
         }
     class Redirects(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, request, file, code, message, headers, target):
@@ -235,6 +235,14 @@ def install_native_recipe(driver, item, run, emit, replace, lock):
         active = openclaw_install(recipe, installed, candidate, run, emit)
     elif application == "nextcloud":
         active = nextcloud_install(recipe, installed, candidate, run, emit, lock)
+    elif application == "codex":
+        active = codex_install(recipe, installed, candidate, run, emit, lock)
+    elif application == "pve-exporter":
+        active = python_application_install(recipe, installed, candidate, run, emit, lock)
+    elif application in {"bun", "node", "github-cli"}:
+        active = toolchain_install(recipe, installed, candidate, run, emit, replace, lock, lambda: run(driver["health"]))
+    elif application in BINARY_RELEASES:
+        active = binary_install(recipe, installed, candidate, run, emit, replace, lock)
     else:
         raise RuntimeError("Unsupported native recipe")
     emit("verifying")

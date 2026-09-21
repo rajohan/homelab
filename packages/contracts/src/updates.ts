@@ -1,5 +1,7 @@
 import * as v from "valibot";
 
+import { tableSortSchema, tableCursorSchema } from "./tableSort";
+
 const text = (maximum: number) =>
     v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(maximum));
 export const updateItemSchema = v.strictObject({
@@ -53,6 +55,8 @@ export const updateItemSchema = v.strictObject({
 });
 export const updateReportSchema = v.strictObject({
     capturedAt: v.pipe(v.string(), v.isoTimestamp()),
+    rebootRequired: v.optional(v.nullable(v.boolean())),
+    rebootObservedAt: v.optional(v.pipe(v.string(), v.isoTimestamp())),
     repositoryMetadataAt: v.nullable(v.pipe(v.string(), v.isoTimestamp())),
     complete: v.boolean(),
     coveredKinds: v.pipe(
@@ -65,6 +69,11 @@ export const updateReportSchema = v.strictObject({
 export type UpdateItem = v.InferOutput<typeof updateItemSchema>;
 export type UpdateReport = v.InferOutput<typeof updateReportSchema>;
 export const updateListSchema = v.strictObject({
+    category: v.optional(v.picklist(["all", "software", "toolchains"]), "all"),
+    sort: v.optional(
+        tableSortSchema(["name", "kind", "installed", "available", "status"])
+    ),
+    cursor: v.optional(tableCursorSchema),
     source: text(100),
     search: v.optional(v.pipe(v.string(), v.maxLength(160)), ""),
     state: v.optional(v.picklist(["attention", "all"]), "attention"),
@@ -83,6 +92,11 @@ export interface UpdateSourceStatus {
     readonly id: string;
     readonly label: string;
     readonly stale: boolean;
+    readonly restart?: {
+        readonly required: boolean | null;
+        readonly observedAt: string;
+        readonly stale: boolean;
+    } | null;
     readonly report:
         | (Omit<UpdateReport, "items"> & {
               readonly available: number;
@@ -134,6 +148,7 @@ export interface UpdateControl {
     readonly reason: string | null;
 }
 export interface UpdatePolicy {
+    readonly category?: "software" | "toolchains";
     readonly target: string;
     readonly label: string;
     readonly source: string;

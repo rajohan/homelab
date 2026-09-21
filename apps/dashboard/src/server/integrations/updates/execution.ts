@@ -1,12 +1,15 @@
 import type { UpdateItem } from "@homelab/contracts/updates";
 import * as v from "valibot";
 
+import binaryProgram from "./binary.py" with { type: "text" };
 import type { UpdateTarget } from "./configuration";
 import nativeProgram from "./native.py" with { type: "text" };
 import remoteProgram from "./remote.py" with { type: "text" };
+import toolchainProgram from "./toolchain.py" with { type: "text" };
 
 // Both modules travel in one transient interpreter; no helper is installed on a host.
-const program = nativeProgram + "\n" + remoteProgram;
+const program =
+    nativeProgram + "\n" + binaryProgram + "\n" + toolchainProgram + "\n" + remoteProgram;
 
 const phases = {
     checking: "Checking the installed version and update target.",
@@ -21,7 +24,7 @@ const eventSchema = v.variant("complete", [
     v.object({
         complete: v.literal(true),
         installed: v.pipe(v.string(), v.maxLength(300)),
-        rebootRequired: v.boolean(),
+        rebootRequired: v.nullable(v.boolean()),
         containerId: v.optional(v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/))),
     }),
     v.object({ complete: v.literal(false) }),
@@ -31,7 +34,7 @@ const progressSchema = v.object({
 });
 export interface UpdateReceipt {
     readonly installed: string;
-    readonly rebootRequired: boolean;
+    readonly rebootRequired: boolean | null;
     readonly containerId?: string;
 }
 export type UpdateExecutor = (
@@ -46,10 +49,11 @@ const quote = (value: string) => "'" + value.replaceAll("'", String.raw`'\''`) +
 /**
  * Build an SSH invocation with explicit host-key verification and no agent/config inheritance.
  * @param target - Deployment-owned host, user and read-only mounted identity/trust paths.
+ * @param source - Fixed code-owned Python program; defaults to the update executor.
  * @returns Argument vector; software data travels on stdin, never inside a shell command.
  */
-export function updateSshArguments(target: UpdateTarget): string[] {
-    const remote = `${target.sudo ? "sudo -n " : ""}/usr/bin/python3 -c ${quote(program)}`;
+export function updateSshArguments(target: UpdateTarget, source = program): string[] {
+    const remote = `${target.sudo ? "sudo -n " : ""}/usr/bin/python3 -c ${quote(source)}`;
     return [
         "/usr/bin/ssh",
         "-F",

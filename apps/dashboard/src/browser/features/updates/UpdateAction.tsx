@@ -7,6 +7,14 @@ import { api } from "../../api/client";
 import { useJobOperation } from "../jobs/useJobOperation";
 import { updateVersion } from "./updateVersion";
 
+function installationDescription(kind: UpdateItem["kind"]): string {
+    if (kind === "runtime")
+        return "The shared runtime and its default entrypoints will change. Existing version-pinned projects retain their current runtime.";
+    if (kind === "container")
+        return "The Compose image pin will be updated and the selected service recreated.";
+    return "Required dependencies may also be updated.";
+}
+
 /**
  * Confirm one exact observed update and reveal its accepted job in shared worker activity.
  * @param props - Software observation and server-owned admission state.
@@ -51,7 +59,7 @@ export function UpdateAction({
             {intent && (
                 <ConfirmDialog
                     title={`Update ${item.name}?`}
-                    description={`Install ${updateVersion(item, "available")}. ${item.kind === "container" ? "The Compose image pin will be updated and the selected service recreated." : "Required dependencies may also be updated."} Services may be interrupted. The host will not restart automatically.${control.change === "major" ? " This is a major upgrade." : ""}`}
+                    description={`Install ${updateVersion(item, "available")}. ${installationDescription(item.kind)} Services may be interrupted. The host will not restart automatically.${control.change === "major" ? " This is a major upgrade." : ""}`}
                     confirmLabel="Update"
                     variant={control.change === "major" ? "danger" : "primary"}
                     onClose={() => setIntent(undefined)}

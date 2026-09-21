@@ -612,6 +612,101 @@ describe("security invariants against the isolated database", () => {
         expect(await status(browser("/api/account/activity"))).toBe(401);
     });
 
+    test("sorted account activity paginates every public column without leaking other accounts or losing timestamp precision", async () => {
+        const database = application.connection.database;
+        const [user] = await database
+            .select()
+            .from(users)
+            .where(eq(users.username, username));
+        if (!user) throw new Error("Fixture account missing");
+        await database.delete(auditEvents).where(eq(auditEvents.userId, user.id));
+        const rows = Array.from({ length: 57 }, (_, index) => ({
+            id: crypto.randomUUID(),
+            userId: user.id,
+            event: ["zeta_event", "beta_event", "alpha_event"][index % 3]!,
+            createdAt: new Date("2026-09-15T12:00:00.000Z"),
+            index,
+        }));
+        await database
+            .insert(auditEvents)
+            .values(rows.map(({ index: _index, ...row }) => row));
+        for (const row of rows)
+            await database.execute(
+                sql`UPDATE auth_audit_events SET created_at = '2026-09-15T12:00:00Z'::timestamptz + ${row.index} * interval '1 microsecond' WHERE id=${row.id}`
+            );
+        await database.insert(auditEvents).values({
+            id: crypto.randomUUID(),
+            userId: null,
+            event: "private_event",
+            createdAt: rows[0]!.createdAt,
+        });
+        const schema = v.object({
+            events: v.array(v.object({ id: v.string(), account: v.string() })),
+            nextCursor: v.nullable(v.string()),
+        });
+        for (const id of ["event", "who", "time", "details"]) {
+            for (const direction of ["ascending", "descending"] as const) {
+                const order = { id, direction };
+                const query = new URLSearchParams({ sort: JSON.stringify(order) });
+                const first = await json(
+                    browser(`/api/account/activity?${query.toString()}`),
+                    schema
+                );
+                expect(first.events).toHaveLength(50);
+                query.set("cursor", first.nextCursor ?? "");
+                const second = await json(
+                    browser(`/api/account/activity?${query.toString()}`),
+                    schema
+                );
+                expect(second.events).toHaveLength(7);
+                expect(second.nextCursor).toBeNull();
+                const value = (row: (typeof rows)[number]) => {
+                    if (id === "time") return row.index;
+                    return id === "who" ? username : row.event;
+                };
+                const expected = rows
+                    .toSorted((left, right) => {
+                        const a = value(left),
+                            b = value(right);
+                        return (
+                            (Number(a > b) - Number(a < b)) *
+                                (direction === "ascending" ? 1 : -1) ||
+                            left.id.localeCompare(right.id)
+                        );
+                    })
+                    .map((row) => row.id);
+                expect([...first.events, ...second.events].map((row) => row.id)).toEqual(
+                    expected
+                );
+                expect(
+                    [...first.events, ...second.events].every(
+                        (row) => row.account === username
+                    )
+                ).toBe(true);
+                query.set(
+                    "sort",
+                    JSON.stringify({
+                        ...order,
+                        direction: direction === "ascending" ? "descending" : "ascending",
+                    })
+                );
+                expect(
+                    await status(browser(`/api/account/activity?${query.toString()}`))
+                ).toBe(400);
+            }
+        }
+        expect(
+            await status(
+                browser(
+                    "/api/account/activity?sort=" +
+                        encodeURIComponent(
+                            JSON.stringify({ id: "userId", direction: "ascending" })
+                        )
+                )
+            )
+        ).toBe(400);
+    });
+
     test("disabling two-step login requires fresh MFA and the password, then revokes all factors and sessions", async () => {
         await enrollTotp();
         const tokens = await authorizationTokens(

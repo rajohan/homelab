@@ -7,6 +7,7 @@ import type { SQL } from "bun";
 
 import { runOperation, trpc } from "../../api/trpc";
 import { authorizedOperations } from "../../operations/authorization";
+import { sortedInventory } from "../../operations/sortedInventory";
 
 /**
  * Read the last successful backup inventory without accessing identity or backup payloads.
@@ -43,11 +44,28 @@ export const backupsRouter = trpc.router({
                 row?.value.snapshots.filter(
                     (snapshot) =>
                         snapshot.groupId === input.groupId &&
-                        (!input.before ||
+                        (input.sort ||
+                            !input.before ||
                             Date.parse(snapshot.createdAt) < Date.parse(input.before))
                 ) ?? [];
+            const unknown = !operations.backupCatalog || !row || row.stale;
+            const sorted = input.sort
+                ? sortedInventory(
+                      snapshots,
+                      {
+                          created: (item) => item.createdAt,
+                          size: (item) => item.sizeBytes,
+                          verification: (item) => (unknown ? null : item.verification),
+                          protected: (item) => (unknown ? null : item.protected),
+                      },
+                      input.sort,
+                      input.cursor,
+                      input.limit
+                  )
+                : null;
             return {
-                snapshots: snapshots.slice(0, input.limit),
+                snapshots: sorted?.items ?? snapshots.slice(0, input.limit),
+                nextSortCursor: sorted?.nextSortCursor ?? null,
                 stale: row?.stale ?? true,
                 nextCursor:
                     snapshots.length > input.limit

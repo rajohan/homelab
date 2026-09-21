@@ -1,5 +1,7 @@
+import type { TableSort } from "@homelab/contracts/tableSort";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { ScrollText } from "lucide-react";
+import { useState } from "react";
 
 import { DataTable, type DataColumn } from "../../../../components/DataTable/DataTable";
 import { Button, ErrorNotice, LoadingState } from "../../../../index";
@@ -13,6 +15,7 @@ type Event = ActivityPage["events"][number];
 const columns: readonly DataColumn<Event>[] = [
     {
         id: "event",
+        sortValue: (event) => event.event,
         label: "Event",
         render: (event) => (
             <span className="font-medium first-letter:uppercase">
@@ -22,6 +25,7 @@ const columns: readonly DataColumn<Event>[] = [
     },
     {
         id: "who",
+        sortValue: (event) => event.account,
         label: "Who",
         render: (event) => (
             <div>
@@ -32,6 +36,7 @@ const columns: readonly DataColumn<Event>[] = [
     },
     {
         id: "time",
+        sortValue: (event) => event.createdAt,
         label: "Time",
         render: (event) => {
             const [date, time] = formatDateTimeParts(event.createdAt);
@@ -45,6 +50,7 @@ const columns: readonly DataColumn<Event>[] = [
     },
     {
         id: "details",
+        sortValue: (event) => event.event,
         label: "Details",
         render: (event) => (
             <div className="text-xs text-primary-400">
@@ -66,10 +72,11 @@ export function ActivityPanel({
     readonly client: IdentityClient;
     readonly accountId: string;
 }) {
+    const [sort, setSort] = useState<TableSort | null>(null);
     const query = useInfiniteQuery({
-        queryKey: ["identity", "activity", accountId],
+        queryKey: ["identity", "activity", accountId, ...(sort ? [sort] : [])],
         initialPageParam: null as string | null,
-        queryFn: ({ pageParam, signal }) => client.activity(pageParam, signal),
+        queryFn: ({ pageParam, signal }) => client.activity(pageParam, signal, sort),
         getNextPageParam: (last) => last.nextCursor ?? undefined,
         retry: false,
         ...queryRefresh("slow"),
@@ -105,6 +112,8 @@ export function ActivityPanel({
             <DataTable
                 label="Security activity"
                 rows={events}
+                sort={sort}
+                onSortChange={setSort}
                 getKey={(event) => event.id}
                 columns={columns}
                 continuation={{

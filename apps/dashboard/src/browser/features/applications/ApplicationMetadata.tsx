@@ -43,17 +43,20 @@ export function ApplicationMetadata({
                         columns={[
                             {
                                 id: "container",
+                                sortValue: (row) => row.container,
                                 label: "Container port",
                                 mobile: "title",
                                 render: (row) => row.container,
                             },
                             {
                                 id: "address",
+                                sortValue: (row) => row.hostAddress,
                                 label: "Host address",
                                 render: (row) => row.hostAddress,
                             },
                             {
                                 id: "port",
+                                sortValue: (row) => Number(row.hostPort),
                                 label: "Host port",
                                 render: (row) => row.hostPort,
                             },
@@ -76,6 +79,7 @@ export function ApplicationMetadata({
                         columns={[
                             {
                                 id: "destination",
+                                sortValue: (row) => row.destination,
                                 label: "Destination",
                                 mobile: "title",
                                 render: (row) => (
@@ -86,6 +90,7 @@ export function ApplicationMetadata({
                             },
                             {
                                 id: "source",
+                                sortValue: (row) => row.source,
                                 label: "Source",
                                 mobile: "wide",
                                 render: (row) => (
@@ -94,11 +99,17 @@ export function ApplicationMetadata({
                             },
                             {
                                 id: "access",
+                                sortValue: (row) => row.readOnly,
                                 label: "Access",
                                 render: (row) =>
                                     row.readOnly ? "Read only" : "Read / write",
                             },
-                            { id: "type", label: "Type", render: (row) => row.type },
+                            {
+                                id: "type",
+                                sortValue: (row) => row.type,
+                                label: "Type",
+                                render: (row) => row.type,
+                            },
                         ]}
                     />
                 ) : (

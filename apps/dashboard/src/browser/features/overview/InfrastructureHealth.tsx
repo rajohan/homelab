@@ -91,12 +91,14 @@ export function InfrastructureHealth() {
                             columns={[
                                 {
                                     id: "name",
+                                    sortValue: (row) => row.name,
                                     label: "Host",
                                     mobile: "title",
                                     render: (host) => host.name,
                                 },
                                 {
                                     id: "state",
+                                    sortValue: (row) => (stale ? null : row.state),
                                     label: "Status",
                                     render: (host) => (
                                         <ResourceStatus
@@ -106,6 +108,7 @@ export function InfrastructureHealth() {
                                 },
                                 {
                                     id: "cpu",
+                                    sortValue: (row) => (stale ? null : row.cpuPercent),
                                     label: "CPU",
                                     render: (host) =>
                                         formatMetric(
@@ -115,6 +118,7 @@ export function InfrastructureHealth() {
                                 },
                                 {
                                     id: "memory",
+                                    sortValue: (row) => (stale ? null : row.memoryUsed),
                                     label: "Memory",
                                     mobile: "wide",
                                     width: "w-48",

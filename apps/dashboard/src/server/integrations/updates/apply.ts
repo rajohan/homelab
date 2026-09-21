@@ -4,6 +4,7 @@ import type { JobExecution } from "../../jobs/types";
 import { publishNotification } from "../../notifications/publish";
 import type { UpdateTarget } from "./configuration";
 import type { UpdateExecutor, UpdateReceipt } from "./execution";
+import { recordRestartObservation } from "./restartObservation";
 
 /** Maximum execution time for one installation, shared by individual and bulk jobs. */
 export const updateTimeoutMs = 1_500_000;
@@ -50,8 +51,17 @@ async function recordResult(
                             : {}),
                     };
                 });
-                await transaction`UPDATE operation_snapshots SET value=${JSON.stringify({ ...row.value, items })}::text::jsonb WHERE key=${key}`;
+                // Receipt time is also a publication watermark: a report collected before
+                // installation must not restore the old version when it arrives late.
+                await transaction`UPDATE operation_snapshots SET value=${JSON.stringify({ ...row.value, items, rebootRequired: receipt.rebootRequired, rebootObservedAt: new Date().toISOString() })}::text::jsonb, captured_at=GREATEST(captured_at, now()) WHERE key=${key}`;
             }
+            const observedAt = new Date().toISOString();
+            await recordRestartObservation(
+                transaction,
+                target.source,
+                receipt.rebootRequired,
+                observedAt
+            );
             if (receipt.rebootRequired)
                 await publishNotification(transaction, "updates", {
                     key: `reboot:${context.runId}`,

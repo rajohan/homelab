@@ -28,6 +28,13 @@ export async function readUpdateSources(
             'security', (SELECT count(*) FROM jsonb_array_elements(value->'items') item WHERE item->>'status' = 'available' AND item->>'security' = 'true')
         ) AS value, captured_at < now() - interval '26 hours' AS stale
         FROM operation_snapshots WHERE key LIKE 'updates:%' OR key LIKE 'updates.resolved:%'`;
+    const restarts = await client<
+        {
+            key: string;
+            value: { required: boolean | null; observedAt: string };
+            stale: boolean;
+        }[]
+    >`SELECT key, value, captured_at < now() - interval '3 minutes' AS stale FROM operation_snapshots WHERE key LIKE 'updates.restart:%'`;
     return sources.map((source) => {
         const row = rows.find((item) => item.key === `updates:${source.id}`);
         const resolved = rows.find(
@@ -37,10 +44,14 @@ export async function readUpdateSources(
                 !item.stale
         );
         const report = resolved?.value ?? row?.value ?? null;
+        const restart = restarts.find(
+            (item) => item.key === `updates.restart:${source.id}`
+        );
         return {
             id: source.id,
             label: source.label,
             report,
+            restart: restart ? { ...restart.value, stale: restart.stale } : null,
             stale: (row?.stale ?? true) || staleUpdateReport(report),
         };
     });

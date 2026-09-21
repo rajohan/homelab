@@ -1,5 +1,7 @@
 import * as v from "valibot";
 
+import { tableSortSchema, tableCursorSchema } from "./tableSort";
+
 export const incidentStates = ["active", "suppressed", "resolved"] as const;
 export const incidentStateSchema = v.picklist(incidentStates);
 const incidentCursorSchema = v.strictObject({
@@ -9,6 +11,8 @@ const incidentCursorSchema = v.strictObject({
 export type IncidentCursor = v.InferOutput<typeof incidentCursorSchema>;
 export const incidentPageSchema = v.pipe(
     v.strictObject({
+        sort: v.optional(tableSortSchema(["name", "host", "state", "time"])),
+        cursor: v.optional(tableCursorSchema),
         state: v.optional(v.picklist(["current", "resolved"]), "current"),
         before: v.optional(incidentCursorSchema),
         limit: v.optional(

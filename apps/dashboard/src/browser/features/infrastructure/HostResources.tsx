@@ -64,6 +64,7 @@ export function HostResources({
                     columns={[
                         {
                             id: "mount",
+                            sortValue: (row) => row.mount,
                             label: "Mount",
                             mobile: "title",
                             render: (row) => (
@@ -77,6 +78,7 @@ export function HostResources({
                         },
                         {
                             id: "usage",
+                            sortValue: (row) => row.used,
                             label: "Used / capacity",
                             render: (row) => (
                                 <ResourceUsage used={row.used} total={row.size} />
@@ -84,11 +86,13 @@ export function HostResources({
                         },
                         {
                             id: "available",
+                            sortValue: (row) => row.available,
                             label: "Available",
                             render: (row) => formatMetric(row.available, "bytes"),
                         },
                         {
                             id: "mode",
+                            sortValue: (row) => row.readOnly,
                             label: "Access",
                             render: (row) =>
                                 booleanLabel(row.readOnly, "Read only", "Read / write"),
@@ -119,17 +123,20 @@ export function HostResources({
                     columns={[
                         {
                             id: "device",
+                            sortValue: (row) => row.device,
                             label: "Interface",
                             mobile: "title",
                             render: (row) => row.device,
                         },
                         {
                             id: "link",
+                            sortValue: (row) => row.up,
                             label: "Link",
                             render: (row) => booleanLabel(row.up, "Up", "Down"),
                         },
                         {
                             id: "speed",
+                            sortValue: (row) => row.speed,
                             label: "Link speed",
                             render: (row) =>
                                 formatMetric(
@@ -139,16 +146,19 @@ export function HostResources({
                         },
                         {
                             id: "receive",
+                            sortValue: (row) => row.receive,
                             label: "Received",
                             render: (row) => formatMetric(row.receive, "bytes/s"),
                         },
                         {
                             id: "transmit",
+                            sortValue: (row) => row.transmit,
                             label: "Sent",
                             render: (row) => formatMetric(row.transmit, "bytes/s"),
                         },
                         {
                             id: "errors",
+                            sortValue: (row) => row.errors,
                             label: "Errors / drops per second",
                             render: (row) =>
                                 `${formatMetric(row.errors)} / ${formatMetric(row.drops)}`,
@@ -171,27 +181,32 @@ export function HostResources({
                 columns={[
                     {
                         id: "device",
+                        sortValue: (row) => row.device,
                         label: "Device",
                         mobile: "title",
                         render: (row) => row.device,
                     },
                     {
                         id: "read",
+                        sortValue: (row) => row.read,
                         label: "Read",
                         render: (row) => formatMetric(row.read, "bytes/s"),
                     },
                     {
                         id: "write",
+                        sortValue: (row) => row.write,
                         label: "Written",
                         render: (row) => formatMetric(row.write, "bytes/s"),
                     },
                     {
                         id: "operations",
+                        sortValue: (row) => row.operations,
                         label: "IOPS",
                         render: (row) => formatMetric(row.operations),
                     },
                     {
                         id: "busy",
+                        sortValue: (row) => row.busyPercent,
                         label: "Busy",
                         render: (row) => formatMetric(row.busyPercent, "percent"),
                     },

@@ -35,6 +35,14 @@ def observed_version(source, command):
         if not match:
             raise ValueError("Installed version was not reported")
         return match.group(1)
+    if provider == "pve-exporter" and not path.exists() and path.name == "METADATA" and path.parent.name.startswith("prometheus_pve_exporter-"):
+        # The configured distribution path includes its old version. A verified
+        # venv upgrade replaces that directory; find exactly one current metadata
+        # file inside the same site-packages directory without executing Python.
+        matches = list(path.parent.parent.glob("prometheus_pve_exporter-*.dist-info/METADATA"))
+        if len(matches) != 1:
+            raise ValueError("Python distribution metadata is ambiguous")
+        path = matches[0]
     if path.stat().st_size > 1_000_000:
         raise ValueError("Version metadata exceeds its budget")
     content = path.read_text(encoding="utf-8")

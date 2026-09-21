@@ -88,12 +88,14 @@ export function SnapshotsPanel() {
                     columns={[
                         {
                             id: "name",
+                            sortValue: (row) => row.name,
                             label: "Backup group",
                             mobile: "title",
                             render: (row) => row.name,
                         },
                         {
                             id: "datastore",
+                            sortValue: (row) => `${row.datastore} ${row.namespace}`,
                             label: "Datastore",
                             render: (row) =>
                                 row.namespace
@@ -102,16 +104,19 @@ export function SnapshotsPanel() {
                         },
                         {
                             id: "count",
+                            sortValue: (row) => row.snapshotCount,
                             label: "Snapshots",
                             render: (row) => row.snapshotCount,
                         },
                         {
                             id: "size",
+                            sortValue: (row) => row.latestSizeBytes,
                             label: "Latest logical size",
                             render: (row) => formatMetric(row.latestSizeBytes, "bytes"),
                         },
                         {
                             id: "latest",
+                            sortValue: (row) => row.latestAt,
                             label: "Latest snapshot",
                             mobile: "wide",
                             render: (row) => formatDateTime(row.latestAt),

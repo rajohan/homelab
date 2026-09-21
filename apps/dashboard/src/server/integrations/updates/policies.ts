@@ -25,6 +25,11 @@ export async function readUpdatePolicies(
         );
         return {
             target: target.id,
+            category:
+                target.driver.kind === "native" &&
+                target.driver.item.startsWith("runtime:")
+                    ? "toolchains"
+                    : "software",
             label: target.label,
             source: target.source,
             enabled: Boolean(row?.enabled && !changed),

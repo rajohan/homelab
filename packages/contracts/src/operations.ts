@@ -7,6 +7,7 @@ import {
     type ResourceClass,
     type ScheduleConfiguration,
 } from "./schedules";
+import { tableSortSchema, tableCursorSchema } from "./tableSort";
 export {
     capabilities,
     capabilitySchema,
@@ -103,6 +104,10 @@ export const workerControlSchema = v.strictObject({
     paused: v.boolean(),
 });
 export const runFilterSchema = v.strictObject({
+    sort: v.optional(
+        tableSortSchema(["job", "state", "size", "attempt", "time", "actor"])
+    ),
+    cursor: v.optional(tableCursorSchema),
     ...pageSchema.entries,
     action: v.optional(runJobSchema.entries.action),
     view: v.optional(v.picklist(["all", "active", "recent"]), "all"),

@@ -20,6 +20,8 @@ export interface BackupInventory {
 }
 import * as v from "valibot";
 
+import { tableSortSchema, tableCursorSchema } from "./tableSort";
+
 export interface BackupSnapshot {
     readonly id: string;
     readonly groupId: string;
@@ -43,6 +45,8 @@ export interface BackupCatalog {
     readonly snapshots: readonly BackupSnapshot[];
 }
 export const snapshotPageSchema = v.strictObject({
+    sort: v.optional(tableSortSchema(["created", "size", "verification", "protected"])),
+    cursor: v.optional(tableCursorSchema),
     groupId: v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/)),
     before: v.optional(v.pipe(v.string(), v.isoTimestamp())),
     limit: v.optional(

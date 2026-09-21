@@ -13,6 +13,7 @@ import { useState, type Ref } from "react";
 import { api } from "../../api/client";
 import { JobActivityItem } from "./JobActivityItem";
 import { RunDetailDialog } from "./RunDetailDialog";
+import { useJobCompletionRefresh } from "./useJobCompletionRefresh";
 
 /**
  * Keep the current operator's jobs accessible across routes and browser refreshes.
@@ -39,6 +40,7 @@ export function JobActivity({
             ).refetchInterval,
         retry: false,
     });
+    useJobCompletionRefresh(query.data?.runs);
     const runs = [
         ...new Map((query.data?.runs ?? []).map((run) => [run.id, run])).values(),
     ].filter((run) => !dismissed.has(run.id));

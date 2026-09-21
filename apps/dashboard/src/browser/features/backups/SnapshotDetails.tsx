@@ -1,4 +1,5 @@
 import type { BackupGroup } from "@homelab/contracts/backups";
+import type { TableSort } from "@homelab/contracts/tableSort";
 import {
     Badge,
     ErrorNotice,
@@ -8,6 +9,7 @@ import {
     queryRefresh,
 } from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
+import { useState } from "react";
 
 import { api } from "../../api/client";
 import { MetricStat } from "../infrastructure/MetricStat";
@@ -26,15 +28,20 @@ export function SnapshotDetails({
     readonly stale: boolean;
     readonly onClose: () => void;
 }) {
+    const [sort, setSort] = useState<TableSort | null>(null);
     const query = useInfiniteQuery({
-        queryKey: ["operations", "snapshots", group.id],
-        initialPageParam: undefined as string | undefined,
+        queryKey: ["operations", "snapshots", group.id, ...(sort ? [sort] : [])],
+        initialPageParam: {},
         queryFn: ({ pageParam, signal }) =>
             api.backups.snapshots.query(
-                { groupId: group.id, ...(pageParam ? { before: pageParam } : {}) },
+                { groupId: group.id, ...pageParam, ...(sort ? { sort } : {}) },
                 { signal }
             ),
-        getNextPageParam: (page) => page.nextCursor ?? undefined,
+        getNextPageParam: (page) => {
+            if (sort)
+                return page.nextSortCursor ? { cursor: page.nextSortCursor } : undefined;
+            return page.nextCursor ? { before: page.nextCursor } : undefined;
+        },
         ...queryRefresh("normal"),
         retry: false,
     });
@@ -66,6 +73,8 @@ export function SnapshotDetails({
                 {rows.length > 0 ? (
                     <SnapshotTable
                         snapshots={rows}
+                        sort={sort}
+                        onSortChange={setSort}
                         unavailable={unavailable}
                         continuation={{
                             hasMore: query.hasNextPage,

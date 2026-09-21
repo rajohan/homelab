@@ -534,6 +534,11 @@ test("software views show source coverage, held security updates and read-only p
                     id: "demo",
                     label: "Demo Main",
                     stale: false,
+                    restart: {
+                        required: true,
+                        observedAt: "2026-09-01T10:00:00Z",
+                        stale: false,
+                    },
                     report: {
                         capturedAt: "2026-09-01T10:00:00Z",
                         repositoryMetadataAt: "2026-09-01T09:00:00Z",
@@ -569,12 +574,149 @@ test("software views show source coverage, held security updates and read-only p
         });
     });
     try {
+        const sourceRow = within(
+            screen.getByRole("table", { name: "Update sources" })
+        ).getByRole("row", { name: /Demo Main/ });
+        const badges = within(sourceRow).getAllByText("Restart required");
+        expect(badges).toHaveLength(2);
+        expect(badges[0]?.closest("td")).toHaveTextContent("Live data");
+        expect(badges[0]?.parentElement?.parentElement).toHaveClass(
+            "@min-[48rem]:hidden"
+        );
+        expect(badges[1]?.closest("td")).toHaveClass("@max-[48rem]:hidden");
         expect(screen.getByText("example")).toBeVisible();
         expect(screen.getByText("Held update")).toBeVisible();
         expect(screen.getByRole("searchbox", { name: "Search software" })).toBeVisible();
         expect(
-            screen.queryByRole("button", { name: /install|upgrade|load more/i })
+            screen.queryByRole("button", {
+                name: /^(?:install|upgrade|load more)(?: |$)/i,
+            })
         ).not.toBeInTheDocument();
+    } finally {
+        cleanup();
+    }
+});
+
+test("host selector reuses one software and policy view for toolchains and falls back when coverage changes", async () => {
+    let updateQuery: QueryClient | undefined;
+    const sources = [
+        {
+            id: "main",
+            label: "Main",
+            stale: false,
+            report: {
+                coveredKinds: ["os", "runtime"],
+                available: 1,
+                security: 0,
+                capturedAt: "2026-09-01T10:00:00Z",
+            },
+        },
+        {
+            id: "db",
+            label: "DB",
+            stale: false,
+            report: {
+                coveredKinds: ["os"],
+                available: 1,
+                security: 0,
+                capturedAt: "2026-09-01T10:00:00Z",
+            },
+        },
+    ];
+    const cleanup = fixture(<UpdatesPanel />, (query) => {
+        updateQuery = query;
+        query.setQueryData(["operations", "updates"], sources);
+        query.setQueryData(["operations", "updates", "policies"], []);
+        for (const [source, category, name] of [
+            ["main", "software", "Main package"],
+            ["main", "toolchains", "Bun"],
+            ["db", "software", "DB package"],
+        ] as const) {
+            query.setQueryData(
+                [
+                    "operations",
+                    "updates",
+                    source,
+                    "",
+                    "attention",
+                    ...(category === "toolchains" ? [category] : []),
+                ],
+                {
+                    pages: [
+                        {
+                            items: [
+                                {
+                                    id: name,
+                                    name,
+                                    kind: category === "toolchains" ? "runtime" : "os",
+                                    installed: "1.0.0",
+                                    available: "1.1.0",
+                                    status: "available",
+                                    security: false,
+                                    held: false,
+                                },
+                            ],
+                            stale: false,
+                            nextCursor: null,
+                        },
+                    ],
+                    pageParams: [undefined],
+                }
+            );
+        }
+    });
+    try {
+        const user = userEvent.setup();
+        expect(screen.getByText("Main package")).toBeVisible();
+        expect(screen.queryByText("Bun")).not.toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "Software source" }));
+        expect(
+            screen.queryByRole("option", { name: "DB · Toolchains" })
+        ).not.toBeInTheDocument();
+        await user.click(screen.getByRole("option", { name: "Main · Toolchains" }));
+        expect(screen.getByRole("table", { name: "Toolchain updates" })).toBeVisible();
+        expect(
+            screen.queryByRole("table", { name: "Software updates" })
+        ).not.toBeInTheDocument();
+        expect(screen.queryByText("Main package")).not.toBeInTheDocument();
+        expect(
+            screen.getAllByRole("searchbox", { name: "Search software" })
+        ).toHaveLength(1);
+        expect(
+            screen.getAllByRole("heading", { name: "Automatic updates" })
+        ).toHaveLength(1);
+        expect(
+            screen.queryByRole("heading", { name: "Toolchains" })
+        ).not.toBeInTheDocument();
+        await user.type(
+            screen.getByRole("searchbox", { name: "Search software" }),
+            "filtered"
+        );
+        await user.click(screen.getByRole("button", { name: "Software source" }));
+        await user.click(screen.getByRole("option", { name: "DB" }));
+        expect(screen.getByRole("searchbox", { name: "Search software" })).toHaveValue(
+            ""
+        );
+        expect(screen.getByRole("table", { name: "Software updates" })).toBeVisible();
+        expect(
+            screen.queryByRole("table", { name: "Toolchain updates" })
+        ).not.toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "Software source" }));
+        await user.click(screen.getByRole("option", { name: "Main · Toolchains" }));
+        updateQuery?.setQueryData(
+            ["operations", "updates"],
+            sources.map((source) => ({
+                ...source,
+                report: { ...source.report, coveredKinds: ["os"] },
+            }))
+        );
+        await waitFor(() =>
+            expect(
+                screen.getByRole("button", { name: "Software source" })
+            ).not.toHaveTextContent("Toolchains")
+        );
+        expect(screen.getByRole("table", { name: "Software updates" })).toBeVisible();
+        expect(screen.queryByText("Bun")).not.toBeInTheDocument();
     } finally {
         cleanup();
     }

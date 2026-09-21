@@ -164,7 +164,8 @@ export async function accountApi(
             await accountActivity(
                 accounts,
                 await requestPrincipal(request, services),
-                new URL(request.url).searchParams.get("cursor")
+                new URL(request.url).searchParams.get("cursor"),
+                new URL(request.url).searchParams.get("sort")
             )
         );
     if (request.method !== "POST") return secureJson({ error: "Not found" }, 404);

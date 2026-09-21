@@ -9,14 +9,24 @@ import { UpdatePolicyControl } from "./UpdatePolicyControl";
  * @param props - Source currently selected in Updates.
  * @returns Independent per-target policy controls, all disabled until operator consent.
  */
-export function AutomaticUpdates({ source }: { readonly source: string }) {
+export function AutomaticUpdates({
+    source,
+    category = "software",
+}: {
+    readonly source: string;
+    readonly category?: "software" | "toolchains";
+}) {
     const query = useQuery({
         queryKey: ["operations", "updates", "policies"],
         queryFn: ({ signal }) => api.updates.policies.query(undefined, { signal }),
         ...queryRefresh("slow"),
         retry: false,
     });
-    const targets = query.data?.filter((policy) => policy.source === source) ?? [];
+    const targets =
+        query.data?.filter(
+            (policy) =>
+                policy.source === source && (policy.category ?? "software") === category
+        ) ?? [];
     return (
         <section className="space-y-3" aria-label="Automatic updates">
             <h3 className="text-sm font-semibold text-primary-100">Automatic updates</h3>

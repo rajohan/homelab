@@ -62,6 +62,16 @@ async function docker(...arguments_: string[]): Promise<string> {
  * @returns Completion after shutdown and cleanup of this run's owned resources.
  */
 export async function main(): Promise<void> {
+    const dashboardPort = Number(process.env.HOMELAB_PREVIEW_PORT ?? "3100");
+    if (
+        !Number.isInteger(dashboardPort) ||
+        dashboardPort < 1024 ||
+        dashboardPort > 65_534
+    )
+        throw new Error("The preview requires a loopback port between 1024 and 65534.");
+    const authPort = dashboardPort + 1;
+    const dashboardOrigin = `http://localhost:${dashboardPort}`;
+    const authOrigin = `http://localhost:${authPort}`;
     // Disposable developer identities only. No production environment is passed to Docker
     // or used as an identity source. Ctrl+C removes this run's exact temporary container.
     const container = `homelab-identity-dev-${crypto.randomUUID()}`;
@@ -221,8 +231,8 @@ export async function main(): Promise<void> {
             const environment = {
                 NODE_ENV: "development",
                 HOMELAB_AUTH_DEVELOPMENT: "true",
-                HOMELAB_AUTH_ISSUER: "http://localhost:3101",
-                HOMELAB_AUTH_DASHBOARD_ORIGIN: "http://localhost:3100",
+                HOMELAB_AUTH_ISSUER: authOrigin,
+                HOMELAB_AUTH_DASHBOARD_ORIGIN: dashboardOrigin,
                 HOMELAB_AUTH_RP_ID: "localhost",
                 HOMELAB_AUTH_DATABASE_URL: databaseUrl,
                 HOMELAB_AUTH_ENCRYPTION_KEY:
@@ -244,15 +254,15 @@ export async function main(): Promise<void> {
                         client_id: "dashboard",
                         client_secret: clientSecret,
                         client_name: "Development dashboard",
-                        redirect_uris: ["http://localhost:3100/auth/callback"],
+                        redirect_uris: [dashboardOrigin + "/auth/callback"],
                         token_endpoint_auth_method: "client_secret_post",
                     },
                 ]),
                 HOMELAB_AUTH_DASHBOARD_CLIENT_ID: "dashboard",
                 HOMELAB_AUTH_EMAIL_FROM: "Development <noreply@example.test>",
                 HOMELAB_DASHBOARD_AUTH_DEVELOPMENT: "true",
-                HOMELAB_DASHBOARD_AUTH_ISSUER: "http://localhost:3101",
-                HOMELAB_DASHBOARD_ORIGIN: "http://localhost:3100",
+                HOMELAB_DASHBOARD_AUTH_ISSUER: authOrigin,
+                HOMELAB_DASHBOARD_ORIGIN: dashboardOrigin,
                 HOMELAB_DASHBOARD_OIDC_CLIENT_ID: "dashboard",
                 HOMELAB_DASHBOARD_OIDC_CLIENT_SECRET: clientSecret,
                 HOMELAB_DASHBOARD_SESSION_KEY: Buffer.from(
@@ -265,7 +275,7 @@ export async function main(): Promise<void> {
                 throw new Error("Invalid development configuration");
             auth = await startAuthServer({
                 hostname: "127.0.0.1",
-                port: 3101,
+                port: authPort,
                 configuration,
                 delivery: (_id, message) => {
                     console.info("DEVELOPMENT MAIL (not sent):", message.text);
@@ -274,7 +284,7 @@ export async function main(): Promise<void> {
             });
             dashboard = startDashboardServer({
                 hostname: "127.0.0.1",
-                port: 3100,
+                port: dashboardPort,
                 authentication,
                 development: true,
                 operations: operationConfiguration,
@@ -295,7 +305,7 @@ export async function main(): Promise<void> {
             // Observe failure immediately even while the foreground preview awaits a signal.
             void worker.catch(() => {});
             console.info(
-                "Disposable identity and operations preview: http://localhost:3100"
+                `Disposable identity and operations preview: ${dashboardOrigin}`
             );
             console.info("Synthetic account: developer / Development-only-password-123!");
             console.info(

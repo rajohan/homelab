@@ -253,60 +253,65 @@ test("update publishers are source-bound, monotonic and distinct from human read
     }
 });
 
-test("update resolution cannot overwrite a newer local observation", async () => {
-    const fixture = await operationFixture();
-    const sources = [{ id: "demo", label: "Demo", publisher: crypto.randomUUID() }];
-    const value = report();
-    const handler = updatesJob(sources, fixture.client);
-    try {
-        await fixture.client`INSERT INTO operation_snapshots (key, value, captured_at) VALUES ('updates:demo', ${JSON.stringify(value)}::text::jsonb, now())`;
-        await handler.execute(
-            {},
-            {
-                runId: crypto.randomUUID(),
-                leaseToken: crypto.randomUUID(),
-                signal: AbortSignal.timeout(5000),
-                reportProgress: () => Promise.resolve(),
-                commit: async (write) => {
-                    await fixture.client`UPDATE operation_snapshots SET value = jsonb_set(value, '{capturedAt}', to_jsonb(${new Date(Date.now() + 1000).toISOString()}::text)) WHERE key = 'updates:demo'`;
-                    await fixture.client.begin(write);
-                    return true;
-                },
-            }
-        );
-        expect(
-            await fixture.client`SELECT key FROM operation_snapshots WHERE key = 'updates.resolved:demo'`
-        ).toHaveLength(0);
-        await handler.execute(
-            {},
-            {
-                runId: crypto.randomUUID(),
-                leaseToken: crypto.randomUUID(),
-                signal: AbortSignal.timeout(5000),
-                reportProgress: () => Promise.resolve(),
-                commit: async (write) => {
-                    await fixture.client.begin(write);
-                    return true;
-                },
-            }
-        );
-        expect(
-            await fixture.client`SELECT key FROM operation_snapshots WHERE key = 'updates.resolved:demo'`
-        ).toHaveLength(1);
-        await expectOperationFailure(
-            handler.execute(
+test.each(["publication", "receipt"] as const)(
+    "update resolution cannot overwrite a newer local %s",
+    async (change) => {
+        const fixture = await operationFixture();
+        const sources = [{ id: "demo", label: "Demo", publisher: crypto.randomUUID() }];
+        const value = report();
+        const handler = updatesJob(sources, fixture.client);
+        try {
+            await fixture.client`INSERT INTO operation_snapshots (key, value, captured_at) VALUES ('updates:demo', ${JSON.stringify(value)}::text::jsonb, now())`;
+            await handler.execute(
                 {},
                 {
                     runId: crypto.randomUUID(),
                     leaseToken: crypto.randomUUID(),
                     signal: AbortSignal.timeout(5000),
                     reportProgress: () => Promise.resolve(),
-                    commit: () => Promise.resolve(false),
+                    commit: async (write) => {
+                        await (change === "publication"
+                            ? fixture.client`UPDATE operation_snapshots SET value = jsonb_set(value, '{capturedAt}', to_jsonb(${new Date(Date.now() + 1000).toISOString()}::text)) WHERE key = 'updates:demo'`
+                            : fixture.client`UPDATE operation_snapshots SET value = jsonb_set(value, '{items,0,installed}', '"1.1-1"') WHERE key = 'updates:demo'`);
+                        await fixture.client.begin(write);
+                        return true;
+                    },
                 }
-            ),
-            "ownership"
-        );
-    } finally {
-        await fixture.close();
+            );
+            expect(
+                await fixture.client`SELECT key FROM operation_snapshots WHERE key = 'updates.resolved:demo'`
+            ).toHaveLength(0);
+            await handler.execute(
+                {},
+                {
+                    runId: crypto.randomUUID(),
+                    leaseToken: crypto.randomUUID(),
+                    signal: AbortSignal.timeout(5000),
+                    reportProgress: () => Promise.resolve(),
+                    commit: async (write) => {
+                        await fixture.client.begin(write);
+                        return true;
+                    },
+                }
+            );
+            expect(
+                await fixture.client`SELECT key FROM operation_snapshots WHERE key = 'updates.resolved:demo'`
+            ).toHaveLength(1);
+            await expectOperationFailure(
+                handler.execute(
+                    {},
+                    {
+                        runId: crypto.randomUUID(),
+                        leaseToken: crypto.randomUUID(),
+                        signal: AbortSignal.timeout(5000),
+                        reportProgress: () => Promise.resolve(),
+                        commit: () => Promise.resolve(false),
+                    }
+                ),
+                "ownership"
+            );
+        } finally {
+            await fixture.close();
+        }
     }
-});
+);

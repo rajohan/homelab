@@ -48,8 +48,51 @@ const service = v.pipe(
     v.regex(/^[a-zA-Z0-9][a-zA-Z0-9_.@-]{0,99}\.service$/)
 );
 const nativeRecipe = v.variant("application", [
+    v.strictObject({
+        application: v.picklist(["bun", "node", "github-cli"]),
+        directory: path,
+        inventory: path,
+        wrapper: v.optional(path),
+        links: v.pipe(
+            v.array(
+                v.strictObject({
+                    path,
+                    member: v.picklist(["bun", "gh", "bin/node", "bin/npm", "bin/npx"]),
+                })
+            ),
+            v.maxLength(3)
+        ),
+    }),
     v.strictObject({ application: v.literal("adguard-home"), binary: path, service }),
     v.strictObject({ application: v.literal("openclaw"), command, service }),
+    v.strictObject({
+        application: v.literal("codex"),
+        prefix: path,
+        node: path,
+        npm: path,
+        user: v.pipe(v.string(), v.regex(/^[a-z_][a-z0-9_-]{0,31}$/)),
+    }),
+    v.strictObject({ application: v.literal("pve-exporter"), directory: path, service }),
+    v.strictObject({
+        application: v.picklist([
+            "adguardhome-sync",
+            "node-exporter",
+            "smartctl-exporter",
+            "blackbox-exporter",
+            "alertmanager",
+            "alloy",
+            "loki",
+            "traefik",
+        ]),
+        binary: path,
+        service,
+    }),
+    v.strictObject({
+        application: v.literal("victoriametrics"),
+        component: v.picklist(["victoriametrics", "vmalert", "vmbackup"]),
+        binary: path,
+        service: v.optional(service),
+    }),
     v.strictObject({
         application: v.literal("nextcloud"),
         directory: path,

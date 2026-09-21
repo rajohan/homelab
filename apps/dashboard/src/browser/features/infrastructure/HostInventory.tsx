@@ -82,6 +82,7 @@ export function HostInventory({
                 columns={[
                     {
                         id: "name",
+                        sortValue: (row) => row.name,
                         label: "Host",
                         mobile: "title",
                         render: (host) => (
@@ -100,11 +101,13 @@ export function HostInventory({
                     },
                     {
                         id: "state",
+                        sortValue: (row) => row.state,
                         label: "Status",
                         render: (host) => <ResourceStatus state={host.state} />,
                     },
                     {
                         id: "cpu",
+                        sortValue: (row) => row.cpuPercent,
                         label: "CPU",
                         render: (host) => (
                             <div>
@@ -117,6 +120,7 @@ export function HostInventory({
                     },
                     {
                         id: "memory",
+                        sortValue: (row) => row.memoryUsed,
                         label: "Memory",
                         width: "w-1/4",
                         render: (host) => (
@@ -129,6 +133,11 @@ export function HostInventory({
                     },
                     {
                         id: "disk",
+                        sortValue: (row) =>
+                            filesystems.find(
+                                (volume) =>
+                                    volume.host === row.host && volume.mount === "/"
+                            )?.used,
                         label: "Disk usage",
                         width: "w-1/4",
                         render: (host) => (
@@ -141,6 +150,7 @@ export function HostInventory({
                     },
                     {
                         id: "uptime",
+                        sortValue: (row) => row.uptime,
                         label: "Uptime",
                         render: (host) => formatMetric(host.uptime, "seconds"),
                     },

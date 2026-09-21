@@ -101,6 +101,21 @@ export function createMonitoringFixture() {
                 });
             if (path === "/api/v1/query") {
                 const now = Date.now() / 1000;
+                const expression = new URL(request.url).searchParams.get("query");
+                const aggregates = new Map([
+                    ["sum(up == 1)", 1],
+                    ["count(up)", 1],
+                    ['sum(ALERTS{alertstate="firing",alertname!="Watchdog"})', 1],
+                ]);
+                const aggregate = aggregates.get(expression ?? "");
+                if (aggregate !== undefined)
+                    return Response.json({
+                        status: "success",
+                        data: {
+                            resultType: "vector",
+                            result: [{ metric: {}, value: [now, String(aggregate)] }],
+                        },
+                    });
                 const tasks = [
                     "pbs-vm-demo",
                     "pbs-verification-demo",
@@ -192,6 +207,8 @@ export async function seedMonitoringPreview(client: SQL, url: string): Promise<v
                 capturedAt: new Date().toISOString(),
                 repositoryMetadataAt: new Date().toISOString(),
                 complete: true,
+                rebootRequired: source.id === "demo-main" ? true : null,
+                rebootObservedAt: new Date().toISOString(),
                 coveredKinds: ["os", "runtime", "container", "application"],
                 items: [
                     ...previewUpdateItems,
@@ -203,16 +220,6 @@ export async function seedMonitoringPreview(client: SQL, url: string): Promise<v
                         available: "3.5.1-1",
                         status: "available",
                         security: true,
-                        held: false,
-                    },
-                    {
-                        id: "runtime:bun",
-                        name: "Bun",
-                        kind: "runtime",
-                        installed: "1.4.2",
-                        available: "1.4.2",
-                        status: "current",
-                        security: false,
                         held: false,
                     },
                     {

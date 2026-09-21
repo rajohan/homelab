@@ -1,3 +1,4 @@
+import type { TableSort } from "@homelab/contracts/tableSort";
 import {
     DataTable,
     ErrorNotice,
@@ -19,19 +20,45 @@ import { updateVersion } from "./updateVersion";
  * @param props - Configured source selected by the operator.
  * @returns Version comparison with separately authorized, confirmed installation controls.
  */
-export function SoftwareUpdates({ source }: { readonly source: string }) {
+export function SoftwareUpdates({
+    source,
+    category = "software",
+}: {
+    readonly source: string;
+    readonly category?: "software" | "toolchains";
+}) {
     const [search, setSearch] = useState("");
     const [state, setState] = useState<"attention" | "all">("attention");
+    const [sort, setSort] = useState<TableSort | null>(null);
     const query = useInfiniteQuery({
-        queryKey: ["operations", "updates", source, search, state],
-        initialPageParam: undefined as string | undefined,
+        queryKey: [
+            "operations",
+            "updates",
+            source,
+            search,
+            state,
+            ...(category === "toolchains" ? [category] : []),
+            ...(sort ? [sort] : []),
+        ],
+        initialPageParam: {},
         queryFn: ({ pageParam, signal }) =>
             api.updates.list.query(
-                { source, search, state, ...(pageParam ? { after: pageParam } : {}) },
+                {
+                    source,
+                    category,
+                    search,
+                    state,
+                    ...pageParam,
+                    ...(sort ? { sort } : {}),
+                },
                 { signal }
             ),
-        getNextPageParam: (page) => page.nextCursor ?? undefined,
-        ...queryRefresh("slow"),
+        getNextPageParam: (page) => {
+            if (sort)
+                return page.nextSortCursor ? { cursor: page.nextSortCursor } : undefined;
+            return page.nextCursor ? { after: page.nextCursor } : undefined;
+        },
+        ...queryRefresh("normal"),
         retry: false,
     });
     const rows = query.data?.pages.flatMap((page) => page.items) ?? [];
@@ -59,13 +86,20 @@ export function SoftwareUpdates({ source }: { readonly source: string }) {
             {query.isError && <ErrorNotice error={query.error} />}
             {rows.length > 0 && (
                 <DataTable
-                    label="Software updates"
+                    label={
+                        category === "toolchains"
+                            ? "Toolchain updates"
+                            : "Software updates"
+                    }
                     compact
                     rows={rows}
+                    sort={sort}
+                    onSortChange={setSort}
                     getKey={(item) => item.id}
                     columns={[
                         {
                             id: "name",
+                            sortValue: (row) => row.name,
                             label: "Software",
                             mobile: "title",
                             render: (item) => (
@@ -79,9 +113,15 @@ export function SoftwareUpdates({ source }: { readonly source: string }) {
                                 </div>
                             ),
                         },
-                        { id: "kind", label: "Type", render: (item) => item.kind },
+                        {
+                            id: "kind",
+                            sortValue: (row) => row.kind,
+                            label: "Type",
+                            render: (item) => item.kind,
+                        },
                         {
                             id: "installed",
+                            sortValue: (row) => row.installed,
                             label: "Installed",
                             render: (item) => (
                                 <span
@@ -94,6 +134,7 @@ export function SoftwareUpdates({ source }: { readonly source: string }) {
                         },
                         {
                             id: "available",
+                            sortValue: (row) => row.available,
                             label: "Available",
                             render: (item) => (
                                 <span
@@ -108,6 +149,7 @@ export function SoftwareUpdates({ source }: { readonly source: string }) {
                         },
                         {
                             id: "status",
+                            sortValue: (row) => row.status,
                             label: "Status",
                             render: (item) => (
                                 <UpdateStatus

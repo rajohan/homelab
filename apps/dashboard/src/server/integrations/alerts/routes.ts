@@ -6,6 +6,7 @@ import {
 
 import { runOperation, trpc } from "../../api/trpc";
 import { authorizedOperations } from "../../operations/authorization";
+import { sortedPage } from "../../operations/sortedPage";
 
 export const alertsRouter = trpc.router({
     rules: trpc.procedure.query(({ ctx }) =>
@@ -27,14 +28,32 @@ export const alertsRouter = trpc.router({
             return operations.client.begin(async (transaction) => {
                 await transaction`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY`;
                 const columns = transaction`id, name, host, service, severity, state, started_at::text AS "startedAt", to_char(resolved_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "resolvedAt"`;
-                const rows =
-                    input.state === "resolved"
-                        ? await transaction<
-                              Incident[]
-                          >`SELECT ${columns} FROM operational_incidents WHERE state = 'resolved' AND (${input.before?.id ?? null}::uuid IS NULL OR (resolved_at, id) < (${input.before?.resolvedAt ?? null}::timestamptz, ${input.before?.id ?? null}::uuid)) ORDER BY resolved_at DESC, id DESC LIMIT ${input.limit + 1}`
-                        : await transaction<
-                              Incident[]
-                          >`SELECT ${columns} FROM operational_incidents WHERE state != 'resolved' AND (${input.before?.id ?? null}::uuid IS NULL OR id < ${input.before?.id ?? null}::uuid) ORDER BY id DESC LIMIT ${input.limit + 1}`;
+                const sorted = input.sort
+                    ? await sortedPage<Incident>(
+                          transaction,
+                          transaction`SELECT ${columns}, concat_ws(' ', host, service) AS "hostService" FROM operational_incidents WHERE (${input.state} = 'resolved' AND state = 'resolved') OR (${input.state} = 'current' AND state != 'resolved')`,
+                          {
+                              name: "name",
+                              host: "hostService",
+                              state: "state",
+                              time:
+                                  input.state === "resolved" ? "resolvedAt" : "startedAt",
+                          },
+                          input.sort,
+                          input.cursor,
+                          input.limit
+                      )
+                    : null;
+                let rows: Incident[];
+                if (sorted) rows = sorted.items;
+                else if (input.state === "resolved")
+                    rows = await transaction<
+                        Incident[]
+                    >`SELECT ${columns} FROM operational_incidents WHERE state = 'resolved' AND (${input.before?.id ?? null}::uuid IS NULL OR (resolved_at, id) < (${input.before?.resolvedAt ?? null}::timestamptz, ${input.before?.id ?? null}::uuid)) ORDER BY resolved_at DESC, id DESC LIMIT ${input.limit + 1}`;
+                else
+                    rows = await transaction<
+                        Incident[]
+                    >`SELECT ${columns} FROM operational_incidents WHERE state != 'resolved' AND (${input.before?.id ?? null}::uuid IS NULL OR id < ${input.before?.id ?? null}::uuid) ORDER BY id DESC LIMIT ${input.limit + 1}`;
                 const [freshness] = await transaction<
                     { capturedAt: string; stale: boolean }[]
                 >`SELECT captured_at::text AS "capturedAt", captured_at < now() - interval '3 minutes' AS stale FROM operation_snapshots WHERE key = 'alerts'`;
@@ -48,6 +67,7 @@ export const alertsRouter = trpc.router({
                     stale: freshness?.stale ?? true,
                     counts,
                     incidents: rows.slice(0, input.limit),
+                    nextSortCursor: sorted?.nextSortCursor ?? null,
                     nextCursor:
                         rows.length > input.limit && last
                             ? {

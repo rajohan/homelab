@@ -172,7 +172,14 @@ export function updatesJob(sources: readonly UpdateSource[], client: SQL): JobHa
                 const report = await resolveUpdates(row.value, context.signal, releases);
                 if (
                     !(await context.commit(async (transaction) => {
-                        await transaction`INSERT INTO operation_snapshots (key, value, captured_at) SELECT ${`updates.resolved:${source.id}`}, ${JSON.stringify(report)}::text::jsonb, now() WHERE EXISTS (SELECT 1 FROM operation_snapshots WHERE key = ${`updates:${source.id}`} AND value->>'capturedAt' = ${report.capturedAt}) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, captured_at = EXCLUDED.captured_at`;
+                        // Receipts change installed versions without changing the
+                        // publisher timestamp. Fence the complete observation,
+                        // locking raw then resolved just like receipt persistence.
+                        const [unchanged] = await transaction<
+                            { key: string }[]
+                        >`SELECT key FROM operation_snapshots WHERE key = ${`updates:${source.id}`} AND value = ${JSON.stringify(row.value)}::text::jsonb FOR UPDATE`;
+                        if (!unchanged) return;
+                        await transaction`INSERT INTO operation_snapshots (key, value, captured_at) VALUES (${`updates.resolved:${source.id}`}, ${JSON.stringify(report)}::text::jsonb, now()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, captured_at = EXCLUDED.captured_at`;
                     }))
                 )
                     throw new Error("Update checker ownership changed");

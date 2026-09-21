@@ -95,12 +95,17 @@ export function WorkerPanel() {
                                 columns={[
                                     {
                                         id: "id",
+                                        sortValue: (row) => row.id,
                                         label: "Worker",
                                         mobile: "title",
                                         render: (worker) => worker.id.slice(0, 8),
                                     },
                                     {
                                         id: "state",
+                                        sortValue: (row) => {
+                                            if (row.draining) return "Stopped";
+                                            return row.online ? "Online" : "Offline";
+                                        },
                                         label: "Status",
                                         render: (worker) => {
                                             const availability = worker.online
@@ -123,17 +128,20 @@ export function WorkerPanel() {
                                     },
                                     {
                                         id: "capacity",
+                                        sortValue: (row) => row.active,
                                         label: "Active / capacity",
                                         render: (worker) =>
                                             `${worker.active} / ${worker.capacity}`,
                                     },
                                     {
                                         id: "version",
+                                        sortValue: (row) => row.version,
                                         label: "Version",
                                         render: (worker) => worker.version,
                                     },
                                     {
                                         id: "heartbeat",
+                                        sortValue: (row) => row.heartbeatAt,
                                         label: "Last heartbeat",
                                         render: (worker) =>
                                             formatDateTime(worker.heartbeatAt),

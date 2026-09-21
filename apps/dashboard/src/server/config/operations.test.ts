@@ -40,14 +40,39 @@ test("packaged deployment targets validate without reading credentials or granti
         undefined,
         fileURLToPath(new URL("../../../config/update-targets.json", import.meta.url))
     );
-    expect(targets).toHaveLength(33);
+    expect(targets).toHaveLength(70);
     expect(targets.filter((target) => target.driver.kind === "apt")).toHaveLength(11);
     expect(targets.filter((target) => target.driver.kind === "docker")).toHaveLength(19);
     expect(
-        targets
-            .filter((target) => target.driver.kind === "native")
-            .map((target) => target.driver.kind === "native" && target.driver.release)
-    ).toEqual(["adguard-home", "openclaw", "nextcloud"]);
+        [
+            ...new Set(
+                targets
+                    .filter((target) => target.driver.kind === "native")
+                    .map(
+                        (target) =>
+                            target.driver.kind === "native" && target.driver.release
+                    )
+            ),
+        ].toSorted((left, right) => String(left).localeCompare(String(right)))
+    ).toEqual([
+        "adguard-home",
+        "adguardhome-sync",
+        "alertmanager",
+        "alloy",
+        "blackbox-exporter",
+        "bun",
+        "codex",
+        "github-cli",
+        "loki",
+        "nextcloud",
+        "node",
+        "node-exporter",
+        "openclaw",
+        "pve-exporter",
+        "smartctl-exporter",
+        "traefik",
+        "victoriametrics",
+    ]);
     const sources = [...new Set(targets.map((target) => target.source))];
     for (const source of sources) {
         const hostTargets = targets.filter((target) => target.source === source);
