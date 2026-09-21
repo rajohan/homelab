@@ -145,7 +145,7 @@ def locked_directory(directory):
 
 
 def docker_update(driver, item, automatic=False):
-    """Persist one literal Compose image pin and recreate only that selected service."""
+    """Update one image, coordinating approved namespace consumers without changing theirs."""
     candidate = item["availableImage"]
     if not re.fullmatch(r"(?:docker.io|ghcr.io)/[a-z0-9][a-z0-9_./-]*:[A-Za-z0-9_][A-Za-z0-9_.-]*@sha256:[a-f0-9]{64}", candidate):
         raise RuntimeError("An immutable public image candidate is required")
@@ -180,6 +180,9 @@ def docker_update(driver, item, automatic=False):
         config = json.loads(compose(["config", "--format", "json"]))
         if config.get("services", {}).get(driver["service"], {}).get("image") != item["image"]:
             raise RuntimeError("Compose and the observed image differ")
+        namespace_plan = prepare_namespace_plan(config, driver, compose)
+        if before[3] == "running":
+            docker_health_checks(driver)
         pattern = re.compile(rb"(?m)^([ \t]+image:[ \t]*)([\"']?)" + re.escape(item["image"].encode()) + rb"\2([ \t]*(?:#[^\r\n]*)?\r?)$")
         matches = list(pattern.finditer(original))
         if len(matches) != 1:
@@ -199,6 +202,7 @@ def docker_update(driver, item, automatic=False):
                 raise RuntimeError("This image change requires manual approval")
         if inspect_container(identity) != before or json.loads(compose(["config", "--format", "json"])) != config:
             raise RuntimeError("Application or Compose configuration changed during preparation")
+        verify_namespace_plan(namespace_plan)
         progress("configuring")
         atomic_content(path, updated, original)
         try:
@@ -210,12 +214,18 @@ def docker_update(driver, item, automatic=False):
             atomic_content(path, original, updated)
             raise
         progress("installing")
+        stop_namespace_consumers(namespace_plan, driver["service"], compose)
         state = ["--wait", "--wait-timeout", "120"] if before[3] == "running" else ["--no-start"]
         compose(["up", "--detach", "--no-deps", "--no-build", "--pull", "never"] + state + [driver["service"]], timeout=180)
         progress("verifying")
         after = inspect_container(driver["name"])
         if after[1:3] != [candidate, item["available"]] or after[4:] != before[4:] or (before[3] == "running" and after[3] != "running") or (before[3] != "running" and after[3] == "running"):
             raise RuntimeError("Application update could not be verified")
+        replacements = restore_namespace_consumers(namespace_plan, driver["service"], compose)
+        if before[3] == "running":
+            docker_health_checks(driver)
+        if replacements:
+            print(json.dumps({"recreatedContainers": replacements}), flush=True)
         return item["available"]
 
 

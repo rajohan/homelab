@@ -59,6 +59,20 @@ requests before success is reported. A service that regressed while a later serv
 fails this final check; declared one-shot dependencies must still have exited successfully.
 These are fresh observations, not an atomic snapshot or a guarantee of future availability.
 
+Container actions include transitive same-project network, PID and IPC namespace
+consumers. The confirmation names these related services and its revision covers the
+whole group. Stop proceeds consumer-first; start proceeds provider-first and waits
+for readiness. Restart keeps previously stopped consumers stopped. Missing immutable
+provider IDs are rejected before stopping a running consumer: lifecycle actions do
+not silently recreate containers or repair their configuration. Cross-project
+namespace groups fail closed.
+
+Application host IDs must match the corresponding update reporting source IDs.
+Configuration binds the Docker endpoint and that source's SSH host addresses to the
+same job resource leases, even when Docker uses a bridge IP and SSH uses a LAN IP.
+Lifecycle admission acquires all these keys; execution checks that the saved job
+still holds the current keys. Unrelated hosts can execute concurrently.
+
 Discovery accepts at most 20 hosts and 200 containers per host. Each inspect response is
 limited to 512 KiB, with at most 32 networks, 128 exposed ports, eight bindings per port and
 64 mounts. Selected browser metadata is limited to 32 KiB per container, 1 MiB per host and

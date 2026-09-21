@@ -26,6 +26,22 @@ async function recordResult(
                 >`SELECT value FROM operation_snapshots WHERE key=${key} FOR UPDATE`;
                 if (!row) continue;
                 const items = row.value.items.map((previous) => {
+                    const replacement = receipt.recreatedContainers?.find(
+                        (candidate) =>
+                            previous.id === `docker:${candidate.previousId}` &&
+                            previous.installed === candidate.installed
+                    );
+                    if (
+                        replacement &&
+                        target.driver.kind === "docker" &&
+                        previous.kind === "container" &&
+                        target.driver.namespaceDependents?.some(
+                            (service) =>
+                                previous.name ===
+                                `${target.driver.kind === "docker" ? target.driver.project : ""}-${service}-1`
+                        )
+                    )
+                        return { ...previous, id: `docker:${replacement.containerId}` };
                     if (previous.id !== item.id || previous.installed !== item.installed)
                         return previous;
                     return {
@@ -62,7 +78,10 @@ async function recordResult(
                 receipt.rebootRequired,
                 observedAt
             );
-            if (receipt.rebootRequired)
+            // Application/container updates may observe a flag left by an earlier
+            // OS update. Keep the host badge current without attributing that
+            // unrelated restart requirement to each successful application job.
+            if (target.driver.kind === "apt" && receipt.rebootRequired)
                 await publishNotification(transaction, "updates", {
                     key: `reboot:${context.runId}`,
                     title: `${target.label}: restart required`,

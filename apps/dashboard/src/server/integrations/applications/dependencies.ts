@@ -30,12 +30,70 @@ function serviceName(item: DockerDetail): string | undefined {
 }
 
 /**
+ * Read immutable container namespace references without exposing other host settings.
+ * @param item - Validated Docker metadata.
+ * @returns Exact provider IDs; unsupported aliases fail before a lifecycle mutation.
+ */
+export function namespaceProviders(item: DockerDetail): readonly string[] {
+    return [
+        ...new Set(
+            Object.values(item.HostConfig ?? {})
+                .filter((mode) => mode.startsWith("container:"))
+                .map((mode) => {
+                    const id = mode.slice("container:".length);
+                    if (!/^[a-f0-9]{64}$/.test(id))
+                        throw new Error(
+                            "A shared namespace requires an exact current container identity"
+                        );
+                    return id;
+                })
+        ),
+    ];
+}
+
+/**
+ * Refuse stale namespace bindings before stopping any selected running service.
+ * @param details - Complete confirmed scope, in dependency order.
+ * @param port - Same-host allowlisted Docker transport.
+ * @param signal - Job cancellation/deadline.
+ * @returns When all immutable providers exist and external providers are ready.
+ */
+export async function verifyNamespaceProviders(
+    details: readonly DockerDetail[],
+    port: DockerPort,
+    signal: AbortSignal
+): Promise<void> {
+    const selected = new Set(details.map((item) => item.Id));
+    for (const item of details)
+        for (const provider of namespaceProviders(item)) {
+            let current: DockerDetail;
+            try {
+                current = await port.inspect(provider, signal);
+            } catch {
+                throw new Error(
+                    "A shared network or process namespace is missing. Recreate the affected service before retrying."
+                );
+            }
+            if (
+                current.Config.Labels?.["com.docker.compose.project"] !==
+                    item.Config.Labels?.["com.docker.compose.project"] ||
+                (!selected.has(provider) && !isApplicationReady(current, false))
+            )
+                throw new Error(
+                    "A shared namespace provider is unavailable or outside the selected project"
+                );
+        }
+}
+
+/**
  * Order an existing project and reject incomplete or cyclic dependencies before any writes.
  * @param details - Complete inspected containers from one allowlisted Compose project.
+ * @param inventory - Same-host inventory for dependencies outside a namespace action group.
  * @returns Dependency-first order; no container is created or reconfigured.
  */
 export function orderApplicationDependencies(
-    details: readonly DockerDetail[]
+    details: readonly DockerDetail[],
+    inventory: readonly DockerDetail[] = details
 ): readonly DockerDetail[] {
     const ordered: DockerDetail[] = [],
         visited = new Set<string>(),
@@ -44,11 +102,23 @@ export function orderApplicationDependencies(
         if (visited.has(item.Id)) return;
         if (visiting.has(item.Id)) throw new Error("Application dependency cycle");
         visiting.add(item.Id);
+        for (const provider of namespaceProviders(item)) {
+            const match = details.find((candidate) => candidate.Id === provider);
+            if (match) visit(match);
+        }
         for (const dependency of dependencies(item)) {
             const matches = details.filter(
                 (candidate) => serviceName(candidate) === dependency.service
             );
-            if (matches.length === 0)
+            if (
+                matches.length === 0 &&
+                !inventory.some(
+                    (candidate) =>
+                        serviceName(candidate) === dependency.service &&
+                        candidate.Config.Labels?.["com.docker.compose.project"] ===
+                            item.Config.Labels?.["com.docker.compose.project"]
+                )
+            )
                 throw new Error("An application dependency is missing from the project");
             for (const match of matches) visit(match);
         }
@@ -91,10 +161,20 @@ export async function waitForApplicationDependencies(
     signal: AbortSignal,
     report: (message: string) => Promise<void> = async () => {}
 ): Promise<void> {
+    for (const provider of namespaceProviders(item)) {
+        const current = await port.inspect(provider, signal);
+        await waitForApplicationReady(current, port, signal, report, false);
+    }
     for (const dependency of dependencies(item)) {
-        for (const candidate of details.filter(
-            (row) => serviceName(row) === dependency.service
-        )) {
+        const matches = details.filter(
+            (row) =>
+                serviceName(row) === dependency.service &&
+                row.Config.Labels?.["com.docker.compose.project"] ===
+                    item.Config.Labels?.["com.docker.compose.project"]
+        );
+        if (matches.length === 0)
+            throw new Error("An application dependency is missing from the project");
+        for (const candidate of matches) {
             const conditions = {
                 service_started: "start",
                 service_healthy: "become healthy",

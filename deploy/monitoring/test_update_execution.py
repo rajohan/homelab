@@ -19,6 +19,7 @@ SOURCE = Path(__file__).resolve().parents[2] / "apps/dashboard/src/server/integr
 SPEC = importlib.util.spec_from_file_location("update_execution_fixture", SOURCE)
 remote = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(remote)
+exec(compile(SOURCE.with_name("docker_dependencies.py").read_text(), str(SOURCE.with_name("docker_dependencies.py")), "exec"), remote.__dict__)
 exec(compile(SOURCE.with_name("native.py").read_text(), str(SOURCE.with_name("native.py")), "exec"), remote.__dict__)
 exec(compile(SOURCE.with_name("binary.py").read_text(), str(SOURCE.with_name("binary.py")), "exec"), remote.__dict__)
 exec(compile(SOURCE.with_name("toolchain.py").read_text(), str(SOURCE.with_name("toolchain.py")), "exec"), remote.__dict__)
@@ -56,8 +57,17 @@ class UpdateExecutionTests(unittest.TestCase):
                 else:
                     self.assertIsNone(environment)
                 if arguments[1] == "inspect":
+                    if arguments[3] == '{{json .State}}':
+                        return json.dumps({'Status': mode, 'Health': {'Status': 'healthy'}})
+                    if '{{.Id}}' in arguments[3]:
+                        return 'c' * 64 + ' default'
+                    if '{{json .Id}}' in arguments[3]:
+                        values = ['c' * 64, '/demo-web-1', new if installed else old, item['available'] if installed else item['installed'], 'created' if installed and mode != 'running' else mode, 'fixture-start', 'demo', 'web', 'default', '', '', []]
+                        return ','.join(json.dumps(value) for value in values)
                     values = ["/demo-web-1", new if installed else old, item["available"] if installed else item["installed"], "created" if installed and mode != "running" else mode, "demo", "web"]
                     return ",".join(json.dumps(value) for value in values)
+                if arguments[1] == 'ps' or (arguments[1] == 'compose' and 'ps' in arguments):
+                    return 'c' * 64
                 if arguments[1:3] == ["image", "inspect"]:
                     return "sha256:" + "f" * 64 if wrong_pull else item["available"]
                 if arguments[1] == "pull":
@@ -101,6 +111,27 @@ class UpdateExecutionTests(unittest.TestCase):
 
     def test_running_image_update_persists_pin_and_waits_for_health(self):
         self.docker_fixture()
+
+    def test_namespace_order_is_transitive_and_cycles_fail_before_writes(self):
+        config = {'vpn': {}, 'proxy': {'network_mode': 'service:vpn'}, 'app': {'network_mode': 'service:proxy'}, 'other': {}}
+        self.assertEqual(remote.namespace_services(config, 'vpn'), ['vpn', 'proxy', 'app'])
+        config['vpn']['ipc'] = 'service:app'
+        with self.assertRaisesRegex(RuntimeError, 'cycle'):
+            remote.namespace_services(config, 'vpn')
+
+    def test_changed_namespace_observations_prevent_mutation(self):
+        with patch.object(remote, 'namespace_snapshot', return_value=['changed']):
+            with self.assertRaisesRegex(RuntimeError, 'changed'):
+                remote.verify_namespace_plan([['old']])
+
+    def test_namespace_stop_targets_only_running_consumers_in_reverse_order(self):
+        plan = [[None] * 12 for _ in range(4)]
+        for row, name, state in zip(plan, ['vpn', 'proxy', 'app', 'stopped'], ['running', 'running', 'running', 'exited']):
+            row[7], row[4] = name, state
+        calls = []
+        with patch.object(remote, 'progress'):
+            remote.stop_namespace_consumers(plan, 'vpn', lambda args, timeout: calls.append(args))
+        self.assertEqual(calls, [['stop', '--timeout', '30', 'app', 'proxy']])
 
     def test_stopped_image_update_does_not_start_the_service(self):
         self.docker_fixture(mode="exited")

@@ -196,7 +196,40 @@ export function updateBatchJobs(
                 if (input.source !== source)
                     throw new Error("Batch update authorization expired");
                 await checkBatchAdmission(client, context.runId);
-                for (const [index, entry] of input.items.entries()) {
+                // Update consumers before their provider. Provider recreation then
+                // keeps their newly approved images; it cannot stale a later item ID.
+                const ordered: typeof input.items = [];
+                const visiting = new Set<string>();
+                const visit = (entry: (typeof input.items)[number]) => {
+                    if (ordered.includes(entry)) return;
+                    if (visiting.has(entry.target))
+                        throw new Error("Update namespace dependency cycle");
+                    visiting.add(entry.target);
+                    const target = owned.find(
+                        (candidate) => candidate.id === entry.target
+                    );
+                    if (target?.driver.kind === "docker") {
+                        const driver = target.driver;
+                        for (const dependent of owned.filter(
+                            (candidate) =>
+                                candidate.driver.kind === "docker" &&
+                                candidate.host === target.host &&
+                                candidate.driver.project === driver.project &&
+                                driver.namespaceDependents?.includes(
+                                    candidate.driver.service
+                                )
+                        )) {
+                            const item = input.items.find(
+                                (candidate) => candidate.target === dependent.id
+                            );
+                            if (item) visit(item);
+                        }
+                    }
+                    visiting.delete(entry.target);
+                    ordered.push(entry);
+                };
+                for (const entry of input.items) visit(entry);
+                for (const [index, entry] of ordered.entries()) {
                     context.signal.throwIfAborted();
                     const target = owned.find(
                         (candidate) => candidate.id === entry.target

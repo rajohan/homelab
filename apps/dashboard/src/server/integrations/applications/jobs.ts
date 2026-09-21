@@ -6,11 +6,10 @@ import type { SQL } from "bun";
 import * as v from "valibot";
 
 import { applicationClientEnvironment } from "../../config/environment";
-import { hostResourceKey } from "../../jobs/resources";
 import type { JobHandler } from "../../jobs/types";
 import { publishNotification } from "../../notifications/publish";
 import { performApplicationAction } from "./actions";
-import type { ApplicationTarget } from "./configuration";
+import { applicationHostResourceKeys, type ApplicationTarget } from "./configuration";
 import { createDockerPort, type DockerPort } from "./docker";
 import { collectApplications } from "./inventory";
 import { readApplicationInventory } from "./selection";
@@ -110,7 +109,7 @@ export function applicationJobs(
                 const target = targets.find((item) => item.id === intent.host);
                 const [run] = await client<
                     { eligible: boolean }[]
-                >`SELECT created_at >= now() - interval '2 minutes' AND ${target ? hostResourceKey(new URL(target.endpoint).hostname) : "unconfigured"} = ANY(resource_keys) AS eligible FROM job_runs WHERE id=${context.runId}`;
+                >`SELECT created_at >= now() - interval '2 minutes' AND resource_keys @> ${client.array(target ? [...applicationHostResourceKeys(target)] : ["unconfigured"], "TEXT")}::text[] AS eligible FROM job_runs WHERE id=${context.runId}`;
                 if (!target || intent.operation !== operation || !run?.eligible)
                     throw new Error(
                         "Application authorization expired or target changed"

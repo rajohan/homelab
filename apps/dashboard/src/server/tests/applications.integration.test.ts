@@ -4,6 +4,7 @@ import { capabilities } from "@homelab/contracts/operations";
 
 import { appRouter } from "../api/router";
 import { performApplicationAction } from "../integrations/applications/actions";
+import { bindApplicationHosts } from "../integrations/applications/configuration";
 import { createDockerPort } from "../integrations/applications/docker";
 import { collectApplications } from "../integrations/applications/inventory";
 import { applicationJobs } from "../integrations/applications/jobs";
@@ -19,90 +20,102 @@ import { hostResourceKey } from "../jobs/resources";
 import { createApplicationFixture } from "../testing/applications";
 import { operationFixture, expectOperationFailure } from "../testing/operations";
 
-test("lifecycle admission leases only its selected host and rejects changed host configuration", async () => {
-    const database = await operationFixture(),
-        docker = createApplicationFixture();
-    try {
-        const other = {
-            ...docker.target,
-            id: "other",
-            endpoint: "https://other.invalid",
-        };
-        const targets = [docker.target, other];
-        const registry = createJobRegistry(applicationJobs(targets, database.client));
-        const inventory = await collectApplications(
-            [docker.target],
-            (target) => createDockerPort(target, {}),
-            AbortSignal.timeout(3000)
-        );
-        await database.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES ('applications.inventory',${JSON.stringify(inventory)}::text::jsonb,now())`;
-        const application = inventory.hosts[0]!.applications[0]!;
-        const principal = { kind: "human" as const, id: "operator", capabilities };
-        const caller = appRouter.createCaller({
-            operations: { ...database, registry, applicationTargets: targets },
-            principal,
-            verifyHuman: () => Promise.resolve(principal),
-        });
-        const result = await caller.applications.request({
-            host: docker.target.id,
-            selection: { kind: "container", target: application.containerId },
-            revision: application.revision,
-            operation: "restart",
-            requestId: crypto.randomUUID(),
-        });
-        const worker = await database.registerWorker();
-        const lifecycle = await claimJob(database.client, worker, [
-            "applications.restart",
-        ]);
-        if (!lifecycle) throw new Error("Expected lifecycle claim");
-        expect(lifecycle.id).toBe(result.id);
-        const selectedKey = hostResourceKey(new URL(docker.target.endpoint).hostname),
-            otherKey = hostResourceKey("other.invalid");
-        expect(lifecycle.resource_keys).toEqual(["applications:inventory", selectedKey]);
-        for (const [key, host] of [
-            ["fixture.update.selected", selectedKey],
-            ["fixture.update.other", otherKey],
-        ]) {
-            await database.client.begin(async (transaction) => {
-                await lockQueue(transaction);
-                await enqueueJob(
-                    transaction,
-                    {
-                        ...maintenanceJob(30).definition,
-                        key: key!,
-                        resourceKeys: [host!],
-                    },
-                    "system:test",
-                    crypto.randomUUID()
-                );
+test.each([false, true])(
+    "lifecycle admission leases its physical host across different endpoint aliases=%s",
+    async (alias) => {
+        const database = await operationFixture(),
+            docker = createApplicationFixture();
+        try {
+            const other = {
+                ...docker.target,
+                id: "other",
+                endpoint: "https://other.invalid",
+            };
+            const targets = alias
+                ? bindApplicationHosts(
+                      [docker.target, other],
+                      [{ source: docker.target.id, host: "192.0.2.10" }]
+                  )
+                : [docker.target, other];
+            const registry = createJobRegistry(applicationJobs(targets, database.client));
+            const inventory = await collectApplications(
+                [docker.target],
+                (target) => createDockerPort(target, {}),
+                AbortSignal.timeout(3000)
+            );
+            await database.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES ('applications.inventory',${JSON.stringify(inventory)}::text::jsonb,now())`;
+            const application = inventory.hosts[0]!.applications[0]!;
+            const principal = { kind: "human" as const, id: "operator", capabilities };
+            const caller = appRouter.createCaller({
+                operations: { ...database, registry, applicationTargets: targets },
+                principal,
+                verifyHuman: () => Promise.resolve(principal),
             });
+            const result = await caller.applications.request({
+                host: docker.target.id,
+                selection: { kind: "container", target: application.containerId },
+                revision: application.revision,
+                operation: "restart",
+                requestId: crypto.randomUUID(),
+            });
+            const worker = await database.registerWorker();
+            const lifecycle = await claimJob(database.client, worker, [
+                "applications.restart",
+            ]);
+            if (!lifecycle) throw new Error("Expected lifecycle claim");
+            expect(lifecycle.id).toBe(result.id);
+            const selectedKey = hostResourceKey(
+                    alias ? "192.0.2.10" : new URL(docker.target.endpoint).hostname
+                ),
+                otherKey = hostResourceKey("other.invalid");
+            expect(lifecycle.resource_keys).toContain("applications:inventory");
+            expect(lifecycle.resource_keys).toContain(selectedKey);
+            expect(lifecycle.resource_keys).toHaveLength(alias ? 3 : 2);
+            for (const [key, host] of [
+                ["fixture.update.selected", selectedKey],
+                ["fixture.update.other", otherKey],
+            ]) {
+                await database.client.begin(async (transaction) => {
+                    await lockQueue(transaction);
+                    await enqueueJob(
+                        transaction,
+                        {
+                            ...maintenanceJob(30).definition,
+                            key: key!,
+                            resourceKeys: [host!],
+                        },
+                        "system:test",
+                        crypto.randomUUID()
+                    );
+                });
+            }
+            expect(
+                await claimJob(database.client, worker, ["fixture.update.selected"])
+            ).toBeUndefined();
+            expect(
+                await claimJob(database.client, worker, ["fixture.update.other"])
+            ).toBeDefined();
+            const changed = applicationJobs(
+                [{ ...docker.target, endpoint: other.endpoint }],
+                database.client
+            ).find((handler) => handler.definition.key === "applications.restart")!;
+            await expectOperationFailure(
+                changed.execute(lifecycle.payload, {
+                    runId: lifecycle.id,
+                    leaseToken: lifecycle.lease_token,
+                    signal: AbortSignal.timeout(3000),
+                    reportProgress: () => Promise.resolve(),
+                    commit: () => Promise.resolve(false),
+                }),
+                "target changed"
+            );
+            expect(docker.calls).toEqual([]);
+        } finally {
+            await docker.close();
+            await database.close();
         }
-        expect(
-            await claimJob(database.client, worker, ["fixture.update.selected"])
-        ).toBeUndefined();
-        expect(
-            await claimJob(database.client, worker, ["fixture.update.other"])
-        ).toBeDefined();
-        const changed = applicationJobs(
-            [{ ...docker.target, endpoint: other.endpoint }],
-            database.client
-        ).find((handler) => handler.definition.key === "applications.restart")!;
-        await expectOperationFailure(
-            changed.execute(lifecycle.payload, {
-                runId: lifecycle.id,
-                leaseToken: lifecycle.lease_token,
-                signal: AbortSignal.timeout(3000),
-                reportProgress: () => Promise.resolve(),
-                commit: () => Promise.resolve(false),
-            }),
-            "target changed"
-        );
-        expect(docker.calls).toEqual([]);
-    } finally {
-        await docker.close();
-        await database.close();
     }
-});
+);
 
 test("snapshot admission and reported freshness use database time, not serialized worker timestamps", async () => {
     const database = await operationFixture(),

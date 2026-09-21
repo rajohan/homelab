@@ -19,7 +19,8 @@ test("restart state distinguishes a current warning, absence of a flag and unava
                 unavailable={false}
             />
         );
-        expect(screen.getByText("No restart reported")).toBeTruthy();
+        const badge = screen.getByText("No restart required");
+        expect(badge.className).toContain("rounded");
         for (const state of [
             null,
             undefined,
@@ -28,7 +29,7 @@ test("restart state distinguishes a current warning, absence of a flag and unava
         ]) {
             view.rerender(<RestartStatus observation={state} unavailable={false} />);
             expect(screen.getByText("Unknown")).toBeTruthy();
-            expect(screen.queryByText("No restart reported")).toBeNull();
+            expect(screen.queryByText("No restart required")).toBeNull();
         }
         view.rerender(<RestartStatus observation={observation} unavailable />);
         expect(screen.getByText("Unknown")).toBeTruthy();

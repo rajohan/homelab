@@ -76,6 +76,7 @@ test("application lifecycle menus require an explicit cancellable confirmation",
             revision={application.revision}
             name="web"
             states={["running", "exited"]}
+            relatedApplications={["proxy", "offline-consumer"]}
         />
     );
     try {
@@ -87,6 +88,16 @@ test("application lifecycle menus require an explicit cancellable confirmation",
                 screen.getByRole("dialog", { name: `${operation} web?` })
             ).toBeVisible();
             expect(screen.getByRole("button", { name: operation })).toBeEnabled();
+            expect(
+                screen.getByText(
+                    /Shared namespace services are coordinated too: proxy, offline-consumer/
+                )
+            ).toBeVisible();
+            expect(
+                screen.getByText(
+                    /Restart leaves previously stopped dependent services stopped/
+                )
+            ).toBeVisible();
             await user.click(screen.getByRole("button", { name: "Cancel" }));
             expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
         }

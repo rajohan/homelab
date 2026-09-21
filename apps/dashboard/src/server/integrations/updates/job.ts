@@ -6,6 +6,32 @@ import type { JobHandler } from "../../jobs/types";
 import { resolveImageUpdate, type ImageUpdate } from "./registry";
 import { compareRelease, latestRelease } from "./releases";
 
+async function cachedLookup<T>(
+    cache: Map<string, Promise<T>>,
+    key: string,
+    signal: AbortSignal,
+    started: number,
+    lookup: (deadline: AbortSignal) => Promise<T>
+): Promise<T> {
+    let promise = cache.get(key);
+    if (!promise) {
+        const attempt = () => {
+            signal.throwIfAborted();
+            const remaining = 30_000 - (Date.now() - started);
+            if (remaining <= 0) throw new Error("Source lookup budget reached");
+            return lookup(
+                AbortSignal.any([signal, AbortSignal.timeout(Math.min(8000, remaining))])
+            );
+        };
+        // Share one bounded retry with every identical observation. A temporary
+        // registry failure must not leave an otherwise current image unchecked
+        // until the next hourly run; cancellation and source budgets still apply.
+        promise = attempt().catch(() => attempt());
+        cache.set(key, promise);
+    }
+    return promise;
+}
+
 /**
  * Compare observed versions with official releases, isolating individual lookup failures.
  * @param report - Installed inventory from a registered read-only publisher.
@@ -39,7 +65,6 @@ export async function resolveUpdates(
             try {
                 if (Date.now() - started > 30_000)
                     throw new Error("Source lookup budget reached");
-                const deadline = AbortSignal.any([signal, AbortSignal.timeout(8000)]);
                 let available: string | null;
                 let availableImage: string | undefined;
                 let installedVersion: string | undefined;
@@ -50,17 +75,15 @@ export async function resolveUpdates(
                         item.release === "nextcloud"
                             ? JSON.stringify([item.release, item.installed])
                             : item.release;
-                    let promise = releases.get(key);
-                    if (!promise) {
-                        promise = latestRelease(
-                            item.release,
-                            deadline,
-                            request,
-                            item.installed
-                        );
-                        releases.set(key, promise);
-                    }
-                    available = await promise;
+                    const release = item.release;
+                    available = await cachedLookup(
+                        releases,
+                        key,
+                        signal,
+                        started,
+                        (deadline) =>
+                            latestRelease(release, deadline, request, item.installed)
+                    );
                 } else {
                     const key = JSON.stringify([
                         item.image,
@@ -68,12 +91,13 @@ export async function resolveUpdates(
                         item.imageTag,
                         item.platform,
                     ]);
-                    let promise = images.get(key);
-                    if (!promise) {
-                        promise = resolveImageUpdate(item, deadline, request);
-                        images.set(key, promise);
-                    }
-                    const candidate = await promise;
+                    const candidate = await cachedLookup(
+                        images,
+                        key,
+                        signal,
+                        started,
+                        (deadline) => resolveImageUpdate(item, deadline, request)
+                    );
                     available = candidate?.imageId ?? null;
                     availableImage = candidate?.reference;
                     installedVersion = candidate?.installedVersion;

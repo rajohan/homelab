@@ -25,7 +25,7 @@ export function RestartStatus({
             {observation.required ? (
                 <Badge tone="warning">Restart required</Badge>
             ) : (
-                <span className="text-primary-400">No restart reported</span>
+                <Badge tone="positive">No restart required</Badge>
             )}
         </span>
     );

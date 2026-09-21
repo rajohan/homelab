@@ -1,6 +1,11 @@
 import { expect, test } from "bun:test";
 
-import { parseApplicationTargets } from "./configuration";
+import { hostResourceKey } from "../../jobs/resources";
+import {
+    parseApplicationTargets,
+    bindApplicationHosts,
+    applicationHostResourceKeys,
+} from "./configuration";
 
 const target = {
     id: "main",
@@ -13,6 +18,23 @@ const target = {
         key: "HOMELAB_DASHBOARD_DOCKER_KEY",
     },
 };
+
+test("Docker proxy and SSH addresses share physical host locks without broadening access", () => {
+    const applications = parseApplicationTargets(JSON.stringify([target]));
+    const [bound] = bindApplicationHosts(applications, [
+        { source: "main", host: "192.0.2.10" },
+        { source: "main", host: "192.0.2.10" },
+        { source: "other", host: "192.0.2.20" },
+    ]);
+    expect(bound).toBeDefined();
+    expect(applicationHostResourceKeys(bound!)).toContain(
+        hostResourceKey("docker.example")
+    );
+    expect(applicationHostResourceKeys(bound!)).toContain(hostResourceKey("192.0.2.10"));
+    expect(applicationHostResourceKeys(bound!)).toHaveLength(2);
+    expect(bound!.projects).toEqual(target.projects);
+    expect(bound!.endpoint).toBe(target.endpoint);
+});
 
 test("historical log mappings are explicit, bounded and cannot overlap other projects", () => {
     const legacy = {

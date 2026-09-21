@@ -5,6 +5,7 @@ import type { RulesConfiguration } from "../integrations/alerts/rules";
 import type { AlertsConfiguration } from "../integrations/alerts/transport";
 import {
     parseApplicationTargets,
+    bindApplicationHosts,
     type ApplicationTarget,
 } from "../integrations/applications/configuration";
 import type { BackupCatalogConfiguration } from "../integrations/backups/catalog";
@@ -205,9 +206,12 @@ export function parseOperationsConfiguration(
         logs: logsUrl
             ? { url: logsUrl, token: environment.HOMELAB_DASHBOARD_LOGS_TOKEN }
             : undefined,
-        applicationTargets: parseApplicationTargets(
-            environment.HOMELAB_DASHBOARD_APPLICATION_TARGETS,
-            ["test", "development"].includes(environment.NODE_ENV ?? "")
+        applicationTargets: bindApplicationHosts(
+            parseApplicationTargets(
+                environment.HOMELAB_DASHBOARD_APPLICATION_TARGETS,
+                ["test", "development"].includes(environment.NODE_ENV ?? "")
+            ),
+            updateTargets
         ),
         databaseUrl,
         metricsUrl,

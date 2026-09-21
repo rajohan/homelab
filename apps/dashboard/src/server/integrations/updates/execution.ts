@@ -3,13 +3,22 @@ import * as v from "valibot";
 
 import binaryProgram from "./binary.py" with { type: "text" };
 import type { UpdateTarget } from "./configuration";
+import dockerDependenciesProgram from "./docker_dependencies.py" with { type: "text" };
 import nativeProgram from "./native.py" with { type: "text" };
 import remoteProgram from "./remote.py" with { type: "text" };
 import toolchainProgram from "./toolchain.py" with { type: "text" };
 
 // Both modules travel in one transient interpreter; no helper is installed on a host.
 const program =
-    nativeProgram + "\n" + binaryProgram + "\n" + toolchainProgram + "\n" + remoteProgram;
+    nativeProgram +
+    "\n" +
+    binaryProgram +
+    "\n" +
+    toolchainProgram +
+    "\n" +
+    dockerDependenciesProgram +
+    "\n" +
+    remoteProgram;
 
 const phases = {
     checking: "Checking the installed version and update target.",
@@ -19,6 +28,10 @@ const phases = {
     configuring: "Saving the new image pin in Compose.",
     installing: "Installing the approved version.",
     verifying: "Verifying the installed version and application health.",
+    stopping_dependents:
+        "Stopping services that share the application's network or process namespace.",
+    rebinding_dependents:
+        "Recreating dependent services against the new namespace, preserving their images and data.",
 } as const;
 const eventSchema = v.variant("complete", [
     v.object({
@@ -32,10 +45,24 @@ const eventSchema = v.variant("complete", [
 const progressSchema = v.object({
     phase: v.picklist(Object.keys(phases) as (keyof typeof phases)[]),
 });
+const containerIdentity = v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/));
+const recreatedContainerSchema = v.strictObject({
+    previousId: containerIdentity,
+    containerId: containerIdentity,
+    installed: v.pipe(v.string(), v.regex(/^sha256:[a-f0-9]{64}$/)),
+});
+const recreatedContainersSchema = v.strictObject({
+    recreatedContainers: v.pipe(v.array(recreatedContainerSchema), v.maxLength(30)),
+});
 export interface UpdateReceipt {
     readonly installed: string;
     readonly rebootRequired: boolean | null;
     readonly containerId?: string;
+    readonly recreatedContainers?: readonly {
+        previousId: string;
+        containerId: string;
+        installed: string;
+    }[];
 }
 export type UpdateExecutor = (
     target: UpdateTarget,
@@ -118,6 +145,7 @@ export const executeUpdate: UpdateExecutor = async (
         env: { PATH: "/usr/bin:/bin", LANG: "C", HOME: "/nonexistent" },
     });
     let receipt: UpdateReceipt | undefined;
+    let recreatedContainers: UpdateReceipt["recreatedContainers"];
     let bytes = 0;
     let pending = "";
     try {
@@ -131,6 +159,14 @@ export const executeUpdate: UpdateExecutor = async (
                 const line = pending.slice(0, end);
                 pending = pending.slice(end + 1);
                 const value: unknown = JSON.parse(line);
+                const replacements = v.safeParse(recreatedContainersSchema, value);
+                if (replacements.success) {
+                    if (receipt || recreatedContainers)
+                        throw new Error("Unexpected namespace receipt");
+                    recreatedContainers = replacements.output.recreatedContainers;
+                    end = pending.indexOf("\n");
+                    continue;
+                }
                 const phase = v.safeParse(progressSchema, value);
                 if (phase.success) {
                     if (receipt)
@@ -144,6 +180,7 @@ export const executeUpdate: UpdateExecutor = async (
                         installed: event.installed,
                         rebootRequired: event.rebootRequired,
                         ...(event.containerId ? { containerId: event.containerId } : {}),
+                        ...(recreatedContainers ? { recreatedContainers } : {}),
                     };
                 }
                 end = pending.indexOf("\n");

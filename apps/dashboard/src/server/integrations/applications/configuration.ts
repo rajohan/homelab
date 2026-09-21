@@ -1,6 +1,8 @@
 import { applicationHostSchema } from "@homelab/contracts/applications";
 import * as v from "valibot";
 
+import { hostResourceKey } from "../../jobs/resources";
+
 const secretName = v.pipe(v.string(), v.regex(/^HOMELAB_DASHBOARD_[A-Z0-9_]{1,100}$/));
 const projectName = v.pipe(v.string(), v.regex(/^[a-z0-9][a-z0-9._-]{0,79}$/));
 const labelName = v.pipe(v.string(), v.regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/));
@@ -55,7 +57,47 @@ const schema = v.pipe(
     ),
     v.maxLength(20)
 );
-export type ApplicationTarget = v.InferOutput<typeof schema>[number];
+export type ApplicationTarget = v.InferOutput<typeof schema>[number] & {
+    readonly controlHosts?: readonly string[];
+};
+
+/**
+ * Coordinate Docker endpoints with the SSH hosts in the same deployment-owned source.
+ * @param applications - Validated endpoints and project allowlists.
+ * @param updates - Configured software targets; no access is inferred or granted.
+ * @returns Docker targets holding every corresponding host lock as well as their endpoint lock.
+ */
+export function bindApplicationHosts(
+    applications: readonly ApplicationTarget[],
+    updates: readonly { readonly source: string; readonly host: string }[]
+): readonly ApplicationTarget[] {
+    return applications.map((application) => ({
+        ...application,
+        controlHosts: [
+            ...new Set([
+                new URL(application.endpoint).hostname,
+                ...updates
+                    .filter((target) => target.source === application.id)
+                    .map((target) => target.host),
+            ]),
+        ].toSorted(),
+    }));
+}
+
+/**
+ * Derive the same deployment-owned host leases during admission and queued execution.
+ * @param target - Docker endpoint with canonical SSH identities bound at configuration load.
+ * @returns Unique opaque locks; different ports or proxy addresses cannot split host ownership.
+ */
+export function applicationHostResourceKeys(target: ApplicationTarget): string[] {
+    return [
+        ...new Set(
+            [new URL(target.endpoint).hostname, ...(target.controlHosts ?? [])].map(
+                (host) => hostResourceKey(host)
+            )
+        ),
+    ];
+}
 
 /**
  * Validate trusted Docker endpoints and explicit project allowlists before startup.

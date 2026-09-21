@@ -111,6 +111,14 @@ const driverSchema = v.union([
         file: path,
         imageFile: path,
         trackingTag: updateItemSchema.entries.imageTag,
+        namespaceDependents: v.optional(
+            v.pipe(
+                v.array(identifier),
+                v.maxLength(30),
+                v.check((names) => new Set(names).size === names.length)
+            )
+        ),
+        healthChecks: v.optional(v.pipe(v.array(command), v.maxLength(10))),
         environment: v.optional(composeEnvironment),
     }),
     v.strictObject({

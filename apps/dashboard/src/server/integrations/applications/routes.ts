@@ -3,10 +3,10 @@ import { applicationIntentSchema } from "@homelab/contracts/applications";
 import { runOperation, trpc } from "../../api/trpc";
 import { requireCapability } from "../../automation/authentication";
 import { enqueueJob, lockQueue } from "../../jobs/queue";
-import { hostResourceKey } from "../../jobs/resources";
 import { authorizedOperations } from "../../operations/authorization";
 import { OperationFailure } from "../../operations/errors";
 import { applicationLogsProcedure } from "../logs/routes";
+import { applicationHostResourceKeys } from "./configuration";
 import { filterApplicationInventory } from "./inventory";
 import {
     readApplicationInventory,
@@ -28,7 +28,46 @@ export const applicationsRouter = trpc.router({
             return {
                 configured: targets.length > 0,
                 fresh: snapshot?.fresh ?? false,
-                inventory,
+                inventory: inventory
+                    ? {
+                          ...inventory,
+                          hosts: inventory.hosts.map((host) => ({
+                              ...host,
+                              applications: host.applications.map((application) => {
+                                  if (!host.available || !snapshot?.fresh)
+                                      return application;
+                                  const selection = {
+                                      kind: "container" as const,
+                                      target: application.containerId,
+                                  };
+                                  try {
+                                      const related = selectApplications(
+                                          inventory,
+                                          host.id,
+                                          selection,
+                                          true
+                                      );
+                                      return {
+                                          ...application,
+                                          actionRevision: selectionRevision(
+                                              related,
+                                              selection
+                                          ),
+                                          relatedApplications: related
+                                              .filter(
+                                                  (item) =>
+                                                      item.containerId !==
+                                                      application.containerId
+                                              )
+                                              .map((item) => item.name),
+                                      };
+                                  } catch {
+                                      return { ...application, actionRevision: "" };
+                                  }
+                              }),
+                          })),
+                      }
+                    : null,
                 logHosts: operations.logs
                     ? targets.filter((target) => target.logs).map((target) => target.id)
                     : [],
@@ -121,7 +160,7 @@ export const applicationsRouter = trpc.router({
                             ...definition,
                             resourceKeys: [
                                 ...definition.resourceKeys,
-                                hostResourceKey(new URL(target.endpoint).hostname),
+                                ...applicationHostResourceKeys(target),
                             ],
                         },
                         `${principal.kind}:${principal.id}`,
