@@ -56,15 +56,16 @@ export function namespaceProviders(item: DockerDetail): readonly string[] {
  * @param details - Complete confirmed scope, in dependency order.
  * @param port - Same-host allowlisted Docker transport.
  * @param signal - Job cancellation/deadline.
+ * @param starting - Exact containers that will be started/restarted; preserved stopped consumers are excluded.
  * @returns When all immutable providers exist and external providers are ready.
  */
 export async function verifyNamespaceProviders(
     details: readonly DockerDetail[],
     port: DockerPort,
-    signal: AbortSignal
+    signal: AbortSignal,
+    starting: ReadonlySet<string>
 ): Promise<void> {
-    const selected = new Set(details.map((item) => item.Id));
-    for (const item of details)
+    for (const item of details.filter((candidate) => starting.has(candidate.Id)))
         for (const provider of namespaceProviders(item)) {
             let current: DockerDetail;
             try {
@@ -77,7 +78,7 @@ export async function verifyNamespaceProviders(
             if (
                 current.Config.Labels?.["com.docker.compose.project"] !==
                     item.Config.Labels?.["com.docker.compose.project"] ||
-                (!selected.has(provider) && !isApplicationReady(current, false))
+                (!starting.has(provider) && !isApplicationReady(current, false))
             )
                 throw new Error(
                     "A shared namespace provider is unavailable or outside the selected project"

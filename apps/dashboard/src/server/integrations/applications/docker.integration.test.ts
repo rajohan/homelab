@@ -73,6 +73,74 @@ test.each(["NetworkMode", "PidMode", "IpcMode"] as const)(
     }
 );
 
+test.each(["NetworkMode", "PidMode", "IpcMode"] as const)(
+    "%s restart rejects a stopped intermediate before disrupting a running descendant",
+    async (kind) => {
+        const fixture = createApplicationFixture();
+        try {
+            const root = fixture.containers.get("a".repeat(64))!;
+            const intermediate = fixture.containers.get("b".repeat(64))!;
+            const leaf = applicationFixtureDetail("c".repeat(64), "leaf");
+            intermediate.HostConfig[kind] = `container:${root.Id}`;
+            leaf.HostConfig[kind] = `container:${intermediate.Id}`;
+            fixture.containers.set(leaf.Id, leaf);
+            const port = createDockerPort(fixture.target, {});
+            const selection = { kind: "container" as const, target: root.Id };
+            const run = async () => {
+                const inventory = await collectApplications(
+                    [fixture.target],
+                    () => port,
+                    AbortSignal.timeout(3000)
+                );
+                const revision = selectionRevision(
+                    selectApplications(inventory, "demo", selection, true),
+                    selection
+                );
+                return performApplicationAction(
+                    fixture.target,
+                    port,
+                    { selection, revision, operation: "restart" },
+                    AbortSignal.timeout(3000)
+                );
+            };
+            for (const state of ["exited", "created"]) {
+                intermediate.State.Status = state;
+                await expectOperationFailure(run(), "namespace");
+                expect(fixture.calls).toEqual([]);
+                expect(leaf.State.Status).toBe("running");
+                expect(root.State.StartedAt).toBe("2026-09-01T10:00:00Z");
+            }
+            leaf.State.Status = "exited";
+            await run();
+            expect(fixture.calls).toEqual(["stop:database", "start:database"]);
+            expect(intermediate.State.Status).toBe("created");
+            expect(leaf.State.Status).toBe("exited");
+            fixture.calls.length = 0;
+            const project = { kind: "project" as const, target: "demo" };
+            const inventory = await collectApplications(
+                [fixture.target],
+                () => port,
+                AbortSignal.timeout(3000)
+            );
+            const revision = selectionRevision(
+                selectApplications(inventory, "demo", project, true),
+                project
+            );
+            await performApplicationAction(
+                fixture.target,
+                port,
+                { selection: project, revision, operation: "start" },
+                AbortSignal.timeout(3000)
+            );
+            expect(fixture.calls).toEqual(["start:database", "start:web", "start:leaf"]);
+            expect(intermediate.State.Status).toBe("running");
+            expect(leaf.State.Status).toBe("running");
+        } finally {
+            await fixture.close();
+        }
+    }
+);
+
 test.each(["start", "restart"] as const)(
     "%s refuses a missing immutable namespace before any mutation",
     async (operation) => {

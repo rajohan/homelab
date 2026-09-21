@@ -78,6 +78,17 @@ export async function performApplicationAction(
         throw new Error("Application selection changed before execution");
     const project = intent.selection.kind === "project";
     const coordinated = project || details.length > 1;
+    const preservedStopped = new Set(
+        details
+            .filter(
+                (detail) =>
+                    !project &&
+                    intent.operation === "restart" &&
+                    detail.Id !== intent.selection.target &&
+                    ["created", "exited"].includes(detail.State.Status)
+            )
+            .map((detail) => detail.Id)
+    );
     const ordered = coordinated
         ? orderApplicationDependencies(details, inspected)
         : details;
@@ -95,7 +106,16 @@ export async function performApplicationAction(
     };
     if (intent.operation !== "stop") {
         try {
-            await verifyNamespaceProviders(details, port, signal);
+            await verifyNamespaceProviders(
+                details,
+                port,
+                signal,
+                new Set(
+                    details
+                        .filter((detail) => !preservedStopped.has(detail.Id))
+                        .map((detail) => detail.Id)
+                )
+            );
         } catch (error) {
             await report(
                 "A shared namespace dependency is unavailable. No containers were changed; recreate the affected services before retrying."
@@ -132,13 +152,7 @@ export async function performApplicationAction(
     if (intent.operation !== "stop") {
         const operation = coordinated ? "start" : intent.operation;
         for (const detail of ordered) {
-            if (
-                !project &&
-                intent.operation === "restart" &&
-                detail.Id !== intent.selection.target &&
-                ["created", "exited"].includes(detail.State.Status)
-            )
-                continue;
+            if (preservedStopped.has(detail.Id)) continue;
             signal.throwIfAborted();
             await waitForApplicationDependencies(detail, inspected, port, signal, report);
             await report(
@@ -151,13 +165,7 @@ export async function performApplicationAction(
     }
     if (intent.operation !== "stop")
         for (const detail of ordered) {
-            if (
-                !project &&
-                intent.operation === "restart" &&
-                detail.Id !== intent.selection.target &&
-                ["created", "exited"].includes(detail.State.Status)
-            )
-                continue;
+            if (preservedStopped.has(detail.Id)) continue;
             await waitForApplicationReady(
                 detail,
                 port,
@@ -174,12 +182,7 @@ export async function performApplicationAction(
         const ready = await Promise.all(
             ordered.slice(offset, offset + 4).map(async (detail) => {
                 const current = await port.inspect(detail.Id, signal);
-                if (
-                    !project &&
-                    intent.operation === "restart" &&
-                    detail.Id !== intent.selection.target &&
-                    ["created", "exited"].includes(detail.State.Status)
-                )
+                if (preservedStopped.has(detail.Id))
                     return ["created", "exited"].includes(current.State.Status);
                 return intent.operation === "stop"
                     ? ["exited", "created"].includes(current.State.Status)

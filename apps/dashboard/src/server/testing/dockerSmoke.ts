@@ -186,6 +186,38 @@ export async function main(): Promise<void> {
         observed = await state(consumer);
         assert.equal(observed.Status, "exited");
         await act(consumer, "start");
+        const leaf = await create("leaf", `container:${consumer}`);
+        await docker("start", leaf);
+        for (let attempt = 0; ; attempt += 1) {
+            const observedLeaf = await state(leaf);
+            if (observedLeaf.Health?.Status === "healthy") break;
+            assert.ok(attempt < 30, "Fixture leaf failed to become healthy");
+            await Bun.sleep(100);
+        }
+        await docker("stop", "--time", "1", consumer);
+        const leafBefore = await state(leaf);
+        const rootBefore = await state(provider);
+        calls.length = 0;
+        await assert.rejects(act(provider, "restart"), /namespace/);
+        assert.equal(
+            calls.length,
+            0,
+            "A stopped intermediate provider must fail before stopping its running descendant"
+        );
+        const leafAfter = await state(leaf);
+        const rootAfter = await state(provider);
+        assert.deepEqual(
+            [leafAfter.Status, leafAfter.StartedAt],
+            [leafBefore.Status, leafBefore.StartedAt]
+        );
+        assert.deepEqual(
+            [rootAfter.Status, rootAfter.StartedAt],
+            [rootBefore.Status, rootBefore.StartedAt]
+        );
+        await act(consumer, "start");
+        const recoveredLeaf = await state(leaf);
+        assert.equal(recoveredLeaf.Status, "running");
+        assert.equal(recoveredLeaf.StartedAt, leafBefore.StartedAt);
         const unhealthy = await create("unhealthy", "none", "false");
         calls.length = 0;
         await assert.rejects(act(unhealthy, "start"), /ready state/);

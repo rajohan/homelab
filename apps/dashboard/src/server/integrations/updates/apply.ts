@@ -34,13 +34,10 @@ async function recordResult(
                     if (
                         replacement &&
                         target.driver.kind === "docker" &&
-                        previous.kind === "container" &&
-                        target.driver.namespaceDependents?.some(
-                            (service) =>
-                                previous.name ===
-                                `${target.driver.kind === "docker" ? target.driver.project : ""}-${service}-1`
-                        )
+                        previous.kind === "container"
                     )
+                        // The worker verified this exact identity's project/service,
+                        // image and mounts. Compose container_name is not an identity.
                         return { ...previous, id: `docker:${replacement.containerId}` };
                     if (previous.id !== item.id || previous.installed !== item.installed)
                         return previous;

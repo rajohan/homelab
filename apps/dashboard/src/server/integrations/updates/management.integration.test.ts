@@ -151,100 +151,140 @@ async function batchFixture(fail = false, withDocker = false, sharedHost = false
     return { ...state, targets, calls, operations, caller, principal, registry };
 }
 
-test("a host batch updates namespace consumers first and records their later recreation without losing versions", async () => {
-    const state = await operationFixture();
-    try {
-        if (target.driver.kind !== "docker") throw new Error("Missing Docker fixture");
-        const provider: UpdateTarget = {
-            ...target,
-            id: "demo-provider",
-            driver: {
-                ...target.driver,
-                name: "demo-provider-1",
-                service: "provider",
-                namespaceDependents: ["web"],
-            },
-        };
-        const consumerItem: UpdateItem = { ...item, id: "docker:" + "b".repeat(64) };
-        const providerItem: UpdateItem = { ...item, name: "demo-provider-1" };
-        const calls: string[] = [];
-        const registry = createJobRegistry(
-            updateActionJobs([provider, target], state.client, (selected, software) => {
-                calls.push(selected.id);
-                return Promise.resolve({
-                    installed: software.available!,
-                    rebootRequired: false,
-                    containerId: (selected.id === provider.id ? "d" : "c").repeat(64),
-                    ...(selected.id === provider.id
-                        ? {
-                              recreatedContainers: [
-                                  {
-                                      previousId: "c".repeat(64),
-                                      containerId: "e".repeat(64),
-                                      installed: consumerItem.available!,
-                                  },
-                              ],
-                          }
-                        : {}),
+test.each(["demo-web-1", "custom-consumer"])(
+    "a host batch remaps recreated %s by identity without losing versions",
+    async (name) => {
+        const state = await operationFixture();
+        try {
+            if (target.driver.kind !== "docker")
+                throw new Error("Missing Docker fixture");
+            const provider: UpdateTarget = {
+                ...target,
+                id: "demo-provider",
+                driver: {
+                    ...target.driver,
+                    name: "demo-provider-1",
+                    service: "provider",
+                    namespaceDependents: ["web"],
+                },
+            };
+            const consumerTarget: UpdateTarget = {
+                ...target,
+                driver: { ...target.driver, name },
+            };
+            const consumerItem: UpdateItem = {
+                ...item,
+                name,
+                id: "docker:" + "b".repeat(64),
+            };
+            const unrelated: UpdateItem = {
+                ...consumerItem,
+                name: "unrelated",
+                id: "docker:" + "f".repeat(64),
+                status: "current",
+                installed: consumerItem.available!,
+            };
+            const providerItem: UpdateItem = { ...item, name: "demo-provider-1" };
+            const calls: string[] = [];
+            const registry = createJobRegistry(
+                updateActionJobs(
+                    [provider, consumerTarget],
+                    state.client,
+                    (selected, software) => {
+                        calls.push(selected.id);
+                        return Promise.resolve({
+                            installed: software.available!,
+                            rebootRequired: false,
+                            containerId: (selected.id === provider.id ? "d" : "c").repeat(
+                                64
+                            ),
+                            ...(selected.id === provider.id
+                                ? {
+                                      recreatedContainers: [
+                                          {
+                                              previousId: "c".repeat(64),
+                                              containerId: "e".repeat(64),
+                                              installed: consumerItem.available!,
+                                          },
+                                      ],
+                                  }
+                                : {}),
+                        });
+                    }
+                )
+            );
+            const report: UpdateReport = {
+                capturedAt: new Date().toISOString(),
+                repositoryMetadataAt: null,
+                complete: true,
+                coveredKinds: ["container"],
+                items: [providerItem, consumerItem, unrelated],
+            };
+            for (const key of ["updates:demo", "updates.resolved:demo"])
+                await state.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES (${key},${JSON.stringify(report)}::text::jsonb,now())`;
+            const principal = { kind: "human" as const, id: "operator", capabilities };
+            const caller = appRouter.createCaller({
+                operations: {
+                    ...state,
+                    registry,
+                    updateTargets: [provider, consumerTarget],
+                    updateSources: [
+                        { id: "demo", label: "Demo", publisher: crypto.randomUUID() },
+                    ],
+                },
+                principal,
+                verifyHuman: () => Promise.resolve(principal),
+            });
+            const plan = await caller.updates.batchPlan({ source: "demo" });
+            expect(plan.eligible).toBe(2);
+            await caller.updates.batchRequest({
+                source: "demo",
+                revision: plan.revision,
+                requestId: crypto.randomUUID(),
+            });
+            const worker = await state.registerWorker();
+            const handler = registry.get(updateBatchKey("demo"))!;
+            const claim = await claimJob(state.client, worker, [handler.definition.key]);
+            expect(claim).toBeDefined();
+            await handler.execute(claim!.payload, {
+                runId: claim!.id,
+                leaseToken: claim!.lease_token,
+                signal: AbortSignal.timeout(5000),
+                reportProgress: () => Promise.resolve(),
+                commit: (write, queue) => commitClaim(state.client, claim!, write, queue),
+            });
+            expect(calls).toEqual([target.id, provider.id]);
+            const current = await readUpdateReport(state.client, "demo");
+            expect(
+                current?.items.find((row) => row.name === consumerItem.name)
+            ).toMatchObject({
+                id: "docker:" + "e".repeat(64),
+                installed: consumerItem.available,
+                status: "current",
+            });
+            expect(
+                current?.items.find((row) => row.name === providerItem.name)
+            ).toMatchObject({ id: "docker:" + "d".repeat(64), status: "current" });
+            for (const key of ["updates:demo", "updates.resolved:demo"]) {
+                const [stored] = await state.client<
+                    { value: UpdateReport }[]
+                >`SELECT value FROM operation_snapshots WHERE key=${key}`;
+                expect(
+                    stored?.value.items.find((row) => row.name === name)
+                ).toMatchObject({
+                    id: "docker:" + "e".repeat(64),
+                    installed: consumerItem.available,
+                    status: "current",
                 });
-            })
-        );
-        const report: UpdateReport = {
-            capturedAt: new Date().toISOString(),
-            repositoryMetadataAt: null,
-            complete: true,
-            coveredKinds: ["container"],
-            items: [providerItem, consumerItem],
-        };
-        for (const key of ["updates:demo", "updates.resolved:demo"])
-            await state.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES (${key},${JSON.stringify(report)}::text::jsonb,now())`;
-        const principal = { kind: "human" as const, id: "operator", capabilities };
-        const caller = appRouter.createCaller({
-            operations: {
-                ...state,
-                registry,
-                updateTargets: [provider, target],
-                updateSources: [
-                    { id: "demo", label: "Demo", publisher: crypto.randomUUID() },
-                ],
-            },
-            principal,
-            verifyHuman: () => Promise.resolve(principal),
-        });
-        const plan = await caller.updates.batchPlan({ source: "demo" });
-        expect(plan.eligible).toBe(2);
-        await caller.updates.batchRequest({
-            source: "demo",
-            revision: plan.revision,
-            requestId: crypto.randomUUID(),
-        });
-        const worker = await state.registerWorker();
-        const handler = registry.get(updateBatchKey("demo"))!;
-        const claim = await claimJob(state.client, worker, [handler.definition.key]);
-        expect(claim).toBeDefined();
-        await handler.execute(claim!.payload, {
-            runId: claim!.id,
-            leaseToken: claim!.lease_token,
-            signal: AbortSignal.timeout(5000),
-            reportProgress: () => Promise.resolve(),
-            commit: (write, queue) => commitClaim(state.client, claim!, write, queue),
-        });
-        expect(calls).toEqual([target.id, provider.id]);
-        const current = await readUpdateReport(state.client, "demo");
-        expect(
-            current?.items.find((row) => row.name === consumerItem.name)
-        ).toMatchObject({
-            id: "docker:" + "e".repeat(64),
-            installed: consumerItem.available,
-            status: "current",
-        });
-        expect(
-            current?.items.find((row) => row.name === providerItem.name)
-        ).toMatchObject({ id: "docker:" + "d".repeat(64), status: "current" });
-    } finally {
-        await state.close();
+                expect(
+                    stored?.value.items.find((row) => row.name === unrelated.name)
+                ).toEqual(unrelated);
+            }
+        } finally {
+            await state.close();
+        }
     }
-});
+);
 
 test("bulk plans cover every page, expose exclusions and preserve host scope and permissions", async () => {
     const state = await batchFixture();

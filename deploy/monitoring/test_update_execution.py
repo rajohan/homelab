@@ -124,6 +124,30 @@ class UpdateExecutionTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'changed'):
                 remote.verify_namespace_plan([['old']])
 
+    def test_namespace_preflight_validates_each_running_consumer_edge(self):
+        for key, index in zip(remote.NAMESPACE_KEYS, (8, 9, 10)):
+            services = {'root': {'image': 'fixture'}, 'middle': {'image': 'fixture', key: 'service:root'}, 'leaf': {'image': 'fixture', key: 'service:middle'}}
+            for root_state in ('running', 'exited', 'created'):
+                for middle_state in ('running', 'exited', 'created'):
+                    for leaf_state in ('running', 'exited', 'created'):
+                        with self.subTest(namespace=key, states=(root_state, middle_state, leaf_state)):
+                            rows = {}
+                            for identity, name, state in zip('abc', services, (root_state, middle_state, leaf_state)):
+                                rows[name] = [identity * 64, '/' + name, 'fixture', 'sha256:' + 'd' * 64, state, 'fixture-start', 'demo', name, '', '', '', []]
+                            rows['middle'][index] = 'container:' + rows['root'][0]
+                            rows['leaf'][index] = 'container:' + rows['middle'][0]
+                            by_id = {row[0]: row for row in rows.values()}
+                            def compose(args):
+                                self.assertEqual(args[:3], ['ps', '--all', '--quiet'])
+                                return rows[args[-1]][0]
+                            with patch.object(remote, 'namespace_snapshot', side_effect=lambda identity: by_id[identity]), patch.object(remote, 'command', return_value=''):
+                                invalid = (middle_state == 'running' and root_state != 'running') or (leaf_state == 'running' and middle_state != 'running')
+                                if invalid:
+                                    with self.assertRaisesRegex(RuntimeError, 'stopped namespace provider'):
+                                        remote.prepare_namespace_plan({'services': services}, {'project': 'demo', 'service': 'root', 'namespaceDependents': ['middle', 'leaf']}, compose)
+                                else:
+                                    self.assertEqual(remote.prepare_namespace_plan({'services': services}, {'project': 'demo', 'service': 'root', 'namespaceDependents': ['middle', 'leaf']}, compose), list(rows.values()))
+
     def test_namespace_stop_targets_only_running_consumers_in_reverse_order(self):
         plan = [[None] * 12 for _ in range(4)]
         for row, name, state in zip(plan, ['vpn', 'proxy', 'app', 'stopped'], ['running', 'running', 'running', 'exited']):

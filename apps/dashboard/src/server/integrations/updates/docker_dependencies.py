@@ -60,9 +60,6 @@ def prepare_namespace_plan(config, driver, compose):
         if snapshot[6:8] != [driver["project"], name] or snapshot[2] != services[name].get("image") or snapshot[4] not in {"running", "exited", "created"}:
             raise RuntimeError("Namespace consumer state or image changed")
         snapshots.append(snapshot)
-    root_snapshot = next(row for row in snapshots if row[7] == root)
-    if root_snapshot[4] != "running" and any(row[4] == "running" for row in snapshots):
-        raise RuntimeError("A stopped namespace provider still has running consumers")
     selected_ids = {row[0] for row in snapshots}
     for row in snapshots:
         for index in (8, 9, 10):
@@ -70,6 +67,8 @@ def prepare_namespace_plan(config, driver, compose):
             if not reference.startswith("container:"):
                 continue
             provider = namespace_snapshot(reference[10:])
+            if row[4] == "running" and provider[4] != "running":
+                raise RuntimeError("A stopped namespace provider still has a running consumer")
             if provider[6] != driver["project"] or (provider[0] not in selected_ids and provider[4] != "running"):
                 raise RuntimeError("A namespace provider is missing, stopped or outside this project")
     if snapshots:

@@ -31,17 +31,27 @@ def main():
         # The real updater deliberately edits a literal YAML pin; other fixtures may use JSON/YAML.
         provider_file.write_text("services:\n  provider:\n    image: " + original + "\n    init: true\n    entrypoint: [/bin/sleep]\n    command: ['3600']\n    network_mode: none\n    mem_limit: 64m\n    pids_limit: 32\n    labels:\n      homelab.smoke: " + owner + "\n    healthcheck:\n      test: [CMD, 'true']\n      interval: 1s\n")
         consumer_file.write_text("services:\n  consumer:\n    image: " + original + "\n" + "".join("    " + key + ": " + json.dumps(value) + "\n" for key, value in {**shared, "network_mode": "service:provider"}.items() if key != "image"))
-        main_file.write_text(json.dumps({"include": [str(provider_file), str(consumer_file)], "services": {"stopped": {**shared, "network_mode": "service:provider"}}, "volumes": {"marker": {"labels": {"homelab.smoke": owner}}}}))
+        main_file.write_text(json.dumps({"include": [str(provider_file), str(consumer_file)], "services": {"stopped": {**shared, "network_mode": "service:provider"}, "leaf": {**shared, "network_mode": "service:consumer"}}, "volumes": {"marker": {"labels": {"homelab.smoke": owner}}}}))
         base = ["/usr/bin/docker", "compose", "--project-directory", str(directory), "--project-name", owner, "--file", str(main_file)]
         def compose(args, timeout=120):
             return command(base + args, timeout=timeout)
         try:
             compose(["up", "--detach", "--no-build", "--pull", "never", "--wait", "--wait-timeout", "20"])
             compose(["stop", "stopped"])
-            before = {service: remote.namespace_snapshot(owner + "-" + service + "-1") for service in ("provider", "consumer", "stopped")}
+            before = {service: remote.namespace_snapshot(owner + "-" + service + "-1") for service in ("provider", "consumer", "stopped", "leaf")}
             command(["/usr/bin/docker", "exec", before["consumer"][0], "/bin/sh", "-ec", "printf persistent > /marker/probe"])
-            driver = {"kind": "docker", "name": owner + "-provider-1", "project": owner, "service": "provider", "directory": str(directory), "file": str(main_file), "imageFile": str(provider_file), "namespaceDependents": ["consumer", "stopped"]}
+            driver = {"kind": "docker", "name": owner + "-provider-1", "project": owner, "service": "provider", "directory": str(directory), "file": str(main_file), "imageFile": str(provider_file), "namespaceDependents": ["consumer", "stopped", "leaf"]}
             item = {"id": "docker:" + before["provider"][0], "image": original, "installed": image["Id"], "available": image["Id"], "availableImage": candidate}
+            compose(["stop", "--timeout", "5", "consumer"])
+            broken = {service: remote.namespace_snapshot(row[0]) for service, row in before.items()}
+            try:
+                remote.docker_update(driver, item)
+                raise AssertionError("A stopped intermediate provider with a running descendant was accepted")
+            except RuntimeError as error:
+                assert "stopped namespace provider" in str(error)
+            assert {service: remote.namespace_snapshot(row[0]) for service, row in before.items()} == broken
+            assert original in provider_file.read_text()
+            compose(["up", "--detach", "--no-deps", "--no-build", "--pull", "never", "--wait", "--wait-timeout", "20", "consumer"])
             # A missing approval must fail before touching a running provider.
             try:
                 remote.docker_update({**driver, "namespaceDependents": []}, item)
@@ -85,7 +95,7 @@ def main():
             assert command(["/usr/bin/docker", "exec", after["consumer"][0], "cat", "/marker/probe"]) == "persistent"
             net = lambda identity: command(["/usr/bin/docker", "exec", identity, "readlink", "/proc/self/ns/net"])
             assert net(after["provider"][0]) == net(after["consumer"][0])
-            consumer_driver = {**driver, "name": owner + "-consumer-1", "service": "consumer", "imageFile": str(consumer_file), "namespaceDependents": []}
+            consumer_driver = {**driver, "name": owner + "-consumer-1", "service": "consumer", "imageFile": str(consumer_file), "namespaceDependents": ["leaf"]}
             consumer_item = {**item, "id": "docker:" + after["consumer"][0]}
             assert remote.docker_update(consumer_driver, consumer_item) == image["Id"]
             assert remote.namespace_snapshot(owner + '-provider-1')[0] == after['provider'][0]
