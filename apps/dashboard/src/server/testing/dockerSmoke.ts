@@ -4,7 +4,10 @@ import type { ApplicationOperation } from "@homelab/contracts/applications";
 
 import { performApplicationAction } from "../integrations/applications/actions";
 import { createDockerPort } from "../integrations/applications/docker";
-import { collectApplications } from "../integrations/applications/inventory";
+import {
+    collectApplications,
+    mapDockerApplication,
+} from "../integrations/applications/inventory";
 import {
     selectApplications,
     selectionRevision,
@@ -33,7 +36,9 @@ async function create(
     service: string,
     network: string,
     health = "true",
-    dependencies = ""
+    dependencies = "",
+    namespaceKind: "network" | "ipc" = "network",
+    project = owner
 ): Promise<string> {
     const id = await docker(
         "create",
@@ -43,7 +48,7 @@ async function create(
         "--label",
         `homelab.smoke=${owner}`,
         "--label",
-        `com.docker.compose.project=${owner}`,
+        `com.docker.compose.project=${project}`,
         "--label",
         `com.docker.compose.service=${service}`,
         "--label",
@@ -53,7 +58,9 @@ async function create(
         "--pids-limit",
         "32",
         "--network",
-        network,
+        namespaceKind === "network" ? network : "none",
+        "--ipc",
+        namespaceKind === "ipc" ? network : "shareable",
         "--health-cmd",
         health,
         "--health-interval",
@@ -266,10 +273,88 @@ export async function main(): Promise<void> {
             [rootAfter.Status, rootAfter.StartedAt],
             [rootBefore.Status, rootBefore.StartedAt]
         );
+        calls.length = 0;
+        await assert.rejects(act(consumer, "start"), /stopped shared namespace provider/);
+        assert.equal(calls.length, 0);
+        await docker("stop", "--time", "1", leaf);
         await act(consumer, "start");
         const recoveredLeaf = await state(leaf);
         assert.equal(recoveredLeaf.Status, "running");
-        assert.equal(recoveredLeaf.StartedAt, leafBefore.StartedAt);
+        assert.notEqual(recoveredLeaf.StartedAt, leafBefore.StartedAt);
+        assert.equal(await namespace(leaf), await namespace(consumer));
+
+        const ipcProvider = await create("ipc-provider", "none");
+        await docker("start", ipcProvider);
+        const ipcConsumer = await create(
+            "ipc-consumer",
+            `container:${ipcProvider}`,
+            "true",
+            "",
+            "ipc"
+        );
+        await docker("start", ipcConsumer);
+        await docker("stop", "--time", "1", ipcProvider);
+        const ipcConsumerState = await state(ipcConsumer);
+        assert.equal(ipcConsumerState.Status, "running");
+        const ipcBefore = await docker(
+            "exec",
+            ipcConsumer,
+            "readlink",
+            "/proc/self/ns/ipc"
+        );
+        calls.length = 0;
+        await assert.rejects(
+            act(ipcProvider, "start"),
+            /stopped shared namespace provider/
+        );
+        assert.equal(calls.length, 0);
+        assert.equal(
+            await docker("exec", ipcConsumer, "readlink", "/proc/self/ns/ipc"),
+            ipcBefore
+        );
+        await docker("stop", "--time", "1", ipcConsumer);
+        await act(ipcProvider, "start");
+        assert.equal(
+            await docker("exec", ipcConsumer, "readlink", "/proc/self/ns/ipc"),
+            await docker("exec", ipcProvider, "readlink", "/proc/self/ns/ipc")
+        );
+
+        const projectSelection = { kind: "project" as const, target: owner };
+        const projectIds = await port.list(signal);
+        const projectRevision = selectionRevision(
+            await Promise.all(
+                projectIds.map(async (id) =>
+                    mapDockerApplication(target, await port.inspect(id, signal))
+                )
+            ),
+            projectSelection
+        );
+        const foreign = await create(
+            "foreign",
+            `container:${provider}`,
+            "true",
+            "",
+            "network",
+            `${owner}-other`
+        );
+        await docker("start", foreign);
+        const extendedTarget = { ...target, projects: [owner, `${owner}-other`] };
+        calls.length = 0;
+        await assert.rejects(
+            performApplicationAction(
+                extendedTarget,
+                createDockerPort(extendedTarget, {}),
+                {
+                    selection: projectSelection,
+                    revision: projectRevision,
+                    operation: "restart",
+                },
+                signal
+            ),
+            /project boundaries/
+        );
+        assert.equal(calls.length, 0);
+        await docker("rm", "--force", "--volumes", foreign);
         const unhealthy = await create("unhealthy", "none", "false");
         calls.length = 0;
         await assert.rejects(act(unhealthy, "start"), /ready state/);

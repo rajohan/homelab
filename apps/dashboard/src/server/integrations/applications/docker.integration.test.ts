@@ -31,6 +31,119 @@ function largeFixtureDetail(id: string) {
     return detail;
 }
 
+test.each(["NetworkMode", "PidMode", "IpcMode"] as const)(
+    "%s start refuses mixed running consumers and stopped providers before any write",
+    async (kind) => {
+        const fixture = createApplicationFixture();
+        try {
+            const provider = fixture.containers.get("a".repeat(64))!;
+            const consumer = fixture.containers.get("b".repeat(64))!;
+            consumer.HostConfig[kind] = `container:${provider.Id}`;
+            provider.State.Status = "exited";
+            const port = createDockerPort(fixture.target, {});
+            for (const selection of [
+                { kind: "container" as const, target: provider.Id },
+                { kind: "project" as const, target: "demo" },
+            ]) {
+                const inventory = await collectApplications(
+                    [fixture.target],
+                    () => port,
+                    AbortSignal.timeout(3000)
+                );
+                const revision = selectionRevision(
+                    selectApplications(inventory, "demo", selection, true),
+                    selection
+                );
+                await expectOperationFailure(
+                    performApplicationAction(
+                        fixture.target,
+                        port,
+                        { selection, revision, operation: "start" },
+                        AbortSignal.timeout(3000)
+                    ),
+                    "stopped shared namespace provider"
+                );
+                expect(fixture.calls).toEqual([]);
+                expect(provider.State.Status).toBe("exited");
+                expect(consumer.State.StartedAt).toBe("2026-09-01T10:00:00Z");
+            }
+            consumer.State.Status = "exited";
+            const selection = { kind: "project" as const, target: "demo" };
+            const inventory = await collectApplications(
+                [fixture.target],
+                () => port,
+                AbortSignal.timeout(3000)
+            );
+            await performApplicationAction(
+                fixture.target,
+                port,
+                {
+                    selection,
+                    revision: selectionRevision(
+                        selectApplications(inventory, "demo", selection, true),
+                        selection
+                    ),
+                    operation: "start",
+                },
+                AbortSignal.timeout(3000)
+            );
+            expect(fixture.calls).toEqual(["start:database", "start:web"]);
+        } finally {
+            await fixture.close();
+        }
+    }
+);
+
+test.each(["NetworkMode", "PidMode", "IpcMode"] as const)(
+    "%s project actions reject external namespace consumers initially and at revalidation",
+    async (kind) => {
+        for (const operation of ["start", "stop", "restart"] as const)
+            for (const late of [false, true]) {
+                const fixture = createApplicationFixture();
+                try {
+                    const target = { ...fixture.target, projects: ["demo", "other"] };
+                    const port = createDockerPort(target, {});
+                    const provider = fixture.containers.get("a".repeat(64))!;
+                    const selection = { kind: "project" as const, target: "demo" };
+                    const inventory = await collectApplications(
+                        [target],
+                        () => port,
+                        AbortSignal.timeout(3000)
+                    );
+                    const revision = selectionRevision(
+                        selectApplications(inventory, "demo", selection, true),
+                        selection
+                    );
+                    const foreign = applicationFixtureDetail("c".repeat(64), "foreign");
+                    foreign.Config.Labels!["com.docker.compose.project"] = "other";
+                    foreign.HostConfig[kind] = `container:${provider.Id}`;
+                    if (!late) fixture.containers.set(foreign.Id, foreign);
+                    const observed: DockerPort = {
+                        ...port,
+                        inspect: async (id, signal) => {
+                            const detail = await port.inspect(id, signal);
+                            if (late) fixture.containers.set(foreign.Id, foreign);
+                            return detail;
+                        },
+                    };
+                    await expectOperationFailure(
+                        performApplicationAction(
+                            target,
+                            observed,
+                            { selection, revision, operation },
+                            AbortSignal.timeout(3000)
+                        ),
+                        "project boundaries"
+                    );
+                    expect(fixture.calls).toEqual([]);
+                    expect(provider.State.StartedAt).toBe("2026-09-01T10:00:00Z");
+                } finally {
+                    await fixture.close();
+                }
+            }
+    }
+);
+
 test.each([
     ["service_started", "exited", "healthy", 0, false],
     ["service_healthy", "running", "unhealthy", 0, false],
@@ -996,7 +1109,7 @@ test.each(
     }
 );
 
-test("project operations never list or inspect unrelated allowlisted projects", async () => {
+test("project operations refuse an inventory too large to exclude external namespace consumers", async () => {
     const fixture = createApplicationFixture();
     try {
         const target = { ...fixture.target, projects: ["demo", "unrelated"] };
@@ -1032,14 +1145,17 @@ test("project operations never list or inspect unrelated allowlisted projects", 
                 return port.inspect(id, requestSignal);
             },
         };
-        await performApplicationAction(
-            target,
-            scoped,
-            { selection, revision, operation: "stop" },
-            signal
+        await expectOperationFailure(
+            performApplicationAction(
+                target,
+                scoped,
+                { selection, revision, operation: "stop" },
+                signal
+            ),
+            "budget"
         );
-        expect(new Set(inspected)).toEqual(new Set(["a".repeat(64), "b".repeat(64)]));
-        expect(fixture.calls).toEqual(["stop:web", "stop:database"]);
+        expect(inspected).toEqual([]);
+        expect(fixture.calls).toEqual([]);
     } finally {
         await fixture.close();
     }

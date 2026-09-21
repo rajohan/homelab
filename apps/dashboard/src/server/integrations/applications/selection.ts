@@ -55,7 +55,7 @@ export function selectApplications(
             ? item.containerId === selection.target
             : item.project === selection.target
     );
-    if (selection.kind === "container") {
+    {
         const root = rows[0];
         if (root) {
             const selected = new Set(rows.map((item) => item.containerId));

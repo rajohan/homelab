@@ -4,6 +4,7 @@ import type { JobExecution } from "../../jobs/types";
 import { publishNotification } from "../../notifications/publish";
 import type { UpdateTarget } from "./configuration";
 import type { UpdateExecutor, UpdateReceipt } from "./execution";
+import { remapPendingUpdateBatches, type UpdateReceiptScope } from "./receipts";
 import { recordRestartObservation } from "./restartObservation";
 
 /** Maximum execution time for one installation, shared by individual and bulk jobs. */
@@ -13,61 +14,78 @@ async function recordResult(
     target: UpdateTarget,
     item: UpdateItem,
     receipt: UpdateReceipt,
-    context: JobExecution
+    context: JobExecution,
+    scope: UpdateReceiptScope
 ) {
     if (
         !(await context.commit(async (transaction) => {
-            for (const key of [
-                `updates:${target.source}`,
-                `updates.resolved:${target.source}`,
-            ]) {
-                const [row] = await transaction<
-                    { value: UpdateReport }[]
-                >`SELECT value FROM operation_snapshots WHERE key=${key} FOR UPDATE`;
-                if (!row) continue;
-                const items = row.value.items.map((previous) => {
-                    const replacement = receipt.recreatedContainers?.find(
-                        (candidate) =>
-                            previous.id === `docker:${candidate.previousId}` &&
-                            previous.installed === candidate.installed
-                    );
-                    if (
-                        replacement &&
-                        target.driver.kind === "docker" &&
-                        previous.kind === "container"
-                    )
-                        // The worker verified this exact identity's project/service,
-                        // image and mounts. Compose container_name is not an identity.
-                        return { ...previous, id: `docker:${replacement.containerId}` };
-                    if (previous.id !== item.id || previous.installed !== item.installed)
-                        return previous;
-                    return {
-                        ...previous,
-                        installed: receipt.installed,
-                        available: receipt.installed,
-                        status: "current" as const,
-                        ...(item.availableImage
-                            ? {
-                                  image: item.availableImage,
-                                  availableImage: item.availableImage,
-                                  pinned: true,
-                              }
-                            : {}),
-                        ...(receipt.containerId
-                            ? { id: `docker:${receipt.containerId}` }
-                            : {}),
-                        ...(item.availableVersion
-                            ? {
-                                  installedVersion: item.availableVersion,
-                                  availableVersion: item.availableVersion,
-                              }
-                            : {}),
-                    };
-                });
-                // Receipt time is also a publication watermark: a report collected before
-                // installation must not restore the old version when it arrives late.
-                await transaction`UPDATE operation_snapshots SET value=${JSON.stringify({ ...row.value, items, rebootRequired: receipt.rebootRequired, rebootObservedAt: new Date().toISOString() })}::text::jsonb, captured_at=GREATEST(captured_at, now()) WHERE key=${key}`;
-            }
+            for (const source of scope.sources)
+                for (const key of [`updates:${source}`, `updates.resolved:${source}`]) {
+                    const [row] = await transaction<
+                        { value: UpdateReport; checkedAt: string }[]
+                    >`SELECT value, captured_at::text AS "checkedAt" FROM operation_snapshots WHERE key=${key} FOR UPDATE`;
+                    if (!row) continue;
+                    const items = row.value.items.map((previous) => {
+                        const replacement = receipt.recreatedContainers?.find(
+                            (candidate) =>
+                                previous.id === `docker:${candidate.previousId}` &&
+                                previous.installed === candidate.installed
+                        );
+                        if (
+                            replacement &&
+                            target.driver.kind === "docker" &&
+                            previous.kind === "container"
+                        )
+                            // The worker verified this exact identity's project/service,
+                            // image and mounts. Compose container_name is not an identity.
+                            return {
+                                ...previous,
+                                id: `docker:${replacement.containerId}`,
+                            };
+                        if (
+                            source !== target.source ||
+                            previous.id !== item.id ||
+                            previous.installed !== item.installed
+                        )
+                            return previous;
+                        return {
+                            ...previous,
+                            installed: receipt.installed,
+                            available: receipt.installed,
+                            status: "current" as const,
+                            ...(item.availableImage
+                                ? {
+                                      image: item.availableImage,
+                                      availableImage: item.availableImage,
+                                      pinned: true,
+                                  }
+                                : {}),
+                            ...(receipt.containerId
+                                ? { id: `docker:${receipt.containerId}` }
+                                : {}),
+                            ...(item.availableVersion
+                                ? {
+                                      installedVersion: item.availableVersion,
+                                      availableVersion: item.availableVersion,
+                                  }
+                                : {}),
+                        };
+                    });
+                    if (items.every((item, index) => item === row.value.items[index]))
+                        continue;
+                    if (key === `updates.resolved:${source}`)
+                        await remapPendingUpdateBatches(
+                            transaction,
+                            context.runId,
+                            source,
+                            { ...row.value, checkedAt: row.checkedAt },
+                            { ...row.value, items, checkedAt: row.checkedAt },
+                            scope.targets
+                        );
+                    // Receipt time is also a publication watermark: a report collected before
+                    // installation must not restore the old version when it arrives late.
+                    await transaction`UPDATE operation_snapshots SET value=${JSON.stringify({ ...row.value, items, ...(source === target.source ? { rebootRequired: receipt.rebootRequired, rebootObservedAt: new Date().toISOString() } : {}) })}::text::jsonb, captured_at=GREATEST(captured_at, now()) WHERE key=${key}`;
+                }
             const observedAt = new Date().toISOString();
             await recordRestartObservation(
                 transaction,
@@ -87,7 +105,7 @@ async function recordResult(
                     severity: "warning",
                     destination: "jobs",
                 });
-        }))
+        }, true))
     )
         throw new Error("Update result no longer owns its job");
 }
@@ -99,6 +117,7 @@ async function recordResult(
  * @param automatic - Whether dependency policy must enforce patch/minor-only changes.
  * @param context - Current worker claim, cancellation signal and progress sink.
  * @param execute - Worker-only installation boundary or an isolated test replacement.
+ * @param scope - Explicit host-bound sources whose verified dependent identities may be reconciled.
  * @returns Completion after the installed version and durable receipt are verified.
  */
 export async function applyUpdate(
@@ -106,7 +125,8 @@ export async function applyUpdate(
     item: UpdateItem,
     automatic: boolean,
     context: JobExecution,
-    execute: UpdateExecutor
+    execute: UpdateExecutor,
+    scope?: UpdateReceiptScope
 ): Promise<void> {
     const signal = AbortSignal.any([
         context.signal,
@@ -125,6 +145,12 @@ export async function applyUpdate(
     signal.throwIfAborted();
     if (receipt.installed !== item.available)
         throw new Error("Update receipt does not match the approved version");
-    await recordResult(target, item, receipt, context);
+    await recordResult(
+        target,
+        item,
+        receipt,
+        context,
+        scope ?? { sources: [target.source], targets: [target] }
+    );
     await context.reportProgress("The installed version has been verified.");
 }

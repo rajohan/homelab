@@ -12,10 +12,12 @@ import { enqueueJob, lockQueue } from "../../jobs/queue";
 import { maximumIntegrationTimeoutMs } from "../../jobs/registry";
 import type { JobHandler } from "../../jobs/types";
 import { OperationFailure } from "../../operations/errors";
+import type { ApplicationTarget } from "../applications/configuration";
 import { applyUpdate, updateTimeoutMs } from "./apply";
-import { updateResourceKeys, type UpdateTarget } from "./configuration";
+import type { UpdateTarget } from "./configuration";
 import type { UpdateExecutor } from "./execution";
 import { readUpdateReport } from "./inventory";
+import { updateReceiptScope, updateReceiptResourceKeys } from "./receipts";
 import { matchesUpdateTarget, updateControl } from "./selection";
 
 const entryBudgetMs = updateTimeoutMs + 30_000;
@@ -164,12 +166,14 @@ export async function readUpdateBatchPlan(
  * @param targets - Explicit installation recipes; no access is inferred from inventory.
  * @param client - Operational state used to revalidate each candidate immediately before execution.
  * @param execute - Worker-only installer, replaced by the isolated preview in development.
+ * @param applications - Explicit source bindings for verified namespace recreation receipts.
  * @returns Non-retryable host jobs sharing resource leases with individual installations.
  */
 export function updateBatchJobs(
     targets: readonly UpdateTarget[],
     client: SQL,
-    execute: UpdateExecutor
+    execute: UpdateExecutor,
+    applications: readonly ApplicationTarget[] = []
 ): JobHandler[] {
     return [...new Set(targets.map((target) => target.source))].map((source) => {
         const owned = targets.filter((target) => target.source === source);
@@ -182,7 +186,13 @@ export function updateBatchJobs(
                 resourceClass: "interactive",
                 capability: "updates:apply",
                 resourceKeys: [
-                    ...new Set(owned.flatMap((target) => updateResourceKeys(target))),
+                    ...new Set(
+                        owned.flatMap((target) =>
+                            updateReceiptResourceKeys(
+                                updateReceiptScope(target, targets, applications)
+                            )
+                        )
+                    ),
                 ],
                 timeoutMs: maximumBatchItems * entryBudgetMs + batchOverheadMs,
                 attemptLimit: 1,
@@ -266,7 +276,8 @@ export function updateBatchJobs(
                                 reportProgress: (message) =>
                                     context.reportProgress(`${prefix}: ${message}`),
                             },
-                            execute
+                            execute,
+                            updateReceiptScope(target, targets, applications)
                         );
                     } catch (error) {
                         if (!context.signal.aborted)

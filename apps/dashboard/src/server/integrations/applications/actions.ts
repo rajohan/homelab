@@ -11,6 +11,7 @@ import {
     isApplicationReady,
     waitForApplicationReady,
     verifyNamespaceProviders,
+    namespaceProviders,
 } from "./dependencies";
 import type { DockerDetail, DockerPort } from "./docker";
 import { mapDockerApplication } from "./inventory";
@@ -37,21 +38,14 @@ export async function performApplicationAction(
     report: (message: string) => Promise<void> = async () => {}
 ): Promise<void> {
     await report("Checking the selected containers and their current state.");
-    const ids = await port.list(
-        signal,
-        intent.selection.kind === "project" ? intent.selection.target : undefined
-    );
+    // Reverse namespace edges can originate in another managed project.
+    const ids = await port.list(signal);
     if (ids.length === 0 || ids.length > 200)
         throw new Error("Application selection changed before execution");
     const inspected: DockerDetail[] = [];
     for (const id of ids) {
         const detail = await port.inspect(id, signal);
-        if (
-            intent.selection.kind === "container" ||
-            detail.Config.Labels?.["com.docker.compose.project"] ===
-                intent.selection.target
-        )
-            inspected.push(detail);
+        inspected.push(detail);
     }
     const applications = inspected.map((detail) => mapDockerApplication(target, detail));
     const scoped = selectApplications(
@@ -94,18 +88,9 @@ export async function performApplicationAction(
         : details;
     const mutated = new Set<string>();
     const revalidateMembership = async () => {
-        const currentIds = await port.list(
-            signal,
-            intent.selection.kind === "project" ? intent.selection.target : undefined
-        );
-        if (
-            project
-                ? currentIds.length !== ids.length ||
-                  currentIds.some((id) => !ids.includes(id))
-                : details.some((detail) => !currentIds.includes(detail.Id))
-        )
+        const currentIds = await port.list(signal);
+        if (details.some((detail) => !currentIds.includes(detail.Id)))
             throw new Error("Application project membership changed before execution");
-        if (project) return;
         // Existing container IDs bind immutable namespace membership. Only newly
         // discovered IDs can extend the confirmed group; unrelated churn is safe.
         const additions: DockerDetail[] = [];
@@ -143,6 +128,20 @@ export async function performApplicationAction(
             throw new Error("Application namespace membership changed before execution");
     };
     if (intent.operation !== "stop") {
+        if (
+            intent.operation === "start" &&
+            details.some(
+                (detail) =>
+                    !["created", "exited"].includes(detail.State.Status) &&
+                    namespaceProviders(detail).some((id) => {
+                        const provider = details.find((candidate) => candidate.Id === id);
+                        return provider && provider.State.Status !== "running";
+                    })
+            )
+        )
+            throw new Error(
+                "A running consumer has a stopped shared namespace provider. Stop the affected group before starting it together."
+            );
         const starting = new Set(
             details
                 .filter((detail) => !preservedStopped.has(detail.Id))
