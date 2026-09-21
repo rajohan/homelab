@@ -75,6 +75,7 @@ export HOMELAB_TEST_DATABASE_URL=postgres://...@127.0.0.1:5432/homelab_auth_test
 bun run test:integration
 bun run build
 bun run test:smoke
+bun run test:docker
 ```
 
 Integration tests require a **disposable** loopback database named exactly `homelab_auth_test`;

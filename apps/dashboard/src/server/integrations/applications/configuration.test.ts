@@ -1,6 +1,12 @@
 import { expect, test } from "bun:test";
 
-import { parseApplicationTargets } from "./configuration";
+import { hostResourceKey } from "../../jobs/resources";
+import { parseUpdateTargets } from "../updates/configuration";
+import {
+    parseApplicationTargets,
+    bindApplicationHosts,
+    applicationHostResourceKeys,
+} from "./configuration";
 
 const target = {
     id: "main",
@@ -13,6 +19,96 @@ const target = {
         key: "HOMELAB_DASHBOARD_DOCKER_KEY",
     },
 };
+
+test.each([false, true])(
+    "lifecycle locks close alternating aliases without treating APT/native edges as Docker bindings, reverse=%s",
+    (reverse) => {
+        const applications = [
+            { ...target, id: "first", updateSources: ["alpha", "beta"] },
+            { ...target, id: "second", updateSources: ["gamma", "delta", "read-only"] },
+            { ...target, id: "unrelated", updateSources: ["apt-bridge", "unrelated"] },
+        ];
+        const updates = [
+            { source: "alpha", host: "first.invalid", driver: { kind: "docker" } },
+            { source: "beta", host: "shared.invalid", driver: { kind: "docker" } },
+            { source: "gamma", host: "SHARED.invalid", driver: { kind: "docker" } },
+            { source: "delta", host: "apt.invalid", driver: { kind: "apt" } },
+            { source: "delta", host: "native.invalid", driver: { kind: "native" } },
+            { source: "apt-bridge", host: "shared.invalid", driver: { kind: "apt" } },
+            {
+                source: "unrelated",
+                host: "unrelated.invalid",
+                driver: { kind: "native" },
+            },
+        ];
+        const bound = bindApplicationHosts(
+            reverse ? applications.toReversed() : applications,
+            reverse ? updates.toReversed() : updates
+        );
+        for (const id of ["first", "second"]) {
+            const actual = bound.find((application) => application.id === id)!;
+            expect(applicationHostResourceKeys(actual).toSorted()).toEqual(
+                [
+                    "docker.example",
+                    "first.invalid",
+                    "shared.invalid",
+                    "apt.invalid",
+                    "native.invalid",
+                ]
+                    .map((host) => hostResourceKey(host))
+                    .toSorted()
+            );
+            expect(actual.projects).toEqual(target.projects);
+            expect(actual.updateSources).toEqual(
+                applications.find((application) => application.id === id)!.updateSources
+            );
+        }
+    }
+);
+
+test("Docker proxy and SSH addresses share physical host locks without broadening access", () => {
+    const applications = parseApplicationTargets(JSON.stringify([target]));
+    const [bound] = bindApplicationHosts(applications, [
+        { source: "main", host: "192.0.2.10", driver: { kind: "docker" } },
+        { source: "main", host: "192.0.2.10", driver: { kind: "apt" } },
+        { source: "other", host: "192.0.2.20", driver: { kind: "apt" } },
+    ]);
+    expect(bound).toBeDefined();
+    expect(applicationHostResourceKeys(bound!)).toContain(
+        hostResourceKey("docker.example")
+    );
+    expect(applicationHostResourceKeys(bound!)).toContain(hostResourceKey("192.0.2.10"));
+    expect(applicationHostResourceKeys(bound!)).toHaveLength(2);
+    expect(bound!.projects).toEqual(target.projects);
+    expect(bound!.endpoint).toBe(target.endpoint);
+});
+
+test("Docker updater source aliases require an explicit lifecycle host binding", () => {
+    const applications = parseApplicationTargets(JSON.stringify([target]));
+    const updates = [
+        { source: "ssh-main", host: "192.0.2.10", driver: { kind: "docker" } },
+    ];
+    expect(() => bindApplicationHosts(applications, updates)).toThrow(
+        "explicit application host binding"
+    );
+    expect(bindApplicationHosts([], updates)).toEqual([]);
+    expect(bindApplicationHosts(applications, [])).toHaveLength(1);
+    const [bound] = bindApplicationHosts(
+        parseApplicationTargets(
+            JSON.stringify([{ ...target, updateSources: ["main", "ssh-main"] }])
+        ),
+        updates
+    );
+    expect(applicationHostResourceKeys(bound!)).toContain(hostResourceKey("192.0.2.10"));
+    expect(applicationHostResourceKeys(bound!)).toContain(
+        hostResourceKey("docker.example")
+    );
+    expect(bound!.projects).toEqual(target.projects);
+    for (const updateSources of [[], ["main", "main"], ["invalid source"]])
+        expect(() =>
+            parseApplicationTargets(JSON.stringify([{ ...target, updateSources }]))
+        ).toThrow();
+});
 
 test("historical log mappings are explicit, bounded and cannot overlap other projects", () => {
     const legacy = {
@@ -44,6 +140,41 @@ test("historical log mappings are explicit, bounded and cannot overlap other pro
                 ])
             )
         ).toThrow();
+});
+
+test("lifecycle source bindings accept the full updater source range without enlarging host IDs", () => {
+    for (const length of [32, 33, 48]) {
+        const source = "a".repeat(length);
+        const updates = parseUpdateTargets(
+            JSON.stringify([
+                {
+                    id: "fixture",
+                    label: "Fixture",
+                    source,
+                    host: "192.0.2.10",
+                    user: "fixture",
+                    identityFile: "/fixture/key",
+                    knownHostsFile: "/fixture/hosts",
+                    driver: { kind: "apt" },
+                },
+            ])
+        );
+        const applications = parseApplicationTargets(
+            JSON.stringify([{ ...target, updateSources: [source] }])
+        );
+        expect(
+            applicationHostResourceKeys(bindApplicationHosts(applications, updates)[0]!)
+        ).toContain(hostResourceKey("192.0.2.10"));
+    }
+    for (const source of ["a".repeat(49), "invalid source", "UPPER", "-prefix"])
+        expect(() =>
+            parseApplicationTargets(
+                JSON.stringify([{ ...target, updateSources: [source] }])
+            )
+        ).toThrow();
+    expect(() =>
+        parseApplicationTargets(JSON.stringify([{ ...target, id: "a".repeat(33) }]))
+    ).toThrow();
 });
 
 test("application targets require explicit unique projects, secure origins and credential references", () => {

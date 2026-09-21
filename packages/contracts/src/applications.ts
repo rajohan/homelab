@@ -59,6 +59,11 @@ export interface ManagedApplication {
     readonly health: string | null;
     readonly startedAt: string;
     readonly revision: string;
+    /** Exact namespace providers; absent only in older snapshots. */
+    readonly namespaceParents?: readonly string[];
+    /** Revision and names of the complete, server-computed lifecycle impact. */
+    readonly actionRevision?: string;
+    readonly relatedApplications?: readonly string[];
     readonly ports: readonly {
         container: string;
         hostAddress: string;

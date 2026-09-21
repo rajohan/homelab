@@ -111,7 +111,15 @@ export function mapDockerApplication(
             detail.State.Health?.Status ?? null,
             detail.State.StartedAt,
             detail.State.FinishedAt,
+            detail.HostConfig ?? null,
         ]),
+        namespaceParents: [
+            ...new Set(
+                Object.values(detail.HostConfig ?? {})
+                    .filter((mode) => mode.startsWith("container:"))
+                    .map((mode) => mode.slice("container:".length))
+            ),
+        ].toSorted(),
         networks: Object.keys(detail.NetworkSettings.Networks).toSorted(),
         mounts: detail.Mounts.map((mount) => ({
             type: mount.Type,

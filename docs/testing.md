@@ -32,6 +32,19 @@ Generated coverage reports are Git-ignored.
 
 ## Component assertions and interaction
 
+`bun run test:docker` requires a local Docker Engine, Compose and the cached
+`postgres:18` image (CI's database service supplies it). It creates uniquely labelled,
+bounded disposable containers running only `sleep`, never production applications.
+The actual Docker HTTP transport and coordinator exercise start/stop/restart,
+namespace dependency ordering, paused/stopped states, stale confirmations,
+cancellation and missing-provider refusal. The unmocked Python updater exercises
+pull/inspect, literal pin changes, Compose recreation, persistent fixture data,
+namespace rebinding and refusal of unapproved consumers. It uses immutable aliases
+of the same cached image, not real application upgrades. Cleanup verifies exact
+fixture ownership before removing its containers and volumes. These tests complement
+HTTP/PostgreSQL tests for admission, leases, receipts, batching and notifications;
+they do not certify arbitrary third-party releases or production-private workflows.
+
 The Happy DOM preload registers Jest DOM matchers with Bun's native `expect`. Component tests use readable assertions such as `toBeVisible`, `toBeInTheDocument`, and `toHaveFocus`. Testing Library `user-event` exercises pointer and keyboard interactions; it does not add Jest or Vitest as a test runner. Browser production types, Bun/server types, and tests that need DOM globals are checked in separate TypeScript configurations.
 
 ## Editor runtime

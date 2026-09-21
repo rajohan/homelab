@@ -26,6 +26,7 @@ export function ApplicationActions({
     revision,
     name,
     states,
+    relatedApplications = [],
     disabled = false,
 }: {
     readonly host: string;
@@ -33,6 +34,7 @@ export function ApplicationActions({
     readonly revision: string;
     readonly name: string;
     readonly states: readonly string[];
+    readonly relatedApplications?: readonly string[];
     readonly disabled?: boolean;
 }) {
     const [intent, setIntent] = useState<ApplicationIntent>();
@@ -47,7 +49,9 @@ export function ApplicationActions({
         <>
             <DropdownMenu
                 label={`Actions for ${name}`}
-                disabled={disabled || request.isPending || available.length === 0}
+                disabled={
+                    disabled || !revision || request.isPending || available.length === 0
+                }
                 actions={operations
                     .filter((operation) => available.includes(operation.id))
                     .map((operation) => ({
@@ -66,9 +70,12 @@ export function ApplicationActions({
                 <ConfirmDialog
                     title={`${verb} ${name}?`}
                     description={
-                        intent.operation === "start"
+                        (intent.operation === "start"
                             ? "Start the selected existing containers. Configuration and images will not change."
-                            : "This interrupts the selected applications. A partially completed operation is not retried automatically; inspect the run before trying again."
+                            : "This interrupts the selected applications. A partially completed operation is not retried automatically; inspect the run before trying again.") +
+                        (relatedApplications.length > 0
+                            ? ` Shared namespace services are coordinated too: ${relatedApplications.join(", ")}. Restart leaves previously stopped dependent services stopped.`
+                            : "")
                     }
                     variant={intent.operation === "start" ? "primary" : "danger"}
                     confirmLabel={verb}

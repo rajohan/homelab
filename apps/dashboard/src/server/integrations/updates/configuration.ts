@@ -7,6 +7,7 @@ import * as v from "valibot";
 import { hostResourceKey } from "../../jobs/resources";
 
 const identifier = v.pipe(v.string(), v.regex(/^[a-z][a-z0-9-]{0,47}$/));
+export const updateTargetSourceSchema = identifier;
 const path = v.pipe(
     v.string(),
     v.maxLength(500),
@@ -111,6 +112,14 @@ const driverSchema = v.union([
         file: path,
         imageFile: path,
         trackingTag: updateItemSchema.entries.imageTag,
+        namespaceDependents: v.optional(
+            v.pipe(
+                v.array(identifier),
+                v.maxLength(30),
+                v.check((names) => new Set(names).size === names.length)
+            )
+        ),
+        healthChecks: v.optional(v.pipe(v.array(command), v.maxLength(10))),
         environment: v.optional(composeEnvironment),
     }),
     v.strictObject({
@@ -132,7 +141,7 @@ const driverSchema = v.union([
 const targetSchema = v.strictObject({
     id: identifier,
     label: v.pipe(v.string(), v.minLength(1), v.maxLength(100)),
-    source: identifier,
+    source: updateTargetSourceSchema,
     host: v.pipe(v.string(), v.maxLength(253), v.regex(/^[a-zA-Z0-9][a-zA-Z0-9.-]*$/)),
     user: v.pipe(v.string(), v.regex(/^[a-z_][a-z0-9_-]{0,31}$/)),
     port: v.optional(

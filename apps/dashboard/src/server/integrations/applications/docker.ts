@@ -19,6 +19,11 @@ const detailSchema = v.object({
     Name: text,
     Image: text,
     Config: v.object({ Image: text, Labels: v.nullable(labels) }),
+    HostConfig: v.object({
+        NetworkMode: networkText,
+        PidMode: v.optional(networkText, ""),
+        IpcMode: v.optional(networkText, ""),
+    }),
     State: v.object({
         Status: text,
         StartedAt: text,

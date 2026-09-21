@@ -14,6 +14,7 @@ export function applicationFixtureDetail(id: string, name: string): DockerDetail
         Id: id,
         Name: `/demo-${name}`,
         Image: `sha256:${"c".repeat(64)}`,
+        HostConfig: { NetworkMode: "demo_default", PidMode: "", IpcMode: "" },
         Config: {
             Image: `example/${name}:1.0.0`,
             Labels: {

@@ -258,6 +258,10 @@ export async function resolveImageUpdate(
         config: manifest.config.digest,
     }[identityKind];
     if (!imageId) return null;
+    // Containerd identifies the descriptor actually pulled. An existing
+    // platform-manifest pin must therefore keep a platform-manifest candidate,
+    // not request its parent index while expecting the child manifest's ID.
+    const pullDigest = identityKind === "manifest" ? platformDigest : selected.digest;
     const labelVersion = async (identity: string): Promise<string | undefined> => {
         if (!v.safeParse(digest, identity).success) return undefined;
         try {
@@ -282,7 +286,7 @@ export async function resolveImageUpdate(
     return {
         imageId,
         current: installedConfig === manifest.config.digest,
-        reference: `${source.prefix}:${selectedTag}${selected.digest ? `@${selected.digest}` : ""}`,
+        reference: `${source.prefix}:${selectedTag}${pullDigest ? `@${pullDigest}` : ""}`,
         ...(installedVersion ? { installedVersion } : {}),
         ...(availableVersion ? { availableVersion } : {}),
     };

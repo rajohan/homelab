@@ -169,11 +169,31 @@ one unambiguous literal `image:` line in the configured source. Symlinked source
 interpolated/ambiguous image declarations and concurrent source edits fail closed.
 Resolved Compose configuration must differ only in that one service's image.
 
-Only that service is recreated with `--no-deps --no-build --pull never`. A stopped
+The selected service is recreated with `--no-deps --no-build --pull never`. A stopped
 container stays stopped; a running service is awaited as running/healthy using
 [Compose's lifecycle options](https://docs.docker.com/reference/cli/docker/compose/up/).
 Volumes are retained. Automatic execution rechecks actual installed/pulled versions;
 opaque channels require comparable image-version metadata or manual approval.
+
+Replacing a network/PID/IPC namespace provider also requires rebinding its existing
+consumers. The driver's explicit `namespaceDependents` must exactly match the
+transitive Compose dependency set. A bounded metadata-only host scan rejects other
+containers referencing the selected namespaces. Missing providers, unexpected
+consumers, unsupported states and changed images/mounts fail before stopping anything.
+After the pull, the full observed dependency plan is checked again before mutation.
+Running consumers stop in reverse dependency order and are recreated provider-first
+with their existing images and data; previously stopped consumers remain stopped.
+Final checks cover image identity, mounts, state, health and current namespace IDs.
+Optional deployment-owned `healthChecks` run before a running service is changed and
+again after recovery, without exposing their output. They can verify paths such as
+internal DNS and proxy connectivity that Docker's own health check does not cover.
+
+Within a confirmed host batch, eligible consumers update before their provider.
+Verified recreation receipts remap retained inventory IDs without losing those
+consumers' installed versions. A failed dependency recovery or functional probe does
+not report success, and remaining items on that host are not started. There is no
+automatic rollback of application data or promise that partial failure leaves all
+services running; the run records the stage requiring inspection.
 
 The new pin is persisted in the configured Compose file. It is **not** committed or
 pushed to Git automatically. A configuration-management deployment must consume that
@@ -206,7 +226,9 @@ resolves dependencies; removals, downgrades and changes to held packages are ref
 Automatic plans additionally reject new/unknown/major dependency changes. Exact
 planned versions are passed to APT, existing conffiles are retained and no autoremove,
 distribution upgrade or reboot is performed. A reboot-required flag produces a
-notification, not a host restart. Package scripts may restart their own services.
+notification, not a host restart. Docker/native updates retain the host's observed
+restart flag but do not emit an OS-restart notification for an unrelated application
+update. Package scripts may restart their own services.
 The repository metadata refresh remains the host's existing APT responsibility.
 
 ### Native software

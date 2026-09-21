@@ -19,6 +19,7 @@ SOURCE = Path(__file__).resolve().parents[2] / "apps/dashboard/src/server/integr
 SPEC = importlib.util.spec_from_file_location("update_execution_fixture", SOURCE)
 remote = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(remote)
+exec(compile(SOURCE.with_name("docker_dependencies.py").read_text(), str(SOURCE.with_name("docker_dependencies.py")), "exec"), remote.__dict__)
 exec(compile(SOURCE.with_name("native.py").read_text(), str(SOURCE.with_name("native.py")), "exec"), remote.__dict__)
 exec(compile(SOURCE.with_name("binary.py").read_text(), str(SOURCE.with_name("binary.py")), "exec"), remote.__dict__)
 exec(compile(SOURCE.with_name("toolchain.py").read_text(), str(SOURCE.with_name("toolchain.py")), "exec"), remote.__dict__)
@@ -27,7 +28,7 @@ exec(compile(SOURCE.with_name("toolchain.py").read_text(), str(SOURCE.with_name(
 class UpdateExecutionTests(unittest.TestCase):
     """Cover exact image pins, source fencing, package boundaries and private error handling."""
 
-    def docker_fixture(self, mode="running", mutate=False, fail=False, with_environment=False, manifest_store=False, wrong_pull=False):
+    def docker_fixture(self, mode="running", mutate=False, fail=False, with_environment=False, manifest_store=False, wrong_pull=False, new_consumer=None):
         with tempfile.TemporaryDirectory(prefix="homelab-updater-fixture-") as temporary:
             directory = Path(temporary).resolve()
             source = directory / "compose.yaml"
@@ -43,9 +44,10 @@ class UpdateExecutionTests(unittest.TestCase):
                 item.update(installed=old.split("@")[1], available=new.split("@")[1])
             calls = []
             installed = False
+            pulled = False
 
             def command(arguments, timeout=120, environment=None, output_limit=2_000_000):
-                nonlocal installed
+                nonlocal installed, pulled
                 calls.append(arguments)
                 if arguments[0] == "/fixture/environment":
                     self.assertIsNone(environment)
@@ -56,11 +58,21 @@ class UpdateExecutionTests(unittest.TestCase):
                 else:
                     self.assertIsNone(environment)
                 if arguments[1] == "inspect":
+                    if arguments[3] == '{{json .State}}':
+                        return json.dumps({'Status': mode, 'Health': {'Status': 'healthy'}})
+                    if '{{.Id}}' in arguments[3]:
+                        return 'c' * 64 + ' default' + ('\n' + 'f' * 64 + ' ' + ' '.join('container:' + 'c' * 64 if key == new_consumer else 'default' for key in remote.NAMESPACE_KEYS) if pulled and new_consumer else '')
+                    if '{{json .Id}}' in arguments[3]:
+                        values = ['c' * 64, '/demo-web-1', new if installed else old, item['available'] if installed else item['installed'], 'created' if installed and mode != 'running' else mode, 'fixture-start', 'demo', 'web', 'default', '', '', []]
+                        return ','.join(json.dumps(value) for value in values)
                     values = ["/demo-web-1", new if installed else old, item["available"] if installed else item["installed"], "created" if installed and mode != "running" else mode, "demo", "web"]
                     return ",".join(json.dumps(value) for value in values)
+                if arguments[1] == 'ps' or (arguments[1] == 'compose' and 'ps' in arguments):
+                    return 'c' * 64
                 if arguments[1:3] == ["image", "inspect"]:
                     return "sha256:" + "f" * 64 if wrong_pull else item["available"]
                 if arguments[1] == "pull":
+                    pulled = True
                     if mutate:
                         source.write_bytes(original + b"# External edit\n")
                     return "Downloaded"
@@ -75,7 +87,7 @@ class UpdateExecutionTests(unittest.TestCase):
                 raise AssertionError("Unexpected command")
 
             with patch.object(remote, "command", side_effect=command), patch.object(remote, "progress"):
-                if mutate or fail or wrong_pull:
+                if mutate or fail or wrong_pull or new_consumer:
                     with self.assertRaises(RuntimeError):
                         remote.docker_update(driver, item, True)
                 else:
@@ -85,7 +97,7 @@ class UpdateExecutionTests(unittest.TestCase):
                 self.assertEqual(sum(call[0] == "/fixture/environment" for call in calls), 1)
             self.assertIn(b"synthetic-private-value", contents)
             self.assertFalse(list(directory.glob(".homelab-update-*")))
-            if wrong_pull:
+            if wrong_pull or new_consumer:
                 self.assertEqual(contents, original)
                 self.assertFalse(any("up" in call for call in calls))
             elif mutate:
@@ -101,6 +113,63 @@ class UpdateExecutionTests(unittest.TestCase):
 
     def test_running_image_update_persists_pin_and_waits_for_health(self):
         self.docker_fixture()
+
+    def test_new_reverse_namespace_edges_during_pull_refuse_before_pin_or_stop(self):
+        for namespace in remote.NAMESPACE_KEYS:
+            with self.subTest(namespace=namespace):
+                self.docker_fixture(new_consumer=namespace)
+
+    def test_reverse_namespace_scan_remains_bounded_and_ignores_unrelated_containers(self):
+        with patch.object(remote, 'command', return_value=' '.join(['a' * 64] * 501)):
+            with self.assertRaisesRegex(RuntimeError, 'budget'):
+                remote.verify_namespace_membership([['a' * 64]])
+        with patch.object(remote, 'command', side_effect=['b' * 64, 'b' * 64 + ' container:' + 'c' * 64]):
+            remote.verify_namespace_membership([['a' * 64]])
+
+    def test_namespace_order_is_transitive_and_cycles_fail_before_writes(self):
+        config = {'vpn': {}, 'proxy': {'network_mode': 'service:vpn'}, 'app': {'network_mode': 'service:proxy'}, 'other': {}}
+        self.assertEqual(remote.namespace_services(config, 'vpn'), ['vpn', 'proxy', 'app'])
+        config['vpn']['ipc'] = 'service:app'
+        with self.assertRaisesRegex(RuntimeError, 'cycle'):
+            remote.namespace_services(config, 'vpn')
+
+    def test_changed_namespace_observations_prevent_mutation(self):
+        with patch.object(remote, 'namespace_snapshot', return_value=['changed']):
+            with self.assertRaisesRegex(RuntimeError, 'changed'):
+                remote.verify_namespace_plan([['old']])
+
+    def test_namespace_preflight_validates_each_running_consumer_edge(self):
+        for key, index in zip(remote.NAMESPACE_KEYS, (8, 9, 10)):
+            services = {'root': {'image': 'fixture'}, 'middle': {'image': 'fixture', key: 'service:root'}, 'leaf': {'image': 'fixture', key: 'service:middle'}}
+            for root_state in ('running', 'exited', 'created'):
+                for middle_state in ('running', 'exited', 'created'):
+                    for leaf_state in ('running', 'exited', 'created'):
+                        with self.subTest(namespace=key, states=(root_state, middle_state, leaf_state)):
+                            rows = {}
+                            for identity, name, state in zip('abc', services, (root_state, middle_state, leaf_state)):
+                                rows[name] = [identity * 64, '/' + name, 'fixture', 'sha256:' + 'd' * 64, state, 'fixture-start', 'demo', name, '', '', '', []]
+                            rows['middle'][index] = 'container:' + rows['root'][0]
+                            rows['leaf'][index] = 'container:' + rows['middle'][0]
+                            by_id = {row[0]: row for row in rows.values()}
+                            def compose(args):
+                                self.assertEqual(args[:3], ['ps', '--all', '--quiet'])
+                                return rows[args[-1]][0]
+                            with patch.object(remote, 'namespace_snapshot', side_effect=lambda identity: by_id[identity]), patch.object(remote, 'command', return_value=''):
+                                invalid = (middle_state == 'running' and root_state != 'running') or (leaf_state == 'running' and middle_state != 'running')
+                                if invalid:
+                                    with self.assertRaisesRegex(RuntimeError, 'stopped namespace provider'):
+                                        remote.prepare_namespace_plan({'services': services}, {'project': 'demo', 'service': 'root', 'namespaceDependents': ['middle', 'leaf']}, compose)
+                                else:
+                                    self.assertEqual(remote.prepare_namespace_plan({'services': services}, {'project': 'demo', 'service': 'root', 'namespaceDependents': ['middle', 'leaf']}, compose), list(rows.values()))
+
+    def test_namespace_stop_targets_only_running_consumers_in_reverse_order(self):
+        plan = [[None] * 12 for _ in range(4)]
+        for row, name, state in zip(plan, ['vpn', 'proxy', 'app', 'stopped'], ['running', 'running', 'running', 'exited']):
+            row[7], row[4] = name, state
+        calls = []
+        with patch.object(remote, 'progress'):
+            remote.stop_namespace_consumers(plan, 'vpn', lambda args, timeout: calls.append(args))
+        self.assertEqual(calls, [['stop', '--timeout', '30', 'app', 'proxy']])
 
     def test_stopped_image_update_does_not_start_the_service(self):
         self.docker_fixture(mode="exited")

@@ -5,16 +5,18 @@ import * as v from "valibot";
 import { enqueueJob, lockQueue } from "../../jobs/queue";
 import type { JobHandler } from "../../jobs/types";
 import { OperationFailure } from "../../operations/errors";
+import type { ApplicationTarget } from "../applications/configuration";
 import { applyUpdate, updateTimeoutMs } from "./apply";
 import { updateBatchJobs } from "./batch";
-import {
-    updateTargetRevision,
-    updateResourceKeys,
-    type UpdateTarget,
-} from "./configuration";
+import { updateTargetRevision, type UpdateTarget } from "./configuration";
 import { executeUpdate, type UpdateExecutor } from "./execution";
 import { readUpdateReport, staleUpdateReport } from "./inventory";
 import { readUpdatePolicies } from "./policies";
+import {
+    updateReceiptScope,
+    updateReceiptResourceKeys,
+    verifyUpdateReceiptLeases,
+} from "./receipts";
 import { matchesUpdateTarget, updateControl } from "./selection";
 
 const payloadSchema = v.strictObject({
@@ -28,12 +30,14 @@ const payloadSchema = v.strictObject({
  * @param targets - Deployment-owned update recipes; an empty list enables no installer.
  * @param client - Dashboard state, never an application database.
  * @param execute - Worker-only SSH boundary; tests inject isolated execution fixtures.
+ * @param applications - Explicit source bindings used only for verified identity reconciliation.
  * @returns Jobs sharing the existing queue, resource leases, progress and notifications.
  */
 export function updateActionJobs(
     targets: readonly UpdateTarget[],
     client: SQL,
-    execute: UpdateExecutor = executeUpdate
+    execute: UpdateExecutor = executeUpdate,
+    applications: readonly ApplicationTarget[] = []
 ): readonly JobHandler[] {
     if (targets.length === 0) return [];
     const installers: JobHandler[] = targets.map((target) => ({
@@ -44,7 +48,9 @@ export function updateActionJobs(
                 "Install an explicitly approved version and verify the result without rebooting the host.",
             resourceClass: "interactive",
             capability: "updates:apply",
-            resourceKeys: updateResourceKeys(target),
+            resourceKeys: updateReceiptResourceKeys(
+                updateReceiptScope(target, targets, applications)
+            ),
             timeoutMs: updateTimeoutMs,
             attemptLimit: 1,
             retrySafe: false,
@@ -59,6 +65,8 @@ export function updateActionJobs(
             >`SELECT created_at >= now() - interval '5 minutes' AS fresh FROM job_runs WHERE id=${context.runId}`;
             if (!run?.fresh || input.target !== target.id)
                 throw new Error("Update authorization expired");
+            const receiptScope = updateReceiptScope(target, targets, applications);
+            await verifyUpdateReceiptLeases(client, context.runId, [receiptScope]);
             const report = await readUpdateReport(client, target.source);
             const item = report?.items.find((candidate) => candidate.id === input.item);
             if (!report || !item) throw new Error("Update observation is unavailable");
@@ -77,12 +85,19 @@ export function updateActionJobs(
             await context.reportProgress(
                 `Preparing the approved update for ${item.name}.`
             );
-            await applyUpdate(target, item, input.automatic, context, execute);
+            await applyUpdate(
+                target,
+                item,
+                input.automatic,
+                context,
+                execute,
+                receiptScope
+            );
         },
     }));
     return [
         ...installers,
-        ...updateBatchJobs(targets, client, execute),
+        ...updateBatchJobs(targets, client, execute, applications),
         {
             definition: {
                 key: "updates.automatic",

@@ -12,10 +12,16 @@ import { enqueueJob, lockQueue } from "../../jobs/queue";
 import { maximumIntegrationTimeoutMs } from "../../jobs/registry";
 import type { JobHandler } from "../../jobs/types";
 import { OperationFailure } from "../../operations/errors";
+import type { ApplicationTarget } from "../applications/configuration";
 import { applyUpdate, updateTimeoutMs } from "./apply";
-import { updateResourceKeys, type UpdateTarget } from "./configuration";
+import type { UpdateTarget } from "./configuration";
 import type { UpdateExecutor } from "./execution";
 import { readUpdateReport } from "./inventory";
+import {
+    updateReceiptScope,
+    updateReceiptResourceKeys,
+    verifyUpdateReceiptLeases,
+} from "./receipts";
 import { matchesUpdateTarget, updateControl } from "./selection";
 
 const entryBudgetMs = updateTimeoutMs + 30_000;
@@ -164,12 +170,14 @@ export async function readUpdateBatchPlan(
  * @param targets - Explicit installation recipes; no access is inferred from inventory.
  * @param client - Operational state used to revalidate each candidate immediately before execution.
  * @param execute - Worker-only installer, replaced by the isolated preview in development.
+ * @param applications - Explicit source bindings for verified namespace recreation receipts.
  * @returns Non-retryable host jobs sharing resource leases with individual installations.
  */
 export function updateBatchJobs(
     targets: readonly UpdateTarget[],
     client: SQL,
-    execute: UpdateExecutor
+    execute: UpdateExecutor,
+    applications: readonly ApplicationTarget[] = []
 ): JobHandler[] {
     return [...new Set(targets.map((target) => target.source))].map((source) => {
         const owned = targets.filter((target) => target.source === source);
@@ -182,7 +190,13 @@ export function updateBatchJobs(
                 resourceClass: "interactive",
                 capability: "updates:apply",
                 resourceKeys: [
-                    ...new Set(owned.flatMap((target) => updateResourceKeys(target))),
+                    ...new Set(
+                        owned.flatMap((target) =>
+                            updateReceiptResourceKeys(
+                                updateReceiptScope(target, targets, applications)
+                            )
+                        )
+                    ),
                 ],
                 timeoutMs: maximumBatchItems * entryBudgetMs + batchOverheadMs,
                 attemptLimit: 1,
@@ -196,7 +210,57 @@ export function updateBatchJobs(
                 if (input.source !== source)
                     throw new Error("Batch update authorization expired");
                 await checkBatchAdmission(client, context.runId);
-                for (const [index, entry] of input.items.entries()) {
+                // Check the whole selected batch before even its first installer.
+                const receiptScopes = new Map(
+                    input.items.map((entry) => {
+                        const target = owned.find(
+                            (candidate) => candidate.id === entry.target
+                        );
+                        if (!target)
+                            throw new Error("An approved update is no longer configured");
+                        return [
+                            target.id,
+                            updateReceiptScope(target, targets, applications),
+                        ] as const;
+                    })
+                );
+                await verifyUpdateReceiptLeases(client, context.runId, [
+                    ...receiptScopes.values(),
+                ]);
+                // Update consumers before their provider. Provider recreation then
+                // keeps their newly approved images; it cannot stale a later item ID.
+                const ordered: typeof input.items = [];
+                const visiting = new Set<string>();
+                const visit = (entry: (typeof input.items)[number]) => {
+                    if (ordered.includes(entry)) return;
+                    if (visiting.has(entry.target))
+                        throw new Error("Update namespace dependency cycle");
+                    visiting.add(entry.target);
+                    const target = owned.find(
+                        (candidate) => candidate.id === entry.target
+                    );
+                    if (target?.driver.kind === "docker") {
+                        const driver = target.driver;
+                        for (const dependent of owned.filter(
+                            (candidate) =>
+                                candidate.driver.kind === "docker" &&
+                                candidate.host === target.host &&
+                                candidate.driver.project === driver.project &&
+                                driver.namespaceDependents?.includes(
+                                    candidate.driver.service
+                                )
+                        )) {
+                            const item = input.items.find(
+                                (candidate) => candidate.target === dependent.id
+                            );
+                            if (item) visit(item);
+                        }
+                    }
+                    visiting.delete(entry.target);
+                    ordered.push(entry);
+                };
+                for (const entry of input.items) visit(entry);
+                for (const [index, entry] of ordered.entries()) {
                     context.signal.throwIfAborted();
                     const target = owned.find(
                         (candidate) => candidate.id === entry.target
@@ -205,7 +269,10 @@ export function updateBatchJobs(
                     const item = report?.items.find(
                         (candidate) => candidate.id === entry.item
                     );
-                    if (!target || !report || !item)
+                    const receiptScope = target
+                        ? receiptScopes.get(target.id)
+                        : undefined;
+                    if (!target || !report || !item || !receiptScope)
                         throw new Error(
                             "An approved update is no longer available; remaining updates were not started"
                         );
@@ -233,7 +300,8 @@ export function updateBatchJobs(
                                 reportProgress: (message) =>
                                     context.reportProgress(`${prefix}: ${message}`),
                             },
-                            execute
+                            execute,
+                            receiptScope
                         );
                     } catch (error) {
                         if (!context.signal.aborted)

@@ -59,6 +59,29 @@ requests before success is reported. A service that regressed while a later serv
 fails this final check; declared one-shot dependencies must still have exited successfully.
 These are fresh observations, not an atomic snapshot or a guarantee of future availability.
 
+Container actions include transitive same-project network, PID and IPC namespace
+consumers. The confirmation names these related services and its revision covers the
+whole group. Stop proceeds consumer-first; start proceeds provider-first and waits
+for readiness. Restart keeps previously stopped consumers stopped. Missing immutable
+provider IDs are rejected before stopping a running consumer: lifecycle actions do
+not silently recreate containers or repair their configuration. Cross-project
+namespace groups fail closed.
+
+Application host IDs default to the corresponding update reporting source IDs.
+If their names differ, set the application's explicit `updateSources` list to the
+reporting source IDs for that same physical host. With lifecycle control configured,
+every Docker updater source must have such a binding; startup rejects unbound sources.
+Update-only deployments with no lifecycle targets remain supported, and unrelated
+APT/native-only hosts do not require Docker lifecycle access.
+Configuration binds the Docker endpoint and those sources' SSH host addresses to the
+same job resource leases, even when Docker uses a bridge IP and SSH uses a LAN IP.
+Lifecycle admission acquires all these keys; execution checks that the saved job
+still holds the current keys. Unrelated hosts can execute concurrently.
+For a container action, membership checks cover its confirmed namespace group, not
+unrelated containers on the host. Newly discovered namespace consumers still invalidate
+the confirmation, including cross-project consumers. Whole-project actions continue to
+require exact project membership throughout execution.
+
 Discovery accepts at most 20 hosts and 200 containers per host. Each inspect response is
 limited to 512 KiB, with at most 32 networks, 128 exposed ports, eight bindings per port and
 64 mounts. Selected browser metadata is limited to 32 KiB per container, 1 MiB per host and

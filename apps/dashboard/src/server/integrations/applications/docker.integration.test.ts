@@ -20,6 +20,88 @@ import {
     selectApplications,
 } from "./selection";
 
+test.each(["NetworkMode", "PidMode", "IpcMode"] as const)(
+    "%s late starts of preserved consumers fail before provider mutation",
+    async (namespace) => {
+        for (const status of ["created", "exited"] as const) {
+            for (const operation of ["stop", "restart"] as const) {
+                const fixture = createApplicationFixture();
+                try {
+                    const provider = fixture.containers.get("a".repeat(64))!;
+                    const consumer = fixture.containers.get("b".repeat(64))!;
+                    consumer.HostConfig[namespace] = `container:${provider.Id}`;
+                    consumer.State.Status = status;
+                    const port = createDockerPort(fixture.target, {});
+                    const signal = AbortSignal.timeout(3000);
+                    const selection = { kind: "container" as const, target: provider.Id };
+                    const inventory = await collectApplications(
+                        [fixture.target],
+                        () => port,
+                        signal
+                    );
+                    const revision = selectionRevision(
+                        selectApplications(inventory, fixture.target.id, selection, true),
+                        selection
+                    );
+                    const before = provider.State.StartedAt;
+                    let changed = false;
+                    await expectOperationFailure(
+                        performApplicationAction(
+                            fixture.target,
+                            port,
+                            { selection, revision, operation },
+                            signal,
+                            (message) => {
+                                if (!changed && message.startsWith("Stopping")) {
+                                    changed = true;
+                                    consumer.State.Status = "running";
+                                    consumer.State.StartedAt = "2026-09-01T11:00:00Z";
+                                }
+                                return Promise.resolve();
+                            }
+                        ),
+                        "preserved container changed"
+                    );
+                    expect(changed).toBe(true);
+                    expect(fixture.calls).toEqual([]);
+                    expect(provider.State.StartedAt).toBe(before);
+                    expect(consumer.State.Status).toBe("running");
+                    const current = await collectApplications(
+                        [fixture.target],
+                        () => port,
+                        signal
+                    );
+                    await performApplicationAction(
+                        fixture.target,
+                        port,
+                        {
+                            selection,
+                            operation,
+                            revision: selectionRevision(
+                                selectApplications(
+                                    current,
+                                    fixture.target.id,
+                                    selection,
+                                    true
+                                ),
+                                selection
+                            ),
+                        },
+                        signal
+                    );
+                    expect(fixture.calls).toEqual(
+                        operation === "stop"
+                            ? ["stop:web", "stop:database"]
+                            : ["stop:web", "stop:database", "start:database", "start:web"]
+                    );
+                } finally {
+                    await fixture.close();
+                }
+            }
+        }
+    }
+);
+
 function largeFixtureDetail(id: string) {
     const detail = applicationFixtureDetail(id, "large-metadata");
     detail.Mounts = Array.from({ length: 10 }, () => ({
@@ -30,6 +112,459 @@ function largeFixtureDetail(id: string) {
     }));
     return detail;
 }
+
+test.each(["NetworkMode", "PidMode", "IpcMode"] as const)(
+    "%s start refuses mixed running consumers and stopped providers before any write",
+    async (kind) => {
+        const fixture = createApplicationFixture();
+        try {
+            const provider = fixture.containers.get("a".repeat(64))!;
+            const consumer = fixture.containers.get("b".repeat(64))!;
+            consumer.HostConfig[kind] = `container:${provider.Id}`;
+            provider.State.Status = "exited";
+            const port = createDockerPort(fixture.target, {});
+            for (const selection of [
+                { kind: "container" as const, target: provider.Id },
+                { kind: "project" as const, target: "demo" },
+            ]) {
+                const inventory = await collectApplications(
+                    [fixture.target],
+                    () => port,
+                    AbortSignal.timeout(3000)
+                );
+                const revision = selectionRevision(
+                    selectApplications(inventory, "demo", selection, true),
+                    selection
+                );
+                await expectOperationFailure(
+                    performApplicationAction(
+                        fixture.target,
+                        port,
+                        { selection, revision, operation: "start" },
+                        AbortSignal.timeout(3000)
+                    ),
+                    "stopped shared namespace provider"
+                );
+                expect(fixture.calls).toEqual([]);
+                expect(provider.State.Status).toBe("exited");
+                expect(consumer.State.StartedAt).toBe("2026-09-01T10:00:00Z");
+            }
+            consumer.State.Status = "exited";
+            const selection = { kind: "project" as const, target: "demo" };
+            const inventory = await collectApplications(
+                [fixture.target],
+                () => port,
+                AbortSignal.timeout(3000)
+            );
+            await performApplicationAction(
+                fixture.target,
+                port,
+                {
+                    selection,
+                    revision: selectionRevision(
+                        selectApplications(inventory, "demo", selection, true),
+                        selection
+                    ),
+                    operation: "start",
+                },
+                AbortSignal.timeout(3000)
+            );
+            expect(fixture.calls).toEqual(["start:database", "start:web"]);
+        } finally {
+            await fixture.close();
+        }
+    }
+);
+
+test.each(["NetworkMode", "PidMode", "IpcMode"] as const)(
+    "%s project actions reject external namespace consumers initially and at revalidation",
+    async (kind) => {
+        for (const operation of ["start", "stop", "restart"] as const)
+            for (const late of [false, true]) {
+                const fixture = createApplicationFixture();
+                try {
+                    const target = { ...fixture.target, projects: ["demo", "other"] };
+                    const port = createDockerPort(target, {});
+                    const provider = fixture.containers.get("a".repeat(64))!;
+                    const selection = { kind: "project" as const, target: "demo" };
+                    const inventory = await collectApplications(
+                        [target],
+                        () => port,
+                        AbortSignal.timeout(3000)
+                    );
+                    const revision = selectionRevision(
+                        selectApplications(inventory, "demo", selection, true),
+                        selection
+                    );
+                    const foreign = applicationFixtureDetail("c".repeat(64), "foreign");
+                    foreign.Config.Labels!["com.docker.compose.project"] = "other";
+                    foreign.HostConfig[kind] = `container:${provider.Id}`;
+                    if (!late) fixture.containers.set(foreign.Id, foreign);
+                    const observed: DockerPort = {
+                        ...port,
+                        inspect: async (id, signal) => {
+                            const detail = await port.inspect(id, signal);
+                            if (late) fixture.containers.set(foreign.Id, foreign);
+                            return detail;
+                        },
+                    };
+                    await expectOperationFailure(
+                        performApplicationAction(
+                            target,
+                            observed,
+                            { selection, revision, operation },
+                            AbortSignal.timeout(3000)
+                        ),
+                        "project boundaries"
+                    );
+                    expect(fixture.calls).toEqual([]);
+                    expect(provider.State.StartedAt).toBe("2026-09-01T10:00:00Z");
+                } finally {
+                    await fixture.close();
+                }
+            }
+    }
+);
+
+test.each([
+    ["service_started", "exited", "healthy", 0, false],
+    ["service_healthy", "running", "unhealthy", 0, false],
+    ["service_completed_successfully", "exited", "healthy", 1, false],
+    ["service_started", "running", "unhealthy", 0, true],
+    ["service_healthy", "running", "healthy", 0, true],
+    ["service_completed_successfully", "exited", "healthy", 0, true],
+] as const)(
+    "namespace restart preflights external %s dependency in %s/%s with exit %s",
+    async (condition, status, health, exitCode, allowed) => {
+        const fixture = createApplicationFixture();
+        try {
+            const provider = fixture.containers.get("a".repeat(64))!;
+            const consumer = fixture.containers.get("b".repeat(64))!;
+            consumer.HostConfig.NetworkMode = `container:${provider.Id}`;
+            consumer.Config.Labels!["com.docker.compose.depends_on"] =
+                `external:${condition}:false`;
+            const external = applicationFixtureDetail("c".repeat(64), "external");
+            external.State.Status = status;
+            external.State.Health = { Status: health };
+            external.State.ExitCode = exitCode;
+            fixture.containers.set(external.Id, external);
+            const port = createDockerPort(fixture.target, {});
+            const selection = { kind: "container" as const, target: provider.Id };
+            const inventory = await collectApplications(
+                [fixture.target],
+                () => port,
+                AbortSignal.timeout(3000)
+            );
+            const revision = selectionRevision(
+                selectApplications(inventory, "demo", selection, true),
+                selection
+            );
+            const result = performApplicationAction(
+                fixture.target,
+                port,
+                { selection, revision, operation: "restart" },
+                AbortSignal.timeout(3000)
+            );
+            if (allowed) {
+                await result;
+                expect(fixture.calls).toEqual([
+                    "stop:web",
+                    "stop:database",
+                    "start:database",
+                    "start:web",
+                ]);
+            } else {
+                await expectOperationFailure(result, "dependency did not become ready");
+                expect(fixture.calls).toEqual([]);
+                expect(provider.State.StartedAt).toBe("2026-09-01T10:00:00Z");
+                expect(consumer.State.StartedAt).toBe("2026-09-01T10:00:00Z");
+            }
+            expect(external.State.Status).toBe(status);
+        } finally {
+            await fixture.close();
+        }
+    }
+);
+
+test.each([
+    "add-same",
+    "add-other",
+    "remove-same",
+    "remove-other",
+    "vanishing-addition",
+    "new-consumer",
+    "replaced-consumer",
+    "cross-project-consumer",
+] as const)(
+    "container restart fences only its coordinated namespace group during %s",
+    async (change) => {
+        const fixture = createApplicationFixture();
+        try {
+            const target = { ...fixture.target, projects: ["demo", "other"] };
+            const provider = fixture.containers.get("a".repeat(64))!;
+            const consumer = fixture.containers.get("b".repeat(64))!;
+            consumer.HostConfig.NetworkMode = `container:${provider.Id}`;
+            const unrelated = applicationFixtureDetail("d".repeat(64), "unrelated");
+            if (change.endsWith("other"))
+                unrelated.Config.Labels!["com.docker.compose.project"] = "other";
+            fixture.containers.set(unrelated.Id, unrelated);
+            const port = createDockerPort(target, {});
+            const inventory = await collectApplications(
+                [target],
+                () => port,
+                AbortSignal.timeout(3000)
+            );
+            const selection = { kind: "container" as const, target: provider.Id };
+            const revision = selectionRevision(
+                selectApplications(inventory, target.id, selection, true),
+                selection
+            );
+            const added = applicationFixtureDetail("e".repeat(64), "added");
+            if (change === "add-other" || change === "cross-project-consumer")
+                added.Config.Labels!["com.docker.compose.project"] = "other";
+            if (change.includes("consumer"))
+                added.HostConfig.NetworkMode = `container:${provider.Id}`;
+            const changing: DockerPort = {
+                ...port,
+                inspect: async (id, signal) => {
+                    if (id === added.Id && change === "vanishing-addition")
+                        fixture.containers.delete(id);
+                    return port.inspect(id, signal);
+                },
+                act: async (id, operation, signal) => {
+                    await port.act(id, operation, signal);
+                    if (fixture.calls.length !== 1) return;
+                    if (change.startsWith("remove-"))
+                        fixture.containers.delete(unrelated.Id);
+                    else fixture.containers.set(added.Id, added);
+                    if (change === "replaced-consumer")
+                        fixture.containers.delete(consumer.Id);
+                },
+            };
+            const result = performApplicationAction(
+                target,
+                changing,
+                { selection, revision, operation: "restart" },
+                AbortSignal.timeout(3000)
+            );
+            if (change.includes("consumer")) {
+                await expectOperationFailure(
+                    result,
+                    change === "cross-project-consumer"
+                        ? "project boundaries"
+                        : "membership changed"
+                );
+                expect(fixture.calls).toEqual(["stop:web"]);
+            } else {
+                await result;
+                expect(fixture.calls).toEqual([
+                    "stop:web",
+                    "stop:database",
+                    "start:database",
+                    "start:web",
+                ]);
+                expect(provider.State.Status).toBe("running");
+                expect(consumer.State.Status).toBe("running");
+            }
+        } finally {
+            await fixture.close();
+        }
+    }
+);
+
+test.each(["NetworkMode", "PidMode", "IpcMode"] as const)(
+    "%s provider restart coordinates the confirmed namespace group",
+    async (kind) => {
+        const fixture = createApplicationFixture();
+        try {
+            const provider = fixture.containers.get("a".repeat(64))!;
+            const consumer = fixture.containers.get("b".repeat(64))!;
+            consumer.HostConfig = {
+                NetworkMode: "",
+                PidMode: "",
+                IpcMode: "",
+                [kind]: `container:${provider.Id}`,
+            };
+            const port = createDockerPort(fixture.target, {});
+            const inventory = await collectApplications(
+                [fixture.target],
+                () => port,
+                AbortSignal.timeout(3000)
+            );
+            const selection = { kind: "container" as const, target: provider.Id };
+            const selected = selectApplications(inventory, "demo", selection, true);
+            expect(selected).toHaveLength(2);
+            const revision = selectionRevision(selected, selection);
+            expect(revision).not.toBe(selected[0]!.revision);
+            await performApplicationAction(
+                fixture.target,
+                port,
+                { selection, revision, operation: "restart" },
+                AbortSignal.timeout(3000)
+            );
+            expect(fixture.calls).toEqual([
+                "stop:web",
+                "stop:database",
+                "start:database",
+                "start:web",
+            ]);
+        } finally {
+            await fixture.close();
+        }
+    }
+);
+
+test.each(["NetworkMode", "PidMode", "IpcMode"] as const)(
+    "%s restart rejects a stopped intermediate before disrupting a running descendant",
+    async (kind) => {
+        const fixture = createApplicationFixture();
+        try {
+            const root = fixture.containers.get("a".repeat(64))!;
+            const intermediate = fixture.containers.get("b".repeat(64))!;
+            const leaf = applicationFixtureDetail("c".repeat(64), "leaf");
+            intermediate.HostConfig[kind] = `container:${root.Id}`;
+            leaf.HostConfig[kind] = `container:${intermediate.Id}`;
+            fixture.containers.set(leaf.Id, leaf);
+            const port = createDockerPort(fixture.target, {});
+            const selection = { kind: "container" as const, target: root.Id };
+            const run = async () => {
+                const inventory = await collectApplications(
+                    [fixture.target],
+                    () => port,
+                    AbortSignal.timeout(3000)
+                );
+                const revision = selectionRevision(
+                    selectApplications(inventory, "demo", selection, true),
+                    selection
+                );
+                return performApplicationAction(
+                    fixture.target,
+                    port,
+                    { selection, revision, operation: "restart" },
+                    AbortSignal.timeout(3000)
+                );
+            };
+            for (const state of ["exited", "created"]) {
+                intermediate.State.Status = state;
+                await expectOperationFailure(run(), "namespace");
+                expect(fixture.calls).toEqual([]);
+                expect(leaf.State.Status).toBe("running");
+                expect(root.State.StartedAt).toBe("2026-09-01T10:00:00Z");
+            }
+            leaf.State.Status = "exited";
+            await run();
+            expect(fixture.calls).toEqual(["stop:database", "start:database"]);
+            expect(intermediate.State.Status).toBe("created");
+            expect(leaf.State.Status).toBe("exited");
+            fixture.calls.length = 0;
+            const project = { kind: "project" as const, target: "demo" };
+            const inventory = await collectApplications(
+                [fixture.target],
+                () => port,
+                AbortSignal.timeout(3000)
+            );
+            const revision = selectionRevision(
+                selectApplications(inventory, "demo", project, true),
+                project
+            );
+            await performApplicationAction(
+                fixture.target,
+                port,
+                { selection: project, revision, operation: "start" },
+                AbortSignal.timeout(3000)
+            );
+            expect(fixture.calls).toEqual(["start:database", "start:web", "start:leaf"]);
+            expect(intermediate.State.Status).toBe("running");
+            expect(leaf.State.Status).toBe("running");
+        } finally {
+            await fixture.close();
+        }
+    }
+);
+
+test.each(["start", "restart"] as const)(
+    "%s refuses a missing immutable namespace before any mutation",
+    async (operation) => {
+        const fixture = createApplicationFixture();
+        try {
+            const consumer = fixture.containers.get("b".repeat(64))!;
+            consumer.HostConfig = {
+                NetworkMode: `container:${"f".repeat(64)}`,
+                PidMode: "",
+                IpcMode: "",
+            };
+            const port = createDockerPort(fixture.target, {});
+            const selection = { kind: "container" as const, target: consumer.Id };
+            const revision = mapDockerApplication(fixture.target, consumer).revision;
+            const progress: string[] = [];
+            await expectOperationFailure(
+                performApplicationAction(
+                    fixture.target,
+                    port,
+                    { selection, revision, operation },
+                    AbortSignal.timeout(3000),
+                    (message) => {
+                        progress.push(message);
+                        return Promise.resolve();
+                    }
+                ),
+                "namespace"
+            );
+            expect(fixture.calls).toEqual([]);
+            expect(
+                progress.some((message) => message.includes("No containers were changed"))
+            ).toBe(true);
+        } finally {
+            await fixture.close();
+        }
+    }
+);
+
+test("namespace impact changes invalidate individual confirmation and preserve stopped consumers", async () => {
+    const fixture = createApplicationFixture();
+    try {
+        const provider = fixture.containers.get("a".repeat(64))!;
+        const consumer = fixture.containers.get("b".repeat(64))!;
+        const port = createDockerPort(fixture.target, {});
+        const selection = { kind: "container" as const, target: provider.Id };
+        const revision = mapDockerApplication(fixture.target, provider).revision;
+        consumer.HostConfig = {
+            NetworkMode: `container:${provider.Id}`,
+            PidMode: "",
+            IpcMode: "",
+        };
+        await expectOperationFailure(
+            performApplicationAction(
+                fixture.target,
+                port,
+                { selection, revision, operation: "restart" },
+                AbortSignal.timeout(3000)
+            ),
+            "changed"
+        );
+        expect(fixture.calls).toEqual([]);
+        consumer.State.Status = "exited";
+        const inventory = await collectApplications(
+            [fixture.target],
+            () => port,
+            AbortSignal.timeout(3000)
+        );
+        const current = selectionRevision(
+            selectApplications(inventory, "demo", selection, true),
+            selection
+        );
+        await performApplicationAction(
+            fixture.target,
+            port,
+            { selection, revision: current, operation: "restart" },
+            AbortSignal.timeout(3000)
+        );
+        expect(fixture.calls).toEqual(["stop:database", "start:database"]);
+        expect(consumer.State.Status).toBe("exited");
+    } finally {
+        await fixture.close();
+    }
+});
 
 test.each(["networks", "ports", "bindings", "mounts", "body"] as const)(
     "Docker inspect bounds %s before retaining metadata",
@@ -656,7 +1191,7 @@ test.each(
     }
 );
 
-test("project operations never list or inspect unrelated allowlisted projects", async () => {
+test("project operations refuse an inventory too large to exclude external namespace consumers", async () => {
     const fixture = createApplicationFixture();
     try {
         const target = { ...fixture.target, projects: ["demo", "unrelated"] };
@@ -692,14 +1227,17 @@ test("project operations never list or inspect unrelated allowlisted projects", 
                 return port.inspect(id, requestSignal);
             },
         };
-        await performApplicationAction(
-            target,
-            scoped,
-            { selection, revision, operation: "stop" },
-            signal
+        await expectOperationFailure(
+            performApplicationAction(
+                target,
+                scoped,
+                { selection, revision, operation: "stop" },
+                signal
+            ),
+            "budget"
         );
-        expect(new Set(inspected)).toEqual(new Set(["a".repeat(64), "b".repeat(64)]));
-        expect(fixture.calls).toEqual(["stop:web", "stop:database"]);
+        expect(inspected).toEqual([]);
+        expect(fixture.calls).toEqual([]);
     } finally {
         await fixture.close();
     }

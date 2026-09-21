@@ -55,6 +55,30 @@ export function selectApplications(
             ? item.containerId === selection.target
             : item.project === selection.target
     );
+    {
+        const root = rows[0];
+        if (root) {
+            const selected = new Set(rows.map((item) => item.containerId));
+            for (let added = true; added;) {
+                added = false;
+                for (const item of host.applications) {
+                    if (
+                        selected.has(item.containerId) ||
+                        !item.namespaceParents?.some((parent) => selected.has(parent))
+                    )
+                        continue;
+                    if (item.project !== root.project)
+                        throw new OperationFailure(
+                            "PRECONDITION_FAILED",
+                            "A shared namespace crosses project boundaries. Review this deployment before changing it."
+                        );
+                    rows.push(item);
+                    selected.add(item.containerId);
+                    added = true;
+                }
+            }
+        }
+    }
     if (rows.length === 0 || rows.length > 50)
         throw new OperationFailure(
             "NOT_FOUND",
@@ -73,7 +97,7 @@ export function selectionRevision(
     applications: readonly ManagedApplication[],
     selection: ApplicationSelection
 ): string {
-    return selection.kind === "container"
+    return selection.kind === "container" && applications.length === 1
         ? (applications[0]?.revision ?? "")
         : applicationRevision(
               applications

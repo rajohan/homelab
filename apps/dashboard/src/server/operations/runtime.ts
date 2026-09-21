@@ -37,7 +37,12 @@ export function createOperationsRuntime(
 ): OperationsRuntime {
     const connection = connectDashboardDatabase(configuration.databaseUrl);
     const registry = createJobRegistry([
-        ...updateActionJobs(configuration.updateTargets ?? [], connection.client),
+        ...updateActionJobs(
+            configuration.updateTargets ?? [],
+            connection.client,
+            undefined,
+            configuration.applicationTargets ?? []
+        ),
         ...(configuration.updateTargets?.length
             ? [restartStatusJob(configuration.updateTargets)]
             : []),

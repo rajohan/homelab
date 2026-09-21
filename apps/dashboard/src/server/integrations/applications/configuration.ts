@@ -1,6 +1,10 @@
 import { applicationHostSchema } from "@homelab/contracts/applications";
 import * as v from "valibot";
 
+import { hostResourceKey } from "../../jobs/resources";
+import { boundHostSources } from "../hostBindings";
+import { updateTargetSourceSchema } from "../updates/configuration";
+
 const secretName = v.pipe(v.string(), v.regex(/^HOMELAB_DASHBOARD_[A-Z0-9_]{1,100}$/));
 const projectName = v.pipe(v.string(), v.regex(/^[a-z0-9][a-z0-9._-]{0,79}$/));
 const labelName = v.pipe(v.string(), v.regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/));
@@ -43,6 +47,9 @@ const schema = v.pipe(
             label: v.pipe(v.string(), v.minLength(1), v.maxLength(80)),
             endpoint: v.string(),
             projects: v.pipe(v.array(projectName), v.minLength(1), v.maxLength(50)),
+            updateSources: v.optional(
+                v.pipe(v.array(updateTargetSourceSchema), v.minLength(1), v.maxLength(50))
+            ),
             tls: v.optional(
                 v.strictObject({
                     ca: secretName,
@@ -55,7 +62,71 @@ const schema = v.pipe(
     ),
     v.maxLength(20)
 );
-export type ApplicationTarget = v.InferOutput<typeof schema>[number];
+export type ApplicationTarget = v.InferOutput<typeof schema>[number] & {
+    readonly controlHosts?: readonly string[];
+};
+
+/**
+ * Coordinate Docker endpoints with the SSH hosts in the same deployment-owned source.
+ * @param applications - Validated endpoints and project allowlists.
+ * @param updates - Configured software targets; no access is inferred or granted.
+ * @returns Docker targets holding every explicitly linked host lock plus their endpoint lock; unbound Docker updater sources are rejected when lifecycle control is configured.
+ */
+export function bindApplicationHosts(
+    applications: readonly ApplicationTarget[],
+    updates: readonly {
+        readonly source: string;
+        readonly host: string;
+        readonly driver: { readonly kind: string };
+    }[]
+): readonly ApplicationTarget[] {
+    const sources = (application: ApplicationTarget) =>
+        application.updateSources ?? [application.id];
+    if (
+        applications.length > 0 &&
+        updates.some(
+            (target) =>
+                target.driver.kind === "docker" &&
+                !applications.some((application) =>
+                    sources(application).includes(target.source)
+                )
+        )
+    )
+        throw new Error(
+            "Docker updater sources require an explicit application host binding (matching id or updateSources)"
+        );
+    return applications.map((application) => {
+        const bound = new Set(
+            boundHostSources(sources(application), updates, applications)
+        );
+        return {
+            ...application,
+            controlHosts: [
+                ...new Set([
+                    new URL(application.endpoint).hostname,
+                    ...updates
+                        .filter((target) => bound.has(target.source))
+                        .map((target) => target.host),
+                ]),
+            ].toSorted(),
+        };
+    });
+}
+
+/**
+ * Derive the same deployment-owned host leases during admission and queued execution.
+ * @param target - Docker endpoint with canonical SSH identities bound at configuration load.
+ * @returns Unique opaque locks; different ports or proxy addresses cannot split host ownership.
+ */
+export function applicationHostResourceKeys(target: ApplicationTarget): string[] {
+    return [
+        ...new Set(
+            [new URL(target.endpoint).hostname, ...(target.controlHosts ?? [])].map(
+                (host) => hostResourceKey(host)
+            )
+        ),
+    ];
+}
 
 /**
  * Validate trusted Docker endpoints and explicit project allowlists before startup.
@@ -89,6 +160,11 @@ export function parseApplicationTargets(
             );
         if (new Set(target.projects).size !== target.projects.length)
             throw new Error("Application project allowlists must be unique");
+        if (
+            target.updateSources &&
+            new Set(target.updateSources).size !== target.updateSources.length
+        )
+            throw new Error("Application update source bindings must be unique");
         if (
             target.logs?.serviceValue === "service" &&
             target.projects.length > 1 &&

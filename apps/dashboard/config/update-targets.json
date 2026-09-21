@@ -1165,6 +1165,16 @@
         "driver": {
             "kind": "docker",
             "name": "stremio-gost-1",
+            "healthChecks": [
+                [
+                    "/usr/bin/docker",
+                    "exec",
+                    "stremio-aiometadata-1",
+                    "node",
+                    "-e",
+                    "const h=require('http');const q=h.request({hostname:'gluetun',port:8888,method:'CONNECT',path:'api4.thetvdb.com:443',timeout:8000});q.on('connect',(r,s)=>{s.destroy();process.exit(r.statusCode===200?0:1)});q.on('timeout',()=>q.destroy());q.on('error',()=>process.exit(1));q.end()"
+                ]
+            ],
             "project": "stremio",
             "service": "gost",
             "directory": "/srv/workspaces/stremio",
@@ -1498,6 +1508,25 @@
         "driver": {
             "kind": "docker",
             "name": "stremio-gluetun-1",
+            "namespaceDependents": ["gost", "jackett", "bitmagnet", "flaresolverr"],
+            "healthChecks": [
+                [
+                    "/usr/bin/docker",
+                    "exec",
+                    "stremio-gluetun-1",
+                    "/bin/sh",
+                    "-ec",
+                    "nslookup db.home.rajohan.no | grep -Eq '(^|[[:space:]])192[.]168[.]1[.]17([[:space:]]|$)'"
+                ],
+                [
+                    "/usr/bin/docker",
+                    "exec",
+                    "stremio-aiometadata-1",
+                    "node",
+                    "-e",
+                    "const h=require('http');const q=h.request({hostname:'gluetun',port:8888,method:'CONNECT',path:'api4.thetvdb.com:443',timeout:8000});q.on('connect',(r,s)=>{s.destroy();process.exit(r.statusCode===200?0:1)});q.on('timeout',()=>q.destroy());q.on('error',()=>process.exit(1));q.end()"
+                ]
+            ],
             "project": "stremio",
             "service": "gluetun",
             "directory": "/srv/workspaces/stremio",

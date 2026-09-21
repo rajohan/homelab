@@ -64,6 +64,255 @@ const item: UpdateItem = {
     platform: { os: "linux", architecture: "amd64" },
 };
 
+test.each([
+    "same-host",
+    "bound-alias",
+    "host-then-binding",
+    "binding-then-host",
+    "alternating-chain",
+    "unbound",
+    "wrong-digest",
+    "changed-candidate",
+    "different-request",
+    "different-actor",
+    "different-scope",
+    "different-plan",
+] as const)(
+    "verified cross-source recreation receipts preserve batch consent during %s",
+    async (scenario) => {
+        const state = await operationFixture();
+        try {
+            if (target.driver.kind !== "docker")
+                throw new Error("Missing Docker fixture");
+            const provider: UpdateTarget = {
+                ...target,
+                id: "provider",
+                source: "alpha",
+                driver: {
+                    ...target.driver,
+                    name: "provider",
+                    service: "provider",
+                    namespaceDependents: ["web"],
+                },
+            };
+            const consumer: UpdateTarget = {
+                ...target,
+                id: "consumer",
+                source: "beta",
+                host: [
+                    "bound-alias",
+                    "unbound",
+                    "host-then-binding",
+                    "binding-then-host",
+                    "alternating-chain",
+                ].includes(scenario)
+                    ? "alias.invalid"
+                    : target.host,
+            };
+            const providerItem = { ...item, name: "provider" };
+            const consumerItem = { ...item, id: "docker:" + "b".repeat(64) };
+            let bridgeSources: [string, string][] = [];
+            let bindings = [["alpha", "beta", "snapshot-only"]];
+            switch (scenario) {
+                case "host-then-binding": {
+                    bridgeSources = [["gamma", target.host]];
+                    bindings = [["gamma", "beta", "snapshot-only"], ["alpha"]];
+                    break;
+                }
+                case "binding-then-host": {
+                    bridgeSources = [["gamma", consumer.host]];
+                    bindings = [
+                        ["beta", "snapshot-only"],
+                        ["alpha", "gamma"],
+                    ];
+                    break;
+                }
+                case "alternating-chain": {
+                    bridgeSources = [
+                        ["gamma", target.host],
+                        ["delta", "middle.invalid"],
+                        ["epsilon", "middle.invalid"],
+                    ];
+                    bindings = [
+                        ["epsilon", "beta", "snapshot-only"],
+                        ["gamma", "delta"],
+                        ["alpha"],
+                    ];
+                    break;
+                }
+                case "unbound": {
+                    bindings = [];
+                    break;
+                }
+            }
+            const targets = [
+                provider,
+                consumer,
+                ...bridgeSources.map(([source, host]) => ({
+                    ...target,
+                    id: source,
+                    source,
+                    host,
+                    driver: {
+                        ...provider.driver,
+                        name: source,
+                        service: source,
+                        namespaceDependents: [],
+                    },
+                })),
+            ];
+            const calls: string[] = [];
+            const applications = bindings.map((updateSources, index) => ({
+                id: `docker-${index}`,
+                label: "Docker",
+                endpoint: "https://docker.invalid",
+                projects: ["demo"],
+                updateSources,
+            }));
+            const registry = createJobRegistry(
+                updateActionJobs(
+                    targets,
+                    state.client,
+                    (selected, software) => {
+                        calls.push(software.id);
+                        return Promise.resolve({
+                            installed: software.available!,
+                            rebootRequired: false,
+                            containerId: (selected.id === "provider" ? "d" : "f").repeat(
+                                64
+                            ),
+                            ...(selected.id === "provider"
+                                ? {
+                                      recreatedContainers: [
+                                          {
+                                              previousId: "b".repeat(64),
+                                              containerId: "e".repeat(64),
+                                              installed:
+                                                  scenario === "wrong-digest"
+                                                      ? "sha256:" + "9".repeat(64)
+                                                      : consumerItem.installed,
+                                          },
+                                      ],
+                                  }
+                                : {}),
+                        });
+                    },
+                    applications
+                )
+            );
+            const report: UpdateReport = {
+                capturedAt: new Date().toISOString(),
+                repositoryMetadataAt: null,
+                complete: true,
+                coveredKinds: ["container"],
+                rebootRequired: true,
+                items: [consumerItem],
+            };
+            for (const source of ["alpha", "beta", "snapshot-only", "unrelated"])
+                for (const prefix of ["updates:", "updates.resolved:"])
+                    await state.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES (${prefix + source},${JSON.stringify({ ...report, items: [source === "alpha" ? providerItem : consumerItem] })}::text::jsonb,now())`;
+            const principal = { kind: "human" as const, id: "operator", capabilities };
+            const caller = appRouter.createCaller({
+                operations: {
+                    ...state,
+                    registry,
+                    updateTargets: targets,
+                    updateSources: ["alpha", "beta"].map((id) => ({
+                        id,
+                        label: id,
+                        publisher: crypto.randomUUID(),
+                    })),
+                },
+                principal,
+                verifyHuman: () => Promise.resolve(principal),
+            });
+            const plan = await caller.updates.batchPlan({});
+            const request = { revision: plan.revision, requestId: crypto.randomUUID() };
+            const accepted = await caller.updates.batchRequest(request);
+            const [original] = await state.client<
+                { id: string; payload: Record<string, unknown>; fingerprint: string }[]
+            >`SELECT id,payload,fingerprint FROM job_runs WHERE action=${updateBatchKey("beta")}`;
+            if (!original) throw new Error("Missing queued consumer");
+            if (scenario === "changed-candidate")
+                await state.client`UPDATE operation_snapshots SET value=jsonb_set(value,'{items,0,available}','"sha256:1111111111111111111111111111111111111111111111111111111111111111"'::jsonb) WHERE key IN ('updates:beta','updates.resolved:beta')`;
+            if (scenario === "different-request")
+                await state.client`UPDATE job_runs SET payload=jsonb_set(payload,'{requestId}',${JSON.stringify(crypto.randomUUID())}::text::jsonb) WHERE id=${original.id}`;
+            if (scenario === "different-actor")
+                await state.client`UPDATE job_runs SET requested_by='another-user' WHERE id=${original.id}`;
+            if (scenario === "different-scope")
+                await state.client`UPDATE job_runs SET payload=jsonb_set(payload,'{scope}','"beta"'::jsonb) WHERE id=${original.id}`;
+            if (scenario === "different-plan")
+                await state.client`UPDATE job_runs SET payload=jsonb_set(payload,'{revision}',${JSON.stringify("0".repeat(64))}::text::jsonb) WHERE id=${original.id}`;
+            const worker = await state.registerWorker();
+            const producer = await claimJob(state.client, worker, [
+                updateBatchKey("alpha"),
+            ]);
+            if (!producer) throw new Error("Missing producer claim");
+            if (scenario !== "unbound")
+                expect(
+                    await claimJob(state.client, worker, [updateBatchKey("beta")])
+                ).toBeUndefined();
+            await registry.get(producer.action)!.execute(producer.payload, {
+                runId: producer.id,
+                leaseToken: producer.lease_token,
+                signal: AbortSignal.timeout(5000),
+                reportProgress: () => Promise.resolve(),
+                commit: (write, queue) =>
+                    commitClaim(state.client, producer, write, queue),
+            });
+            await settleClaim(state.client, producer, "succeeded");
+            const remapped = !["unbound", "wrong-digest"].includes(scenario);
+            for (const source of ["beta", "snapshot-only", "unrelated"])
+                for (const prefix of ["updates:", "updates.resolved:"]) {
+                    const [stored] = await state.client<
+                        { value: UpdateReport }[]
+                    >`SELECT value FROM operation_snapshots WHERE key=${prefix + source}`;
+                    expect(stored?.value.items[0]?.id).toBe(
+                        "docker:" +
+                            (remapped && source !== "unrelated" ? "e" : "b").repeat(64)
+                    );
+                    expect(stored?.value.items[0]?.installed).toBe(
+                        consumerItem.installed
+                    );
+                    expect(stored?.value.rebootRequired).toBe(true);
+                    expect(stored?.value.capturedAt).toBe(report.capturedAt);
+                }
+            const [queued] = await state.client<
+                { payload: { items: { item: string }[] }; fingerprint: string }[]
+            >`SELECT payload,fingerprint FROM job_runs WHERE id=${original.id}`;
+            const continued = [
+                "same-host",
+                "bound-alias",
+                "host-then-binding",
+                "binding-then-host",
+                "alternating-chain",
+            ].includes(scenario);
+            expect(queued?.payload.items[0]?.item).toBe(
+                "docker:" + (continued ? "e" : "b").repeat(64)
+            );
+            expect(queued?.fingerprint).toBe(original.fingerprint);
+            if (continued) {
+                expect(await caller.updates.batchRequest(request)).toEqual(accepted);
+                const next = await claimJob(state.client, worker, [
+                    updateBatchKey("beta"),
+                ]);
+                if (!next) throw new Error("Missing consumer claim");
+                await registry.get(next.action)!.execute(next.payload, {
+                    runId: next.id,
+                    leaseToken: next.lease_token,
+                    signal: AbortSignal.timeout(5000),
+                    reportProgress: () => Promise.resolve(),
+                    commit: (write, queue) =>
+                        commitClaim(state.client, next, write, queue),
+                });
+                expect(calls).toEqual([providerItem.id, "docker:" + "e".repeat(64)]);
+            }
+        } finally {
+            await state.close();
+        }
+    }
+);
+
 async function batchFixture(fail = false, withDocker = false, sharedHost = false) {
     const state = await operationFixture();
     const targets: UpdateTarget[] = ["alpha", "beta"].map((source) => ({
@@ -150,6 +399,141 @@ async function batchFixture(fail = false, withDocker = false, sharedHost = false
     }
     return { ...state, targets, calls, operations, caller, principal, registry };
 }
+
+test.each(["demo-web-1", "custom-consumer"])(
+    "a host batch remaps recreated %s by identity without losing versions",
+    async (name) => {
+        const state = await operationFixture();
+        try {
+            if (target.driver.kind !== "docker")
+                throw new Error("Missing Docker fixture");
+            const provider: UpdateTarget = {
+                ...target,
+                id: "demo-provider",
+                driver: {
+                    ...target.driver,
+                    name: "demo-provider-1",
+                    service: "provider",
+                    namespaceDependents: ["web"],
+                },
+            };
+            const consumerTarget: UpdateTarget = {
+                ...target,
+                driver: { ...target.driver, name },
+            };
+            const consumerItem: UpdateItem = {
+                ...item,
+                name,
+                id: "docker:" + "b".repeat(64),
+            };
+            const unrelated: UpdateItem = {
+                ...consumerItem,
+                name: "unrelated",
+                id: "docker:" + "f".repeat(64),
+                status: "current",
+                installed: consumerItem.available!,
+            };
+            const providerItem: UpdateItem = { ...item, name: "demo-provider-1" };
+            const calls: string[] = [];
+            const registry = createJobRegistry(
+                updateActionJobs(
+                    [provider, consumerTarget],
+                    state.client,
+                    (selected, software) => {
+                        calls.push(selected.id);
+                        return Promise.resolve({
+                            installed: software.available!,
+                            rebootRequired: false,
+                            containerId: (selected.id === provider.id ? "d" : "c").repeat(
+                                64
+                            ),
+                            ...(selected.id === provider.id
+                                ? {
+                                      recreatedContainers: [
+                                          {
+                                              previousId: "c".repeat(64),
+                                              containerId: "e".repeat(64),
+                                              installed: consumerItem.available!,
+                                          },
+                                      ],
+                                  }
+                                : {}),
+                        });
+                    }
+                )
+            );
+            const report: UpdateReport = {
+                capturedAt: new Date().toISOString(),
+                repositoryMetadataAt: null,
+                complete: true,
+                coveredKinds: ["container"],
+                items: [providerItem, consumerItem, unrelated],
+            };
+            for (const key of ["updates:demo", "updates.resolved:demo"])
+                await state.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES (${key},${JSON.stringify(report)}::text::jsonb,now())`;
+            const principal = { kind: "human" as const, id: "operator", capabilities };
+            const caller = appRouter.createCaller({
+                operations: {
+                    ...state,
+                    registry,
+                    updateTargets: [provider, consumerTarget],
+                    updateSources: [
+                        { id: "demo", label: "Demo", publisher: crypto.randomUUID() },
+                    ],
+                },
+                principal,
+                verifyHuman: () => Promise.resolve(principal),
+            });
+            const plan = await caller.updates.batchPlan({ source: "demo" });
+            expect(plan.eligible).toBe(2);
+            await caller.updates.batchRequest({
+                source: "demo",
+                revision: plan.revision,
+                requestId: crypto.randomUUID(),
+            });
+            const worker = await state.registerWorker();
+            const handler = registry.get(updateBatchKey("demo"))!;
+            const claim = await claimJob(state.client, worker, [handler.definition.key]);
+            expect(claim).toBeDefined();
+            await handler.execute(claim!.payload, {
+                runId: claim!.id,
+                leaseToken: claim!.lease_token,
+                signal: AbortSignal.timeout(5000),
+                reportProgress: () => Promise.resolve(),
+                commit: (write, queue) => commitClaim(state.client, claim!, write, queue),
+            });
+            expect(calls).toEqual([target.id, provider.id]);
+            const current = await readUpdateReport(state.client, "demo");
+            expect(
+                current?.items.find((row) => row.name === consumerItem.name)
+            ).toMatchObject({
+                id: "docker:" + "e".repeat(64),
+                installed: consumerItem.available,
+                status: "current",
+            });
+            expect(
+                current?.items.find((row) => row.name === providerItem.name)
+            ).toMatchObject({ id: "docker:" + "d".repeat(64), status: "current" });
+            for (const key of ["updates:demo", "updates.resolved:demo"]) {
+                const [stored] = await state.client<
+                    { value: UpdateReport }[]
+                >`SELECT value FROM operation_snapshots WHERE key=${key}`;
+                expect(
+                    stored?.value.items.find((row) => row.name === name)
+                ).toMatchObject({
+                    id: "docker:" + "e".repeat(64),
+                    installed: consumerItem.available,
+                    status: "current",
+                });
+                expect(
+                    stored?.value.items.find((row) => row.name === unrelated.name)
+                ).toEqual(unrelated);
+            }
+        } finally {
+            await state.close();
+        }
+    }
+);
 
 test("bulk plans cover every page, expose exclusions and preserve host scope and permissions", async () => {
     const state = await batchFixture();
@@ -457,7 +841,8 @@ test.each([
 
 async function fixture(
     selectedTarget: UpdateTarget = target,
-    observedItem: UpdateItem = item
+    observedItem: UpdateItem = item,
+    rebootRequired: boolean | null = true
 ) {
     const state = await operationFixture();
     const calls: { item: UpdateItem; automatic: boolean }[] = [];
@@ -469,8 +854,10 @@ async function fixture(
             await report("Verifying the synthetic update.");
             return {
                 installed: software.available!,
-                rebootRequired: true,
-                containerId: "f".repeat(64),
+                rebootRequired,
+                ...(selectedTarget.driver.kind === "docker"
+                    ? { containerId: "f".repeat(64) }
+                    : {}),
             };
         }
     );
@@ -489,7 +876,8 @@ async function fixture(
     const report: UpdateReport & { checkedAt: string } = {
         capturedAt: new Date().toISOString(),
         checkedAt: new Date().toISOString(),
-        repositoryMetadataAt: null,
+        repositoryMetadataAt:
+            observedItem.kind === "os" ? new Date().toISOString() : null,
         complete: true,
         coveredKinds: [observedItem.kind],
         items: [observedItem],
@@ -517,6 +905,161 @@ async function fixture(
     };
     return { ...state, operations, caller, calls, report, handlers, run, principal };
 }
+
+test("a later batch item's new receipt leases are checked before the first APT installer", async () => {
+    const state = await batchFixture(false, true);
+    try {
+        const plan = await state.caller.updates.batchPlan({ source: "alpha" });
+        expect(plan.eligible).toBeGreaterThan(1);
+        await state.caller.updates.batchRequest({
+            source: "alpha",
+            revision: plan.revision,
+            requestId: crypto.randomUUID(),
+        });
+        const worker = await state.registerWorker();
+        const action = updateBatchKey("alpha");
+        const claim = await claimJob(state.client, worker, [action]);
+        if (!claim) throw new Error("Expected batch claim");
+        let executed = 0;
+        const handler = updateActionJobs(
+            state.targets,
+            state.client,
+            (_target, software) => {
+                executed += 1;
+                return Promise.resolve({
+                    installed: software.available!,
+                    rebootRequired: false,
+                });
+            },
+            [
+                {
+                    id: "docker",
+                    label: "Docker",
+                    endpoint: "https://docker.invalid",
+                    projects: ["demo"],
+                    updateSources: ["alpha", "beta"],
+                },
+            ]
+        ).find((candidate) => candidate.definition.key === action)!;
+        await expectOperationFailure(
+            handler.execute(claim.payload, {
+                runId: claim.id,
+                leaseToken: claim.lease_token,
+                signal: AbortSignal.timeout(5000),
+                reportProgress: () => Promise.resolve(),
+                commit: (write, queue) => commitClaim(state.client, claim, write, queue),
+            }),
+            "host bindings changed"
+        );
+        expect(executed).toBe(0);
+    } finally {
+        await state.close();
+    }
+});
+
+test.each(["install", "batch"] as const)(
+    "%s revalidates current receipt and host leases before execution",
+    async (mode) => {
+        for (const scenario of [
+            "binding",
+            "ssh",
+            "same-source",
+            "unchanged",
+            "same-keys",
+        ] as const) {
+            const state = await fixture();
+            try {
+                const action =
+                    mode === "install"
+                        ? `updates.install.${target.id}`
+                        : updateBatchKey(target.source);
+                if (mode === "install")
+                    await state.caller.updates.request({
+                        target: target.id,
+                        item: item.id,
+                        revision: updateControl(target, state.report, item).revision,
+                        requestId: crypto.randomUUID(),
+                    });
+                else {
+                    const plan = await state.caller.updates.batchPlan({
+                        source: target.source,
+                    });
+                    expect(plan.eligible).toBe(1);
+                    await state.caller.updates.batchRequest({
+                        source: target.source,
+                        revision: plan.revision,
+                        requestId: crypto.randomUUID(),
+                    });
+                }
+                const before = await state.client<
+                    { key: string; value: unknown }[]
+                >`SELECT key,value FROM operation_snapshots WHERE key LIKE 'updates%' ORDER BY key`;
+                const [admitted] = await state.client<
+                    { resource_keys: string[] }[]
+                >`SELECT resource_keys FROM job_runs WHERE action=${action}`;
+                const peer: UpdateTarget = {
+                    ...target,
+                    id: "peer",
+                    source: ["same-source", "same-keys"].includes(scenario)
+                        ? target.source
+                        : "peer",
+                    host: ["ssh", "same-keys"].includes(scenario)
+                        ? target.host
+                        : "peer.invalid",
+                };
+                const currentTargets =
+                    scenario === "unchanged" ? [target] : [peer, target];
+                const applications =
+                    scenario === "binding"
+                        ? [
+                              {
+                                  id: "docker",
+                                  label: "Docker",
+                                  endpoint: "https://docker.invalid",
+                                  projects: ["demo"],
+                                  updateSources: [target.source, peer.source],
+                              },
+                          ]
+                        : [];
+                let executed = 0;
+                const handler = updateActionJobs(
+                    currentTargets,
+                    state.client,
+                    (_target, software) => {
+                        executed += 1;
+                        return Promise.resolve({
+                            installed: software.available!,
+                            rebootRequired: false,
+                            containerId: "f".repeat(64),
+                        });
+                    },
+                    applications
+                ).find((candidate) => candidate.definition.key === action)!;
+                if (["unchanged", "same-keys"].includes(scenario)) {
+                    await state.run(handler);
+                    expect(executed).toBe(1);
+                } else {
+                    await expectOperationFailure(
+                        state.run(handler),
+                        "host bindings changed"
+                    );
+                    expect(executed).toBe(0);
+                    expect(
+                        await state.client<
+                            { key: string; value: unknown }[]
+                        >`SELECT key,value FROM operation_snapshots WHERE key LIKE 'updates%' ORDER BY key`
+                    ).toEqual(before);
+                }
+                const [after] = await state.client<
+                    { resource_keys: string[] }[]
+                >`SELECT resource_keys FROM job_runs WHERE action=${action}`;
+                expect(after!.resource_keys).toEqual(admitted!.resource_keys);
+            } finally {
+                await state.close();
+            }
+        }
+    }
+);
 
 test("manual Docker updates require current confirmation, MFA and permission and preserve idempotency", async () => {
     const state = await fixture();
@@ -555,7 +1098,8 @@ test("manual Docker updates require current confirmation, MFA and permission and
         const [notification] = await state.client<
             { title: string }[]
         >`SELECT title FROM dashboard_notifications WHERE source='updates'`;
-        expect(notification?.title).toContain("restart required");
+        expect(notification).toBeUndefined();
+        expect(saved?.rebootRequired).toBe(true);
         expect(await state.caller.updates.request(input)).toEqual(first);
         await expectOperationFailure(
             state.caller.updates.request({ ...input, item: "different" }),
@@ -565,6 +1109,66 @@ test("manual Docker updates require current confirmation, MFA and permission and
         await state.close();
     }
 });
+
+test.each(["docker", "native", "apt"] as const)(
+    "%s receipts preserve host restart state without attributing existing OS requirements to applications",
+    async (kind) => {
+        const drivers: Record<typeof kind, UpdateTarget["driver"]> = {
+            docker: target.driver,
+            apt: { kind: "apt" },
+            native: {
+                kind: "native",
+                item: "runtime:demo",
+                release: "bun",
+                inspect: ["/bin/demo", "--version"],
+                install: ["/bin/demo", "install", "{version}"],
+                health: ["/bin/demo", "health"],
+            },
+        };
+        const configured: UpdateTarget = { ...target, driver: drivers[kind] };
+        const observed: UpdateItem =
+            kind === "docker"
+                ? item
+                : {
+                      id: kind === "apt" ? "apt:demo" : "runtime:demo",
+                      name: "Demo software",
+                      kind: kind === "apt" ? "os" : "runtime",
+                      installed: "1.2.3",
+                      available: "1.3.0",
+                      status: "available",
+                      security: false,
+                      held: false,
+                      candidateVerified: true,
+                      ...(kind === "native" ? { release: "bun" as const } : {}),
+                  };
+        for (const required of [true, false, null]) {
+            const state = await fixture(configured, observed, required);
+            try {
+                const control = updateControl(configured, state.report, observed);
+                expect(control.allowed).toBe(true);
+                await state.caller.updates.request({
+                    target: configured.id,
+                    item: observed.id,
+                    revision: control.revision,
+                    requestId: crypto.randomUUID(),
+                });
+                await state.run(state.handlers[0]!);
+                const saved = await readUpdateReport(state.client, "demo");
+                expect(saved?.rebootRequired).toBe(required);
+                expect(saved?.items[0]?.status).toBe("current");
+                const [restart] = await state.client<{ required: boolean | null }[]>`
+                    SELECT value->'required' AS required FROM operation_snapshots
+                    WHERE key='updates.restart:demo'`;
+                expect(restart?.required).toBe(required);
+                const notifications = await state.client<{ title: string }[]>`
+                    SELECT title FROM dashboard_notifications WHERE source='updates'`;
+                expect(notifications).toHaveLength(kind === "apt" && required ? 1 : 0);
+            } finally {
+                await state.close();
+            }
+        }
+    }
+);
 
 test("automatic policies default off, require human consent, reject concurrent edits and invalidate changed recipes", async () => {
     const state = await fixture();

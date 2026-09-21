@@ -216,7 +216,10 @@ export function Applications() {
                                                 kind: "container",
                                                 target: row.containerId,
                                             }}
-                                            revision={row.revision}
+                                            revision={row.actionRevision ?? row.revision}
+                                            relatedApplications={
+                                                row.relatedApplications ?? []
+                                            }
                                             name={row.name}
                                             states={[row.state]}
                                             disabled={unavailable(row.host)}

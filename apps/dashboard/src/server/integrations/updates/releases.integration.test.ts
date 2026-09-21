@@ -518,6 +518,113 @@ test.each([
     ).toBeNull();
 });
 
+test.each([
+    { kind: "container", persistent: false },
+    { kind: "container", persistent: true },
+    { kind: "application", persistent: false },
+    { kind: "application", persistent: true },
+] as const)(
+    "public lookups retry once and share the result: $kind persistent=$persistent",
+    async ({ kind, persistent }) => {
+        let lookups = 0;
+        const server = Bun.serve({
+            hostname: "127.0.0.1",
+            port: 0,
+            fetch: (request) => {
+                const path = new URL(request.url).pathname;
+                if (kind === "application" || path.endsWith("/manifests/latest")) {
+                    lookups += 1;
+                    if (persistent || lookups === 1)
+                        return new Response(null, { status: 503 });
+                    if (kind === "application")
+                        return Response.json([{ version: "v26.8.2" }]);
+                    return manifestResponse(
+                        { config: { digest: image.installed } },
+                        fixtureDigest("b")
+                    );
+                }
+                return Response.json(imageConfiguration());
+            },
+        });
+        const request: typeof fetch = Object.assign(
+            (
+                input: Parameters<typeof fetch>[0],
+                options?: Parameters<typeof fetch>[1]
+            ) => {
+                const url = new URL(input instanceof Request ? input.url : input);
+                expect(["registry-1.docker.io", "nodejs.org"]).toContain(url.hostname);
+                return fetch(new URL(url.pathname, server.url), options);
+            },
+            { preconnect: fetch.preconnect }
+        );
+        const item: UpdateItem =
+            kind === "container"
+                ? image
+                : {
+                      id: "application:node",
+                      name: "Node",
+                      kind,
+                      release: "node",
+                      installed: "26.8.2",
+                      available: null,
+                      status: "unknown",
+                      security: false,
+                      held: false,
+                  };
+        try {
+            const result = await resolveUpdates(
+                {
+                    capturedAt: new Date().toISOString(),
+                    repositoryMetadataAt: null,
+                    complete: true,
+                    coveredKinds: [kind],
+                    items: [item, { ...item, id: "second" }, { ...item, id: "third" }],
+                },
+                AbortSignal.timeout(2000),
+                new Map(),
+                request
+            );
+            expect(lookups).toBe(2);
+            for (const observation of result.items) {
+                expect(observation.status).toBe(persistent ? "unknown" : "current");
+                expect(observation.candidateVerified).toBe(!persistent);
+                expect(observation.available).toBe(persistent ? null : item.installed);
+                if (persistent) expect(observation.availableImage).toBeUndefined();
+            }
+        } finally {
+            await server.stop(true);
+        }
+    }
+);
+
+test("cancelled registry checks do not retry or leave an available candidate", async () => {
+    const controller = new AbortController();
+    let lookups = 0;
+    const request: typeof fetch = Object.assign(
+        () => {
+            lookups += 1;
+            controller.abort(new Error("Synthetic cancellation"));
+            return Promise.reject(new Error("Synthetic unavailable registry"));
+        },
+        { preconnect: fetch.preconnect }
+    );
+    const failure = await resolveUpdates(
+        {
+            capturedAt: new Date().toISOString(),
+            repositoryMetadataAt: null,
+            complete: true,
+            coveredKinds: ["container"],
+            items: [image],
+        },
+        controller.signal,
+        new Map(),
+        request
+    ).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect(String(failure)).toContain("Synthetic cancellation");
+    expect(lookups).toBe(1);
+});
+
 test("shared mutable-tag lookups retain each installed digest's actual version", async () => {
     const secondDigest = "sha256:" + "b".repeat(64);
     const nextDigest = "sha256:" + "c".repeat(64);
@@ -638,6 +745,8 @@ test.each([
                 const path = decodeURIComponent(new URL(request.url).pathname);
                 if (path.endsWith("/manifests/latest"))
                     return indexManifestResponse(nextIndex, nextManifest);
+                if (path.endsWith("/manifests/" + nextIndex))
+                    return indexManifestResponse(nextIndex, nextManifest);
                 if (path.endsWith("/manifests/" + oldIndex))
                     return indexManifestResponse(oldIndex, oldManifest);
                 if (path.endsWith("/manifests/" + oldManifest))
@@ -695,7 +804,20 @@ test.each([
             expect(item.available).toBe(
                 { config: nextConfig, manifest: nextManifest, index: nextIndex }[store]
             );
-            expect(item.availableImage).toBe("ghcr.io/example/web:latest@" + nextIndex);
+            const pullDigest = store === "manifest" ? nextManifest : nextIndex;
+            expect(item.availableImage).toBe("ghcr.io/example/web:latest@" + pullDigest);
+            // Exercise the resolver/executor boundary: containerd identifies the
+            // requested descriptor, while classic Docker identifies its config.
+            // A mocked executor returning item.available would hide this mismatch.
+            const pulled = await request(
+                `https://ghcr.io/v2/example/web/manifests/${pullDigest}`
+            );
+            expect(pulled.ok).toBe(true);
+            const pulledId =
+                store === "config"
+                    ? nextConfig
+                    : pulled.headers.get("docker-content-digest");
+            expect(pulledId).toBe(item.available);
             expect(item.installedVersion).toBe("1.2.0");
             expect(item.availableVersion).toBe(sameContent ? "1.2.0" : "1.3.0");
             expect(item.candidateVerified).toBe(true);
