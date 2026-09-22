@@ -59,6 +59,9 @@ const recreatedContainerSchema = v.strictObject({
     previousId: containerIdentity,
     containerId: containerIdentity,
     installed: v.pipe(v.string(), v.regex(/^sha256:[a-f0-9]{64}$/)),
+    image: v.exactOptional(
+        v.pipe(v.string(), v.maxLength(1000), v.regex(/^[^\s@]+@sha256:[a-f0-9]{64}$/))
+    ),
 });
 const recreatedContainersSchema = v.strictObject({
     recreatedContainers: v.pipe(v.array(recreatedContainerSchema), v.maxLength(30)),
@@ -71,6 +74,7 @@ export interface UpdateReceipt {
         previousId: string;
         containerId: string;
         installed: string;
+        image?: string;
     }[];
 }
 export type UpdateExecutor = (

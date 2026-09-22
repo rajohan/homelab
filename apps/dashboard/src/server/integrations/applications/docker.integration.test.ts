@@ -8,6 +8,87 @@ import { expectOperationFailure, operationFixture } from "../../testing/operatio
 import { hasApplicationCodeMount } from "../updates/observations";
 import { performApplicationAction } from "./actions";
 import { waitForApplicationReady } from "./dependencies";
+
+test.each([
+    "append",
+    "unset-function",
+    "tar",
+    "loader",
+    "loader-parent",
+    "manifest",
+    "manifest-child",
+    "data",
+])("Docker HTTP qualifies indirect loader and search inputs: %s", async (mode) => {
+    const fixture = createApplicationFixture();
+    try {
+        const detail = [...fixture.containers.values()][0]!;
+        detail.Config.Entrypoint = ["/vendor/server"];
+        detail.Config.Cmd = [];
+        detail.Config.WorkingDir = "/";
+        detail.Config.Env = [
+            "PRIVATE_KEY=SYNTHETIC_PRIVATE",
+            "PATH=/custom:/usr/bin:/bin",
+        ];
+        if (mode === "append" || mode === "unset-function") {
+            detail.Config.Entrypoint = ["/bin/bash", "-c"];
+            detail.Config.Cmd = [
+                mode === "append"
+                    ? "PATH=/usr/bin:/bin; PATH+=:/custom; run"
+                    : "unset -f PATH; run",
+            ];
+        }
+        if (mode === "tar")
+            detail.Config.Healthcheck = {
+                Test: [
+                    "CMD",
+                    "tar",
+                    "--to-command=/custom/SYNTHETIC_PRIVATE",
+                    "-xf",
+                    "/data/archive",
+                ],
+            };
+        if (mode.startsWith("manifest")) {
+            detail.Config.Entrypoint = ["node", "."];
+            detail.Config.WorkingDir = "/app";
+        }
+        const destinations: Record<string, string> = {
+            loader: "/etc/ld.so.preload",
+            "loader-parent": "/etc",
+            manifest: "/app/package.json",
+            "manifest-child": "/app/manifest-alias",
+            data: "/data/settings.json",
+        };
+        const destination = destinations[mode] ?? "/custom";
+        detail.Mounts = [
+            {
+                Type: "volume",
+                Source: "fixture-storage",
+                Destination: destination,
+                RW: true,
+            },
+        ];
+        fixture.pathMetadata.set("/app", { mode: 2_147_483_648, linkTarget: "" });
+        fixture.pathMetadata.set("/app/manifest-alias", {
+            mode: 134_217_728,
+            linkTarget: "package.json",
+        });
+        const inventory = await collectApplications(
+            [fixture.target],
+            () => createDockerPort(fixture.target, {}),
+            AbortSignal.timeout(5000)
+        );
+        const application = inventory.hosts[0]!.applications.find(
+            (row) => row.containerId === detail.Id
+        )!;
+        expect(inventory.hosts[0]!.available).toBe(true);
+        expect(hasApplicationCodeMount(application)).toBe(mode !== "data");
+        expect(JSON.stringify(application)).not.toContain("SYNTHETIC_PRIVATE");
+        expect(JSON.stringify(application)).not.toContain("PRIVATE_KEY");
+        expect(fixture.calls).toEqual([]);
+    } finally {
+        await fixture.close();
+    }
+});
 import { createDockerPort, type DockerPort } from "./docker";
 import {
     collectApplications,

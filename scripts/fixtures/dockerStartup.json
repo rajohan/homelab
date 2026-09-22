@@ -1,5 +1,292 @@
 [
     {
+        "name": "append lookup PATH+=:/custom; run",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["PATH+=:/custom; run"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "environment": ["PATH=/usr/bin:/bin"],
+        "blocked": true
+    },
+    {
+        "name": "append lookup export PATH+=:/custom; run",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["export PATH+=:/custom; run"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "environment": ["PATH=/usr/bin:/bin"],
+        "blocked": true
+    },
+    {
+        "name": "append lookup readonly PATH+=:/custom; run",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["readonly PATH+=:/custom; run"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "environment": ["PATH=/usr/bin:/bin"],
+        "blocked": true
+    },
+    {
+        "name": "append lookup PATH+=:/custom run",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["PATH+=:/custom run"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "environment": ["PATH=/usr/bin:/bin"],
+        "blocked": true
+    },
+    {
+        "name": "append lookup PATH=/usr/bin; PATH+=:/custom; run",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["PATH=/usr/bin; PATH+=:/custom; run"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "environment": ["PATH=/usr/bin:/bin"],
+        "blocked": true
+    },
+    {
+        "name": "append lookup PATH+=:/custom; command run",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["PATH+=:/custom; command run"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "environment": ["PATH=/usr/bin:/bin"],
+        "blocked": true
+    },
+    {
+        "name": "append data PATH+=:/custom; /vendor/server",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["PATH+=:/custom; /vendor/server"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "environment": ["PATH=/usr/bin:/bin"],
+        "blocked": false
+    },
+    {
+        "name": "append data PATH+=:/custom; command -v run",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["PATH+=:/custom; command -v run"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "environment": ["PATH=/usr/bin:/bin"],
+        "blocked": false
+    },
+    {
+        "name": "append data /vendor/server 'PATH+=:/custom'",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["/vendor/server 'PATH+=:/custom'"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "environment": ["PATH=/usr/bin:/bin"],
+        "blocked": false
+    },
+    {
+        "name": "function unset unset -f PATH; run",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["unset -f PATH; run"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "environment": ["PATH=/custom:/usr/bin:/bin"],
+        "blocked": true
+    },
+    {
+        "name": "function unset unset -ff PATH; run",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["unset -ff PATH; run"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "environment": ["PATH=/custom:/usr/bin:/bin"],
+        "blocked": true
+    },
+    {
+        "name": "function unset builtin unset -f PATH; run",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["builtin unset -f PATH; run"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "environment": ["PATH=/custom:/usr/bin:/bin"],
+        "blocked": true
+    },
+    {
+        "name": "function unset command unset -f PATH; run",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["command unset -f PATH; run"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "environment": ["PATH=/custom:/usr/bin:/bin"],
+        "blocked": true
+    },
+    {
+        "name": "function unset unset -f -- PATH; run",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["unset -f -- PATH; run"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "environment": ["PATH=/custom:/usr/bin:/bin"],
+        "blocked": true
+    },
+    {
+        "name": "unset safe unset -v PATH; /vendor/server",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["unset -v PATH; /vendor/server"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "environment": ["PATH=/custom:/usr/bin:/bin"],
+        "blocked": false
+    },
+    {
+        "name": "unset safe unset -- PATH; /vendor/server",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["unset -- PATH; /vendor/server"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "environment": ["PATH=/custom:/usr/bin:/bin"],
+        "blocked": false
+    },
+    {
+        "name": "unset safe unset --help; /vendor/server",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["unset --help; /vendor/server"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "environment": ["PATH=/custom:/usr/bin:/bin"],
+        "blocked": false
+    },
+    {
+        "name": "unset safe unset -f PATH; /vendor/server",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["unset -f PATH; /vendor/server"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "environment": ["PATH=/custom:/usr/bin:/bin"],
+        "blocked": false
+    },
+    {
+        "name": "unqualified unset unset -n PATH; run",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["unset -n PATH; run"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "environment": ["PATH=/usr/bin:/bin"],
+        "blocked": true
+    },
+    {
+        "name": "unqualified unset unset -fv PATH; run",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["unset -fv PATH; run"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "environment": ["PATH=/usr/bin:/bin"],
+        "blocked": true
+    },
+    {
+        "name": "unqualified unset unset -f$FLAGS PATH; run",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["unset -f$FLAGS PATH; run"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "environment": ["PATH=/usr/bin:/bin"],
+        "blocked": true
+    },
+    {
+        "name": "archive dispatch tar -I /custom/start -xf /data/archive",
+        "entrypoint": ["tar", "-I", "/custom/start", "-xf", "/data/archive"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "archive dispatch tar --use-compress-program=/custom/start -xf /data/archive",
+        "entrypoint": [
+            "tar",
+            "--use-compress-program=/custom/start",
+            "-xf",
+            "/data/archive"
+        ],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "archive dispatch tar --to-command=/custom/start -xf /data/archive",
+        "entrypoint": ["tar", "--to-command=/custom/start", "-xf", "/data/archive"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "archive dispatch gtar --checkpoint-action=exec=/custom/start -xf /data/archive",
+        "entrypoint": [
+            "gtar",
+            "--checkpoint-action=exec=/custom/start",
+            "-xf",
+            "/data/archive"
+        ],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "archive dispatch bsdtar -I /custom/start -xf /data/archive",
+        "entrypoint": ["bsdtar", "-I", "/custom/start", "-xf", "/data/archive"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "archive dispatch busybox tar -I /custom/start -xf /data/archive",
+        "entrypoint": ["busybox", "tar", "-I", "/custom/start", "-xf", "/data/archive"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "archive dispatch toybox tar -I /custom/start -xf /data/archive",
+        "entrypoint": ["toybox", "tar", "-I", "/custom/start", "-xf", "/data/archive"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "archive information/data tar --help",
+        "entrypoint": ["tar", "--help"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "archive information/data gtar --version",
+        "entrypoint": ["gtar", "--version"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "archive information/data bsdtar --help",
+        "entrypoint": ["bsdtar", "--help"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "archive information/data /vendor/server --to-command=/custom/start",
+        "entrypoint": ["/vendor/server", "--to-command=/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
         "name": "round21 shell /{custom,vendor}/start",
         "entrypoint": ["/bin/bash", "-c"],
         "command": ["/{custom,vendor}/start"],

@@ -3,6 +3,32 @@
 NAMESPACE_KEYS = ("network_mode", "pid", "ipc")
 
 
+def matches_configured_image(actual, configured):
+    """Accept only the configured reference or its immutable same-reference pin."""
+    return actual == configured or isinstance(configured, str) and re.fullmatch(re.escape(configured) + r"@sha256:[a-f0-9]{64}", actual) is not None
+
+
+def pin_namespace_images(plan, root):
+    """Resolve qualified consumer images to existing immutable same-repository references."""
+    pins = {}
+    for row in plan:
+        if row[7] == root:
+            continue
+        if "@sha256:" in row[2]:
+            candidates = [row[2]]
+        else:
+            digests = json.loads(command(["/usr/bin/docker", "image", "inspect", "--format", "{{json .RepoDigests}}", row[3]], output_limit=65536))
+            candidates = [row[2] + "@" + value.rsplit("@", 1)[1] for value in digests or []
+                          if isinstance(value, str) and re.fullmatch(r"[^\s@]+@sha256:[a-f0-9]{64}", value) and image_repository(value) == image_repository(row[2])]
+        for reference in candidates:
+            if command(["/usr/bin/docker", "image", "inspect", "--format", "{{.Id}}", reference]) == row[3]:
+                pins[row[7]] = reference
+                break
+        if row[7] not in pins:
+            raise UpdateRefusal("local_code_override")
+    return pins
+
+
 def namespace_services(services, service):
     """Order transitive namespace consumers and reject cycles before any mutation."""
     selected, ordered, visiting = {service}, [], set()
@@ -57,7 +83,7 @@ def prepare_namespace_plan(config, driver, compose):
         if len(ids) != 1 or not re.fullmatch(r"[a-f0-9]{64}", ids[0]):
             raise RuntimeError("Namespace services must have one existing container")
         snapshot = namespace_snapshot(ids[0])
-        if snapshot[6:8] != [driver["project"], name] or snapshot[2] != services[name].get("image") or snapshot[4] not in {"running", "exited", "created"}:
+        if snapshot[6:8] != [driver["project"], name] or not matches_configured_image(snapshot[2], services[name].get("image")) or snapshot[4] not in {"running", "exited", "created"}:
             raise RuntimeError("Namespace consumer state or image changed")
         snapshots.append(snapshot)
     selected_ids = {row[0] for row in snapshots}
@@ -106,7 +132,7 @@ def stop_namespace_consumers(plan, root, compose):
         compose(["stop", "--timeout", "30"] + running, timeout=30 * len(running) + 30)
 
 
-def restore_namespace_consumers(plan, root, compose):
+def restore_namespace_consumers(plan, root, compose, pins):
     """Rebind consumers without pulling images or starting intentionally stopped services."""
     if len(plan) > 1:
         progress("rebinding_dependents")
@@ -115,12 +141,12 @@ def restore_namespace_consumers(plan, root, compose):
         if row[7] == root:
             continue
         state = ["--wait", "--wait-timeout", "120"] if row[4] == "running" else ["--no-start"]
-        compose(["up", "--detach", "--no-deps", "--no-build", "--pull", "never", "--force-recreate"] + state + [row[7]], timeout=180)
+        compose(["up", "--detach", "--no-deps", "--no-build", "--pull", "never", "--force-recreate"] + state + [row[7]], timeout=180, images=pins)
         current = namespace_snapshot(row[1])
-        checks = {"image": current[2:4] == row[2:4], "ownership": current[6:8] == row[6:8], "mounts": current[11] == row[11], "state": (current[4] == "running") == (row[4] == "running")}
+        checks = {"image": current[2:4] == [pins[row[7]], row[3]], "ownership": current[6:8] == row[6:8], "mounts": current[11] == row[11], "state": (current[4] == "running") == (row[4] == "running")}
         if not all(checks.values()):
             raise RuntimeError("Namespace consumer verification failed: " + ", ".join(name for name, valid in checks.items() if not valid))
-        replacements.append({"previousId": row[0], "containerId": current[0], "installed": current[3]})
+        replacements.append({"previousId": row[0], "containerId": current[0], "installed": current[3], **({"image": current[2]} if current[2] != row[2] else {})})
     by_service = {row[7]: namespace_snapshot(row[1]) for row in plan}
     root_before = next(row for row in plan if row[7] == root)
     if by_service[root][11] != root_before[11]:

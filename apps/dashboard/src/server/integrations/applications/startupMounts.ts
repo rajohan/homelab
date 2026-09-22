@@ -73,11 +73,13 @@ export async function qualifyStartupMounts(
             code: string[] = [];
         for (const destination of destinations) mounts.push(await resolve(destination));
         for (const name of paths) code.push(await resolve(name));
-        return mounts.map((mount) =>
-            code.some(
-                (name) =>
-                    name === mount || name.startsWith(mount.replace(/\/$/, "") + "/")
-            )
+        return mounts.map(
+            (mount) =>
+                /(?:\/package\.json|^\/etc\/ld-musl-[^/]+\.path)$/.test(mount) ||
+                code.some(
+                    (name) =>
+                        name === mount || name.startsWith(mount.replace(/\/$/, "") + "/")
+                )
         );
     } catch {
         return blocked;

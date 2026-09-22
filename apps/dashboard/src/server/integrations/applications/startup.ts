@@ -120,7 +120,12 @@ export function startupCodePaths(
     environment?: readonly string[] | null,
     shell?: readonly string[] | null
 ): readonly string[] | null {
-    const paths = new Set<string>();
+    const paths = new Set<string>([
+        "/etc/ld.so.preload",
+        "/etc/ld.so.cache",
+        "/etc/ld.so.conf",
+        "/etc/ld.so.conf.d",
+    ]);
     let unqualified = false;
     const defaultPath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
     let searchPath = defaultPath,
@@ -151,7 +156,18 @@ export function startupCodePaths(
     };
     const argv = (value: typeof entrypoint): readonly string[] =>
         typeof value === "string" ? words(value) : (value ?? []);
-    const assignment = (value: string): void => {
+    const assignment = (input: string, shellAssignment = false): void => {
+        let value = input;
+        const append = shellAssignment
+            ? /^([A-Za-z_][A-Za-z0-9_]*)\+=([\s\S]*)$/.exec(value)
+            : null;
+        if (append) {
+            if (append[1] === "PATH") {
+                searchPath += append[2];
+                return;
+            }
+            value = append[1] + "=" + append[2];
+        }
         if (value.startsWith("PATH=")) searchPath = value.slice(5);
         // Loader/search options can contain expansion syntax or private values.
         // Require separate qualification rather than returning any of their data.
@@ -367,7 +383,7 @@ export function startupCodePaths(
                 unqualified = true;
             return;
         }
-        if (["sed", "gsed"].includes(name)) {
+        if (["sed", "gsed", "tar", "gtar", "bsdtar"].includes(name)) {
             // Programs and program files can dispatch commands and load code.
             // Do not interpret expressions, even with implementation-specific sandbox flags.
             if (!(args.length === 2 && ["--help", "--version"].includes(args[1]!)))
@@ -624,8 +640,8 @@ export function startupCodePaths(
                     const inherited = searchPath;
                     // Shell assignments precede the command but are not executable
                     // words. Values (including quoted paths) must not become code.
-                    while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(group[0] ?? ""))
-                        assignment(group.shift()!);
+                    while (/^[A-Za-z_][A-Za-z0-9_]*\+?=/.test(group[0] ?? ""))
+                        assignment(group.shift()!, true);
                     const selected = dispatch(group);
                     if (
                         ["export", "readonly", "declare", "typeset"].includes(
@@ -644,10 +660,34 @@ export function startupCodePaths(
                                 )
                         )
                             unqualified = true;
-                        for (const value of selected.slice(1)) assignment(value);
+                        for (const value of selected.slice(1)) assignment(value, true);
                     }
-                    if (selected[0] === "unset" && selected.slice(1).includes("PATH"))
-                        searchPath = defaultPath;
+                    if (selected[0] === "unset") {
+                        let index = 1,
+                            functions = false,
+                            variables = false;
+                        for (; selected[index]?.startsWith("-"); index++) {
+                            const option = selected[index]!;
+                            if (option === "--") {
+                                index++;
+                                break;
+                            }
+                            if (option === "--help") {
+                                index = selected.length;
+                                break;
+                            }
+                            if (!/^-[fv]+$/.test(option)) unqualified = true;
+                            functions ||= option.includes("f");
+                            variables ||= option.includes("v");
+                        }
+                        if (
+                            (functions && variables) ||
+                            selected.slice(index).some((value) => value.includes("\0"))
+                        )
+                            unqualified = true;
+                        if (!functions && selected.slice(index).includes("PATH"))
+                            searchPath = defaultPath;
+                    }
                     if (selected[0] === "eval" || (selected[0] ?? "").includes("\0"))
                         unqualified = true;
                     else if (selected[0] === "cd") {
@@ -685,7 +725,7 @@ export function startupCodePaths(
                     else {
                         if (
                             group.every((word) =>
-                                /^[A-Za-z_][A-Za-z0-9_]*=/.test(word)
+                                /^[A-Za-z_][A-Za-z0-9_]*\+?=/.test(word)
                             ) &&
                             ((group.length === 0 &&
                                 token.raw.replaceAll("\\\n", "") === "coproc") ||

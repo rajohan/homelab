@@ -72,6 +72,8 @@ test.each([
     "alternating-chain",
     "unbound",
     "wrong-digest",
+    "immutable-pin",
+    "wrong-pin",
     "changed-candidate",
     "different-request",
     "different-actor",
@@ -110,7 +112,16 @@ test.each([
                     : target.host,
             };
             const providerItem = { ...item, name: "provider" };
-            const consumerItem = { ...item, id: "docker:" + "b".repeat(64) };
+            const pinScenario = ["immutable-pin", "wrong-pin"].includes(scenario);
+            const consumerItem = {
+                ...item,
+                id: "docker:" + "b".repeat(64),
+                ...(pinScenario ? { image: "example/web:1.2.3", pinned: false } : {}),
+            };
+            const receiptImage =
+                (scenario === "wrong-pin" ? "example/web:other" : consumerItem.image) +
+                "@sha256:" +
+                "d".repeat(64);
             let bridgeSources: [string, string][] = [];
             let bindings = [["alpha", "beta", "snapshot-only"]];
             switch (scenario) {
@@ -186,6 +197,9 @@ test.each([
                                       recreatedContainers: [
                                           {
                                               previousId: "b".repeat(64),
+                                              ...(pinScenario
+                                                  ? { image: receiptImage }
+                                                  : {}),
                                               containerId: "e".repeat(64),
                                               installed:
                                                   scenario === "wrong-digest"
@@ -261,7 +275,7 @@ test.each([
                     commitClaim(state.client, producer, write, queue),
             });
             await settleClaim(state.client, producer, "succeeded");
-            const remapped = !["unbound", "wrong-digest"].includes(scenario);
+            const remapped = !["unbound", "wrong-digest", "wrong-pin"].includes(scenario);
             for (const source of ["beta", "snapshot-only", "unrelated"])
                 for (const prefix of ["updates:", "updates.resolved:"]) {
                     const [stored] = await state.client<
@@ -275,12 +289,23 @@ test.each([
                         consumerItem.installed
                     );
                     expect(stored?.value.rebootRequired).toBe(true);
+                    expect(stored?.value.items[0]?.image).toBe(
+                        pinScenario && remapped && source !== "unrelated"
+                            ? receiptImage
+                            : consumerItem.image
+                    );
+                    expect(stored?.value.items[0]?.pinned).toBe(
+                        pinScenario && remapped && source !== "unrelated"
+                            ? true
+                            : consumerItem.pinned
+                    );
                     expect(stored?.value.capturedAt).toBe(report.capturedAt);
                 }
             const [queued] = await state.client<
                 { payload: { items: { item: string }[] }; fingerprint: string }[]
             >`SELECT payload,fingerprint FROM job_runs WHERE id=${original.id}`;
             const continued = [
+                "immutable-pin",
                 "same-host",
                 "bound-alias",
                 "host-then-binding",

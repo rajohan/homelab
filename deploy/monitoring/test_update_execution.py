@@ -28,6 +28,63 @@ exec(compile(SOURCE.with_name("toolchain.py").read_text(), str(SOURCE.with_name(
 class UpdateExecutionTests(unittest.TestCase):
     """Cover exact image pins, source fencing, package boundaries and private error handling."""
 
+    def test_namespace_image_pins_are_immutable_and_same_reference(self):
+        installed, digest = "sha256:" + "a" * 64, "sha256:" + "b" * 64
+        row = ["c" * 64, "fixture-worker", "postgres:fixture-owned", installed, "running", "", "fixture", "worker", "", "", "", []]
+        for mode in ("valid", "foreign", "empty", "wrong-id"):
+            with self.subTest(mode=mode):
+                def command(args, **options):
+                    if args[4] == "{{json .RepoDigests}}":
+                        return json.dumps([] if mode == "empty" else [("foreign/example" if mode == "foreign" else "postgres") + "@" + digest])
+                    self.assertEqual(args[-1], row[2] + "@" + digest)
+                    return "sha256:" + "f" * 64 if mode == "wrong-id" else installed
+                with patch.object(remote, "command", side_effect=command):
+                    if mode == "valid":
+                        self.assertEqual(remote.pin_namespace_images([row], "root"), {"worker": row[2] + "@" + digest})
+                    else:
+                        with self.assertRaises(remote.UpdateRefusal):
+                            remote.pin_namespace_images([row], "root")
+        self.assertTrue(remote.matches_configured_image(row[2] + "@" + digest, row[2]))
+        self.assertFalse(remote.matches_configured_image("postgres:other@" + digest, row[2]))
+        self.assertFalse(remote.matches_configured_image(row[2] + "@sha256:short", row[2]))
+
+    def test_loader_and_project_manifests_are_code_mounts(self):
+        for kind in ("volumes", "configs", "secrets"):
+            for target in ("/etc/ld.so.preload", "/etc/ld.so.cache", "/etc/ld.so.conf", "/etc/ld-musl-x86_64.path", "/app/package.json"):
+                with self.subTest(kind=kind, target=target):
+                    mount = {"target": target, "source": "synthetic-fixture"}
+                    if kind == "volumes":
+                        mount["type"] = "volume"
+                    with self.assertRaises(remote.UpdateRefusal):
+                        remote.verify_code_mounts({kind: [mount]}, {"entrypoint": ["/vendor/server"]})
+        metadata = lambda name: {"mode": 0x08000000 if name == "/app/manifest-alias" else 0x80000000 if name in ("/", "/app", "/etc", "/data") else 0, "linkTarget": "package.json" if name == "/app/manifest-alias" else ""}
+        for target, blocked in (("/app/manifest-alias", True), ("/data/settings.json", False), ("/etc", True)):
+            with self.subTest(target=target):
+                service = {"volumes": [{"type": "volume", "target": target}]}
+                startup = {"entrypoint": ["node", "."], "working_dir": "/app"}
+                if blocked:
+                    with self.assertRaises(remote.UpdateRefusal):
+                        remote.verify_code_mounts(service, startup, metadata)
+                else:
+                    remote.verify_code_mounts(service, startup, metadata)
+
+    def test_actual_append_function_unset_and_tar_dispatch(self):
+        with tempfile.TemporaryDirectory(prefix="homelab-search-proof-") as temporary:
+            root = Path(temporary)
+            executable = root / "fixture_run"
+            executable.write_text("#!/bin/sh\nprintf SYNTHETIC_EXECUTED\n")
+            executable.chmod(0o700)
+            for expression in ('PATH+="$1"; fixture_run', 'PATH="$1"; unset -f PATH; fixture_run', 'export PATH+="$1"; fixture_run'):
+                result = subprocess.run(["/bin/bash", "--noprofile", "--norc", "-c", expression, "fixture", str(root)], env={"PATH": "/usr/bin:/bin:", "HOME": temporary}, check=True, capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.stdout, "SYNTHETIC_EXECUTED")
+            archive = root / "archive.tar"
+            payload = root / "payload"
+            payload.write_text("synthetic")
+            with tarfile.open(archive, "w") as stream:
+                stream.add(payload, arcname="payload")
+            result = subprocess.run(["tar", "-xf", str(archive), "--to-command=" + str(executable)], check=True, capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.stdout, "SYNTHETIC_EXECUTED")
+
     def test_relative_symlink_targets_use_resolved_parent(self):
         for links, code, mount, blocked in [
             ({"/bin": "usr/bin", "/usr/bin/sh": "dash"}, "/bin/sh", "/data", False),
@@ -655,10 +712,17 @@ class UpdateExecutionTests(unittest.TestCase):
                     def command(arguments, **options):
                         calls.append(arguments)
                         if arguments[1] == "compose" and "config" in arguments:
-                            return json.dumps({"services": services})
+                            effective = copy.deepcopy(services)
+                            override = Path(arguments[len(arguments) - 1 - arguments[::-1].index("--file") + 1])
+                            if override.name.startswith(".homelab-update-images-"):
+                                for name, values in json.loads(override.read_text())["services"].items():
+                                    effective[name].update(values)
+                            return json.dumps({"services": effective})
                         if arguments[1] == "inspect" and arguments[3].startswith('{"entrypoint":'):
                             return json.dumps(lives[arguments[-1]])
                         if arguments[1:3] == ["image", "inspect"]:
+                            if arguments[4] == "{{json .RepoDigests}}":
+                                return json.dumps(["example/worker@sha256:" + "d" * 64])
                             return installed if arguments[4] == "{{.Id}}" else json.dumps(defaults)
                         if arguments[1] == "pull":
                             raise PullBoundary()

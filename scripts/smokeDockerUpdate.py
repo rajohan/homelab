@@ -33,6 +33,7 @@ def main():
     original = "postgres@" + digest
     candidate = "docker.io/library/postgres:18@" + digest
     inherited_image = "homelab-fixtures/" + owner + ":inherited"
+    consumer_tag = "postgres:" + owner + "-consumer"
     config_image = "homelab-fixtures/" + owner + ":config"
     health_image = "homelab-fixtures/" + owner + ":health"
     shell_image = "homelab-fixtures/" + owner + ":shell"
@@ -103,7 +104,7 @@ def main():
         shared = {"image": original, "init": True, "entrypoint": ["/bin/sleep"], "command": ["3600"], "mem_limit": "64m", "pids_limit": 32, "labels": {"homelab.smoke": owner}, "healthcheck": {"test": ["CMD", "true"], "interval": "1s", "retries": 2}, "volumes": ["marker:/marker"]}
         # The real updater deliberately edits a literal YAML pin; other fixtures may use JSON/YAML.
         provider_file.write_text("services:\n  provider:\n    image: " + original + "\n    init: true\n    entrypoint: [/bin/sleep]\n    command: ['3600']\n    network_mode: none\n    mem_limit: 64m\n    pids_limit: 32\n    labels:\n      homelab.smoke: " + owner + "\n    healthcheck:\n      test: [CMD, 'true']\n      interval: 1s\n")
-        consumer_file.write_text("services:\n  consumer:\n    image: " + original + "\n" + "".join("    " + key + ": " + json.dumps(value) + "\n" for key, value in {**shared, "network_mode": "service:provider"}.items() if key != "image"))
+        consumer_file.write_text("services:\n  consumer:\n    image: " + consumer_tag + "\n" + "".join("    " + key + ": " + json.dumps(value) + "\n" for key, value in {**shared, "network_mode": "service:provider"}.items() if key != "image"))
         config_file = directory / "config.yaml"
         config_data = directory / "config-data"
         config_data.mkdir()
@@ -117,6 +118,7 @@ def main():
         def compose(args, timeout=120):
             return command(base + args, timeout=timeout)
         built_images = []
+        consumer_tag_created = False
         def clear_pending_hooks():
             # Fixtures introduce hooks only for preflight. Never run them during
             # the later whole-project stop or cleanup.
@@ -131,6 +133,8 @@ def main():
             # disposable fixture instead of the updater's /nonexistent HOME.
             command(["/usr/bin/docker", "build", "--pull=false", "--network=none", "--label", "homelab.smoke=" + owner, "--tag", inherited_image, str(build_directory)], environment={"HOME": str(build_directory)})
             built_images.append(inherited_image)
+            command(["/usr/bin/docker", "tag", image["Id"], consumer_tag])
+            consumer_tag_created = True
             (build_directory / "server").write_text('#!/bin/sh\ntest -f "$1" || exit 1\nexec /bin/sleep 3600\n')
             (build_directory / "coproc").write_text('#!/bin/sh\nexit 0\n')
             (build_directory / "Dockerfile").write_text('FROM postgres:18\nCOPY --chmod=755 server /vendor/server\nCOPY --chmod=755 coproc /vendor/coproc\nENV PATH=/vendor:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\nENTRYPOINT ["/vendor/server"]\n')
@@ -339,23 +343,36 @@ def main():
             # transitive leaf, before pulling the root or changing any pin.
             pristine_main, pristine_consumer = main_file.read_bytes(), consumer_file.read_bytes()
             stable_peers = {name: remote.namespace_snapshot(row[0]) for name, row in before.items()}
-            for selected, mode in (("consumer", "startup"), ("leaf", "health"), ("stopped", "hook"), ("leaf", "relative-link")):
+            for selected, mode in (("consumer", "startup"), ("leaf", "health"), ("stopped", "hook"), ("leaf", "relative-link"), ("consumer", "append"), ("consumer", "unset-function"), ("consumer", "tar"), ("consumer", "loader-config"), ("consumer", "manifest")):
                 try:
                     config = json.loads(pristine_main)
                     if selected == "consumer":
                         peer_file = consumer_file
-                        peer = {**shared, "network_mode": "service:provider"}
+                        peer = {**shared, "image": consumer_tag, "network_mode": "service:provider"}
                     else:
                         peer_file = main_file
                         peer = config["services"][selected]
                     peer["volumes"] = ["marker:/marker", "/custom"]
+                    if mode in ("append", "unset-function"):
+                        peer["entrypoint"] = ["/bin/bash", "-c"]
+                        peer["command"] = ["PATH+=:/custom; run" if mode == "append" else "unset -f PATH; run"]
+                        peer["environment"] = {"PATH": "/custom:/usr/bin:/bin" if mode == "unset-function" else "/usr/bin:/bin"}
+                    elif mode == "tar":
+                        peer["entrypoint"] = ["tar"]
+                        peer["command"] = ["-I", "/custom/start", "-xf", "/data/archive"]
+                    elif mode in ("loader-config", "manifest"):
+                        source = directory / (mode + ".input")
+                        source.write_text("" if mode == "loader-config" else '{"main":"../custom/start.js"}')
+                        peer["volumes"].append({"type": "bind", "source": str(source), "target": "/etc/ld.so.preload" if mode == "loader-config" else "/app/package.json", "read_only": True})
+                        if mode == "manifest":
+                            peer["entrypoint"], peer["command"], peer["working_dir"] = ["node"], ["."], "/app"
                     if mode == "startup":
                         peer["entrypoint"], peer["command"] = ["/custom/start"], []
                     elif mode == "health":
                         peer["healthcheck"] = {"test": ["CMD", "sed", "-n", "-e", "1e /custom/start", "/etc/hostname"]}
                     elif mode == "hook":
                         peer["pre_stop"] = [{"command": ["/custom/start"]}]
-                    else:
+                    elif mode == "relative-link":
                         # The consumer uses the same immutable image as the root.
                         # /bin/sh is a real relative link to dash in this image.
                         peer["entrypoint"], peer["command"] = ["/bin/sh", "/custom/start"], []
@@ -434,7 +451,16 @@ def main():
                 if rogue:
                     assert command(["/usr/bin/docker", "inspect", "--format", '{{index .Config.Labels "homelab.smoke"}}', rogue]) == owner
                     command(["/usr/bin/docker", "rm", "--force", "--volumes", rogue])
+            original_progress = remote.progress
+            tag_moved = False
+            def racing_progress(stage, *args, **kwargs):
+                nonlocal tag_moved
+                if stage == "installing":
+                    command(["/usr/bin/docker", "tag", inherited_image, consumer_tag])
+                    tag_moved = True
+                return original_progress(stage, *args, **kwargs)
             try:
+                remote.progress = racing_progress
                 assert remote.docker_update(driver, item) == image["Id"]
             except RuntimeError:
                 for service in before:
@@ -442,18 +468,23 @@ def main():
                     if current[11] != before[service][11]:
                         print(json.dumps({"fixture": service, "mounts_before": before[service][11], "mounts_after": current[11]}))
                 raise
+            finally:
+                remote.progress = original_progress
+            assert tag_moved
             after = {service: remote.namespace_snapshot(owner + "-" + service + "-1") for service in before}
             assert after["provider"][0] != before["provider"][0]
             assert after["consumer"][0] != before["consumer"][0]
             assert after["consumer"][8] == "container:" + after["provider"][0]
             assert after["stopped"][8] == "container:" + after["provider"][0]
             assert after["stopped"][4] == "created"
-            assert after["consumer"][2:4] == before["consumer"][2:4]
+            assert after["consumer"][2:4] == [consumer_tag + "@" + digest, image["Id"]]
+            assert consumer_tag in consumer_file.read_text() and "@" not in consumer_file.read_text()
+            assert command(["/usr/bin/docker", "image", "inspect", "--format", "{{.Id}}", consumer_tag]) != image["Id"]
             assert command(["/usr/bin/docker", "exec", after["consumer"][0], "cat", "/marker/probe"]) == "persistent"
             net = lambda identity: command(["/usr/bin/docker", "exec", identity, "readlink", "/proc/self/ns/net"])
             assert net(after["provider"][0]) == net(after["consumer"][0])
             consumer_driver = {**driver, "name": owner + "-consumer-1", "service": "consumer", "imageFile": str(consumer_file), "namespaceDependents": ["leaf"]}
-            consumer_item = {**item, "id": "docker:" + after["consumer"][0]}
+            consumer_item = {**item, "id": "docker:" + after["consumer"][0], "image": after["consumer"][2]}
             assert remote.docker_update(consumer_driver, consumer_item) == image["Id"]
             assert remote.namespace_snapshot(owner + '-provider-1')[0] == after['provider'][0]
             assert net(owner + '-provider-1') == net(owner + '-consumer-1')
@@ -482,6 +513,10 @@ def main():
             for identity in ids:
                 assert command(["/usr/bin/docker", "inspect", "--format", '{{index .Config.Labels "homelab.smoke"}}', identity]) == owner
             compose(["down", "--volumes", "--timeout", "5"])
+            if consumer_tag_created:
+                tagged = json.loads(command(["/usr/bin/docker", "image", "inspect", consumer_tag]))[0]
+                assert tagged["Id"] == image["Id"] or tagged["Config"]["Labels"].get("homelab.smoke") == owner
+                command(["/usr/bin/docker", "image", "rm", consumer_tag])
             for fixture_image in built_images:
                 assert command(["/usr/bin/docker", "image", "inspect", "--format", '{{index .Config.Labels "homelab.smoke"}}', fixture_image]) == owner
                 command(["/usr/bin/docker", "image", "rm", fixture_image])

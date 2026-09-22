@@ -76,12 +76,18 @@ class UpdateRefusal(RuntimeError):
 
 def startup_code_paths(startup):
     """Infer executable/interpreter positions, never ordinary data-path operands."""
-    paths = set()
+    paths = {"/etc/ld.so.preload", "/etc/ld.so.cache", "/etc/ld.so.conf", "/etc/ld.so.conf.d"}
     unqualified = False
     default_path = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
     search_path, default_lookup = default_path, False
-    def assignment(value):
+    def assignment(value, shell_assignment=False):
         nonlocal unqualified, search_path
+        append = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_]*)\+=([\s\S]*)", value) if shell_assignment else None
+        if append:
+            if append[1] == "PATH":
+                search_path += append[2]
+                return
+            value = append[1] + "=" + append[2]
         if value.startswith("PATH="):
             search_path = value[5:]
         # Loader values stay in memory; never return paths or options from them.
@@ -288,7 +294,7 @@ def startup_code_paths(startup):
             # Never evaluate program files, inline programs or extension loaders.
             if not (len(args) == 2 and args[1] in ("--help", "--version", "-h", "-V", "-Whelp", "-Wversion")) and not (len(args) == 3 and args[1] == "-W" and args[2] in ("help", "version")):
                 unqualified = True
-        elif name in ("sed", "gsed"):
+        elif name in ("sed", "gsed", "tar", "gtar", "bsdtar"):
             # Expressions/program files can dispatch code. Never interpret them.
             if not (len(args) == 2 and args[1] in ("--help", "--version")):
                 unqualified = True
@@ -430,16 +436,32 @@ def startup_code_paths(startup):
                     if separator:
                         inherited = search_path
                         # Assignment values are data, even if they contain paths.
-                        while group and re.match(r"[A-Za-z_][A-Za-z0-9_]*=", group[0]):
-                            assignment(group.pop(0))
+                        while group and re.match(r"[A-Za-z_][A-Za-z0-9_]*\+?=", group[0]):
+                            assignment(group.pop(0), True)
                         selected = dispatch(group)
                         if selected and selected[0] in ("export", "readonly", "declare", "typeset"):
                             if any(value.startswith('-') and value not in ('--', '--help') and re.fullmatch(r'-[prx]+', value) is None for value in selected[1:]):
                                 unqualified = True
                             for value in selected[1:]:
-                                assignment(value)
-                        if selected and selected[0] == "unset" and "PATH" in selected[1:]:
-                            search_path = default_path
+                                assignment(value, True)
+                        if selected and selected[0] == "unset":
+                            index, functions, variables = 1, False, False
+                            while index < len(selected) and selected[index].startswith("-"):
+                                option = selected[index]
+                                index += 1
+                                if option == "--":
+                                    break
+                                if option == "--help":
+                                    index = len(selected)
+                                    break
+                                if not re.fullmatch(r"-[fv]+", option):
+                                    unqualified = True
+                                functions |= "f" in option
+                                variables |= "v" in option
+                            if functions and variables or any("\0" in value for value in selected[index:]):
+                                unqualified = True
+                            if not functions and "PATH" in selected[index:]:
+                                search_path = default_path
                         if selected and (selected[0] == "eval" or "\0" in selected[0]):
                             unqualified = True
                         elif selected and selected[0] == "cd":
@@ -454,7 +476,7 @@ def startup_code_paths(startup):
                             search_path = inherited
                         group = []
                     else:
-                        if all(re.match(r"[A-Za-z_][A-Za-z0-9_]*=", word) for word in group) and ((not group and raw.replace("\\\n", "") == "coproc") or re.fullmatch(r"(?:if|then|elif|else|fi|while|until|for|select|in|do|done|case|esac|function|time|!|\{|\}|\[\[|\]\])", raw.replace("\\\n", "")) or token == "eval"):
+                        if all(re.match(r"[A-Za-z_][A-Za-z0-9_]*\+?=", word) for word in group) and ((not group and raw.replace("\\\n", "") == "coproc") or re.fullmatch(r"(?:if|then|elif|else|fi|while|until|for|select|in|do|done|case|esac|function|time|!|\{|\}|\[\[|\]\])", raw.replace("\\\n", "")) or token == "eval"):
                             unqualified = True
                             return
                         group.append(token + ("\0" if dynamic_shell_word(raw) else ""))
@@ -664,7 +686,8 @@ def qualify_startup_mounts(paths, destinations, path_stat):
         cache['/'] = root
         mounts = [resolve(destination) for destination in destinations]
         code = [resolve(name) for name in paths]
-        return [any(name == mount or name.startswith(mount.rstrip('/') + '/') for name in code) for mount in mounts]
+        return [bool(re.search(r"(?:/package\.json|^/etc/ld-musl-[^/]+\.path)$", mount)) or
+                any(name == mount or name.startswith(mount.rstrip('/') + '/') for name in code) for mount in mounts]
     except Exception:
         return [True] * len(destinations)
 
@@ -758,6 +781,8 @@ def verify_code_mounts(service, startup=None, path_stat=None):
     for index, mount in enumerate(mounts):
         destination = mount.get("target", "")
         normalized = posixpath.normpath(destination)
+        if posixpath.basename(normalized) == "package.json" or re.fullmatch(r"/etc/(?:ld\.so\.(?:preload|cache|conf)(?:\.d(?:/.*)?)?|ld-musl-[^/]+\.path)", normalized):
+            raise UpdateRefusal("local_code_override")
         startup_code = paths is None or qualified is not None and qualified[index] or any(path == normalized or path.startswith(normalized.rstrip("/") + "/") for path in paths)
         # The standalone helper exception cannot override startup, healthcheck,
         # hook or unresolved filesystem qualification.
@@ -874,23 +899,26 @@ def verify_service_mounts(service, snapshot):
     verify_image_mounts(service, compose_startup(service, defaults), installed)
 
 
+def image_repository(reference):
+    """Normalize a Docker repository while preserving registry and repository identity."""
+    value = reference.split("@")[0]
+    if ":" in value.rsplit("/", 1)[-1]:
+        value = value.rsplit(":", 1)[0]
+    for prefix in ["registry-1.docker.io/", "index.docker.io/", "docker.io/"]:
+        if value.startswith(prefix):
+            value = value[len(prefix):]
+            break
+    if "." in value.split("/")[0] or ":" in value.split("/")[0] or value.startswith("localhost/"):
+        return value
+    return "docker.io/" + ("library/" if "/" not in value else "") + value
+
+
 def docker_update(driver, item, automatic=False):
     """Update one image, coordinating approved namespace consumers without changing theirs."""
     candidate = item["availableImage"]
     if not re.fullmatch(r"(?:docker.io|ghcr.io)/[a-z0-9][a-z0-9_./-]*:[A-Za-z0-9_][A-Za-z0-9_.-]*@sha256:[a-f0-9]{64}", candidate):
         raise RuntimeError("An immutable public image candidate is required")
-    def repository(reference):
-        value = reference.split("@")[0]
-        if ":" in value.rsplit("/", 1)[-1]:
-            value = value.rsplit(":", 1)[0]
-        for prefix in ["registry-1.docker.io/", "index.docker.io/", "docker.io/"]:
-            if value.startswith(prefix):
-                value = value[len(prefix):]
-                break
-        if value.startswith("ghcr.io/"):
-            return value
-        return "docker.io/" + ("library/" if "/" not in value else "") + value
-    if repository(item["image"]) != repository(candidate):
+    if image_repository(item["image"]) != image_repository(candidate):
         raise RuntimeError("An update cannot change the image repository")
     identity = item["id"].removeprefix("docker:")
     if not re.fullmatch(r"[a-f0-9]{64}", identity):
@@ -908,11 +936,19 @@ def docker_update(driver, item, automatic=False):
             raise UpdateRefusal("container_changed")
         original = path.read_bytes()
         environment = compose_environment(driver)
-        def compose(arguments, timeout=120):
-            return command(base + arguments, timeout=timeout, environment=environment)
+        def compose(arguments, timeout=120, images=None):
+            if images is None:
+                return command(base + arguments, timeout=timeout, environment=environment)
+            # Only immutable image references are overridden; no application
+            # configuration, stored pins or credentials enter this owned file.
+            with tempfile.NamedTemporaryFile(mode="w+", prefix=".homelab-update-images-", suffix=".json", dir=directory) as override:
+                json.dump({"services": {name: {"image": image} for name, image in images.items()}}, override)
+                override.flush()
+                return command(base + ["--file", override.name] + arguments, timeout=timeout, environment=environment)
         config = json.loads(compose(["config", "--format", "json"]))
         service = config.get("services", {}).get(driver["service"], {})
-        if config.get("services", {}).get(driver["service"], {}).get("image") != item["image"]:
+        configured_image = service.get("image")
+        if not matches_configured_image(item["image"], configured_image):
             raise RuntimeError("Compose and the observed image differ")
         root_snapshot = namespace_snapshot(identity)
         if root_snapshot[1:5] != before[:4]:
@@ -927,11 +963,16 @@ def docker_update(driver, item, automatic=False):
             # the same live, image, hook and filesystem qualification to each.
             if row[7] != driver["service"]:
                 verify_service_mounts(config["services"][row[7]], row)
-                if command(["/usr/bin/docker", "image", "inspect", "--format", "{{.Id}}", row[2]]) != row[3]:
-                    raise UpdateRefusal("container_changed")
+        consumer_pins = pin_namespace_images(namespace_plan, driver["service"])
+        if consumer_pins:
+            pinned_config = copy.deepcopy(config)
+            for name, reference in consumer_pins.items():
+                pinned_config["services"][name]["image"] = reference
+            if json.loads(compose(["config", "--format", "json"], images=consumer_pins)) != pinned_config:
+                raise RuntimeError("Immutable consumer overrides changed Compose configuration")
         if before[3] == "running":
             docker_health_checks(driver)
-        pattern = re.compile(rb"(?m)^([ \t]+image:[ \t]*)([\"']?)" + re.escape(item["image"].encode()) + rb"\2([ \t]*(?:#[^\r\n]*)?\r?)$")
+        pattern = re.compile(rb"(?m)^([ \t]+image:[ \t]*)([\"']?)" + re.escape(configured_image.encode()) + rb"\2([ \t]*(?:#[^\r\n]*)?\r?)$")
         matches = list(pattern.finditer(original))
         if len(matches) != 1:
             raise RuntimeError("The source must contain one unambiguous literal image")
@@ -953,11 +994,6 @@ def docker_update(driver, item, automatic=False):
         if inspect_container(identity) != before or json.loads(compose(["config", "--format", "json"])) != config:
             raise RuntimeError("Application or Compose configuration changed during preparation")
         verify_namespace_plan(namespace_plan)
-        # Rebinding uses --pull never, but a moved local tag must not select an
-        # image other than the immutable image qualified for that consumer.
-        for row in namespace_plan:
-            if row[7] != driver["service"] and command(["/usr/bin/docker", "image", "inspect", "--format", "{{.Id}}", row[2]]) != row[3]:
-                raise UpdateRefusal("container_changed")
         progress("configuring")
         atomic_content(path, updated, original)
         try:
@@ -979,7 +1015,7 @@ def docker_update(driver, item, automatic=False):
         after = inspect_container(driver["name"])
         if after[1:3] != [candidate, item["available"]] or after[4:] != before[4:] or (before[3] == "running" and after[3] != "running") or (before[3] != "running" and after[3] == "running"):
             raise RuntimeError("Application update could not be verified")
-        replacements = restore_namespace_consumers(namespace_plan, driver["service"], compose)
+        replacements = restore_namespace_consumers(namespace_plan, driver["service"], compose, consumer_pins)
         if before[3] == "running":
             docker_health_checks(driver)
         if replacements:

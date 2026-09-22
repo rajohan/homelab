@@ -49,6 +49,34 @@ const report: UpdateReport = {
 };
 const owner = { name: app.containerName, project: app.project, service: app.name };
 
+test.each([
+    ["/etc/ld.so.preload", true],
+    ["/etc/ld.so.cache", true],
+    ["/etc/ld.so.conf", true],
+    ["/etc/ld.so.conf.d/custom.conf", true],
+    ["/etc/ld-musl-x86_64.path", true],
+    ["/app/package.json", true],
+    ["/config/settings.json", false],
+] as const)(
+    "loader and project manifests are code inputs: %s",
+    (destination, blocked) => {
+        expect(
+            hasApplicationCodeMount({
+                ...app,
+                mounts: [
+                    {
+                        type: "bind",
+                        source: "/fixture/input",
+                        destination,
+                        readOnly: true,
+                        startupCode: false,
+                    },
+                ],
+            })
+        ).toBe(blocked);
+    }
+);
+
 test.each([true, false, undefined])(
     "the helper exception cannot override code qualification: %s",
     (startupCode) => {

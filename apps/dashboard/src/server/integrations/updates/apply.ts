@@ -4,7 +4,11 @@ import type { JobExecution } from "../../jobs/types";
 import { publishNotification } from "../../notifications/publish";
 import type { UpdateTarget } from "./configuration";
 import type { UpdateExecutor, UpdateReceipt } from "./execution";
-import { remapPendingUpdateBatches, type UpdateReceiptScope } from "./receipts";
+import {
+    isImmutableImagePin,
+    remapPendingUpdateBatches,
+    type UpdateReceiptScope,
+} from "./receipts";
 import { recordRestartObservation } from "./restartObservation";
 
 /** Maximum execution time for one installation, shared by individual and bulk jobs. */
@@ -34,13 +38,18 @@ async function recordResult(
                         if (
                             replacement &&
                             target.driver.kind === "docker" &&
-                            previous.kind === "container"
+                            previous.kind === "container" &&
+                            (!replacement.image ||
+                                isImmutableImagePin(previous.image, replacement.image))
                         )
                             // The worker verified this exact identity's project/service,
                             // image and mounts. Compose container_name is not an identity.
                             return {
                                 ...previous,
                                 id: `docker:${replacement.containerId}`,
+                                ...(replacement.image
+                                    ? { image: replacement.image, pinned: true }
+                                    : {}),
                             };
                         if (
                             source !== target.source ||

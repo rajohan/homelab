@@ -4,6 +4,42 @@ import { startupCodePaths } from "./startup";
 import { qualifyStartupMounts } from "./startupMounts";
 
 test.each([
+    ["/app/package.json", true],
+    ["/app/manifest-alias", true],
+    ["/data/settings.json", false],
+    ["/etc/ld.so.preload", true],
+    ["/etc", true],
+] as const)("runtime project and loader inputs: %s", async (mount, blocked) => {
+    const paths = startupCodePaths(["node"], ["."], "/app");
+    const modes: Record<string, number> = {
+        "/": 2_147_483_648,
+        "/app": 2_147_483_648,
+        "/data": 2_147_483_648,
+        "/etc": 2_147_483_648,
+        "/app/manifest-alias": 134_217_728,
+    };
+    expect(
+        await qualifyStartupMounts(paths, [mount], (name) =>
+            Promise.resolve({
+                mode: modes[name] ?? 0,
+                linkTarget: name === "/app/manifest-alias" ? "package.json" : "",
+            })
+        )
+    ).toEqual([blocked]);
+});
+
+test("an ordinary program file does not qualify all its sibling data", async () => {
+    expect(
+        await qualifyStartupMounts(["/app/server"], ["/app/settings.json"], (name) =>
+            Promise.resolve({
+                mode: ["/", "/app"].includes(name) ? 2_147_483_648 : 0,
+                linkTarget: "",
+            })
+        )
+    ).toEqual([false]);
+});
+
+test.each([
     {
         links: { "/bin": "usr/bin", "/usr/bin/sh": "dash" },
         code: "/bin/sh",

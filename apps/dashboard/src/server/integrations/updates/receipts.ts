@@ -7,6 +7,24 @@ import { boundHostSources } from "../hostBindings";
 import { updateResourceKeys, type UpdateTarget } from "./configuration";
 import { updateControl } from "./selection";
 
+/**
+ * Check that a consumer retained its exact repository/tag with an appended immutable digest.
+ * @param original - Previously verified runtime image reference.
+ * @param pinned - New runtime reference from the trusted recreation receipt.
+ * @returns True only for an appended SHA-256 digest, never a changed repository or tag.
+ */
+export function isImmutableImagePin(
+    original: string | null | undefined,
+    pinned: string
+): boolean {
+    return Boolean(
+        original &&
+        !original.includes("@") &&
+        pinned.startsWith(original) &&
+        /^@sha256:[a-f0-9]{64}$/.test(pinned.slice(original.length))
+    );
+}
+
 export interface UpdateReceiptScope {
     readonly sources: readonly string[];
     readonly targets: readonly UpdateTarget[];
@@ -69,7 +87,7 @@ export async function verifyUpdateReceiptLeases(
 }
 
 /**
- * Carry exact identity-only receipts into queued sibling batches from the same confirmation.
+ * Carry exact identity and same-image pin receipts into queued siblings from the same confirmation.
  * @param transaction - Still-owned result transaction holding the queue lock.
  * @param runId - Producer job; individual jobs never rewrite another confirmation.
  * @param source - Explicitly bound report source being reconciled.
@@ -117,8 +135,15 @@ export async function remapPendingUpdateBatches(
                 !previous ||
                 !current ||
                 previous.id === current.id ||
-                JSON.stringify({ ...previous, id: current.id }) !==
-                    JSON.stringify(current)
+                JSON.stringify({
+                    ...previous,
+                    id: current.id,
+                    ...(current.image !== previous.image &&
+                    current.image &&
+                    isImmutableImagePin(previous.image, current.image)
+                        ? { image: current.image, pinned: true }
+                        : {}),
+                }) !== JSON.stringify(current)
             )
                 return entry;
             const oldControl = updateControl(target, before, previous);
@@ -134,7 +159,7 @@ export async function remapPendingUpdateBatches(
         });
         if (changed)
             // The original plan/fingerprint still identifies the user's admission.
-            // Only an identity-only transition proven by that plan's sibling may move it.
+            // Only the sibling's exact identity/same-reference pin transition may move it.
             await transaction`UPDATE job_runs SET payload=${JSON.stringify({ ...peer.payload, items })}::text::jsonb WHERE id=${peer.id}`;
     }
 }
