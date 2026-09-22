@@ -1,5 +1,437 @@
 [
     {
+        "name": "attached printf variable assignment changes command lookup",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["builtin printf -vPATH /custom; start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "stdin program [\"sh\"]",
+        "entrypoint": ["sh"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "stdin program [\"bash\",\"--\"]",
+        "entrypoint": ["bash", "--"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "stdin program [\"bash\",\"-\"]",
+        "entrypoint": ["bash", "-"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "stdin program [\"bash\",\"-s\"]",
+        "entrypoint": ["bash", "-s"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "stdin program [\"bash\",\"-so\",\"errexit\",\"/vendor/data\"]",
+        "entrypoint": ["bash", "-so", "errexit", "/vendor/data"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "stdin program [\"bash\",\"-isO\",\"extglob\",\"/vendor/data\"]",
+        "entrypoint": ["bash", "-isO", "extglob", "/vendor/data"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "stdin program [\"node\"]",
+        "entrypoint": ["node"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "stdin program [\"node\",\"--\"]",
+        "entrypoint": ["node", "--"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "stdin program [\"node\",\"--\",\"-\"]",
+        "entrypoint": ["node", "--", "-"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "stdin program [\"ruby\"]",
+        "entrypoint": ["ruby"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "stdin program [\"ruby\",\"--\"]",
+        "entrypoint": ["ruby", "--"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "stdin program [\"ruby\",\"--\",\"-\"]",
+        "entrypoint": ["ruby", "--", "-"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "stdin program [\"perl\"]",
+        "entrypoint": ["perl"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "stdin program [\"perl\",\"--\"]",
+        "entrypoint": ["perl", "--"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "stdin program [\"perl\",\"--\",\"-\"]",
+        "entrypoint": ["perl", "--", "-"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "stdin program [\"php\"]",
+        "entrypoint": ["php"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "stdin program [\"php\",\"--\"]",
+        "entrypoint": ["php", "--"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "stdin program [\"php\",\"--\",\"-\"]",
+        "entrypoint": ["php", "--", "-"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "stdin program [\"lua\"]",
+        "entrypoint": ["lua"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "stdin program [\"lua\",\"--\"]",
+        "entrypoint": ["lua", "--"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "stdin program [\"lua\",\"--\",\"-\"]",
+        "entrypoint": ["lua", "--", "-"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "stdin program [\"luajit\"]",
+        "entrypoint": ["luajit"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "stdin program [\"luajit\",\"--\"]",
+        "entrypoint": ["luajit", "--"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "stdin program [\"luajit\",\"--\",\"-\"]",
+        "entrypoint": ["luajit", "--", "-"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell program state cat /custom/start | sh",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["cat /custom/start | sh"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell program state cat /custom/start | node",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["cat /custom/start | node"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell program state history -r /custom/commands; fc -s",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["history -r /custom/commands; fc -s"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell program state builtin history -n /custom/commands; command fc -s",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["builtin history -n /custom/commands; command fc -s"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell program state fc",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["fc"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell program state fc -e /custom/editor",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["fc -e /custom/editor"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell program state history -s /custom/start; fc -s",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["history -s /custom/start; fc -s"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell program state history -c",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["history -c"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell program state printf -v PATH /custom; start",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["printf -v PATH /custom; start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell program state read -r PATH; start",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["read -r PATH; start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell program state declare -n PATH=loader; loader=/custom; start",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["declare -n PATH=loader; loader=/custom; start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell program state mapfile PATH; start",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["mapfile PATH; start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell program state set -a; loader=x",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["set -a; loader=x"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell program state shopt -s expand_aliases",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["shopt -s expand_aliases"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell information or data history",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["history"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell information or data history 10",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["history 10"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell information or data history --help",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["history --help"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell information or data fc -l",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["fc -l"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell information or data fc -lnr -10 -1",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["fc -lnr -10 -1"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell information or data fc --help",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["fc --help"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell information or data printf '%s' '-v' /custom/data",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["printf '%s' '-v' /custom/data"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell information or data /vendor/server 'history -r /custom/data'",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["/vendor/server 'history -r /custom/data'"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell information or data declare -x PATH=/usr/bin; /vendor/server",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["declare -x PATH=/usr/bin; /vendor/server"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell information or data shopt -p",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["shopt -p"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "explicit program boundary [\"/bin/sh\",\"/vendor/start\",\"/custom/data\"]",
+        "entrypoint": ["/bin/sh", "/vendor/start", "/custom/data"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "explicit program boundary [\"/bin/bash\",\"-c\",\"/vendor/server /custom/data\"]",
+        "entrypoint": ["/bin/bash", "-c", "/vendor/server /custom/data"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "explicit program boundary [\"/bin/bash\",\"--help\"]",
+        "entrypoint": ["/bin/bash", "--help"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "explicit program boundary [\"node\",\"/vendor/start.js\",\"--\",\"-\"]",
+        "entrypoint": ["node", "/vendor/start.js", "--", "-"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "explicit program boundary [\"ruby\",\"/vendor/start.rb\",\"-\"]",
+        "entrypoint": ["ruby", "/vendor/start.rb", "-"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
         "name": "module CLI -m doctest /custom/app.py",
         "entrypoint": ["python3.14", "-m", "doctest", "/custom/app.py"],
         "mount": "/custom",

@@ -1,6 +1,54 @@
 import { expect, test } from "bun:test";
 
+import { startupCodePaths } from "./startup";
 import { qualifyStartupMounts } from "./startupMounts";
+
+test("startup, cwd and PATH preserve link-before-parent traversal through qualification", async () => {
+    const links: Record<string, string> = { "/alias": "/custom/dir" };
+    const stat = (name: string) =>
+        Promise.resolve({
+            mode: links[name] ? 134_217_728 : 2_147_483_648,
+            linkTarget: links[name] ?? "",
+        });
+    for (const paths of [
+        startupCodePaths(["/alias/../start"], []),
+        startupCodePaths(["./start"], [], "/alias/.."),
+        startupCodePaths(["start"], [], "/", undefined, ["PATH=/alias/.."]),
+        startupCodePaths(["/vendor/server"], [], "/", ["CMD", "/alias/../start"]),
+    ]) {
+        expect(paths).not.toBeNull();
+        expect(paths?.some((name) => name.includes("/alias/../"))).toBe(true);
+        expect(await qualifyStartupMounts(paths, ["/custom"], stat)).toEqual([true]);
+    }
+    expect(await qualifyStartupMounts(["/custom/start"], ["/alias/.."], stat)).toEqual([
+        true,
+    ]);
+    expect(
+        await qualifyStartupMounts(["/alias/../../outside"], ["/custom"], stat)
+    ).toEqual([false]);
+});
+
+test("a symlink target's own parent traversal is resolved component by component", async () => {
+    const links: Record<string, string> = {
+        "/entry": "/alias/../start",
+        "/alias": "/custom/dir",
+    };
+    expect(
+        await qualifyStartupMounts(["/entry"], ["/custom"], (name) =>
+            Promise.resolve({
+                mode: links[name] ? 134_217_728 : 2_147_483_648,
+                linkTarget: links[name] ?? "",
+            })
+        )
+    ).toEqual([true]);
+    expect(
+        await qualifyStartupMounts(["/missing/../start"], ["/custom"], (name) =>
+            Promise.resolve(
+                name === "/missing" ? null : { mode: 2_147_483_648, linkTarget: "" }
+            )
+        )
+    ).toEqual([true]);
+});
 
 test.each([
     {

@@ -28,6 +28,69 @@ exec(compile(SOURCE.with_name("toolchain.py").read_text(), str(SOURCE.with_name(
 class UpdateExecutionTests(unittest.TestCase):
     """Cover exact image pins, source fencing, package boundaries and private error handling."""
 
+    def test_actual_stdin_history_and_shell_variable_programs(self):
+        with tempfile.TemporaryDirectory(prefix="homelab-shell-state-") as temporary:
+            root = Path(temporary)
+            script = root / "start"
+            script.write_text("#!/bin/sh\nprintf executed\n")
+            script.chmod(0o700)
+            history = root / "commands"
+            history.write_text(str(script) + "\n")
+            expressions = ["cat \"$1/start\" | /bin/sh", "history -r \"$1/commands\"; fc -s", "printf -v PATH '%s' \"$1\"; start", "printf -vPATH '%s' \"$1\"; start"]
+            for expression in expressions:
+                result = subprocess.run(["/bin/bash", "--noprofile", "--norc", "-c", expression, "fixture", temporary], env={"PATH": "/usr/bin:/bin", "HOME": temporary, "HISTFILE": "/dev/null"}, capture_output=True, text=True, check=True, timeout=5)
+                self.assertEqual(result.stdout, "executed")
+
+    def test_link_parent_traversal_survives_all_startup_inputs(self):
+        links = {"/alias": "/custom/dir", "/entry": "/alias/../start"}
+        def metadata(name):
+            return {"mode": 0x08000000 if name in links else 0x80000000, "linkTarget": links.get(name, "")}
+        for startup in ({"entrypoint": ["/alias/../start"]}, {"entrypoint": ["./start"], "working_dir": "/alias/.."}, {"entrypoint": ["start"], "environment": ["PATH=/alias/.."]}, {"entrypoint": ["/vendor/server"], "healthcheck": {"test": ["CMD", "/alias/../start"]}}, {"entrypoint": ["/entry"]}):
+            paths = remote.startup_code_paths(startup)
+            self.assertIsNotNone(paths)
+            self.assertEqual(remote.qualify_startup_mounts(paths, ["/custom"], metadata), [True])
+            with self.assertRaises(remote.UpdateRefusal):
+                remote.verify_code_mounts({"volumes": [{"type": "volume", "target": "/custom"}]}, startup, metadata)
+        self.assertEqual(remote.qualify_startup_mounts({"/custom/start"}, ["/alias/.."], metadata), [True])
+        self.assertEqual(remote.qualify_startup_mounts({"/alias/../../outside"}, ["/custom"], metadata), [False])
+
+    def test_actual_kernel_resolves_links_before_parent_components(self):
+        with tempfile.TemporaryDirectory(prefix="homelab-path-traversal-") as temporary:
+            root = Path(temporary)
+            (root / "custom/dir").mkdir(parents=True)
+            (root / "alias").symlink_to(root / "custom/dir")
+            (root / "entry").symlink_to(root / "alias/../start")
+            script = root / "custom/start"
+            script.write_text("#!/bin/sh\nprintf executed\n")
+            script.chmod(0o700)
+            for executable in (str(root / "alias") + "/../start", str(root / "entry")):
+                result = subprocess.run([executable], env={"PATH": "/usr/bin:/bin"}, capture_output=True, text=True, check=True, timeout=5)
+                self.assertEqual(result.stdout, "executed")
+
+    def test_helper_exception_never_overrides_startup_healthcheck_hook_or_unknown_metadata(self):
+        helper = "/opt/homelab/logout-worker.js"
+        base = {"entrypoint": ["/vendor/server"]}
+        metadata = lambda name: {"mode": 0x80000000, "linkTarget": ""}
+        for kind in ("volumes", "configs", "secrets"):
+            service = {kind: [{"target": helper}]}
+            remote.verify_code_mounts(service, base, metadata)
+            for startup in ({"entrypoint": ["node", helper]}, {**base, "healthcheck": {"test": ["CMD", "node", helper]}}, {"entrypoint": ["sh"]}):
+                with self.assertRaises(remote.UpdateRefusal):
+                    remote.verify_code_mounts(service, startup, metadata)
+            with self.assertRaises(remote.UpdateRefusal):
+                remote.verify_code_mounts(service, base, lambda name: None)
+            for hook in ("post_start", "pre_stop"):
+                with self.assertRaises(remote.UpdateRefusal):
+                    remote.verify_code_mounts({**service, hook: [{"command": ["node", helper]}]}, base, metadata)
+
+    def test_stdin_and_history_effective_healthchecks_can_be_disabled(self):
+        for command in (["sh"], ["node"], ["bash", "-c", "history -r /custom/commands; fc -s"], ["bash", "-c", "printf -v PATH /custom; start"]):
+            defaults = {"entrypoint": ["/vendor/server"], "healthcheck": {"Test": ["CMD", *command]}}
+            service = {"volumes": [{"target": "/custom"}]}
+            with self.assertRaises(remote.UpdateRefusal):
+                remote.verify_code_mounts(service, remote.compose_startup({}, defaults))
+            remote.verify_code_mounts(service, remote.compose_startup({"healthcheck": {"disable": True}}, defaults))
+
     def test_actual_module_and_cdpath_execution(self):
         with tempfile.TemporaryDirectory(prefix="homelab-program-input-") as temporary:
             root = Path(temporary)

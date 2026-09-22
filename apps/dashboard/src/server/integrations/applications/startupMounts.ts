@@ -18,18 +18,34 @@ export async function qualifyStartupMounts(
     const cache = new Map<string, { mode: number; linkTarget: string } | null>();
     let probes = 0;
     const resolve = async (original: string): Promise<string> => {
-        let remaining = path.posix.resolve("/", original).split("/").filter(Boolean);
+        if (
+            !original.startsWith("/") ||
+            original.includes("\0") ||
+            original.length > 2000
+        )
+            throw new Error("Unqualified filesystem path");
+        let remaining = original.split("/").filter(Boolean);
         let current = "/",
             hops = 0;
         while (remaining.length > 0) {
-            current = path.posix.join(current, remaining.shift()!);
+            const component = remaining.shift()!;
+            if (component === ".") continue;
+            if (component === "..") {
+                current = path.posix.dirname(current);
+                continue;
+            }
+            current = path.posix.join(current, component);
             if (!cache.has(current)) {
                 if (++probes > 256)
                     throw new Error("Filesystem metadata budget exceeded");
                 cache.set(current, await stat(current));
             }
             const metadata = cache.get(current);
-            if (!metadata) return path.posix.join(current, ...remaining);
+            if (!metadata) {
+                if (remaining.includes(".."))
+                    throw new Error("Unproven parent traversal");
+                return path.posix.join(current, ...remaining);
+            }
             if ((metadata.mode & 134_217_728) !== 0) {
                 if (
                     ++hops > 32 ||

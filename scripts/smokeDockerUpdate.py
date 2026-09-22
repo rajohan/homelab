@@ -58,7 +58,7 @@ def main():
                 helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sh, " + destination + "]", "entrypoint: [/bin/sleep]\n    command: ['3600']"))
             if service in ("inherited-helper", "option-helper"):
                 helper_file.write_text(helper_file.read_text().replace(original, inherited_image))
-        for service, kind in (("assignment-helper", "volumes"), ("config-helper", "configs"), ("secret-helper", "secrets"), ("newline-helper", "volumes"), ("volume-helper", "named-volume"), ("expansion-helper", "volumes"), ("health-helper", "volumes"), ("inherited-health-helper", "volumes"), ("compound-helper", "volumes"), ("conditional-helper", "volumes"), ("compound-health-helper", "volumes"), ("dispatch-helper", "volumes"), ("dispatch-cwd-helper", "volumes"), ("dispatch-health-helper", "volumes"), ("launcher-helper", "volumes"), ("loader-helper", "named-volume"), ("shell-option-helper", "volumes"), ("trap-helper", "volumes"), ("jvm-helper", "volumes"), ("post-hook-helper", "volumes"), ("pre-hook-helper", "volumes"), ("hook-environment-helper", "volumes"), ("path-helper", "volumes"), ("expanded-script-helper", "volumes"), ("runtime-option-helper", "volumes"), ("ruby-option-helper", "volumes"), ("hash-helper", "volumes"), ("exec-arg-helper", "volumes"), ("init-arg-helper", "volumes"), ("volumes-from-helper", "inherited-volume"), ("external-volumes-helper", "inherited-volume"), ("coproc-helper", "named-volume"), ("coproc-health-helper", "volumes"), ("builtin-loader-helper", "named-volume"), ("custom-shell-helper", "volumes"), ("alias-helper", "named-volume"), ("python-inline-helper", "volumes"), ("awk-helper", "named-volume"), ("find-helper", "volumes"), ("module-cli-helper", "volumes"), ("make-helper", "volumes"), ("cdpath-helper", "volumes"), ("symlink-helper", "named-volume")):
+        for service, kind in (("assignment-helper", "volumes"), ("config-helper", "configs"), ("secret-helper", "secrets"), ("newline-helper", "volumes"), ("volume-helper", "named-volume"), ("expansion-helper", "volumes"), ("health-helper", "volumes"), ("inherited-health-helper", "volumes"), ("compound-helper", "volumes"), ("conditional-helper", "volumes"), ("compound-health-helper", "volumes"), ("dispatch-helper", "volumes"), ("dispatch-cwd-helper", "volumes"), ("dispatch-health-helper", "volumes"), ("launcher-helper", "volumes"), ("loader-helper", "named-volume"), ("shell-option-helper", "volumes"), ("trap-helper", "volumes"), ("jvm-helper", "volumes"), ("post-hook-helper", "volumes"), ("pre-hook-helper", "volumes"), ("hook-environment-helper", "volumes"), ("path-helper", "volumes"), ("expanded-script-helper", "volumes"), ("runtime-option-helper", "volumes"), ("ruby-option-helper", "volumes"), ("hash-helper", "volumes"), ("exec-arg-helper", "volumes"), ("init-arg-helper", "volumes"), ("volumes-from-helper", "inherited-volume"), ("external-volumes-helper", "inherited-volume"), ("coproc-helper", "named-volume"), ("coproc-health-helper", "volumes"), ("builtin-loader-helper", "named-volume"), ("custom-shell-helper", "volumes"), ("alias-helper", "named-volume"), ("python-inline-helper", "volumes"), ("awk-helper", "named-volume"), ("find-helper", "volumes"), ("module-cli-helper", "volumes"), ("make-helper", "volumes"), ("cdpath-helper", "volumes"), ("symlink-helper", "named-volume"), ("stdin-helper", "volumes"), ("history-helper", "named-volume"), ("helper-entrypoint", "helper-file"), ("helper-hook", "helper-file"), ("variable-helper", "volumes")):
             helper_file = directory / (service + ".yaml")
             source_file = directory / (service + ".source")
             source_file.write_text("# Synthetic startup code, never executed.\n")
@@ -68,6 +68,8 @@ def main():
                 source_directory.mkdir()
                 (source_directory / "start").write_text(source_file.read_text())
                 text += "    volumes:\n      - type: bind\n        source: " + str(source_directory) + "\n        target: /custom\n        read_only: true\n"
+            elif kind == "helper-file":
+                text += "    volumes:\n      - type: bind\n        source: " + str(source_file) + "\n        target: /opt/homelab/logout-worker.js\n        read_only: true\n"
             elif kind == "named-volume":
                 text += "    volumes:\n      - type: volume\n        source: startup-code\n        target: /custom\nvolumes:\n  startup-code:\n    labels:\n      homelab.smoke: " + owner + "\n"
             elif kind in ("configs", "secrets"):
@@ -103,6 +105,7 @@ def main():
         config_data.mkdir()
         (config_data / "settings.json").write_text("{}\n")
         config_file.write_text("services:\n  config-app:\n    image: " + config_image + "\n    command: [/config/settings.json]\n    network_mode: none\n    mem_limit: 64m\n    pids_limit: 32\n    labels:\n      homelab.smoke: " + owner + "\n    volumes:\n      - type: bind\n        source: " + str(config_data) + "\n        target: /config\n        read_only: true\n")
+        config_file.write_text(config_file.read_text() + "      - type: bind\n        source: " + str(config_data / "settings.json") + "\n        target: /opt/homelab/logout-worker.js\n        read_only: true\n")
         config_file.write_text(config_file.read_text() + "    configs: [ordinary-settings]\n    secrets: [ordinary-token]\nconfigs:\n  ordinary-settings:\n    file: " + str(config_data / "settings.json") + "\nsecrets:\n  ordinary-token:\n    file: " + str(config_data / "settings.json") + "\n")
         config_file.write_text(config_file.read_text().replace("    command: [/config/settings.json]\n", "    command: [/config/settings.json]\n    healthcheck:\n      test: [CMD, /bin/bash, '-c', 'FOO=x coproc /vendor/server']\n      interval: 1s\n"))
         main_file.write_text(json.dumps({"include": [str(provider_file), str(consumer_file), str(overlay_file), str(config_file)] + [str(path) for _, path in helpers], "services": {"stopped": {**shared, "network_mode": "service:provider"}, "leaf": {**shared, "network_mode": "service:consumer"}}, "volumes": {"marker": {"labels": {"homelab.smoke": owner}}}}))
@@ -114,7 +117,7 @@ def main():
             # Fixtures introduce hooks only for preflight. Never run them during
             # the later whole-project stop or cleanup.
             for name, source_file in helpers:
-                if name in ("post-hook-helper", "pre-hook-helper", "hook-environment-helper"):
+                if name in ("post-hook-helper", "pre-hook-helper", "hook-environment-helper", "helper-hook"):
                     source_file.write_text("\n".join(line for line in source_file.read_text().splitlines() if not line.startswith(("    post_start:", "    pre_stop:"))) + "\n")
         try:
             build_directory = directory / "image"
@@ -135,7 +138,7 @@ def main():
             (build_directory / "Dockerfile").write_text('FROM postgres:18\nSHELL ["/custom/shell", "-c"]\nENTRYPOINT ["/bin/sleep"]\nCMD ["3600"]\n')
             command(["/usr/bin/docker", "build", "--pull=false", "--network=none", "--label", "homelab.smoke=" + owner, "--tag", shell_image, str(build_directory)], environment={"HOME": str(build_directory)})
             built_images.append(shell_image)
-            (build_directory / "Dockerfile").write_text('FROM postgres:18\nRUN mkdir -p /vendor /custom && ln -s /vendor/../custom/./start /vendor/start\nENTRYPOINT ["/bin/sleep"]\nCMD ["3600"]\n')
+            (build_directory / "Dockerfile").write_text('FROM postgres:18\nRUN mkdir -p /vendor /custom/dir && ln -s /custom/dir /alias && ln -s /alias/../start /vendor/start\nENTRYPOINT ["/bin/sleep"]\nCMD ["3600"]\n')
             command(["/usr/bin/docker", "build", "--pull=false", "--network=none", "--label", "homelab.smoke=" + owner, "--tag", symlink_image, str(build_directory)], environment={"HOME": str(build_directory)})
             built_images.append(symlink_image)
             symlink_file = directory / "symlink-helper.yaml"
@@ -231,7 +234,9 @@ def main():
                     helper_file.write_text(helper_file.read_text() + "    healthcheck:\n      test: " + json.dumps(["CMD", "/bin/bash", "-c", "co\\\nproc /custom/start"]) + "\n")
                 elif service == "builtin-loader-helper":
                     helper_file.write_text(helper_file.read_text().replace("    entrypoint: [/bin/sleep]\n    command: ['3600']", "    entrypoint: [/bin/bash, '-c']\n    command: ['enable -f /custom/plugin.so worker; worker']"))
-                elif service in ("alias-helper", "python-inline-helper", "awk-helper", "find-helper", "module-cli-helper", "make-helper", "cdpath-helper", "symlink-helper"):
+                elif service == "helper-hook":
+                    helper_file.write_text(helper_file.read_text() + "    post_start: " + json.dumps([{"command": ["node", "/opt/homelab/logout-worker.js"]}]) + "\n")
+                elif service in ("alias-helper", "python-inline-helper", "awk-helper", "find-helper", "module-cli-helper", "make-helper", "cdpath-helper", "symlink-helper", "stdin-helper", "history-helper", "helper-entrypoint", "variable-helper"):
                     invocation = {
                         "alias-helper": ["/bin/bash", "-O", "expand_aliases", "-c", "alias run=/custom/start\nrun"],
                         "python-inline-helper": ["python", "-Ic", "exec(open('/custom/start').read())"],
@@ -240,7 +245,11 @@ def main():
                         "module-cli-helper": ["python", "-m", "doctest", "/custom/app.py"],
                         "make-helper": ["make", "-f", "/custom/Makefile"],
                         "cdpath-helper": ["/bin/sh", "-c", "CDPATH=/custom; cd app; ./start"],
-                        "symlink-helper": ["/vendor/start"],
+                        "symlink-helper": ["/alias/../start"],
+                        "stdin-helper": ["/bin/sh", "-c", "cat /custom/start | sh"],
+                        "history-helper": ["/bin/bash", "-c", "history -r /custom/commands; fc -s"],
+                        "helper-entrypoint": ["node", "/opt/homelab/logout-worker.js"],
+                        "variable-helper": ["/bin/bash", "-c", "printf -vPATH /custom; start"],
                     }[service]
                     helper_file.write_text(helper_file.read_text().replace("    entrypoint: [/bin/sleep]\n    command: ['3600']", "    entrypoint: " + json.dumps(invocation) + "\n    command: []"))
                 elif service == "custom-shell-helper":

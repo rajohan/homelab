@@ -31,10 +31,10 @@ type DockerOwner = Pick<
 export function hasApplicationCodeMount(application: ManagedApplication): boolean {
     return application.mounts.some(
         (mount) =>
-            mount.destination !== "/opt/homelab/logout-worker.js" &&
-            (mount.startupCode === true ||
-                codeFile.test(mount.destination) ||
-                codeDirectory.test(mount.destination))
+            mount.startupCode === true ||
+            (mount.destination !== "/opt/homelab/logout-worker.js" &&
+                (codeFile.test(mount.destination) ||
+                    codeDirectory.test(mount.destination)))
     );
 }
 

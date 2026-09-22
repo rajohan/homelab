@@ -140,7 +140,9 @@ def startup_code_paths(startup):
         if "\0" in cwd or "\0" in value:
             unqualified = True
             return "/"
-        return posixpath.normpath(posixpath.join(cwd, value))
+        # Preserve parent traversal until preceding symlinks have been resolved.
+        absolute = value if value.startswith('/') else cwd + '/' + value
+        return '/' + '/'.join(part for part in absolute.split('/') if part and part != '.')
     def lookup(executable, cwd, selected_path):
         nonlocal unqualified
         if "\0" in executable or "\0" in selected_path:
@@ -301,7 +303,15 @@ def startup_code_paths(startup):
             # Listing is harmless; changing loaded builtins changes later lookup.
             if not all(re.fullmatch(r"-[anps]+", arg) or arg == "--help" for arg in args[1:]):
                 unqualified = True
-        elif name in ("hash", "trap", "eval", "xargs", "parallel", "chroot", "su", "runuser", "sudo", "doas", "setpriv", "setsid", "chrt", "ionice", "taskset", "stdbuf", "flock", "watch"):
+        elif name == "history":
+            if not all(re.fullmatch(r"\d+", arg) or arg == "--help" for arg in args[1:]):
+                unqualified = True
+        elif name == "fc":
+            if not (len(args) == 2 and args[1] == "--help") and not (any(re.fullmatch(r"-[lnr]*l[lnr]*", arg) for arg in args[1:]) and all(re.fullmatch(r"-[lnr]+|-?\d+", arg) for arg in args[1:])):
+                unqualified = True
+        elif name == "printf" and len(args) > 1 and args[1].startswith("-v") or name == "set" and len(args) > 1 and args[1] != "--help" or name == "shopt" and any(re.match(r"-[^-]*[su]", arg) for arg in args[1:]):
+            unqualified = True
+        elif name in ("hash", "trap", "eval", "xargs", "parallel", "chroot", "su", "runuser", "sudo", "doas", "setpriv", "setsid", "chrt", "ionice", "taskset", "stdbuf", "flock", "watch", "read", "readarray", "mapfile", "getopts", "let"):
             unqualified = True
         elif name in ("exec", "tini", "dumb-init", "gosu", "su-exec", "docker-entrypoint.sh", "docker-entrypoint"):
             index, empty_environment = 1, False
@@ -380,6 +390,8 @@ def startup_code_paths(startup):
                     match = re.fullmatch(r"[+-]([abefhkmnptuvxBCEHPTirsDc]*)([oO])(.*)", option)
                     if match:
                         inline = inline or option.startswith("-") and "c" in match[1]
+                        if re.search(r"[is]", match[1]):
+                            unqualified = True
                         if not match[3]:
                             index += 1
                     elif re.fullmatch(r"[+-][abefhkmnptuvxBCEHPTirsDc]+", option):
@@ -405,6 +417,8 @@ def startup_code_paths(startup):
                             assignment(group.pop(0))
                         selected = dispatch(group)
                         if selected and selected[0] in ("export", "readonly", "declare", "typeset"):
+                            if any(value.startswith('-') and value not in ('--', '--help') and re.fullmatch(r'-[prx]+', value) is None for value in selected[1:]):
+                                unqualified = True
                             for value in selected[1:]:
                                 assignment(value)
                         if selected and selected[0] == "unset" and "PATH" in selected[1:]:
@@ -429,8 +443,10 @@ def startup_code_paths(startup):
                         group.append(token + ("\0" if dynamic_shell_word(raw) else ""))
             else:
                 script = args[index] if index < len(args) else None
-                if script:
+                if script and script != "-":
                     paths.add(resolve(cwd, script))
+                else:
+                    unqualified = True
         elif name in (".", "source"):
             if len(args) > 1:
                 paths.add(resolve(cwd, args[1]))
@@ -527,8 +543,10 @@ def startup_code_paths(startup):
                 return
             for index, option in enumerate(args[1:], 1):
                 if option == "--":
-                    if index + 1 < len(args):
+                    if index + 1 < len(args) and args[index + 1] != "-":
                         paths.add(resolve(cwd, args[index + 1]))
+                    else:
+                        unqualified = True
                     return
                 if not option.startswith("-"):
                     paths.add(resolve(cwd, option))
@@ -537,6 +555,7 @@ def startup_code_paths(startup):
                     continue
                 unqualified = True
                 return
+            unqualified = True
     first, second = argv(startup.get("entrypoint")), argv(startup.get("command"))
     cwd = resolve("/", startup.get("working_dir") or "/")
     inspect(first + second, cwd)
@@ -592,23 +611,33 @@ def qualify_startup_mounts(paths, destinations, path_stat):
         return [True] * len(destinations)
     cache = {}
     def resolve(original):
-        remaining = [part for part in posixpath.normpath('/' + original.lstrip('/')).split('/') if part]
+        if not original.startswith('/') or '\0' in original or len(original) > 2000:
+            raise UpdateRefusal('local_code_override')
+        remaining = [part for part in original.split('/') if part]
         current, hops = '/', 0
         while remaining:
-            current = posixpath.join(current, remaining.pop(0))
+            component = remaining.pop(0)
+            if component == '.':
+                continue
+            if component == '..':
+                current = posixpath.dirname(current)
+                continue
+            current = posixpath.join(current, component)
             if current not in cache:
                 if len(cache) >= 256:
                     raise UpdateRefusal('local_code_override')
                 cache[current] = path_stat(current)
             metadata = cache[current]
             if metadata is None:
+                if '..' in remaining:
+                    raise UpdateRefusal('local_code_override')
                 return posixpath.join(current, *remaining)
             if metadata['mode'] & 0x08000000:
                 hops += 1
                 target = metadata['linkTarget']
                 if hops > 32 or not target.startswith('/') or '\0' in target or len(target) > 2000:
                     raise UpdateRefusal('local_code_override')
-                remaining = [part for part in posixpath.normpath(target).split('/') if part] + remaining
+                remaining = [part for part in target.split('/') if part] + remaining
                 current = '/'
         return current
     try:
@@ -711,11 +740,12 @@ def verify_code_mounts(service, startup=None, path_stat=None):
     qualified = qualify_startup_mounts(paths, [mount.get('target', '') for mount in mounts], path_stat) if path_stat is not None else None
     for index, mount in enumerate(mounts):
         destination = mount.get("target", "")
-        # Only the qualified standalone logout helper is exempt, not this directory.
-        if destination == "/opt/homelab/logout-worker.js":
-            continue
         normalized = posixpath.normpath(destination)
         startup_code = paths is None or qualified is not None and qualified[index] or any(path == normalized or path.startswith(normalized.rstrip("/") + "/") for path in paths)
+        # The standalone helper exception cannot override startup, healthcheck,
+        # hook or unresolved filesystem qualification.
+        if destination == "/opt/homelab/logout-worker.js" and not startup_code:
+            continue
         # Named-volume identifiers are not host paths. Their target/startup
         # relationship still matters: updating the image does not replace them.
         source = mount.get("source") if mount.get("type") == "bind" else None

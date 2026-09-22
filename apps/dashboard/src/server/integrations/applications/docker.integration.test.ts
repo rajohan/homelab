@@ -74,6 +74,88 @@ test.each(["direct", "parent", "mount", "loop", "denied", "safe", "dot", "dotdot
 );
 
 test.each([
+    "startup",
+    "cwd",
+    "path",
+    "health",
+    "target",
+    "helper",
+    "helper-health",
+    "helper-safe",
+    "helper-unknown",
+])(
+    "full Docker discovery preserves traversal and helper qualification: %s",
+    async (mode) => {
+        const fixture = createApplicationFixture();
+        try {
+            const detail = [...fixture.containers.values()][0]!;
+            detail.Config.Entrypoint = ["/vendor/server"];
+            detail.Config.Cmd = [];
+            detail.Config.WorkingDir = "/";
+            detail.Config.Env = ["PRIVATE_KEY=SYNTHETIC_PRIVATE"];
+            const helper = "/opt/homelab/logout-worker.js";
+            detail.Mounts = [
+                {
+                    Type: "volume",
+                    Source: "fixture-code",
+                    Destination: mode.startsWith("helper") ? helper : "/custom",
+                    RW: true,
+                },
+            ];
+            fixture.pathMetadata.set("/alias", {
+                mode: 134_217_728,
+                linkTarget: "/custom/dir",
+            });
+            if (mode === "startup") detail.Config.Entrypoint = ["/alias/../start"];
+            if (mode === "cwd") {
+                detail.Config.Entrypoint = ["./start"];
+                detail.Config.WorkingDir = "/alias/..";
+            }
+            if (mode === "path") {
+                detail.Config.Entrypoint = ["start"];
+                detail.Config.Env.push("PATH=/alias/..");
+            }
+            if (mode === "health")
+                detail.Config.Healthcheck = { Test: ["CMD", "/alias/../start"] };
+            if (mode === "target") {
+                detail.Config.Entrypoint = ["/entry"];
+                fixture.pathMetadata.set("/entry", {
+                    mode: 134_217_728,
+                    linkTarget: "/alias/../start",
+                });
+            }
+            if (mode === "helper") detail.Config.Entrypoint = ["node", helper];
+            if (mode === "helper-health")
+                detail.Config.Healthcheck = { Test: ["CMD", "node", helper] };
+            if (mode === "helper-unknown") fixture.behavior.statUnavailable = true;
+            const inventory = await collectApplications(
+                [fixture.target],
+                () => createDockerPort(fixture.target, {}),
+                AbortSignal.timeout(5000)
+            );
+            const application = inventory.hosts[0]!.applications.find(
+                (item) => item.containerId === detail.Id
+            )!;
+            expect(inventory.hosts[0]!.available).toBe(true);
+            expect(hasApplicationCodeMount(application)).toBe(mode !== "helper-safe");
+            expect(JSON.stringify(application)).not.toContain("SYNTHETIC_PRIVATE");
+            expect(JSON.stringify(application)).not.toContain("/alias/../start");
+            expect(fixture.calls).toEqual([]);
+        } finally {
+            await fixture.close();
+        }
+    }
+);
+
+test.each([
+    { test: ["CMD-SHELL", "cat /custom/start | sh"], blocked: true },
+    { test: ["CMD", "node"], blocked: true },
+    {
+        test: ["CMD", "/bin/bash", "-c", "history -r /custom/SYNTHETIC_PRIVATE; fc -s"],
+        blocked: true,
+    },
+    { test: ["CMD", "/bin/bash", "-c", "fc -lnr -10 -1"], blocked: false },
+    { test: ["CMD", "/bin/bash", "-c", "printf -v PATH /custom; start"], blocked: true },
     { test: ["CMD", "python", "-m", "doctest", "/custom/app.py"], blocked: true },
     { test: ["CMD", "python", "-Imdoctest", "/custom/app.py"], blocked: true },
     { test: ["CMD", "make", "-f", "/custom/Makefile"], blocked: true },

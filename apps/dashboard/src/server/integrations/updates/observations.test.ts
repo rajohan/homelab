@@ -49,6 +49,28 @@ const report: UpdateReport = {
 };
 const owner = { name: app.containerName, project: app.project, service: app.name };
 
+test.each([true, false, undefined])(
+    "the helper exception cannot override code qualification: %s",
+    (startupCode) => {
+        const helper = {
+            ...app,
+            mounts: [
+                {
+                    type: "bind",
+                    source: "/fixture/helper",
+                    destination: "/opt/homelab/logout-worker.js",
+                    readOnly: true,
+                    ...(startupCode === undefined ? {} : { startupCode }),
+                },
+            ],
+        };
+        expect(hasApplicationCodeMount(helper)).toBe(startupCode === true);
+        expect(
+            reconcile(report, [helper], [owner]).items[0]?.applicationBlock !== undefined
+        ).toBe(startupCode === true);
+    }
+);
+
 function reconcileDockerObservations(
     value: UpdateReport,
     applications: readonly ManagedApplication[],

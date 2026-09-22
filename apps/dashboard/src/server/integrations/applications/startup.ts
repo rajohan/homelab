@@ -117,7 +117,16 @@ export function startupCodePaths(
             unqualified = true;
             return "/";
         }
-        return path.posix.resolve(cwd, value);
+        // Parent traversal is meaningful only after resolving the preceding
+        // filesystem components. Do not erase a symlink/.. pair here.
+        const absolute = value.startsWith("/") ? value : `${cwd}/${value}`;
+        return (
+            "/" +
+            absolute
+                .split("/")
+                .filter((part) => part && part !== ".")
+                .join("/")
+        );
     };
     const lookup = (executable: string, cwd: string, selectedPath: string): void => {
         if (executable.includes("\0") || selectedPath.includes("\0")) {
@@ -389,6 +398,34 @@ export function startupCodePaths(
                 unqualified = true;
             return;
         }
+        if (name === "history") {
+            if (!args.slice(1).every((arg) => /^\d+$/.test(arg) || arg === "--help"))
+                unqualified = true;
+            return;
+        }
+        if (name === "fc") {
+            // Only listing is qualified. Editing/replaying history evaluates
+            // a separate program, including when dispatched through builtin.
+            if (
+                !(args.length === 2 && args[1] === "--help") &&
+                !(
+                    args.slice(1).some((arg) => /^-[lnr]*l[lnr]*$/.test(arg)) &&
+                    args
+                        .slice(1)
+                        .every((arg) => /^-[lnr]+$/.test(arg) || /^-?\d+$/.test(arg))
+                )
+            )
+                unqualified = true;
+            return;
+        }
+        if (
+            (name === "printf" && args[1]?.startsWith("-v")) ||
+            (name === "set" && args.length > 1 && args[1] !== "--help") ||
+            (name === "shopt" && args.slice(1).some((arg) => /^-[^-]*[su]/.test(arg)))
+        ) {
+            unqualified = true;
+            return;
+        }
         if (
             [
                 "hash",
@@ -409,6 +446,11 @@ export function startupCodePaths(
                 "stdbuf",
                 "flock",
                 "watch",
+                "read",
+                "readarray",
+                "mapfile",
+                "getopts",
+                "let",
             ].includes(name)
         ) {
             // These utilities defer or dispatch commands using separate grammars.
@@ -523,6 +565,7 @@ export function startupCodePaths(
                     );
                     if (match) {
                         inline ||= option.startsWith("-") && match[1]!.includes("c");
+                        if (/[is]/.test(match[1]!)) unqualified = true;
                         if (!match[3]) index++;
                     } else if (/^[+-][abefhkmnptuvxBCEHPTirsDc]+$/.test(option)) {
                         inline ||= option.startsWith("-") && option.includes("c");
@@ -536,7 +579,8 @@ export function startupCodePaths(
             }
             if (!inline) {
                 const script = args[index];
-                if (script) paths.add(resolve(cwd, script));
+                if (script && script !== "-") paths.add(resolve(cwd, script));
+                else unqualified = true;
                 return;
             }
             {
@@ -563,6 +607,18 @@ export function startupCodePaths(
                             selected[0] ?? ""
                         )
                     ) {
+                        if (
+                            selected
+                                .slice(1)
+                                .some(
+                                    (value) =>
+                                        value.startsWith("-") &&
+                                        value !== "--" &&
+                                        value !== "--help" &&
+                                        !/^-[prx]+$/.test(value)
+                                )
+                        )
+                            unqualified = true;
                         for (const value of selected.slice(1)) assignment(value);
                     }
                     if (selected[0] === "unset" && selected.slice(1).includes("PATH"))
@@ -768,7 +824,9 @@ export function startupCodePaths(
             for (let index = 1; index < args.length; index++) {
                 const option = args[index]!;
                 if (option === "--") {
-                    if (args[index + 1]) paths.add(resolve(cwd, args[index + 1]!));
+                    if (args[index + 1] && args[index + 1] !== "-")
+                        paths.add(resolve(cwd, args[index + 1]!));
+                    else unqualified = true;
                     return;
                 }
                 if (!option.startsWith("-")) {
@@ -785,17 +843,20 @@ export function startupCodePaths(
                 unqualified = true;
                 return;
             }
+            // Every direct-script runtime may accept a program on stdin when
+            // the script is absent; this is not specific to Python or shells.
+            unqualified = true;
         }
     };
     const first = argv(entrypoint),
         second = argv(command);
-    inspect([...first, ...second], path.posix.resolve("/", workingDirectory || "/"));
-    if (healthcheck?.[0] === "CMD")
-        inspect(healthcheck.slice(1), path.posix.resolve("/", workingDirectory || "/"));
+    const cwd = resolve("/", workingDirectory || "/");
+    inspect([...first, ...second], cwd);
+    if (healthcheck?.[0] === "CMD") inspect(healthcheck.slice(1), cwd);
     else if (healthcheck?.[0] === "CMD-SHELL")
         inspect(
             [...(shell?.length ? shell : ["/bin/sh", "-c"]), healthcheck[1] ?? ""],
-            path.posix.resolve("/", workingDirectory || "/")
+            cwd
         );
     // CMD is otherwise an argument tail, not an independent executable vector.
     return unqualified ? null : [...paths];
