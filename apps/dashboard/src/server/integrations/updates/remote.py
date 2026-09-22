@@ -73,8 +73,12 @@ def startup_code_paths(startup):
     """Infer executable/interpreter positions, never ordinary data-path operands."""
     paths = set()
     unqualified = False
+    default_path = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    search_path, default_lookup = default_path, False
     def assignment(value):
-        nonlocal unqualified
+        nonlocal unqualified, search_path
+        if value.startswith("PATH="):
+            search_path = value[5:]
         # Loader values stay in memory; never return paths or options from them.
         if re.fullmatch(r"(?:LD_[A-Z_]+|DYLD_[A-Z_]+|BASH_ENV|ENV|ZDOTDIR|PYTHONPATH|PYTHONHOME|PYTHONSTARTUP|NODE_OPTIONS|NODE_PATH|RUBYOPT|RUBYLIB|PERL5OPT|PERL5LIB|PERLLIB|LUA_PATH|LUA_CPATH|PHP_INI_SCAN_DIR|PHPRC|CLASSPATH|JAVA_TOOL_OPTIONS|JDK_JAVA_OPTIONS|_JAVA_OPTIONS)=[\s\S]+", value):
             unqualified = True
@@ -107,14 +111,41 @@ def startup_code_paths(startup):
                  re.fullmatch(r"[;|&\n]+", word) is not None, word)
                 for word in re.findall(r'''(?:"(?:\\[\s\S]|[^"\\])*"|'[^']*'|\\[\s\S]|[^\s;|&"'\\])+|[;|&]+|\n''', value)
                 if word != "\\\n"]
+    def dynamic_shell_word(raw):
+        quote, index = None, 0
+        while index < len(raw):
+            character = raw[index]
+            if quote == "'":
+                if character == "'":
+                    quote = None
+            elif character == "\\":
+                index += 1
+            elif character == '"' or character == "'" and quote is None:
+                quote = None if quote == character else character
+            elif character == "$" and re.match(r"[A-Za-z0-9_@*#?$!{(\-]", raw[index + 1:index + 2]) or quote is None and (character in "*?[" or character == "~" and (index == 0 or raw[index - 1] == "=")):
+                return True
+            index += 1
+        return False
     def words(value):
         return [word for word, separator, _ in tokens(value) if not separator or word != "\n"]
     def argv(value):
         return words(value) if isinstance(value, str) else value or []
     def resolve(cwd, value):
-        return posixpath.normpath(posixpath.join(cwd, value))
-    def dispatch(args):
         nonlocal unqualified
+        if "\0" in cwd or "\0" in value:
+            unqualified = True
+            return "/"
+        return posixpath.normpath(posixpath.join(cwd, value))
+    def lookup(executable, cwd, selected_path):
+        nonlocal unqualified
+        if "\0" in executable or "\0" in selected_path:
+            unqualified = True
+            return
+        for root in selected_path.split(":"):
+            paths.add(resolve(resolve(cwd, root or "."), executable))
+    def dispatch(args):
+        nonlocal unqualified, default_lookup
+        default_lookup = False
         selected, depth = args, 0
         while selected and selected[0] in ("command", "builtin"):
             if depth >= 8:
@@ -133,26 +164,39 @@ def startup_code_paths(startup):
                     unqualified = True
                     return []
                 information = information or "v" in option or "V" in option
+                default_lookup = default_lookup or "p" in option
             # Information-only dispatch never executes its command operands.
             if information:
                 return []
             selected = selected[index:]
         return selected
-    def inspect(args, cwd, depth=0):
-        nonlocal unqualified
+    def inspect(args, cwd, depth=0, selected_path=None):
+        nonlocal search_path
+        inherited = search_path
+        inspect_command(args, cwd, depth, search_path if selected_path is None else selected_path)
+        search_path = inherited
+    def inspect_command(args, cwd, depth, selected_path):
+        nonlocal unqualified, search_path
         if not args or not args[0] or args[0].startswith("-"):
             return
         if depth > 8:
             unqualified = True
             return
+        if "\0" in args[0]:
+            unqualified = True
+            return
         executable, name = args[0], posixpath.basename(args[0])
         if "/" in executable:
             paths.add(resolve(cwd, executable))
+        else:
+            lookup(executable, cwd, selected_path)
         if name == "env":
             current, options, splits, index = cwd, True, 0, 1
             expanded = list(args)
             while index < len(expanded):
                 arg = expanded[index]
+                if options and (arg in ("-", "--ignore-environment") or re.fullmatch(r"-[i0v]*i[i0v]*", arg)):
+                    search_path = default_path
                 if options and arg in ("--", "-"):
                     options = False
                     index += 1
@@ -168,13 +212,15 @@ def startup_code_paths(startup):
                             if index >= len(expanded):
                                 return
                             value = expanded[index]
+                        if option in ("u", "unset") and value == "PATH":
+                            search_path = default_path
                         if option in ("f", "file"):
                             unqualified = True
                         if option in ("C", "chdir"):
                             current = resolve(cwd, value)
                         if option in ("S", "split-string"):
                             splits += 1
-                            if splits > 8:
+                            if splits > 8 or dynamic_shell_word(value) or "\0" in value:
                                 unqualified = True
                                 return
                             expanded[index + 1:index + 1] = words(value)
@@ -247,12 +293,13 @@ def startup_code_paths(startup):
             if inline:
                 # Qualify simple command lists only, never guessed compound
                 # grammar, redirections or executable expansions.
-                if unqualified_shell(args[index] if len(args) > index else ""):
+                if unqualified_shell(args[index] if len(args) > index else "") or "\0" in (args[index] if len(args) > index else ""):
                     unqualified = True
                     return
                 group, current = [], cwd
                 for token, separator, raw in tokens(args[index] if len(args) > index else "") + [(";", True, ";")]:
                     if separator:
+                        inherited = search_path
                         # Assignment values are data, even if they contain paths.
                         while group and re.match(r"[A-Za-z_][A-Za-z0-9_]*=", group[0]):
                             assignment(group.pop(0))
@@ -260,22 +307,26 @@ def startup_code_paths(startup):
                         if selected and selected[0] in ("export", "readonly", "declare", "typeset"):
                             for value in selected[1:]:
                                 assignment(value)
-                        if selected and (selected[0] == "eval" or re.search(r"[$`]", selected[0])):
+                        if selected and selected[0] == "unset" and "PATH" in selected[1:]:
+                            search_path = default_path
+                        if selected and (selected[0] == "eval" or "\0" in selected[0]):
                             unqualified = True
                         elif selected and selected[0] == "cd":
                             operands = selected[2:] if len(selected) > 1 and selected[1] == "--" else selected[1:]
-                            if len(operands) != 1 or operands[0].startswith("-") or re.search(r"[$`]", operands[0]):
+                            if len(operands) != 1 or operands[0].startswith("-") or "\0" in operands[0]:
                                 unqualified = True
                             else:
                                 current = resolve(current, operands[0])
-                        else:
-                            inspect(selected, current, depth + 1)
+                        elif not selected or selected[0] not in ("export", "readonly", "declare", "typeset", "unset"):
+                            inspect(selected, current, depth + 1, default_path if default_lookup else search_path)
+                        if selected and selected[0] not in ("export", "readonly", "declare", "typeset", "unset"):
+                            search_path = inherited
                         group = []
                     else:
                         if all(re.match(r"[A-Za-z_][A-Za-z0-9_]*=", word) for word in group) and (re.fullmatch(r"(?:if|then|elif|else|fi|while|until|for|select|in|do|done|case|esac|function|time|!|\{|\}|\[\[|\]\])", raw.replace("\\\n", "")) or token == "eval"):
                             unqualified = True
                             return
-                        group.append(token)
+                        group.append(token + ("\0" if dynamic_shell_word(raw) else ""))
             else:
                 script = args[index] if index < len(args) else None
                 if script:
@@ -283,6 +334,8 @@ def startup_code_paths(startup):
         elif name in (".", "source"):
             if len(args) > 1:
                 paths.add(resolve(cwd, args[1]))
+                if "/" not in args[1]:
+                    lookup(args[1], cwd, search_path)
         elif name == "java":
             paths.add(cwd)
             def add_list(value):
@@ -329,6 +382,9 @@ def startup_code_paths(startup):
                 index = 1
                 while index < len(args):
                     arg = args[index]
+                    if "\0" in arg:
+                        unqualified = True
+                        return
                     if arg == "--":
                         if len(args) > index + 1 and args[index + 1] != "-":
                             paths.add(resolve(cwd, args[index + 1]))
@@ -342,6 +398,20 @@ def startup_code_paths(startup):
                         paths.add(resolve(cwd, arg))
                         break
                     index += 1
+                return
+            if name in ("node", "nodejs", "bun"):
+                for index, option in enumerate(args[1:], 1):
+                    if option == "--":
+                        if index + 1 < len(args):
+                            paths.add(resolve(cwd, args[index + 1]))
+                        return
+                    if not option.startswith("-"):
+                        paths.add(resolve(cwd, option))
+                        return
+                    if re.fullmatch(r"(?:--(?:no-warnings|trace-warnings|use-strict|enable-source-maps)|--(?:max-old-space-size|stack-size)=\d+)", option):
+                        continue
+                    unqualified = True
+                    return
                 return
             script = next((arg for arg in args[1:] if not arg.startswith("-")), None)
             if script and not any(arg in args for arg in ("-m", "-c", "-e", "--eval", "--print")):

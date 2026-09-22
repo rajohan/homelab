@@ -60,13 +60,42 @@ function unqualifiedShell(command: string): boolean {
     return false;
 }
 
+// Preserve expansion provenance until a token reaches a code position. Never
+// expand variables or inspect their potentially private values.
+function dynamicShellWord(raw: string): boolean {
+    let quote: "'" | '"' | undefined;
+    for (let index = 0; index < raw.length; index++) {
+        const character = raw[index];
+        if (quote === "'") {
+            if (character === "'") quote = undefined;
+            continue;
+        }
+        if (character === "\\") {
+            index++;
+            continue;
+        }
+        if (character === '"' || (character === "'" && quote === undefined)) {
+            quote = quote === character ? undefined : character;
+            continue;
+        }
+        if (
+            (character === "$" && /[A-Za-z0-9_@*#?$!{(-]/.test(raw[index + 1] ?? "")) ||
+            (quote === undefined &&
+                ("*?[".includes(character ?? "\0") ||
+                    (character === "~" && (index === 0 || raw[index - 1] === "="))))
+        )
+            return true;
+    }
+    return false;
+}
+
 /**
  * Identify startup code without mistaking ordinary flags and data operands for executables.
  * @param entrypoint - Image-resolved or pending Compose entrypoint, never persisted.
  * @param command - Image-resolved or pending Compose command, never persisted.
  * @param workingDirectory - Runtime directory used for relative scripts and module imports.
  * @param healthcheck - Effective Docker healthcheck test vector, never persisted.
- * @param environment - Effective container environment, inspected only in memory and never returned.
+ * @param environment - Effective container environment, inspected in memory; only normalized executable search candidates may be returned.
  * @returns Code paths, or null for execution/loading semantics requiring separate qualification. Callers persist booleans only.
  */
 export function startupCodePaths(
@@ -78,9 +107,28 @@ export function startupCodePaths(
 ): readonly string[] | null {
     const paths = new Set<string>();
     let unqualified = false;
+    const defaultPath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+    let searchPath = defaultPath,
+        defaultLookup = false;
+    const resolve = (cwd: string, value: string): string => {
+        if (cwd.includes("\0") || value.includes("\0")) {
+            unqualified = true;
+            return "/";
+        }
+        return path.posix.resolve(cwd, value);
+    };
+    const lookup = (executable: string, cwd: string, selectedPath: string): void => {
+        if (executable.includes("\0") || selectedPath.includes("\0")) {
+            unqualified = true;
+            return;
+        }
+        for (const root of selectedPath.split(":"))
+            paths.add(resolve(resolve(cwd, root || "."), executable));
+    };
     const argv = (value: typeof entrypoint): readonly string[] =>
         typeof value === "string" ? words(value) : (value ?? []);
     const assignment = (value: string): void => {
+        if (value.startsWith("PATH=")) searchPath = value.slice(5);
         // Loader/search options can contain expansion syntax or private values.
         // Require separate qualification rather than returning any of their data.
         if (
@@ -93,6 +141,7 @@ export function startupCodePaths(
     for (const value of environment ?? []) assignment(value);
     const dispatch = (args: readonly string[]): readonly string[] => {
         let selected = args;
+        defaultLookup = false;
         for (let depth = 0; ["command", "builtin"].includes(selected[0] ?? ""); depth++) {
             if (depth >= 8) {
                 unqualified = true;
@@ -110,6 +159,7 @@ export function startupCodePaths(
                     return [];
                 }
                 information ||= /[Vv]/.test(option);
+                defaultLookup ||= option.includes("p");
             }
             // -v/-V (including combined flags) describe commands, not execute
             // them. All other dispatch forms retain the selected command tail.
@@ -118,15 +168,35 @@ export function startupCodePaths(
         }
         return selected;
     };
-    const inspect = (args: readonly string[], cwd: string, depth = 0): void => {
+    const inspect = (
+        args: readonly string[],
+        cwd: string,
+        depth = 0,
+        selectedPath = searchPath
+    ): void => {
+        const inherited = searchPath;
+        inspectCommand(args, cwd, depth, selectedPath);
+        searchPath = inherited;
+    };
+    const inspectCommand = (
+        args: readonly string[],
+        cwd: string,
+        depth: number,
+        selectedPath: string
+    ): void => {
         const executable = args[0];
         if (!executable || executable.startsWith("-")) return;
         if (depth > 8) {
             unqualified = true;
             return;
         }
+        if (executable.includes("\0")) {
+            unqualified = true;
+            return;
+        }
         const name = path.posix.basename(executable);
-        if (executable.includes("/")) paths.add(path.posix.resolve(cwd, executable));
+        if (executable.includes("/")) paths.add(resolve(cwd, executable));
+        else lookup(executable, cwd, selectedPath);
         if (name === "env") {
             let current = cwd,
                 options = true,
@@ -135,6 +205,13 @@ export function startupCodePaths(
             let index = 1;
             while (index < expanded.length) {
                 const arg = expanded[index]!;
+                if (
+                    options &&
+                    (arg === "-" ||
+                        arg === "--ignore-environment" ||
+                        /^-[i0v]*i[i0v]*$/.test(arg))
+                )
+                    searchPath = defaultPath;
                 if (options && (arg === "--" || arg === "-")) {
                     options = false;
                     index++;
@@ -149,11 +226,17 @@ export function startupCodePaths(
                         const attached = long ? long[2] : short![2] || undefined;
                         const value = attached ?? expanded[++index];
                         if (value === undefined) return;
+                        if ((option === "u" || option === "unset") && value === "PATH")
+                            searchPath = defaultPath;
                         if (option === "f" || option === "file") unqualified = true;
                         if (option === "C" || option === "chdir")
-                            current = path.posix.resolve(cwd, value);
+                            current = resolve(cwd, value);
                         if (option === "S" || option === "split-string") {
-                            if (++splits > 8) {
+                            if (
+                                ++splits > 8 ||
+                                dynamicShellWord(value) ||
+                                value.includes("\0")
+                            ) {
                                 unqualified = true;
                                 return;
                             }
@@ -261,8 +344,7 @@ export function startupCodePaths(
                 if (!/^[+-]/.test(option) || option === "-") break;
                 if (["--help", "--version"].includes(option)) return;
                 if (["--rcfile", "--init-file"].includes(option)) {
-                    if (args[index + 1])
-                        paths.add(path.posix.resolve(cwd, args[++index]!));
+                    if (args[index + 1]) paths.add(resolve(cwd, args[++index]!));
                 } else if (
                     [
                         "--noprofile",
@@ -292,19 +374,23 @@ export function startupCodePaths(
             }
             if (!inline) {
                 const script = args[index];
-                if (script) paths.add(path.posix.resolve(cwd, script));
+                if (script) paths.add(resolve(cwd, script));
                 return;
             }
             {
                 // Only simple command lists are qualified. Do not guess through
                 // compound grammar, redirections or executable expansions.
-                if (unqualifiedShell(args[index] ?? "")) {
+                if (
+                    unqualifiedShell(args[index] ?? "") ||
+                    (args[index] ?? "").includes("\0")
+                ) {
                     unqualified = true;
                     return;
                 }
                 let group: string[] = [];
                 let current = cwd;
                 const finish = () => {
+                    const inherited = searchPath;
                     // Shell assignments precede the command but are not executable
                     // words. Values (including quoted paths) must not become code.
                     while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(group[0] ?? ""))
@@ -317,18 +403,37 @@ export function startupCodePaths(
                     ) {
                         for (const value of selected.slice(1)) assignment(value);
                     }
-                    if (selected[0] === "eval" || /[$`]/.test(selected[0] ?? ""))
+                    if (selected[0] === "unset" && selected.slice(1).includes("PATH"))
+                        searchPath = defaultPath;
+                    if (selected[0] === "eval" || (selected[0] ?? "").includes("\0"))
                         unqualified = true;
                     else if (selected[0] === "cd") {
                         const operands = selected.slice(selected[1] === "--" ? 2 : 1);
                         if (
                             operands.length !== 1 ||
                             operands[0]!.startsWith("-") ||
-                            /[$`]/.test(operands[0]!)
+                            operands[0]!.includes("\0")
                         )
                             unqualified = true;
-                        else current = path.posix.resolve(current, operands[0]!);
-                    } else inspect(selected, current, depth + 1);
+                        else current = resolve(current, operands[0]!);
+                    } else if (
+                        !["export", "readonly", "declare", "typeset", "unset"].includes(
+                            selected[0] ?? ""
+                        )
+                    )
+                        inspect(
+                            selected,
+                            current,
+                            depth + 1,
+                            defaultLookup ? defaultPath : searchPath
+                        );
+                    if (
+                        selected.length > 0 &&
+                        !["export", "readonly", "declare", "typeset", "unset"].includes(
+                            selected[0]!
+                        )
+                    )
+                        searchPath = inherited;
                     group = [];
                 };
                 for (const token of tokens(args[index] ?? "")) {
@@ -346,7 +451,9 @@ export function startupCodePaths(
                             unqualified = true;
                             return;
                         }
-                        group.push(token.value);
+                        group.push(
+                            token.value + (dynamicShellWord(token.raw) ? "\0" : "")
+                        );
                     }
                 }
                 finish();
@@ -354,20 +461,22 @@ export function startupCodePaths(
             return;
         }
         if (name === "." || name === "source") {
-            if (args[1]) paths.add(path.posix.resolve(cwd, args[1]));
+            if (args[1]) {
+                paths.add(resolve(cwd, args[1]));
+                if (!args[1].includes("/")) lookup(args[1], cwd, searchPath);
+            }
             return;
         }
         if (name === "java") {
             paths.add(cwd); // Default class path, relative source and module imports.
             const addList = (value: string) => {
                 for (const item of value.split(":"))
-                    paths.add(path.posix.resolve(cwd, item.replace(/\/\*$/, "") || "."));
+                    paths.add(resolve(cwd, item.replace(/\/\*$/, "") || "."));
             };
             for (let index = 1; index < args.length; index++) {
                 const option = args[index]!;
                 if (option === "-jar") {
-                    if (args[index + 1])
-                        paths.add(path.posix.resolve(cwd, args[index + 1]!));
+                    if (args[index + 1]) paths.add(resolve(cwd, args[index + 1]!));
                     return;
                 }
                 const list =
@@ -412,7 +521,7 @@ export function startupCodePaths(
                     unqualified = true;
                     return;
                 } else {
-                    paths.add(path.posix.resolve(cwd, option));
+                    paths.add(resolve(cwd, option));
                     return;
                 }
             }
@@ -429,9 +538,13 @@ export function startupCodePaths(
             if (/^python(?:\d+(?:\.\d+)*)?$/.test(name)) {
                 for (let index = 1; index < args.length; index++) {
                     const arg = args[index]!;
+                    if (arg.includes("\0")) {
+                        unqualified = true;
+                        return;
+                    }
                     if (arg === "--") {
                         if (args[index + 1] && args[index + 1] !== "-")
-                            paths.add(path.posix.resolve(cwd, args[index + 1]!));
+                            paths.add(resolve(cwd, args[index + 1]!));
                         break;
                     }
                     if (arg === "-" || /^-[cm]/.test(arg)) break;
@@ -442,8 +555,34 @@ export function startupCodePaths(
                         continue;
                     }
                     if (arg.startsWith("-")) continue;
-                    paths.add(path.posix.resolve(cwd, arg));
+                    paths.add(resolve(cwd, arg));
                     break;
+                }
+                return;
+            }
+            // Runtime preload/loader switches execute code independently of the
+            // main script. Qualify only option positions, never its data argv.
+            if (["node", "nodejs", "bun"].includes(name)) {
+                for (let index = 1; index < args.length; index++) {
+                    const option = args[index]!;
+                    if (option === "--") {
+                        if (args[index + 1]) paths.add(resolve(cwd, args[index + 1]!));
+                        return;
+                    }
+                    if (!option.startsWith("-")) {
+                        paths.add(resolve(cwd, option));
+                        return;
+                    }
+                    if (
+                        /^(?:--(?:no-warnings|trace-warnings|use-strict|enable-source-maps)|--(?:max-old-space-size|stack-size)=\d+)$/.test(
+                            option
+                        )
+                    )
+                        continue;
+                    // Includes -r/--require, --import, loader/preload, eval and
+                    // options whose arity or configuration inputs are unknown.
+                    unqualified = true;
+                    return;
                 }
                 return;
             }
@@ -452,7 +591,7 @@ export function startupCodePaths(
                 script &&
                 !["-m", "-c", "-e", "--eval", "--print"].some((arg) => args.includes(arg))
             )
-                paths.add(path.posix.resolve(cwd, script));
+                paths.add(resolve(cwd, script));
         }
     };
     const first = argv(entrypoint),

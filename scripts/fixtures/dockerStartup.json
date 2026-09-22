@@ -1918,5 +1918,510 @@
         "working_dir": "/",
         "mount": "/custom",
         "blocked": true
+    },
+    {
+        "name": "PATH bare executable",
+        "entrypoint": ["start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["PATH=/custom:/usr/bin"]
+    },
+    {
+        "name": "PATH shell executable",
+        "entrypoint": ["sh", "-c"],
+        "command": ["start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["PATH=/custom:/usr/bin"]
+    },
+    {
+        "name": "PATH inline assignment",
+        "entrypoint": ["sh", "-c"],
+        "command": ["PATH=/custom:/usr/bin start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": []
+    },
+    {
+        "name": "PATH exported assignment",
+        "entrypoint": ["sh", "-c"],
+        "command": ["export PATH=/custom:/usr/bin; start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": []
+    },
+    {
+        "name": "PATH env assignment",
+        "entrypoint": ["env", "PATH=/custom:/usr/bin"],
+        "command": ["start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": []
+    },
+    {
+        "name": "PATH relative component",
+        "entrypoint": ["start"],
+        "command": [],
+        "working_dir": "/custom",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["PATH=bin:/usr/bin"]
+    },
+    {
+        "name": "PATH empty component",
+        "entrypoint": ["start"],
+        "command": [],
+        "working_dir": "/custom",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["PATH=:/usr/bin"]
+    },
+    {
+        "name": "PATH empty value",
+        "entrypoint": ["start"],
+        "command": [],
+        "working_dir": "/custom",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["PATH="]
+    },
+    {
+        "name": "PATH explicit file",
+        "entrypoint": ["start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom/start",
+        "blocked": true,
+        "environment": ["PATH=/custom:/usr/bin"]
+    },
+    {
+        "name": "PATH absolute bypass",
+        "entrypoint": ["/vendor/server"],
+        "command": ["/custom/data"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false,
+        "environment": ["PATH=/custom:/usr/bin"]
+    },
+    {
+        "name": "PATH standard search",
+        "entrypoint": ["server"],
+        "command": ["/custom/data"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false,
+        "environment": ["PATH=/usr/bin:/bin"]
+    },
+    {
+        "name": "PATH command query",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["command -v start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false,
+        "environment": ["PATH=/custom:/usr/bin"]
+    },
+    {
+        "name": "PATH default command lookup",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["command -p start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false,
+        "environment": ["PATH=/custom:/usr/bin"]
+    },
+    {
+        "name": "PATH child lookup remains custom",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["command -p sh -c start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["PATH=/custom:/usr/bin"]
+    },
+    {
+        "name": "PATH cwd change",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["cd /custom; start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["PATH=:/bin"]
+    },
+    {
+        "name": "PATH assignment scope preserves parent",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["env PATH=/usr/bin /bin/true; start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["PATH=/custom:/usr/bin"]
+    },
+    {
+        "name": "PATH temporary shell scope preserves parent",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["PATH=/usr/bin /bin/true; start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["PATH=/custom:/usr/bin"]
+    },
+    {
+        "name": "PATH healthcheck independent startup assignment",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["PATH=/usr/bin /bin/true"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false,
+        "environment": ["PATH=/custom:/usr/bin"]
+    },
+    {
+        "name": "expanded operand python \"$SCRIPT\"",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["python \"$SCRIPT\""],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["SCRIPT=/custom/start", "TOKEN=SYNTHETIC_PRIVATE"]
+    },
+    {
+        "name": "expanded operand python ${SCRIPT}",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["python ${SCRIPT}"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["SCRIPT=/custom/start", "TOKEN=SYNTHETIC_PRIVATE"]
+    },
+    {
+        "name": "expanded operand python \"$1\"",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["python \"$1\""],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["SCRIPT=/custom/start", "TOKEN=SYNTHETIC_PRIVATE"]
+    },
+    {
+        "name": "expanded operand python -- \"$SCRIPT\"",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["python -- \"$SCRIPT\""],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["SCRIPT=/custom/start", "TOKEN=SYNTHETIC_PRIVATE"]
+    },
+    {
+        "name": "expanded operand bash --rcfile \"$SCRIPT\" /vendor/app",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["bash --rcfile \"$SCRIPT\" /vendor/app"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["SCRIPT=/custom/start", "TOKEN=SYNTHETIC_PRIVATE"]
+    },
+    {
+        "name": "expanded operand bash \"$SCRIPT\"",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["bash \"$SCRIPT\""],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["SCRIPT=/custom/start", "TOKEN=SYNTHETIC_PRIVATE"]
+    },
+    {
+        "name": "expanded operand . \"$SCRIPT\"",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": [". \"$SCRIPT\""],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["SCRIPT=/custom/start", "TOKEN=SYNTHETIC_PRIVATE"]
+    },
+    {
+        "name": "expanded operand java -jar \"$SCRIPT\"",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["java -jar \"$SCRIPT\""],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["SCRIPT=/custom/start", "TOKEN=SYNTHETIC_PRIVATE"]
+    },
+    {
+        "name": "expanded operand node \"$SCRIPT\"",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["node \"$SCRIPT\""],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["SCRIPT=/custom/start", "TOKEN=SYNTHETIC_PRIVATE"]
+    },
+    {
+        "name": "expanded operand env /usr/bin/python \"$SCRIPT\"",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["env /usr/bin/python \"$SCRIPT\""],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["SCRIPT=/custom/start", "TOKEN=SYNTHETIC_PRIVATE"]
+    },
+    {
+        "name": "expanded operand python /vendor/app.py \"$TOKEN\"",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["python /vendor/app.py \"$TOKEN\""],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false,
+        "environment": ["SCRIPT=/custom/start", "TOKEN=SYNTHETIC_PRIVATE"]
+    },
+    {
+        "name": "expanded operand python '$SCRIPT'",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["python '$SCRIPT'"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false,
+        "environment": ["SCRIPT=/custom/start", "TOKEN=SYNTHETIC_PRIVATE"]
+    },
+    {
+        "name": "expanded operand python \\$SCRIPT",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["python \\$SCRIPT"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false,
+        "environment": ["SCRIPT=/custom/start", "TOKEN=SYNTHETIC_PRIVATE"]
+    },
+    {
+        "name": "expanded operand python /custom/\"${NAME}\"",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["python /custom/\"${NAME}\""],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["SCRIPT=/custom/start", "TOKEN=SYNTHETIC_PRIVATE"]
+    },
+    {
+        "name": "expanded operand python /vendor/*.py",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["python /vendor/*.py"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["SCRIPT=/custom/start", "TOKEN=SYNTHETIC_PRIVATE"]
+    },
+    {
+        "name": "expanded operand python \"/vendor/*.py\"",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["python \"/vendor/*.py\""],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false,
+        "environment": ["SCRIPT=/custom/start", "TOKEN=SYNTHETIC_PRIVATE"]
+    },
+    {
+        "name": "expanded operand python /vendor/app.py /custom/*.txt",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["python /vendor/app.py /custom/*.txt"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false,
+        "environment": ["SCRIPT=/custom/start", "TOKEN=SYNTHETIC_PRIVATE"]
+    },
+    {
+        "name": "expanded operand python ~/start",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["python ~/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["SCRIPT=/custom/start", "TOKEN=SYNTHETIC_PRIVATE"]
+    },
+    {
+        "name": "expanded operand python '~/start'",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["python '~/start'"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false,
+        "environment": ["SCRIPT=/custom/start", "TOKEN=SYNTHETIC_PRIVATE"]
+    },
+    {
+        "name": "expanded operand node --require=\"$SCRIPT\" /vendor/app.js",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["node --require=\"$SCRIPT\" /vendor/app.js"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["SCRIPT=/custom/start", "TOKEN=SYNTHETIC_PRIVATE"]
+    },
+    {
+        "name": "expanded operand python /vendor/app.py \"${TOKEN:-SYNTHETIC_PRIVATE}\"",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["python /vendor/app.py \"${TOKEN:-SYNTHETIC_PRIVATE}\""],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false,
+        "environment": ["SCRIPT=/custom/start", "TOKEN=SYNTHETIC_PRIVATE"]
+    },
+    {
+        "name": "expanded operand PATH=\"$ROOT:/usr/bin\" start",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["PATH=\"$ROOT:/usr/bin\" start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["SCRIPT=/custom/start", "TOKEN=SYNTHETIC_PRIVATE"]
+    },
+    {
+        "name": "direct exec dollar operand is literal",
+        "entrypoint": ["python"],
+        "command": ["$SCRIPT"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false,
+        "environment": ["SCRIPT=/custom/start"]
+    },
+    {
+        "name": "attached runtime --require=/custom/hook",
+        "entrypoint": ["node", "--require=/custom/hook"],
+        "command": ["/vendor/app.js"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "script data runtime --require=/custom/hook",
+        "entrypoint": ["node", "/vendor/app.js"],
+        "command": ["--require=/custom/hook"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "attached runtime -r/custom/hook",
+        "entrypoint": ["node", "-r/custom/hook"],
+        "command": ["/vendor/app.js"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "script data runtime -r/custom/hook",
+        "entrypoint": ["node", "/vendor/app.js"],
+        "command": ["-r/custom/hook"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "attached runtime --import=/custom/hook",
+        "entrypoint": ["node", "--import=/custom/hook"],
+        "command": ["/vendor/app.js"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "script data runtime --import=/custom/hook",
+        "entrypoint": ["node", "/vendor/app.js"],
+        "command": ["--import=/custom/hook"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "attached runtime --loader=/custom/hook",
+        "entrypoint": ["node", "--loader=/custom/hook"],
+        "command": ["/vendor/app.js"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "script data runtime --loader=/custom/hook",
+        "entrypoint": ["node", "/vendor/app.js"],
+        "command": ["--loader=/custom/hook"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "attached runtime --experimental-loader=/custom/hook",
+        "entrypoint": ["node", "--experimental-loader=/custom/hook"],
+        "command": ["/vendor/app.js"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "script data runtime --experimental-loader=/custom/hook",
+        "entrypoint": ["node", "/vendor/app.js"],
+        "command": ["--experimental-loader=/custom/hook"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "split runtime --require",
+        "entrypoint": ["node", "--require", "/custom/hook"],
+        "command": ["/vendor/app.js"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "split runtime -r",
+        "entrypoint": ["node", "-r", "/custom/hook"],
+        "command": ["/vendor/app.js"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "split runtime --import",
+        "entrypoint": ["node", "--import", "/custom/hook"],
+        "command": ["/vendor/app.js"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "split runtime --loader",
+        "entrypoint": ["node", "--loader", "/custom/hook"],
+        "command": ["/vendor/app.js"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "split runtime --experimental-loader",
+        "entrypoint": ["node", "--experimental-loader", "/custom/hook"],
+        "command": ["/vendor/app.js"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "node option terminator",
+        "entrypoint": ["node", "--"],
+        "command": ["/vendor/app.js", "--require=/custom/data"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "node ordinary option",
+        "entrypoint": ["node", "--no-warnings"],
+        "command": ["/vendor/app.js", "/custom/data"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
     }
 ]

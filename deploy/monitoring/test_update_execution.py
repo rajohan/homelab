@@ -197,6 +197,34 @@ class UpdateExecutionTests(unittest.TestCase):
                 else:
                     remote.verify_code_mounts(service)
 
+    def test_path_inheritance_and_healthcheck_scope(self):
+        defaults = {"entrypoint": ["/bin/sh", "-c"], "command": ["PATH=/usr/bin /bin/true"], "environment": ["PATH=/custom:/usr/bin"], "healthcheck": {"Test": ["CMD", "start"]}}
+        for kind in ("bind", "volume", "tmpfs"):
+            service = {"volumes": [{"type": kind, "target": "/custom"}]}
+            for overrides in ({}, {"environment": {"APP_CONFIG": "SYNTHETIC_PRIVATE"}}):
+                with self.subTest(kind=kind, overrides=overrides), self.assertRaises(remote.UpdateRefusal):
+                    remote.verify_code_mounts(service, remote.compose_startup(overrides, defaults))
+            remote.verify_code_mounts(service, remote.compose_startup({"environment": {"PATH": "/usr/bin:/bin"}}, defaults))
+        paths = remote.startup_code_paths({"entrypoint": ["node", "--max-old-space-size=128"], "command": ["/vendor/app.js", "/custom/data"]})
+        self.assertIsNotNone(paths)
+        self.assertNotIn("/custom/data", paths)
+
+    def test_real_shell_search_and_parameter_operands(self):
+        with tempfile.TemporaryDirectory(prefix="homelab-shell-search-") as temporary:
+            script = Path(temporary) / "start"
+            script.write_text("#!/bin/sh\nprintf executed")
+            script.chmod(0o700)
+            environment = {"PATH": temporary + ":/usr/bin:/bin", "SCRIPT": str(script), "HOME": temporary}
+            for expression in ("start", 'sh "$SCRIPT"', 'command sh "$SCRIPT"'):
+                result = subprocess.run(["/bin/sh", "-c", expression], env=environment, capture_output=True, text=True, check=True, timeout=5)
+                self.assertEqual(result.stdout, "executed")
+            result = subprocess.run(["/bin/sh", "-c", "printf '%s' '$SCRIPT'"], env=environment, capture_output=True, text=True, check=True, timeout=5)
+            self.assertEqual(result.stdout, "$SCRIPT")
+
+    def test_expanded_interpreter_options_are_not_guessed(self):
+        self.assertIsNone(remote.startup_code_paths({"entrypoint": ["/bin/sh", "-c"], "command": ["python -$OPTIONS /vendor/app.py"]}))
+        self.assertIsNotNone(remote.startup_code_paths({"entrypoint": ["/bin/sh", "-c"], "command": ["python /vendor/app.py --mode=$OPTIONS"]}))
+
     def docker_fixture(self, mode="running", mutate=False, fail=False, with_environment=False, manifest_store=False, wrong_pull=False, new_consumer=None):
         with tempfile.TemporaryDirectory(prefix="homelab-updater-fixture-") as temporary:
             directory = Path(temporary).resolve()

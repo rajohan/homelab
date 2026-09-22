@@ -119,6 +119,83 @@ test.each([
     }
 );
 
+test.each([
+    { command: ["start"], environment: ["PATH=/custom:/usr/bin"], blocked: true },
+    {
+        command: ["/bin/sh", "-c", "start"],
+        environment: ["PATH=/custom:/usr/bin"],
+        blocked: true,
+    },
+    {
+        command: ["/bin/sh", "-c", 'python "$SCRIPT"'],
+        environment: ["SCRIPT=/custom/SYNTHETIC_PRIVATE"],
+        blocked: true,
+    },
+    {
+        command: ["/bin/sh", "-c", 'python /vendor/app.py "$SCRIPT"'],
+        environment: ["SCRIPT=/custom/SYNTHETIC_PRIVATE"],
+        blocked: false,
+    },
+    {
+        command: ["node", "--require=/custom/start", "/vendor/app.js"],
+        environment: [],
+        blocked: true,
+    },
+    {
+        command: ["node", "/vendor/app.js", "--require=/custom/data"],
+        environment: [],
+        blocked: false,
+    },
+    {
+        command: ["/bin/sh", "-c", "command -p start"],
+        environment: ["PATH=/custom:/usr/bin"],
+        blocked: false,
+    },
+])(
+    "Docker indirect startup and healthcheck inputs stay private: %j",
+    async (scenario) => {
+        const fixture = createApplicationFixture();
+        try {
+            const detail = fixture.containers.get("a".repeat(64))!;
+            detail.Config.Env = [...scenario.environment];
+            detail.Mounts = [
+                {
+                    Type: "volume",
+                    Source: "fixture-code",
+                    Destination: "/custom",
+                    RW: false,
+                },
+            ];
+            for (const healthcheck of [false, true]) {
+                detail.Config.Entrypoint = healthcheck
+                    ? ["/vendor/server"]
+                    : [...scenario.command];
+                detail.Config.Cmd = [];
+                detail.Config.Healthcheck = {
+                    Test: healthcheck ? ["CMD", ...scenario.command] : ["NONE"],
+                };
+                const inventory = await collectApplications(
+                    [fixture.target],
+                    () => createDockerPort(fixture.target, {}),
+                    AbortSignal.timeout(3000)
+                );
+                const app = inventory.hosts[0]!.applications.find(
+                    (value) => value.containerId === detail.Id
+                )!;
+                expect(hasApplicationCodeMount(app)).toBe(scenario.blocked);
+                expect(JSON.stringify(inventory)).not.toContain("SYNTHETIC_PRIVATE");
+                expect(
+                    JSON.stringify(
+                        filterApplicationInventory(inventory, [fixture.target])
+                    )
+                ).not.toContain("SYNTHETIC_PRIVATE");
+            }
+        } finally {
+            await fixture.close();
+        }
+    }
+);
+
 test("oversized internal visibility still produces a readable healthy PostgreSQL snapshot", async () => {
     const fixture = await operationFixture();
     const docker = createApplicationFixture();
