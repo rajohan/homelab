@@ -8,6 +8,8 @@ import * as v from "valibot";
 import { applicationClientEnvironment } from "../../config/environment";
 import type { JobHandler } from "../../jobs/types";
 import { publishNotification } from "../../notifications/publish";
+import type { UpdateTarget } from "../updates/configuration";
+import { refreshDockerObservations } from "../updates/observations";
 import { performApplicationAction } from "./actions";
 import { applicationHostResourceKeys, type ApplicationTarget } from "./configuration";
 import { createDockerPort, type DockerPort } from "./docker";
@@ -18,7 +20,9 @@ const payloadSchema = v.omit(applicationIntentSchema, ["requestId"]);
 
 function persist(
     inventory: ApplicationInventory,
-    context: Parameters<JobHandler["execute"]>[1]
+    context: Parameters<JobHandler["execute"]>[1],
+    targets: readonly ApplicationTarget[],
+    updates: readonly UpdateTarget[]
 ) {
     return context.commit(async (transaction) => {
         const previous = await readApplicationInventory(transaction);
@@ -37,7 +41,8 @@ function persist(
             });
         }
         await transaction`INSERT INTO operation_snapshots(key,value,captured_at) VALUES ('applications.inventory',${JSON.stringify(inventory)}::text::jsonb,statement_timestamp()) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,captured_at=EXCLUDED.captured_at`;
-    });
+        await refreshDockerObservations(transaction, inventory, targets, updates);
+    }, true);
 }
 
 /**
@@ -45,13 +50,15 @@ function persist(
  * @param targets - Explicit host allowlists, without credential values.
  * @param client - Dashboard database used to bound queued authorization lifetime.
  * @param connect - Worker-only transport factory; tests inject isolated fixtures.
+ * @param updates - Deployment-owned aliases used to refresh existing software observations.
  * @returns Registered jobs, with unsafe external effects disabled for automatic retries.
  */
 export function applicationJobs(
     targets: readonly ApplicationTarget[],
     client: SQL,
     connect: (target: ApplicationTarget) => DockerPort = (target) =>
-        createDockerPort(target, applicationClientEnvironment(target))
+        createDockerPort(target, applicationClientEnvironment(target)),
+    updates: readonly UpdateTarget[] = []
 ): readonly JobHandler[] {
     if (targets.length === 0) return [];
     return [
@@ -81,7 +88,7 @@ export function applicationJobs(
                     context.signal,
                     previous?.inventory
                 );
-                if (!(await persist(inventory, context)))
+                if (!(await persist(inventory, context, targets, updates)))
                     throw new Error("Application snapshot ownership changed");
             },
         },
@@ -140,7 +147,7 @@ export function applicationJobs(
                             context.signal,
                             previous?.inventory
                         );
-                        persisted = await persist(inventory, context);
+                        persisted = await persist(inventory, context, targets, updates);
                     }
                 }
                 if (!persisted) throw new Error("Application result ownership changed");

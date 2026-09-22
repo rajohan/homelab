@@ -40,7 +40,16 @@ const eventSchema = v.variant("complete", [
         rebootRequired: v.nullable(v.boolean()),
         containerId: v.optional(v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/))),
     }),
-    v.object({ complete: v.literal(false) }),
+    v.object({
+        complete: v.literal(false),
+        reason: v.optional(
+            v.picklist([
+                "container_changed",
+                "local_code_override",
+                "application_start_failed",
+            ])
+        ),
+    }),
 ]);
 const progressSchema = v.object({
     phase: v.picklist(Object.keys(phases) as (keyof typeof phases)[]),
@@ -174,8 +183,19 @@ export const executeUpdate: UpdateExecutor = async (
                     await report(phases[phase.output.phase]);
                 } else {
                     const event = v.parse(eventSchema, value);
-                    if (!event.complete || receipt)
+                    if (!event.complete) {
+                        const reasons = {
+                            container_changed:
+                                "The container was replaced after the software inventory was captured. Refresh the inventory and confirm the update again.",
+                            local_code_override:
+                                "Local application code is mounted over this image. Review or remove the override before updating; no image was changed.",
+                            application_start_failed:
+                                "The image was changed, but the application did not start successfully. Inspect its health before retrying; no automatic rollback was attempted.",
+                        };
+                        if (event.reason) await report(reasons[event.reason]);
                         throw new Error("Update execution did not complete");
+                    }
+                    if (receipt) throw new Error("Update execution did not complete");
                     receipt = {
                         installed: event.installed,
                         rebootRequired: event.rebootRequired,

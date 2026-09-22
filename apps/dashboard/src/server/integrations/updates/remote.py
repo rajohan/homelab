@@ -60,6 +60,27 @@ def progress(phase):
     print(json.dumps({"phase": phase}), flush=True)
 
 
+class UpdateRefusal(RuntimeError):
+    """Carry a fixed error category without exposing command output or secrets."""
+
+    def __init__(self, reason):
+        super().__init__(reason)
+        self.reason = reason
+
+
+def verify_code_mounts(service):
+    """Refuse executable bind overlays before pulling or mutating a deployment."""
+    for mount in service.get("volumes", []):
+        if mount.get("type") != "bind":
+            continue
+        destination = mount.get("target", "")
+        # Standalone Homelab helpers do not replace vendor application modules.
+        if destination.startswith("/opt/homelab/"):
+            continue
+        if re.search(r"\.(?:py|pyc|js|mjs|cjs|jsx|ts|tsx|so|node)$", destination, re.I) or re.fullmatch(r"/app(?:/(?:src|lib|services|providers|api|utils|cw_platform)(?:/.*)?)?/?", destination):
+            raise UpdateRefusal("local_code_override")
+
+
 def file_digest(path):
     """Hash a large executable incrementally rather than holding its old copy in RAM."""
     with path.open("rb") as stream:
@@ -170,14 +191,18 @@ def docker_update(driver, item, automatic=False):
         raise RuntimeError("Untrusted Compose source path")
     base = ["/usr/bin/docker", "compose", "--project-directory", str(directory), "--project-name", driver["project"], "--file", driver["file"]]
     with locked_directory(directory):
-        before = inspect_container(identity)
+        try:
+            before = inspect_container(identity)
+        except RuntimeError:
+            raise UpdateRefusal("container_changed") from None
         if before[:3] != ["/" + driver["name"], item["image"], item["installed"]] or before[4:] != [driver["project"], driver["service"]] or before[3] not in {"running", "exited", "created"}:
-            raise RuntimeError("The observed application changed")
+            raise UpdateRefusal("container_changed")
         original = path.read_bytes()
         environment = compose_environment(driver)
         def compose(arguments, timeout=120):
             return command(base + arguments, timeout=timeout, environment=environment)
         config = json.loads(compose(["config", "--format", "json"]))
+        verify_code_mounts(config.get("services", {}).get(driver["service"], {}))
         if config.get("services", {}).get(driver["service"], {}).get("image") != item["image"]:
             raise RuntimeError("Compose and the observed image differ")
         namespace_plan = prepare_namespace_plan(config, driver, compose)
@@ -216,7 +241,10 @@ def docker_update(driver, item, automatic=False):
         progress("installing")
         stop_namespace_consumers(namespace_plan, driver["service"], compose)
         state = ["--wait", "--wait-timeout", "120"] if before[3] == "running" else ["--no-start"]
-        compose(["up", "--detach", "--no-deps", "--no-build", "--pull", "never"] + state + [driver["service"]], timeout=180)
+        try:
+            compose(["up", "--detach", "--no-deps", "--no-build", "--pull", "never"] + state + [driver["service"]], timeout=180)
+        except RuntimeError:
+            raise UpdateRefusal("application_start_failed") from None
         progress("verifying")
         after = inspect_container(driver["name"])
         if after[1:3] != [candidate, item["available"]] or after[4:] != before[4:] or (before[3] == "running" and after[3] != "running") or (before[3] != "running" and after[3] == "running"):
@@ -353,6 +381,6 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, interrupted)
     try:
         main()
-    except Exception:
-        print(json.dumps({"complete": False}), flush=True)
+    except Exception as error:
+        print(json.dumps({"complete": False, **({"reason": error.reason} if isinstance(error, UpdateRefusal) else {})}), flush=True)
         sys.exit(1)

@@ -77,7 +77,12 @@ export function createOperationsRuntime(
             ? [updatesJob(configuration.updateSources, connection.client)]
             : []),
         ...(configuration.alerts ? [alertsJob(configuration.alerts)] : []),
-        ...applicationJobs(configuration.applicationTargets ?? [], connection.client),
+        ...applicationJobs(
+            configuration.applicationTargets ?? [],
+            connection.client,
+            undefined,
+            configuration.updateTargets ?? []
+        ),
         ...(configuration.metricsUrl
             ? [
                   metricsJob(

@@ -18,6 +18,7 @@ def main():
     """Verify real pull identity, namespace rebinding, mounts and stopped state with scoped cleanup."""
     owner = "homelab-update-smoke-" + uuid.uuid4().hex
     command = remote.command
+    remote.verify_code_mounts({"volumes": [{"type": "bind", "target": "/opt/homelab/logout-worker.js"}]})
     image = json.loads(command(["/usr/bin/docker", "image", "inspect", "postgres:18"]))[0]
     digest = next(value.split("@", 1)[1] for value in image["RepoDigests"] if value.startswith("postgres@"))
     original = "postgres@" + digest
@@ -27,11 +28,15 @@ def main():
         provider_file = directory / "provider.yaml"
         consumer_file = directory / "consumer.yaml"
         main_file = directory / "compose.yaml"
+        overlay_file = directory / "overlay.yaml"
+        patch_file = directory / "legacy.py"
+        patch_file.write_text("# Synthetic obsolete application override; never production code.\n")
+        overlay_file.write_text("services:\n  overlay:\n    image: " + original + "\n    entrypoint: [/bin/sleep]\n    command: ['3600']\n    network_mode: none\n    mem_limit: 64m\n    pids_limit: 32\n    labels:\n      homelab.smoke: " + owner + "\n    volumes:\n      - type: bind\n        source: " + str(patch_file) + "\n        target: /app/services/legacy.py\n        read_only: true\n")
         shared = {"image": original, "init": True, "entrypoint": ["/bin/sleep"], "command": ["3600"], "mem_limit": "64m", "pids_limit": 32, "labels": {"homelab.smoke": owner}, "healthcheck": {"test": ["CMD", "true"], "interval": "1s", "retries": 2}, "volumes": ["marker:/marker"]}
         # The real updater deliberately edits a literal YAML pin; other fixtures may use JSON/YAML.
         provider_file.write_text("services:\n  provider:\n    image: " + original + "\n    init: true\n    entrypoint: [/bin/sleep]\n    command: ['3600']\n    network_mode: none\n    mem_limit: 64m\n    pids_limit: 32\n    labels:\n      homelab.smoke: " + owner + "\n    healthcheck:\n      test: [CMD, 'true']\n      interval: 1s\n")
         consumer_file.write_text("services:\n  consumer:\n    image: " + original + "\n" + "".join("    " + key + ": " + json.dumps(value) + "\n" for key, value in {**shared, "network_mode": "service:provider"}.items() if key != "image"))
-        main_file.write_text(json.dumps({"include": [str(provider_file), str(consumer_file)], "services": {"stopped": {**shared, "network_mode": "service:provider"}, "leaf": {**shared, "network_mode": "service:consumer"}}, "volumes": {"marker": {"labels": {"homelab.smoke": owner}}}}))
+        main_file.write_text(json.dumps({"include": [str(provider_file), str(consumer_file), str(overlay_file)], "services": {"stopped": {**shared, "network_mode": "service:provider"}, "leaf": {**shared, "network_mode": "service:consumer"}}, "volumes": {"marker": {"labels": {"homelab.smoke": owner}}}}))
         base = ["/usr/bin/docker", "compose", "--project-directory", str(directory), "--project-name", owner, "--file", str(main_file)]
         def compose(args, timeout=120):
             return command(base + args, timeout=timeout)
@@ -42,6 +47,14 @@ def main():
             command(["/usr/bin/docker", "exec", before["consumer"][0], "/bin/sh", "-ec", "printf persistent > /marker/probe"])
             driver = {"kind": "docker", "name": owner + "-provider-1", "project": owner, "service": "provider", "directory": str(directory), "file": str(main_file), "imageFile": str(provider_file), "namespaceDependents": ["consumer", "stopped", "leaf"]}
             item = {"id": "docker:" + before["provider"][0], "image": original, "installed": image["Id"], "available": image["Id"], "availableImage": candidate}
+            overlay_before = remote.namespace_snapshot(owner + "-overlay-1")
+            try:
+                remote.docker_update({**driver, "name": owner + "-overlay-1", "service": "overlay", "imageFile": str(overlay_file), "namespaceDependents": []}, {**item, "id": "docker:" + overlay_before[0]})
+                raise AssertionError("An obsolete executable overlay was allowed through the updater")
+            except remote.UpdateRefusal as error:
+                assert error.reason == "local_code_override"
+            assert remote.namespace_snapshot(owner + "-overlay-1") == overlay_before
+            assert original in overlay_file.read_text() and candidate not in overlay_file.read_text()
             compose(["stop", "--timeout", "5", "consumer"])
             broken = {service: remote.namespace_snapshot(row[0]) for service, row in before.items()}
             try:

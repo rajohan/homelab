@@ -42,6 +42,7 @@ export const updateItemSchema = v.strictObject({
     installedVersion: v.optional(text(100)),
     availableVersion: v.optional(text(100)),
     candidateVerified: v.optional(v.boolean()),
+    installationBlock: v.optional(text(300)),
     imageTag: v.optional(
         v.pipe(v.string(), v.regex(/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/))
     ),
