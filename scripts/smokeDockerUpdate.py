@@ -32,6 +32,7 @@ def main():
     digest = next(value.split("@", 1)[1] for value in image["RepoDigests"] if value.startswith("postgres@"))
     original = "postgres@" + digest
     candidate = "docker.io/library/postgres:18@" + digest
+    inherited_image = "homelab-fixtures/" + owner + ":inherited"
     with tempfile.TemporaryDirectory(prefix=owner + "-") as temporary:
         directory = Path(temporary).resolve()
         provider_file = directory / "provider.yaml"
@@ -39,18 +40,20 @@ def main():
         main_file = directory / "compose.yaml"
         overlay_file = directory / "overlay.yaml"
         helpers = []
-        for service, destination in [("custom-helper", "/opt/homelab/custom-entrypoint.py"), ("shell-helper", "/usr/local/bin/custom-entrypoint.sh"), ("extensionless-helper", "/custom/start"), ("pending-helper", "/custom/start"), ("module-helper", "/custom")]:
+        for service, destination in [("custom-helper", "/opt/homelab/custom-entrypoint.py"), ("shell-helper", "/usr/local/bin/custom-entrypoint.sh"), ("extensionless-helper", "/custom/start"), ("pending-helper", "/custom/start"), ("module-helper", "/custom"), ("inherited-helper", "/custom"), ("library-helper", "/usr/local/lib/python3.13/site-packages")]:
             helper_file = directory / (service + ".yaml")
             entrypoint_file = directory / (service + ".source")
             entrypoint_file.write_text("#!/bin/sh\nexec /bin/sleep 3600\n")
-            if service == "module-helper":
-                entrypoint_file = directory / "module-code"
+            if service in ("module-helper", "inherited-helper", "library-helper"):
+                entrypoint_file = directory / (service + "-code")
                 entrypoint_file.mkdir()
                 (entrypoint_file / "app.py").write_text("# Synthetic module source, never executed.\n")
             helper_file.write_text("services:\n  " + service + ":\n    image: " + original + "\n    entrypoint: [/bin/sh, " + destination + "]\n    network_mode: none\n    mem_limit: 64m\n    pids_limit: 32\n    labels:\n      homelab.smoke: " + owner + "\n    volumes:\n      - type: bind\n        source: " + str(entrypoint_file) + "\n        target: " + destination + "\n        read_only: true\n")
             helpers.append((service, helper_file))
-            if service in ("pending-helper", "module-helper"):
+            if service in ("pending-helper", "module-helper", "inherited-helper", "library-helper"):
                 helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sh, " + destination + "]", "entrypoint: [/bin/sleep]\n    command: ['3600']"))
+            if service == "inherited-helper":
+                helper_file.write_text(helper_file.read_text().replace(original, inherited_image))
         # A mounted executable can also be invoked later, outside startup argv.
         executable = directory / "extensionless-binary"
         executable.write_text("#!/bin/sh\nexit 0\n")
@@ -72,7 +75,15 @@ def main():
         base = ["/usr/bin/docker", "compose", "--project-directory", str(directory), "--project-name", owner, "--file", str(main_file)]
         def compose(args, timeout=120):
             return command(base + args, timeout=timeout)
+        image_built = False
         try:
+            build_directory = directory / "image"
+            build_directory.mkdir()
+            (build_directory / "Dockerfile").write_text("FROM postgres:18\nENTRYPOINT [\"python\"]\nCMD [\"/vendor/app.py\"]\n")
+            # BuildKit needs a writable client state directory; scope it to this
+            # disposable fixture instead of the updater's /nonexistent HOME.
+            command(["/usr/bin/docker", "build", "--pull=false", "--network=none", "--label", "homelab.smoke=" + owner, "--tag", inherited_image, str(build_directory)], environment={"HOME": str(build_directory)})
+            image_built = True
             compose(["up", "--detach", "--no-build", "--pull", "never", "--wait", "--wait-timeout", "20"])
             # Change Compose only, keeping the live startup vector on /bin/sleep.
             # Both pending extensionless scripts and cwd module execution must
@@ -82,6 +93,10 @@ def main():
                     helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sleep]\n    command: ['3600']", "entrypoint: [/bin/sh, /custom/start]"))
                 elif service == "module-helper":
                     helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sleep]\n    command: ['3600']", "working_dir: /custom\n    entrypoint: [python]\n    command: ['-m', app]"))
+                elif service == "inherited-helper":
+                    # Remove the OLD container override: the image supplies Python,
+                    # while pending Compose supplies only module args and cwd.
+                    helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sleep]\n    command: ['3600']", "working_dir: /custom\n    command: ['-m', app]"))
             compose(["stop", "stopped"])
             before = {service: remote.namespace_snapshot(owner + "-" + service + "-1") for service in ("provider", "consumer", "stopped", "leaf")}
             command(["/usr/bin/docker", "exec", before["consumer"][0], "/bin/sh", "-ec", "printf persistent > /marker/probe"])
@@ -95,14 +110,17 @@ def main():
                         assert arguments[1] != "pull", "Preflight must refuse mounted code before pull"
                         return command(arguments, **options)
                     remote.command = no_pull
-                    remote.docker_update({**driver, "name": overlay_name, "service": overlay_service, "imageFile": str(overlay_source), "namespaceDependents": []}, {**item, "id": "docker:" + overlay_before[0]})
+                    overlay_item = {**item, "id": "docker:" + overlay_before[0]}
+                    if overlay_service == "inherited-helper":
+                        overlay_item.update(image=inherited_image, installed=overlay_before[3], available=overlay_before[3], availableImage="docker.io/homelab-fixtures/" + owner + ":candidate@sha256:" + "a" * 64)
+                    remote.docker_update({**driver, "name": overlay_name, "service": overlay_service, "imageFile": str(overlay_source), "namespaceDependents": []}, overlay_item)
                     raise AssertionError("An obsolete executable overlay was allowed through the updater")
                 except remote.UpdateRefusal as error:
                     assert error.reason == "local_code_override"
                 finally:
                     remote.command = command
                 assert remote.namespace_snapshot(overlay_name) == overlay_before
-                assert original in overlay_source.read_text() and candidate not in overlay_source.read_text()
+                assert overlay_item["image"] in overlay_source.read_text() and overlay_item["availableImage"] not in overlay_source.read_text()
             compose(["stop", "--timeout", "5", "consumer"])
             broken = {service: remote.namespace_snapshot(row[0]) for service, row in before.items()}
             try:
@@ -207,6 +225,9 @@ def main():
             for identity in ids:
                 assert command(["/usr/bin/docker", "inspect", "--format", '{{index .Config.Labels "homelab.smoke"}}', identity]) == owner
             compose(["down", "--volumes", "--timeout", "5"])
+            if image_built:
+                assert command(["/usr/bin/docker", "image", "inspect", "--format", '{{index .Config.Labels "homelab.smoke"}}', inherited_image]) == owner
+                command(["/usr/bin/docker", "image", "rm", inherited_image])
 
 
 if __name__ == "__main__":

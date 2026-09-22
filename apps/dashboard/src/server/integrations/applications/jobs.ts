@@ -13,7 +13,7 @@ import { refreshDockerObservations } from "../updates/observations";
 import { performApplicationAction } from "./actions";
 import { applicationHostResourceKeys, type ApplicationTarget } from "./configuration";
 import { createDockerPort, type DockerPort } from "./docker";
-import { collectApplications } from "./inventory";
+import { collectApplications, readApplicationObservationTime } from "./inventory";
 import { readApplicationInventory } from "./selection";
 
 const payloadSchema = v.omit(applicationIntentSchema, ["requestId"]);
@@ -86,7 +86,9 @@ export function applicationJobs(
                     targets,
                     connect,
                     context.signal,
-                    previous?.inventory
+                    previous?.inventory,
+                    undefined,
+                    () => readApplicationObservationTime(client)
                 );
                 if (!(await persist(inventory, context, targets, updates)))
                     throw new Error("Application snapshot ownership changed");
@@ -145,7 +147,9 @@ export function applicationJobs(
                             targets,
                             connect,
                             context.signal,
-                            previous?.inventory
+                            previous?.inventory,
+                            undefined,
+                            () => readApplicationObservationTime(client)
                         );
                         persisted = await persist(inventory, context, targets, updates);
                     }

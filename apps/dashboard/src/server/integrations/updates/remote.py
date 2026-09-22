@@ -124,6 +124,17 @@ def startup_code_paths(startup):
     return paths
 
 
+def compose_startup(service, defaults):
+    """Apply Compose null/empty/omitted startup semantics to installed image defaults."""
+    entrypoint = service.get("entrypoint")
+    command = service.get("command")
+    return {
+        "entrypoint": defaults.get("entrypoint") if entrypoint is None else entrypoint,
+        "command": command if command is not None else defaults.get("command") if entrypoint is None else [],
+        "working_dir": service.get("working_dir") or defaults.get("working_dir") or "/",
+    }
+
+
 def verify_code_mounts(service, startup=None):
     """Refuse executable bind overlays before pulling or mutating a deployment."""
     paths = startup_code_paths(startup or service)
@@ -141,7 +152,7 @@ def verify_code_mounts(service, startup=None):
         if source:
             metadata = Path(source).stat()
             executable = Path(source).is_file() and bool(metadata.st_mode & 0o111)
-        if executable or startup_code or re.search(r"\.(?:py|pyc|js|mjs|cjs|jsx|ts|tsx|so|node|sh|bash|dash|ksh|zsh|fish|pl|rb|php|lua|ps1|exe|dll|wasm)$", destination, re.I) or re.fullmatch(r"(?:/app(?:/(?:src|lib|services|providers|api|utils|cw_platform)(?:/.*)?)?|/(?:usr/(?:local/)?)?(?:bin|sbin|libexec)(?:/.*)?)/?", destination):
+        if executable or startup_code or re.search(r"\.(?:py|pyc|js|mjs|cjs|jsx|ts|tsx|so|node|sh|bash|dash|ksh|zsh|fish|pl|rb|php|lua|ps1|exe|dll|wasm)$", destination, re.I) or re.fullmatch(r"(?:/app(?:/(?:src|lib|services|providers|api|utils|cw_platform)(?:/.*)?)?|/(?:usr/(?:local/)?)?(?:bin|sbin|libexec|lib|lib32|lib64)(?:/.*)?|/usr/share/(?:nodejs|node_modules|python\d*(?:\.\d+)*|perl\d*|php|ruby)(?:/.*)?)/?", normalized):
             raise UpdateRefusal("local_code_override")
 
 
@@ -272,6 +283,10 @@ def docker_update(driver, item, automatic=False):
         # Inspect only startup vectors, not the environment or complete Config.
         startup = json.loads(command(["/usr/bin/docker", "inspect", "--format", '{"entrypoint":{{json .Config.Entrypoint}},"command":{{json .Config.Cmd}},"working_dir":{{json .Config.WorkingDir}}}', identity]))
         verify_code_mounts(service, startup)
+        # Container Config may contain old Compose overrides. Inherit from the
+        # immutable installed image, not from those old container overrides.
+        defaults = json.loads(command(["/usr/bin/docker", "image", "inspect", "--format", '{"entrypoint":{{json .Config.Entrypoint}},"command":{{json .Config.Cmd}},"working_dir":{{json .Config.WorkingDir}}}', before[2]]))
+        verify_code_mounts(service, compose_startup(service, defaults))
         if config.get("services", {}).get(driver["service"], {}).get("image") != item["image"]:
             raise RuntimeError("Compose and the observed image differ")
         namespace_plan = prepare_namespace_plan(config, driver, compose)
@@ -286,6 +301,8 @@ def docker_update(driver, item, automatic=False):
         updated = original[:match.start()] + replacement + original[match.end():]
         progress("pulling")
         command(["/usr/bin/docker", "pull", candidate], timeout=600)
+        candidate_startup = json.loads(command(["/usr/bin/docker", "image", "inspect", "--format", '{"entrypoint":{{json .Config.Entrypoint}},"command":{{json .Config.Cmd}},"working_dir":{{json .Config.WorkingDir}}}', candidate]))
+        verify_code_mounts(service, compose_startup(service, candidate_startup))
         pulled = command(["/usr/bin/docker", "image", "inspect", "--format", "{{.Id}}", candidate])
         if pulled != item["available"]:
             raise RuntimeError("Pulled image does not match the approved platform image")

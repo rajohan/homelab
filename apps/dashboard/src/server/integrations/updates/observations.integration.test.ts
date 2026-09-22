@@ -13,10 +13,123 @@ import { createApplicationFixture } from "../../testing/applications";
 import { operationFixture } from "../../testing/operations";
 import { bindApplicationHosts } from "../applications/configuration";
 import { createDockerPort } from "../applications/docker";
-import { collectApplications } from "../applications/inventory";
+import {
+    collectApplications,
+    readApplicationObservationTime,
+} from "../applications/inventory";
 import { parseUpdateTargets } from "./configuration";
 import { refreshDockerObservations } from "./observations";
 import { updateControl } from "./selection";
+
+test.each([-86_400_000, 86_400_000])(
+    "worker discovery uses the database watermark despite clock skew %i",
+    async (skew) => {
+        const state = await operationFixture();
+        const fixture = createApplicationFixture();
+        try {
+            const targets = parseUpdateTargets(
+                JSON.stringify([
+                    {
+                        id: "web",
+                        label: "Web",
+                        source: "software",
+                        host: "fixture.invalid",
+                        user: "updater",
+                        identityFile: "/run/secrets/test-key",
+                        knownHostsFile: "/run/secrets/test-hosts",
+                        driver: {
+                            kind: "docker",
+                            name: "demo-web",
+                            project: "demo",
+                            service: "web",
+                            directory: "/srv/demo",
+                            file: "/srv/demo/compose.yaml",
+                            imageFile: "/srv/demo/web.yaml",
+                        },
+                    },
+                ])
+            );
+            const bindings = bindApplicationHosts(
+                [{ ...fixture.target, updateSources: ["software"] }],
+                targets
+            );
+            // Isolate the altered JavaScript clock from the HTTP fixture, PostgreSQL
+            // and other tests. Exercise the registered production discovery handler.
+            const script = `
+                import { SQL } from "bun";
+                import { applicationJobs } from ${JSON.stringify(new URL("../applications/jobs.ts", import.meta.url).href)};
+                import { createDockerPort } from ${JSON.stringify(new URL("../applications/docker.ts", import.meta.url).href)};
+                import { lockQueue } from ${JSON.stringify(new URL("../../jobs/queue.ts", import.meta.url).href)};
+                const input = JSON.parse(await Bun.stdin.text());
+                const NativeDate = Date;
+                globalThis.Date = class extends NativeDate {
+                    constructor(value) { super(arguments.length ? value : NativeDate.now() + input.skew); }
+                    static now() { return NativeDate.now() + input.skew; }
+                };
+                const client = new SQL(input.url);
+                let published;
+                try {
+                    const handler = applicationJobs(input.bindings, client, target => {
+                        const port = createDockerPort(target, {});
+                        return {...port, async inspect(id, signal) {
+                            const detail = await port.inspect(id, signal);
+                            if (detail.Name === "/demo-web") {
+                                await Bun.sleep(5);
+                                const [{time}] = await client\`SELECT to_char(clock_timestamp() - interval '1 minute', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS time\`;
+                                published = {capturedAt: time, repositoryMetadataAt: null, complete: true, coveredKinds: ["container"], items: [{id: "docker:" + "e".repeat(64), name: "demo-web", kind: "container", installed: detail.Image, image: detail.Config.Image, available: "sha256:" + "d".repeat(64), status: "available", security: false, held: false, candidateVerified: true}]};
+                                for (const key of ["updates:software", "updates.resolved:software"])
+                                    await client\`INSERT INTO operation_snapshots(key,value,captured_at) VALUES(\${key},\${JSON.stringify(published)}::text::jsonb,\${time}::timestamptz)\`;
+                            }
+                            return detail;
+                        }};
+                    }, input.targets).find(job => job.definition.key === "applications.discover");
+                    await handler.execute({}, {runId: "fixture", signal: AbortSignal.timeout(5000), reportProgress: async () => {}, commit: async write => {await client.begin(async tx => {await lockQueue(tx); await write(tx);}); return true;}});
+                    const rows = await client\`SELECT key,value FROM operation_snapshots WHERE key IN ('applications.inventory','updates:software','updates.resolved:software')\`;
+                    console.log(JSON.stringify({rows,published}));
+                } finally { await client.close(); }
+            `;
+            const child = Bun.spawn([process.execPath, "--eval", script], {
+                stdin: new Blob([
+                    JSON.stringify({ url: state.url, bindings, targets, skew }),
+                ]),
+                stdout: "pipe",
+                stderr: "pipe",
+            });
+            const [output, error, code] = await Promise.all([
+                new Response(child.stdout).text(),
+                new Response(child.stderr).text(),
+                child.exited,
+            ]);
+            expect(error).toBe("");
+            expect(code).toBe(0);
+            const result = JSON.parse(output) as {
+                rows: { key: string; value: ApplicationInventory | UpdateReport }[];
+                published: UpdateReport;
+            };
+            const inventory = result.rows.find(
+                (row) => row.key === "applications.inventory"
+            )!.value as ApplicationInventory;
+            const databaseTime = Date.parse(
+                await readApplicationObservationTime(state.client)
+            );
+            expect(
+                Math.abs(
+                    Date.parse(inventory.hosts[0]!.observationStartedAt!) - databaseTime
+                )
+            ).toBeLessThan(5000);
+            expect(
+                Math.abs(Date.parse(inventory.capturedAt) - databaseTime - skew)
+            ).toBeLessThan(5000);
+            for (const row of result.rows.filter((row) => row.key.startsWith("updates")))
+                expect(row.value).toEqual(result.published);
+            expect(result.rows).toHaveLength(3);
+            expect(fixture.calls).toEqual([]);
+        } finally {
+            await fixture.close();
+            await state.close();
+        }
+    }
+);
 
 test.each([
     { reverse: false, firstStale: false },
@@ -499,7 +612,10 @@ test.each(
                         return stale;
                     },
                 }),
-                AbortSignal.timeout(5000)
+                AbortSignal.timeout(5000),
+                undefined,
+                undefined,
+                () => readApplicationObservationTime(state.client)
             );
             expect(published).toBeDefined();
             expect(inventory.hosts[0]?.observationStartedAt).toBeDefined();

@@ -15,7 +15,7 @@ import type { UpdateTarget } from "./configuration";
 const codeFile =
     /\.(?:py|pyc|js|mjs|cjs|jsx|ts|tsx|so|node|sh|bash|dash|ksh|zsh|fish|pl|rb|php|lua|ps1|exe|dll|wasm)$/i;
 const codeDirectory =
-    /^(?:\/app(?:\/(?:src|lib|services|providers|api|utils|cw_platform)(?:\/.*)?)?|\/(?:usr\/(?:local\/)?)?(?:bin|sbin|libexec)(?:\/.*)?)\/?$/;
+    /^(?:\/app(?:\/(?:src|lib|services|providers|api|utils|cw_platform)(?:\/.*)?)?|\/(?:usr\/(?:local\/)?)?(?:bin|sbin|libexec|lib|lib32|lib64)(?:\/.*)?|\/usr\/share\/(?:nodejs|node_modules|python\d*(?:\.\d+)*|perl\d*|php|ruby)(?:\/.*)?)\/?$/;
 const overlayReason =
     "Local application code is mounted over this image. Review or remove the override before updating.";
 type DockerOwner = Pick<

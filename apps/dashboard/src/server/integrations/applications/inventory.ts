@@ -4,6 +4,7 @@ import type {
     ApplicationInventory,
     ManagedApplication,
 } from "@homelab/contracts/applications";
+import type { SQL } from "bun";
 
 import type { ApplicationTarget } from "./configuration";
 import type { DockerDetail, DockerPort } from "./docker";
@@ -12,6 +13,18 @@ import { startupCodePaths } from "./startup";
 export const applicationInventoryByteLimit = 8 * 1024 * 1024;
 const containerByteLimit = 32 * 1024;
 const hostByteLimit = 1024 * 1024;
+
+/**
+ * Capture the same database clock that stamps software snapshot mutations.
+ * @param client - Dashboard database pool, outside the later fenced write transaction.
+ * @returns UTC pre-read watermark preserving PostgreSQL microsecond precision.
+ */
+export async function readApplicationObservationTime(client: SQL): Promise<string> {
+    const [row] = await client<{ time: string }[]>`
+        SELECT to_char(clock_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS time`;
+    if (!row) throw new Error("Application observation clock unavailable");
+    return row.time;
+}
 
 function metadataBytes(value: unknown): number {
     return new TextEncoder().encode(JSON.stringify(value)).byteLength;
@@ -165,6 +178,7 @@ export function mapDockerApplication(
  * @param signal - Job deadline and cancellation signal.
  * @param previous - Last successful identities retained when a configured host is unavailable.
  * @param hostTimeoutMs - Independent host budget, below the discovery job's overall deadline.
+ * @param observationClock - Database clock captured before reads; absent clocks disable software reconciliation.
  * @returns One snapshot with per-host availability and only allowlisted applications.
  */
 export async function collectApplications(
@@ -172,7 +186,8 @@ export async function collectApplications(
     connect: (target: ApplicationTarget) => DockerPort,
     signal: AbortSignal,
     previous?: ApplicationInventory | null,
-    hostTimeoutMs = 20_000
+    hostTimeoutMs = 20_000,
+    observationClock?: () => Promise<string>
 ): Promise<ApplicationInventory> {
     signal.throwIfAborted();
     if (targets.length > 20) throw new Error("Host inventory exceeds its budget");
@@ -180,12 +195,13 @@ export async function collectApplications(
         targets.map(async (target) => {
             // Completion time cannot fence a software report published while Docker
             // reads are in flight. Preserve the conservative per-host start instead.
-            const observationStartedAt = new Date().toISOString();
             const hostSignal = AbortSignal.any([
                 signal,
                 AbortSignal.timeout(hostTimeoutMs),
             ]);
             try {
+                const observationStartedAt = await observationClock?.();
+                hostSignal.throwIfAborted();
                 const port = connect(target);
                 const applications: ManagedApplication[] = [];
                 const ids = await port.list(hostSignal);
@@ -215,7 +231,7 @@ export async function collectApplications(
                     id: target.id,
                     label: target.label,
                     available: true,
-                    observationStartedAt,
+                    ...(observationStartedAt ? { observationStartedAt } : {}),
                     applications,
                 };
             } catch {

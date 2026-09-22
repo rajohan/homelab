@@ -28,6 +28,27 @@ exec(compile(SOURCE.with_name("toolchain.py").read_text(), str(SOURCE.with_name(
 class UpdateExecutionTests(unittest.TestCase):
     """Cover exact image pins, source fencing, package boundaries and private error handling."""
 
+    def test_compose_startup_inherits_only_omitted_or_null_image_defaults(self):
+        defaults = {"entrypoint": ["python"], "command": ["/vendor/app.py"], "working_dir": "/vendor"}
+        for overrides in ({}, {"entrypoint": None, "command": None, "working_dir": None}):
+            self.assertEqual(remote.compose_startup(overrides, defaults), defaults)
+        for empty in ([], ""):
+            self.assertEqual(remote.compose_startup({"entrypoint": empty}, defaults), {**defaults, "entrypoint": empty, "command": []})
+            self.assertEqual(remote.compose_startup({"command": empty}, defaults), {**defaults, "command": empty})
+        for entrypoint in (None, ["python"], "python"):
+            service = {"entrypoint": entrypoint, "command": ["-m", "app"], "working_dir": "/custom", "volumes": [{"type": "bind", "target": "/custom"}]}
+            with self.assertRaises(remote.UpdateRefusal):
+                remote.verify_code_mounts(service, remote.compose_startup(service, defaults))
+        service = {"working_dir": "/custom", "volumes": [{"type": "bind", "target": "/custom"}]}
+        with self.assertRaises(remote.UpdateRefusal):
+            remote.verify_code_mounts(service, remote.compose_startup(service, defaults))
+
+    def test_runtime_library_directory_binds_are_code(self):
+        for destination in ("/usr/local/lib/python3.13/site-packages", "/usr/lib/python3/dist-packages", "/usr/local/lib/node_modules", "/usr/share/nodejs", "/usr/share/php", "/usr/lib64", "/lib", "/usr/share/ruby/vendor_ruby"):
+            with self.subTest(destination=destination), self.assertRaises(remote.UpdateRefusal):
+                remote.verify_code_mounts({"entrypoint": ["python"], "command": ["/vendor/app.py"], "volumes": [{"type": "bind", "target": destination}]})
+        remote.verify_code_mounts({"entrypoint": ["/vendor/server"], "volumes": [{"type": "bind", "target": "/usr/share/zoneinfo"}, {"type": "bind", "target": "/usr/local/library-data"}]})
+
     def test_startup_positions_match_discovery_corpus(self):
         cases = json.loads((SOURCE.parents[6] / "scripts/fixtures/dockerStartup.json").read_text())
         for scenario in cases:
@@ -88,6 +109,8 @@ class UpdateExecutionTests(unittest.TestCase):
                 if arguments[1] == 'ps' or (arguments[1] == 'compose' and 'ps' in arguments):
                     return 'c' * 64
                 if arguments[1:3] == ["image", "inspect"]:
+                    if arguments[4].startswith('{"entrypoint":'):
+                        return json.dumps({"entrypoint": ["/vendor/web"], "command": None, "working_dir": "/"})
                     return "sha256:" + "f" * 64 if wrong_pull else item["available"]
                 if arguments[1] == "pull":
                     pulled = True
