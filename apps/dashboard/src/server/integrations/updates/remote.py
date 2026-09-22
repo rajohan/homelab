@@ -60,6 +60,30 @@ def progress(phase):
     print(json.dumps({"phase": phase}), flush=True)
 
 
+class UpdateRefusal(RuntimeError):
+    """Expose a fixed preflight reason without forwarding command output."""
+
+    def __init__(self, reason):
+        super().__init__(reason)
+        self.reason = reason
+
+
+def verify_code_mounts(plan, services):
+    """Reject direct source-file/code-directory overlays, not infer arbitrary program behavior.
+
+    This is a guard for image updates of locally patched applications, not a
+    compatibility checker or sandbox. Deployment recipes still require review.
+    Inspect only live and pending mount destinations; never open mounted files.
+    """
+    for row in plan:
+        destinations = [mount["Destination"] for mount in row[11]]
+        destinations += [mount["target"] for mount in services[row[7]].get("volumes", [])]
+        for destination in destinations:
+            target = os.path.normpath("/" + destination.lstrip("/"))
+            if re.search(r"\.(?:py|pyc|js|mjs|cjs|jsx|ts|tsx|so|node)$", target, re.I) or re.fullmatch(r"/app(?:/(?:src|lib|services|providers|api|utils|cw_platform)(?:/.*)?)?/?", target):
+                raise UpdateRefusal("local_code_override")
+
+
 def file_digest(path):
     """Hash a large executable incrementally rather than holding its old copy in RAM."""
     with path.open("rb") as stream:
@@ -170,9 +194,19 @@ def docker_update(driver, item, automatic=False):
         raise RuntimeError("Untrusted Compose source path")
     base = ["/usr/bin/docker", "compose", "--project-directory", str(directory), "--project-name", driver["project"], "--file", driver["file"]]
     with locked_directory(directory):
-        before = inspect_container(identity)
+        # A daily report's ephemeral ID may predate a same-image recreation.
+        # Resolve only the deployment-owned name, then fence every later read to
+        # that exact live ID. Never accept a different image or Compose owner.
+        try:
+            current = namespace_snapshot(driver["name"])
+        except RuntimeError:
+            raise UpdateRefusal("container_changed") from None
+        identity = current[0]
+        before = current[1:5] + current[6:8]
+        if not re.fullmatch(r"[a-f0-9]{64}", identity):
+            raise UpdateRefusal("container_changed")
         if before[:3] != ["/" + driver["name"], item["image"], item["installed"]] or before[4:] != [driver["project"], driver["service"]] or before[3] not in {"running", "exited", "created"}:
-            raise RuntimeError("The observed application changed")
+            raise UpdateRefusal("container_changed")
         original = path.read_bytes()
         environment = compose_environment(driver)
         def compose(arguments, timeout=120):
@@ -181,6 +215,9 @@ def docker_update(driver, item, automatic=False):
         if config.get("services", {}).get(driver["service"], {}).get("image") != item["image"]:
             raise RuntimeError("Compose and the observed image differ")
         namespace_plan = prepare_namespace_plan(config, driver, compose)
+        if next(row for row in namespace_plan if row[7] == driver["service"]) != current:
+            raise UpdateRefusal("container_changed")
+        verify_code_mounts(namespace_plan, config["services"])
         if before[3] == "running":
             docker_health_checks(driver)
         pattern = re.compile(rb"(?m)^([ \t]+image:[ \t]*)([\"']?)" + re.escape(item["image"].encode()) + rb"\2([ \t]*(?:#[^\r\n]*)?\r?)$")
@@ -353,6 +390,6 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, interrupted)
     try:
         main()
-    except Exception:
-        print(json.dumps({"complete": False}), flush=True)
+    except Exception as error:
+        print(json.dumps({"complete": False, **({"reason": error.reason} if isinstance(error, UpdateRefusal) else {})}), flush=True)
         sys.exit(1)

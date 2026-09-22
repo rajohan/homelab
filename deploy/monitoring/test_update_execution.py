@@ -28,7 +28,7 @@ exec(compile(SOURCE.with_name("toolchain.py").read_text(), str(SOURCE.with_name(
 class UpdateExecutionTests(unittest.TestCase):
     """Cover exact image pins, source fencing, package boundaries and private error handling."""
 
-    def docker_fixture(self, mode="running", mutate=False, fail=False, with_environment=False, manifest_store=False, wrong_pull=False, new_consumer=None):
+    def docker_fixture(self, mode="running", mutate=False, fail=False, with_environment=False, manifest_store=False, wrong_pull=False, new_consumer=None, stale=False, changed=None, replaced=False, live_mount=None, pending_mount=None):
         with tempfile.TemporaryDirectory(prefix="homelab-updater-fixture-") as temporary:
             directory = Path(temporary).resolve()
             source = directory / "compose.yaml"
@@ -40,6 +40,8 @@ class UpdateExecutionTests(unittest.TestCase):
             if with_environment:
                 driver["environment"] = {"command": ["/fixture/environment", "json"], "variables": ["PRIVATE"]}
             item = {"id": "docker:" + "c" * 64, "image": old, "installed": "sha256:" + "d" * 64, "available": "sha256:" + "e" * 64, "availableImage": new}
+            if stale:
+                item["id"] = "docker:" + "9" * 64
             if manifest_store:
                 item.update(installed=old.split("@")[1], available=new.split("@")[1])
             calls = []
@@ -58,12 +60,18 @@ class UpdateExecutionTests(unittest.TestCase):
                 else:
                     self.assertIsNone(environment)
                 if arguments[1] == "inspect":
+                    if arguments[-1] == '9' * 64 or (replaced and pulled and arguments[-1] == 'c' * 64):
+                        raise RuntimeError("Synthetic removed container")
                     if arguments[3] == '{{json .State}}':
                         return json.dumps({'Status': mode, 'Health': {'Status': 'healthy'}})
                     if '{{.Id}}' in arguments[3]:
                         return 'c' * 64 + ' default' + ('\n' + 'f' * 64 + ' ' + ' '.join('container:' + 'c' * 64 if key == new_consumer else 'default' for key in remote.NAMESPACE_KEYS) if pulled and new_consumer else '')
                     if '{{json .Id}}' in arguments[3]:
                         values = ['c' * 64, '/demo-web-1', new if installed else old, item['available'] if installed else item['installed'], 'created' if installed and mode != 'running' else mode, 'fixture-start', 'demo', 'web', 'default', '', '', []]
+                        if changed:
+                            values[changed[0]] = changed[1]
+                        if live_mount:
+                            values[11] = [{"Type": "bind", "Source": "/synthetic/source", "Destination": live_mount}]
                         return ','.join(json.dumps(value) for value in values)
                     values = ["/demo-web-1", new if installed else old, item["available"] if installed else item["installed"], "created" if installed and mode != "running" else mode, "demo", "web"]
                     return ",".join(json.dumps(value) for value in values)
@@ -78,7 +86,10 @@ class UpdateExecutionTests(unittest.TestCase):
                     return "Downloaded"
                 if "config" in arguments:
                     image = new if new in source.read_text() else old
-                    return json.dumps({"services": {"web": {"image": image, "environment": {"PRIVATE": "synthetic-private-value"}}}})
+                    service = {"image": image, "environment": {"PRIVATE": "synthetic-private-value"}}
+                    if pending_mount:
+                        service["volumes"] = [{"type": "bind", "source": "/synthetic/source", "target": pending_mount}]
+                    return json.dumps({"services": {"web": service}})
                 if "up" in arguments:
                     installed = True
                     if fail:
@@ -87,7 +98,7 @@ class UpdateExecutionTests(unittest.TestCase):
                 raise AssertionError("Unexpected command")
 
             with patch.object(remote, "command", side_effect=command), patch.object(remote, "progress"):
-                if mutate or fail or wrong_pull or new_consumer:
+                if mutate or fail or wrong_pull or new_consumer or changed or replaced or live_mount or pending_mount:
                     with self.assertRaises(RuntimeError):
                         remote.docker_update(driver, item, True)
                 else:
@@ -97,7 +108,10 @@ class UpdateExecutionTests(unittest.TestCase):
                 self.assertEqual(sum(call[0] == "/fixture/environment" for call in calls), 1)
             self.assertIn(b"synthetic-private-value", contents)
             self.assertFalse(list(directory.glob(".homelab-update-*")))
-            if wrong_pull or new_consumer:
+            if changed or live_mount or pending_mount:
+                self.assertEqual(contents, original)
+                self.assertFalse(any(call[1] == "pull" or "up" in call or "stop" in call for call in calls))
+            elif wrong_pull or new_consumer or replaced:
                 self.assertEqual(contents, original)
                 self.assertFalse(any("up" in call for call in calls))
             elif mutate:
@@ -113,6 +127,30 @@ class UpdateExecutionTests(unittest.TestCase):
 
     def test_running_image_update_persists_pin_and_waits_for_health(self):
         self.docker_fixture()
+
+    def test_same_image_recreation_uses_the_live_id_and_preserves_state(self):
+        for mode in ("running", "exited", "created"):
+            with self.subTest(mode=mode):
+                self.docker_fixture(mode=mode, stale=True)
+
+    def test_recreation_cannot_change_the_configured_name_owner_or_image(self):
+        for changed in ((1, "/other"), (2, "other/image:latest"), (3, "sha256:" + "f" * 64), (6, "other-project"), (7, "other-service")):
+            with self.subTest(changed=changed):
+                self.docker_fixture(stale=True, changed=changed)
+        self.docker_fixture(stale=True, replaced=True)
+
+    def test_direct_code_overlays_are_refused_before_pull_or_mutation(self):
+        self.docker_fixture(live_mount="/app/providers/patched.py")
+        self.docker_fixture(pending_mount="/app/api/patched.js")
+        self.docker_fixture(live_mount="//app/src")
+        self.docker_fixture(pending_mount="//app/src")
+        root = ['a' * 64, '/root', 'image', 'digest', 'running', '', 'demo', 'root', '', '', '', []]
+        consumer = [*root[:7], 'consumer', *root[8:]]
+        services = {'root': {'volumes': [{'target': '//data'}]}, 'consumer': {'volumes': [{'target': '//config/settings.json'}]}}
+        remote.verify_code_mounts([root, consumer], services)
+        services['consumer']['volumes'] = [{'target': '//app/src'}]
+        with self.assertRaisesRegex(remote.UpdateRefusal, '^local_code_override$'):
+            remote.verify_code_mounts([root, consumer], services)
 
     def test_new_reverse_namespace_edges_during_pull_refuse_before_pin_or_stop(self):
         for namespace in remote.NAMESPACE_KEYS:

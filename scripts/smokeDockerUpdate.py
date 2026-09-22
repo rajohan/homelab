@@ -36,12 +36,37 @@ def main():
         def compose(args, timeout=120):
             return command(base + args, timeout=timeout)
         try:
+            compose(["up", "--detach", "--no-build", "--pull", "never", "--wait", "--wait-timeout", "20", "provider"])
+            published_id = remote.namespace_snapshot(owner + "-provider-1")[0]
+            compose(["up", "--detach", "--no-build", "--pull", "never", "--force-recreate", "--wait", "--wait-timeout", "20", "provider"])
             compose(["up", "--detach", "--no-build", "--pull", "never", "--wait", "--wait-timeout", "20"])
             compose(["stop", "stopped"])
             before = {service: remote.namespace_snapshot(owner + "-" + service + "-1") for service in ("provider", "consumer", "stopped", "leaf")}
             command(["/usr/bin/docker", "exec", before["consumer"][0], "/bin/sh", "-ec", "printf persistent > /marker/probe"])
             driver = {"kind": "docker", "name": owner + "-provider-1", "project": owner, "service": "provider", "directory": str(directory), "file": str(main_file), "imageFile": str(provider_file), "namespaceDependents": ["consumer", "stopped", "leaf"]}
-            item = {"id": "docker:" + before["provider"][0], "image": original, "installed": image["Id"], "available": image["Id"], "availableImage": candidate}
+            assert published_id != before["provider"][0]
+            item = {"id": "docker:" + published_id, "image": original, "installed": image["Id"], "available": image["Id"], "availableImage": candidate}
+            patch_file = directory / "patched.py"
+            patch_file.write_text("# Synthetic patch; never executed.\n")
+            baseline = provider_file.read_bytes()
+            def preflight_only(arguments, **options):
+                assert arguments[1] != "pull" and not any(action in arguments for action in ("up", "stop", "rm")), "Preflight crossed a mutation boundary"
+                return command(arguments, **options)
+            for mount_source, mount_target in ((patch_file, "/app/providers/patched.py"), (directory, "//app/src")):
+                overlay = baseline + ("    volumes:\n      - " + str(mount_source) + ":" + mount_target + ":ro\n").encode()
+                provider_file.write_bytes(overlay)
+                try:
+                    remote.command = preflight_only
+                    try:
+                        remote.docker_update(driver, item)
+                        raise AssertionError("A pending direct code overlay was accepted")
+                    except remote.UpdateRefusal as error:
+                        assert error.reason == "local_code_override"
+                    assert provider_file.read_bytes() == overlay
+                    assert {service: remote.namespace_snapshot(row[0]) for service, row in before.items()} == before
+                finally:
+                    remote.command = command
+                    provider_file.write_bytes(baseline)
             compose(["stop", "--timeout", "5", "consumer"])
             broken = {service: remote.namespace_snapshot(row[0]) for service, row in before.items()}
             try:
@@ -140,7 +165,7 @@ def main():
             assert remote.docker_update(driver, stopped_item) == image['Id']
             assert all(remote.namespace_snapshot(owner + '-' + service + '-1')[4] == 'created' for service in before)
             assert not list(directory.glob(".homelab-update-*"))
-            print("PASS: unmocked Docker pull/inspect/Compose updater, exact pins, external-consumer refusal, baseline/post-update health failures, provider and consumer updates, retained data and stopped-project preservation.")
+            print("PASS: same-image recreation with stale published ID, direct code-overlay refusal before pull, exact pins, external-consumer refusal, baseline/post-update health failures, provider and consumer updates, retained data and stopped-project preservation.")
         finally:
             ids = compose(["ps", "--all", "--quiet"]).split()
             for identity in ids:
