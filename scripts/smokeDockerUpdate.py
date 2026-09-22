@@ -56,7 +56,7 @@ def main():
                 helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sh, " + destination + "]", "entrypoint: [/bin/sleep]\n    command: ['3600']"))
             if service in ("inherited-helper", "option-helper"):
                 helper_file.write_text(helper_file.read_text().replace(original, inherited_image))
-        for service, kind in (("assignment-helper", "volumes"), ("config-helper", "configs"), ("secret-helper", "secrets"), ("newline-helper", "volumes"), ("volume-helper", "named-volume"), ("expansion-helper", "volumes"), ("health-helper", "volumes"), ("inherited-health-helper", "volumes"), ("compound-helper", "volumes"), ("conditional-helper", "volumes"), ("compound-health-helper", "volumes"), ("dispatch-helper", "volumes"), ("dispatch-cwd-helper", "volumes"), ("dispatch-health-helper", "volumes")):
+        for service, kind in (("assignment-helper", "volumes"), ("config-helper", "configs"), ("secret-helper", "secrets"), ("newline-helper", "volumes"), ("volume-helper", "named-volume"), ("expansion-helper", "volumes"), ("health-helper", "volumes"), ("inherited-health-helper", "volumes"), ("compound-helper", "volumes"), ("conditional-helper", "volumes"), ("compound-health-helper", "volumes"), ("dispatch-helper", "volumes"), ("dispatch-cwd-helper", "volumes"), ("dispatch-health-helper", "volumes"), ("launcher-helper", "volumes"), ("loader-helper", "named-volume"), ("shell-option-helper", "volumes"), ("trap-helper", "volumes"), ("jvm-helper", "volumes"), ("post-hook-helper", "volumes"), ("pre-hook-helper", "volumes"), ("hook-environment-helper", "volumes")):
             helper_file = directory / (service + ".yaml")
             source_file = directory / (service + ".source")
             source_file.write_text("# Synthetic startup code, never executed.\n")
@@ -103,6 +103,12 @@ def main():
         def compose(args, timeout=120):
             return command(base + args, timeout=timeout)
         built_images = []
+        def clear_pending_hooks():
+            # Fixtures introduce hooks only for preflight. Never run them during
+            # the later whole-project stop or cleanup.
+            for name, source_file in helpers:
+                if name in ("post-hook-helper", "pre-hook-helper", "hook-environment-helper"):
+                    source_file.write_text("\n".join(line for line in source_file.read_text().splitlines() if not line.startswith(("    post_start:", "    pre_stop:"))) + "\n")
         try:
             build_directory = directory / "image"
             build_directory.mkdir()
@@ -167,6 +173,22 @@ def main():
                     helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sleep]\n    command: ['3600']", "entrypoint: [/bin/bash, '-c']\n    command: " + json.dumps([expression])))
                 elif service == "dispatch-health-helper":
                     helper_file.write_text(helper_file.read_text() + "    healthcheck:\n      test: " + json.dumps(["CMD", "/bin/bash", "-c", "builtin command /custom/start"]) + "\n")
+                elif service in ("launcher-helper", "shell-option-helper", "trap-helper", "jvm-helper"):
+                    invocation = {
+                        "launcher-helper": ["/usr/bin/nice", "-n", "5", "/custom/start"],
+                        "shell-option-helper": ["/bin/bash", "-O", "extglob", "/custom/start"],
+                        "trap-helper": ["/bin/sh", "-c", "trap /custom/start EXIT; /bin/sleep 3600"],
+                        "jvm-helper": ["java", "-jar", "/custom/app.jar"],
+                    }[service]
+                    helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sleep]\n    command: ['3600']", "entrypoint: " + json.dumps(invocation) + "\n    command: []"))
+                elif service == "loader-helper":
+                    helper_file.write_text(helper_file.read_text().replace("    command: ['3600']", "    command: ['3600']\n    environment:\n      LD_PRELOAD: /custom/libapp.so"))
+                elif service in ("post-hook-helper", "pre-hook-helper", "hook-environment-helper"):
+                    kind = "pre_stop" if service == "pre-hook-helper" else "post_start"
+                    hook = {"command": ["./start"], "working_dir": "/custom"}
+                    if service == "hook-environment-helper":
+                        hook = {"command": ["/bin/true"], "environment": {"LD_PRELOAD": "/custom/libapp.so"}}
+                    helper_file.write_text(helper_file.read_text() + "    " + kind + ": " + json.dumps([hook]) + "\n")
                 elif service == "health-helper":
                     helper_file.write_text(helper_file.read_text() + "    healthcheck:\n      test: [CMD, /bin/sh, /custom/start]\n")
                 elif service == "inherited-health-helper":
@@ -310,6 +332,7 @@ def main():
                 pass
             assert probe.read_text() == '2'
             assert remote.namespace_snapshot(owner + '-consumer-1')[0] != current_consumer[0]
+            clear_pending_hooks()
             compose(['stop', '--timeout', '5'])
             current = remote.namespace_snapshot(owner + '-provider-1')
             stopped_item = {**item, 'id': 'docker:' + current[0], 'image': candidate, 'availableImage': 'docker.io/library/postgres:18-bookworm@' + digest}
@@ -318,6 +341,7 @@ def main():
             assert not list(directory.glob(".homelab-update-*"))
             print("PASS: unmocked Docker pull/inspect/Compose updater, exact pins, external-consumer refusal, baseline/post-update health failures, provider and consumer updates, retained data and stopped-project preservation.")
         finally:
+            clear_pending_hooks()
             ids = compose(["ps", "--all", "--quiet"]).split()
             for identity in ids:
                 assert command(["/usr/bin/docker", "inspect", "--format", '{{index .Config.Labels "homelab.smoke"}}', identity]) == owner

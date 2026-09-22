@@ -73,6 +73,14 @@ def startup_code_paths(startup):
     """Infer executable/interpreter positions, never ordinary data-path operands."""
     paths = set()
     unqualified = False
+    def assignment(value):
+        nonlocal unqualified
+        # Loader values stay in memory; never return paths or options from them.
+        if re.fullmatch(r"(?:LD_[A-Z_]+|DYLD_[A-Z_]+|BASH_ENV|ENV|ZDOTDIR|PYTHONPATH|PYTHONHOME|PYTHONSTARTUP|NODE_OPTIONS|NODE_PATH|RUBYOPT|RUBYLIB|PERL5OPT|PERL5LIB|PERLLIB|LUA_PATH|LUA_CPATH|PHP_INI_SCAN_DIR|PHPRC|CLASSPATH|JAVA_TOOL_OPTIONS|JDK_JAVA_OPTIONS|_JAVA_OPTIONS)=[\s\S]+", value):
+            unqualified = True
+    for key, value in startup_environment(startup.get("environment")).items():
+        if value is not None:
+            assignment(key + "=" + value)
     def unqualified_shell(value):
         quote, index = None, 0
         while index < len(value):
@@ -135,7 +143,7 @@ def startup_code_paths(startup):
         if not args or not args[0] or args[0].startswith("-"):
             return
         if depth > 8:
-            paths.add(cwd)
+            unqualified = True
             return
         executable, name = args[0], posixpath.basename(args[0])
         if "/" in executable:
@@ -160,42 +168,98 @@ def startup_code_paths(startup):
                             if index >= len(expanded):
                                 return
                             value = expanded[index]
+                        if option in ("f", "file"):
+                            unqualified = True
                         if option in ("C", "chdir"):
                             current = resolve(cwd, value)
                         if option in ("S", "split-string"):
                             splits += 1
                             if splits > 8:
-                                paths.add(current)
+                                unqualified = True
                                 return
                             expanded[index + 1:index + 1] = words(value)
                     index += 1
                     continue
                 options = False
                 if re.match(r"[A-Za-z_][A-Za-z0-9_]*=", arg):
+                    assignment(arg)
                     index += 1
                     continue
                 break
             inspect(expanded[index:], current, depth + 1)
+        elif name in ("nice", "nohup", "timeout"):
+            index = 1
+            while index < len(args) and args[index].startswith("-"):
+                option = args[index]
+                index += 1
+                if option == "--":
+                    break
+                if option in ("--help", "--version"):
+                    return
+                if name == "nice" and option in ("-n", "--adjustment") or name == "timeout" and option in ("-s", "-k", "--signal", "--kill-after"):
+                    index += 1
+                elif name == "nice" and re.fullmatch(r"(?:-n.+|-\d+|--adjustment=.+)", option) or name == "timeout" and re.fullmatch(r"(?:-[sk].+|--(?:signal|kill-after)=.+|--(?:foreground|preserve-status|verbose))", option):
+                    continue
+                else:
+                    unqualified = True
+                    return
+            if name == "timeout":
+                index += 1
+            inspect(args[index:], cwd, depth + 1)
+        elif name in ("trap", "eval", "xargs", "parallel", "chroot", "su", "runuser", "sudo", "doas", "setpriv", "setsid", "chrt", "ionice", "taskset", "stdbuf", "flock", "watch"):
+            unqualified = True
         elif name in ("exec", "tini", "dumb-init", "gosu", "su-exec", "docker-entrypoint.sh", "docker-entrypoint"):
             index = 2 if name in ("gosu", "su-exec") else 1
             while index < len(args) and (args[index].startswith("-") or re.match(r"[A-Za-z_][A-Za-z0-9_]*=", args[index])):
                 index += 1
             inspect(args[index:], cwd, depth + 1)
         elif name in ("sh", "bash", "dash", "ksh", "zsh", "ash"):
-            inline = next((index for index, arg in enumerate(args) if index > 0 and re.match(r"^-[^-]*c", arg)), None)
-            if inline is not None:
+            index, inline = 1, False
+            while index < len(args):
+                option = args[index]
+                if option == "--":
+                    index += 1
+                    break
+                if not re.match(r"^[+-]", option) or option == "-":
+                    break
+                if option in ("--help", "--version"):
+                    return
+                if option in ("--rcfile", "--init-file"):
+                    if index + 1 < len(args):
+                        index += 1
+                        paths.add(resolve(cwd, args[index]))
+                elif option in ("--noprofile", "--norc", "--posix", "--restricted", "--verbose"):
+                    pass
+                else:
+                    match = re.fullmatch(r"[+-]([abefhkmnptuvxBCEHPTirsDc]*)([oO])(.*)", option)
+                    if match:
+                        inline = inline or option.startswith("-") and "c" in match[1]
+                        if not match[3]:
+                            index += 1
+                    elif re.fullmatch(r"[+-][abefhkmnptuvxBCEHPTirsDc]+", option):
+                        inline = inline or option.startswith("-") and "c" in option
+                        if re.search(r"[is]", option):
+                            unqualified = True
+                    else:
+                        unqualified = True
+                        return
+                index += 1
+            if inline:
                 # Qualify simple command lists only, never guessed compound
                 # grammar, redirections or executable expansions.
-                if unqualified_shell(args[inline + 1] if len(args) > inline + 1 else ""):
+                if unqualified_shell(args[index] if len(args) > index else ""):
                     unqualified = True
                     return
                 group, current = [], cwd
-                for token, separator, raw in tokens(args[inline + 1] if len(args) > inline + 1 else "") + [(";", True, ";")]:
+                for token, separator, raw in tokens(args[index] if len(args) > index else "") + [(";", True, ";")]:
                     if separator:
                         # Assignment values are data, even if they contain paths.
                         while group and re.match(r"[A-Za-z_][A-Za-z0-9_]*=", group[0]):
-                            group.pop(0)
+                            assignment(group.pop(0))
                         selected = dispatch(group)
+                        if selected and selected[0] in ("export", "readonly", "declare", "typeset"):
+                            for value in selected[1:]:
+                                assignment(value)
                         if selected and (selected[0] == "eval" or re.search(r"[$`]", selected[0])):
                             unqualified = True
                         elif selected and selected[0] == "cd":
@@ -213,12 +277,52 @@ def startup_code_paths(startup):
                             return
                         group.append(token)
             else:
-                script = next((arg for arg in args[1:] if not arg.startswith("-")), None)
+                script = args[index] if index < len(args) else None
                 if script:
                     paths.add(resolve(cwd, script))
         elif name in (".", "source"):
             if len(args) > 1:
                 paths.add(resolve(cwd, args[1]))
+        elif name == "java":
+            paths.add(cwd)
+            def add_list(value):
+                for entry in value.split(":"):
+                    paths.add(resolve(cwd, re.sub(r"/\*$", "", entry) or "."))
+            index = 1
+            while index < len(args):
+                option = args[index]
+                if option == "-jar":
+                    if index + 1 < len(args):
+                        paths.add(resolve(cwd, args[index + 1]))
+                    return
+                path_list = re.fullmatch(r"(--class-path|--module-path|--upgrade-module-path|--patch-module)(?:=(.*))?", option)
+                if path_list or option in ("-cp", "-classpath", "-p"):
+                    value = path_list[2] if path_list else None
+                    if value is None:
+                        index += 1
+                        if index >= len(args):
+                            unqualified = True
+                            return
+                        value = args[index]
+                    if path_list and path_list[1] == "--patch-module":
+                        value = value[value.find("=") + 1:]
+                    add_list(value)
+                elif option in ("-m", "--module") or option.startswith("--module="):
+                    return
+                elif re.match(r"^(?:-javaagent:|-agentpath:|-agentlib:|@|-Xbootclasspath|--source)", option):
+                    unqualified = True
+                    return
+                elif re.match(r"^-D(?:java.library.path|java.class.path|jdk.module.path)=", option):
+                    add_list(option.split("=", 1)[1])
+                elif option.startswith("-D") or re.fullmatch(r"-Xm[sx]\d+[kKmMgG]?", option) or option in ("-server", "-client", "--enable-preview"):
+                    pass
+                elif option.startswith("-"):
+                    unqualified = True
+                    return
+                else:
+                    paths.add(resolve(cwd, option))
+                    return
+                index += 1
         elif re.fullmatch(r"(?:python(?:\d+(?:\.\d+)*)?|node|nodejs|bun|deno|ruby|perl|php|lua|luajit|npm|npx|yarn|pnpm)", name):
             paths.add(cwd)
             if re.fullmatch(r"python(?:\d+(?:\.\d+)*)?", name):
@@ -257,6 +361,13 @@ def startup_code_paths(startup):
     return None if unqualified else paths
 
 
+def startup_environment(value):
+    """Normalize in-memory Docker/Compose environment without reading env-file contents."""
+    if isinstance(value, dict):
+        return value
+    return dict(entry.split("=", 1) if "=" in entry else (entry, None) for entry in value or [])
+
+
 def compose_startup(service, defaults):
     """Apply Compose null/empty/omitted startup semantics to installed image defaults."""
     entrypoint = service.get("entrypoint")
@@ -275,12 +386,29 @@ def compose_startup(service, defaults):
         health_test = override["test"]
     if health_test is not None:
         result["healthcheck"] = {"test": health_test}
+    if "environment" in service or "environment" in defaults:
+        result["environment"] = {**startup_environment(defaults.get("environment")), **startup_environment(service.get("environment"))}
     return result
 
 
 def verify_code_mounts(service, startup=None):
     """Refuse executable deployment mounts without reading config/secret contents."""
     paths = startup_code_paths(startup or service)
+    effective = startup or service
+    # Hooks run independently of ENTRYPOINT/CMD but inherit cwd/environment.
+    # Separate-image pre_start hooks require their own deployment qualification.
+    if service.get("pre_start"):
+        paths = None
+    for kind in ("post_start", "pre_stop"):
+        for hook in service.get(kind, []):
+            command = hook.get("command")
+            hook_startup = {
+                "entrypoint": ["/bin/sh", "-c", command] if isinstance(command, str) else command,
+                "working_dir": hook.get("working_dir") or effective.get("working_dir") or "/",
+                "environment": {**startup_environment(effective.get("environment")), **startup_environment(hook.get("environment"))},
+            }
+            selected = startup_code_paths(hook_startup)
+            paths = None if paths is None or selected is None else paths | selected
     mounts = list(service.get("volumes", []))
     for kind, base in (("configs", "/"), ("secrets", "/run/secrets")):
         for entry in service.get(kind, []):
@@ -302,7 +430,7 @@ def verify_code_mounts(service, startup=None):
         if source:
             metadata = Path(source).stat()
             executable = Path(source).is_file() and bool(metadata.st_mode & 0o111)
-        if executable or startup_code or re.search(r"\.(?:py|pyc|js|mjs|cjs|jsx|ts|tsx|so|node|sh|bash|dash|ksh|zsh|fish|pl|rb|php|lua|ps1|exe|dll|wasm)$", destination, re.I) or re.fullmatch(r"(?:/app(?:/(?:src|lib|services|providers|api|utils|cw_platform)(?:/.*)?)?|/(?:usr/(?:local/)?)?(?:bin|sbin|libexec|lib|lib32|lib64)(?:/.*)?|/usr/share/(?:nodejs|node_modules|python\d*(?:\.\d+)*|perl\d*|php|ruby)(?:/.*)?)/?", normalized):
+        if executable or startup_code or re.search(r"\.(?:py|pyc|js|mjs|cjs|jsx|ts|tsx|so|node|sh|bash|dash|ksh|zsh|fish|pl|rb|php|lua|ps1|exe|dll|wasm|jar|class|jmod|java)$", destination, re.I) or re.fullmatch(r"(?:/app(?:/(?:src|lib|services|providers|api|utils|cw_platform)(?:/.*)?)?|/(?:usr/(?:local/)?)?(?:bin|sbin|libexec|lib|lib32|lib64)(?:/.*)?|/usr/share/(?:nodejs|node_modules|python\d*(?:\.\d+)*|perl\d*|php|ruby)(?:/.*)?)/?", normalized):
             raise UpdateRefusal("local_code_override")
 
 
@@ -428,13 +556,14 @@ def docker_update(driver, item, automatic=False):
             return command(base + arguments, timeout=timeout, environment=environment)
         config = json.loads(compose(["config", "--format", "json"]))
         service = config.get("services", {}).get(driver["service"], {})
-        # Inspect only startup vectors, not the environment or complete Config.
-        startup = json.loads(command(["/usr/bin/docker", "inspect", "--format", '{"entrypoint":{{json .Config.Entrypoint}},"command":{{json .Config.Cmd}},"working_dir":{{json .Config.WorkingDir}},"healthcheck":{{json .Config.Healthcheck}}}', identity]))
+        # Inspect bounded startup/loader inputs in memory, never complete Config
+        # or environment values in output, inventory or update receipts.
+        startup = json.loads(command(["/usr/bin/docker", "inspect", "--format", '{"entrypoint":{{json .Config.Entrypoint}},"command":{{json .Config.Cmd}},"working_dir":{{json .Config.WorkingDir}},"healthcheck":{{json .Config.Healthcheck}},"environment":{{json .Config.Env}}}', identity]))
         verify_code_mounts(service, startup)
         # Container Config may contain old Compose overrides. Inherit from the
         # immutable installed image, not from those old container overrides.
         # Never classify an unmerged CMD argument tail as an executable vector.
-        defaults = json.loads(command(["/usr/bin/docker", "image", "inspect", "--format", '{"entrypoint":{{json .Config.Entrypoint}},"command":{{json .Config.Cmd}},"working_dir":{{json .Config.WorkingDir}},"healthcheck":{{json .Config.Healthcheck}}}', before[2]]))
+        defaults = json.loads(command(["/usr/bin/docker", "image", "inspect", "--format", '{"entrypoint":{{json .Config.Entrypoint}},"command":{{json .Config.Cmd}},"working_dir":{{json .Config.WorkingDir}},"healthcheck":{{json .Config.Healthcheck}},"environment":{{json .Config.Env}}}', before[2]]))
         verify_code_mounts(service, compose_startup(service, defaults))
         if config.get("services", {}).get(driver["service"], {}).get("image") != item["image"]:
             raise RuntimeError("Compose and the observed image differ")
@@ -450,7 +579,7 @@ def docker_update(driver, item, automatic=False):
         updated = original[:match.start()] + replacement + original[match.end():]
         progress("pulling")
         command(["/usr/bin/docker", "pull", candidate], timeout=600)
-        candidate_startup = json.loads(command(["/usr/bin/docker", "image", "inspect", "--format", '{"entrypoint":{{json .Config.Entrypoint}},"command":{{json .Config.Cmd}},"working_dir":{{json .Config.WorkingDir}},"healthcheck":{{json .Config.Healthcheck}}}', candidate]))
+        candidate_startup = json.loads(command(["/usr/bin/docker", "image", "inspect", "--format", '{"entrypoint":{{json .Config.Entrypoint}},"command":{{json .Config.Cmd}},"working_dir":{{json .Config.WorkingDir}},"healthcheck":{{json .Config.Healthcheck}},"environment":{{json .Config.Env}}}', candidate]))
         verify_code_mounts(service, compose_startup(service, candidate_startup))
         pulled = command(["/usr/bin/docker", "image", "inspect", "--format", "{{.Id}}", candidate])
         if pulled != item["available"]:

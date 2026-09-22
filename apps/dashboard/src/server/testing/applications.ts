@@ -192,7 +192,10 @@ export function createApplicationFixture(
                     ...detail,
                     Config: {
                         ...detail.Config,
-                        Env: ["PRIVATE_KEY=must-never-reach-browser"],
+                        Env: [
+                            ...(detail.Config.Env ?? []),
+                            "PRIVATE_KEY=must-never-reach-browser",
+                        ],
                     },
                 });
             if (

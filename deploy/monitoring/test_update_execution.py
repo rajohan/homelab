@@ -136,6 +136,52 @@ class UpdateExecutionTests(unittest.TestCase):
                 result = subprocess.run(["/bin/bash", "--noprofile", "--norc", "-c", expression, "fixture", str(script)], capture_output=True, text=True, check=True, timeout=5, env={"PATH": "/usr/bin:/bin", "HOME": temporary})
                 self.assertEqual(result.stdout.strip(), "executed" if executes else str(script))
 
+    def test_code_loading_environment_is_merged_without_leaking_values(self):
+        for kind in ("bind", "volume", "tmpfs"):
+            service = {"volumes": [{"type": kind, "target": "/custom"}]}
+            defaults = {"entrypoint": ["/vendor/server"], "environment": ["LD_PRELOAD=/custom/SYNTHETIC_PRIVATE"]}
+            for override in ({}, {"environment": {"APP_CONFIG": "private"}}, {"environment": ["LD_PRELOAD=/custom/SYNTHETIC_PRIVATE"]}):
+                with self.subTest(kind=kind, override=override), self.assertRaises(remote.UpdateRefusal) as error:
+                    remote.verify_code_mounts(service, remote.compose_startup(override, defaults))
+                self.assertNotIn("SYNTHETIC_PRIVATE", str(error.exception))
+            for value in ("", None):
+                remote.verify_code_mounts(service, remote.compose_startup({"environment": {"LD_PRELOAD": value}}, defaults))
+            remote.verify_code_mounts({}, defaults)
+
+    def test_compose_lifecycle_hooks_qualify_effective_startup(self):
+        for kind in ("post_start", "pre_stop"):
+            for command in (["/custom/start"], "nice /custom/start", ["bash", "-O", "extglob", "/custom/start"], ["java", "-jar", "/custom/app.jar"], "trap /custom/start EXIT; true"):
+                for mount in ("bind", "volume", "tmpfs"):
+                    service = {kind: [{"command": command}], "volumes": [{"type": mount, "target": "/custom"}]}
+                    with self.subTest(kind=kind, command=command, mount=mount), self.assertRaises(remote.UpdateRefusal):
+                        remote.verify_code_mounts(service, {"entrypoint": ["/vendor/server"]})
+            for hook in ({"command": ["./start"], "working_dir": "/custom"}, {"command": ["/vendor/check"], "environment": {"LD_PRELOAD": "/custom/SYNTHETIC_PRIVATE"}}):
+                with self.subTest(hook=hook), self.assertRaises(remote.UpdateRefusal):
+                    remote.verify_code_mounts({kind: [hook], "volumes": [{"target": "/custom"}]}, {"entrypoint": ["/vendor/server"]})
+            with self.assertRaises(remote.UpdateRefusal):
+                remote.verify_code_mounts({kind: [{"command": ["./start"]}], "volumes": [{"target": "/custom"}]}, {"entrypoint": ["/vendor/server"], "working_dir": "/custom"})
+            remote.verify_code_mounts({kind: [{"command": ["/vendor/check", "/custom/config"]}], "volumes": [{"target": "/custom"}]}, {"entrypoint": ["/vendor/server"]})
+
+    def test_separate_image_compose_init_hooks_require_qualification(self):
+        with self.assertRaises(remote.UpdateRefusal):
+            remote.verify_code_mounts({"pre_start": [{"image": "fixture", "command": ["/custom/start"]}], "volumes": [{"target": "/custom"}]})
+
+    def test_jvm_artifact_mount_suffixes(self):
+        for extension in ("jar", "class", "jmod", "java"):
+            with self.subTest(extension=extension), self.assertRaises(remote.UpdateRefusal):
+                remote.verify_code_mounts({"entrypoint": ["/vendor/server"], "volumes": [{"target": "/custom/plugin." + extension}]})
+        remote.verify_code_mounts({"entrypoint": ["/vendor/server"], "volumes": [{"target": "/custom/data.zip"}]})
+
+    def test_real_shell_option_and_deferred_handler_semantics(self):
+        with tempfile.TemporaryDirectory(prefix="homelab-shell-options-") as temporary:
+            script = Path(temporary) / "start"
+            script.write_text("printf executed")
+            for options in (["-O", "extglob"], ["-o", "pipefail"], ["+O", "extglob"], ["-eO", "extglob"]):
+                result = subprocess.run(["/bin/bash", *options, str(script)], check=True, capture_output=True, text=True, timeout=5, env={"PATH": "/usr/bin:/bin", "HOME": temporary})
+                self.assertEqual(result.stdout, "executed")
+            result = subprocess.run(["/bin/bash", "-c", "trap 'printf deferred' EXIT; printf main"], check=True, capture_output=True, text=True, timeout=5, env={"PATH": "/usr/bin:/bin", "HOME": temporary})
+            self.assertEqual(result.stdout, "maindeferred")
+
     def test_startup_positions_match_discovery_corpus(self):
         cases = json.loads((SOURCE.parents[6] / "scripts/fixtures/dockerStartup.json").read_text())
         for scenario in cases:

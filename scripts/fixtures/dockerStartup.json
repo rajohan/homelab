@@ -1248,5 +1248,675 @@
         "working_dir": "/data",
         "mount": "/data",
         "blocked": false
+    },
+    {
+        "name": "nice default",
+        "entrypoint": ["nice", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "nice separate priority",
+        "entrypoint": ["nice", "-n", "5", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "nice attached priority",
+        "entrypoint": ["nice", "-n5", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "nice long priority",
+        "entrypoint": ["nice", "--adjustment=5", "--", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "nice historical priority",
+        "entrypoint": ["nice", "-5", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "nohup",
+        "entrypoint": ["nohup", "--", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "timeout",
+        "entrypoint": ["timeout", "5s", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "timeout options",
+        "entrypoint": [
+            "timeout",
+            "-s",
+            "TERM",
+            "--kill-after=2s",
+            "--",
+            "5s",
+            "/custom/start"
+        ],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "nested launchers",
+        "entrypoint": ["nohup", "nice", "-n", "5", "timeout", "5", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "timeout attached options",
+        "entrypoint": [
+            "timeout",
+            "-sTERM",
+            "-k2s",
+            "--foreground",
+            "5s",
+            "/custom/start"
+        ],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "unsupported dispatch grammar",
+        "entrypoint": ["setsid", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "bounded launcher recursion",
+        "entrypoint": [
+            "nohup",
+            "nohup",
+            "nohup",
+            "nohup",
+            "nohup",
+            "nohup",
+            "nohup",
+            "nohup",
+            "nohup",
+            "nohup",
+            "nohup",
+            "/custom/start"
+        ],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "launcher shell form",
+        "entrypoint": ["sh", "-c"],
+        "command": ["nice -n 5 /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "launcher preserves ordinary operands",
+        "entrypoint": ["nice", "-n", "5", "/vendor/server"],
+        "command": ["/custom/settings.json"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "timeout preserves ordinary operands",
+        "entrypoint": ["timeout", "5s", "/vendor/server"],
+        "command": ["/custom/settings.json"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "nohup help is not execution",
+        "entrypoint": ["nohup", "--help"],
+        "command": ["/custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell shopt operand",
+        "entrypoint": ["bash", "-O", "extglob", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell set option operand",
+        "entrypoint": ["bash", "-o", "pipefail", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell plus option",
+        "entrypoint": ["bash", "+O", "extglob", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell combined option operand",
+        "entrypoint": ["bash", "-eO", "extglob", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell attached option",
+        "entrypoint": ["bash", "-Oextglob", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell delimiter",
+        "entrypoint": ["bash", "--", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell rcfile",
+        "entrypoint": ["bash", "--rcfile", "/custom/start", "-c", "true"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell init file",
+        "entrypoint": ["bash", "--init-file", "/custom/start", "-c", "true"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell options before inline",
+        "entrypoint": ["bash", "-O", "extglob", "-ec", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell options after c",
+        "entrypoint": ["bash", "-c", "-O", "extglob", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell data arguments after vendor script",
+        "entrypoint": ["bash", "-O", "extglob", "/vendor/start"],
+        "command": ["-c", "/custom/config"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell simple inline options preserve data",
+        "entrypoint": ["bash", "-o", "pipefail", "-c"],
+        "command": ["/vendor/server /custom/config"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "deferred trap trap /custom/cleanup EXIT; /vendor/server",
+        "entrypoint": ["sh", "-c"],
+        "command": ["trap /custom/cleanup EXIT; /vendor/server"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "deferred trap trap '/custom/cleanup' EXIT; /vendor/server",
+        "entrypoint": ["sh", "-c"],
+        "command": ["trap '/custom/cleanup' EXIT; /vendor/server"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "deferred trap command trap /custom/cleanup EXIT",
+        "entrypoint": ["sh", "-c"],
+        "command": ["command trap /custom/cleanup EXIT"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "deferred trap builtin trap /custom/cleanup EXIT",
+        "entrypoint": ["sh", "-c"],
+        "command": ["builtin trap /custom/cleanup EXIT"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "deferred trap trap -p",
+        "entrypoint": ["sh", "-c"],
+        "command": ["trap -p"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "deferred trap trap '' EXIT",
+        "entrypoint": ["sh", "-c"],
+        "command": ["trap '' EXIT"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "deferred trap trap - EXIT",
+        "entrypoint": ["sh", "-c"],
+        "command": ["trap - EXIT"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "literal trap data remains eligible",
+        "entrypoint": ["sh", "-c"],
+        "command": ["/vendor/server 'trap /custom/start EXIT'"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "JVM jar",
+        "entrypoint": ["java", "-jar", "/custom/app.jar"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "JVM classpath short",
+        "entrypoint": ["java", "-cp", "/vendor:/custom/classes", "Main"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "JVM classpath long",
+        "entrypoint": ["java", "--class-path=/custom/*", "Main"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "JVM module path",
+        "entrypoint": ["java", "--module-path", "/custom", "-m", "app/Main"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "JVM module short",
+        "entrypoint": ["java", "-p", "/custom", "--module=app/Main"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "JVM patch module",
+        "entrypoint": ["java", "--patch-module=app=/custom/classes", "--module=app/Main"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "JVM upgrade module",
+        "entrypoint": ["java", "--upgrade-module-path=/custom", "-m", "app/Main"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "JVM source file",
+        "entrypoint": ["java", "/custom/Main.java"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "JVM source flag",
+        "entrypoint": ["java", "--source", "21", "/custom/Main"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "JVM library property",
+        "entrypoint": ["java", "-Djava.library.path=/custom", "Main"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "JVM agent",
+        "entrypoint": ["java", "-javaagent:/custom/agent.jar", "Main"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "JVM argument file",
+        "entrypoint": ["java", "@/custom/args"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "JVM JVM unsupported option",
+        "entrypoint": ["java", "--unknown-option", "/custom/code"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "JVM class cwd",
+        "entrypoint": ["java", "Main"],
+        "command": [],
+        "working_dir": "/custom",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "JVM image jar data operand",
+        "entrypoint": ["java", "-Xmx512m", "-jar", "/vendor/app.jar"],
+        "command": ["/custom/settings.json"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "JVM vendor classpath data operand",
+        "entrypoint": ["java", "-cp", "/vendor", "Main"],
+        "command": ["/custom/settings.json"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "loader environment LD_PRELOAD",
+        "entrypoint": ["/vendor/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["LD_PRELOAD=/custom/SYNTHETIC_PRIVATE"]
+    },
+    {
+        "name": "loader environment LD_LIBRARY_PATH",
+        "entrypoint": ["/vendor/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["LD_LIBRARY_PATH=/custom/SYNTHETIC_PRIVATE"]
+    },
+    {
+        "name": "loader environment LD_AUDIT",
+        "entrypoint": ["/vendor/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["LD_AUDIT=/custom/SYNTHETIC_PRIVATE"]
+    },
+    {
+        "name": "loader environment BASH_ENV",
+        "entrypoint": ["/vendor/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["BASH_ENV=/custom/SYNTHETIC_PRIVATE"]
+    },
+    {
+        "name": "loader environment ENV",
+        "entrypoint": ["/vendor/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["ENV=/custom/SYNTHETIC_PRIVATE"]
+    },
+    {
+        "name": "loader environment PYTHONPATH",
+        "entrypoint": ["/vendor/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["PYTHONPATH=/custom/SYNTHETIC_PRIVATE"]
+    },
+    {
+        "name": "loader environment NODE_OPTIONS",
+        "entrypoint": ["/vendor/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["NODE_OPTIONS=/custom/SYNTHETIC_PRIVATE"]
+    },
+    {
+        "name": "loader environment CLASSPATH",
+        "entrypoint": ["/vendor/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["CLASSPATH=/custom/SYNTHETIC_PRIVATE"]
+    },
+    {
+        "name": "loader environment JAVA_TOOL_OPTIONS",
+        "entrypoint": ["/vendor/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["JAVA_TOOL_OPTIONS=/custom/SYNTHETIC_PRIVATE"]
+    },
+    {
+        "name": "loader environment JDK_JAVA_OPTIONS",
+        "entrypoint": ["/vendor/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["JDK_JAVA_OPTIONS=/custom/SYNTHETIC_PRIVATE"]
+    },
+    {
+        "name": "loader environment RUBYOPT",
+        "entrypoint": ["/vendor/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["RUBYOPT=/custom/SYNTHETIC_PRIVATE"]
+    },
+    {
+        "name": "loader environment PERL5OPT",
+        "entrypoint": ["/vendor/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["PERL5OPT=/custom/SYNTHETIC_PRIVATE"]
+    },
+    {
+        "name": "empty loader environment",
+        "entrypoint": ["/vendor/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false,
+        "environment": ["LD_PRELOAD=", "NODE_OPTIONS="]
+    },
+    {
+        "name": "ordinary environment data",
+        "entrypoint": ["/vendor/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false,
+        "environment": [
+            "APP_CONFIG=/custom/SYNTHETIC_PRIVATE",
+            "NODE_ENV=production",
+            "PYTHONUNBUFFERED=1"
+        ]
+    },
+    {
+        "name": "inline loader LD_PRELOAD=/custom/lib.so /vendor/server",
+        "entrypoint": ["sh", "-c"],
+        "command": ["LD_PRELOAD=/custom/lib.so /vendor/server"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "inline loader export LD_PRELOAD=/custom/lib.so; /vendor/server",
+        "entrypoint": ["sh", "-c"],
+        "command": ["export LD_PRELOAD=/custom/lib.so; /vendor/server"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "inline loader readonly LD_PRELOAD=/custom/lib.so; /vendor/server",
+        "entrypoint": ["sh", "-c"],
+        "command": ["readonly LD_PRELOAD=/custom/lib.so; /vendor/server"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "inline loader env LD_PRELOAD=/custom/lib.so /vendor/server",
+        "entrypoint": ["sh", "-c"],
+        "command": ["env LD_PRELOAD=/custom/lib.so /vendor/server"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "inline loader env -S 'LD_PRELOAD=/custom/lib.so /vendor/server'",
+        "entrypoint": ["sh", "-c"],
+        "command": ["env -S 'LD_PRELOAD=/custom/lib.so /vendor/server'"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "inline loader LD_PRELOAD=/custom/lib.so",
+        "entrypoint": ["sh", "-c"],
+        "command": ["LD_PRELOAD=/custom/lib.so"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "env loader argv",
+        "entrypoint": ["env", "LD_PRELOAD=/custom/SYNTHETIC_PRIVATE", "/vendor/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "literal loader data operand",
+        "entrypoint": ["/vendor/server"],
+        "command": ["LD_PRELOAD=/custom/SYNTHETIC_PRIVATE"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "dispatched loader export",
+        "entrypoint": ["sh", "-c"],
+        "command": ["command export LD_PRELOAD=/custom/lib.so; /vendor/server"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "builtin loader declaration",
+        "entrypoint": ["sh", "-c"],
+        "command": ["builtin declare -x LD_PRELOAD=/custom/lib.so; /vendor/server"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "env file is unqualified loader input",
+        "entrypoint": ["env", "--file=/config/private"],
+        "command": ["/vendor/server"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "env short file is unqualified",
+        "entrypoint": ["env", "-f", "/config/private"],
+        "command": ["/vendor/server"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
     }
 ]

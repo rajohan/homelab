@@ -66,18 +66,31 @@ function unqualifiedShell(command: string): boolean {
  * @param command - Image-resolved or pending Compose command, never persisted.
  * @param workingDirectory - Runtime directory used for relative scripts and module imports.
  * @param healthcheck - Effective Docker healthcheck test vector, never persisted.
- * @returns Code paths, or null for shell syntax requiring separate qualification. Callers persist booleans only.
+ * @param environment - Effective container environment, inspected only in memory and never returned.
+ * @returns Code paths, or null for execution/loading semantics requiring separate qualification. Callers persist booleans only.
  */
 export function startupCodePaths(
     entrypoint: readonly string[] | string | null | undefined,
     command: readonly string[] | string | null | undefined,
     workingDirectory = "/",
-    healthcheck?: readonly string[] | null
+    healthcheck?: readonly string[] | null,
+    environment?: readonly string[] | null
 ): readonly string[] | null {
     const paths = new Set<string>();
     let unqualified = false;
     const argv = (value: typeof entrypoint): readonly string[] =>
         typeof value === "string" ? words(value) : (value ?? []);
+    const assignment = (value: string): void => {
+        // Loader/search options can contain expansion syntax or private values.
+        // Require separate qualification rather than returning any of their data.
+        if (
+            /^(?:LD_[A-Z_]+|DYLD_[A-Z_]+|BASH_ENV|ENV|ZDOTDIR|PYTHONPATH|PYTHONHOME|PYTHONSTARTUP|NODE_OPTIONS|NODE_PATH|RUBYOPT|RUBYLIB|PERL5OPT|PERL5LIB|PERLLIB|LUA_PATH|LUA_CPATH|PHP_INI_SCAN_DIR|PHPRC|CLASSPATH|JAVA_TOOL_OPTIONS|JDK_JAVA_OPTIONS|_JAVA_OPTIONS)=[\s\S]+$/.test(
+                value
+            )
+        )
+            unqualified = true;
+    };
+    for (const value of environment ?? []) assignment(value);
     const dispatch = (args: readonly string[]): readonly string[] => {
         let selected = args;
         for (let depth = 0; ["command", "builtin"].includes(selected[0] ?? ""); depth++) {
@@ -109,7 +122,7 @@ export function startupCodePaths(
         const executable = args[0];
         if (!executable || executable.startsWith("-")) return;
         if (depth > 8) {
-            paths.add(cwd);
+            unqualified = true;
             return;
         }
         const name = path.posix.basename(executable);
@@ -136,11 +149,12 @@ export function startupCodePaths(
                         const attached = long ? long[2] : short![2] || undefined;
                         const value = attached ?? expanded[++index];
                         if (value === undefined) return;
+                        if (option === "f" || option === "file") unqualified = true;
                         if (option === "C" || option === "chdir")
                             current = path.posix.resolve(cwd, value);
                         if (option === "S" || option === "split-string") {
                             if (++splits > 8) {
-                                paths.add(current);
+                                unqualified = true;
                                 return;
                             }
                             expanded.splice(index + 1, 0, ...words(value));
@@ -151,12 +165,67 @@ export function startupCodePaths(
                 }
                 options = false;
                 if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(arg)) {
+                    assignment(arg);
                     index++;
                     continue;
                 }
                 break;
             }
             inspect(expanded.slice(index), current, depth + 1);
+            return;
+        }
+        if (["nice", "nohup", "timeout"].includes(name)) {
+            let index = 1;
+            while (args[index]?.startsWith("-")) {
+                const option = args[index++]!;
+                if (option === "--") break;
+                if (option === "--help" || option === "--version") return;
+                if (
+                    (name === "nice" && /^(?:-n|--adjustment)$/.test(option)) ||
+                    (name === "timeout" &&
+                        /^(?:-[sk]|--signal|--kill-after)$/.test(option))
+                )
+                    index++;
+                else if (
+                    (name === "nice" && /^(?:-n.+|-\d+|--adjustment=.+)$/.test(option)) ||
+                    (name === "timeout" &&
+                        /^(?:-[sk].+|--(?:signal|kill-after)=.+|--(?:foreground|preserve-status|verbose))$/.test(
+                            option
+                        ))
+                )
+                    continue;
+                else {
+                    unqualified = true;
+                    return;
+                }
+            }
+            if (name === "timeout") index++; // The duration is not a command.
+            inspect(args.slice(index), cwd, depth + 1);
+            return;
+        }
+        if (
+            [
+                "trap",
+                "eval",
+                "xargs",
+                "parallel",
+                "chroot",
+                "su",
+                "runuser",
+                "sudo",
+                "doas",
+                "setpriv",
+                "setsid",
+                "chrt",
+                "ionice",
+                "taskset",
+                "stdbuf",
+                "flock",
+                "watch",
+            ].includes(name)
+        ) {
+            // These utilities defer or dispatch commands using separate grammars.
+            unqualified = true;
             return;
         }
         if (
@@ -181,18 +250,55 @@ export function startupCodePaths(
             return;
         }
         if (["sh", "bash", "dash", "ksh", "zsh", "ash"].includes(name)) {
-            const inline = args.findIndex(
-                (arg, index) => index > 0 && /^-[^-]*c/.test(arg)
-            );
-            if (inline === -1) {
-                const script = args.slice(1).find((arg) => !arg.startsWith("-"));
+            let index = 1,
+                inline = false;
+            while (index < args.length) {
+                const option = args[index]!;
+                if (option === "--") {
+                    index++;
+                    break;
+                }
+                if (!/^[+-]/.test(option) || option === "-") break;
+                if (["--help", "--version"].includes(option)) return;
+                if (["--rcfile", "--init-file"].includes(option)) {
+                    if (args[index + 1])
+                        paths.add(path.posix.resolve(cwd, args[++index]!));
+                } else if (
+                    [
+                        "--noprofile",
+                        "--norc",
+                        "--posix",
+                        "--restricted",
+                        "--verbose",
+                    ].includes(option)
+                ) {
+                    // No operand.
+                } else {
+                    const match = /^[+-]([abefhkmnptuvxBCEHPTirsDc]*)([oO])(.*)$/.exec(
+                        option
+                    );
+                    if (match) {
+                        inline ||= option.startsWith("-") && match[1]!.includes("c");
+                        if (!match[3]) index++;
+                    } else if (/^[+-][abefhkmnptuvxBCEHPTirsDc]+$/.test(option)) {
+                        inline ||= option.startsWith("-") && option.includes("c");
+                        if (/[is]/.test(option)) unqualified = true;
+                    } else {
+                        unqualified = true;
+                        return;
+                    }
+                }
+                index++;
+            }
+            if (!inline) {
+                const script = args[index];
                 if (script) paths.add(path.posix.resolve(cwd, script));
                 return;
             }
             {
                 // Only simple command lists are qualified. Do not guess through
                 // compound grammar, redirections or executable expansions.
-                if (unqualifiedShell(args[inline + 1] ?? "")) {
+                if (unqualifiedShell(args[index] ?? "")) {
                     unqualified = true;
                     return;
                 }
@@ -201,8 +307,16 @@ export function startupCodePaths(
                 const finish = () => {
                     // Shell assignments precede the command but are not executable
                     // words. Values (including quoted paths) must not become code.
-                    while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(group[0] ?? "")) group.shift();
+                    while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(group[0] ?? ""))
+                        assignment(group.shift()!);
                     const selected = dispatch(group);
+                    if (
+                        ["export", "readonly", "declare", "typeset"].includes(
+                            selected[0] ?? ""
+                        )
+                    ) {
+                        for (const value of selected.slice(1)) assignment(value);
+                    }
                     if (selected[0] === "eval" || /[$`]/.test(selected[0] ?? ""))
                         unqualified = true;
                     else if (selected[0] === "cd") {
@@ -217,7 +331,7 @@ export function startupCodePaths(
                     } else inspect(selected, current, depth + 1);
                     group = [];
                 };
-                for (const token of tokens(args[inline + 1] ?? "")) {
+                for (const token of tokens(args[index] ?? "")) {
                     if (token.separator) finish();
                     else {
                         if (
@@ -241,6 +355,67 @@ export function startupCodePaths(
         }
         if (name === "." || name === "source") {
             if (args[1]) paths.add(path.posix.resolve(cwd, args[1]));
+            return;
+        }
+        if (name === "java") {
+            paths.add(cwd); // Default class path, relative source and module imports.
+            const addList = (value: string) => {
+                for (const item of value.split(":"))
+                    paths.add(path.posix.resolve(cwd, item.replace(/\/\*$/, "") || "."));
+            };
+            for (let index = 1; index < args.length; index++) {
+                const option = args[index]!;
+                if (option === "-jar") {
+                    if (args[index + 1])
+                        paths.add(path.posix.resolve(cwd, args[index + 1]!));
+                    return;
+                }
+                const list =
+                    /^(--class-path|--module-path|--upgrade-module-path|--patch-module)(?:=(.*))?$/.exec(
+                        option
+                    );
+                if (list || ["-cp", "-classpath", "-p"].includes(option)) {
+                    let value = list?.[2] ?? args[++index];
+                    if (value === undefined) {
+                        unqualified = true;
+                        return;
+                    }
+                    if (list?.[1] === "--patch-module")
+                        value = value.slice(value.indexOf("=") + 1);
+                    addList(value);
+                } else if (
+                    option === "-m" ||
+                    option === "--module" ||
+                    option.startsWith("--module=")
+                )
+                    return;
+                else if (
+                    /^(?:-javaagent:|-agentpath:|-agentlib:|@|-Xbootclasspath|--source)/.test(
+                        option
+                    )
+                ) {
+                    unqualified = true;
+                    return;
+                } else if (
+                    /^-D(?:java.library.path|java.class.path|jdk.module.path)=/.test(
+                        option
+                    )
+                )
+                    addList(option.slice(option.indexOf("=") + 1));
+                else if (
+                    option.startsWith("-D") ||
+                    /^-Xm[sx]\d+[kKmMgG]?$/.test(option) ||
+                    ["-server", "-client", "--enable-preview"].includes(option)
+                )
+                    continue;
+                else if (option.startsWith("-")) {
+                    unqualified = true;
+                    return;
+                } else {
+                    paths.add(path.posix.resolve(cwd, option));
+                    return;
+                }
+            }
             return;
         }
         if (

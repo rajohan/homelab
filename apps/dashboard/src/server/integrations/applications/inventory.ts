@@ -131,7 +131,8 @@ export function mapDockerApplication(
         detail.Config.Entrypoint,
         detail.Config.Cmd,
         detail.Config.WorkingDir,
-        detail.Config.Healthcheck?.Test
+        detail.Config.Healthcheck?.Test,
+        detail.Config.Env
     );
     const application: ManagedApplication = {
         id: `${target.id}:${detail.Id}`,

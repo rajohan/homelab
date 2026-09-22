@@ -8,7 +8,9 @@ test.each(cases)("startup code positions: $name", (scenario) => {
     const paths = startupCodePaths(
         scenario.entrypoint,
         scenario.command,
-        scenario.working_dir
+        scenario.working_dir,
+        undefined,
+        "environment" in scenario ? scenario.environment : undefined
     );
     const mount = path.posix.normalize(scenario.mount);
     expect(
@@ -25,5 +27,5 @@ test("nested startup wrappers remain bounded", () => {
             ["python", "-m", "app"],
             "/custom"
         )
-    ).toContain("/custom");
+    ).toBeNull();
 });

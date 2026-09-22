@@ -38,6 +38,13 @@ test.each([
     { test: ["CMD-SHELL", "command cd /custom; ./check"], blocked: true },
     { test: ["CMD-SHELL", "command -v /custom/check"], blocked: false },
     { test: ["CMD-SHELL", "command -pV /custom/check"], blocked: false },
+    { test: ["CMD", "nice", "-n", "5", "/custom/check"], blocked: true },
+    { test: ["CMD-SHELL", "nohup timeout 5s /custom/check"], blocked: true },
+    { test: ["CMD", "bash", "-O", "extglob", "/custom/check"], blocked: true },
+    { test: ["CMD-SHELL", "trap /custom/check EXIT; true"], blocked: true },
+    { test: ["CMD", "java", "-jar", "/custom/app.jar"], blocked: true },
+    { test: ["CMD-SHELL", "env LD_PRELOAD=/custom/lib.so /vendor/check"], blocked: true },
+    { test: ["CMD", "nice", "/vendor/check", "/custom/config"], blocked: false },
     { test: ["CMD", "/vendor/check", "--data", "/custom/config"], blocked: false },
     { test: ["NONE", "/custom/check"], blocked: false },
 ])(
@@ -63,6 +70,49 @@ test.each([
             expect(hasApplicationCodeMount(mapped)).toBe(scenario.blocked);
             expect(JSON.stringify(mapped)).not.toContain("SYNTHETIC_PRIVATE");
             expect(mapped).not.toHaveProperty("Healthcheck");
+        } finally {
+            await fixture.close();
+        }
+    }
+);
+
+test.each([
+    ["LD_PRELOAD", true],
+    ["LD_LIBRARY_PATH", true],
+    ["BASH_ENV", true],
+    ["NODE_OPTIONS", true],
+    ["CLASSPATH", true],
+    ["APP_CONFIG", false],
+] as const)(
+    "Docker loader environment %s is private and qualified",
+    async (name, blocked) => {
+        const fixture = createApplicationFixture();
+        try {
+            const detail = fixture.containers.get("a".repeat(64))!;
+            detail.Config.Entrypoint = ["/vendor/server"];
+            detail.Config.Cmd = [];
+            detail.Config.Env = [name + "=/custom/SYNTHETIC_PRIVATE"];
+            detail.Mounts = [
+                {
+                    Type: "volume",
+                    Source: "fixture-code",
+                    Destination: "/custom",
+                    RW: false,
+                },
+            ];
+            const inventory = await collectApplications(
+                [fixture.target],
+                () => createDockerPort(fixture.target, {}),
+                AbortSignal.timeout(3000)
+            );
+            const app = inventory.hosts[0]!.applications.find(
+                (value) => value.containerId === detail.Id
+            )!;
+            expect(hasApplicationCodeMount(app)).toBe(blocked);
+            expect(JSON.stringify(inventory)).not.toContain("SYNTHETIC_PRIVATE");
+            expect(
+                JSON.stringify(filterApplicationInventory(inventory, [fixture.target]))
+            ).not.toContain("SYNTHETIC_PRIVATE");
         } finally {
             await fixture.close();
         }

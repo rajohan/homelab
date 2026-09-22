@@ -8,6 +8,8 @@ const id = v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/));
 const text = v.pipe(v.string(), v.maxLength(2000));
 const labels = v.record(v.string(), v.string());
 const commandVector = v.pipe(v.array(text), v.maxLength(128));
+const environmentEntry = v.pipe(v.string(), v.maxLength(16_384));
+const environmentVector = v.pipe(v.array(environmentEntry), v.maxLength(512));
 const networkText = v.pipe(v.string(), v.maxLength(256));
 const portBindings = v.nullable(
     v.pipe(
@@ -25,6 +27,7 @@ const detailSchema = v.object({
         Entrypoint: v.optional(v.nullable(v.pipe(v.array(text), v.maxLength(128)))),
         Cmd: v.optional(v.nullable(v.pipe(v.array(text), v.maxLength(128)))),
         WorkingDir: v.optional(text),
+        Env: v.optional(v.nullable(environmentVector)),
         Healthcheck: v.optional(
             v.nullable(
                 v.object({
