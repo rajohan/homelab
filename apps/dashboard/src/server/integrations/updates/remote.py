@@ -79,7 +79,7 @@ def verify_code_mounts(plan, services):
         destinations = [mount["Destination"] for mount in row[11]]
         destinations += [mount["target"] for mount in services[row[7]].get("volumes", [])]
         for destination in destinations:
-            target = os.path.normpath(destination)
+            target = os.path.normpath("/" + destination.lstrip("/"))
             if re.search(r"\.(?:py|pyc|js|mjs|cjs|jsx|ts|tsx|so|node)$", target, re.I) or re.fullmatch(r"/app(?:/(?:src|lib|services|providers|api|utils|cw_platform)(?:/.*)?)?/?", target):
                 raise UpdateRefusal("local_code_override")
 

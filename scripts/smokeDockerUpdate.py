@@ -49,23 +49,24 @@ def main():
             patch_file = directory / "patched.py"
             patch_file.write_text("# Synthetic patch; never executed.\n")
             baseline = provider_file.read_bytes()
-            overlay = baseline + ("    volumes:\n      - " + str(patch_file) + ":/app/providers/patched.py:ro\n").encode()
-            provider_file.write_bytes(overlay)
             def preflight_only(arguments, **options):
                 assert arguments[1] != "pull" and not any(action in arguments for action in ("up", "stop", "rm")), "Preflight crossed a mutation boundary"
                 return command(arguments, **options)
-            try:
-                remote.command = preflight_only
+            for mount_source, mount_target in ((patch_file, "/app/providers/patched.py"), (directory, "//app/src")):
+                overlay = baseline + ("    volumes:\n      - " + str(mount_source) + ":" + mount_target + ":ro\n").encode()
+                provider_file.write_bytes(overlay)
                 try:
-                    remote.docker_update(driver, item)
-                    raise AssertionError("A pending direct code overlay was accepted")
-                except remote.UpdateRefusal as error:
-                    assert error.reason == "local_code_override"
-                assert provider_file.read_bytes() == overlay
-                assert {service: remote.namespace_snapshot(row[0]) for service, row in before.items()} == before
-            finally:
-                remote.command = command
-                provider_file.write_bytes(baseline)
+                    remote.command = preflight_only
+                    try:
+                        remote.docker_update(driver, item)
+                        raise AssertionError("A pending direct code overlay was accepted")
+                    except remote.UpdateRefusal as error:
+                        assert error.reason == "local_code_override"
+                    assert provider_file.read_bytes() == overlay
+                    assert {service: remote.namespace_snapshot(row[0]) for service, row in before.items()} == before
+                finally:
+                    remote.command = command
+                    provider_file.write_bytes(baseline)
             compose(["stop", "--timeout", "5", "consumer"])
             broken = {service: remote.namespace_snapshot(row[0]) for service, row in before.items()}
             try:

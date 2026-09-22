@@ -142,11 +142,13 @@ class UpdateExecutionTests(unittest.TestCase):
     def test_direct_code_overlays_are_refused_before_pull_or_mutation(self):
         self.docker_fixture(live_mount="/app/providers/patched.py")
         self.docker_fixture(pending_mount="/app/api/patched.js")
+        self.docker_fixture(live_mount="//app/src")
+        self.docker_fixture(pending_mount="//app/src")
         root = ['a' * 64, '/root', 'image', 'digest', 'running', '', 'demo', 'root', '', '', '', []]
         consumer = [*root[:7], 'consumer', *root[8:]]
-        services = {'root': {'volumes': [{'target': '/data'}]}, 'consumer': {'volumes': [{'target': '/config/settings.json'}]}}
+        services = {'root': {'volumes': [{'target': '//data'}]}, 'consumer': {'volumes': [{'target': '//config/settings.json'}]}}
         remote.verify_code_mounts([root, consumer], services)
-        services['consumer']['volumes'] = [{'target': '/app/src'}]
+        services['consumer']['volumes'] = [{'target': '//app/src'}]
         with self.assertRaisesRegex(remote.UpdateRefusal, '^local_code_override$'):
             remote.verify_code_mounts([root, consumer], services)
 
