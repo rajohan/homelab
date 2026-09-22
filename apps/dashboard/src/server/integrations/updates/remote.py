@@ -88,7 +88,43 @@ def startup_code_paths(startup):
         executable, name = args[0], posixpath.basename(args[0])
         if "/" in executable:
             paths.add(resolve(cwd, executable))
-        if name in ("exec", "env", "tini", "dumb-init", "gosu", "su-exec", "docker-entrypoint.sh", "docker-entrypoint"):
+        if name == "env":
+            current, options, splits, index = cwd, True, 0, 1
+            expanded = list(args)
+            while index < len(expanded):
+                arg = expanded[index]
+                if options and arg in ("--", "-"):
+                    options = False
+                    index += 1
+                    continue
+                if options and arg.startswith("-"):
+                    long = re.fullmatch(r"--(unset|chdir|split-string|argv0|file)(?:=(.*))?", arg)
+                    short = re.fullmatch(r"-[i0v]*([uCSaf])(.*)", arg)
+                    option = long[1] if long else short[1] if short else None
+                    if option:
+                        value = long[2] if long else short[2] or None
+                        if value is None:
+                            index += 1
+                            if index >= len(expanded):
+                                return
+                            value = expanded[index]
+                        if option in ("C", "chdir"):
+                            current = resolve(cwd, value)
+                        if option in ("S", "split-string"):
+                            splits += 1
+                            if splits > 8:
+                                paths.add(current)
+                                return
+                            expanded[index + 1:index + 1] = words(value)
+                    index += 1
+                    continue
+                options = False
+                if re.match(r"[A-Za-z_][A-Za-z0-9_]*=", arg):
+                    index += 1
+                    continue
+                break
+            inspect(expanded[index:], current, depth + 1)
+        elif name in ("exec", "tini", "dumb-init", "gosu", "su-exec", "docker-entrypoint.sh", "docker-entrypoint"):
             index = 2 if name in ("gosu", "su-exec") else 1
             while index < len(args) and (args[index].startswith("-") or re.match(r"[A-Za-z_][A-Za-z0-9_]*=", args[index])):
                 index += 1
@@ -296,13 +332,12 @@ def docker_update(driver, item, automatic=False):
             return command(base + arguments, timeout=timeout, environment=environment)
         config = json.loads(compose(["config", "--format", "json"]))
         service = config.get("services", {}).get(driver["service"], {})
-        # Pending Compose changes must be qualified too, not just live startup.
-        verify_code_mounts(service)
         # Inspect only startup vectors, not the environment or complete Config.
         startup = json.loads(command(["/usr/bin/docker", "inspect", "--format", '{"entrypoint":{{json .Config.Entrypoint}},"command":{{json .Config.Cmd}},"working_dir":{{json .Config.WorkingDir}}}', identity]))
         verify_code_mounts(service, startup)
         # Container Config may contain old Compose overrides. Inherit from the
         # immutable installed image, not from those old container overrides.
+        # Never classify an unmerged CMD argument tail as an executable vector.
         defaults = json.loads(command(["/usr/bin/docker", "image", "inspect", "--format", '{"entrypoint":{{json .Config.Entrypoint}},"command":{{json .Config.Cmd}},"working_dir":{{json .Config.WorkingDir}}}', before[2]]))
         verify_code_mounts(service, compose_startup(service, defaults))
         if config.get("services", {}).get(driver["service"], {}).get("image") != item["image"]:

@@ -69,21 +69,23 @@ export function reconcileDockerObservations(
             if (matches.length !== 1) return item;
             const app = matches[0]!;
             if (app.project !== owner.project || app.name !== owner.service) return item;
-            const { installationBlock: _block, ...previous } = item;
+            // Recompute only discovery-owned blocks. Publisher refusals retain
+            // their provenance even when a code overlay is added or removed.
+            const { applicationBlock: _block, ...previous } = item;
             if (app.image !== item.image || app.imageId !== item.installed)
                 return {
                     ...previous,
                     candidateVerified: false,
                     available: null,
                     status: "unknown" as const,
-                    installationBlock:
+                    applicationBlock:
                         "The installed image changed. Refresh the host software inventory before updating.",
                 };
             return {
                 ...previous,
                 id: `docker:${app.containerId}`,
                 ...(hasApplicationCodeMount(app)
-                    ? { installationBlock: overlayReason }
+                    ? { applicationBlock: overlayReason }
                     : {}),
             };
         }),

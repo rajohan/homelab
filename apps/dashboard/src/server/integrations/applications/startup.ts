@@ -31,10 +31,54 @@ export function startupCodePaths(
         }
         const name = path.posix.basename(executable);
         if (executable.includes("/")) paths.add(path.posix.resolve(cwd, executable));
+        if (name === "env") {
+            let current = cwd,
+                options = true,
+                splits = 0;
+            const expanded = [...args];
+            let index = 1;
+            while (index < expanded.length) {
+                const arg = expanded[index]!;
+                if (options && (arg === "--" || arg === "-")) {
+                    options = false;
+                    index++;
+                    continue;
+                }
+                if (options && arg.startsWith("-")) {
+                    const long =
+                        /^--(unset|chdir|split-string|argv0|file)(?:=(.*))?$/.exec(arg);
+                    const short = /^-[i0v]*([uCSaf])(.*)$/.exec(arg);
+                    const option = long?.[1] ?? short?.[1];
+                    if (option) {
+                        const attached = long ? long[2] : short![2] || undefined;
+                        const value = attached ?? expanded[++index];
+                        if (value === undefined) return;
+                        if (option === "C" || option === "chdir")
+                            current = path.posix.resolve(cwd, value);
+                        if (option === "S" || option === "split-string") {
+                            if (++splits > 8) {
+                                paths.add(current);
+                                return;
+                            }
+                            expanded.splice(index + 1, 0, ...words(value));
+                        }
+                    }
+                    index++;
+                    continue;
+                }
+                options = false;
+                if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(arg)) {
+                    index++;
+                    continue;
+                }
+                break;
+            }
+            inspect(expanded.slice(index), current, depth + 1);
+            return;
+        }
         if (
             [
                 "exec",
-                "env",
                 "tini",
                 "dumb-init",
                 "gosu",

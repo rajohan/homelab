@@ -79,7 +79,7 @@ test.each(["digest", "reference"])(
         expect(next.candidateVerified).toBe(false);
         expect(next.available).toBeNull();
         expect(next.status).toBe("unknown");
-        expect(next.installationBlock).toContain("installed image changed");
+        expect(next.applicationBlock).toContain("installed image changed");
         expect(next.id).toBe(report.items[0]!.id);
     }
 );
@@ -128,7 +128,7 @@ test.each([
     };
     expect(hasApplicationCodeMount(patched)).toBe(true);
     expect(
-        reconcileDockerObservations(report, [patched]).items[0]?.installationBlock
+        reconcileDockerObservations(report, [patched]).items[0]?.applicationBlock
     ).toContain("Local application code");
 });
 
@@ -231,11 +231,40 @@ test("standalone logout helpers do not block an otherwise unmodified vendor imag
 test("removing an overlay clears only its installation block on the next observation", () => {
     const blocked = {
         ...report,
-        items: [{ ...report.items[0]!, installationBlock: "Local application code" }],
+        items: [{ ...report.items[0]!, applicationBlock: "Local application code" }],
     };
     expect(
-        reconcileDockerObservations(blocked, [app]).items[0]?.installationBlock
+        reconcileDockerObservations(blocked, [app]).items[0]?.applicationBlock
     ).toBeUndefined();
+});
+
+test.each([
+    "Publisher incompatibility",
+    "Local application code is mounted over this image. Review or remove the override before updating.",
+])("publisher installation blocks survive overlay changes: %s", (installationBlock) => {
+    const blocked = { ...report, items: [{ ...report.items[0]!, installationBlock }] };
+    const overlay = {
+        ...app,
+        mounts: [
+            {
+                type: "bind",
+                source: "/fixture",
+                destination: "/app/code.py",
+                readOnly: true,
+            },
+        ],
+    };
+    const observed = reconcileDockerObservations(blocked, [overlay]);
+    expect(observed.items[0]?.installationBlock).toBe(installationBlock);
+    expect(observed.items[0]?.applicationBlock).toContain("Local application code");
+    const cleared = reconcileDockerObservations(observed, [app]);
+    expect(cleared.items[0]?.installationBlock).toBe(installationBlock);
+    expect(cleared.items[0]?.applicationBlock).toBeUndefined();
+    const changed = reconcileDockerObservations(observed, [
+        { ...app, imageId: "sha256:" + "f".repeat(64) },
+    ]);
+    expect(changed.items[0]?.installationBlock).toBe(installationBlock);
+    expect(changed.items[0]?.applicationBlock).toContain("installed image changed");
 });
 
 test.each(["project", "service"])(

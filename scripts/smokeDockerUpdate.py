@@ -33,6 +33,7 @@ def main():
     original = "postgres@" + digest
     candidate = "docker.io/library/postgres:18@" + digest
     inherited_image = "homelab-fixtures/" + owner + ":inherited"
+    config_image = "homelab-fixtures/" + owner + ":config"
     with tempfile.TemporaryDirectory(prefix=owner + "-") as temporary:
         directory = Path(temporary).resolve()
         provider_file = directory / "provider.yaml"
@@ -40,17 +41,17 @@ def main():
         main_file = directory / "compose.yaml"
         overlay_file = directory / "overlay.yaml"
         helpers = []
-        for service, destination in [("custom-helper", "/opt/homelab/custom-entrypoint.py"), ("shell-helper", "/usr/local/bin/custom-entrypoint.sh"), ("extensionless-helper", "/custom/start"), ("pending-helper", "/custom/start"), ("module-helper", "/custom"), ("inherited-helper", "/custom"), ("option-helper", "/custom"), ("library-helper", "/usr/local/lib/python3.13/site-packages")]:
+        for service, destination in [("custom-helper", "/opt/homelab/custom-entrypoint.py"), ("shell-helper", "/usr/local/bin/custom-entrypoint.sh"), ("extensionless-helper", "/custom/start"), ("pending-helper", "/custom/start"), ("module-helper", "/custom"), ("inherited-helper", "/custom"), ("option-helper", "/custom"), ("env-helper", "/custom"), ("library-helper", "/usr/local/lib/python3.13/site-packages")]:
             helper_file = directory / (service + ".yaml")
             entrypoint_file = directory / (service + ".source")
             entrypoint_file.write_text("#!/bin/sh\nexec /bin/sleep 3600\n")
-            if service in ("module-helper", "inherited-helper", "option-helper", "library-helper"):
+            if service in ("module-helper", "inherited-helper", "option-helper", "env-helper", "library-helper"):
                 entrypoint_file = directory / (service + "-code")
                 entrypoint_file.mkdir()
                 (entrypoint_file / "app.py").write_text("# Synthetic module source, never executed.\n")
             helper_file.write_text("services:\n  " + service + ":\n    image: " + original + "\n    entrypoint: [/bin/sh, " + destination + "]\n    network_mode: none\n    mem_limit: 64m\n    pids_limit: 32\n    labels:\n      homelab.smoke: " + owner + "\n    volumes:\n      - type: bind\n        source: " + str(entrypoint_file) + "\n        target: " + destination + "\n        read_only: true\n")
             helpers.append((service, helper_file))
-            if service in ("pending-helper", "module-helper", "inherited-helper", "option-helper", "library-helper"):
+            if service in ("pending-helper", "module-helper", "inherited-helper", "option-helper", "env-helper", "library-helper"):
                 helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sh, " + destination + "]", "entrypoint: [/bin/sleep]\n    command: ['3600']"))
             if service in ("inherited-helper", "option-helper"):
                 helper_file.write_text(helper_file.read_text().replace(original, inherited_image))
@@ -71,11 +72,16 @@ def main():
         # The real updater deliberately edits a literal YAML pin; other fixtures may use JSON/YAML.
         provider_file.write_text("services:\n  provider:\n    image: " + original + "\n    init: true\n    entrypoint: [/bin/sleep]\n    command: ['3600']\n    network_mode: none\n    mem_limit: 64m\n    pids_limit: 32\n    labels:\n      homelab.smoke: " + owner + "\n    healthcheck:\n      test: [CMD, 'true']\n      interval: 1s\n")
         consumer_file.write_text("services:\n  consumer:\n    image: " + original + "\n" + "".join("    " + key + ": " + json.dumps(value) + "\n" for key, value in {**shared, "network_mode": "service:provider"}.items() if key != "image"))
-        main_file.write_text(json.dumps({"include": [str(provider_file), str(consumer_file), str(overlay_file)] + [str(path) for _, path in helpers], "services": {"stopped": {**shared, "network_mode": "service:provider"}, "leaf": {**shared, "network_mode": "service:consumer"}}, "volumes": {"marker": {"labels": {"homelab.smoke": owner}}}}))
+        config_file = directory / "config.yaml"
+        config_data = directory / "config-data"
+        config_data.mkdir()
+        (config_data / "settings.json").write_text("{}\n")
+        config_file.write_text("services:\n  config-app:\n    image: " + config_image + "\n    command: [/config/settings.json]\n    network_mode: none\n    mem_limit: 64m\n    pids_limit: 32\n    labels:\n      homelab.smoke: " + owner + "\n    volumes:\n      - type: bind\n        source: " + str(config_data) + "\n        target: /config\n        read_only: true\n")
+        main_file.write_text(json.dumps({"include": [str(provider_file), str(consumer_file), str(overlay_file), str(config_file)] + [str(path) for _, path in helpers], "services": {"stopped": {**shared, "network_mode": "service:provider"}, "leaf": {**shared, "network_mode": "service:consumer"}}, "volumes": {"marker": {"labels": {"homelab.smoke": owner}}}}))
         base = ["/usr/bin/docker", "compose", "--project-directory", str(directory), "--project-name", owner, "--file", str(main_file)]
         def compose(args, timeout=120):
             return command(base + args, timeout=timeout)
-        image_built = False
+        built_images = []
         try:
             build_directory = directory / "image"
             build_directory.mkdir()
@@ -83,7 +89,11 @@ def main():
             # BuildKit needs a writable client state directory; scope it to this
             # disposable fixture instead of the updater's /nonexistent HOME.
             command(["/usr/bin/docker", "build", "--pull=false", "--network=none", "--label", "homelab.smoke=" + owner, "--tag", inherited_image, str(build_directory)], environment={"HOME": str(build_directory)})
-            image_built = True
+            built_images.append(inherited_image)
+            (build_directory / "server").write_text('#!/bin/sh\ntest -f "$1" || exit 1\nexec /bin/sleep 3600\n')
+            (build_directory / "Dockerfile").write_text('FROM postgres:18\nCOPY --chmod=755 server /vendor/server\nENTRYPOINT ["/vendor/server"]\n')
+            command(["/usr/bin/docker", "build", "--pull=false", "--network=none", "--label", "homelab.smoke=" + owner, "--tag", config_image, str(build_directory)], environment={"HOME": str(build_directory)})
+            built_images.append(config_image)
             compose(["up", "--detach", "--no-build", "--pull", "never", "--wait", "--wait-timeout", "20"])
             # Change Compose only, keeping the live startup vector on /bin/sleep.
             # Both pending extensionless scripts and cwd module execution must
@@ -99,11 +109,34 @@ def main():
                     helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sleep]\n    command: ['3600']", "working_dir: /custom\n    command: ['-m', app]"))
                 elif service == "option-helper":
                     helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sleep]\n    command: ['3600']", "command: ['-X', dev, '-W', error, /custom/app.py]"))
+                elif service == "env-helper":
+                    helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sleep]\n    command: ['3600']", "entrypoint: [/usr/bin/env]\n    command: ['-u', FOO, /custom/start]"))
             compose(["stop", "stopped"])
             before = {service: remote.namespace_snapshot(owner + "-" + service + "-1") for service in ("provider", "consumer", "stopped", "leaf")}
             command(["/usr/bin/docker", "exec", before["consumer"][0], "/bin/sh", "-ec", "printf persistent > /marker/probe"])
             driver = {"kind": "docker", "name": owner + "-provider-1", "project": owner, "service": "provider", "directory": str(directory), "file": str(main_file), "imageFile": str(provider_file), "namespaceDependents": ["consumer", "stopped", "leaf"]}
             item = {"id": "docker:" + before["provider"][0], "image": original, "installed": image["Id"], "available": image["Id"], "availableImage": candidate}
+            # Real image defaults and Compose config must qualify a positional
+            # data operand. Stop at pull: the synthetic image is intentionally
+            # local-only, and is never published or pulled from a real registry.
+            class PreflightQualified(Exception):
+                pass
+            config_name = owner + "-config-app-1"
+            config_before = remote.namespace_snapshot(config_name)
+            def stop_after_preflight(arguments, **options):
+                if arguments[1] == "pull":
+                    raise PreflightQualified()
+                return command(arguments, **options)
+            try:
+                remote.command = stop_after_preflight
+                remote.docker_update({**driver, "name": config_name, "service": "config-app", "imageFile": str(config_file), "namespaceDependents": []}, {**item, "id": "docker:" + config_before[0], "image": config_image, "installed": config_before[3], "availableImage": "docker.io/homelab-fixtures/" + owner + ":candidate@sha256:" + "a" * 64})
+                raise AssertionError("The preflight boundary was not reached")
+            except PreflightQualified:
+                pass
+            finally:
+                remote.command = command
+            assert remote.namespace_snapshot(config_name) == config_before
+            assert config_image in config_file.read_text()
             for overlay_service, overlay_source in [("overlay", overlay_file)] + helpers:
                 overlay_name = owner + "-" + overlay_service + "-1"
                 overlay_before = remote.namespace_snapshot(overlay_name)
@@ -227,9 +260,9 @@ def main():
             for identity in ids:
                 assert command(["/usr/bin/docker", "inspect", "--format", '{{index .Config.Labels "homelab.smoke"}}', identity]) == owner
             compose(["down", "--volumes", "--timeout", "5"])
-            if image_built:
-                assert command(["/usr/bin/docker", "image", "inspect", "--format", '{{index .Config.Labels "homelab.smoke"}}', inherited_image]) == owner
-                command(["/usr/bin/docker", "image", "rm", inherited_image])
+            for fixture_image in built_images:
+                assert command(["/usr/bin/docker", "image", "inspect", "--format", '{{index .Config.Labels "homelab.smoke"}}', fixture_image]) == owner
+                command(["/usr/bin/docker", "image", "rm", fixture_image])
 
 
 if __name__ == "__main__":

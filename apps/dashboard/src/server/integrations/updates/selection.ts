@@ -53,6 +53,7 @@ export function updateControl(
     else if (staleUpdateReport(report))
         reason = "Refresh the software inventory before installing an update.";
     else if (item.installationBlock) reason = item.installationBlock;
+    else if (item.applicationBlock) reason = item.applicationBlock;
     else if (item.held)
         reason = "This package is held. Remove the hold on its host before updating.";
     else if (target.driver.kind === "native" && item.release !== target.driver.release)
@@ -93,6 +94,7 @@ export function updateControl(
                 item.release,
                 item.imageTag,
                 item.installationBlock,
+                item.applicationBlock,
                 item.platform?.os,
                 item.platform?.architecture,
                 item.platform?.variant,

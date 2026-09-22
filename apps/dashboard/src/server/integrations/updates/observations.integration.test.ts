@@ -21,6 +21,192 @@ import { parseUpdateTargets } from "./configuration";
 import { refreshDockerObservations } from "./observations";
 import { updateControl } from "./selection";
 
+test.each([
+    "Publisher reports an incompatible container configuration.",
+    "Local application code is mounted over this image. Review or remove the override before updating.",
+])(
+    "authenticated publisher blocks survive discovery and overlay removal: %s",
+    async (installationBlock) => {
+        const state = await operationFixture();
+        const fixture = createApplicationFixture();
+        const publisher = await createAutomation(state.client, "human:test", {
+            label: "Publisher",
+            capabilities: ["updates:publish"],
+            expiresAt: null,
+        });
+        const server = startDashboardServer({
+            hostname: "127.0.0.1",
+            port: 0,
+            development: false,
+            authentication: null,
+            operations: {
+                databaseUrl: state.url,
+                metricsUrl: undefined,
+                metricsToken: undefined,
+                concurrency: 1,
+                retentionDays: 30,
+                updateSources: [
+                    { id: "software", label: "Software", publisher: publisher.id },
+                ],
+            },
+        });
+        try {
+            const targets = parseUpdateTargets(
+                JSON.stringify([
+                    {
+                        id: "web",
+                        label: "Web",
+                        source: "software",
+                        host: "fixture.invalid",
+                        user: "updater",
+                        identityFile: "/run/secrets/test-key",
+                        knownHostsFile: "/run/secrets/test-hosts",
+                        driver: {
+                            kind: "docker",
+                            name: "demo-web",
+                            project: "demo",
+                            service: "web",
+                            directory: "/srv/demo",
+                            file: "/srv/demo/compose.yaml",
+                            imageFile: "/srv/demo/web.yaml",
+                        },
+                    },
+                ])
+            );
+            const bindings = bindApplicationHosts(
+                [{ ...fixture.target, updateSources: ["software"] }],
+                targets
+            );
+            const port = createDockerPort(fixture.target, {});
+            const observed = await collectApplications(
+                bindings,
+                () => port,
+                AbortSignal.timeout(5000)
+            );
+            const app = observed.hosts[0]!.applications.find(
+                (value) => value.containerName === "demo-web"
+            )!;
+            const capturedAt = new Date(Date.now() - 60_000).toISOString();
+            const report: UpdateReport = {
+                capturedAt,
+                repositoryMetadataAt: null,
+                complete: true,
+                coveredKinds: ["container"],
+                items: [
+                    {
+                        id: "docker:" + "e".repeat(64),
+                        name: "demo-web",
+                        kind: "container",
+                        image: app.image,
+                        installed: app.imageId,
+                        available: "sha256:" + "f".repeat(64),
+                        status: "available",
+                        security: false,
+                        held: false,
+                        installationBlock,
+                    },
+                ],
+            };
+            const publish = (value: UpdateReport) =>
+                fetch(new URL("/api/automation/updates.publish", server.url), {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${publisher.token}`,
+                    },
+                    body: JSON.stringify({ json: value }),
+                });
+            const forged = await publish({
+                ...report,
+                items: [
+                    {
+                        ...report.items[0]!,
+                        applicationBlock: "Forged dashboard provenance",
+                    },
+                ],
+            });
+            expect(forged.status).toBe(400);
+            await forged.text();
+            const accepted = await publish(report);
+            expect(accepted.status).toBe(200);
+            expect(await accepted.json()).toMatchObject({
+                result: { data: { json: { accepted: true } } },
+            });
+            const verified = {
+                ...report,
+                items: report.items.map((item) => ({
+                    ...item,
+                    candidateVerified: true,
+                    availableImage: "docker.io/example/web:2@sha256:" + "f".repeat(64),
+                })),
+            };
+            await state.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES('updates.resolved:software',${JSON.stringify(verified)}::text::jsonb,${capturedAt}::timestamptz)`;
+            let previousRevision: string | undefined;
+            for (const overlay of [false, true, false]) {
+                const watermark = await readApplicationObservationTime(state.client);
+                const inventory: ApplicationInventory = {
+                    ...observed,
+                    hosts: observed.hosts.map((host) => ({
+                        ...host,
+                        observationStartedAt: watermark.time,
+                        observationVisibility: watermark.visibility,
+                        applications: host.applications.map((value) => ({
+                            ...value,
+                            mounts: overlay
+                                ? [
+                                      {
+                                          type: "bind",
+                                          source: "/fixture",
+                                          destination: "/app/local.py",
+                                          readOnly: true,
+                                      },
+                                  ]
+                                : [],
+                        })),
+                    })),
+                };
+                await state.client.begin(async (transaction) => {
+                    await lockQueue(transaction);
+                    await refreshDockerObservations(
+                        transaction,
+                        inventory,
+                        bindings,
+                        targets
+                    );
+                });
+                const rows = await state.client<
+                    { key: string; value: UpdateReport }[]
+                >`SELECT key,value FROM operation_snapshots WHERE key LIKE 'updates%' ORDER BY key`;
+                expect(rows).toHaveLength(2);
+                for (const row of rows) {
+                    const item = row.value.items[0]!;
+                    expect(item.id).toBe(`docker:${app.containerId}`);
+                    expect(item.installationBlock).toBe(installationBlock);
+                    expect(Boolean(item.applicationBlock)).toBe(overlay);
+                    const control = updateControl(
+                        targets[0]!,
+                        { ...row.value, checkedAt: capturedAt },
+                        item
+                    );
+                    expect(control.allowed).toBe(false);
+                    expect(control.reason).toBe(installationBlock);
+                    if (row.key === "updates.resolved:software") {
+                        expect(item.candidateVerified).toBe(true);
+                        if (previousRevision)
+                            expect(control.revision).not.toBe(previousRevision);
+                        previousRevision = control.revision;
+                    }
+                }
+            }
+            expect(fixture.calls).toEqual([]);
+        } finally {
+            await server.stop();
+            await fixture.close();
+            await state.close();
+        }
+    }
+);
+
 test.each(
     [false, true].flatMap((existing) =>
         ["before-read", "during-read", "during-reconcile"].map((commit) => ({

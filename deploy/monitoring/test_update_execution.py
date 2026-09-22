@@ -43,6 +43,16 @@ class UpdateExecutionTests(unittest.TestCase):
         with self.assertRaises(remote.UpdateRefusal):
             remote.verify_code_mounts(service, remote.compose_startup(service, defaults))
 
+    def test_compose_positional_data_inherits_image_entrypoint(self):
+        defaults = {"entrypoint": ["/vendor/server"], "command": [], "working_dir": "/"}
+        for overrides in ({}, {"entrypoint": None}):
+            service = {**overrides, "command": ["/config/settings.json"], "volumes": [{"type": "bind", "target": "/config"}]}
+            remote.verify_code_mounts(service, remote.compose_startup(service, defaults))
+        for entrypoint in ([], ""):
+            service = {"entrypoint": entrypoint, "command": ["/custom/start"], "volumes": [{"type": "bind", "target": "/custom"}]}
+            with self.assertRaises(remote.UpdateRefusal):
+                remote.verify_code_mounts(service, remote.compose_startup(service, defaults))
+
     def test_runtime_library_directory_binds_are_code(self):
         for destination in ("/usr/local/lib/python3.13/site-packages", "/usr/lib/python3/dist-packages", "/usr/local/lib/node_modules", "/usr/share/nodejs", "/usr/share/php", "/usr/lib64", "/lib", "/usr/share/ruby/vendor_ruby"):
             with self.subTest(destination=destination), self.assertRaises(remote.UpdateRefusal):

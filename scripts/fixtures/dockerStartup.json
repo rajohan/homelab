@@ -1,5 +1,141 @@
 [
     {
+        "name": "env split unset",
+        "entrypoint": ["/usr/bin/env"],
+        "command": ["-u", "FOO", "/custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "env long unset",
+        "entrypoint": ["/usr/bin/env"],
+        "command": ["--unset", "FOO", "/custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "env attached unset",
+        "entrypoint": ["/usr/bin/env"],
+        "command": ["-uFOO", "/custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "env equals unset",
+        "entrypoint": ["/usr/bin/env"],
+        "command": ["--unset=FOO", "/custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "env combined short flags",
+        "entrypoint": ["/usr/bin/env"],
+        "command": ["-ivuFOO", "/custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "env multiple option operands",
+        "entrypoint": ["/usr/bin/env"],
+        "command": ["-u", "FOO", "--argv0", "synthetic-name", "--", "/custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "env chdir relative script",
+        "entrypoint": ["/usr/bin/env"],
+        "command": ["-C", "/custom", "./start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "env attached chdir",
+        "entrypoint": ["/usr/bin/env"],
+        "command": ["-C/custom", "./start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "env equals chdir",
+        "entrypoint": ["/usr/bin/env"],
+        "command": ["--chdir=/custom", "./start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "env split string",
+        "entrypoint": ["/usr/bin/env"],
+        "command": ["-S", "-u FOO /custom/start --data /data"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "env attached split string",
+        "entrypoint": ["/usr/bin/env"],
+        "command": ["-vS-u FOO /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "env long split string",
+        "entrypoint": ["/usr/bin/env"],
+        "command": ["--split-string=-C /custom python3 -X dev app.py"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "env argv0 is not executable",
+        "entrypoint": ["/usr/bin/env"],
+        "command": ["-a", "/custom/start", "/vendor/server", "/config/settings.json"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "env unset operand is not executable",
+        "entrypoint": ["/usr/bin/env"],
+        "command": ["--unset", "/custom/start", "/vendor/server"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "env assignment after options",
+        "entrypoint": ["/usr/bin/env"],
+        "command": ["-u", "FOO", "SYNTHETIC=value", "/custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "env ordinary positional config",
+        "entrypoint": ["/usr/bin/env"],
+        "command": ["-u", "FOO", "/vendor/server", "/config/settings.json"],
+        "working_dir": "/",
+        "mount": "/config",
+        "blocked": false
+    },
+    {
+        "name": "binary positional config",
+        "entrypoint": ["/vendor/server"],
+        "command": ["/config/settings.json"],
+        "working_dir": "/",
+        "mount": "/config",
+        "blocked": false
+    },
+    {
         "name": "python split X",
         "entrypoint": ["python3.14"],
         "command": ["-X", "dev", "/custom/app.py"],

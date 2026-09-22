@@ -67,8 +67,13 @@ export const updateReportSchema = v.strictObject({
     ),
     items: v.pipe(v.array(updateItemSchema), v.maxLength(5000)),
 });
-export type UpdateItem = v.InferOutput<typeof updateItemSchema>;
-export type UpdateReport = v.InferOutput<typeof updateReportSchema>;
+export type UpdateItem = v.InferOutput<typeof updateItemSchema> & {
+    /** Dashboard-owned discovery block, never accepted by the publication schema. */
+    readonly applicationBlock?: string;
+};
+export type UpdateReport = Omit<v.InferOutput<typeof updateReportSchema>, "items"> & {
+    items: UpdateItem[];
+};
 export const updateListSchema = v.strictObject({
     category: v.optional(v.picklist(["all", "software", "toolchains"]), "all"),
     sort: v.optional(
