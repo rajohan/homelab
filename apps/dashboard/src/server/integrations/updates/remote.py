@@ -72,6 +72,23 @@ class UpdateRefusal(RuntimeError):
 def startup_code_paths(startup):
     """Infer executable/interpreter positions, never ordinary data-path operands."""
     paths = set()
+    unqualified = False
+    def executable_expansion(value):
+        quote, index = None, 0
+        while index < len(value):
+            character = value[index]
+            following = value[index + 1:index + 3]
+            if quote == "'":
+                if character == "'":
+                    quote = None
+            elif character == "\\":
+                index += 1
+            elif character == '"' or character == "'" and quote is None:
+                quote = None if quote == character else character
+            elif character == "`" or character == "$" and following.startswith("(") and following != "((" or quote is None and character in "<>" and following.startswith("("):
+                return True
+            index += 1
+        return False
     def tokens(value):
         def unquote(match):
             if match[1] is not None:
@@ -89,6 +106,7 @@ def startup_code_paths(startup):
     def resolve(cwd, value):
         return posixpath.normpath(posixpath.join(cwd, value))
     def inspect(args, cwd, depth=0):
+        nonlocal unqualified
         if not args or not args[0] or args[0].startswith("-"):
             return
         if depth > 8:
@@ -141,6 +159,9 @@ def startup_code_paths(startup):
         elif name in ("sh", "bash", "dash", "ksh", "zsh", "ash"):
             inline = next((index for index, arg in enumerate(args) if index > 0 and re.match(r"^-[^-]*c", arg)), None)
             if inline is not None:
+                if executable_expansion(args[inline + 1] if len(args) > inline + 1 else ""):
+                    unqualified = True
+                    return
                 group, current = [], cwd
                 for token, separator in tokens(args[inline + 1] if len(args) > inline + 1 else "") + [(";", True)]:
                     if separator:
@@ -187,18 +208,37 @@ def startup_code_paths(startup):
     first, second = argv(startup.get("entrypoint")), argv(startup.get("command"))
     cwd = resolve("/", startup.get("working_dir") or "/")
     inspect(first + second, cwd)
-    return paths
+    healthcheck = startup.get("healthcheck") or {}
+    health_test = healthcheck.get("Test", healthcheck.get("test")) or []
+    if isinstance(health_test, str):
+        health_test = ["CMD-SHELL", health_test]
+    if not healthcheck.get("disable"):
+        if health_test and health_test[0] == "CMD":
+            inspect(health_test[1:], cwd)
+        elif health_test and health_test[0] == "CMD-SHELL":
+            inspect(["/bin/sh", "-c", health_test[1] if len(health_test) > 1 else ""], cwd)
+    return None if unqualified else paths
 
 
 def compose_startup(service, defaults):
     """Apply Compose null/empty/omitted startup semantics to installed image defaults."""
     entrypoint = service.get("entrypoint")
     command = service.get("command")
-    return {
+    result = {
         "entrypoint": defaults.get("entrypoint") if entrypoint is None else entrypoint,
         "command": command if command is not None else defaults.get("command") if entrypoint is None else [],
         "working_dir": service.get("working_dir") or defaults.get("working_dir") or "/",
     }
+    health = defaults.get("healthcheck") or {}
+    override = service.get("healthcheck") or {}
+    health_test = health.get("Test", health.get("test"))
+    if override.get("disable"):
+        health_test = ["NONE"]
+    elif override.get("test") is not None:
+        health_test = override["test"]
+    if health_test is not None:
+        result["healthcheck"] = {"test": health_test}
+    return result
 
 
 def verify_code_mounts(service, startup=None):
@@ -217,7 +257,7 @@ def verify_code_mounts(service, startup=None):
         if destination == "/opt/homelab/logout-worker.js":
             continue
         normalized = posixpath.normpath(destination)
-        startup_code = any(path == normalized or path.startswith(normalized.rstrip("/") + "/") for path in paths)
+        startup_code = paths is None or any(path == normalized or path.startswith(normalized.rstrip("/") + "/") for path in paths)
         # Named-volume identifiers are not host paths. Their target/startup
         # relationship still matters: updating the image does not replace them.
         source = mount.get("source") if mount.get("type") == "bind" else None
@@ -352,12 +392,12 @@ def docker_update(driver, item, automatic=False):
         config = json.loads(compose(["config", "--format", "json"]))
         service = config.get("services", {}).get(driver["service"], {})
         # Inspect only startup vectors, not the environment or complete Config.
-        startup = json.loads(command(["/usr/bin/docker", "inspect", "--format", '{"entrypoint":{{json .Config.Entrypoint}},"command":{{json .Config.Cmd}},"working_dir":{{json .Config.WorkingDir}}}', identity]))
+        startup = json.loads(command(["/usr/bin/docker", "inspect", "--format", '{"entrypoint":{{json .Config.Entrypoint}},"command":{{json .Config.Cmd}},"working_dir":{{json .Config.WorkingDir}},"healthcheck":{{json .Config.Healthcheck}}}', identity]))
         verify_code_mounts(service, startup)
         # Container Config may contain old Compose overrides. Inherit from the
         # immutable installed image, not from those old container overrides.
         # Never classify an unmerged CMD argument tail as an executable vector.
-        defaults = json.loads(command(["/usr/bin/docker", "image", "inspect", "--format", '{"entrypoint":{{json .Config.Entrypoint}},"command":{{json .Config.Cmd}},"working_dir":{{json .Config.WorkingDir}}}', before[2]]))
+        defaults = json.loads(command(["/usr/bin/docker", "image", "inspect", "--format", '{"entrypoint":{{json .Config.Entrypoint}},"command":{{json .Config.Cmd}},"working_dir":{{json .Config.WorkingDir}},"healthcheck":{{json .Config.Healthcheck}}}', before[2]]))
         verify_code_mounts(service, compose_startup(service, defaults))
         if config.get("services", {}).get(driver["service"], {}).get("image") != item["image"]:
             raise RuntimeError("Compose and the observed image differ")
@@ -373,7 +413,7 @@ def docker_update(driver, item, automatic=False):
         updated = original[:match.start()] + replacement + original[match.end():]
         progress("pulling")
         command(["/usr/bin/docker", "pull", candidate], timeout=600)
-        candidate_startup = json.loads(command(["/usr/bin/docker", "image", "inspect", "--format", '{"entrypoint":{{json .Config.Entrypoint}},"command":{{json .Config.Cmd}},"working_dir":{{json .Config.WorkingDir}}}', candidate]))
+        candidate_startup = json.loads(command(["/usr/bin/docker", "image", "inspect", "--format", '{"entrypoint":{{json .Config.Entrypoint}},"command":{{json .Config.Cmd}},"working_dir":{{json .Config.WorkingDir}},"healthcheck":{{json .Config.Healthcheck}}}', candidate]))
         verify_code_mounts(service, compose_startup(service, candidate_startup))
         pulled = command(["/usr/bin/docker", "image", "inspect", "--format", "{{.Id}}", candidate])
         if pulled != item["available"]:

@@ -31,19 +31,52 @@ function words(command: string): string[] {
         .map((token) => token.value);
 }
 
+function executableExpansion(command: string): boolean {
+    let quote: "'" | '"' | undefined;
+    for (let index = 0; index < command.length; index++) {
+        const character = command[index];
+        if (quote === "'") {
+            if (character === "'") quote = undefined;
+            continue;
+        }
+        if (character === "\\") {
+            index++;
+            continue;
+        }
+        if (character === '"' || (character === "'" && quote === undefined)) {
+            quote = quote === character ? undefined : character;
+            continue;
+        }
+        if (
+            character === "`" ||
+            (character === "$" &&
+                command[index + 1] === "(" &&
+                command[index + 2] !== "(") ||
+            (quote === undefined &&
+                (character === "<" || character === ">") &&
+                command[index + 1] === "(")
+        )
+            return true;
+    }
+    return false;
+}
+
 /**
  * Identify startup code without mistaking ordinary flags and data operands for executables.
  * @param entrypoint - Image-resolved or pending Compose entrypoint, never persisted.
  * @param command - Image-resolved or pending Compose command, never persisted.
  * @param workingDirectory - Runtime directory used for relative scripts and module imports.
- * @returns Code paths only; callers persist mount-match booleans, not argv or this list.
+ * @param healthcheck - Effective Docker healthcheck test vector, never persisted.
+ * @returns Code paths, or null for unqualified executable shell expansion. Callers persist booleans only.
  */
 export function startupCodePaths(
     entrypoint: readonly string[] | string | null | undefined,
     command: readonly string[] | string | null | undefined,
-    workingDirectory = "/"
-): readonly string[] {
+    workingDirectory = "/",
+    healthcheck?: readonly string[] | null
+): readonly string[] | null {
     const paths = new Set<string>();
+    let unqualified = false;
     const argv = (value: typeof entrypoint): readonly string[] =>
         typeof value === "string" ? words(value) : (value ?? []);
     const inspect = (args: readonly string[], cwd: string, depth = 0): void => {
@@ -131,6 +164,10 @@ export function startupCodePaths(
                 return;
             }
             {
+                if (executableExpansion(args[inline + 1] ?? "")) {
+                    unqualified = true;
+                    return;
+                }
                 let group: string[] = [];
                 let current = cwd;
                 const finish = () => {
@@ -194,6 +231,13 @@ export function startupCodePaths(
     const first = argv(entrypoint),
         second = argv(command);
     inspect([...first, ...second], path.posix.resolve("/", workingDirectory || "/"));
+    if (healthcheck?.[0] === "CMD")
+        inspect(healthcheck.slice(1), path.posix.resolve("/", workingDirectory || "/"));
+    else if (healthcheck?.[0] === "CMD-SHELL")
+        inspect(
+            ["/bin/sh", "-c", healthcheck[1] ?? ""],
+            path.posix.resolve("/", workingDirectory || "/")
+        );
     // CMD is otherwise an argument tail, not an independent executable vector.
-    return [...paths];
+    return unqualified ? null : [...paths];
 }

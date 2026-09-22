@@ -93,14 +93,28 @@ class UpdateExecutionTests(unittest.TestCase):
                 with self.subTest(kind=kind, destination=destination), patch.object(Path, "stat", side_effect=AssertionError("Non-bind sources are not host paths")):
                     remote.verify_code_mounts({"entrypoint": ["/vendor/server"], "command": ["--data", destination], "volumes": [{"type": kind, "source": "synthetic-volume", "target": destination}]})
 
+    def test_healthcheck_mounts_use_effective_commands(self):
+        for kind in ("bind", "volume"):
+            for check in (["CMD", "/custom/check"], ["CMD-SHELL", "/vendor/prep; /custom/check"], ["CMD-SHELL", '/vendor/check "$(/custom/check)"']):
+                service = {"entrypoint": ["/vendor/server"], "volumes": [{"type": kind, "target": "/custom"}]}
+                defaults = {"entrypoint": ["/vendor/server"], "healthcheck": {"Test": check}}
+                for override in ({}, {"healthcheck": None}, {"healthcheck": {"interval": "1s"}}, {"healthcheck": {"test": check}}):
+                    with self.subTest(kind=kind, check=check, override=override), self.assertRaises(remote.UpdateRefusal):
+                        remote.verify_code_mounts({**service, **override}, remote.compose_startup(override, defaults))
+                for override in ({"disable": True}, {"test": ["NONE"]}, {"test": ["CMD", "/vendor/check", "--data", "/custom/config"]}):
+                    remote.verify_code_mounts(service, remote.compose_startup({"healthcheck": override}, defaults))
+
+    def test_shell_expansion_without_mounts_is_not_a_code_overlay(self):
+        remote.verify_code_mounts({"entrypoint": ["sh", "-c"], "command": ['/vendor/check "$(date)"']})
+
     def test_startup_positions_match_discovery_corpus(self):
         cases = json.loads((SOURCE.parents[6] / "scripts/fixtures/dockerStartup.json").read_text())
         for scenario in cases:
             with self.subTest(name=scenario["name"]):
                 paths = remote.startup_code_paths(scenario)
                 mounted = scenario["mount"]
-                self.assertEqual(any(value == mounted or value.startswith(mounted + "/") for value in paths), scenario["blocked"])
-                self.assertNotIn("SYNTHETIC_PRIVATE", "\n".join(paths))
+                self.assertEqual(paths is None or any(value == mounted or value.startswith(mounted + "/") for value in paths), scenario["blocked"])
+                self.assertNotIn("SYNTHETIC_PRIVATE", "\n".join(paths or []))
                 service = {**scenario, "volumes": [{"type": "bind", "target": mounted}]}
                 if scenario["blocked"]:
                     with self.assertRaises(remote.UpdateRefusal):
@@ -138,7 +152,7 @@ class UpdateExecutionTests(unittest.TestCase):
                 else:
                     self.assertIsNone(environment)
                 if arguments[1] == "inspect":
-                    if arguments[3] == '{"entrypoint":{{json .Config.Entrypoint}},"command":{{json .Config.Cmd}},"working_dir":{{json .Config.WorkingDir}}}':
+                    if arguments[3].startswith('{"entrypoint":'):
                         self.assertEqual(arguments[4], 'c' * 64)
                         return json.dumps({"entrypoint": ["/vendor/web"], "command": None, "working_dir": "/"})
                     if arguments[3] == '{{json .State}}':

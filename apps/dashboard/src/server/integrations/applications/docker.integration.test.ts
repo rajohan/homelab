@@ -5,6 +5,7 @@ import {
     applicationFixtureDetail,
 } from "../../testing/applications";
 import { expectOperationFailure, operationFixture } from "../../testing/operations";
+import { hasApplicationCodeMount } from "../updates/observations";
 import { performApplicationAction } from "./actions";
 import { waitForApplicationReady } from "./dependencies";
 import { createDockerPort, type DockerPort } from "./docker";
@@ -19,6 +20,72 @@ import {
     selectionRevision,
     selectApplications,
 } from "./selection";
+
+test.each([
+    { test: ["CMD", "/custom/check", "SYNTHETIC_PRIVATE"], blocked: true },
+    {
+        test: ["CMD-SHELL", "/vendor/prep; /custom/check --token=SYNTHETIC_PRIVATE"],
+        blocked: true,
+    },
+    { test: ["CMD-SHELL", '/vendor/check "$(/custom/check)"'], blocked: true },
+    { test: ["CMD", "/vendor/check", "--data", "/custom/config"], blocked: false },
+    { test: ["NONE", "/custom/check"], blocked: false },
+])(
+    "Docker healthcheck commands are qualified without publishing argv: %j",
+    async (scenario) => {
+        const fixture = createApplicationFixture();
+        try {
+            const detail = fixture.containers.get("a".repeat(64))!;
+            detail.Config.Entrypoint = ["/vendor/server"];
+            detail.Config.Cmd = [];
+            detail.Config.Healthcheck = { Test: [...scenario.test] };
+            detail.Mounts = [
+                {
+                    Type: "volume",
+                    Source: "fixture-code",
+                    Destination: "/custom",
+                    RW: false,
+                },
+            ];
+            const port = createDockerPort(fixture.target, {});
+            const inspected = await port.inspect(detail.Id, AbortSignal.timeout(3000));
+            const mapped = mapDockerApplication(fixture.target, inspected);
+            expect(hasApplicationCodeMount(mapped)).toBe(scenario.blocked);
+            expect(JSON.stringify(mapped)).not.toContain("SYNTHETIC_PRIVATE");
+            expect(mapped).not.toHaveProperty("Healthcheck");
+        } finally {
+            await fixture.close();
+        }
+    }
+);
+
+test("oversized internal visibility still produces a readable healthy PostgreSQL snapshot", async () => {
+    const fixture = await operationFixture();
+    const docker = createApplicationFixture();
+    try {
+        const inventory = await collectApplications(
+            [docker.target],
+            () => createDockerPort(docker.target, {}),
+            AbortSignal.timeout(3000),
+            undefined,
+            2000,
+            () =>
+                Promise.resolve({
+                    time: new Date().toISOString(),
+                    visibility: "1:999999:" + "2,".repeat(applicationInventoryByteLimit),
+                })
+        );
+        expect(inventory.hosts[0]?.available).toBe(true);
+        expect(inventory.hosts[0]?.applications.length).toBeGreaterThan(0);
+        expect(inventory.hosts[0]).not.toHaveProperty("observationVisibility");
+        await fixture.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES ('applications.inventory', ${JSON.stringify(inventory)}::text::jsonb, now())`;
+        const stored = await readApplicationInventory(fixture.client);
+        expect(stored?.inventory.hosts).toEqual(inventory.hosts);
+    } finally {
+        await docker.close();
+        await fixture.close();
+    }
+});
 
 test.each(["NetworkMode", "PidMode", "IpcMode"] as const)(
     "%s late starts of preserved consumers fail before provider mutation",

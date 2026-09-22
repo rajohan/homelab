@@ -7,6 +7,7 @@ import type { ApplicationTarget } from "./configuration";
 const id = v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/));
 const text = v.pipe(v.string(), v.maxLength(2000));
 const labels = v.record(v.string(), v.string());
+const commandVector = v.pipe(v.array(text), v.maxLength(128));
 const networkText = v.pipe(v.string(), v.maxLength(256));
 const portBindings = v.nullable(
     v.pipe(
@@ -24,6 +25,13 @@ const detailSchema = v.object({
         Entrypoint: v.optional(v.nullable(v.pipe(v.array(text), v.maxLength(128)))),
         Cmd: v.optional(v.nullable(v.pipe(v.array(text), v.maxLength(128)))),
         WorkingDir: v.optional(text),
+        Healthcheck: v.optional(
+            v.nullable(
+                v.object({
+                    Test: v.optional(commandVector),
+                })
+            )
+        ),
     }),
     HostConfig: v.object({
         NetworkMode: networkText,

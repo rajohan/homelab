@@ -13,6 +13,7 @@ import { startupCodePaths } from "./startup";
 export const applicationInventoryByteLimit = 8 * 1024 * 1024;
 const containerByteLimit = 32 * 1024;
 const hostByteLimit = 1024 * 1024;
+export const applicationVisibilityByteLimit = 16 * 1024;
 
 /**
  * Capture the same database clock that stamps software snapshot mutations.
@@ -34,7 +35,22 @@ function metadataBytes(value: unknown): number {
 }
 
 function boundedInventory(inventory: ApplicationInventory): ApplicationInventory {
-    const emptyHosts = inventory.hosts.map((host) => ({
+    // A visibility snapshot is an all-or-nothing reconciliation fence, not health
+    // evidence. Omit oversized values; never truncate into a different snapshot.
+    const hosts = inventory.hosts.map((host) => {
+        if (
+            !host.observationVisibility ||
+            metadataBytes(host.observationVisibility) <= applicationVisibilityByteLimit
+        )
+            return host;
+        const {
+            observationVisibility: _visibility,
+            observationStartedAt: _startedAt,
+            ...bounded
+        } = host;
+        return bounded;
+    });
+    const emptyHosts = hosts.map((host) => ({
         ...host,
         available: false,
         applications: [],
@@ -42,7 +58,7 @@ function boundedInventory(inventory: ApplicationInventory): ApplicationInventory
     let bytes = metadataBytes({ ...inventory, hosts: emptyHosts });
     return {
         ...inventory,
-        hosts: inventory.hosts.map((host, index) => {
+        hosts: hosts.map((host, index) => {
             const empty = emptyHosts[index];
             if (!empty) throw new Error("Missing inventory host envelope");
             if (host.applications.length > 200) return empty;
@@ -114,7 +130,8 @@ export function mapDockerApplication(
     const startupPaths = startupCodePaths(
         detail.Config.Entrypoint,
         detail.Config.Cmd,
-        detail.Config.WorkingDir
+        detail.Config.WorkingDir,
+        detail.Config.Healthcheck?.Test
     );
     const application: ManagedApplication = {
         id: `${target.id}:${detail.Id}`,
@@ -152,13 +169,16 @@ export function mapDockerApplication(
             source: mount.Source,
             destination: mount.Destination,
             readOnly: !mount.RW,
-            startupCode: startupPaths.some(
-                (item) =>
-                    item === path.posix.normalize(mount.Destination) ||
-                    item.startsWith(
-                        path.posix.normalize(mount.Destination).replace(/\/$/, "") + "/"
-                    )
-            ),
+            startupCode:
+                startupPaths === null ||
+                startupPaths.some(
+                    (item) =>
+                        item === path.posix.normalize(mount.Destination) ||
+                        item.startsWith(
+                            path.posix.normalize(mount.Destination).replace(/\/$/, "") +
+                                "/"
+                        )
+                ),
         })),
         ports: Object.entries(detail.NetworkSettings.Ports ?? {}).flatMap(
             ([container, bindings]) =>

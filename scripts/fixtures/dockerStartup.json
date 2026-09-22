@@ -1,5 +1,109 @@
 [
     {
+        "name": "shell command substitution",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["/vendor/prep \"$(/custom/start)\""],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell backtick substitution",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["/vendor/prep `/custom/start`"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell process substitution",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["/vendor/prep <(/custom/start)"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell assignment substitution",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["VALUE=$(/custom/start) /vendor/prep"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell nested substitution",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["/vendor/prep \"$(echo \"$(/custom/start)\")\""],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell substitution hidden inside parameters",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["/vendor/prep \"${VALUE:-$(/custom/start)}\""],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell escaped substitution literal",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["/vendor/prep \"\\$(/custom/start)\""],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell single quoted substitution literal",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["/vendor/prep '$(/custom/start)'"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell single quoted backticks literal",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["/vendor/prep '`/custom/start`'"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell escaped backticks literal",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["/vendor/prep \"\\`/custom/start\\`\""],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell ordinary arithmetic",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["/vendor/prep \"$((1 + 2))\""],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell arithmetic command substitution",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["/vendor/prep \"$(( $(/custom/start) + 2 ))\""],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell quoted process substitution literal",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["/vendor/prep \"<(/custom/start)\""],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
         "name": "shell newline separates commands",
         "entrypoint": ["/bin/sh", "-c"],
         "command": ["/vendor/prep\n/custom/start"],

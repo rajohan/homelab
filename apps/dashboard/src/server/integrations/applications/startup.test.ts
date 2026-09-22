@@ -11,10 +11,11 @@ test.each(cases)("startup code positions: $name", (scenario) => {
         scenario.working_dir
     );
     const mount = path.posix.normalize(scenario.mount);
-    expect(paths.some((item) => item === mount || item.startsWith(mount + "/"))).toBe(
-        scenario.blocked
-    );
-    expect(paths.join("\n")).not.toContain("SYNTHETIC_PRIVATE");
+    expect(
+        paths === null ||
+            paths.some((item) => item === mount || item.startsWith(mount + "/"))
+    ).toBe(scenario.blocked);
+    expect(paths?.join("\n") ?? "").not.toContain("SYNTHETIC_PRIVATE");
 });
 
 test("nested startup wrappers remain bounded", () => {

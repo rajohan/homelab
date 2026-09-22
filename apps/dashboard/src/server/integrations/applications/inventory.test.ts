@@ -1,6 +1,10 @@
 import { expect, test } from "bun:test";
 
-import { collectApplications } from "./inventory";
+import {
+    collectApplications,
+    filterApplicationInventory,
+    applicationInventoryByteLimit,
+} from "./inventory";
 
 const target = {
     id: "main",
@@ -8,6 +12,54 @@ const target = {
     endpoint: "http://fixture.invalid:2375",
     projects: ["demo"],
 };
+
+test.each([16 * 1024, applicationInventoryByteLimit])(
+    "oversized visibility %i does not remove healthy hosts",
+    async (size) => {
+        const targets = Array.from({ length: 20 }, (_, index) => ({
+            ...target,
+            id: "host-" + index,
+        }));
+        const inventory = await collectApplications(
+            targets,
+            () => ({
+                list: () => Promise.resolve([]),
+                inspect: () => {
+                    throw new Error("No containers");
+                },
+                act: () => {
+                    throw new Error("Read-only fixture");
+                },
+            }),
+            AbortSignal.timeout(3000),
+            undefined,
+            1000,
+            () =>
+                Promise.resolve({
+                    time: "2026-01-01T00:00:00.000000Z",
+                    visibility: "1:999999:" + "2,".repeat(size / 2),
+                })
+        );
+        expect(inventory.hosts).toHaveLength(20);
+        for (const host of inventory.hosts) {
+            expect(host.available).toBe(true);
+            expect(host).not.toHaveProperty("observationVisibility");
+            expect(host).not.toHaveProperty("observationStartedAt");
+        }
+        expect(
+            new TextEncoder().encode(JSON.stringify(inventory)).byteLength
+        ).toBeLessThan(applicationInventoryByteLimit);
+        const legacy = {
+            ...inventory,
+            hosts: inventory.hosts.map((host) => ({
+                ...host,
+                observationStartedAt: inventory.capturedAt,
+                observationVisibility: "x".repeat(size + 1),
+            })),
+        };
+        expect(filterApplicationInventory(legacy, targets)).toEqual(inventory);
+    }
+);
 
 test("a failed observation clock rejects collection without attempting Docker", async () => {
     let connected = false;

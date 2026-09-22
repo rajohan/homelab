@@ -34,6 +34,7 @@ def main():
     candidate = "docker.io/library/postgres:18@" + digest
     inherited_image = "homelab-fixtures/" + owner + ":inherited"
     config_image = "homelab-fixtures/" + owner + ":config"
+    health_image = "homelab-fixtures/" + owner + ":health"
     with tempfile.TemporaryDirectory(prefix=owner + "-") as temporary:
         directory = Path(temporary).resolve()
         provider_file = directory / "provider.yaml"
@@ -55,7 +56,7 @@ def main():
                 helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sh, " + destination + "]", "entrypoint: [/bin/sleep]\n    command: ['3600']"))
             if service in ("inherited-helper", "option-helper"):
                 helper_file.write_text(helper_file.read_text().replace(original, inherited_image))
-        for service, kind in (("assignment-helper", "volumes"), ("config-helper", "configs"), ("secret-helper", "secrets"), ("newline-helper", "volumes"), ("volume-helper", "named-volume")):
+        for service, kind in (("assignment-helper", "volumes"), ("config-helper", "configs"), ("secret-helper", "secrets"), ("newline-helper", "volumes"), ("volume-helper", "named-volume"), ("expansion-helper", "volumes"), ("health-helper", "volumes"), ("inherited-health-helper", "volumes")):
             helper_file = directory / (service + ".yaml")
             source_file = directory / (service + ".source")
             source_file.write_text("# Synthetic startup code, never executed.\n")
@@ -70,6 +71,8 @@ def main():
             else:
                 text += "    " + kind + ":\n      - source: " + service + "\n        target: /custom/start\n" + kind + ":\n  " + service + ":\n    file: " + str(source_file) + "\n"
             helper_file.write_text(text)
+            if service == "inherited-health-helper":
+                helper_file.write_text(text.replace(original, health_image) + "    healthcheck:\n      disable: true\n")
             helpers.append((service, helper_file))
         # A mounted executable can also be invoked later, outside startup argv.
         executable = directory / "extensionless-binary"
@@ -111,6 +114,9 @@ def main():
             (build_directory / "Dockerfile").write_text('FROM postgres:18\nCOPY --chmod=755 server /vendor/server\nENTRYPOINT ["/vendor/server"]\n')
             command(["/usr/bin/docker", "build", "--pull=false", "--network=none", "--label", "homelab.smoke=" + owner, "--tag", config_image, str(build_directory)], environment={"HOME": str(build_directory)})
             built_images.append(config_image)
+            (build_directory / "Dockerfile").write_text('FROM postgres:18\nENTRYPOINT ["/bin/sleep"]\nCMD ["3600"]\nHEALTHCHECK CMD ["/bin/sh", "/custom/start"]\n')
+            command(["/usr/bin/docker", "build", "--pull=false", "--network=none", "--label", "homelab.smoke=" + owner, "--tag", health_image, str(build_directory)], environment={"HOME": str(build_directory)})
+            built_images.append(health_image)
             compose(["up", "--detach", "--no-build", "--pull", "never", "--wait", "--wait-timeout", "20"])
             # Change Compose only, keeping the live startup vector on /bin/sleep.
             # Both pending extensionless scripts and cwd module execution must
@@ -137,6 +143,12 @@ def main():
                 elif service == "volume-helper":
                     command(["/usr/bin/docker", "exec", owner + "-volume-helper-1", "/bin/sh", "-ec", "printf '# Synthetic code, never executed.\\n' > /custom/start; chmod 644 /custom/start"])
                     helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sleep]\n    command: ['3600']", "entrypoint: [/bin/sh, /custom/start]"))
+                elif service == "expansion-helper":
+                    helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sleep]\n    command: ['3600']", "entrypoint: [/bin/sh, '-c']\n    command: " + json.dumps(['/vendor/prep "$(/custom/start)"'])))
+                elif service == "health-helper":
+                    helper_file.write_text(helper_file.read_text() + "    healthcheck:\n      test: [CMD, /bin/sh, /custom/start]\n")
+                elif service == "inherited-health-helper":
+                    helper_file.write_text(helper_file.read_text().replace("    healthcheck:\n      disable: true\n", "    healthcheck:\n      interval: 1s\n"))
             compose(["stop", "stopped"])
             before = {service: remote.namespace_snapshot(owner + "-" + service + "-1") for service in ("provider", "consumer", "stopped", "leaf")}
             command(["/usr/bin/docker", "exec", before["consumer"][0], "/bin/sh", "-ec", "printf persistent > /marker/probe"])
@@ -174,6 +186,8 @@ def main():
                     overlay_item = {**item, "id": "docker:" + overlay_before[0]}
                     if overlay_service in ("inherited-helper", "option-helper"):
                         overlay_item.update(image=inherited_image, installed=overlay_before[3], available=overlay_before[3], availableImage="docker.io/homelab-fixtures/" + owner + ":candidate@sha256:" + "a" * 64)
+                    elif overlay_service == "inherited-health-helper":
+                        overlay_item.update(image=health_image, installed=overlay_before[3], available=overlay_before[3], availableImage="docker.io/homelab-fixtures/" + owner + ":candidate@sha256:" + "a" * 64)
                     remote.docker_update({**driver, "name": overlay_name, "service": overlay_service, "imageFile": str(overlay_source), "namespaceDependents": []}, overlay_item)
                     raise AssertionError("An obsolete executable overlay was allowed through the updater")
                 except remote.UpdateRefusal as error:
