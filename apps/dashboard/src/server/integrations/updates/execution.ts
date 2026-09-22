@@ -33,6 +33,12 @@ const phases = {
     rebinding_dependents:
         "Recreating dependent services against the new namespace, preserving their images and data.",
 } as const;
+const refusals = {
+    container_changed:
+        "The configured container or installed image changed. Refresh the software inventory before updating.",
+    local_code_override:
+        "Local application code is mounted into this deployment. Review or remove the override before updating its image.",
+} as const;
 const eventSchema = v.variant("complete", [
     v.object({
         complete: v.literal(true),
@@ -40,7 +46,12 @@ const eventSchema = v.variant("complete", [
         rebootRequired: v.nullable(v.boolean()),
         containerId: v.optional(v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/))),
     }),
-    v.object({ complete: v.literal(false) }),
+    v.object({
+        complete: v.literal(false),
+        reason: v.optional(
+            v.picklist(Object.keys(refusals) as (keyof typeof refusals)[])
+        ),
+    }),
 ]);
 const progressSchema = v.object({
     phase: v.picklist(Object.keys(phases) as (keyof typeof phases)[]),
@@ -174,8 +185,13 @@ export const executeUpdate: UpdateExecutor = async (
                     await report(phases[phase.output.phase]);
                 } else {
                     const event = v.parse(eventSchema, value);
-                    if (!event.complete || receipt)
-                        throw new Error("Update execution did not complete");
+                    if (!event.complete)
+                        throw new Error(
+                            event.reason
+                                ? refusals[event.reason]
+                                : "Update execution did not complete"
+                        );
+                    if (receipt) throw new Error("Update execution did not complete");
                     receipt = {
                         installed: event.installed,
                         rebootRequired: event.rebootRequired,
