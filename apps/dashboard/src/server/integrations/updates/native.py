@@ -140,18 +140,33 @@ def adguard_install(recipe, installed, candidate, run, emit, replace, lock):
 
 
 def openclaw_install(recipe, installed, candidate, run, emit):
-    """Use the installation owner's official updater with an exact temporary version tag."""
+    """Run the exact-version updater offline; only reactivate a verified successful update."""
     base = recipe["command"]
     if native_version(run(base + ["--version"])) != installed:
         raise RuntimeError("OpenClaw version changed")
     active = native_service(recipe["service"], run)
-    emit("installing")
-    run(base + ["update", "--tag", candidate, "--yes", "--no-restart"], timeout=1200)
-    if native_version(run(base + ["--version"])) != candidate:
-        raise RuntimeError("OpenClaw updater did not install the approved version")
+    # --no-restart leaves lifecycle ownership here. Doctor needs the gateway's
+    # state coordinator released before it can perform update maintenance.
+    try:
+        if active:
+            emit("stopping_application")
+            run(["/usr/bin/systemctl", "stop", recipe["service"]])
+        if native_service(recipe["service"], run):
+            raise RuntimeError("OpenClaw service did not stop")
+    except Exception:
+        raise UpdateRefusal("openclaw_stop_failed") from None
+    try:
+        emit("installing")
+        run(base + ["update", "--tag", candidate, "--yes", "--no-restart"], timeout=1200)
+        if native_version(run(base + ["--version"])) != candidate:
+            raise RuntimeError("OpenClaw updater did not install the approved version")
+    except Exception:
+        # A package rollback alone does not prove Doctor/state recovery is safe.
+        # Leave recovery to the operator instead of booting a partial update.
+        raise UpdateRefusal("openclaw_update_failed") from None
     if active:
         emit("restarting")
-        run(["/usr/bin/systemctl", "restart", recipe["service"]])
+        run(["/usr/bin/systemctl", "start", recipe["service"]])
     if native_service(recipe["service"], run) != active:
         raise RuntimeError("OpenClaw activation failed")
     return active

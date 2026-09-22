@@ -61,7 +61,7 @@ def progress(phase):
 
 
 class UpdateRefusal(RuntimeError):
-    """Expose a fixed preflight reason without forwarding command output."""
+    """Expose a fixed update failure reason without forwarding command output."""
 
     def __init__(self, reason):
         super().__init__(reason)

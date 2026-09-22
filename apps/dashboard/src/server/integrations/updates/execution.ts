@@ -27,6 +27,7 @@ const phases = {
     pulling: "Downloading the approved image without changing the running application.",
     configuring: "Saving the new image pin in Compose.",
     installing: "Installing the approved version.",
+    stopping_application: "Stopping the application for required update maintenance.",
     verifying: "Verifying the installed version and application health.",
     stopping_dependents:
         "Stopping services that share the application's network or process namespace.",
@@ -34,6 +35,10 @@ const phases = {
         "Recreating dependent services against the new namespace, preserving their images and data.",
 } as const;
 const refusals = {
+    openclaw_stop_failed:
+        "OpenClaw could not be confirmed stopped. Its update was not started; check the service before retrying.",
+    openclaw_update_failed:
+        "OpenClaw update or version verification failed. The updater did not restart its service; inspect OpenClaw's update report before recovery.",
     container_changed:
         "The configured container or installed image changed. Refresh the software inventory before updating.",
     local_code_override:
@@ -185,12 +190,13 @@ export const executeUpdate: UpdateExecutor = async (
                     await report(phases[phase.output.phase]);
                 } else {
                     const event = v.parse(eventSchema, value);
-                    if (!event.complete)
-                        throw new Error(
-                            event.reason
-                                ? refusals[event.reason]
-                                : "Update execution did not complete"
-                        );
+                    if (!event.complete) {
+                        const message = event.reason
+                            ? refusals[event.reason]
+                            : "Update execution did not complete";
+                        if (event.reason) await report(message);
+                        throw new Error(message);
+                    }
                     if (receipt) throw new Error("Update execution did not complete");
                     receipt = {
                         installed: event.installed,

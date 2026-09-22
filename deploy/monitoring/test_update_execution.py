@@ -450,18 +450,105 @@ class NativeRecipeTests(unittest.TestCase):
         for active in (False, True):
             with self.subTest(active=active):
                 calls = []
+                running = active
+                version = "2026.9.1"
                 def run(args, **_options):
+                    nonlocal running, version
                     calls.append(args)
                     if "--property=ActiveState" in args:
-                        return "active" if active else "inactive"
+                        return "active" if running else "inactive"
                     if args[-1] == "--version":
-                        return "2026.9.2" if any("update" in call for call in calls) else "2026.9.1"
+                        return version
+                    if args[1] == "stop": running = False
+                    if args[1] == "start": running = True
+                    if args[1] == "update":
+                        if running: raise RuntimeError("Doctor cannot acquire gateway-lifecycle")
+                        version = "2026.9.2"
+                        self.assertEqual(_options, {"timeout": 1200})
                     return ""
                 recipe = {"application": "openclaw", "command": ["/fixture/openclaw"], "service": "openclaw.service"}
                 with patch.object(remote, "progress"):
                     self.assertEqual(remote.openclaw_install(recipe, "2026.9.1", "2026.9.2", run, remote.progress), active)
                 self.assertIn(["/fixture/openclaw", "update", "--tag", "2026.9.2", "--yes", "--no-restart"], calls)
-                self.assertEqual(sum("restart" in call for call in calls), int(active))
+                self.assertEqual(sum("stop" in call for call in calls), int(active))
+                self.assertEqual(sum("start" in call for call in calls), int(active))
+                self.assertFalse(any("restart" in call for call in calls))
+                self.assertEqual(running, active)
+
+    def test_openclaw_failed_stop_or_update_never_starts_an_unverified_runtime(self):
+        for failure in ("stop", "still_active", "update", "wrong_version", "version_probe", "start"):
+            with self.subTest(failure=failure):
+                calls = []; running = True; updated = False
+                def run(args, **_options):
+                    nonlocal running, updated
+                    calls.append(args)
+                    if "--property=ActiveState" in args: return "active" if running else "inactive"
+                    if args[-1] == "--version":
+                        if updated and failure == "version_probe": raise RuntimeError("private diagnostic")
+                        return "2026.9.2" if updated and failure != "wrong_version" else "2026.9.1"
+                    if args[1] == failure: raise RuntimeError("private diagnostic")
+                    if args[1] == "stop": running = failure == "still_active"
+                    if args[1] == "update":
+                        self.assertFalse(running)
+                        updated = True
+                    return ""
+                recipe = {"command": ["/fixture/openclaw"], "service": "openclaw.service"}
+                with self.assertRaises(RuntimeError) as result:
+                    remote.openclaw_install(recipe, "2026.9.1", "2026.9.2", run, lambda _phase: None)
+                if failure != "start":
+                    self.assertIsInstance(result.exception, remote.UpdateRefusal)
+                    self.assertEqual(result.exception.reason, "openclaw_stop_failed" if failure in {"stop", "still_active"} else "openclaw_update_failed")
+                    self.assertNotIn("private diagnostic", str(result.exception))
+                    self.assertFalse(any(args[1] == "start" for args in calls))
+                self.assertEqual(any(args[1] == "update" for args in calls), failure not in {"stop", "still_active"})
+
+    def test_openclaw_maintenance_releases_a_real_process_lock_before_update(self):
+        # An isolated process models the resident gateway's coordinator. Neither
+        # this executable nor the systemctl adapter can address a real service.
+        with tempfile.TemporaryDirectory(prefix="homelab-openclaw-fixture-") as temporary:
+            directory = Path(temporary)
+            version = directory / "version"; version.write_text("2026.9.1")
+            cli = directory / "openclaw.py"
+            cli.write_text("""import fcntl, pathlib, sys, time
+root = pathlib.Path(__file__).parent
+if sys.argv[1] == '--version':
+    print((root / 'version').read_text())
+else:
+    with (root / 'coordinator').open('a') as coordinator:
+        fcntl.flock(coordinator, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if sys.argv[1] == 'gateway':
+            print('ready', flush=True)
+            time.sleep(60)
+        else:
+            assert sys.argv[1:] == ['update', '--tag', '2026.9.2', '--yes', '--no-restart']
+            (root / 'version').write_text('2026.9.2')
+""")
+            def gateway():
+                process = subprocess.Popen([sys.executable, str(cli), "gateway"], stdout=subprocess.PIPE, text=True)
+                self.assertEqual(process.stdout.readline().strip(), "ready")
+                return process
+            resident = gateway()
+            try:
+                base = [sys.executable, str(cli)]
+                with self.assertRaisesRegex(RuntimeError, "command failed"):
+                    remote.command(base + ["update", "--tag", "2026.9.2", "--yes", "--no-restart"])
+                self.assertEqual(version.read_text(), "2026.9.1")
+                def run(args, **options):
+                    nonlocal resident
+                    if args[0] != "/usr/bin/systemctl": return remote.command(args, **options)
+                    self.assertEqual(args[-1], "fixture-openclaw.service")
+                    if args[1] == "show": return "active" if resident.poll() is None else "inactive"
+                    if args[1] == "stop":
+                        resident.terminate(); resident.wait(timeout=5); resident.stdout.close()
+                    elif args[1] == "start": resident = gateway()
+                    else: self.fail("Unexpected fixture service command")
+                    return ""
+                self.assertTrue(remote.openclaw_install({"command": base, "service": "fixture-openclaw.service"}, "2026.9.1", "2026.9.2", run, lambda _phase: None))
+                self.assertEqual(version.read_text(), "2026.9.2")
+                self.assertIsNone(resident.poll())
+            finally:
+                if resident.poll() is None: resident.terminate(); resident.wait(timeout=5)
+                resident.stdout.close()
 
     def nextcloud_fixture(self, *, offered="33.0.1.1", wrong_url=False, modified=False, pending=False, failed_database=False, missing_option=None, required_values=False, extra_help=""):
         with tempfile.TemporaryDirectory(prefix="homelab-nextcloud-fixture-") as temporary:
