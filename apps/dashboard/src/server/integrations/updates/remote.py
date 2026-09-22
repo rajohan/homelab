@@ -73,8 +73,12 @@ def startup_code_paths(startup):
     """Infer executable/interpreter positions, never ordinary data-path operands."""
     paths = set()
     def words(value):
-        return [word[1:-1] if word.startswith(('"', "'")) else word
-                for word in re.findall(r'''"(?:\\.|[^"\\])*"|'[^']*'|[^\s;|&]+|[;|&]+''', value)]
+        def unquote(match):
+            if match[1] is not None:
+                return re.sub(r'\\(["\\$`])', r'\1', match[1])
+            return match[2] if match[2] is not None else match[3]
+        return [re.sub(r'''"((?:\\.|[^"\\])*)"|'([^']*)'|\\(.)''', unquote, word)
+                for word in re.findall(r'''(?:"(?:\\.|[^"\\])*"|'[^']*'|\\.|[^\s;|&"'\\])+|[;|&]+''', value)]
     def argv(value):
         return words(value) if isinstance(value, str) else value or []
     def resolve(cwd, value):
@@ -135,6 +139,9 @@ def startup_code_paths(startup):
                 group, current = [], cwd
                 for token in words(args[inline + 1] if len(args) > inline + 1 else "") + [";"]:
                     if re.fullmatch(r"[;|&]+", token):
+                        # Assignment values are data, even if they contain paths.
+                        while group and re.match(r"[A-Za-z_][A-Za-z0-9_]*=", group[0]):
+                            group.pop(0)
                         if len(group) > 1 and group[0] == "cd":
                             current = resolve(current, group[1])
                         else:
@@ -190,11 +197,16 @@ def compose_startup(service, defaults):
 
 
 def verify_code_mounts(service, startup=None):
-    """Refuse executable bind overlays before pulling or mutating a deployment."""
+    """Refuse executable deployment mounts without reading config/secret contents."""
     paths = startup_code_paths(startup or service)
-    for mount in service.get("volumes", []):
-        if mount.get("type") != "bind":
-            continue
+    mounts = [mount for mount in service.get("volumes", []) if mount.get("type") == "bind"]
+    for kind, base in (("configs", "/"), ("secrets", "/run/secrets")):
+        for entry in service.get(kind, []):
+            target = entry if isinstance(entry, str) else entry.get("target") or entry["source"]
+            # These sources are Compose object names, never filesystem paths.
+            # Only their effective container destinations are needed to qualify code.
+            mounts.append({"target": posixpath.join(base, target)})
+    for mount in mounts:
         destination = mount.get("target", "")
         # Only the qualified standalone logout helper is exempt, not this directory.
         if destination == "/opt/homelab/logout-worker.js":

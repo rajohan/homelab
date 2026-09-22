@@ -1,9 +1,21 @@
 import path from "node:path";
 
 function words(command: string): string[] {
-    return (command.match(/"(?:\\.|[^"\\])*"|'[^']*'|[^\s;|&]+|[;|&]+/g) ?? []).map(
-        (word) =>
-            word.startsWith('"') || word.startsWith("'") ? word.slice(1, -1) : word
+    return (
+        command.match(/(?:"(?:\\.|[^"\\])*"|'[^']*'|\\.|[^\s;|&"'\\])+|[;|&]+/g) ?? []
+    ).map((word) =>
+        word.replaceAll(
+            /"((?:\\.|[^"\\])*)"|'([^']*)'|\\(.)/g,
+            (
+                _match,
+                double: string | undefined,
+                single: string | undefined,
+                escaped: string | undefined
+            ) =>
+                double === undefined
+                    ? (single ?? escaped ?? "")
+                    : double.replaceAll(/\\(["\\$`])/g, "$1")
+        )
     );
 }
 
@@ -110,6 +122,9 @@ export function startupCodePaths(
                 let group: string[] = [];
                 let current = cwd;
                 const finish = () => {
+                    // Shell assignments precede the command but are not executable
+                    // words. Values (including quoted paths) must not become code.
+                    while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(group[0] ?? "")) group.shift();
                     if (group[0] === "cd" && group[1])
                         current = path.posix.resolve(current, group[1]);
                     else inspect(group, current, depth + 1);

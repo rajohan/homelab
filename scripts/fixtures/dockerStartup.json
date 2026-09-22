@@ -1,5 +1,109 @@
 [
     {
+        "name": "shell leading assignment",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["FOO=x /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell multiple assignments",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["FOO=x BAR=y /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell single quoted assignment",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["FOO='value with spaces' /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell double quoted assignment",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["FOO=\"value with spaces\" /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell escaped assignment",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["FOO=value\\ with\\ spaces /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell empty assignment",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["FOO= /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell assignment path is data",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["FOO=/custom/start /vendor/server"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell assignment only",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["FOO=/custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell assigned cwd",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["FOO=x cd /custom && BAR=y ./start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell assignment before env",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["FOO=x env -u BAR /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell assignment before interpreter",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["FOO=x python3 ./app.py"],
+        "working_dir": "/custom",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell assigned ordinary config",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["FOO='x y' /vendor/server /config/settings.json"],
+        "working_dir": "/",
+        "mount": "/config",
+        "blocked": false
+    },
+    {
+        "name": "shell quoted assignment separator",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["FOO='x ; y' /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
         "name": "env split unset",
         "entrypoint": ["/usr/bin/env"],
         "command": ["-u", "FOO", "/custom/start"],

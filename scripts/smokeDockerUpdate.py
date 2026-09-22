@@ -55,6 +55,20 @@ def main():
                 helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sh, " + destination + "]", "entrypoint: [/bin/sleep]\n    command: ['3600']"))
             if service in ("inherited-helper", "option-helper"):
                 helper_file.write_text(helper_file.read_text().replace(original, inherited_image))
+        for service, kind in (("assignment-helper", "volumes"), ("config-helper", "configs"), ("secret-helper", "secrets")):
+            helper_file = directory / (service + ".yaml")
+            source_file = directory / (service + ".source")
+            source_file.write_text("# Synthetic startup code, never executed.\n")
+            text = "services:\n  " + service + ":\n    image: " + original + "\n    entrypoint: [/bin/sleep]\n    command: ['3600']\n    network_mode: none\n    mem_limit: 64m\n    pids_limit: 32\n    labels:\n      homelab.smoke: " + owner + "\n"
+            if kind == "volumes":
+                source_directory = directory / (service + "-code")
+                source_directory.mkdir()
+                (source_directory / "start").write_text(source_file.read_text())
+                text += "    volumes:\n      - type: bind\n        source: " + str(source_directory) + "\n        target: /custom\n        read_only: true\n"
+            else:
+                text += "    " + kind + ":\n      - source: " + service + "\n        target: /custom/start\n" + kind + ":\n  " + service + ":\n    file: " + str(source_file) + "\n"
+            helper_file.write_text(text)
+            helpers.append((service, helper_file))
         # A mounted executable can also be invoked later, outside startup argv.
         executable = directory / "extensionless-binary"
         executable.write_text("#!/bin/sh\nexit 0\n")
@@ -77,6 +91,7 @@ def main():
         config_data.mkdir()
         (config_data / "settings.json").write_text("{}\n")
         config_file.write_text("services:\n  config-app:\n    image: " + config_image + "\n    command: [/config/settings.json]\n    network_mode: none\n    mem_limit: 64m\n    pids_limit: 32\n    labels:\n      homelab.smoke: " + owner + "\n    volumes:\n      - type: bind\n        source: " + str(config_data) + "\n        target: /config\n        read_only: true\n")
+        config_file.write_text(config_file.read_text() + "    configs: [ordinary-settings]\n    secrets: [ordinary-token]\nconfigs:\n  ordinary-settings:\n    file: " + str(config_data / "settings.json") + "\nsecrets:\n  ordinary-token:\n    file: " + str(config_data / "settings.json") + "\n")
         main_file.write_text(json.dumps({"include": [str(provider_file), str(consumer_file), str(overlay_file), str(config_file)] + [str(path) for _, path in helpers], "services": {"stopped": {**shared, "network_mode": "service:provider"}, "leaf": {**shared, "network_mode": "service:consumer"}}, "volumes": {"marker": {"labels": {"homelab.smoke": owner}}}}))
         base = ["/usr/bin/docker", "compose", "--project-directory", str(directory), "--project-name", owner, "--file", str(main_file)]
         def compose(args, timeout=120):
@@ -111,6 +126,10 @@ def main():
                     helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sleep]\n    command: ['3600']", "command: ['-X', dev, '-W', error, /custom/app.py]"))
                 elif service == "env-helper":
                     helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sleep]\n    command: ['3600']", "entrypoint: [/usr/bin/env]\n    command: ['-u', FOO, /custom/start]"))
+                elif service == "assignment-helper":
+                    helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sleep]\n    command: ['3600']", "entrypoint: [/bin/sh, '-c']\n    command: ['FOO=x /custom/start']"))
+                elif service in ("config-helper", "secret-helper"):
+                    helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sleep]\n    command: ['3600']", "entrypoint: [/bin/sh, /custom/start]"))
             compose(["stop", "stopped"])
             before = {service: remote.namespace_snapshot(owner + "-" + service + "-1") for service in ("provider", "consumer", "stopped", "leaf")}
             command(["/usr/bin/docker", "exec", before["consumer"][0], "/bin/sh", "-ec", "printf persistent > /marker/probe"])

@@ -53,6 +53,28 @@ class UpdateExecutionTests(unittest.TestCase):
             with self.assertRaises(remote.UpdateRefusal):
                 remote.verify_code_mounts(service, remote.compose_startup(service, defaults))
 
+    def test_compose_config_secret_startup_targets(self):
+        for kind, base in (("configs", "/"), ("secrets", "/run/secrets/")):
+            for entry, target in (("startup", base + "startup"),
+                                  ({"source": "startup"}, base + "startup"),
+                                  ({"source": "startup", "target": "/custom/start"}, "/custom/start"),
+                                  ({"source": "startup", "target": "start"}, base + "start")):
+                with self.subTest(kind=kind, entry=entry), self.assertRaises(remote.UpdateRefusal):
+                    remote.verify_code_mounts({kind: [entry]}, {"entrypoint": ["/bin/sh", target]})
+
+    def test_compose_config_secret_data_is_not_read_or_blocked(self):
+        for kind, base in (("configs", "/"), ("secrets", "/run/secrets/")):
+            with self.subTest(kind=kind), patch.object(Path, "read_text", side_effect=AssertionError("Contents must not be read")), patch.object(Path, "read_bytes", side_effect=AssertionError("Contents must not be read")):
+                service = {kind: ["settings", {"source": "credential", "target": "/config/token"}]}
+                remote.verify_code_mounts(service, {"entrypoint": ["/vendor/server"], "command": [base + "settings", "/config/token"]})
+                remote.verify_code_mounts(service, {"entrypoint": ["python", "/vendor/server.py"], "command": ["--token-file", "/config/token"], "working_dir": "/vendor"})
+
+    def test_compose_config_secret_code_suffixes_remain_blocked(self):
+        for kind in ("configs", "secrets"):
+            for target in ("/custom/plugin.py", "/usr/local/lib/python3.13/site-packages/plugin", "/app/lib/module"):
+                with self.subTest(kind=kind, target=target), self.assertRaises(remote.UpdateRefusal):
+                    remote.verify_code_mounts({kind: [{"source": "code", "target": target}]}, {"entrypoint": ["/vendor/server"]})
+
     def test_runtime_library_directory_binds_are_code(self):
         for destination in ("/usr/local/lib/python3.13/site-packages", "/usr/lib/python3/dist-packages", "/usr/local/lib/node_modules", "/usr/share/nodejs", "/usr/share/php", "/usr/lib64", "/lib", "/usr/share/ruby/vendor_ruby"):
             with self.subTest(destination=destination), self.assertRaises(remote.UpdateRefusal):
