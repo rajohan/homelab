@@ -12,9 +12,10 @@ import {
 import { boundHostSources } from "../hostBindings";
 import type { UpdateTarget } from "./configuration";
 
-const codeFile = /\.(?:py|pyc|js|mjs|cjs|jsx|ts|tsx|so|node)$/i;
+const codeFile =
+    /\.(?:py|pyc|js|mjs|cjs|jsx|ts|tsx|so|node|sh|bash|dash|ksh|zsh|fish|pl|rb|php|lua|ps1|exe|dll|wasm)$/i;
 const codeDirectory =
-    /^\/app(?:\/(?:src|lib|services|providers|api|utils|cw_platform)(?:\/.*)?)?\/?$/;
+    /^(?:\/app(?:\/(?:src|lib|services|providers|api|utils|cw_platform)(?:\/.*)?)?|\/(?:usr\/(?:local\/)?)?(?:bin|sbin|libexec)(?:\/.*)?)\/?$/;
 const overlayReason =
     "Local application code is mounted over this image. Review or remove the override before updating.";
 type DockerOwner = Pick<
@@ -32,7 +33,9 @@ export function hasApplicationCodeMount(application: ManagedApplication): boolea
         (mount) =>
             mount.type === "bind" &&
             mount.destination !== "/opt/homelab/logout-worker.js" &&
-            (codeFile.test(mount.destination) || codeDirectory.test(mount.destination))
+            (mount.startupCode === true ||
+                codeFile.test(mount.destination) ||
+                codeDirectory.test(mount.destination))
     );
 }
 
@@ -131,6 +134,7 @@ export async function refreshDockerObservations(
                 const key = `${prefix}${source}`;
                 const [row] = await transaction<{ value: UpdateReport }[]>`
                     SELECT value FROM operation_snapshots WHERE key=${key}
+                    AND mutated_at < ${startedAt}::timestamptz
                     AND captured_at < ${startedAt}::timestamptz FOR UPDATE`;
                 if (!row || Date.parse(row.value.capturedAt) >= Date.parse(startedAt))
                     continue;

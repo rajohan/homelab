@@ -20,7 +20,9 @@ def main():
     command = remote.command
     remote.verify_code_mounts({"volumes": [{"type": "bind", "target": "/opt/homelab/logout-worker.js"}]})
     for destination in ["/opt/homelab/custom-entrypoint.py", "/opt/homelab/custom-worker.js",
-                        "/opt/homelab/logout-worker.js/extra.js", "/opt/homelab/../homelab/logout-worker.js"]:
+                        "/opt/homelab/logout-worker.js/extra.js", "/opt/homelab/../homelab/logout-worker.js",
+                        "/usr/local/bin/custom-entrypoint.sh", "/config/start.sh", "/usr/local/bin/extensionless",
+                        "/usr/libexec/worker", "/custom/program.exe"]:
         try:
             remote.verify_code_mounts({"volumes": [{"type": "bind", "target": destination}]})
             raise AssertionError("An unqualified helper code mount was accepted")
@@ -36,10 +38,23 @@ def main():
         consumer_file = directory / "consumer.yaml"
         main_file = directory / "compose.yaml"
         overlay_file = directory / "overlay.yaml"
-        helper_file = directory / "custom-helper.yaml"
-        entrypoint_file = directory / "custom-entrypoint.py"
-        entrypoint_file.write_text("#!/bin/sh\nexec /bin/sleep 3600\n")
-        helper_file.write_text("services:\n  custom-helper:\n    image: " + original + "\n    entrypoint: [/bin/sh, /opt/homelab/custom-entrypoint.py]\n    network_mode: none\n    mem_limit: 64m\n    pids_limit: 32\n    labels:\n      homelab.smoke: " + owner + "\n    volumes:\n      - type: bind\n        source: " + str(entrypoint_file) + "\n        target: /opt/homelab/custom-entrypoint.py\n        read_only: true\n")
+        helpers = []
+        for service, destination in [("custom-helper", "/opt/homelab/custom-entrypoint.py"), ("shell-helper", "/usr/local/bin/custom-entrypoint.sh"), ("extensionless-helper", "/custom/start")]:
+            helper_file = directory / (service + ".yaml")
+            entrypoint_file = directory / (service + ".source")
+            entrypoint_file.write_text("#!/bin/sh\nexec /bin/sleep 3600\n")
+            helper_file.write_text("services:\n  " + service + ":\n    image: " + original + "\n    entrypoint: [/bin/sh, " + destination + "]\n    network_mode: none\n    mem_limit: 64m\n    pids_limit: 32\n    labels:\n      homelab.smoke: " + owner + "\n    volumes:\n      - type: bind\n        source: " + str(entrypoint_file) + "\n        target: " + destination + "\n        read_only: true\n")
+            helpers.append((service, helper_file))
+        # A mounted executable can also be invoked later, outside startup argv.
+        executable = directory / "extensionless-binary"
+        executable.write_text("#!/bin/sh\nexit 0\n")
+        executable.chmod(0o755)
+        try:
+            remote.verify_code_mounts({"volumes": [{"type": "bind", "source": str(executable), "target": "/custom/utility"}]})
+            raise AssertionError("An executable bind without a suffix was accepted")
+        except remote.UpdateRefusal as error:
+            assert error.reason == "local_code_override"
+        remote.verify_code_mounts({"entrypoint": ["/vendor/app"], "command": ["--config", "/config/app.json"], "volumes": [{"type": "bind", "target": "/config"}]})
         patch_file = directory / "legacy.py"
         patch_file.write_text("# Synthetic obsolete application override; never production code.\n")
         overlay_file.write_text("services:\n  overlay:\n    image: " + original + "\n    entrypoint: [/bin/sleep]\n    command: ['3600']\n    network_mode: none\n    mem_limit: 64m\n    pids_limit: 32\n    labels:\n      homelab.smoke: " + owner + "\n    volumes:\n      - type: bind\n        source: " + str(patch_file) + "\n        target: /app/services/legacy.py\n        read_only: true\n")
@@ -47,7 +62,7 @@ def main():
         # The real updater deliberately edits a literal YAML pin; other fixtures may use JSON/YAML.
         provider_file.write_text("services:\n  provider:\n    image: " + original + "\n    init: true\n    entrypoint: [/bin/sleep]\n    command: ['3600']\n    network_mode: none\n    mem_limit: 64m\n    pids_limit: 32\n    labels:\n      homelab.smoke: " + owner + "\n    healthcheck:\n      test: [CMD, 'true']\n      interval: 1s\n")
         consumer_file.write_text("services:\n  consumer:\n    image: " + original + "\n" + "".join("    " + key + ": " + json.dumps(value) + "\n" for key, value in {**shared, "network_mode": "service:provider"}.items() if key != "image"))
-        main_file.write_text(json.dumps({"include": [str(provider_file), str(consumer_file), str(overlay_file), str(helper_file)], "services": {"stopped": {**shared, "network_mode": "service:provider"}, "leaf": {**shared, "network_mode": "service:consumer"}}, "volumes": {"marker": {"labels": {"homelab.smoke": owner}}}}))
+        main_file.write_text(json.dumps({"include": [str(provider_file), str(consumer_file), str(overlay_file)] + [str(path) for _, path in helpers], "services": {"stopped": {**shared, "network_mode": "service:provider"}, "leaf": {**shared, "network_mode": "service:consumer"}}, "volumes": {"marker": {"labels": {"homelab.smoke": owner}}}}))
         base = ["/usr/bin/docker", "compose", "--project-directory", str(directory), "--project-name", owner, "--file", str(main_file)]
         def compose(args, timeout=120):
             return command(base + args, timeout=timeout)
@@ -58,14 +73,20 @@ def main():
             command(["/usr/bin/docker", "exec", before["consumer"][0], "/bin/sh", "-ec", "printf persistent > /marker/probe"])
             driver = {"kind": "docker", "name": owner + "-provider-1", "project": owner, "service": "provider", "directory": str(directory), "file": str(main_file), "imageFile": str(provider_file), "namespaceDependents": ["consumer", "stopped", "leaf"]}
             item = {"id": "docker:" + before["provider"][0], "image": original, "installed": image["Id"], "available": image["Id"], "availableImage": candidate}
-            for overlay_service, overlay_source in [("overlay", overlay_file), ("custom-helper", helper_file)]:
+            for overlay_service, overlay_source in [("overlay", overlay_file)] + helpers:
                 overlay_name = owner + "-" + overlay_service + "-1"
                 overlay_before = remote.namespace_snapshot(overlay_name)
                 try:
+                    def no_pull(arguments, **options):
+                        assert arguments[1] != "pull", "Preflight must refuse mounted code before pull"
+                        return command(arguments, **options)
+                    remote.command = no_pull
                     remote.docker_update({**driver, "name": overlay_name, "service": overlay_service, "imageFile": str(overlay_source), "namespaceDependents": []}, {**item, "id": "docker:" + overlay_before[0]})
                     raise AssertionError("An obsolete executable overlay was allowed through the updater")
                 except remote.UpdateRefusal as error:
                     assert error.reason == "local_code_override"
+                finally:
+                    remote.command = command
                 assert remote.namespace_snapshot(overlay_name) == overlay_before
                 assert original in overlay_source.read_text() and candidate not in overlay_source.read_text()
             compose(["stop", "--timeout", "5", "consumer"])

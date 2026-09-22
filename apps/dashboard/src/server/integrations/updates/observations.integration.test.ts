@@ -6,6 +6,8 @@ import type {
 } from "@homelab/contracts/applications";
 import type { UpdateReport } from "@homelab/contracts/updates";
 
+import { createAutomation } from "../../automation/service";
+import { startDashboardServer } from "../../index";
 import { lockQueue } from "../../jobs/queue";
 import { createApplicationFixture } from "../../testing/applications";
 import { operationFixture } from "../../testing/operations";
@@ -143,6 +145,18 @@ test.each([
                           ]
                         : [],
             };
+            // Seed publications before the host starts its remote observation.
+            for (const key of [
+                "updates:software",
+                "updates.resolved:software",
+                "updates:alias",
+                "updates.resolved:alias",
+                "updates:read-only",
+                "updates.resolved:read-only",
+                "updates:unrelated",
+            ])
+                await state.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES(${key},${JSON.stringify(report)}::text::jsonb,${capturedAt}::timestamptz)`;
+            await Bun.sleep(3);
             let observationStartedAt = new Date().toISOString();
             if (scenario === "equal-publication") observationStartedAt = capturedAt;
             if (scenario === "newer-publication")
@@ -164,16 +178,6 @@ test.each([
                     },
                 ],
             };
-            for (const key of [
-                "updates:software",
-                "updates.resolved:software",
-                "updates:alias",
-                "updates.resolved:alias",
-                "updates:read-only",
-                "updates.resolved:read-only",
-                "updates:unrelated",
-            ])
-                await state.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES(${key},${JSON.stringify(report)}::text::jsonb,${capturedAt}::timestamptz)`;
             if (scenario === "active-host") {
                 const id = crypto.randomUUID(),
                     token = crypto.randomUUID();
@@ -227,16 +231,56 @@ test.each([
     }
 );
 
-test.each([
-    { changedImage: false, delayedPublication: false },
-    { changedImage: true, delayedPublication: false },
-    { changedImage: false, delayedPublication: true },
-    { changedImage: true, delayedPublication: true },
-])(
+test.each(
+    [
+        { changedImage: false, delayedPublication: false },
+        { changedImage: true, delayedPublication: false },
+        { changedImage: false, delayedPublication: true },
+        { changedImage: true, delayedPublication: true },
+    ].flatMap((scenario) => [false, true].map((existing) => ({ ...scenario, existing })))
+)(
     "software publication during Docker reads is preserved: %j",
-    async ({ changedImage, delayedPublication }) => {
+    async ({ changedImage, delayedPublication, existing }) => {
         const state = await operationFixture();
         const fixture = createApplicationFixture();
+        const publisher = await createAutomation(state.client, "human:test", {
+            label: "Publisher",
+            capabilities: ["updates:publish"],
+            expiresAt: null,
+        });
+        const server = startDashboardServer({
+            hostname: "127.0.0.1",
+            port: 0,
+            development: false,
+            authentication: null,
+            operations: {
+                databaseUrl: state.url,
+                metricsUrl: undefined,
+                metricsToken: undefined,
+                concurrency: 1,
+                retentionDays: 30,
+                updateSources: [
+                    { id: "software", label: "Software", publisher: publisher.id },
+                ],
+            },
+        });
+        const publish = async (value: UpdateReport) => {
+            const response = await fetch(
+                new URL("/api/automation/updates.publish", server.url),
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${publisher.token}`,
+                    },
+                    body: JSON.stringify({ json: value }),
+                }
+            );
+            expect(response.status).toBe(200);
+            expect(await response.json()).toMatchObject({
+                result: { data: { json: { accepted: true } } },
+            });
+        };
         try {
             const targets = parseUpdateTargets(
                 JSON.stringify([
@@ -267,6 +311,17 @@ test.each([
             const port = createDockerPort(fixture.target, {});
             let published: UpdateReport | undefined;
             const oldTime = new Date(Date.now() - 60_000).toISOString();
+            if (existing) {
+                const previous: UpdateReport = {
+                    capturedAt: new Date(Date.now() - 120_000).toISOString(),
+                    repositoryMetadataAt: null,
+                    complete: true,
+                    coveredKinds: ["container"],
+                    items: [],
+                };
+                await publish(previous);
+                await state.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES('updates.resolved:software',${JSON.stringify(previous)}::text::jsonb,${previous.capturedAt}::timestamptz)`;
+            }
             const inventory = await collectApplications(
                 bindings,
                 () => ({
@@ -297,18 +352,26 @@ test.each([
                                             : stale.Config.Image,
                                         available: "sha256:" + "d".repeat(64),
                                         status: "available",
-                                        candidateVerified: true,
                                         security: false,
                                         held: false,
                                     },
                                 ],
                             };
-                            await state.client.begin(async (transaction) => {
-                                await lockQueue(transaction);
-                                for (const prefix of ["updates:", "updates.resolved:"])
-                                    await transaction`INSERT INTO operation_snapshots(key,value,captured_at)
-                                VALUES(${prefix + "software"},${JSON.stringify(published)}::text::jsonb,clock_timestamp())`;
-                            });
+                            // Exercise the actual authenticated HTTP publisher, including
+                            // its source-supplied captured_at on INSERT and ON CONFLICT.
+                            await publish(published);
+                            const verified = {
+                                ...published,
+                                items: published.items.map((item) => ({
+                                    ...item,
+                                    candidateVerified: true,
+                                })),
+                            };
+                            // The DB mutation fence also covers independent resolver/receipt
+                            // writes even when their observation time remains old.
+                            await state.client`INSERT INTO operation_snapshots(key,value,captured_at)
+                                VALUES('updates.resolved:software',${JSON.stringify(verified)}::text::jsonb,${published.capturedAt}::timestamptz)
+                                ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value, captured_at=EXCLUDED.captured_at`;
                         }
                         return stale;
                     },
@@ -329,12 +392,36 @@ test.each([
                     targets
                 );
             });
-            const rows = await state.client<{ value: UpdateReport }[]>`
-            SELECT value FROM operation_snapshots WHERE key LIKE 'updates%'`;
+            const rows = await state.client<
+                {
+                    key: string;
+                    value: UpdateReport;
+                    captured_at: Date;
+                    mutated_at: Date;
+                }[]
+            >`
+            SELECT key,value,captured_at,mutated_at FROM operation_snapshots WHERE key LIKE 'updates%'`;
             expect(rows).toHaveLength(2);
-            for (const row of rows) expect(row.value).toEqual(published!);
+            for (const row of rows) {
+                expect(row.value).toEqual(
+                    row.key.startsWith("updates.resolved:")
+                        ? {
+                              ...published!,
+                              items: published!.items.map((item) => ({
+                                  ...item,
+                                  candidateVerified: true,
+                              })),
+                          }
+                        : published!
+                );
+                expect(row.captured_at.toISOString()).toBe(published!.capturedAt);
+                expect(row.mutated_at.getTime()).toBeGreaterThan(
+                    Date.parse(inventory.hosts[0]!.observationStartedAt!)
+                );
+            }
             expect(fixture.calls).toEqual([]);
         } finally {
+            await server.stop();
             await fixture.close();
             await state.close();
         }

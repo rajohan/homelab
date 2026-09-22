@@ -74,6 +74,8 @@ export interface ManagedApplication {
         source: string;
         destination: string;
         readOnly: boolean;
+        /** Whether the runtime invokes code from this mount; arguments are never exposed. */
+        startupCode?: boolean;
     }[];
     readonly networks: readonly string[];
 }

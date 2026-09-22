@@ -3,6 +3,8 @@ import { expect, test } from "bun:test";
 import type { ManagedApplication } from "@homelab/contracts/applications";
 import type { UpdateReport } from "@homelab/contracts/updates";
 
+import { applicationFixtureDetail } from "../../testing/applications";
+import { mapDockerApplication } from "../applications/inventory";
 import {
     hasApplicationCodeMount,
     reconcileDockerObservations as reconcile,
@@ -102,6 +104,13 @@ test.each([
     "/opt/homelab/custom-worker.js",
     "/opt/homelab/logout-worker.js/extra.js",
     "/opt/homelab/../homelab/logout-worker.js",
+    "/usr/local/bin/custom-entrypoint.sh",
+    "/config/start.sh",
+    "/config/start.BASH",
+    "/custom/program.exe",
+    "/usr/local/bin/extensionless",
+    "/usr/libexec/worker",
+    "/bin",
 ])("executable overlay %s blocks installation", (destination) => {
     const patched = {
         ...app,
@@ -131,6 +140,67 @@ test.each(["/config", "/app/data", "/app/.env", "/etc/ssl/ca.pem", "/app/config.
                 ],
             })
         ).toBe(false);
+    }
+);
+
+test.each([
+    {
+        entrypoint: ["/custom/start"],
+        command: [],
+        directory: "/",
+        destination: "/custom/start",
+        blocked: true,
+    },
+    {
+        entrypoint: ["/bin/sh", "/custom/start"],
+        command: [],
+        directory: "/",
+        destination: "/custom",
+        blocked: true,
+    },
+    {
+        entrypoint: ["/bin/sh"],
+        command: ["-c", "exec ./start --token=SYNTHETIC_PRIVATE"],
+        directory: "/custom",
+        destination: "/custom/start",
+        blocked: true,
+    },
+    {
+        entrypoint: null,
+        command: ["/custom/start"],
+        directory: "/",
+        destination: "/custom/start",
+        blocked: true,
+    },
+    {
+        entrypoint: ["/vendor/app"],
+        command: ["--config", "/config/app.json"],
+        directory: "/",
+        destination: "/config",
+        blocked: false,
+    },
+])(
+    "startup code metadata is bounded and private: %j",
+    ({ entrypoint, command, directory, destination, blocked }) => {
+        const detail = applicationFixtureDetail("a".repeat(64), "web");
+        detail.Config.Entrypoint = entrypoint ? [...entrypoint] : null;
+        detail.Config.Cmd = [...command];
+        detail.Config.WorkingDir = directory;
+        detail.Mounts = [
+            { Type: "bind", Source: "/fixture", Destination: destination, RW: false },
+        ];
+        const mapped = mapDockerApplication(
+            {
+                id: "main",
+                label: "Main",
+                endpoint: "http://fixture.invalid:2375",
+                projects: ["demo"],
+            },
+            detail
+        );
+        expect(hasApplicationCodeMount(mapped)).toBe(blocked);
+        expect(JSON.stringify(mapped)).not.toContain("SYNTHETIC_PRIVATE");
+        expect(mapped).not.toHaveProperty("Config");
     }
 );
 

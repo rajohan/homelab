@@ -192,6 +192,9 @@ export const snapshots = pgTable("operation_snapshots", {
     key: text().primaryKey(),
     value: jsonb().$type<InfrastructureSnapshot>().notNull(),
     capturedAt: time("captured_at").notNull(),
+    mutatedAt: time("mutated_at")
+        .notNull()
+        .default(sql`clock_timestamp()`),
 });
 export const rateWindows = pgTable("operation_rate_windows", {
     key: text().primaryKey(),

@@ -58,6 +58,9 @@ class UpdateExecutionTests(unittest.TestCase):
                 else:
                     self.assertIsNone(environment)
                 if arguments[1] == "inspect":
+                    if arguments[3] == '{"entrypoint":{{json .Config.Entrypoint}},"command":{{json .Config.Cmd}},"working_dir":{{json .Config.WorkingDir}}}':
+                        self.assertEqual(arguments[4], 'c' * 64)
+                        return json.dumps({"entrypoint": ["/vendor/web"], "command": None, "working_dir": "/"})
                     if arguments[3] == '{{json .State}}':
                         return json.dumps({'Status': mode, 'Health': {'Status': 'healthy'}})
                     if '{{.Id}}' in arguments[3]:

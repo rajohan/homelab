@@ -18,7 +18,13 @@ const detailSchema = v.object({
     Id: id,
     Name: text,
     Image: text,
-    Config: v.object({ Image: text, Labels: v.nullable(labels) }),
+    Config: v.object({
+        Image: text,
+        Labels: v.nullable(labels),
+        Entrypoint: v.optional(v.nullable(v.pipe(v.array(text), v.maxLength(128)))),
+        Cmd: v.optional(v.nullable(v.pipe(v.array(text), v.maxLength(128)))),
+        WorkingDir: v.optional(text),
+    }),
     HostConfig: v.object({
         NetworkMode: networkText,
         PidMode: v.optional(networkText, ""),

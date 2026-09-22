@@ -8,6 +8,7 @@ from contextlib import contextmanager
 import fcntl
 import json
 import os
+import posixpath
 from pathlib import Path
 import re
 import selectors
@@ -68,8 +69,17 @@ class UpdateRefusal(RuntimeError):
         self.reason = reason
 
 
-def verify_code_mounts(service):
+def verify_code_mounts(service, startup=None):
     """Refuse executable bind overlays before pulling or mutating a deployment."""
+    startup = startup or service
+    arguments = []
+    for key in ("entrypoint", "command"):
+        value = startup.get(key) or []
+        arguments.extend([value] if isinstance(value, str) else value)
+    paths = [posixpath.normpath(posixpath.join(startup.get("working_dir") or "/", token))
+             for argument in arguments for token in re.split(r"[\s\"';&|()]+", argument)
+             if "/" in token and not token.startswith("-") and "://" not in token
+             and not re.search(r"\.(?:json|ya?ml|toml|ini|conf|cfg|env|pem|crt|key|db|sqlite|txt|log)$", token, re.I)]
     for mount in service.get("volumes", []):
         if mount.get("type") != "bind":
             continue
@@ -77,7 +87,14 @@ def verify_code_mounts(service):
         # Only the qualified standalone logout helper is exempt, not this directory.
         if destination == "/opt/homelab/logout-worker.js":
             continue
-        if re.search(r"\.(?:py|pyc|js|mjs|cjs|jsx|ts|tsx|so|node)$", destination, re.I) or re.fullmatch(r"/app(?:/(?:src|lib|services|providers|api|utils|cw_platform)(?:/.*)?)?/?", destination):
+        normalized = posixpath.normpath(destination)
+        startup_code = any(path == normalized or path.startswith(normalized.rstrip("/") + "/") for path in paths)
+        source = mount.get("source")
+        executable = False
+        if source:
+            metadata = Path(source).stat()
+            executable = Path(source).is_file() and bool(metadata.st_mode & 0o111)
+        if executable or startup_code or re.search(r"\.(?:py|pyc|js|mjs|cjs|jsx|ts|tsx|so|node|sh|bash|dash|ksh|zsh|fish|pl|rb|php|lua|ps1|exe|dll|wasm)$", destination, re.I) or re.fullmatch(r"(?:/app(?:/(?:src|lib|services|providers|api|utils|cw_platform)(?:/.*)?)?|/(?:usr/(?:local/)?)?(?:bin|sbin|libexec)(?:/.*)?)/?", destination):
             raise UpdateRefusal("local_code_override")
 
 
@@ -202,7 +219,10 @@ def docker_update(driver, item, automatic=False):
         def compose(arguments, timeout=120):
             return command(base + arguments, timeout=timeout, environment=environment)
         config = json.loads(compose(["config", "--format", "json"]))
-        verify_code_mounts(config.get("services", {}).get(driver["service"], {}))
+        service = config.get("services", {}).get(driver["service"], {})
+        # Inspect only startup vectors, not the environment or complete Config.
+        startup = json.loads(command(["/usr/bin/docker", "inspect", "--format", '{"entrypoint":{{json .Config.Entrypoint}},"command":{{json .Config.Cmd}},"working_dir":{{json .Config.WorkingDir}}}', identity]))
+        verify_code_mounts(service, startup)
         if config.get("services", {}).get(driver["service"], {}).get("image") != item["image"]:
             raise RuntimeError("Compose and the observed image differ")
         namespace_plan = prepare_namespace_plan(config, driver, compose)

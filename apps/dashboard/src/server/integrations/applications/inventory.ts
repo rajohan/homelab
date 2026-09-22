@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import type {
     ApplicationInventory,
     ManagedApplication,
@@ -90,6 +92,23 @@ export function mapDockerApplication(
     target: ApplicationTarget,
     detail: DockerDetail
 ): ManagedApplication {
+    // Retain only a boolean. Startup arguments may contain credentials and must
+    // never enter inventory snapshots, logs or the browser response.
+    const startupPaths = [
+        ...(detail.Config.Entrypoint ?? []),
+        ...(detail.Config.Cmd ?? []),
+    ]
+        .flatMap((argument) => argument.split(/[\s"';&|()]+/))
+        .filter(
+            (token) =>
+                token.includes("/") &&
+                !token.startsWith("-") &&
+                !token.includes("://") &&
+                !/\.(?:json|ya?ml|toml|ini|conf|cfg|env|pem|crt|key|db|sqlite|txt|log)$/i.test(
+                    token
+                )
+        )
+        .map((token) => path.posix.resolve(detail.Config.WorkingDir || "/", token));
     const application: ManagedApplication = {
         id: `${target.id}:${detail.Id}`,
         host: target.id,
@@ -126,6 +145,13 @@ export function mapDockerApplication(
             source: mount.Source,
             destination: mount.Destination,
             readOnly: !mount.RW,
+            startupCode: startupPaths.some(
+                (item) =>
+                    item === path.posix.normalize(mount.Destination) ||
+                    item.startsWith(
+                        path.posix.normalize(mount.Destination).replace(/\/$/, "") + "/"
+                    )
+            ),
         })),
         ports: Object.entries(detail.NetworkSettings.Ports ?? {}).flatMap(
             ([container, bindings]) =>
