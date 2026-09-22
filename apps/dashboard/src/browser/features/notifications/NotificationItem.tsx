@@ -31,17 +31,15 @@ export function NotificationItem({
     const unread = notification.readAt === null;
     return (
         <article
-            className={
-                unread
-                    ? "rounded-lg border border-accent-500/35 bg-accent-950/25 p-3"
-                    : "rounded-lg border border-primary-700 bg-primary-900 p-3"
-            }
+            className="rounded-lg border border-primary-700 bg-primary-900 p-3"
             aria-label={notification.title}
         >
             <div className="flex items-start justify-between gap-3">
                 <h3 className="min-w-0 text-sm font-semibold wrap-anywhere">
                     {notification.title}
-                    {unread && <span className="sr-only"> — Unread</span>}
+                    {unread && (
+                        <span className="ml-2 text-xs text-accent-400">Unread</span>
+                    )}
                 </h3>
                 <Badge
                     tone={tones[notification.severity]}

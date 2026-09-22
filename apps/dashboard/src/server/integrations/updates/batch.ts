@@ -35,6 +35,7 @@ const payloadSchema = v.strictObject({
     scope: v.nullable(v.string()),
     revision: updateBatchRequestSchema.entries.revision,
     requestId: updateBatchRequestSchema.entries.requestId,
+    selection: v.optional(updateBatchRequestSchema.entries.revision),
     items: v.pipe(
         v.array(v.omit(updateRequestSchema, ["requestId"])),
         v.minLength(1),
@@ -340,6 +341,15 @@ export async function requestUpdateBatch(
     return client.begin(async (transaction) => {
         await lockQueue(transaction);
         const prefix = `${actor}:update-batch:${input.requestId}:`;
+        const selected = input.items
+            ?.map((entry) => JSON.stringify([entry.source, entry.item]))
+            .toSorted();
+        const selection = selected ? digest(selected) : undefined;
+        if (selected && new Set(selected).size !== selected.length)
+            throw new OperationFailure(
+                "BAD_REQUEST",
+                "An update can only be selected once."
+            );
         const existing = await transaction<
             { id: string; payload: v.InferOutput<typeof payloadSchema> }[]
         >`SELECT id, payload FROM job_runs WHERE left(idempotency_key, length(${prefix}))=${prefix} ORDER BY id`;
@@ -348,7 +358,8 @@ export async function requestUpdateBatch(
                 existing.some(
                     (row) =>
                         row.payload.revision !== input.revision ||
-                        row.payload.scope !== (input.source ?? null)
+                        row.payload.scope !== (input.source ?? null) ||
+                        row.payload.selection !== selection
                 )
             )
                 throw new OperationFailure(
@@ -369,16 +380,25 @@ export async function requestUpdateBatch(
                 "CONFLICT",
                 "The update plan changed. Close this dialog and review the current updates."
             );
-        if (plan.eligible === 0)
+        const included = plan.entries.filter(
+            (entry) =>
+                entry.reason === null &&
+                (!selected ||
+                    selected.includes(JSON.stringify([entry.source, entry.item.id])))
+        );
+        if (selected && included.length !== selected.length)
+            throw new OperationFailure(
+                "CONFLICT",
+                "A selected update is not eligible in this plan."
+            );
+        if (included.length === 0)
             throw new OperationFailure(
                 "PRECONDITION_FAILED",
                 "No updates in this plan can be installed."
             );
         const ids: string[] = [];
         for (const source of sources) {
-            const entries = plan.entries.filter(
-                (entry) => entry.source === source.id && entry.reason === null
-            );
+            const entries = included.filter((entry) => entry.source === source.id);
             if (entries.length === 0) continue;
             const handler = registry.get(updateBatchKey(source.id));
             if (!handler) throw new Error("Missing registered batch installer");
@@ -401,6 +421,7 @@ export async function requestUpdateBatch(
                         scope: input.source ?? null,
                         revision: input.revision,
                         requestId: input.requestId,
+                        ...(selection ? { selection } : {}),
                         items,
                     },
                     `Update ${source.label} · ${items.length} updates`

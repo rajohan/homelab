@@ -35,6 +35,10 @@ const phases = {
         "Recreating dependent services against the new namespace, preserving their images and data.",
 } as const;
 const refusals = {
+    apt_candidate_changed:
+        "The installed package, hold or repository candidate changed. Refresh this host's software report and approve the current version; no installation was started.",
+    loki_readiness_failed:
+        "The approved Loki version was installed, but readiness did not pass within 60 seconds. Inspect the service and refresh its software report before retrying.",
     openclaw_stop_failed:
         "OpenClaw could not be confirmed stopped. Its update was not started; check the service before retrying.",
     openclaw_update_failed:

@@ -106,8 +106,10 @@ function measurePortals() {
 
 test("job activity opens details on demand, survives closing them and dismisses completed results", async () => {
     const restoreMeasurements = measurePortals();
+    const storageKey = "homelab:job-activity:dismissed";
+    globalThis.localStorage.setItem(storageKey, "{malformed");
     let queries: QueryClient | undefined;
-    const cleanup = fixture(<JobActivity />, (query) => {
+    let cleanup = fixture(<JobActivity />, (query) => {
         queries = query;
         query.setQueryData(["operations", "jobs", "activity"], { runs: [activityRun] });
         query.setQueryData(["operations", "jobs", "detail", activityRun.id], {
@@ -184,8 +186,34 @@ test("job activity opens details on demand, survives closing them and dismisses 
         expect(screen.getByText("No active or recently completed jobs.")).toHaveClass(
             "bg-primary-900"
         );
+        expect(JSON.parse(globalThis.localStorage.getItem(storageKey)!)).toEqual([
+            activityRun.id,
+        ]);
+        cleanup();
+        cleanup = fixture(<JobActivity />, (query) => {
+            queries = query;
+            query.setQueryData(["operations", "jobs", "activity"], {
+                runs: [{ ...activityRun, state: "succeeded", message: null }],
+            });
+        });
+        await user.click(
+            screen.getByRole("button", { name: "Worker activity, 0 running, 0 queued" })
+        );
+        expect(
+            screen.queryByRole("button", { name: "View Restart web" })
+        ).not.toBeInTheDocument();
+        await act(() => {
+            queries?.setQueryData(["operations", "jobs", "activity"], {
+                runs: [activityRun],
+            });
+            return Promise.resolve();
+        });
+        expect(
+            await screen.findByRole("button", { name: "View Restart web" })
+        ).toBeVisible();
     } finally {
         cleanup();
+        globalThis.localStorage.removeItem(storageKey);
         restoreMeasurements();
     }
 });

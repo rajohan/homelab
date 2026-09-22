@@ -119,6 +119,13 @@ export const updateBatchRequestSchema = v.strictObject({
     ...updateBatchScopeSchema.entries,
     revision: v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/)),
     requestId: v.pipe(v.string(), v.uuid()),
+    items: v.optional(
+        v.pipe(
+            v.array(v.strictObject({ source: text(100), item: text(200) })),
+            v.minLength(1),
+            v.maxLength(5000)
+        )
+    ),
 });
 export interface UpdateBatchEntry {
     readonly source: string;

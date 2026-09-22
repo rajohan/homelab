@@ -347,6 +347,17 @@ class UpdateExecutionTests(unittest.TestCase):
             command.assert_not_called()
             progress.assert_called_once_with("verifying")
 
+    def test_changed_package_candidates_are_reported_without_installing(self):
+        for name, installed, approved, current in (
+            ('raspi-firmware:arm64', '1:1.20260521-3', '1:1.20260907-1', '1:1.20260915-1'),
+            ('wpasupplicant:arm64', '2:2.10-24', '2:2.10-24+rpt1', '2:2.10-24+rpt2'),
+        ):
+            package = types.SimpleNamespace(installed=types.SimpleNamespace(version=installed), candidate=types.SimpleNamespace(version=current), _pkg=types.SimpleNamespace(selected_state=0))
+            modules = {'apt': types.SimpleNamespace(Cache=lambda: {name: package}), 'apt_pkg': types.SimpleNamespace(SELSTATE_HOLD=2)}
+            with self.subTest(package=name), patch.dict(sys.modules, modules), patch.object(remote, 'command') as command, self.assertRaisesRegex(remote.UpdateRefusal, '^apt_candidate_changed$'):
+                remote.apt_update({'id': 'apt:' + name, 'installed': installed, 'available': approved}, False)
+            command.assert_not_called()
+
     def test_failure_receipt_omits_updater_output_and_private_data(self):
         payload = {"driver": {"kind": "native", "inspect": [sys.executable, "-c", "raise Exception('synthetic-private-value')"]}, "item": {"installed": "1.0.0"}, "automatic": False}
         result = subprocess.run([sys.executable, str(SOURCE)], input=json.dumps(payload), capture_output=True, text=True, timeout=10)
@@ -550,7 +561,7 @@ else:
                 if resident.poll() is None: resident.terminate(); resident.wait(timeout=5)
                 resident.stdout.close()
 
-    def nextcloud_fixture(self, *, offered="33.0.1.1", wrong_url=False, modified=False, pending=False, failed_database=False, missing_option=None, required_values=False, extra_help=""):
+    def nextcloud_fixture(self, *, offered="33.0.1.1", wrong_url=False, modified=False, pending=False, failed_database=False, missing_option=None, required_values=False, extra_help="", signature=None):
         with tempfile.TemporaryDirectory(prefix="homelab-nextcloud-fixture-") as temporary:
             directory = Path(temporary).resolve()
             (directory / "updater").mkdir()
@@ -583,16 +594,18 @@ else:
                     return "8x4x1"
                 return ""
             url = "https://evil.invalid/nextcloud-33.0.1.zip" if wrong_url else "https://download.nextcloud.com/server/releases/nextcloud-33.0.1.zip"
-            metadata = f"<nextcloud><version>{offered}</version><autoupdater>1</autoupdater><url>{url}</url><signature>{'a' * 344}</signature></nextcloud>".encode()
+            signature = 'a' * 344 if signature is None else signature
+            invalid_signature = "!" in signature
+            metadata = f"<nextcloud><version>{offered}</version><autoupdater>1</autoupdater><url>{url}</url><signature>{signature}</signature></nextcloud>".encode()
             recipe = {"application": "nextcloud", "directory": str(directory), "php": "/usr/bin/php", "user": "www-data"}
             with patch.object(remote, "native_download", return_value=metadata), patch.object(remote, "progress"):
-                if offered != "33.0.1.1" or wrong_url or modified or pending or failed_database or missing_option:
+                if offered != "33.0.1.1" or wrong_url or modified or pending or failed_database or missing_option or invalid_signature:
                     with self.assertRaises(RuntimeError):
                         remote.nextcloud_install(recipe, "33.0.0", "33.0.1", run, remote.progress, remote.locked_directory)
                 else:
                     self.assertTrue(remote.nextcloud_install(recipe, "33.0.0", "33.0.1", run, remote.progress, remote.locked_directory))
             installs = [call for call in calls if "--no-interaction" in call]
-            self.assertEqual(len(installs), int(not (offered != "33.0.1.1" or wrong_url or modified or pending or missing_option)))
+            self.assertEqual(len(installs), int(not (offered != "33.0.1.1" or wrong_url or modified or pending or missing_option or invalid_signature)))
             if installs:
                 self.assertIn("--no-backup", installs[0])
                 self.assertNotIn("--no-verify", installs[0])
@@ -602,6 +615,40 @@ else:
 
     def test_nextcloud_uses_signed_exact_archive_and_checks_database_state(self):
         self.nextcloud_fixture()
+        self.nextcloud_fixture(signature="\n" + "\n".join(['a' * 64] * 5 + ['a' * 24]))
+        self.nextcloud_fixture(signature=" \t" + 'a' * 172 + "\r\n" + 'a' * 172 + "\n")
+        self.nextcloud_fixture(signature='a' * 343 + '!')
+
+    def test_loki_retries_only_readiness_with_a_bounded_deadline(self):
+        driver = {"release": "loki", "recipe": {"application": "loki"}, "health": ["/fixture/health"]}
+        item = {"release": "loki", "installed": "3.7.7", "available": "3.7.8"}
+        for active, ready in ((True, True), (True, False), (False, True)):
+            with self.subTest(active=active, ready=ready):
+                clock, calls = [0.0], []
+                def run(args, **options):
+                    self.assertEqual(args, driver['health'])
+                    self.assertLessEqual(options['timeout'], 10)
+                    calls.append(clock[0])
+                    clock[0] += min(10, options['timeout'])
+                    if not ready or clock[0] < 15:
+                        raise RuntimeError('Update command failed')
+                    return ''
+                def sleep(seconds): clock[0] += seconds
+                with patch.object(remote, 'binary_install', return_value=active) as install, patch.object(remote.time, 'monotonic', side_effect=lambda: clock[0]), patch.object(remote.time, 'sleep', side_effect=sleep):
+                    if active and not ready:
+                        with self.assertRaisesRegex(remote.UpdateRefusal, '^loki_readiness_failed$'):
+                            remote.install_native_recipe(driver, item, run, lambda _phase: None, remote.atomic_content, remote.locked_directory)
+                        self.assertEqual(clock[0], 60)
+                    else:
+                        self.assertEqual(remote.install_native_recipe(driver, item, run, lambda _phase: None, remote.atomic_content, remote.locked_directory), '3.7.8')
+                    install.assert_called_once()
+                self.assertEqual(bool(calls), active)
+                if active and ready: self.assertEqual(len(calls), 2)
+        with patch.object(remote, 'binary_install', return_value=True), patch.object(remote.time, 'sleep') as sleep:
+            def interrupted(_args, **_options): raise RuntimeError('Update interrupted')
+            with self.assertRaisesRegex(RuntimeError, '^Update interrupted$'):
+                remote.install_native_recipe(driver, item, interrupted, lambda _phase: None, remote.atomic_content, remote.locked_directory)
+            sleep.assert_not_called()
 
     def test_nextcloud_accepts_required_value_help_notation(self):
         self.nextcloud_fixture(required_values=True)

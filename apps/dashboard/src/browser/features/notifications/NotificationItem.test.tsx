@@ -21,6 +21,11 @@ test("notifications expose personal read controls, safe text and internal links"
         <NotificationItem notification={notification} pending={false} onAction={action} />
     );
     expect(screen.getByText(notification.message)).toBeInTheDocument();
+    expect(screen.getByRole("article")).toHaveClass(
+        "bg-primary-900",
+        "border-primary-700"
+    );
+    expect(screen.getByText("Unread")).toBeVisible();
     expect(view.container.querySelector("script")).toBeNull();
     expect(screen.getByRole("link", { name: "Open jobs" })).toHaveAttribute(
         "href",
@@ -37,6 +42,11 @@ test("notifications expose personal read controls, safe text and internal links"
         />
     );
     await user.click(screen.getByRole("button", { name: "Mark unread: Job completed" }));
+    expect(screen.getByRole("article")).toHaveClass(
+        "bg-primary-900",
+        "border-primary-700"
+    );
+    expect(screen.queryByText("Unread")).not.toBeInTheDocument();
     expect(action).toHaveBeenCalledWith(notification.id, "unread");
     await user.click(
         screen.getByRole("button", { name: "Delete notification: Job completed" })

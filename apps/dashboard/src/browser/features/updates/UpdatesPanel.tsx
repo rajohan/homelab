@@ -51,7 +51,7 @@ export function UpdatesPanel({ compact = false }: { readonly compact?: boolean }
         <Card className="space-y-4">
             <SectionHeader
                 title="Available updates"
-                description="Installed versions, available updates and update policies."
+                description="Installed versions, available updates and update policies. Inventory observation and package-list refresh times are separate; OS package lists older than 48 hours are stale."
                 icon={PackageCheck}
                 badge={
                     <ObservationBadge
@@ -164,13 +164,32 @@ export function UpdatesPanel({ compact = false }: { readonly compact?: boolean }
                                         {
                                             id: "time",
                                             sortValue: (row) => row.report?.capturedAt,
-                                            label: "Observed",
+                                            label: "Inventory observed",
                                             render: (item) =>
                                                 item.report
                                                     ? formatDateTime(
                                                           item.report.capturedAt
                                                       )
                                                     : "Not reported",
+                                        },
+                                        {
+                                            id: "packageLists",
+                                            sortValue: (row) =>
+                                                row.report?.repositoryMetadataAt,
+                                            label: "Package lists refreshed",
+                                            render: (item) => {
+                                                if (
+                                                    !item.report?.coveredKinds.includes(
+                                                        "os"
+                                                    )
+                                                )
+                                                    return "Not applicable";
+                                                return item.report.repositoryMetadataAt
+                                                    ? formatDateTime(
+                                                          item.report.repositoryMetadataAt
+                                                      )
+                                                    : "Not reported";
+                                            },
                                         },
                                         {
                                             id: "state",

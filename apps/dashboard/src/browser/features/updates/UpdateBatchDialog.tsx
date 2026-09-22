@@ -1,6 +1,8 @@
+import type { updateBatchRequestSchema } from "@homelab/contracts/updates";
 import { Badge, ConfirmDialog, DataTable, ErrorNotice, LoadingState } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import type { InferOutput } from "valibot";
 
 import { api } from "../../api/client";
 import { useJobOperation } from "../jobs/useJobOperation";
@@ -21,6 +23,7 @@ export function UpdateBatchDialog({
     readonly onClose: () => void;
 }) {
     const [requestId] = useState(() => crypto.randomUUID());
+    const [excluded, setExcluded] = useState<ReadonlySet<string>>(() => new Set());
     const query = useQuery({
         queryKey: ["operations", "updates", "batch", source ?? null],
         queryFn: ({ signal }) =>
@@ -29,11 +32,17 @@ export function UpdateBatchDialog({
         retry: false,
     });
     const operation = useJobOperation(
-        (input: { source?: string; revision: string; requestId: string }, signal) =>
+        (input: InferOutput<typeof updateBatchRequestSchema>, signal) =>
             api.updates.batchRequest.mutate(input, { signal })
     );
     const plan = query.data;
-    const disabled = query.isFetching || query.isError || !plan || plan.eligible === 0;
+    const included =
+        plan?.entries.filter(
+            (entry) =>
+                entry.reason === null &&
+                !excluded.has(JSON.stringify([entry.source, entry.item.id]))
+        ) ?? [];
+    const disabled = query.isFetching || query.isError || !plan || included.length === 0;
     return (
         <ConfirmDialog
             title={label ? `Update all on ${label}?` : "Update all hosts?"}
@@ -49,6 +58,10 @@ export function UpdateBatchDialog({
                     ...(source ? { source } : {}),
                     revision: plan.revision,
                     requestId,
+                    items: included.map((entry) => ({
+                        source: entry.source,
+                        item: entry.item.id,
+                    })),
                 });
                 onClose();
             }}
@@ -59,14 +72,16 @@ export function UpdateBatchDialog({
                 <div className="space-y-4">
                     <div className="flex flex-wrap items-center gap-2">
                         <Badge tone="positive">
-                            {plan.eligible} {plan.eligible === 1 ? "update" : "updates"}{" "}
-                            included
+                            {included.length}{" "}
+                            {included.length === 1 ? "update" : "updates"} included
                         </Badge>
                         <Badge>
-                            {plan.hosts} {plan.hosts === 1 ? "host" : "hosts"}
+                            {new Set(included.map((entry) => entry.source)).size} hosts
                         </Badge>
-                        {plan.excluded > 0 && (
-                            <Badge tone="warning">{plan.excluded} not included</Badge>
+                        {plan.entries.length > included.length && (
+                            <Badge tone="warning">
+                                {plan.entries.length - included.length} not included
+                            </Badge>
                         )}
                     </div>
                     {plan.entries.length > 0 ? (
@@ -79,6 +94,41 @@ export function UpdateBatchDialog({
                                 JSON.stringify([entry.source, entry.item.id])
                             }
                             columns={[
+                                {
+                                    id: "selected",
+                                    label: "Include",
+                                    render: (entry) => {
+                                        const key = JSON.stringify([
+                                            entry.source,
+                                            entry.item.id,
+                                        ]);
+                                        return (
+                                            <input
+                                                type="checkbox"
+                                                className="size-4 accent-accent-500"
+                                                aria-label={`Include ${entry.item.name} on ${entry.sourceLabel}`}
+                                                checked={
+                                                    entry.reason === null &&
+                                                    !excluded.has(key)
+                                                }
+                                                disabled={
+                                                    entry.reason !== null ||
+                                                    operation.isPending
+                                                }
+                                                onChange={(event) => {
+                                                    const checked =
+                                                        event.currentTarget.checked;
+                                                    setExcluded((current) => {
+                                                        const next = new Set(current);
+                                                        if (checked) next.delete(key);
+                                                        else next.add(key);
+                                                        return next;
+                                                    });
+                                                }}
+                                            />
+                                        );
+                                    },
+                                },
                                 {
                                     id: "software",
                                     sortValue: (row) => row.item.name,
@@ -121,9 +171,27 @@ export function UpdateBatchDialog({
                                     label: "Status",
                                     render: (entry) => (
                                         <Badge
-                                            tone={entry.reason ? "neutral" : "positive"}
+                                            tone={
+                                                entry.reason ||
+                                                excluded.has(
+                                                    JSON.stringify([
+                                                        entry.source,
+                                                        entry.item.id,
+                                                    ])
+                                                )
+                                                    ? "neutral"
+                                                    : "positive"
+                                            }
                                         >
-                                            {entry.reason ? "Not included" : "Included"}
+                                            {entry.reason ||
+                                            excluded.has(
+                                                JSON.stringify([
+                                                    entry.source,
+                                                    entry.item.id,
+                                                ])
+                                            )
+                                                ? "Not included"
+                                                : "Included"}
                                         </Badge>
                                     ),
                                 },

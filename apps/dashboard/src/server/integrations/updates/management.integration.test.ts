@@ -595,6 +595,98 @@ test("bulk plans cover every page, expose exclusions and preserve host scope and
     }
 });
 
+test.each([undefined, "alpha"])(
+    "bulk selection preserves exact admission and replay for scope %s",
+    async (source) => {
+        const state = await batchFixture();
+        try {
+            const scope = source ? { source } : {};
+            const plan = await state.caller.updates.batchPlan(scope);
+            const selected = plan.entries
+                .filter((entry) => entry.source === "alpha" && entry.reason === null)
+                .slice(0, 2);
+            const items = selected.map((entry) => ({
+                source: entry.source,
+                item: entry.item.id,
+            }));
+            const request = {
+                ...scope,
+                revision: plan.revision,
+                requestId: crypto.randomUUID(),
+                items,
+            };
+            const queued = await state.caller.updates.batchRequest(request);
+            expect(queued.ids).toHaveLength(1);
+            const [row] = await state.client<
+                { payload: { items: { item: string }[] }; timeout_ms: number }[]
+            >`SELECT payload,timeout_ms FROM job_runs WHERE id=${queued.id}`;
+            expect(row?.payload.items.map((entry) => entry.item)).toEqual(
+                items.map((entry) => entry.item)
+            );
+            expect(row?.timeout_ms).toBe(2 * 1_530_000 + 60_000);
+            expect(
+                await state.caller.updates.batchRequest({
+                    ...request,
+                    items: items.toReversed(),
+                })
+            ).toEqual(queued);
+            await expectOperationFailure(
+                state.caller.updates.batchRequest({
+                    ...request,
+                    items: items.slice(0, 1),
+                }),
+                "another update plan"
+            );
+            const handler = state.registry.get(updateBatchKey("alpha"))!;
+            const worker = await state.registerWorker();
+            const claim = (await claimJob(state.client, worker, [
+                handler.definition.key,
+            ]))!;
+            await handler.execute(claim.payload, {
+                runId: claim.id,
+                leaseToken: claim.lease_token,
+                signal: AbortSignal.timeout(20_000),
+                reportProgress: () => Promise.resolve(),
+                commit: (write, queue) => commitClaim(state.client, claim, write, queue),
+            });
+            expect(state.calls).toEqual(items);
+            await settleClaim(state.client, claim, "succeeded");
+        } finally {
+            await state.close();
+        }
+    }
+);
+
+test("bulk selection refuses excluded, unknown, duplicate, empty and out-of-scope items without queuing", async () => {
+    const state = await batchFixture();
+    try {
+        const plan = await state.caller.updates.batchPlan({ source: "alpha" });
+        const valid = { source: "alpha", item: "apt:package-002" };
+        for (const items of [
+            [],
+            [valid, valid],
+            [{ source: "alpha", item: "apt:package-000" }],
+            [{ source: "alpha", item: "apt:package-001" }],
+            [{ source: "alpha", item: "missing" }],
+            [{ ...valid, source: "beta" }],
+        ]) {
+            const result = await state.caller.updates
+                .batchRequest({
+                    source: "alpha",
+                    revision: plan.revision,
+                    requestId: crypto.randomUUID(),
+                    items,
+                })
+                .catch((error: unknown) => error);
+            expect(result).toBeInstanceOf(Error);
+        }
+        expect(await state.client`SELECT id FROM job_runs`).toHaveLength(0);
+        expect(state.calls).toHaveLength(0);
+    } finally {
+        await state.close();
+    }
+});
+
 test.each([false, true])(
     "host batches share leases and run concurrently with Docker=%s",
     async (withDocker) => {
@@ -1678,6 +1770,8 @@ test.each([
             for (const [reason, expected] of [
                 ["openclaw_stop_failed", "Its update was not started"],
                 ["openclaw_update_failed", "inspect OpenClaw's update report"],
+                ["apt_candidate_changed", "Refresh this host's software report"],
+                ["loki_readiness_failed", "readiness did not pass within 60 seconds"],
             ] as const) {
                 const messages: string[] = [];
                 const output = [
