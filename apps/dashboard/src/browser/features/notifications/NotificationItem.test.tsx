@@ -26,6 +26,13 @@ test("notifications expose personal read controls, safe text and internal links"
         "border-primary-700"
     );
     expect(screen.getByText("Unread")).toBeVisible();
+    expect(screen.getByText("Unread")).toHaveClass("rounded-md", "bg-primary-700");
+    expect(screen.getByText("Unread").parentElement).toBe(
+        screen.getByText("success").parentElement
+    );
+    expect(
+        screen.getByRole("heading", { name: notification.title })
+    ).not.toHaveTextContent("Unread");
     expect(view.container.querySelector("script")).toBeNull();
     expect(screen.getByRole("link", { name: "Open jobs" })).toHaveAttribute(
         "href",
@@ -47,6 +54,7 @@ test("notifications expose personal read controls, safe text and internal links"
         "border-primary-700"
     );
     expect(screen.queryByText("Unread")).not.toBeInTheDocument();
+    expect(screen.queryByText("Read")).not.toBeInTheDocument();
     expect(action).toHaveBeenCalledWith(notification.id, "unread");
     await user.click(
         screen.getByRole("button", { name: "Delete notification: Job completed" })

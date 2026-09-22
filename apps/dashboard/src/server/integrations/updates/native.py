@@ -264,14 +264,14 @@ def install_native_recipe(driver, item, run, emit, replace, lock):
         raise RuntimeError("Unsupported native recipe")
     emit("verifying")
     if active:
-        if application == "loki":
-            # Loki deliberately delays readiness after joining its ring (15s by
-            # default). Retry only the read-only health probe, never installation.
+        if application in {"loki", "openclaw"}:
+            # An active service can still be starting. Retry only the read-only
+            # health probe for these recipes, never installation or restart.
             deadline = time.monotonic() + 60
             while True:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
-                    raise UpdateRefusal("loki_readiness_failed")
+                    raise UpdateRefusal(application + "_readiness_failed")
                 try:
                     run(driver["health"], timeout=min(10, remaining))
                     break
@@ -280,7 +280,7 @@ def install_native_recipe(driver, item, run, emit, replace, lock):
                         raise
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
-                        raise UpdateRefusal("loki_readiness_failed") from None
+                        raise UpdateRefusal(application + "_readiness_failed") from None
                     time.sleep(min(2, remaining))
         else:
             run(driver["health"])

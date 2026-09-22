@@ -128,6 +128,9 @@ test.each([true, false])(
                 name: scoped ? "Update all on Demo?" : "Update all hosts?",
             });
             expect(dialog).toHaveAccessibleDescription(/Updates run in sequence/);
+            expect(screen.getByRole("columnheader", { name: "Include" })).toHaveClass(
+                "w-20"
+            );
             expect(screen.getByText("1 update included")).toBeVisible();
             expect(screen.getByRole("button", { name: "Update all" })).toBeEnabled();
             const checkbox = screen.getByRole("checkbox", {

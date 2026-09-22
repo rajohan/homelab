@@ -37,16 +37,13 @@ export function NotificationItem({
             <div className="flex items-start justify-between gap-3">
                 <h3 className="min-w-0 text-sm font-semibold wrap-anywhere">
                     {notification.title}
-                    {unread && (
-                        <span className="ml-2 text-xs text-accent-400">Unread</span>
-                    )}
                 </h3>
-                <Badge
-                    tone={tones[notification.severity]}
-                    className="shrink-0 capitalize"
-                >
-                    {notification.severity}
-                </Badge>
+                <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+                    <Badge tone={tones[notification.severity]} className="capitalize">
+                        {notification.severity}
+                    </Badge>
+                    {unread && <Badge>Unread</Badge>}
+                </div>
             </div>
             <p className="mt-1 text-sm leading-6 wrap-anywhere text-primary-300">
                 {notification.message}
