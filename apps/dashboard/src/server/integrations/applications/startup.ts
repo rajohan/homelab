@@ -78,6 +78,33 @@ export function startupCodePaths(
     let unqualified = false;
     const argv = (value: typeof entrypoint): readonly string[] =>
         typeof value === "string" ? words(value) : (value ?? []);
+    const dispatch = (args: readonly string[]): readonly string[] => {
+        let selected = args;
+        for (let depth = 0; ["command", "builtin"].includes(selected[0] ?? ""); depth++) {
+            if (depth >= 8) {
+                unqualified = true;
+                return [];
+            }
+            const name = selected[0];
+            let index = 1,
+                information = false;
+            while (selected[index]?.startsWith("-")) {
+                const option = selected[index++]!;
+                if (option === "--") break;
+                if (option === "--help") return [];
+                if (name !== "command" || !/^-[pVv]+$/.test(option)) {
+                    unqualified = true;
+                    return [];
+                }
+                information ||= /[Vv]/.test(option);
+            }
+            // -v/-V (including combined flags) describe commands, not execute
+            // them. All other dispatch forms retain the selected command tail.
+            if (information) return [];
+            selected = selected.slice(index);
+        }
+        return selected;
+    };
     const inspect = (args: readonly string[], cwd: string, depth = 0): void => {
         const executable = args[0];
         if (!executable || executable.startsWith("-")) return;
@@ -175,9 +202,19 @@ export function startupCodePaths(
                     // Shell assignments precede the command but are not executable
                     // words. Values (including quoted paths) must not become code.
                     while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(group[0] ?? "")) group.shift();
-                    if (group[0] === "cd" && group[1])
-                        current = path.posix.resolve(current, group[1]);
-                    else inspect(group, current, depth + 1);
+                    const selected = dispatch(group);
+                    if (selected[0] === "eval" || /[$`]/.test(selected[0] ?? ""))
+                        unqualified = true;
+                    else if (selected[0] === "cd") {
+                        const operands = selected.slice(selected[1] === "--" ? 2 : 1);
+                        if (
+                            operands.length !== 1 ||
+                            operands[0]!.startsWith("-") ||
+                            /[$`]/.test(operands[0]!)
+                        )
+                            unqualified = true;
+                        else current = path.posix.resolve(current, operands[0]!);
+                    } else inspect(selected, current, depth + 1);
                     group = [];
                 };
                 for (const token of tokens(args[inline + 1] ?? "")) {

@@ -118,6 +118,24 @@ class UpdateExecutionTests(unittest.TestCase):
                 remote.verify_code_mounts({}, remote.compose_startup({}, defaults))
                 remote.verify_code_mounts({"volumes": [{"type": kind, "target": "/custom"}]}, remote.compose_startup({"healthcheck": {"disable": True}}, defaults))
 
+    def test_dispatch_healthchecks_preserve_query_only_and_disabled_modes(self):
+        for expression in ("command /custom/check", "command -p -- /custom/check", "builtin command /custom/check", "command cd /custom; ./check"):
+            for kind in ("bind", "volume", "tmpfs"):
+                defaults = {"entrypoint": ["/vendor/server"], "healthcheck": {"Test": ["CMD-SHELL", expression]}}
+                service = {"volumes": [{"type": kind, "target": "/custom"}]}
+                with self.subTest(healthcheck=expression, kind=kind), self.assertRaises(remote.UpdateRefusal):
+                    remote.verify_code_mounts(service, remote.compose_startup({"healthcheck": {"interval": "1s"}}, defaults))
+                for test in (["NONE"], ["CMD-SHELL", "command -v /custom/check"], ["CMD-SHELL", "builtin command -Vp /custom/check"]):
+                    remote.verify_code_mounts(service, remote.compose_startup({"healthcheck": {"test": test}}, defaults))
+    def test_real_bash_dispatch_distinguishes_execution_from_information(self):
+        with tempfile.TemporaryDirectory(prefix="homelab-dispatch-test-") as temporary:
+            script = Path(temporary) / "start"
+            script.write_text("#!/bin/sh\nprintf executed\n")
+            script.chmod(0o700)
+            for expression, executes in (("command -p -- \"$1\"", True), ("builtin command -- \"$1\"", True), ("command -pv -- \"$1\"", False), ("builtin command -v \"$1\"", False)):
+                result = subprocess.run(["/bin/bash", "--noprofile", "--norc", "-c", expression, "fixture", str(script)], capture_output=True, text=True, check=True, timeout=5, env={"PATH": "/usr/bin:/bin", "HOME": temporary})
+                self.assertEqual(result.stdout.strip(), "executed" if executes else str(script))
+
     def test_startup_positions_match_discovery_corpus(self):
         cases = json.loads((SOURCE.parents[6] / "scripts/fixtures/dockerStartup.json").read_text())
         for scenario in cases:

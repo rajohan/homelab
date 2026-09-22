@@ -1,5 +1,271 @@
 [
     {
+        "name": "shell command dynamic executable",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["command \"$RUN\""],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell command dynamic information only",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["command -v \"$RUN\""],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell command direct",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["command /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell command default path",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["command -p /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell command delimiter",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["command -- /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell command option delimiter",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["command -p -- /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell command nested",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["command -p command -- /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell command quoted builtin",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["\"command\" /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell command continued builtin",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["comm\\\nand /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell command after assignments",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["FOO=data command /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell command interpreter",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["command python -X dev /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell command source",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["command . /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell command changes cwd",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["command cd /custom; ./start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell command nested cwd",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["builtin command cd -- /custom && ./start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell builtin command dispatch",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["builtin command -p /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell builtin exec dispatch",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["builtin exec /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell builtin source dispatch",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["builtin source /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell command eval dispatch",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["command eval /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell builtin eval dispatch",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["builtin eval /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell command bounded nesting",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": [
+            "command command command command command command command command command command /custom/start"
+        ],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell command information lowercase",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["command -v /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell command information uppercase",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["command -V /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell command combined lowercase query",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["command -pv /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell command combined uppercase query",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["command -Vp /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell command split query",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["command -p -v -- /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell command nested query",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["command command -V /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell builtin nested query",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["builtin command -v /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell command query of dispatch",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["command -v command /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell command data operand",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["command /vendor/server /custom/settings.json"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell command no operand",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["command -p"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell command query followed by code",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["command -v /vendor/server; /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell command cd followed by module",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["command cd /custom; command python -m app"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell builtin delimiter dispatch",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["builtin -- command /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
         "name": "shell continued if keyword",
         "entrypoint": ["/bin/sh", "-c"],
         "command": ["i\\\nf /custom/start; then true; fi"],

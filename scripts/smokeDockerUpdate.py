@@ -56,7 +56,7 @@ def main():
                 helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sh, " + destination + "]", "entrypoint: [/bin/sleep]\n    command: ['3600']"))
             if service in ("inherited-helper", "option-helper"):
                 helper_file.write_text(helper_file.read_text().replace(original, inherited_image))
-        for service, kind in (("assignment-helper", "volumes"), ("config-helper", "configs"), ("secret-helper", "secrets"), ("newline-helper", "volumes"), ("volume-helper", "named-volume"), ("expansion-helper", "volumes"), ("health-helper", "volumes"), ("inherited-health-helper", "volumes"), ("compound-helper", "volumes"), ("conditional-helper", "volumes"), ("compound-health-helper", "volumes")):
+        for service, kind in (("assignment-helper", "volumes"), ("config-helper", "configs"), ("secret-helper", "secrets"), ("newline-helper", "volumes"), ("volume-helper", "named-volume"), ("expansion-helper", "volumes"), ("health-helper", "volumes"), ("inherited-health-helper", "volumes"), ("compound-helper", "volumes"), ("conditional-helper", "volumes"), ("compound-health-helper", "volumes"), ("dispatch-helper", "volumes"), ("dispatch-cwd-helper", "volumes"), ("dispatch-health-helper", "volumes")):
             helper_file = directory / (service + ".yaml")
             source_file = directory / (service + ".source")
             source_file.write_text("# Synthetic startup code, never executed.\n")
@@ -97,6 +97,7 @@ def main():
         (config_data / "settings.json").write_text("{}\n")
         config_file.write_text("services:\n  config-app:\n    image: " + config_image + "\n    command: [/config/settings.json]\n    network_mode: none\n    mem_limit: 64m\n    pids_limit: 32\n    labels:\n      homelab.smoke: " + owner + "\n    volumes:\n      - type: bind\n        source: " + str(config_data) + "\n        target: /config\n        read_only: true\n")
         config_file.write_text(config_file.read_text() + "    configs: [ordinary-settings]\n    secrets: [ordinary-token]\nconfigs:\n  ordinary-settings:\n    file: " + str(config_data / "settings.json") + "\nsecrets:\n  ordinary-token:\n    file: " + str(config_data / "settings.json") + "\n")
+        config_file.write_text(config_file.read_text().replace("    command: [/config/settings.json]\n", "    command: [/config/settings.json]\n    healthcheck:\n      test: [CMD-SHELL, 'command -v /vendor/server']\n      interval: 1s\n"))
         main_file.write_text(json.dumps({"include": [str(provider_file), str(consumer_file), str(overlay_file), str(config_file)] + [str(path) for _, path in helpers], "services": {"stopped": {**shared, "network_mode": "service:provider"}, "leaf": {**shared, "network_mode": "service:consumer"}}, "volumes": {"marker": {"labels": {"homelab.smoke": owner}}}}))
         base = ["/usr/bin/docker", "compose", "--project-directory", str(directory), "--project-name", owner, "--file", str(main_file)]
         def compose(args, timeout=120):
@@ -161,6 +162,11 @@ def main():
                     helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sleep]\n    command: ['3600']", "entrypoint: [/bin/sh, '-c']\n    command: " + json.dumps([expression])))
                 elif service == "compound-health-helper":
                     helper_file.write_text(helper_file.read_text() + "    healthcheck:\n      test: " + json.dumps(["CMD-SHELL", "{ /custom/start; }"]) + "\n")
+                elif service in ("dispatch-helper", "dispatch-cwd-helper"):
+                    expression = "command -p -- /custom/start" if service == "dispatch-helper" else "builtin command cd -- /custom && ./start"
+                    helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sleep]\n    command: ['3600']", "entrypoint: [/bin/bash, '-c']\n    command: " + json.dumps([expression])))
+                elif service == "dispatch-health-helper":
+                    helper_file.write_text(helper_file.read_text() + "    healthcheck:\n      test: " + json.dumps(["CMD", "/bin/bash", "-c", "builtin command /custom/start"]) + "\n")
                 elif service == "health-helper":
                     helper_file.write_text(helper_file.read_text() + "    healthcheck:\n      test: [CMD, /bin/sh, /custom/start]\n")
                 elif service == "inherited-health-helper":

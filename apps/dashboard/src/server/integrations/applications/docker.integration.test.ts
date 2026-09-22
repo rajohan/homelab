@@ -32,6 +32,12 @@ test.each([
     { test: ["CMD-SHELL", "{ /custom/check; }"], blocked: true },
     { test: ["CMD-SHELL", "if /custom/check; then true; fi"], blocked: true },
     { test: ["CMD-SHELL", "/vendor/check '( /custom/data )'"], blocked: false },
+    { test: ["CMD-SHELL", "command /custom/check"], blocked: true },
+    { test: ["CMD-SHELL", "command -p -- /custom/check"], blocked: true },
+    { test: ["CMD-SHELL", "builtin command /custom/check"], blocked: true },
+    { test: ["CMD-SHELL", "command cd /custom; ./check"], blocked: true },
+    { test: ["CMD-SHELL", "command -v /custom/check"], blocked: false },
+    { test: ["CMD-SHELL", "command -pV /custom/check"], blocked: false },
     { test: ["CMD", "/vendor/check", "--data", "/custom/config"], blocked: false },
     { test: ["NONE", "/custom/check"], blocked: false },
 ])(

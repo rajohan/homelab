@@ -105,6 +105,31 @@ def startup_code_paths(startup):
         return words(value) if isinstance(value, str) else value or []
     def resolve(cwd, value):
         return posixpath.normpath(posixpath.join(cwd, value))
+    def dispatch(args):
+        nonlocal unqualified
+        selected, depth = args, 0
+        while selected and selected[0] in ("command", "builtin"):
+            if depth >= 8:
+                unqualified = True
+                return []
+            depth += 1
+            name, index, information = selected[0], 1, False
+            while index < len(selected) and selected[index].startswith("-"):
+                option = selected[index]
+                index += 1
+                if option == "--":
+                    break
+                if option == "--help":
+                    return []
+                if name != "command" or re.fullmatch(r"-[pVv]+", option) is None:
+                    unqualified = True
+                    return []
+                information = information or "v" in option or "V" in option
+            # Information-only dispatch never executes its command operands.
+            if information:
+                return []
+            selected = selected[index:]
+        return selected
     def inspect(args, cwd, depth=0):
         nonlocal unqualified
         if not args or not args[0] or args[0].startswith("-"):
@@ -170,10 +195,17 @@ def startup_code_paths(startup):
                         # Assignment values are data, even if they contain paths.
                         while group and re.match(r"[A-Za-z_][A-Za-z0-9_]*=", group[0]):
                             group.pop(0)
-                        if len(group) > 1 and group[0] == "cd":
-                            current = resolve(current, group[1])
+                        selected = dispatch(group)
+                        if selected and (selected[0] == "eval" or re.search(r"[$`]", selected[0])):
+                            unqualified = True
+                        elif selected and selected[0] == "cd":
+                            operands = selected[2:] if len(selected) > 1 and selected[1] == "--" else selected[1:]
+                            if len(operands) != 1 or operands[0].startswith("-") or re.search(r"[$`]", operands[0]):
+                                unqualified = True
+                            else:
+                                current = resolve(current, operands[0])
                         else:
-                            inspect(group, current, depth + 1)
+                            inspect(selected, current, depth + 1)
                         group = []
                     else:
                         if all(re.match(r"[A-Za-z_][A-Za-z0-9_]*=", word) for word in group) and (re.fullmatch(r"(?:if|then|elif|else|fi|while|until|for|select|in|do|done|case|esac|function|time|!|\{|\}|\[\[|\]\])", raw.replace("\\\n", "")) or token == "eval"):
