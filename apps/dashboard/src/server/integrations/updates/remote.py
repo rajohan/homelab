@@ -118,6 +118,7 @@ def startup_code_paths(startup):
                 if word != "\\\n"]
     def dynamic_shell_word(raw):
         quote, index = None, 0
+        braces = []
         while index < len(raw):
             character = raw[index]
             if quote == "'":
@@ -127,8 +128,16 @@ def startup_code_paths(startup):
                 index += 1
             elif character == '"' or character == "'" and quote is None:
                 quote = None if quote == character else character
-            elif character == "$" and re.match(r"[A-Za-z0-9_@*#?$!{(\-]", raw[index + 1:index + 2]) or quote is None and (character in "*?[" or character == "~" and (index == 0 or raw[index - 1] == "=")):
+            elif character == "$" and (re.match(r"[A-Za-z0-9_@*#?$!{(\-]", raw[index + 1:index + 2]) or quote is None and raw[index + 1:index + 2] in ("'", '"')) or quote is None and (character in "*?[" or character == "~" and (index == 0 or raw[index - 1] == "=")):
                 return True
+            elif quote is None:
+                if character == "{":
+                    braces.append(False)
+                elif character == "}" and braces:
+                    if braces.pop():
+                        return True
+                elif braces and (character == "," or raw[index:index + 2] == ".."):
+                    braces[-1] = True
             index += 1
         return False
     def words(value):
@@ -278,6 +287,14 @@ def startup_code_paths(startup):
         elif name in ("awk", "gawk", "mawk", "nawk"):
             # Never evaluate program files, inline programs or extension loaders.
             if not (len(args) == 2 and args[1] in ("--help", "--version", "-h", "-V", "-Whelp", "-Wversion")) and not (len(args) == 3 and args[1] == "-W" and args[2] in ("help", "version")):
+                unqualified = True
+        elif name in ("sed", "gsed"):
+            # Expressions/program files can dispatch code. Never interpret them.
+            if not (len(args) == 2 and args[1] in ("--help", "--version")):
+                unqualified = True
+        elif name in ("pushd", "popd"):
+            # Directory-stack state changes later relative executable lookup.
+            if not (len(args) == 2 and args[1] == "--help"):
                 unqualified = True
         elif name == "find":
             index = 1
@@ -635,10 +652,10 @@ def qualify_startup_mounts(paths, destinations, path_stat):
             if metadata['mode'] & 0x08000000:
                 hops += 1
                 target = metadata['linkTarget']
-                if hops > 32 or not target.startswith('/') or '\0' in target or len(target) > 2000:
+                if hops > 32 or not target or '\0' in target or len(target) > 2000:
                     raise UpdateRefusal('local_code_override')
                 remaining = [part for part in target.split('/') if part] + remaining
-                current = '/'
+                current = '/' if target.startswith('/') else posixpath.dirname(current)
         return current
     try:
         root = path_stat('/')
@@ -841,6 +858,22 @@ def locked_directory(directory):
         os.close(descriptor)
 
 
+def verify_service_mounts(service, snapshot):
+    """Qualify live and pending code for one exact root or namespace consumer."""
+    identity, installed = snapshot[0], snapshot[3]
+    # Read only bounded startup metadata, never complete Config or file bodies.
+    template = '{"entrypoint":{{json .Config.Entrypoint}},"command":{{json .Config.Cmd}},"working_dir":{{json .Config.WorkingDir}},"healthcheck":{{json .Config.Healthcheck}},"environment":{{json .Config.Env}},"shell":{{json .Config.Shell}}}'
+    startup = json.loads(command(["/usr/bin/docker", "inspect", "--format", template, identity]))
+    # A removed/changed pending mount must not hide live executable storage.
+    live = {"volumes": [{"type": mount["Type"], "source": mount.get("Source"), "target": mount["Destination"]} for mount in snapshot[11]]}
+    verify_code_mounts(live, startup)
+    if live["volumes"]:
+        verify_code_mounts(live, startup, container_path_stat(identity))
+    defaults = json.loads(command(["/usr/bin/docker", "image", "inspect", "--format", template, installed]))
+    # Compose overrides inherit from the immutable image, not old container overrides.
+    verify_image_mounts(service, compose_startup(service, defaults), installed)
+
+
 def docker_update(driver, item, automatic=False):
     """Update one image, coordinating approved namespace consumers without changing theirs."""
     candidate = item["availableImage"]
@@ -879,20 +912,23 @@ def docker_update(driver, item, automatic=False):
             return command(base + arguments, timeout=timeout, environment=environment)
         config = json.loads(compose(["config", "--format", "json"]))
         service = config.get("services", {}).get(driver["service"], {})
-        # Inspect bounded startup/loader inputs in memory, never complete Config
-        # or environment values in output, inventory or update receipts.
-        startup = json.loads(command(["/usr/bin/docker", "inspect", "--format", '{"entrypoint":{{json .Config.Entrypoint}},"command":{{json .Config.Cmd}},"working_dir":{{json .Config.WorkingDir}},"healthcheck":{{json .Config.Healthcheck}},"environment":{{json .Config.Env}},"shell":{{json .Config.Shell}}}', identity]))
-        verify_code_mounts(service, startup)
-        if any(service.get(kind) for kind in ('volumes', 'configs', 'secrets')):
-            verify_code_mounts(service, startup, container_path_stat(identity))
-        # Container Config may contain old Compose overrides. Inherit from the
-        # immutable installed image, not from those old container overrides.
-        # Never classify an unmerged CMD argument tail as an executable vector.
-        defaults = json.loads(command(["/usr/bin/docker", "image", "inspect", "--format", '{"entrypoint":{{json .Config.Entrypoint}},"command":{{json .Config.Cmd}},"working_dir":{{json .Config.WorkingDir}},"healthcheck":{{json .Config.Healthcheck}},"environment":{{json .Config.Env}},"shell":{{json .Config.Shell}}}', before[2]]))
-        verify_image_mounts(service, compose_startup(service, defaults), before[2])
         if config.get("services", {}).get(driver["service"], {}).get("image") != item["image"]:
             raise RuntimeError("Compose and the observed image differ")
+        root_snapshot = namespace_snapshot(identity)
+        if root_snapshot[1:5] != before[:4]:
+            raise UpdateRefusal("container_changed")
+        verify_service_mounts(service, root_snapshot)
         namespace_plan = prepare_namespace_plan(config, driver, compose)
+        selected = next(row for row in namespace_plan if row[7] == driver["service"])
+        if selected[0] != identity or selected[1:5] != before[:4]:
+            raise UpdateRefusal("container_changed")
+        for row in namespace_plan:
+            # Stopped and transitive consumers are also recreated. Apply exactly
+            # the same live, image, hook and filesystem qualification to each.
+            if row[7] != driver["service"]:
+                verify_service_mounts(config["services"][row[7]], row)
+                if command(["/usr/bin/docker", "image", "inspect", "--format", "{{.Id}}", row[2]]) != row[3]:
+                    raise UpdateRefusal("container_changed")
         if before[3] == "running":
             docker_health_checks(driver)
         pattern = re.compile(rb"(?m)^([ \t]+image:[ \t]*)([\"']?)" + re.escape(item["image"].encode()) + rb"\2([ \t]*(?:#[^\r\n]*)?\r?)$")
@@ -917,6 +953,11 @@ def docker_update(driver, item, automatic=False):
         if inspect_container(identity) != before or json.loads(compose(["config", "--format", "json"])) != config:
             raise RuntimeError("Application or Compose configuration changed during preparation")
         verify_namespace_plan(namespace_plan)
+        # Rebinding uses --pull never, but a moved local tag must not select an
+        # image other than the immutable image qualified for that consumer.
+        for row in namespace_plan:
+            if row[7] != driver["service"] and command(["/usr/bin/docker", "image", "inspect", "--format", "{{.Id}}", row[2]]) != row[3]:
+                raise UpdateRefusal("container_changed")
         progress("configuring")
         atomic_content(path, updated, original)
         try:

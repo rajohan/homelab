@@ -21,57 +21,75 @@ import {
     selectApplications,
 } from "./selection";
 
-test.each(["direct", "parent", "mount", "loop", "denied", "safe", "dot", "dotdot"])(
-    "metadata-only startup link qualification through Docker HTTP: %s",
-    async (mode) => {
-        const fixture = createApplicationFixture();
-        try {
-            const detail = [...fixture.containers.values()][0]!;
-            detail.Config.Entrypoint = ["/vendor/start"];
-            detail.Config.Env = ["PRIVATE_KEY=SYNTHETIC_PRIVATE"];
-            detail.Mounts = [
-                {
-                    Type: "volume",
-                    Source: "SYNTHETIC_PRIVATE",
-                    Destination: mode === "mount" ? "/alias" : "/custom",
-                    RW: true,
-                },
-            ];
-            const names: Record<string, string> = {
-                parent: "/vendor",
-                loop: "/vendor",
-                mount: "/alias",
-            };
-            const targets: Record<string, string> = {
-                dot: "/custom/./start",
-                dotdot: "/vendor/../custom/start",
-                safe: "/usr/bin/sleep",
-                loop: "/vendor",
-                mount: "/vendor",
-                parent: "/custom",
-            };
-            const name = names[mode] ?? "/vendor/start";
-            const target = targets[mode] ?? "/custom/start";
-            fixture.pathMetadata.set(name, { mode: 134_217_728, linkTarget: target });
-            fixture.behavior.statUnavailable = mode === "denied";
-            const inventory = await collectApplications(
-                [fixture.target],
-                () => createDockerPort(fixture.target, {}),
-                AbortSignal.timeout(5000)
-            );
-            const application = inventory.hosts[0]!.applications.find(
-                (item) => item.containerId === detail.Id
-            )!;
-            expect(inventory.hosts[0]!.available).toBe(true);
-            expect(application.mounts[0]!.startupCode).toBe(mode !== "safe");
-            expect(JSON.stringify(application)).not.toContain("/vendor/start");
-            expect(JSON.stringify(application)).not.toContain("PRIVATE_KEY");
-            expect(fixture.calls).toEqual([]);
-        } finally {
-            await fixture.close();
-        }
+test.each([
+    "direct",
+    "parent",
+    "mount",
+    "loop",
+    "denied",
+    "safe",
+    "dot",
+    "dotdot",
+    "relative-safe",
+    "relative-code",
+    "relative-chain",
+])("metadata-only startup link qualification through Docker HTTP: %s", async (mode) => {
+    const fixture = createApplicationFixture();
+    try {
+        const detail = [...fixture.containers.values()][0]!;
+        detail.Config.Entrypoint = ["/vendor/start"];
+        detail.Config.Env = ["PRIVATE_KEY=SYNTHETIC_PRIVATE"];
+        detail.Mounts = [
+            {
+                Type: "volume",
+                Source: "SYNTHETIC_PRIVATE",
+                Destination: mode === "mount" ? "/alias" : "/custom",
+                RW: true,
+            },
+        ];
+        const names: Record<string, string> = {
+            parent: "/vendor",
+            loop: "/vendor",
+            mount: "/alias",
+        };
+        const targets: Record<string, string> = {
+            "relative-safe": "../usr/bin/sleep",
+            "relative-code": "../custom/start",
+            "relative-chain": "../bridge/../start",
+            dot: "/custom/./start",
+            dotdot: "/vendor/../custom/start",
+            safe: "/usr/bin/sleep",
+            loop: "/vendor",
+            mount: "/vendor",
+            parent: "/custom",
+        };
+        const name = names[mode] ?? "/vendor/start";
+        const target = targets[mode] ?? "/custom/start";
+        fixture.pathMetadata.set(name, { mode: 134_217_728, linkTarget: target });
+        fixture.pathMetadata.set("/bridge", {
+            mode: 134_217_728,
+            linkTarget: "custom/dir",
+        });
+        fixture.behavior.statUnavailable = mode === "denied";
+        const inventory = await collectApplications(
+            [fixture.target],
+            () => createDockerPort(fixture.target, {}),
+            AbortSignal.timeout(5000)
+        );
+        const application = inventory.hosts[0]!.applications.find(
+            (item) => item.containerId === detail.Id
+        )!;
+        expect(inventory.hosts[0]!.available).toBe(true);
+        expect(application.mounts[0]!.startupCode).toBe(
+            !["safe", "relative-safe"].includes(mode)
+        );
+        expect(JSON.stringify(application)).not.toContain("/vendor/start");
+        expect(JSON.stringify(application)).not.toContain("PRIVATE_KEY");
+        expect(fixture.calls).toEqual([]);
+    } finally {
+        await fixture.close();
     }
-);
+});
 
 test.each([
     "startup",
@@ -148,6 +166,24 @@ test.each([
 );
 
 test.each([
+    { test: ["CMD", "/bin/bash", "-c", "/{custom,vendor}/start"], blocked: true },
+    {
+        test: ["CMD", "/bin/bash", "-c", String.raw`$'/cus\x74om/SYNTHETIC_PRIVATE'`],
+        blocked: true,
+    },
+    { test: ["CMD", "/bin/bash", "-c", '$"/custom/SYNTHETIC_PRIVATE"'], blocked: true },
+    {
+        test: ["CMD", "/bin/bash", "-c", "/vendor/server /{custom,vendor}/data"],
+        blocked: false,
+    },
+    {
+        test: ["CMD", "sed", "-n", "-e", "1e /custom/SYNTHETIC_PRIVATE", "/etc/hostname"],
+        blocked: true,
+    },
+    { test: ["CMD", "sed", "--help"], blocked: false },
+    { test: ["CMD", "/bin/bash", "-c", "builtin pushd /custom; ./start"], blocked: true },
+    { test: ["CMD", "/bin/bash", "-c", "popd; ./start"], blocked: true },
+    { test: ["CMD", "/bin/bash", "-c", "command -v pushd"], blocked: false },
     { test: ["CMD-SHELL", "cat /custom/start | sh"], blocked: true },
     { test: ["CMD", "node"], blocked: true },
     {

@@ -1,5 +1,349 @@
 [
     {
+        "name": "round21 shell /{custom,vendor}/start",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["/{custom,vendor}/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "round21 shell /{custom,}/start",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["/{custom,}/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "round21 shell /custom{1..3}/start",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["/custom{1..3}/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "round21 shell /{\"custom\",\"vendor\"}/start",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["/{\"custom\",\"vendor\"}/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "round21 shell /{custom,{vendor,other}}/start",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["/{custom,{vendor,other}}/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "round21 shell /{custom,ven\\\ndor}/start",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["/{custom,ven\\\ndor}/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "round21 shell python /{custom,vendor}/app.py",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["python /{custom,vendor}/app.py"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "round21 shell $'/cus\\x74om/start'",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["$'/cus\\x74om/start'"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "round21 shell python $'/cus\\x74om/start'",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["python $'/cus\\x74om/start'"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "round21 shell $\"/custom/start\"",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["$\"/custom/start\""],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "round21 shell command /{custom,vendor}/start",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["command /{custom,vendor}/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "round21 shell exec /{custom,vendor}/start",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["exec /{custom,vendor}/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "round21 shell env PATH=/{custom,vendor} start",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["env PATH=/{custom,vendor} start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "round21 shell pushd /custom; ./start",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["pushd /custom; ./start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "round21 shell builtin pushd /custom; ./start",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["builtin pushd /custom; ./start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "round21 shell command popd; ./start",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["command popd; ./start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "round21 shell pushd; ./start",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["pushd; ./start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "round21 shell popd -n +1; ./start",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["popd -n +1; ./start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "round21 shell '/{custom,vendor}/start'",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["'/{custom,vendor}/start'"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "round21 shell \"/{custom,vendor}/start\"",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["\"/{custom,vendor}/start\""],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "round21 shell /\\{custom,vendor\\}/start",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["/\\{custom,vendor\\}/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "round21 shell /{literal}/start",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["/{literal}/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "round21 shell /{custom\\,vendor}/start",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["/{custom\\,vendor}/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "round21 shell /vendor/server /{custom,vendor}/data",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["/vendor/server /{custom,vendor}/data"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "round21 shell /vendor/server $'/cus\\x74om/data'",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["/vendor/server $'/cus\\x74om/data'"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "round21 shell /vendor/server $\"/custom/data\"",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["/vendor/server $\"/custom/data\""],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "round21 shell command -v pushd",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["command -v pushd"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "round21 shell pushd --help",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["pushd --help"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "round21 shell popd --help",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["popd --help"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "round21 shell /vendor/server pushd /custom",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["/vendor/server pushd /custom"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "round21 sed sed -n -e 1e /custom/start /etc/hostname",
+        "entrypoint": ["sed", "-n", "-e", "1e /custom/start", "/etc/hostname"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "round21 sed gsed -f /custom/program",
+        "entrypoint": ["gsed", "-f", "/custom/program"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "round21 sed sed --file=/custom/program",
+        "entrypoint": ["sed", "--file=/custom/program"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "round21 sed sed -ne e /custom/start",
+        "entrypoint": ["sed", "-ne", "e /custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "round21 sed busybox sed -f /custom/program",
+        "entrypoint": ["busybox", "sed", "-f", "/custom/program"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "round21 sed toybox sed e /custom/start",
+        "entrypoint": ["toybox", "sed", "e /custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "round21 sed sed --sandbox s/x/y/",
+        "entrypoint": ["sed", "--sandbox", "s/x/y/"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "round21 sed sed",
+        "entrypoint": ["sed"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "round21 sed sed -e SYNTHETIC_PRIVATE",
+        "entrypoint": ["sed", "-e", "SYNTHETIC_PRIVATE"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "round21 sed sed --help -f /custom/program",
+        "entrypoint": ["sed", "--help", "-f", "/custom/program"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "round21 sed info sed --help",
+        "entrypoint": ["sed", "--help"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "round21 sed info gsed --version",
+        "entrypoint": ["gsed", "--version"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "round21 sed info /vendor/server sed -e /custom/data",
+        "entrypoint": ["/vendor/server", "sed", "-e", "/custom/data"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
         "name": "attached printf variable assignment changes command lookup",
         "entrypoint": ["/bin/bash", "-c"],
         "command": ["builtin printf -vPATH /custom; start"],

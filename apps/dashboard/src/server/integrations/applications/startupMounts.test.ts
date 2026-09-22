@@ -3,6 +3,61 @@ import { expect, test } from "bun:test";
 import { startupCodePaths } from "./startup";
 import { qualifyStartupMounts } from "./startupMounts";
 
+test.each([
+    {
+        links: { "/bin": "usr/bin", "/usr/bin/sh": "dash" },
+        code: "/bin/sh",
+        mount: "/data",
+        blocked: false,
+    },
+    {
+        links: { "/vendor/start": "../custom/start" },
+        code: "/vendor/start",
+        mount: "/custom",
+        blocked: true,
+    },
+    {
+        links: { "/vendor/start": "../bridge/../start", "/bridge": "custom/dir" },
+        code: "/vendor/start",
+        mount: "/custom",
+        blocked: true,
+    },
+    {
+        links: { "/vendor/start": "../custom/dir/../../usr/bin/sleep" },
+        code: "/vendor/start",
+        mount: "/custom",
+        blocked: false,
+    },
+    {
+        links: { "/storage": "./custom" },
+        code: "/custom/start",
+        mount: "/storage",
+        blocked: true,
+    },
+    {
+        links: { "/vendor/start": "./start" },
+        code: "/vendor/start",
+        mount: "/data",
+        blocked: true,
+    },
+    {
+        links: { "/vendor/start": "next", "/vendor/next": "start" },
+        code: "/vendor/start",
+        mount: "/data",
+        blocked: true,
+    },
+])("relative filesystem targets: %j", async ({ links, code, mount, blocked }) => {
+    const targets: Record<string, string | undefined> = links;
+    expect(
+        await qualifyStartupMounts([code], [mount], (name) =>
+            Promise.resolve({
+                mode: targets[name] ? 134_217_728 : 2_147_483_648,
+                linkTarget: targets[name] ?? "",
+            })
+        )
+    ).toEqual([blocked]);
+});
+
 test("startup, cwd and PATH preserve link-before-parent traversal through qualification", async () => {
     const links: Record<string, string> = { "/alias": "/custom/dir" };
     const stat = (name: string) =>
@@ -122,11 +177,11 @@ test.each([
         blocked: true,
     },
     {
-        name: "noncanonical response",
+        name: "relative directory response",
         links: { "/vendor": "relative" },
         code: "/vendor/start",
         mount: "/custom",
-        blocked: true,
+        blocked: false,
     },
 ])("filesystem qualification: $name", async ({ links, code, mount, blocked }) => {
     const metadata: Record<string, string | undefined> = links;

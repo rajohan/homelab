@@ -28,6 +28,37 @@ exec(compile(SOURCE.with_name("toolchain.py").read_text(), str(SOURCE.with_name(
 class UpdateExecutionTests(unittest.TestCase):
     """Cover exact image pins, source fencing, package boundaries and private error handling."""
 
+    def test_relative_symlink_targets_use_resolved_parent(self):
+        for links, code, mount, blocked in [
+            ({"/bin": "usr/bin", "/usr/bin/sh": "dash"}, "/bin/sh", "/data", False),
+            ({"/vendor/start": "../custom/start"}, "/vendor/start", "/custom", True),
+            ({"/vendor/start": "../bridge/../start", "/bridge": "custom/dir"}, "/vendor/start", "/custom", True),
+            ({"/storage": "./custom"}, "/custom/start", "/storage", True),
+            ({"/vendor/start": "../custom/dir/../../usr/bin/sleep"}, "/vendor/start", "/custom", False),
+            ({"/vendor/start": "start"}, "/vendor/start", "/data", True),
+            ({"/vendor/start": "next", "/vendor/next": "start"}, "/vendor/start", "/data", True),
+        ]:
+            with self.subTest(links=links):
+                metadata = lambda name: {"mode": 0x08000000 if name in links else 0x80000000, "linkTarget": links.get(name, "")}
+                self.assertEqual(remote.qualify_startup_mounts({code}, [mount], metadata), [blocked])
+
+    def test_actual_brace_ansi_sed_and_directory_stack_execution(self):
+        with tempfile.TemporaryDirectory(prefix="homelab-dispatch-proof-") as temporary:
+            root = Path(temporary)
+            script = root / "start"
+            script.write_text("#!/bin/sh\nprintf SYNTHETIC_EXECUTED\n")
+            script.chmod(0o755)
+            for expression in [
+                str(root) + "/{start,missing}",
+                "$'" + str(root) + "/sta\\x72t'",
+                'pushd "$1" >/dev/null; ./start',
+                'pushd "$1" >/dev/null; pushd / >/dev/null; popd >/dev/null; ./start',
+            ]:
+                result = subprocess.run(["/bin/bash", "-c", expression, "fixture", str(root)], check=True, capture_output=True, text=True)
+                self.assertEqual(result.stdout, "SYNTHETIC_EXECUTED")
+            result = subprocess.run(["sed", "-n", "-e", "1e " + str(script)], input="synthetic\n", check=True, capture_output=True, text=True)
+            self.assertEqual(result.stdout, "SYNTHETIC_EXECUTED")
+
     def test_actual_stdin_history_and_shell_variable_programs(self):
         with tempfile.TemporaryDirectory(prefix="homelab-shell-state-") as temporary:
             root = Path(temporary)
@@ -582,6 +613,69 @@ class UpdateExecutionTests(unittest.TestCase):
                 self.assertIn("--no-build", action)
                 self.assertIn("--no-start" if mode != "running" else "--wait", action)
                 self.assertEqual(action[-1], "web")
+
+    def test_all_namespace_consumers_are_qualified_before_pull(self):
+        class PullBoundary(Exception):
+            pass
+        for state in ("running", "exited", "created"):
+            for mode in ("pending", "live-removed-mount", "image-health", "hook", "loader", "relative-link", "ordinary", "unrelated"):
+                with self.subTest(state=state, mode=mode), tempfile.TemporaryDirectory(prefix="homelab-peer-preflight-") as temporary:
+                    directory = Path(temporary).resolve()
+                    source = directory / "compose.yaml"
+                    old = "example/web:1.0@sha256:" + "a" * 64
+                    original = ("services:\n  root:\n    image: " + old + "\n").encode()
+                    source.write_bytes(original)
+                    installed = "sha256:" + "d" * 64
+                    driver = {"name": "fixture-root-1", "project": "fixture", "service": "root", "directory": str(directory), "file": str(source), "imageFile": str(source), "namespaceDependents": ["middle", "leaf"]}
+                    item = {"id": "docker:" + "a" * 64, "image": old, "installed": installed, "available": "sha256:" + "e" * 64, "availableImage": "docker.io/example/web:2.0@sha256:" + "b" * 64}
+                    services = {name: {"image": old if name == "root" else "example/worker:1"} for name in ("root", "middle", "leaf", "unrelated")}
+                    rows = [[character * 64, "/fixture-" + name + "-1", services[name]["image"], installed, state, "started", "fixture", name, "none", "", "", []] for character, name in zip("abc", ("root", "middle", "leaf"))]
+                    base = {"entrypoint": ["/vendor/server"], "working_dir": "/", "environment": []}
+                    lives = {row[0]: dict(base) for row in rows}
+                    defaults = dict(base)
+                    selected = services["unrelated" if mode == "unrelated" else "leaf"]
+                    selected["volumes"] = [{"type": "volume", "target": "/custom"}]
+                    if mode in ("pending", "unrelated"):
+                        selected["entrypoint"] = ["/custom/start"]
+                    elif mode == "live-removed-mount":
+                        selected.pop("volumes")
+                        rows[-1][11] = [{"Type": "volume", "Source": "fixture-code", "Destination": "/custom"}]
+                        lives[rows[-1][0]] = {**base, "entrypoint": ["/custom/start"]}
+                    elif mode == "image-health":
+                        defaults["healthcheck"] = {"Test": ["CMD", "/custom/start"]}
+                    elif mode == "hook":
+                        selected["pre_stop"] = [{"command": ["/custom/start"]}]
+                    elif mode == "loader":
+                        selected["environment"] = {"LD_PRELOAD": "/custom/SYNTHETIC_PRIVATE"}
+                    elif mode == "relative-link":
+                        selected["entrypoint"] = ["/vendor/entry"]
+                    calls, qualified = [], []
+                    def metadata(name):
+                        return {"mode": 0x08000000 if name == "/vendor/entry" else 0x80000000, "linkTarget": "../custom/start" if name == "/vendor/entry" else ""}
+                    def command(arguments, **options):
+                        calls.append(arguments)
+                        if arguments[1] == "compose" and "config" in arguments:
+                            return json.dumps({"services": services})
+                        if arguments[1] == "inspect" and arguments[3].startswith('{"entrypoint":'):
+                            return json.dumps(lives[arguments[-1]])
+                        if arguments[1:3] == ["image", "inspect"]:
+                            return installed if arguments[4] == "{{.Id}}" else json.dumps(defaults)
+                        if arguments[1] == "pull":
+                            raise PullBoundary()
+                        self.fail("Unexpected mutation or inspection: " + repr(arguments))
+                    def image_mounts(service, startup, image):
+                        qualified.append(image)
+                        remote.verify_code_mounts(service, startup, metadata)
+                    with patch.object(remote, "command", side_effect=command), patch.object(remote, "inspect_container", return_value=[*rows[0][1:5], "fixture", "root"]), patch.object(remote, "namespace_snapshot", return_value=rows[0]), patch.object(remote, "prepare_namespace_plan", return_value=rows), patch.object(remote, "container_path_stat", return_value=metadata), patch.object(remote, "verify_image_mounts", side_effect=image_mounts), patch.object(remote, "progress"):
+                        if mode in ("ordinary", "unrelated"):
+                            with self.assertRaises(PullBoundary):
+                                remote.docker_update(driver, item)
+                            self.assertEqual(qualified, [installed] * 3)
+                        else:
+                            with self.assertRaises(remote.UpdateRefusal):
+                                remote.docker_update(driver, item)
+                            self.assertFalse(any(call[1] == "pull" for call in calls))
+                    self.assertEqual(source.read_bytes(), original)
 
     def test_running_image_update_persists_pin_and_waits_for_health(self):
         self.docker_fixture()

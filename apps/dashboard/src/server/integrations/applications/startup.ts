@@ -64,6 +64,7 @@ function unqualifiedShell(command: string): boolean {
 // expand variables or inspect their potentially private values.
 function dynamicShellWord(raw: string): boolean {
     let quote: "'" | '"' | undefined;
+    const braces: boolean[] = [];
     for (let index = 0; index < raw.length; index++) {
         const character = raw[index];
         if (quote === "'") {
@@ -79,12 +80,24 @@ function dynamicShellWord(raw: string): boolean {
             continue;
         }
         if (
-            (character === "$" && /[A-Za-z0-9_@*#?$!{(-]/.test(raw[index + 1] ?? "")) ||
+            (character === "$" &&
+                (/[A-Za-z0-9_@*#?$!{(-]/.test(raw[index + 1] ?? "") ||
+                    (quote === undefined &&
+                        ["'", '"'].includes(raw[index + 1] ?? "")))) ||
             (quote === undefined &&
                 ("*?[".includes(character ?? "\0") ||
                     (character === "~" && (index === 0 || raw[index - 1] === "="))))
         )
             return true;
+        if (quote === undefined) {
+            if (character === "{") braces.push(false);
+            else if (character === "}" && braces.pop()) return true;
+            else if (
+                braces.length > 0 &&
+                (character === "," || (character === "." && raw[index + 1] === "."))
+            )
+                braces[braces.length - 1] = true;
+        }
     }
     return false;
 }
@@ -352,6 +365,18 @@ export function startupCodePaths(
                 )
             )
                 unqualified = true;
+            return;
+        }
+        if (["sed", "gsed"].includes(name)) {
+            // Programs and program files can dispatch commands and load code.
+            // Do not interpret expressions, even with implementation-specific sandbox flags.
+            if (!(args.length === 2 && ["--help", "--version"].includes(args[1]!)))
+                unqualified = true;
+            return;
+        }
+        if (["pushd", "popd"].includes(name)) {
+            // Directory-stack mutation affects subsequent relative lookup.
+            if (!(args.length === 2 && args[1] === "--help")) unqualified = true;
             return;
         }
         if (name === "find") {

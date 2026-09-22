@@ -49,7 +49,7 @@ export async function qualifyStartupMounts(
             if ((metadata.mode & 134_217_728) !== 0) {
                 if (
                     ++hops > 32 ||
-                    !metadata.linkTarget.startsWith("/") ||
+                    !metadata.linkTarget ||
                     metadata.linkTarget.includes("\0") ||
                     metadata.linkTarget.length > 2000
                 )
@@ -58,7 +58,9 @@ export async function qualifyStartupMounts(
                     ...metadata.linkTarget.split("/").filter(Boolean),
                     ...remaining,
                 ];
-                current = "/";
+                current = metadata.linkTarget.startsWith("/")
+                    ? "/"
+                    : path.posix.dirname(current);
             }
         }
         return current;

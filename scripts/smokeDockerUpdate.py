@@ -83,6 +83,10 @@ def main():
                 shell_file.chmod(0o755)
                 helper_file.write_text(text.replace(original, shell_image) + "    healthcheck:\n      test: [CMD, /bin/true]\n      interval: 1s\n")
             helpers.append((service, helper_file))
+        for service in ("brace-helper", "sed-helper", "stack-helper"):
+            helper_file = directory / (service + ".yaml")
+            helper_file.write_text("services:\n  " + service + ":\n    image: " + original + "\n    entrypoint: [/bin/sleep]\n    command: ['3600']\n    network_mode: none\n    mem_limit: 64m\n    pids_limit: 32\n    labels:\n      homelab.smoke: " + owner + "\n    volumes:\n      - /custom\n")
+            helpers.append((service, helper_file))
         # A mounted executable can also be invoked later, outside startup argv.
         executable = directory / "extensionless-binary"
         executable.write_text("#!/bin/sh\nexit 0\n")
@@ -163,7 +167,14 @@ def main():
             # Both pending extensionless scripts and cwd module execution must
             # fail before a pull, pin edit or replacement of the current container.
             for service, helper_file in helpers:
-                if service == "pending-helper":
+                if service in ("brace-helper", "sed-helper", "stack-helper"):
+                    invocation = {
+                        "brace-helper": ["/bin/bash", "-c", "/{custom,vendor}/start"],
+                        "sed-helper": ["sed", "-n", "-e", "1e /custom/start", "/etc/hostname"],
+                        "stack-helper": ["/bin/bash", "-c", "pushd /custom; ./start"],
+                    }[service]
+                    helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sleep]\n    command: ['3600']", "entrypoint: " + json.dumps(invocation) + "\n    command: []"))
+                elif service == "pending-helper":
                     helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sleep]\n    command: ['3600']", "entrypoint: [/bin/sh, /custom/start]"))
                 elif service == "module-helper":
                     helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sleep]\n    command: ['3600']", "working_dir: /custom\n    entrypoint: [python]\n    command: ['-m', app]"))
@@ -324,6 +335,47 @@ def main():
                     remote.command = command
                 assert remote.namespace_snapshot(overlay_name) == overlay_before
                 assert overlay_item["image"] in overlay_source.read_text() and overlay_item["availableImage"] not in overlay_source.read_text()
+            # Qualify every planned consumer, including a stopped peer and a
+            # transitive leaf, before pulling the root or changing any pin.
+            pristine_main, pristine_consumer = main_file.read_bytes(), consumer_file.read_bytes()
+            stable_peers = {name: remote.namespace_snapshot(row[0]) for name, row in before.items()}
+            for selected, mode in (("consumer", "startup"), ("leaf", "health"), ("stopped", "hook"), ("leaf", "relative-link")):
+                try:
+                    config = json.loads(pristine_main)
+                    if selected == "consumer":
+                        peer_file = consumer_file
+                        peer = {**shared, "network_mode": "service:provider"}
+                    else:
+                        peer_file = main_file
+                        peer = config["services"][selected]
+                    peer["volumes"] = ["marker:/marker", "/custom"]
+                    if mode == "startup":
+                        peer["entrypoint"], peer["command"] = ["/custom/start"], []
+                    elif mode == "health":
+                        peer["healthcheck"] = {"test": ["CMD", "sed", "-n", "-e", "1e /custom/start", "/etc/hostname"]}
+                    elif mode == "hook":
+                        peer["pre_stop"] = [{"command": ["/custom/start"]}]
+                    else:
+                        # The consumer uses the same immutable image as the root.
+                        # /bin/sh is a real relative link to dash in this image.
+                        peer["entrypoint"], peer["command"] = ["/bin/sh", "/custom/start"], []
+                    peer_file.write_text(json.dumps({"services": {selected: peer}} if selected == "consumer" else config))
+                    def refuse_peer_pull(arguments, **options):
+                        assert arguments[1] != "pull", "Consumer code must refuse before the root pull"
+                        return command(arguments, **options)
+                    remote.command = refuse_peer_pull
+                    try:
+                        remote.docker_update(driver, item)
+                        raise AssertionError("Namespace consumer mounted code passed preflight")
+                    except remote.UpdateRefusal as error:
+                        assert error.reason == "local_code_override"
+                finally:
+                    remote.command = command
+                    # Restore pending hooks before any later lifecycle/cleanup.
+                    main_file.write_bytes(pristine_main)
+                    consumer_file.write_bytes(pristine_consumer)
+                assert {name: remote.namespace_snapshot(row[0]) for name, row in before.items()} == stable_peers
+                assert original in provider_file.read_text() and candidate not in provider_file.read_text()
             compose(["stop", "--timeout", "5", "consumer"])
             broken = {service: remote.namespace_snapshot(row[0]) for service, row in before.items()}
             try:
