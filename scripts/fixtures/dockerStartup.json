@@ -1,0 +1,194 @@
+[
+    {
+        "name": "postgres data operand",
+        "entrypoint": ["docker-entrypoint.sh"],
+        "command": ["postgres", "-D", "/var/lib/postgresql/data"],
+        "working_dir": "/",
+        "mount": "/var/lib/postgresql/data",
+        "blocked": false
+    },
+    {
+        "name": "postgres entrypoint data operand",
+        "entrypoint": ["postgres"],
+        "command": ["-D", "/data"],
+        "working_dir": "/",
+        "mount": "/data",
+        "blocked": false
+    },
+    {
+        "name": "string command data operand",
+        "entrypoint": null,
+        "command": "postgres -D '/var/lib/postgresql/data'",
+        "working_dir": "/",
+        "mount": "/var/lib/postgresql/data",
+        "blocked": false
+    },
+    {
+        "name": "shell postgres data operand",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["exec postgres -D /data"],
+        "working_dir": "/",
+        "mount": "/data",
+        "blocked": false
+    },
+    {
+        "name": "binary config directory",
+        "entrypoint": ["/vendor/app"],
+        "command": ["--config", "/config/app.json"],
+        "working_dir": "/",
+        "mount": "/config",
+        "blocked": false
+    },
+    {
+        "name": "node data operand",
+        "entrypoint": ["node", "/vendor/server.js"],
+        "command": ["--cache-dir", "/cache"],
+        "working_dir": "/vendor",
+        "mount": "/cache",
+        "blocked": false
+    },
+    {
+        "name": "absolute extensionless executable",
+        "entrypoint": ["/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom/start",
+        "blocked": true
+    },
+    {
+        "name": "extensionless interpreter script",
+        "entrypoint": ["/bin/sh", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom/start",
+        "blocked": true
+    },
+    {
+        "name": "split interpreter command",
+        "entrypoint": ["/bin/sh"],
+        "command": ["/custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "relative interpreter script",
+        "entrypoint": null,
+        "command": ["python3", "start"],
+        "working_dir": "/custom",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "module cwd",
+        "entrypoint": null,
+        "command": ["python", "-m", "app"],
+        "working_dir": "/custom",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "module versioned runtime",
+        "entrypoint": ["python3.14"],
+        "command": ["-m", "app"],
+        "working_dir": "/custom",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "node eval cwd",
+        "entrypoint": ["node"],
+        "command": ["-e", "require('./app')"],
+        "working_dir": "/custom",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "npm project",
+        "entrypoint": null,
+        "command": ["npm", "start"],
+        "working_dir": "/custom",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "python inline cwd",
+        "entrypoint": ["python3"],
+        "command": ["-c", "import app"],
+        "working_dir": "/custom",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell relative script",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["exec ./start --token=SYNTHETIC_PRIVATE"],
+        "working_dir": "/custom",
+        "mount": "/custom/start",
+        "blocked": true
+    },
+    {
+        "name": "shell cwd module",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["cd /custom && python -m app"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell sourced code",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": [". /custom/start; exec postgres -D /data"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "env module wrapper",
+        "entrypoint": ["/usr/bin/env", "SYNTHETIC_PRIVATE=value", "python3"],
+        "command": ["-m", "app"],
+        "working_dir": "/custom",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "tini module wrapper",
+        "entrypoint": ["tini", "--"],
+        "command": ["python3", "-m", "app"],
+        "working_dir": "/custom",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "gosu ordinary data",
+        "entrypoint": ["gosu", "postgres"],
+        "command": ["postgres", "-D", "/data"],
+        "working_dir": "/",
+        "mount": "/data",
+        "blocked": false
+    },
+    {
+        "name": "quoted script space",
+        "entrypoint": null,
+        "command": "python '/custom/my start'",
+        "working_dir": "/",
+        "mount": "/custom/my start",
+        "blocked": true
+    },
+    {
+        "name": "path prefix boundary",
+        "entrypoint": ["/custom-app/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "data operands from cwd",
+        "entrypoint": ["postgres"],
+        "command": ["-D", "/data"],
+        "working_dir": "/data",
+        "mount": "/data",
+        "blocked": false
+    }
+]

@@ -69,17 +69,64 @@ class UpdateRefusal(RuntimeError):
         self.reason = reason
 
 
+def startup_code_paths(startup):
+    """Infer executable/interpreter positions, never ordinary data-path operands."""
+    paths = set()
+    def words(value):
+        return [word[1:-1] if word.startswith(('"', "'")) else word
+                for word in re.findall(r'''"(?:\\.|[^"\\])*"|'[^']*'|[^\s;|&]+|[;|&]+''', value)]
+    def argv(value):
+        return words(value) if isinstance(value, str) else value or []
+    def resolve(cwd, value):
+        return posixpath.normpath(posixpath.join(cwd, value))
+    def inspect(args, cwd, depth=0):
+        if not args or not args[0] or args[0].startswith("-"):
+            return
+        if depth > 8:
+            paths.add(cwd)
+            return
+        executable, name = args[0], posixpath.basename(args[0])
+        if "/" in executable:
+            paths.add(resolve(cwd, executable))
+        if name in ("exec", "env", "tini", "dumb-init", "gosu", "su-exec", "docker-entrypoint.sh", "docker-entrypoint"):
+            index = 2 if name in ("gosu", "su-exec") else 1
+            while index < len(args) and (args[index].startswith("-") or re.match(r"[A-Za-z_][A-Za-z0-9_]*=", args[index])):
+                index += 1
+            inspect(args[index:], cwd, depth + 1)
+        elif name in ("sh", "bash", "dash", "ksh", "zsh", "ash"):
+            inline = next((index for index, arg in enumerate(args) if index > 0 and re.match(r"^-[^-]*c", arg)), None)
+            if inline is not None:
+                group, current = [], cwd
+                for token in words(args[inline + 1] if len(args) > inline + 1 else "") + [";"]:
+                    if re.fullmatch(r"[;|&]+", token):
+                        if len(group) > 1 and group[0] == "cd":
+                            current = resolve(current, group[1])
+                        else:
+                            inspect(group, current, depth + 1)
+                        group = []
+                    else:
+                        group.append(token)
+            else:
+                script = next((arg for arg in args[1:] if not arg.startswith("-")), None)
+                if script:
+                    paths.add(resolve(cwd, script))
+        elif name in (".", "source"):
+            if len(args) > 1:
+                paths.add(resolve(cwd, args[1]))
+        elif re.fullmatch(r"(?:python(?:\d+(?:\.\d+)*)?|node|nodejs|bun|deno|ruby|perl|php|lua|luajit|npm|npx|yarn|pnpm)", name):
+            paths.add(cwd)
+            script = next((arg for arg in args[1:] if not arg.startswith("-")), None)
+            if script and not any(arg in args for arg in ("-m", "-c", "-e", "--eval", "--print")):
+                paths.add(resolve(cwd, script))
+    first, second = argv(startup.get("entrypoint")), argv(startup.get("command"))
+    cwd = resolve("/", startup.get("working_dir") or "/")
+    inspect(first + second, cwd)
+    return paths
+
+
 def verify_code_mounts(service, startup=None):
     """Refuse executable bind overlays before pulling or mutating a deployment."""
-    startup = startup or service
-    arguments = []
-    for key in ("entrypoint", "command"):
-        value = startup.get(key) or []
-        arguments.extend([value] if isinstance(value, str) else value)
-    paths = [posixpath.normpath(posixpath.join(startup.get("working_dir") or "/", token))
-             for argument in arguments for token in re.split(r"[\s\"';&|()]+", argument)
-             if "/" in token and not token.startswith("-") and "://" not in token
-             and not re.search(r"\.(?:json|ya?ml|toml|ini|conf|cfg|env|pem|crt|key|db|sqlite|txt|log)$", token, re.I)]
+    paths = startup_code_paths(startup or service)
     for mount in service.get("volumes", []):
         if mount.get("type") != "bind":
             continue
@@ -220,6 +267,8 @@ def docker_update(driver, item, automatic=False):
             return command(base + arguments, timeout=timeout, environment=environment)
         config = json.loads(compose(["config", "--format", "json"]))
         service = config.get("services", {}).get(driver["service"], {})
+        # Pending Compose changes must be qualified too, not just live startup.
+        verify_code_mounts(service)
         # Inspect only startup vectors, not the environment or complete Config.
         startup = json.loads(command(["/usr/bin/docker", "inspect", "--format", '{"entrypoint":{{json .Config.Entrypoint}},"command":{{json .Config.Cmd}},"working_dir":{{json .Config.WorkingDir}}}', identity]))
         verify_code_mounts(service, startup)

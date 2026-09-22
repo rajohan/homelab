@@ -7,6 +7,7 @@ import type {
 
 import type { ApplicationTarget } from "./configuration";
 import type { DockerDetail, DockerPort } from "./docker";
+import { startupCodePaths } from "./startup";
 
 export const applicationInventoryByteLimit = 8 * 1024 * 1024;
 const containerByteLimit = 32 * 1024;
@@ -94,21 +95,11 @@ export function mapDockerApplication(
 ): ManagedApplication {
     // Retain only a boolean. Startup arguments may contain credentials and must
     // never enter inventory snapshots, logs or the browser response.
-    const startupPaths = [
-        ...(detail.Config.Entrypoint ?? []),
-        ...(detail.Config.Cmd ?? []),
-    ]
-        .flatMap((argument) => argument.split(/[\s"';&|()]+/))
-        .filter(
-            (token) =>
-                token.includes("/") &&
-                !token.startsWith("-") &&
-                !token.includes("://") &&
-                !/\.(?:json|ya?ml|toml|ini|conf|cfg|env|pem|crt|key|db|sqlite|txt|log)$/i.test(
-                    token
-                )
-        )
-        .map((token) => path.posix.resolve(detail.Config.WorkingDir || "/", token));
+    const startupPaths = startupCodePaths(
+        detail.Config.Entrypoint,
+        detail.Config.Cmd,
+        detail.Config.WorkingDir
+    );
     const application: ManagedApplication = {
         id: `${target.id}:${detail.Id}`,
         host: target.id,

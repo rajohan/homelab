@@ -104,6 +104,15 @@ export async function refreshDockerObservations(
     applications: readonly ApplicationTarget[],
     targets: readonly UpdateTarget[]
 ): Promise<void> {
+    const snapshots = new Map<
+        string,
+        {
+            value: UpdateReport;
+            original: string;
+            capturedAt: string;
+            mutatedAt: string;
+        } | null
+    >();
     for (const host of inventory.hosts) {
         const binding = applications.find((target) => target.id === host.id);
         const startedAt = host.observationStartedAt;
@@ -132,11 +141,26 @@ export async function refreshDockerObservations(
         for (const prefix of ["updates:", "updates.resolved:"]) {
             for (const source of sources) {
                 const key = `${prefix}${source}`;
-                const [row] = await transaction<{ value: UpdateReport }[]>`
-                    SELECT value FROM operation_snapshots WHERE key=${key}
-                    AND mutated_at < ${startedAt}::timestamptz
-                    AND captured_at < ${startedAt}::timestamptz FOR UPDATE`;
-                if (!row || Date.parse(row.value.capturedAt) >= Date.parse(startedAt))
+                if (!snapshots.has(key)) {
+                    const [stored] = await transaction<
+                        { value: UpdateReport; capturedAt: string; mutatedAt: string }[]
+                    >`
+                        SELECT value, captured_at::text AS "capturedAt", mutated_at::text AS "mutatedAt"
+                        FROM operation_snapshots WHERE key=${key} FOR UPDATE`;
+                    snapshots.set(
+                        key,
+                        stored
+                            ? { ...stored, original: JSON.stringify(stored.value) }
+                            : null
+                    );
+                }
+                const row = snapshots.get(key);
+                if (
+                    !row ||
+                    [row.capturedAt, row.mutatedAt, row.value.capturedAt].some(
+                        (time) => Date.parse(time) >= Date.parse(startedAt)
+                    )
+                )
                     continue;
                 const owners = recipes.flatMap((target) => {
                     const driver = target.driver;
@@ -151,10 +175,14 @@ export async function refreshDockerObservations(
                     );
                     return !sourceOwnsName || target.source === source ? [driver] : [];
                 });
-                const updated = reconcileDockerObservations(row.value, allowed, owners);
-                if (JSON.stringify(updated) !== JSON.stringify(row.value))
-                    await transaction`UPDATE operation_snapshots SET value=${JSON.stringify(updated)}::text::jsonb WHERE key=${key}`;
+                row.value = reconcileDockerObservations(row.value, allowed, owners);
             }
         }
+    }
+    // All hosts compare against the original locked mutation watermark. Write once
+    // after composing their changes so our trigger cannot fence sibling hosts.
+    for (const [key, row] of snapshots) {
+        if (row && JSON.stringify(row.value) !== row.original)
+            await transaction`UPDATE operation_snapshots SET value=${JSON.stringify(row.value)}::text::jsonb WHERE key=${key}`;
     }
 }

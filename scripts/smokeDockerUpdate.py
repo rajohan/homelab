@@ -39,12 +39,18 @@ def main():
         main_file = directory / "compose.yaml"
         overlay_file = directory / "overlay.yaml"
         helpers = []
-        for service, destination in [("custom-helper", "/opt/homelab/custom-entrypoint.py"), ("shell-helper", "/usr/local/bin/custom-entrypoint.sh"), ("extensionless-helper", "/custom/start")]:
+        for service, destination in [("custom-helper", "/opt/homelab/custom-entrypoint.py"), ("shell-helper", "/usr/local/bin/custom-entrypoint.sh"), ("extensionless-helper", "/custom/start"), ("pending-helper", "/custom/start"), ("module-helper", "/custom")]:
             helper_file = directory / (service + ".yaml")
             entrypoint_file = directory / (service + ".source")
             entrypoint_file.write_text("#!/bin/sh\nexec /bin/sleep 3600\n")
+            if service == "module-helper":
+                entrypoint_file = directory / "module-code"
+                entrypoint_file.mkdir()
+                (entrypoint_file / "app.py").write_text("# Synthetic module source, never executed.\n")
             helper_file.write_text("services:\n  " + service + ":\n    image: " + original + "\n    entrypoint: [/bin/sh, " + destination + "]\n    network_mode: none\n    mem_limit: 64m\n    pids_limit: 32\n    labels:\n      homelab.smoke: " + owner + "\n    volumes:\n      - type: bind\n        source: " + str(entrypoint_file) + "\n        target: " + destination + "\n        read_only: true\n")
             helpers.append((service, helper_file))
+            if service in ("pending-helper", "module-helper"):
+                helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sh, " + destination + "]", "entrypoint: [/bin/sleep]\n    command: ['3600']"))
         # A mounted executable can also be invoked later, outside startup argv.
         executable = directory / "extensionless-binary"
         executable.write_text("#!/bin/sh\nexit 0\n")
@@ -68,6 +74,14 @@ def main():
             return command(base + args, timeout=timeout)
         try:
             compose(["up", "--detach", "--no-build", "--pull", "never", "--wait", "--wait-timeout", "20"])
+            # Change Compose only, keeping the live startup vector on /bin/sleep.
+            # Both pending extensionless scripts and cwd module execution must
+            # fail before a pull, pin edit or replacement of the current container.
+            for service, helper_file in helpers:
+                if service == "pending-helper":
+                    helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sleep]\n    command: ['3600']", "entrypoint: [/bin/sh, /custom/start]"))
+                elif service == "module-helper":
+                    helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sleep]\n    command: ['3600']", "working_dir: /custom\n    entrypoint: [python]\n    command: ['-m', app]"))
             compose(["stop", "stopped"])
             before = {service: remote.namespace_snapshot(owner + "-" + service + "-1") for service in ("provider", "consumer", "stopped", "leaf")}
             command(["/usr/bin/docker", "exec", before["consumer"][0], "/bin/sh", "-ec", "printf persistent > /marker/probe"])

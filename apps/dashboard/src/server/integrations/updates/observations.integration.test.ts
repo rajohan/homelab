@@ -19,6 +19,129 @@ import { refreshDockerObservations } from "./observations";
 import { updateControl } from "./selection";
 
 test.each([
+    { reverse: false, firstStale: false },
+    { reverse: true, firstStale: false },
+    { reverse: false, firstStale: true },
+    { reverse: true, firstStale: true },
+])(
+    "shared-source host observations retain their original mutation fence: %j",
+    async ({ reverse, firstStale }) => {
+        const state = await operationFixture();
+        try {
+            const names = ["alpha", "bravo"];
+            const capturedAt = new Date(Date.now() - 60_000).toISOString();
+            const staleStart = new Date(Date.now() - 1000).toISOString();
+            const digest = "sha256:" + "c".repeat(64);
+            const targets = parseUpdateTargets(
+                JSON.stringify(
+                    names.map((name) => ({
+                        id: name,
+                        label: name,
+                        source: "software",
+                        host: `${name}.invalid`,
+                        user: "updater",
+                        identityFile: "/run/secrets/test-key",
+                        knownHostsFile: "/run/secrets/test-hosts",
+                        driver: {
+                            kind: "docker",
+                            name: `${name}-web`,
+                            project: name,
+                            service: "web",
+                            directory: "/srv/demo",
+                            file: "/srv/demo/compose.yaml",
+                            imageFile: "/srv/demo/web.yaml",
+                        },
+                    }))
+                )
+            );
+            const bindings = names.map((name) => ({
+                id: name,
+                label: name,
+                endpoint: `http://${name}.invalid:2375`,
+                projects: [name],
+                updateSources: ["software"],
+            }));
+            const report: UpdateReport = {
+                capturedAt,
+                repositoryMetadataAt: null,
+                complete: true,
+                coveredKinds: ["container"],
+                items: names.map((name, index) => ({
+                    id: "docker:" + String(index + 1).repeat(64),
+                    name: `${name}-web`,
+                    kind: "container",
+                    installed: digest,
+                    image: "example/web:1",
+                    available: "sha256:" + "d".repeat(64),
+                    status: "available",
+                    security: false,
+                    held: false,
+                    candidateVerified: true,
+                })),
+            };
+            for (const key of ["updates:software", "updates.resolved:software"])
+                await state.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES(${key},${JSON.stringify(report)}::text::jsonb,${capturedAt}::timestamptz)`;
+            await Bun.sleep(3);
+            const startedAt = new Date().toISOString();
+            const hosts: ApplicationInventory["hosts"] = names.map((name, index) => ({
+                id: name,
+                label: name,
+                available: true,
+                observationStartedAt: firstStale && index === 0 ? staleStart : startedAt,
+                applications: [
+                    {
+                        id: `${name}:` + String(index + 3).repeat(64),
+                        host: name,
+                        containerId: String(index + 3).repeat(64),
+                        containerName: `${name}-web`,
+                        name: "web",
+                        project: name,
+                        image: "example/web:1",
+                        imageId: digest,
+                        state: "running",
+                        health: "healthy",
+                        startedAt,
+                        revision: "f".repeat(64),
+                        ports: [],
+                        mounts: [],
+                        networks: [],
+                    },
+                ],
+            }));
+            await state.client.begin(async (transaction) => {
+                await lockQueue(transaction);
+                await refreshDockerObservations(
+                    transaction,
+                    {
+                        capturedAt: startedAt,
+                        hosts: reverse ? hosts.toReversed() : hosts,
+                    },
+                    bindings,
+                    targets
+                );
+            });
+            const rows = await state.client<
+                { value: UpdateReport; captured_at: Date }[]
+            >`SELECT value,captured_at FROM operation_snapshots WHERE key LIKE 'updates%'`;
+            expect(rows).toHaveLength(2);
+            for (const row of rows) {
+                expect(row.value.items.map((item) => item.id)).toEqual([
+                    "docker:" + (firstStale ? "1" : "3").repeat(64),
+                    "docker:" + "4".repeat(64),
+                ]);
+                expect(row.value.items.every((item) => item.candidateVerified)).toBe(
+                    true
+                );
+                expect(row.value.capturedAt).toBe(capturedAt);
+                expect(row.captured_at.toISOString()).toBe(capturedAt);
+            }
+        } finally {
+            await state.close();
+        }
+    }
+);
+
+test.each([
     "refresh",
     "unavailable",
     "unbound",

@@ -28,6 +28,21 @@ exec(compile(SOURCE.with_name("toolchain.py").read_text(), str(SOURCE.with_name(
 class UpdateExecutionTests(unittest.TestCase):
     """Cover exact image pins, source fencing, package boundaries and private error handling."""
 
+    def test_startup_positions_match_discovery_corpus(self):
+        cases = json.loads((SOURCE.parents[6] / "scripts/fixtures/dockerStartup.json").read_text())
+        for scenario in cases:
+            with self.subTest(name=scenario["name"]):
+                paths = remote.startup_code_paths(scenario)
+                mounted = scenario["mount"]
+                self.assertEqual(any(value == mounted or value.startswith(mounted + "/") for value in paths), scenario["blocked"])
+                self.assertNotIn("SYNTHETIC_PRIVATE", "\n".join(paths))
+                service = {**scenario, "volumes": [{"type": "bind", "target": mounted}]}
+                if scenario["blocked"]:
+                    with self.assertRaises(remote.UpdateRefusal):
+                        remote.verify_code_mounts(service)
+                else:
+                    remote.verify_code_mounts(service)
+
     def docker_fixture(self, mode="running", mutate=False, fail=False, with_environment=False, manifest_store=False, wrong_pull=False, new_consumer=None):
         with tempfile.TemporaryDirectory(prefix="homelab-updater-fixture-") as temporary:
             directory = Path(temporary).resolve()
