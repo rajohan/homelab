@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.6](https://github.com/rajohan/homelab/compare/v0.7.5...v0.7.6) (2026-09-22)
+
+
+### Bug Fixes
+
+* **updates:** wait for readiness and preserve running batches ([#35](https://github.com/rajohan/homelab/issues/35)) ([ff2ed11](https://github.com/rajohan/homelab/commit/ff2ed119e9345d671b82b58a2ee2a00d5b2665b0))
+
 ## [0.7.5](https://github.com/rajohan/homelab/compare/v0.7.4...v0.7.5) (2026-09-22)
 
 
