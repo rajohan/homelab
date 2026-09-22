@@ -107,6 +107,17 @@ class UpdateExecutionTests(unittest.TestCase):
     def test_shell_expansion_without_mounts_is_not_a_code_overlay(self):
         remote.verify_code_mounts({"entrypoint": ["sh", "-c"], "command": ['/vendor/check "$(date)"']})
 
+    def test_compound_shell_healthchecks_fail_closed_only_with_mounts(self):
+        for expression in ("( /custom/check )", "{ /custom/check; }", "if /custom/check; then true; fi", "while /custom/check; do true; done"):
+            for kind in ("bind", "volume", "tmpfs"):
+                defaults = {"entrypoint": ["/vendor/server"], "healthcheck": {"Test": ["CMD-SHELL", expression]}}
+                for override in ({}, {"healthcheck": {"interval": "1s"}}, {"healthcheck": {"test": ["CMD-SHELL", expression]}}):
+                    service = {**override, "volumes": [{"type": kind, "target": "/custom"}]}
+                    with self.subTest(expression=expression, kind=kind, override=override), self.assertRaises(remote.UpdateRefusal):
+                        remote.verify_code_mounts(service, remote.compose_startup(service, defaults))
+                remote.verify_code_mounts({}, remote.compose_startup({}, defaults))
+                remote.verify_code_mounts({"volumes": [{"type": kind, "target": "/custom"}]}, remote.compose_startup({"healthcheck": {"disable": True}}, defaults))
+
     def test_startup_positions_match_discovery_corpus(self):
         cases = json.loads((SOURCE.parents[6] / "scripts/fixtures/dockerStartup.json").read_text())
         for scenario in cases:

@@ -1,5 +1,229 @@
 [
     {
+        "name": "shell continued if keyword",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["i\\\nf /custom/start; then true; fi"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell continued while keyword",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["whi\\\nle /custom/start; do true; done"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell quoted eval builtin",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["\"eval\" /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell spaced subshell",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["( /custom/start )"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell compact subshell",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["(/custom/start)"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell brace group",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["{ /custom/start; }"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell if compound",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["if /custom/start; then /vendor/server; fi"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell multiline if",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["if /custom/start\nthen /vendor/server\nfi"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell while compound",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["while /custom/start; do /vendor/server; done"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell until compound",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["until /custom/start; do /vendor/server; done"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell for compound",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["for value in 1; do /custom/start; done"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell select compound",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["select value in 1; do /custom/start; done"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell case compound",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["case x in x) /custom/start;; esac"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell function definition",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["run() { /custom/start; }; run"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell function keyword",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["function run { /custom/start; }; run"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell timed command",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["time /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell negated command",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["! /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell compound after and",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["/vendor/prep && { /custom/start; }"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell compound after assignment",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["FOO=x time /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell deferred eval",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["eval '/custom/start'"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell redirected command",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": [">/custom/log /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell quoted parentheses data",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["/vendor/server '( /custom/start )'"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell double quoted braces data",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["/vendor/server \"{ /custom/start; }\""],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell escaped parentheses data",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["/vendor/server \\( /custom/start \\)"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell keyword operands",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["/vendor/server if while for case /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell quoted keyword executable",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["\"if\" /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell ordinary parameter operand",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["/vendor/server ${VALUE:-/custom/data}"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell ordinary escaped redirection operand",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["/vendor/server \\> /custom/data"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
         "name": "shell command substitution",
         "entrypoint": ["/bin/sh", "-c"],
         "command": ["/vendor/prep \"$(/custom/start)\""],

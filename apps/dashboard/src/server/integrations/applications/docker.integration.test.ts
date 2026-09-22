@@ -28,6 +28,10 @@ test.each([
         blocked: true,
     },
     { test: ["CMD-SHELL", '/vendor/check "$(/custom/check)"'], blocked: true },
+    { test: ["CMD-SHELL", "( /custom/check )"], blocked: true },
+    { test: ["CMD-SHELL", "{ /custom/check; }"], blocked: true },
+    { test: ["CMD-SHELL", "if /custom/check; then true; fi"], blocked: true },
+    { test: ["CMD-SHELL", "/vendor/check '( /custom/data )'"], blocked: false },
     { test: ["CMD", "/vendor/check", "--data", "/custom/config"], blocked: false },
     { test: ["NONE", "/custom/check"], blocked: false },
 ])(

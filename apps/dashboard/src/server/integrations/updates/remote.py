@@ -73,7 +73,7 @@ def startup_code_paths(startup):
     """Infer executable/interpreter positions, never ordinary data-path operands."""
     paths = set()
     unqualified = False
-    def executable_expansion(value):
+    def unqualified_shell(value):
         quote, index = None, 0
         while index < len(value):
             character = value[index]
@@ -85,7 +85,7 @@ def startup_code_paths(startup):
                 index += 1
             elif character == '"' or character == "'" and quote is None:
                 quote = None if quote == character else character
-            elif character == "`" or character == "$" and following.startswith("(") and following != "((" or quote is None and character in "<>" and following.startswith("("):
+            elif character == "`" or character == "$" and following.startswith("(") and following != "((" or quote is None and character in "()<>":
                 return True
             index += 1
         return False
@@ -96,11 +96,11 @@ def startup_code_paths(startup):
             return match[2] if match[2] is not None else "" if match[3] == "\n" else match[3]
         # Preserve separator provenance before unquoting literal argument values.
         return [(re.sub(r'''"((?:\\[\s\S]|[^"\\])*)"|'([^']*)'|\\([\s\S])''', unquote, word),
-                 re.fullmatch(r"[;|&\n]+", word) is not None)
+                 re.fullmatch(r"[;|&\n]+", word) is not None, word)
                 for word in re.findall(r'''(?:"(?:\\[\s\S]|[^"\\])*"|'[^']*'|\\[\s\S]|[^\s;|&"'\\])+|[;|&]+|\n''', value)
                 if word != "\\\n"]
     def words(value):
-        return [word for word, separator in tokens(value) if not separator or word != "\n"]
+        return [word for word, separator, _ in tokens(value) if not separator or word != "\n"]
     def argv(value):
         return words(value) if isinstance(value, str) else value or []
     def resolve(cwd, value):
@@ -159,11 +159,13 @@ def startup_code_paths(startup):
         elif name in ("sh", "bash", "dash", "ksh", "zsh", "ash"):
             inline = next((index for index, arg in enumerate(args) if index > 0 and re.match(r"^-[^-]*c", arg)), None)
             if inline is not None:
-                if executable_expansion(args[inline + 1] if len(args) > inline + 1 else ""):
+                # Qualify simple command lists only, never guessed compound
+                # grammar, redirections or executable expansions.
+                if unqualified_shell(args[inline + 1] if len(args) > inline + 1 else ""):
                     unqualified = True
                     return
                 group, current = [], cwd
-                for token, separator in tokens(args[inline + 1] if len(args) > inline + 1 else "") + [(";", True)]:
+                for token, separator, raw in tokens(args[inline + 1] if len(args) > inline + 1 else "") + [(";", True, ";")]:
                     if separator:
                         # Assignment values are data, even if they contain paths.
                         while group and re.match(r"[A-Za-z_][A-Za-z0-9_]*=", group[0]):
@@ -174,6 +176,9 @@ def startup_code_paths(startup):
                             inspect(group, current, depth + 1)
                         group = []
                     else:
+                        if all(re.match(r"[A-Za-z_][A-Za-z0-9_]*=", word) for word in group) and (re.fullmatch(r"(?:if|then|elif|else|fi|while|until|for|select|in|do|done|case|esac|function|time|!|\{|\}|\[\[|\]\])", raw.replace("\\\n", "")) or token == "eval"):
+                            unqualified = True
+                            return
                         group.append(token)
             else:
                 script = next((arg for arg in args[1:] if not arg.startswith("-")), None)

@@ -1,6 +1,6 @@
 import path from "node:path";
 
-function tokens(command: string): { value: string; separator: boolean }[] {
+function tokens(command: string): { value: string; separator: boolean; raw: string }[] {
     return (
         command.match(
             /(?:"(?:\\[\s\S]|[^"\\])*"|'[^']*'|\\[\s\S]|[^\s;|&"'\\])+|[;|&]+|\n/g
@@ -8,6 +8,7 @@ function tokens(command: string): { value: string; separator: boolean }[] {
     )
         .filter((word) => word !== "\\\n")
         .map((word) => ({
+            raw: word,
             // Classify before unquoting so literal separators remain arguments.
             separator: /^[;|&\n]+$/.test(word),
             value: word.replaceAll(
@@ -31,7 +32,7 @@ function words(command: string): string[] {
         .map((token) => token.value);
 }
 
-function executableExpansion(command: string): boolean {
+function unqualifiedShell(command: string): boolean {
     let quote: "'" | '"' | undefined;
     for (let index = 0; index < command.length; index++) {
         const character = command[index];
@@ -52,9 +53,7 @@ function executableExpansion(command: string): boolean {
             (character === "$" &&
                 command[index + 1] === "(" &&
                 command[index + 2] !== "(") ||
-            (quote === undefined &&
-                (character === "<" || character === ">") &&
-                command[index + 1] === "(")
+            (quote === undefined && "()<>".includes(character ?? "\0"))
         )
             return true;
     }
@@ -67,7 +66,7 @@ function executableExpansion(command: string): boolean {
  * @param command - Image-resolved or pending Compose command, never persisted.
  * @param workingDirectory - Runtime directory used for relative scripts and module imports.
  * @param healthcheck - Effective Docker healthcheck test vector, never persisted.
- * @returns Code paths, or null for unqualified executable shell expansion. Callers persist booleans only.
+ * @returns Code paths, or null for shell syntax requiring separate qualification. Callers persist booleans only.
  */
 export function startupCodePaths(
     entrypoint: readonly string[] | string | null | undefined,
@@ -164,7 +163,9 @@ export function startupCodePaths(
                 return;
             }
             {
-                if (executableExpansion(args[inline + 1] ?? "")) {
+                // Only simple command lists are qualified. Do not guess through
+                // compound grammar, redirections or executable expansions.
+                if (unqualifiedShell(args[inline + 1] ?? "")) {
                     unqualified = true;
                     return;
                 }
@@ -181,7 +182,21 @@ export function startupCodePaths(
                 };
                 for (const token of tokens(args[inline + 1] ?? "")) {
                     if (token.separator) finish();
-                    else group.push(token.value);
+                    else {
+                        if (
+                            group.every((word) =>
+                                /^[A-Za-z_][A-Za-z0-9_]*=/.test(word)
+                            ) &&
+                            (/^(?:if|then|elif|else|fi|while|until|for|select|in|do|done|case|esac|function|time|!|\{|\}|\[\[|\]\])$/.test(
+                                token.raw.replaceAll("\\\n", "")
+                            ) ||
+                                token.value === "eval")
+                        ) {
+                            unqualified = true;
+                            return;
+                        }
+                        group.push(token.value);
+                    }
                 }
                 finish();
             }

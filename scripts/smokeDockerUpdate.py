@@ -56,7 +56,7 @@ def main():
                 helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sh, " + destination + "]", "entrypoint: [/bin/sleep]\n    command: ['3600']"))
             if service in ("inherited-helper", "option-helper"):
                 helper_file.write_text(helper_file.read_text().replace(original, inherited_image))
-        for service, kind in (("assignment-helper", "volumes"), ("config-helper", "configs"), ("secret-helper", "secrets"), ("newline-helper", "volumes"), ("volume-helper", "named-volume"), ("expansion-helper", "volumes"), ("health-helper", "volumes"), ("inherited-health-helper", "volumes")):
+        for service, kind in (("assignment-helper", "volumes"), ("config-helper", "configs"), ("secret-helper", "secrets"), ("newline-helper", "volumes"), ("volume-helper", "named-volume"), ("expansion-helper", "volumes"), ("health-helper", "volumes"), ("inherited-health-helper", "volumes"), ("compound-helper", "volumes"), ("conditional-helper", "volumes"), ("compound-health-helper", "volumes")):
             helper_file = directory / (service + ".yaml")
             source_file = directory / (service + ".source")
             source_file.write_text("# Synthetic startup code, never executed.\n")
@@ -117,7 +117,18 @@ def main():
             (build_directory / "Dockerfile").write_text('FROM postgres:18\nENTRYPOINT ["/bin/sleep"]\nCMD ["3600"]\nHEALTHCHECK CMD ["/bin/sh", "/custom/start"]\n')
             command(["/usr/bin/docker", "build", "--pull=false", "--network=none", "--label", "homelab.smoke=" + owner, "--tag", health_image, str(build_directory)], environment={"HOME": str(build_directory)})
             built_images.append(health_image)
-            compose(["up", "--detach", "--no-build", "--pull", "never", "--wait", "--wait-timeout", "20"])
+            # Compose 2.38 --wait incorrectly requires State.Health even when an
+            # inherited image healthcheck is explicitly disabled. Start this
+            # exact fixture separately and assert its effective disabled state;
+            # all remaining fixtures retain Compose's normal readiness checks.
+            disabled_health_service = "inherited-health-helper"
+            compose(["up", "--detach", "--no-build", "--pull", "never", disabled_health_service])
+            disabled_health = json.loads(command(["/usr/bin/docker", "inspect", owner + "-" + disabled_health_service + "-1"]))[0]
+            assert disabled_health["Config"]["Labels"]["homelab.smoke"] == owner
+            assert disabled_health["Config"]["Healthcheck"]["Test"] == ["NONE"]
+            assert disabled_health["State"]["Status"] == "running" and not disabled_health["State"].get("Health")
+            wait_services = [name for name in compose(["config", "--services"]).split() if name != disabled_health_service]
+            compose(["up", "--detach", "--no-build", "--pull", "never", "--wait", "--wait-timeout", "20", *wait_services])
             # Change Compose only, keeping the live startup vector on /bin/sleep.
             # Both pending extensionless scripts and cwd module execution must
             # fail before a pull, pin edit or replacement of the current container.
@@ -145,6 +156,11 @@ def main():
                     helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sleep]\n    command: ['3600']", "entrypoint: [/bin/sh, /custom/start]"))
                 elif service == "expansion-helper":
                     helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sleep]\n    command: ['3600']", "entrypoint: [/bin/sh, '-c']\n    command: " + json.dumps(['/vendor/prep "$(/custom/start)"'])))
+                elif service in ("compound-helper", "conditional-helper"):
+                    expression = "( /custom/start )" if service == "compound-helper" else "i\\\nf /custom/start; then /bin/sleep 3600; fi"
+                    helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sleep]\n    command: ['3600']", "entrypoint: [/bin/sh, '-c']\n    command: " + json.dumps([expression])))
+                elif service == "compound-health-helper":
+                    helper_file.write_text(helper_file.read_text() + "    healthcheck:\n      test: " + json.dumps(["CMD-SHELL", "{ /custom/start; }"]) + "\n")
                 elif service == "health-helper":
                     helper_file.write_text(helper_file.read_text() + "    healthcheck:\n      test: [CMD, /bin/sh, /custom/start]\n")
                 elif service == "inherited-health-helper":
