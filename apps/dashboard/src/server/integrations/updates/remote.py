@@ -317,7 +317,9 @@ def apt_update(item, automatic):
     if not versions or len(versions) > 500:
         raise RuntimeError("Unsupported package update plan")
     progress("installing")
-    command(["/usr/bin/apt-get", "--assume-yes", "--no-remove", "--no-install-recommends", "-o", "Dpkg::Options::=--force-confold", "install"] + versions, timeout=1200)
+    # Report services needing restart without needrestart killing this worker's
+    # own Doppler-backed service midway through an approved host batch.
+    command(["/usr/bin/apt-get", "--assume-yes", "--no-remove", "--no-install-recommends", "-o", "Dpkg::Options::=--force-confold", "install"] + versions, timeout=1200, environment={"NEEDRESTART_MODE": "l"})
     progress("verifying")
     cache.open()
     installed = cache[name].installed

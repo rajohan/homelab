@@ -358,6 +358,18 @@ class UpdateExecutionTests(unittest.TestCase):
                 remote.apt_update({'id': 'apt:' + name, 'installed': installed, 'available': approved}, False)
             command.assert_not_called()
 
+    def test_package_install_defers_needrestart_without_changing_host_configuration(self):
+        package = types.SimpleNamespace(fullname='demo:amd64', installed=types.SimpleNamespace(version='1.2.3'), candidate=types.SimpleNamespace(version='1.3.0'), marked_delete=False, _pkg=types.SimpleNamespace(selected_state=0), mark_install=lambda **_options: None)
+        class Cache:
+            broken_count = 0
+            def __getitem__(self, _name): return package
+            def get_changes(self): return [package]
+            def open(self): package.installed = package.candidate
+        modules = {'apt': types.SimpleNamespace(Cache=Cache), 'apt_pkg': types.SimpleNamespace(SELSTATE_HOLD=2, version_compare=lambda _after, _before: 1)}
+        with patch.dict(sys.modules, modules), patch.object(remote, 'command') as command, patch.object(remote, 'progress'):
+            self.assertEqual(remote.apt_update({'id': 'apt:demo:amd64', 'installed': '1.2.3', 'available': '1.3.0'}, False), '1.3.0')
+        command.assert_called_once_with(['/usr/bin/apt-get', '--assume-yes', '--no-remove', '--no-install-recommends', '-o', 'Dpkg::Options::=--force-confold', 'install', 'demo:amd64=1.3.0'], timeout=1200, environment={'NEEDRESTART_MODE': 'l'})
+
     def test_failure_receipt_omits_updater_output_and_private_data(self):
         payload = {"driver": {"kind": "native", "inspect": [sys.executable, "-c", "raise Exception('synthetic-private-value')"]}, "item": {"installed": "1.0.0"}, "automatic": False}
         result = subprocess.run([sys.executable, str(SOURCE)], input=json.dumps(payload), capture_output=True, text=True, timeout=10)
@@ -619,9 +631,14 @@ else:
         self.nextcloud_fixture(signature=" \t" + 'a' * 172 + "\r\n" + 'a' * 172 + "\n")
         self.nextcloud_fixture(signature='a' * 343 + '!')
 
-    def test_loki_retries_only_readiness_with_a_bounded_deadline(self):
-        driver = {"release": "loki", "recipe": {"application": "loki"}, "health": ["/fixture/health"]}
-        item = {"release": "loki", "installed": "3.7.7", "available": "3.7.8"}
+    def test_loki_and_openclaw_retry_only_readiness_with_a_bounded_deadline(self):
+        for application, installer in (('loki', 'binary_install'), ('openclaw', 'openclaw_install')):
+            with self.subTest(application=application):
+                self.readiness_fixture(application, installer)
+
+    def readiness_fixture(self, application, installer):
+        driver = {"release": application, "recipe": {"application": application}, "health": ["/fixture/health"]}
+        item = {"release": application, "installed": "3.7.7", "available": "3.7.8"}
         for active, ready in ((True, True), (True, False), (False, True)):
             with self.subTest(active=active, ready=ready):
                 clock, calls = [0.0], []
@@ -634,9 +651,9 @@ else:
                         raise RuntimeError('Update command failed')
                     return ''
                 def sleep(seconds): clock[0] += seconds
-                with patch.object(remote, 'binary_install', return_value=active) as install, patch.object(remote.time, 'monotonic', side_effect=lambda: clock[0]), patch.object(remote.time, 'sleep', side_effect=sleep):
+                with patch.object(remote, installer, return_value=active) as install, patch.object(remote.time, 'monotonic', side_effect=lambda: clock[0]), patch.object(remote.time, 'sleep', side_effect=sleep):
                     if active and not ready:
-                        with self.assertRaisesRegex(remote.UpdateRefusal, '^loki_readiness_failed$'):
+                        with self.assertRaisesRegex(remote.UpdateRefusal, '^' + application + '_readiness_failed$'):
                             remote.install_native_recipe(driver, item, run, lambda _phase: None, remote.atomic_content, remote.locked_directory)
                         self.assertEqual(clock[0], 60)
                     else:
@@ -644,7 +661,7 @@ else:
                     install.assert_called_once()
                 self.assertEqual(bool(calls), active)
                 if active and ready: self.assertEqual(len(calls), 2)
-        with patch.object(remote, 'binary_install', return_value=True), patch.object(remote.time, 'sleep') as sleep:
+        with patch.object(remote, installer, return_value=True), patch.object(remote.time, 'sleep') as sleep:
             def interrupted(_args, **_options): raise RuntimeError('Update interrupted')
             with self.assertRaisesRegex(RuntimeError, '^Update interrupted$'):
                 remote.install_native_recipe(driver, item, interrupted, lambda _phase: None, remote.atomic_content, remote.locked_directory)

@@ -97,6 +97,7 @@ export function UpdateBatchDialog({
                                 {
                                     id: "selected",
                                     label: "Include",
+                                    width: "w-20",
                                     render: (entry) => {
                                         const key = JSON.stringify([
                                             entry.source,

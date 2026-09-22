@@ -1772,6 +1772,7 @@ test.each([
                 ["openclaw_update_failed", "inspect OpenClaw's update report"],
                 ["apt_candidate_changed", "Refresh this host's software report"],
                 ["loki_readiness_failed", "readiness did not pass within 60 seconds"],
+                ["openclaw_readiness_failed", "OpenClaw version was installed"],
             ] as const) {
                 const messages: string[] = [];
                 const output = [

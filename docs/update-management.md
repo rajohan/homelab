@@ -229,6 +229,11 @@ distribution upgrade or reboot is performed. A reboot-required flag produces a
 notification, not a host restart. Docker/native updates retain the host's observed
 restart flag but do not emit an OS-restart notification for an unrelated application
 update. Package scripts may restart their own services.
+For this APT invocation only, `NEEDRESTART_MODE=l` makes needrestart list services
+instead of automatically restarting them. Otherwise updating Doppler can terminate
+the dashboard/worker running the batch. No host configuration is changed. Required
+service restarts must be scheduled separately; list-only mode does not itself set
+the operating system's reboot-required flag.
 The repository metadata refresh remains the host's existing APT responsibility.
 
 ### Native software
@@ -280,7 +285,10 @@ bulk and opt-in automatic queues, permissions, version fences and receipts.
   point); do not run an unrelated root/global installation. The official updater gets
   `update --tag <approved-version> --yes --no-restart`. It does not change channels or
   accept new plugin capabilities. Homelab verifies the exact version and restarts only
-  a previously active service, then invokes the configured health check.
+  a previously active service, then waits up to 60 seconds for its configured health
+  check, like Loki. Only the read-only probe is retried, not installation or restart.
+  On timeout, inspect the service and refresh inventory before another confirmation:
+  the approved version may already be installed even though the run failed readiness.
 - **Nextcloud:** `recipe` contains `application: "nextcloud"`, installation `directory`,
   absolute `php` executable and service `user`.
   The release checker prefers the installed major's latest stable point release before
@@ -298,6 +306,13 @@ bulk and opt-in automatic queues, permissions, version fences and receipts.
   The invocation uses `--no-backup`: a current, tested PBS backup is a prerequisite to
   activation, not a second unmanaged local backup. No automatic rollback of migrated
   application data is attempted. Vendor updater logs/recovery state are not deleted.
+  Its writable-tree check also covers custom `config/*.config.php` files. Keep
+  protected deployment configuration outside the replaceable application tree;
+  small PHP loaders in that tree may include those root-owned files without copying
+  their secrets or making the originals writable. This is an explicitly reviewed
+  host preparation, not an installer action: preserve ownership, permissions and
+  contents, verify unchanged effective configuration and health, and do not bypass
+  the vendor's checks or automatically chmod configuration files.
 
 For stopped services, successful installation means the on-disk version was verified;
 online health is checked only for running services. A failed restart or health check
