@@ -24,14 +24,13 @@ type DockerOwner = Pick<
 >;
 
 /**
- * Detect bind-mounted application code that cannot be qualified by changing an image pin.
+ * Detect mounted application code that cannot be qualified by changing an image pin.
  * @param application - Safe Docker metadata, excluding environment and file contents.
  * @returns Whether a source overlay requires a separately qualified deployment.
  */
 export function hasApplicationCodeMount(application: ManagedApplication): boolean {
     return application.mounts.some(
         (mount) =>
-            mount.type === "bind" &&
             mount.destination !== "/opt/homelab/logout-worker.js" &&
             (mount.startupCode === true ||
                 codeFile.test(mount.destination) ||

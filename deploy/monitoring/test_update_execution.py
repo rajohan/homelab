@@ -81,6 +81,18 @@ class UpdateExecutionTests(unittest.TestCase):
                 remote.verify_code_mounts({"entrypoint": ["python"], "command": ["/vendor/app.py"], "volumes": [{"type": "bind", "target": destination}]})
         remote.verify_code_mounts({"entrypoint": ["/vendor/server"], "volumes": [{"type": "bind", "target": "/usr/share/zoneinfo"}, {"type": "bind", "target": "/usr/local/library-data"}]})
 
+    def test_non_bind_startup_mounts_are_not_image_owned(self):
+        for kind in ("volume", "tmpfs"):
+            for target, entrypoint in (("/custom", ["/custom/start"]), ("/usr/local/lib/python3.13/site-packages", ["/vendor/server"])):
+                with self.subTest(kind=kind, target=target), patch.object(Path, "stat", side_effect=AssertionError("Non-bind sources are not host paths")), self.assertRaises(remote.UpdateRefusal):
+                    remote.verify_code_mounts({"entrypoint": entrypoint, "volumes": [{"type": kind, "source": "synthetic-volume", "target": target}]})
+
+    def test_non_bind_data_mounts_remain_eligible(self):
+        for kind in ("volume", "tmpfs"):
+            for destination in ("/config", "/var/lib/postgresql/data", "/app/data"):
+                with self.subTest(kind=kind, destination=destination), patch.object(Path, "stat", side_effect=AssertionError("Non-bind sources are not host paths")):
+                    remote.verify_code_mounts({"entrypoint": ["/vendor/server"], "command": ["--data", destination], "volumes": [{"type": kind, "source": "synthetic-volume", "target": destination}]})
+
     def test_startup_positions_match_discovery_corpus(self):
         cases = json.loads((SOURCE.parents[6] / "scripts/fixtures/dockerStartup.json").read_text())
         for scenario in cases:

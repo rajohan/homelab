@@ -72,13 +72,18 @@ class UpdateRefusal(RuntimeError):
 def startup_code_paths(startup):
     """Infer executable/interpreter positions, never ordinary data-path operands."""
     paths = set()
-    def words(value):
+    def tokens(value):
         def unquote(match):
             if match[1] is not None:
-                return re.sub(r'\\(["\\$`])', r'\1', match[1])
-            return match[2] if match[2] is not None else match[3]
-        return [re.sub(r'''"((?:\\.|[^"\\])*)"|'([^']*)'|\\(.)''', unquote, word)
-                for word in re.findall(r'''(?:"(?:\\.|[^"\\])*"|'[^']*'|\\.|[^\s;|&"'\\])+|[;|&]+''', value)]
+                return re.sub(r'\\(["\\$`])', r'\1', match[1].replace("\\\n", ""))
+            return match[2] if match[2] is not None else "" if match[3] == "\n" else match[3]
+        # Preserve separator provenance before unquoting literal argument values.
+        return [(re.sub(r'''"((?:\\[\s\S]|[^"\\])*)"|'([^']*)'|\\([\s\S])''', unquote, word),
+                 re.fullmatch(r"[;|&\n]+", word) is not None)
+                for word in re.findall(r'''(?:"(?:\\[\s\S]|[^"\\])*"|'[^']*'|\\[\s\S]|[^\s;|&"'\\])+|[;|&]+|\n''', value)
+                if word != "\\\n"]
+    def words(value):
+        return [word for word, separator in tokens(value) if not separator or word != "\n"]
     def argv(value):
         return words(value) if isinstance(value, str) else value or []
     def resolve(cwd, value):
@@ -137,8 +142,8 @@ def startup_code_paths(startup):
             inline = next((index for index, arg in enumerate(args) if index > 0 and re.match(r"^-[^-]*c", arg)), None)
             if inline is not None:
                 group, current = [], cwd
-                for token in words(args[inline + 1] if len(args) > inline + 1 else "") + [";"]:
-                    if re.fullmatch(r"[;|&]+", token):
+                for token, separator in tokens(args[inline + 1] if len(args) > inline + 1 else "") + [(";", True)]:
+                    if separator:
                         # Assignment values are data, even if they contain paths.
                         while group and re.match(r"[A-Za-z_][A-Za-z0-9_]*=", group[0]):
                             group.pop(0)
@@ -199,7 +204,7 @@ def compose_startup(service, defaults):
 def verify_code_mounts(service, startup=None):
     """Refuse executable deployment mounts without reading config/secret contents."""
     paths = startup_code_paths(startup or service)
-    mounts = [mount for mount in service.get("volumes", []) if mount.get("type") == "bind"]
+    mounts = list(service.get("volumes", []))
     for kind, base in (("configs", "/"), ("secrets", "/run/secrets")):
         for entry in service.get(kind, []):
             target = entry if isinstance(entry, str) else entry.get("target") or entry["source"]
@@ -213,7 +218,9 @@ def verify_code_mounts(service, startup=None):
             continue
         normalized = posixpath.normpath(destination)
         startup_code = any(path == normalized or path.startswith(normalized.rstrip("/") + "/") for path in paths)
-        source = mount.get("source")
+        # Named-volume identifiers are not host paths. Their target/startup
+        # relationship still matters: updating the image does not replace them.
+        source = mount.get("source") if mount.get("type") == "bind" else None
         executable = False
         if source:
             metadata = Path(source).stat()

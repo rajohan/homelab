@@ -228,6 +228,40 @@ test("standalone logout helpers do not block an otherwise unmodified vendor imag
     ).toBe(false);
 });
 
+test.each(["volume", "tmpfs"])(
+    "non-bind %s startup and library mounts block updates without reading sources",
+    (type) => {
+        for (const [destination, entrypoint, blocked] of [
+            ["/custom", ["/custom/start"], true],
+            ["/usr/local/lib/python3.13/site-packages", ["/vendor/server"], true],
+            ["/config", ["/vendor/server"], false],
+            ["/var/lib/postgresql/data", ["postgres"], false],
+        ] as const) {
+            const detail = applicationFixtureDetail("a".repeat(64), "web");
+            detail.Config.Entrypoint = [...entrypoint];
+            detail.Config.Cmd = ["--data", destination];
+            detail.Mounts = [
+                {
+                    Type: type,
+                    Source: "synthetic-volume-not-a-file",
+                    Destination: destination,
+                    RW: false,
+                },
+            ];
+            const mapped = mapDockerApplication(
+                {
+                    id: "main",
+                    label: "Main",
+                    endpoint: "http://fixture.invalid:2375",
+                    projects: ["demo"],
+                },
+                detail
+            );
+            expect(hasApplicationCodeMount(mapped)).toBe(blocked);
+        }
+    }
+);
+
 test("removing an overlay clears only its installation block on the next observation", () => {
     const blocked = {
         ...report,

@@ -55,7 +55,7 @@ def main():
                 helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sh, " + destination + "]", "entrypoint: [/bin/sleep]\n    command: ['3600']"))
             if service in ("inherited-helper", "option-helper"):
                 helper_file.write_text(helper_file.read_text().replace(original, inherited_image))
-        for service, kind in (("assignment-helper", "volumes"), ("config-helper", "configs"), ("secret-helper", "secrets")):
+        for service, kind in (("assignment-helper", "volumes"), ("config-helper", "configs"), ("secret-helper", "secrets"), ("newline-helper", "volumes"), ("volume-helper", "named-volume")):
             helper_file = directory / (service + ".yaml")
             source_file = directory / (service + ".source")
             source_file.write_text("# Synthetic startup code, never executed.\n")
@@ -65,6 +65,8 @@ def main():
                 source_directory.mkdir()
                 (source_directory / "start").write_text(source_file.read_text())
                 text += "    volumes:\n      - type: bind\n        source: " + str(source_directory) + "\n        target: /custom\n        read_only: true\n"
+            elif kind == "named-volume":
+                text += "    volumes:\n      - type: volume\n        source: startup-code\n        target: /custom\nvolumes:\n  startup-code:\n    labels:\n      homelab.smoke: " + owner + "\n"
             else:
                 text += "    " + kind + ":\n      - source: " + service + "\n        target: /custom/start\n" + kind + ":\n  " + service + ":\n    file: " + str(source_file) + "\n"
             helper_file.write_text(text)
@@ -129,6 +131,11 @@ def main():
                 elif service == "assignment-helper":
                     helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sleep]\n    command: ['3600']", "entrypoint: [/bin/sh, '-c']\n    command: ['FOO=x /custom/start']"))
                 elif service in ("config-helper", "secret-helper"):
+                    helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sleep]\n    command: ['3600']", "entrypoint: [/bin/sh, /custom/start]"))
+                elif service == "newline-helper":
+                    helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sleep]\n    command: ['3600']", "entrypoint: [/bin/sh, '-c']\n    command: " + json.dumps(["/vendor/prep\n/custom/start"])))
+                elif service == "volume-helper":
+                    command(["/usr/bin/docker", "exec", owner + "-volume-helper-1", "/bin/sh", "-ec", "printf '# Synthetic code, never executed.\\n' > /custom/start; chmod 644 /custom/start"])
                     helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sleep]\n    command: ['3600']", "entrypoint: [/bin/sh, /custom/start]"))
             compose(["stop", "stopped"])
             before = {service: remote.namespace_snapshot(owner + "-" + service + "-1") for service in ("provider", "consumer", "stopped", "leaf")}

@@ -1,5 +1,133 @@
 [
     {
+        "name": "shell newline separates commands",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["/vendor/prep\n/custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell blank lines separate commands",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["/vendor/prep\n\n/custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell newline after assignment",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["FOO=x /vendor/prep\nBAR=y /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell newline changes working directory",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["cd /custom\n./start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell quoted newline argument is data",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["/vendor/server '\n' /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell quoted multiline argument is data",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["/vendor/server '/ordinary\n/custom/start'"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell double quoted multiline argument is data",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["/vendor/server \"/ordinary\n/custom/start\""],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell quoted newline assignment is data",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["FOO='x\n/custom/start' /vendor/server"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell escaped newline keeps arguments",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["/vendor/server \\\n /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell escaped newline joins executable",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["/cus\\\ntom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell continued command followed by newline",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["/vendor/server \\\n --config /config/settings\n/custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell double quoted continuation is data",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["/vendor/server \"data\\\n/custom/start\""],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell single quoted backslash newline is data",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["/vendor/server 'data\\\n/custom/start'"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell newline after quoted value",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["/vendor/server 'data\nvalue'\n/custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "shell literal semicolon argument is data",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["/vendor/server ';' /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "shell newline before data argument stays command-local",
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": ["/vendor/prep\n/vendor/server /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
         "name": "shell leading assignment",
         "entrypoint": ["/bin/sh", "-c"],
         "command": ["FOO=x /custom/start"],

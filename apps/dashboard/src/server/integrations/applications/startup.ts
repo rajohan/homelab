@@ -1,22 +1,34 @@
 import path from "node:path";
 
-function words(command: string): string[] {
+function tokens(command: string): { value: string; separator: boolean }[] {
     return (
-        command.match(/(?:"(?:\\.|[^"\\])*"|'[^']*'|\\.|[^\s;|&"'\\])+|[;|&]+/g) ?? []
-    ).map((word) =>
-        word.replaceAll(
-            /"((?:\\.|[^"\\])*)"|'([^']*)'|\\(.)/g,
-            (
-                _match,
-                double: string | undefined,
-                single: string | undefined,
-                escaped: string | undefined
-            ) =>
-                double === undefined
-                    ? (single ?? escaped ?? "")
-                    : double.replaceAll(/\\(["\\$`])/g, "$1")
-        )
-    );
+        command.match(
+            /(?:"(?:\\[\s\S]|[^"\\])*"|'[^']*'|\\[\s\S]|[^\s;|&"'\\])+|[;|&]+|\n/g
+        ) ?? []
+    )
+        .filter((word) => word !== "\\\n")
+        .map((word) => ({
+            // Classify before unquoting so literal separators remain arguments.
+            separator: /^[;|&\n]+$/.test(word),
+            value: word.replaceAll(
+                /"((?:\\[\s\S]|[^"\\])*)"|'([^']*)'|\\([\s\S])/g,
+                (
+                    _match,
+                    double: string | undefined,
+                    single: string | undefined,
+                    escaped: string | undefined
+                ) =>
+                    double === undefined
+                        ? (single ?? (escaped === "\n" ? "" : escaped) ?? "")
+                        : double.replaceAll("\\\n", "").replaceAll(/\\(["\\$`])/g, "$1")
+            ),
+        }));
+}
+
+function words(command: string): string[] {
+    return tokens(command)
+        .filter((token) => !token.separator || token.value !== "\n")
+        .map((token) => token.value);
 }
 
 /**
@@ -130,9 +142,9 @@ export function startupCodePaths(
                     else inspect(group, current, depth + 1);
                     group = [];
                 };
-                for (const token of words(args[inline + 1] ?? "")) {
-                    if (/^[;|&]+$/.test(token)) finish();
-                    else group.push(token);
+                for (const token of tokens(args[inline + 1] ?? "")) {
+                    if (token.separator) finish();
+                    else group.push(token.value);
                 }
                 finish();
             }
