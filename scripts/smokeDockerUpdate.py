@@ -146,7 +146,7 @@ def main():
             (build_directory / "Dockerfile").write_text('FROM postgres:18\nSHELL ["/custom/shell", "-c"]\nENTRYPOINT ["/bin/sleep"]\nCMD ["3600"]\n')
             command(["/usr/bin/docker", "build", "--pull=false", "--network=none", "--label", "homelab.smoke=" + owner, "--tag", shell_image, str(build_directory)], environment={"HOME": str(build_directory)})
             built_images.append(shell_image)
-            (build_directory / "Dockerfile").write_text('FROM postgres:18\nRUN mkdir -p /vendor /custom/dir && ln -s /custom/dir /alias && ln -s /alias/../start /vendor/start && ln -s /etc/ld.so.conf.d/fixture.conf /loader-fragment\nENTRYPOINT ["/bin/sleep"]\nCMD ["3600"]\n')
+            (build_directory / "Dockerfile").write_text('FROM postgres:18\nRUN mkdir -p /vendor /custom/dir && ln -s /custom/dir /alias && ln -s /alias/../start /vendor/start && ln -s /etc/ld.so.conf.d/fixture.conf /loader-fragment && ln -s /etc/ld.so.preload /loader-preload && ln -s /etc/ld.so.cache /loader-cache && ln -s /etc/ld.so.conf /loader-conf\nENTRYPOINT ["/bin/sleep"]\nCMD ["3600"]\n')
             command(["/usr/bin/docker", "build", "--pull=false", "--network=none", "--label", "homelab.smoke=" + owner, "--tag", symlink_image, str(build_directory)], environment={"HOME": str(build_directory)})
             built_images.append(symlink_image)
             symlink_file = directory / "symlink-helper.yaml"
@@ -345,23 +345,24 @@ def main():
             fragment_name = owner + "-symlink-helper-1"
             fragment_before = remote.namespace_snapshot(fragment_name)
             fragment_original = symlink_file.read_bytes()
-            try:
-                symlink_file.write_text(json.dumps({"services": {"symlink-helper": {**shared, "image": symlink_image, "entrypoint": ["/sbin/ldconfig"], "command": [], "volumes": [{"type": "bind", "source": str(fragment_source), "target": "/loader-fragment", "read_only": True}]}}}))
-                remote.command = no_pull
+            for control in ("fragment", "preload", "cache", "conf"):
                 try:
-                    remote.docker_update({**driver, "name": fragment_name, "service": "symlink-helper", "imageFile": str(symlink_file), "namespaceDependents": []}, {**item, "id": "docker:" + fragment_before[0], "image": symlink_image, "installed": fragment_before[3], "availableImage": "docker.io/homelab-fixtures/" + owner + ":candidate@sha256:" + "a" * 64})
-                    raise AssertionError("A mounted loader configuration alias passed preflight")
-                except remote.UpdateRefusal as error:
-                    assert error.reason == "local_code_override"
-            finally:
-                remote.command = command
-                symlink_file.write_bytes(fragment_original)
-            assert remote.namespace_snapshot(fragment_name) == fragment_before
+                    symlink_file.write_text(json.dumps({"services": {"symlink-helper": {**shared, "image": symlink_image, "entrypoint": ["/sbin/ldconfig"], "command": [], "volumes": [{"type": "bind", "source": str(fragment_source), "target": "/loader-" + control, "read_only": True}]}}}))
+                    remote.command = no_pull
+                    try:
+                        remote.docker_update({**driver, "name": fragment_name, "service": "symlink-helper", "imageFile": str(symlink_file), "namespaceDependents": []}, {**item, "id": "docker:" + fragment_before[0], "image": symlink_image, "installed": fragment_before[3], "availableImage": "docker.io/homelab-fixtures/" + owner + ":candidate@sha256:" + "a" * 64})
+                        raise AssertionError("A mounted loader configuration alias passed preflight")
+                    except remote.UpdateRefusal as error:
+                        assert error.reason == "local_code_override"
+                finally:
+                    remote.command = command
+                    symlink_file.write_bytes(fragment_original)
+                assert remote.namespace_snapshot(fragment_name) == fragment_before
             # Qualify every planned consumer, including a stopped peer and a
             # transitive leaf, before pulling the root or changing any pin.
             pristine_main, pristine_consumer = main_file.read_bytes(), consumer_file.read_bytes()
             stable_peers = {name: remote.namespace_snapshot(row[0]) for name, row in before.items()}
-            for selected, mode in (("consumer", "startup"), ("leaf", "health"), ("stopped", "hook"), ("leaf", "relative-link"), ("consumer", "append"), ("consumer", "unset-function"), ("consumer", "tar"), ("consumer", "loader-config"), ("consumer", "manifest"), ("consumer", "direct-loader"), ("consumer", "time"), ("consumer", "prlimit")):
+            for selected, mode in (("consumer", "startup"), ("leaf", "health"), ("stopped", "hook"), ("leaf", "relative-link"), ("consumer", "append"), ("consumer", "unset-function"), ("consumer", "tar"), ("consumer", "loader-config"), ("consumer", "manifest"), ("consumer", "direct-loader"), ("consumer", "time"), ("consumer", "prlimit"), ("consumer", "unshare"), ("consumer", "nsenter")):
                 try:
                     config = json.loads(pristine_main)
                     if selected == "consumer":
@@ -371,8 +372,8 @@ def main():
                         peer_file = main_file
                         peer = config["services"][selected]
                     peer["volumes"] = ["marker:/marker", "/custom"]
-                    if mode in ("direct-loader", "time", "prlimit"):
-                        peer["entrypoint"] = [{"direct-loader": "/lib64/ld-linux-x86-64.so.2", "time": "/usr/bin/time", "prlimit": "/usr/bin/prlimit"}[mode]]
+                    if mode in ("direct-loader", "time", "prlimit", "unshare", "nsenter"):
+                        peer["entrypoint"] = [{"direct-loader": "/lib64/ld-linux-x86-64.so.2", "time": "/usr/bin/time", "prlimit": "/usr/bin/prlimit", "unshare": "/usr/bin/unshare", "nsenter": "/usr/bin/nsenter"}[mode]]
                         peer["command"] = ["/custom/start"]
                     if mode in ("append", "unset-function"):
                         peer["entrypoint"] = ["/bin/bash", "-c"]

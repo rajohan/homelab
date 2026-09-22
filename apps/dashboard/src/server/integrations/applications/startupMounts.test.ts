@@ -4,6 +4,15 @@ import { startupCodePaths } from "./startup";
 import { qualifyStartupMounts } from "./startupMounts";
 
 test.each([
+    ["/alias", "/etc/ld.so.preload", false, true],
+    ["/alias", "/etc/ld.so.cache", false, true],
+    ["/alias", "/etc/ld.so.conf", false, true],
+    ["/alias", "/etc/ld-musl-x86_64.path", false, true],
+    ["/alias", "/etc/ld-musl-aarch64.path", false, true],
+    ["/alias", "/etc/ld.so.preload.backup", false, false],
+    ["/alias", "/data/ld.so.conf", false, false],
+    ["/entry", "/usr/bin/unshare", true, true],
+    ["/entry", "/usr/bin/nsenter", true, true],
     ["/alias", "/etc/ld.so.conf.d/extra.conf", false, true],
     ["/alias", "/etc/ld.so.conf.d/nested/extra.conf", false, true],
     ["/alias", "/etc/ld.so.conf.debug/extra.conf", false, false],
@@ -27,6 +36,35 @@ test.each([
                     })
             )
         ).toEqual([blocked]);
+    }
+);
+
+test.each(["preload", "cache", "conf", "conf.d/nested/input"])(
+    "loader controls match direct, relative, chained and parent aliases: %s",
+    async (suffix) => {
+        const target = "/etc/ld.so." + suffix;
+        const links: Record<string, string> = {
+            "/alias": target,
+            "/relative": "etc/ld.so." + suffix,
+            "/chain": "/alias",
+            "/parent": "/etc",
+        };
+        for (const destination of [
+            target,
+            "/alias",
+            "/relative",
+            "/chain",
+            "/parent/ld.so." + suffix,
+        ]) {
+            expect(
+                await qualifyStartupMounts(["/vendor/server"], [destination], (name) =>
+                    Promise.resolve({
+                        mode: links[name] ? 134_217_728 : 2_147_483_648,
+                        linkTarget: links[name] ?? "",
+                    })
+                )
+            ).toEqual([true]);
+        }
     }
 );
 

@@ -1,5 +1,229 @@
 [
     {
+        "name": "namespace dispatch unshare /custom/start",
+        "entrypoint": ["unshare", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "namespace dispatch /usr/bin/unshare -- /custom/start",
+        "entrypoint": ["/usr/bin/unshare", "--", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "namespace dispatch unshare --mount --fork /custom/start",
+        "entrypoint": ["unshare", "--mount", "--fork", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "namespace dispatch unshare",
+        "entrypoint": ["unshare"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "namespace dispatch nsenter /custom/start",
+        "entrypoint": ["nsenter", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "namespace dispatch /usr/bin/nsenter --target 123 --mount /custom/start",
+        "entrypoint": ["/usr/bin/nsenter", "--target", "123", "--mount", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "namespace dispatch nsenter -- /custom/start",
+        "entrypoint": ["nsenter", "--", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "namespace dispatch nsenter",
+        "entrypoint": ["nsenter"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "namespace dispatch busybox unshare /custom/start",
+        "entrypoint": ["busybox", "unshare", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "namespace dispatch busybox nsenter /custom/start",
+        "entrypoint": ["busybox", "nsenter", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "namespace dispatch toybox nsenter /custom/start",
+        "entrypoint": ["toybox", "nsenter", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "namespace dispatch /bin/sh -c command unshare /custom/start",
+        "entrypoint": ["/bin/sh", "-c", "command unshare /custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "namespace dispatch env unshare /custom/start",
+        "entrypoint": ["env", "unshare", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "namespace dispatch timeout 5 nsenter /custom/start",
+        "entrypoint": ["timeout", "5", "nsenter", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "namespace dispatch unshare --unknown",
+        "entrypoint": ["unshare", "--unknown"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "namespace dispatch nsenter --unknown",
+        "entrypoint": ["nsenter", "--unknown"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "unshare information --help",
+        "entrypoint": ["unshare", "--help"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "unshare information --version",
+        "entrypoint": ["unshare", "--version"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "unshare information -h",
+        "entrypoint": ["unshare", "-h"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "unshare information -V",
+        "entrypoint": ["unshare", "-V"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "nsenter information --help",
+        "entrypoint": ["nsenter", "--help"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "nsenter information --version",
+        "entrypoint": ["nsenter", "--version"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "nsenter information -h",
+        "entrypoint": ["nsenter", "-h"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "nsenter information -V",
+        "entrypoint": ["nsenter", "-V"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "namespace data /vendor/server unshare /custom/start",
+        "entrypoint": ["/vendor/server", "unshare", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "namespace data /vendor/server nsenter /custom/start",
+        "entrypoint": ["/vendor/server", "nsenter", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "namespace data /bin/sh -c command -v unshare",
+        "entrypoint": ["/bin/sh", "-c", "command -v unshare"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "namespace data /bin/sh -c command -V nsenter",
+        "entrypoint": ["/bin/sh", "-c", "command -V nsenter"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
         "name": "loader/resource dispatch /lib64/ld-linux-x86-64.so.2 /custom/server",
         "entrypoint": ["/lib64/ld-linux-x86-64.so.2", "/custom/server"],
         "command": [],

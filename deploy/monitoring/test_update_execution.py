@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 import os
+import stat
 from pathlib import Path
 import subprocess
 import struct
@@ -30,6 +31,14 @@ class UpdateExecutionTests(unittest.TestCase):
 
     def test_loader_fragment_and_dispatcher_aliases(self):
         for target, executable, blocked in (
+            ("/etc/ld.so.preload", False, True),
+            ("/etc/ld.so.cache", False, True),
+            ("/etc/ld.so.conf", False, True),
+            ("/etc/ld-musl-x86_64.path", False, True),
+            ("/etc/ld.so.preload.backup", False, False),
+            ("/data/ld.so.conf", False, False),
+            ("/usr/bin/unshare", True, True),
+            ("/usr/bin/nsenter", True, True),
             ("/etc/ld.so.conf.d/extra.conf", False, True),
             ("/etc/ld.so.conf.d/nested/extra.conf", False, True),
             ("/etc/ld.so.conf.debug/extra.conf", False, False),
@@ -51,6 +60,28 @@ class UpdateExecutionTests(unittest.TestCase):
                         remote.verify_code_mounts(service, startup, metadata)
                 else:
                     remote.verify_code_mounts(service, startup, metadata)
+
+    def test_all_loader_control_alias_forms_are_equivalent(self):
+        for suffix in ("preload", "cache", "conf", "conf.d/nested/input"):
+            target = "/etc/ld.so." + suffix
+            links = {"/alias": target, "/relative": "etc/ld.so." + suffix, "/chain": "/alias", "/parent": "/etc"}
+            metadata = lambda name: {"mode": 0x08000000 if name in links else 0x80000000, "linkTarget": links.get(name, "")}
+            for destination in (target, "/alias", "/relative", "/chain", "/parent/ld.so." + suffix):
+                for kind in ("volumes", "configs", "secrets"):
+                    with self.subTest(suffix=suffix, destination=destination, kind=kind):
+                        self.assertEqual(remote.qualify_startup_mounts({"/vendor/server"}, [destination], metadata), [True])
+                        with self.assertRaises(remote.UpdateRefusal):
+                            remote.verify_code_mounts({kind: [{"source": "synthetic", "type": "volume", "target": destination}]}, {"entrypoint": ["/vendor/server"]}, metadata)
+
+    def test_namespace_utility_dispatch_without_entering_host_namespaces(self):
+        with tempfile.TemporaryDirectory(prefix="homelab-dispatch-proof-") as temporary:
+            # No namespace flags or target PID: unshare tests program dispatch only.
+            result = subprocess.run(["/usr/bin/unshare", "--", "/bin/dash", "-c", "printf SYNTHETIC_EXECUTED"], cwd=temporary, env={"PATH": "/usr/bin:/bin"}, capture_output=True, text=True, check=True, timeout=5)
+            self.assertEqual(result.stdout, "SYNTHETIC_EXECUTED")
+            # nsenter requires a namespace selection on some versions. Read its
+            # grammar instead of entering any host namespace as a test fixture.
+            result = subprocess.run(["/usr/bin/nsenter", "--help"], cwd=temporary, env={"PATH": "/usr/bin:/bin", "LC_ALL": "C"}, capture_output=True, text=True, check=True, timeout=5)
+            self.assertIn("program", result.stdout)
 
     def test_actual_dynamic_loader_time_and_prlimit_execute_their_program(self):
         loader = next(path for path in ("/lib64/ld-linux-x86-64.so.2", "/lib/ld-linux-aarch64.so.1") if Path(path).exists())
@@ -616,7 +647,7 @@ class UpdateExecutionTests(unittest.TestCase):
                     remote.verify_code_mounts(service, remote.compose_startup({"healthcheck": {"interval": "1s"}}, defaults))
                 remote.verify_code_mounts(service, remote.compose_startup({"healthcheck": {"disable": True}}, defaults))
 
-    def docker_fixture(self, mode="running", mutate=False, fail=False, with_environment=False, manifest_store=False, wrong_pull=False, new_consumer=None):
+    def docker_fixture(self, mode="running", mutate=False, fail=False, with_environment=False, manifest_store=False, wrong_pull=False, new_consumer=None, directory_sync_error=False):
         with tempfile.TemporaryDirectory(prefix="homelab-updater-fixture-") as temporary:
             directory = Path(temporary).resolve()
             source = directory / "compose.yaml"
@@ -679,8 +710,16 @@ class UpdateExecutionTests(unittest.TestCase):
                     return "Started"
                 raise AssertionError("Unexpected command")
 
-            with patch.object(remote, "command", side_effect=command), patch.object(remote, "progress"):
-                if mutate or fail or wrong_pull or new_consumer:
+            real_fsync = os.fsync
+            def sync(descriptor):
+                if directory_sync_error and stat.S_ISDIR(os.fstat(descriptor).st_mode):
+                    raise OSError("Synthetic directory sync failure")
+                real_fsync(descriptor)
+            with patch.object(remote, "command", side_effect=command), patch.object(remote, "progress"), patch.object(remote.os, "fsync", side_effect=sync):
+                if directory_sync_error:
+                    with self.assertRaisesRegex(OSError, "directory sync failure"):
+                        remote.docker_update(driver, item, True)
+                elif mutate or fail or wrong_pull or new_consumer:
                     with self.assertRaises(RuntimeError):
                         remote.docker_update(driver, item, True)
                 else:
@@ -690,7 +729,13 @@ class UpdateExecutionTests(unittest.TestCase):
                 self.assertEqual(sum(call[0] == "/fixture/environment" for call in calls), 1)
             self.assertIn(b"synthetic-private-value", contents)
             self.assertFalse(list(directory.glob(".homelab-update-*")))
-            if wrong_pull or new_consumer:
+            if directory_sync_error:
+                # The rename happened, but durability was not acknowledged. Do
+                # not recreate containers or claim success (nor blindly undo it).
+                self.assertIn(new.encode(), contents)
+                self.assertFalse(installed)
+                self.assertFalse(any("up" in call or "stop" in call for call in calls))
+            elif wrong_pull or new_consumer:
                 self.assertEqual(contents, original)
                 self.assertFalse(any("up" in call for call in calls))
             elif mutate:
@@ -880,6 +925,63 @@ class UpdateExecutionTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 remote.docker_update({}, {"image": "example/web:1.0.0", "availableImage": "ghcr.io/other/web:1.1.0@sha256:" + "a" * 64})
             command.assert_not_called()
+
+    def test_directory_sync_failure_stops_before_application_mutation(self):
+        for mode in ("running", "exited", "created"):
+            with self.subTest(mode=mode):
+                self.docker_fixture(mode=mode, directory_sync_error=True)
+
+    def test_atomic_replacement_syncs_file_then_rename_then_directory(self):
+        with tempfile.TemporaryDirectory(prefix="homelab-updater-fixture-") as temporary:
+            path = Path(temporary).resolve() / "compose.yaml"
+            path.write_bytes(b"original")
+            events, descriptors = [], []
+            real_fsync, real_replace = os.fsync, os.replace
+            def sync(descriptor):
+                directory = stat.S_ISDIR(os.fstat(descriptor).st_mode)
+                events.append("directory" if directory else "file")
+                if directory:
+                    descriptors.append(descriptor)
+                real_fsync(descriptor)
+            def replace(source, target):
+                events.append("replace")
+                real_replace(source, target)
+            with patch.object(remote.os, "fsync", side_effect=sync), patch.object(remote.os, "replace", side_effect=replace):
+                remote.atomic_content(path, b"changed", b"original")
+                remote.atomic_content(path, b"original", b"changed")
+            self.assertEqual(events, ["file", "replace", "directory"] * 2)
+            self.assertEqual(path.read_bytes(), b"original")
+            self.assertEqual(list(path.parent.iterdir()), [path])
+            for descriptor in descriptors:
+                with self.assertRaises(OSError):
+                    os.fstat(descriptor)
+
+    def test_atomic_directory_open_or_sync_failure_closes_owned_files(self):
+        for stage in ("open", "sync"):
+            with self.subTest(stage=stage), tempfile.TemporaryDirectory(prefix="homelab-updater-fixture-") as temporary:
+                path = Path(temporary).resolve() / "compose.yaml"
+                path.write_bytes(b"original")
+                real_open, real_fsync = os.open, os.fsync
+                descriptors = []
+                def open_directory(name, flags, *args, **kwargs):
+                    if flags & os.O_DIRECTORY and stage == "open":
+                        raise OSError("Synthetic directory open failure")
+                    descriptor = real_open(name, flags, *args, **kwargs)
+                    if flags & os.O_DIRECTORY:
+                        descriptors.append(descriptor)
+                    return descriptor
+                def sync(descriptor):
+                    if stat.S_ISDIR(os.fstat(descriptor).st_mode):
+                        raise OSError("Synthetic directory sync failure")
+                    real_fsync(descriptor)
+                with patch.object(remote.os, "open", side_effect=open_directory), patch.object(remote.os, "fsync", side_effect=sync):
+                    with self.assertRaisesRegex(OSError, "directory .* failure"):
+                        remote.atomic_content(path, b"changed", b"original")
+                self.assertEqual(path.read_bytes(), b"original" if stage == "open" else b"changed")
+                self.assertEqual(list(path.parent.iterdir()), [path])
+                for descriptor in descriptors:
+                    with self.assertRaises(OSError):
+                        os.fstat(descriptor)
 
     def test_atomic_replacement_rejects_a_symlink_and_keeps_the_target(self):
         with tempfile.TemporaryDirectory(prefix="homelab-updater-fixture-") as temporary:

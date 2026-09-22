@@ -215,7 +215,7 @@ def startup_code_paths(startup):
         if re.fullmatch(r"(?:ld(?:64)?(?:[-.][A-Za-z0-9_.+-]+)?|libc(?:-[0-9.]+)?)\.so(?:\.\d+)*", name):
             # Loader executable/library/search operands need separate qualification.
             unqualified = True
-        elif name in ("time", "prlimit"):
+        elif name in ("time", "prlimit", "unshare", "nsenter"):
             if not (len(args) == 2 and args[1] in ("--help", "--version", "-h", "-V")):
                 unqualified = True
         elif name == "env":
@@ -650,6 +650,11 @@ def compose_startup(service, defaults):
     return result
 
 
+def runtime_control_path(destination):
+    """Use the same loader/project control rules for lexical and resolved mounts."""
+    return bool(re.search(r"(?:/package\.json|^/etc/(?:ld\.so\.(?:preload|cache|conf)(?:\.d(?:/.*)?)?|ld-musl-[^/]+\.path))$", destination, re.I))
+
+
 def qualify_startup_mounts(paths, destinations, path_stat):
     """Resolve path components from metadata only, with a shared bounded probe cache."""
     if paths is None or len(paths) > 128 or len(destinations) > 64:
@@ -694,9 +699,9 @@ def qualify_startup_mounts(paths, destinations, path_stat):
         code = [resolve(name) for name in paths]
         for original, resolved in zip(paths, code):
             name = posixpath.basename(resolved)
-            if posixpath.basename(original) != name and (name in ("time", "prlimit") or re.fullmatch(r"(?:ld(?:64)?(?:[-.][A-Za-z0-9_.+-]+)?|libc(?:-[0-9.]+)?)\.so(?:\.\d+)*", name)):
+            if posixpath.basename(original) != name and (name in ("time", "prlimit", "unshare", "nsenter") or re.fullmatch(r"(?:ld(?:64)?(?:[-.][A-Za-z0-9_.+-]+)?|libc(?:-[0-9.]+)?)\.so(?:\.\d+)*", name)):
                 return [True] * len(destinations)
-        return [bool(re.search(r"(?:/package\.json|^/etc/ld-musl-[^/]+\.path|^/etc/ld\.so\.conf\.d(?:/.*)?)$", mount)) or
+        return [runtime_control_path(mount) or
                 any(name == mount or name.startswith(mount.rstrip('/') + '/') for name in code) for mount in mounts]
     except Exception:
         return [True] * len(destinations)
@@ -791,7 +796,7 @@ def verify_code_mounts(service, startup=None, path_stat=None):
     for index, mount in enumerate(mounts):
         destination = mount.get("target", "")
         normalized = posixpath.normpath(destination)
-        if posixpath.basename(normalized) == "package.json" or re.fullmatch(r"/etc/(?:ld\.so\.(?:preload|cache|conf)(?:\.d(?:/.*)?)?|ld-musl-[^/]+\.path)", normalized):
+        if runtime_control_path(normalized):
             raise UpdateRefusal("local_code_override")
         startup_code = paths is None or qualified is not None and qualified[index] or any(path == normalized or path.startswith(normalized.rstrip("/") + "/") for path in paths)
         # The standalone helper exception cannot override startup, healthcheck,
@@ -848,7 +853,14 @@ def atomic_content(path, contents, expected):
             os.fsync(output.fileno())
         if path.is_symlink() or path.stat().st_ino != metadata.st_ino or path.stat().st_ctime_ns != metadata.st_ctime_ns or not matches():
             raise RuntimeError("Update source changed")
-        os.replace(temporary, path)
+        directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+        try:
+            os.replace(temporary, path)
+            # File fsync does not persist the renamed directory entry. Do not
+            # report success or begin lifecycle mutation without its durability.
+            os.fsync(directory)
+        finally:
+            os.close(directory)
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)

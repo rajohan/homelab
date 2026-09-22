@@ -250,7 +250,7 @@ export function startupCodePaths(
             unqualified = true;
             return;
         }
-        if (["time", "prlimit"].includes(name)) {
+        if (["time", "prlimit", "unshare", "nsenter"].includes(name)) {
             if (
                 !(
                     args.length === 2 &&

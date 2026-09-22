@@ -10,6 +10,15 @@ import { performApplicationAction } from "./actions";
 import { waitForApplicationReady } from "./dependencies";
 
 test.each([
+    "preload-alias",
+    "cache-alias",
+    "conf-alias",
+    "preload-chain",
+    "unshare",
+    "nsenter",
+    "unshare-alias",
+    "nsenter-alias",
+    "namespace-help",
     "loader",
     "time",
     "prlimit",
@@ -26,6 +35,11 @@ test.each([
         detail.Config.Cmd = [];
         detail.Config.Env = ["PRIVATE_KEY=SYNTHETIC_PRIVATE"];
         const commands: Record<string, string[]> = {
+            unshare: ["/usr/bin/unshare", "/custom/SYNTHETIC_PRIVATE"],
+            nsenter: ["/usr/bin/nsenter", "--target", "123", "/custom/SYNTHETIC_PRIVATE"],
+            "unshare-alias": ["/entry", "/custom/start"],
+            "nsenter-alias": ["/entry", "/custom/start"],
+            "namespace-help": ["unshare", "--help"],
             loader: [
                 "/lib64/ld-linux-x86-64.so.2",
                 "--preload",
@@ -45,23 +59,33 @@ test.each([
                 Type: "volume",
                 Source: "fixture-storage",
                 Destination:
-                    mode.includes("fragment") || mode === "data-alias"
+                    mode.includes("fragment") ||
+                    /^(?:preload|cache|conf)-/.test(mode) ||
+                    mode === "data-alias"
                         ? "/alias"
                         : "/custom",
                 RW: false,
             },
         ];
+        const entryTargets: Record<string, string | undefined> = {
+            "unshare-alias": "/usr/bin/unshare",
+            "nsenter-alias": "/usr/bin/nsenter",
+        };
         fixture.pathMetadata.set("/entry", {
             mode: 134_217_728,
-            linkTarget: "/lib64/ld-linux-x86-64.so.2",
+            linkTarget: entryTargets[mode] ?? "/lib64/ld-linux-x86-64.so.2",
         });
-        const target =
-            mode === "data-alias"
-                ? "/data/settings.conf"
-                : "/etc/ld.so.conf.d/extra.conf";
+        const controlTargets: Record<string, string | undefined> = {
+            "data-alias": "/data/settings.conf",
+            "preload-alias": "/etc/ld.so.preload",
+            "preload-chain": "/etc/ld.so.preload",
+            "cache-alias": "/etc/ld.so.cache",
+            "conf-alias": "/etc/ld.so.conf",
+        };
+        const target = controlTargets[mode] ?? "/etc/ld.so.conf.d/extra.conf";
         fixture.pathMetadata.set("/alias", {
             mode: 134_217_728,
-            linkTarget: mode === "fragment-chain" ? "/bridge" : target,
+            linkTarget: mode.endsWith("-chain") ? "/bridge" : target,
         });
         fixture.pathMetadata.set("/bridge", { mode: 134_217_728, linkTarget: target });
         const inventory = await collectApplications(
@@ -74,7 +98,7 @@ test.each([
         )!;
         expect(inventory.hosts[0]!.available).toBe(true);
         expect(hasApplicationCodeMount(application)).toBe(
-            !["data-alias", "time-help"].includes(mode)
+            !["data-alias", "time-help", "namespace-help"].includes(mode)
         );
         expect(JSON.stringify(application)).not.toContain("SYNTHETIC_PRIVATE");
         expect(fixture.calls).toEqual([]);

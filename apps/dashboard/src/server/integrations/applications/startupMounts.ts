@@ -1,6 +1,17 @@
 import path from "node:path";
 
 /**
+ * Recognize runtime control inputs equally before and after filesystem resolution.
+ * @param destination - Container path, never a host source or file contents.
+ * @returns Whether loaders or project startup may consume the mounted control file.
+ */
+export function isRuntimeControlPath(destination: string): boolean {
+    return /(?:\/package\.json|^\/etc\/(?:ld\.so\.(?:preload|cache|conf)(?:\.d(?:\/.*)?)?|ld-musl-[^/]+\.path))$/i.test(
+        destination
+    );
+}
+
+/**
  * Qualify mount/code relationships using bounded metadata-only filesystem reads.
  * @param paths - In-memory startup paths, or null when execution cannot be qualified.
  * @param destinations - Effective container mount destinations, never host sources.
@@ -77,7 +88,7 @@ export async function qualifyStartupMounts(
             const name = path.posix.basename(resolved);
             if (
                 path.posix.basename(original) !== name &&
-                (["time", "prlimit"].includes(name) ||
+                (["time", "prlimit", "unshare", "nsenter"].includes(name) ||
                     /^(?:ld(?:64)?(?:[-.][A-Za-z0-9_.+-]+)?|libc(?:-[0-9.]+)?)\.so(?:\.\d+)*$/.test(
                         name
                     ))
@@ -87,9 +98,7 @@ export async function qualifyStartupMounts(
         }
         return mounts.map(
             (mount) =>
-                /(?:\/package\.json|^\/etc\/ld-musl-[^/]+\.path|^\/etc\/ld\.so\.conf\.d(?:\/.*)?)$/.test(
-                    mount
-                ) ||
+                isRuntimeControlPath(mount) ||
                 code.some(
                     (name) =>
                         name === mount || name.startsWith(mount.replace(/\/$/, "") + "/")
