@@ -172,20 +172,22 @@ export function startupCodePaths(
         args: readonly string[],
         cwd: string,
         depth = 0,
-        selectedPath = searchPath
+        selectedPath = searchPath,
+        shellCommand = false
     ): void => {
         const inherited = searchPath;
-        inspectCommand(args, cwd, depth, selectedPath);
+        inspectCommand(args, cwd, depth, selectedPath, shellCommand);
         searchPath = inherited;
     };
     const inspectCommand = (
         args: readonly string[],
         cwd: string,
         depth: number,
-        selectedPath: string
+        selectedPath: string,
+        shellCommand: boolean
     ): void => {
         const executable = args[0];
-        if (!executable || executable.startsWith("-")) return;
+        if (!executable) return;
         if (depth > 8) {
             unqualified = true;
             return;
@@ -196,7 +198,8 @@ export function startupCodePaths(
         }
         const name = path.posix.basename(executable);
         if (executable.includes("/")) paths.add(resolve(cwd, executable));
-        else lookup(executable, cwd, selectedPath);
+        else if (!(shellCommand && name === "exec"))
+            lookup(executable, cwd, selectedPath);
         if (name === "env") {
             let current = cwd,
                 options = true,
@@ -288,6 +291,7 @@ export function startupCodePaths(
         }
         if (
             [
+                "hash",
                 "trap",
                 "eval",
                 "xargs",
@@ -322,14 +326,72 @@ export function startupCodePaths(
                 "docker-entrypoint",
             ].includes(name)
         ) {
-            let index = 1;
-            if (name === "gosu" || name === "su-exec") index++;
-            while (
-                args[index]?.startsWith("-") ||
-                /^[A-Za-z_][A-Za-z0-9_]*=/.test(args[index] ?? "")
-            )
-                index++;
-            inspect(args.slice(index), cwd, depth + 1);
+            let index = 1,
+                emptyEnvironment = false;
+            if (name === "gosu" || name === "su-exec") {
+                if (["--help", "--version"].includes(args[index] ?? "")) return;
+                if (args[index] === "--") index++;
+                if (
+                    !args[index] ||
+                    args[index]!.startsWith("-") ||
+                    args[index]!.includes("\0")
+                ) {
+                    unqualified = true;
+                    return;
+                }
+                index++; // The user/group is not a command.
+            }
+            while (args[index]?.startsWith("-")) {
+                const option = args[index++]!;
+                if (option === "--") break;
+                if (["--help", "--version"].includes(option)) return;
+                let operand: string | undefined,
+                    consumes = false;
+                if (name === "exec") {
+                    const match = /^-([cl]*)a(.*)$/.exec(option);
+                    if (match) {
+                        emptyEnvironment ||= match[1]!.includes("c");
+                        operand = match[2] || args[index++];
+                        consumes = true;
+                    } else if (/^-[cl]+$/.test(option))
+                        emptyEnvironment ||= option.includes("c");
+                    else {
+                        unqualified = true;
+                        return;
+                    }
+                } else if (name === "tini") {
+                    const match = /^-[sgvw]*[pe](.*)$/.exec(option);
+                    if (match) {
+                        operand = match[1] || args[index++];
+                        consumes = true;
+                    } else if (!/^-[sgvw]+$/.test(option)) {
+                        unqualified = true;
+                        return;
+                    }
+                } else if (name === "dumb-init") {
+                    const match = /^(?:-r(.*)|--rewrite(?:=(.*))?)$/.exec(option);
+                    if (match) {
+                        operand = match[1] || match[2] || args[index++];
+                        consumes = true;
+                    } else if (
+                        !["-c", "-v", "--single-child", "--verbose"].includes(option)
+                    ) {
+                        unqualified = true;
+                        return;
+                    }
+                } else {
+                    // Vendor wrappers have no universal option grammar.
+                    unqualified = true;
+                    return;
+                }
+                if (consumes && (operand === undefined || operand.includes("\0"))) {
+                    unqualified = true;
+                    return;
+                }
+            }
+            const commandPath = searchPath;
+            if (emptyEnvironment) searchPath = defaultPath;
+            inspect(args.slice(index), cwd, depth + 1, commandPath);
             return;
         }
         if (["sh", "bash", "dash", "ksh", "zsh", "ash"].includes(name)) {
@@ -425,7 +487,8 @@ export function startupCodePaths(
                             selected,
                             current,
                             depth + 1,
-                            defaultLookup ? defaultPath : searchPath
+                            defaultLookup ? defaultPath : searchPath,
+                            true
                         );
                     if (
                         selected.length > 0 &&
@@ -528,7 +591,7 @@ export function startupCodePaths(
             return;
         }
         if (
-            /^(?:python(?:\d+(?:\.\d+)*)?|node|nodejs|bun|deno|ruby|perl|php|lua|luajit|npm|npx|yarn|pnpm)$/.test(
+            /^(?:python(?:\d+(?:\.\d+)*)?|node|nodejs|bun|deno|(?:ruby|perl|php|lua|luajit)(?:\d+(?:\.\d+)*)?|npm|npx|yarn|pnpm)$/.test(
                 name
             )
         ) {
@@ -560,38 +623,34 @@ export function startupCodePaths(
                 }
                 return;
             }
-            // Runtime preload/loader switches execute code independently of the
-            // main script. Qualify only option positions, never its data argv.
-            if (["node", "nodejs", "bun"].includes(name)) {
-                for (let index = 1; index < args.length; index++) {
-                    const option = args[index]!;
-                    if (option === "--") {
-                        if (args[index + 1]) paths.add(resolve(cwd, args[index + 1]!));
-                        return;
-                    }
-                    if (!option.startsWith("-")) {
-                        paths.add(resolve(cwd, option));
-                        return;
-                    }
-                    if (
-                        /^(?:--(?:no-warnings|trace-warnings|use-strict|enable-source-maps)|--(?:max-old-space-size|stack-size)=\d+)$/.test(
-                            option
-                        )
-                    )
-                        continue;
-                    // Includes -r/--require, --import, loader/preload, eval and
-                    // options whose arity or configuration inputs are unknown.
-                    unqualified = true;
-                    return;
-                }
+            if (["deno", "npm", "npx", "yarn", "pnpm"].includes(name)) {
+                // Subcommands, project scripts and package execution have
+                // independent resolution grammars, not a direct script operand.
+                unqualified = true;
                 return;
             }
-            const script = args.slice(1).find((arg) => !arg.startsWith("-"));
-            if (
-                script &&
-                !["-m", "-c", "-e", "--eval", "--print"].some((arg) => args.includes(arg))
-            )
-                paths.add(resolve(cwd, script));
+            // All recognized runtimes require explicit qualification for option
+            // semantics. Never silently discard a non-Node preload switch.
+            for (let index = 1; index < args.length; index++) {
+                const option = args[index]!;
+                if (option === "--") {
+                    if (args[index + 1]) paths.add(resolve(cwd, args[index + 1]!));
+                    return;
+                }
+                if (!option.startsWith("-")) {
+                    paths.add(resolve(cwd, option));
+                    return;
+                }
+                if (
+                    ["node", "nodejs", "bun"].includes(name) &&
+                    /^(?:--(?:no-warnings|trace-warnings|use-strict|enable-source-maps)|--(?:max-old-space-size|stack-size)=\d+)$/.test(
+                        option
+                    )
+                )
+                    continue;
+                unqualified = true;
+                return;
+            }
         }
     };
     const first = argv(entrypoint),

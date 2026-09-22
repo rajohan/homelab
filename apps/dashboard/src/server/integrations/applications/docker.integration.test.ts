@@ -122,6 +122,68 @@ test.each([
 test.each([
     { command: ["start"], environment: ["PATH=/custom:/usr/bin"], blocked: true },
     {
+        command: ["ruby", "-r/custom/hook", "/vendor/app.rb"],
+        environment: ["APP_CONFIG=SYNTHETIC_PRIVATE"],
+        blocked: true,
+    },
+    {
+        command: ["perl", "-MHook", "-I/custom", "/vendor/app.pl"],
+        environment: ["APP_CONFIG=SYNTHETIC_PRIVATE"],
+        blocked: true,
+    },
+    {
+        command: ["php", "-dauto_prepend_file=/custom/start", "/vendor/app.php"],
+        environment: ["APP_CONFIG=SYNTHETIC_PRIVATE"],
+        blocked: true,
+    },
+    {
+        command: ["lua", "-l/custom/hook", "/vendor/app.lua"],
+        environment: ["APP_CONFIG=SYNTHETIC_PRIVATE"],
+        blocked: true,
+    },
+    {
+        command: ["ruby", "/vendor/app.rb", "-r/custom/data"],
+        environment: ["APP_CONFIG=SYNTHETIC_PRIVATE"],
+        blocked: false,
+    },
+    {
+        command: ["/bin/bash", "-c", "hash -p /custom/start run; run"],
+        environment: ["APP_CONFIG=SYNTHETIC_PRIVATE"],
+        blocked: true,
+    },
+    {
+        command: ["/bin/bash", "-c", "builtin hash -p /custom/start run; run"],
+        environment: ["APP_CONFIG=SYNTHETIC_PRIVATE"],
+        blocked: true,
+    },
+    {
+        command: ["/bin/bash", "-c", "exec -a synthetic /custom/start"],
+        environment: ["APP_CONFIG=SYNTHETIC_PRIVATE"],
+        blocked: true,
+    },
+    {
+        command: ["/bin/bash", "-c", "exec -a /custom/data /vendor/server"],
+        environment: ["APP_CONFIG=SYNTHETIC_PRIVATE"],
+        blocked: false,
+    },
+    {
+        command: ["tini", "-p", "SIGTERM", "--", "/custom/start"],
+        environment: ["APP_CONFIG=SYNTHETIC_PRIVATE"],
+        blocked: true,
+    },
+    {
+        command: [
+            "dumb-init",
+            "--rewrite",
+            "2:3",
+            "--",
+            "/vendor/server",
+            "/custom/data",
+        ],
+        environment: ["APP_CONFIG=SYNTHETIC_PRIVATE"],
+        blocked: false,
+    },
+    {
         command: ["/bin/sh", "-c", "start"],
         environment: ["PATH=/custom:/usr/bin"],
         blocked: true,

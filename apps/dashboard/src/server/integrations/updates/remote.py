@@ -170,14 +170,14 @@ def startup_code_paths(startup):
                 return []
             selected = selected[index:]
         return selected
-    def inspect(args, cwd, depth=0, selected_path=None):
+    def inspect(args, cwd, depth=0, selected_path=None, shell_command=False):
         nonlocal search_path
         inherited = search_path
-        inspect_command(args, cwd, depth, search_path if selected_path is None else selected_path)
+        inspect_command(args, cwd, depth, search_path if selected_path is None else selected_path, shell_command)
         search_path = inherited
-    def inspect_command(args, cwd, depth, selected_path):
+    def inspect_command(args, cwd, depth, selected_path, shell_command):
         nonlocal unqualified, search_path
-        if not args or not args[0] or args[0].startswith("-"):
+        if not args or not args[0]:
             return
         if depth > 8:
             unqualified = True
@@ -188,7 +188,7 @@ def startup_code_paths(startup):
         executable, name = args[0], posixpath.basename(args[0])
         if "/" in executable:
             paths.add(resolve(cwd, executable))
-        else:
+        elif not (shell_command and name == "exec"):
             lookup(executable, cwd, selected_path)
         if name == "env":
             current, options, splits, index = cwd, True, 0, 1
@@ -252,13 +252,64 @@ def startup_code_paths(startup):
             if name == "timeout":
                 index += 1
             inspect(args[index:], cwd, depth + 1)
-        elif name in ("trap", "eval", "xargs", "parallel", "chroot", "su", "runuser", "sudo", "doas", "setpriv", "setsid", "chrt", "ionice", "taskset", "stdbuf", "flock", "watch"):
+        elif name in ("hash", "trap", "eval", "xargs", "parallel", "chroot", "su", "runuser", "sudo", "doas", "setpriv", "setsid", "chrt", "ionice", "taskset", "stdbuf", "flock", "watch"):
             unqualified = True
         elif name in ("exec", "tini", "dumb-init", "gosu", "su-exec", "docker-entrypoint.sh", "docker-entrypoint"):
-            index = 2 if name in ("gosu", "su-exec") else 1
-            while index < len(args) and (args[index].startswith("-") or re.match(r"[A-Za-z_][A-Za-z0-9_]*=", args[index])):
+            index, empty_environment = 1, False
+            if name in ("gosu", "su-exec"):
+                if index < len(args) and args[index] in ("--help", "--version"):
+                    return
+                if index < len(args) and args[index] == "--":
+                    index += 1
+                if index >= len(args) or args[index].startswith("-") or "\0" in args[index]:
+                    unqualified = True
+                    return
                 index += 1
-            inspect(args[index:], cwd, depth + 1)
+            while index < len(args) and args[index].startswith("-"):
+                option = args[index]
+                index += 1
+                if option == "--":
+                    break
+                if option in ("--help", "--version"):
+                    return
+                operand, consumes = None, False
+                if name == "exec":
+                    match = re.fullmatch(r"-([cl]*)a(.*)", option)
+                    if match:
+                        empty_environment = empty_environment or "c" in match[1]
+                        operand, consumes = match[2] or None, True
+                    elif re.fullmatch(r"-[cl]+", option):
+                        empty_environment = empty_environment or "c" in option
+                    else:
+                        unqualified = True
+                        return
+                elif name == "tini":
+                    match = re.fullmatch(r"-[sgvw]*[pe](.*)", option)
+                    if match:
+                        operand, consumes = match[1] or None, True
+                    elif re.fullmatch(r"-[sgvw]+", option) is None:
+                        unqualified = True
+                        return
+                elif name == "dumb-init":
+                    match = re.fullmatch(r"(?:-r(.*)|--rewrite(?:=(.*))?)", option)
+                    if match:
+                        operand, consumes = match[1] or match[2] or None, True
+                    elif option not in ("-c", "-v", "--single-child", "--verbose"):
+                        unqualified = True
+                        return
+                else:
+                    unqualified = True
+                    return
+                if consumes and operand is None:
+                    operand = args[index] if index < len(args) else None
+                    index += 1
+                if consumes and (operand is None or "\0" in operand):
+                    unqualified = True
+                    return
+            command_path = search_path
+            if empty_environment:
+                search_path = default_path
+            inspect(args[index:], cwd, depth + 1, command_path)
         elif name in ("sh", "bash", "dash", "ksh", "zsh", "ash"):
             index, inline = 1, False
             while index < len(args):
@@ -318,7 +369,7 @@ def startup_code_paths(startup):
                             else:
                                 current = resolve(current, operands[0])
                         elif not selected or selected[0] not in ("export", "readonly", "declare", "typeset", "unset"):
-                            inspect(selected, current, depth + 1, default_path if default_lookup else search_path)
+                            inspect(selected, current, depth + 1, default_path if default_lookup else search_path, True)
                         if selected and selected[0] not in ("export", "readonly", "declare", "typeset", "unset"):
                             search_path = inherited
                         group = []
@@ -376,7 +427,7 @@ def startup_code_paths(startup):
                     paths.add(resolve(cwd, option))
                     return
                 index += 1
-        elif re.fullmatch(r"(?:python(?:\d+(?:\.\d+)*)?|node|nodejs|bun|deno|ruby|perl|php|lua|luajit|npm|npx|yarn|pnpm)", name):
+        elif re.fullmatch(r"(?:python(?:\d+(?:\.\d+)*)?|node|nodejs|bun|deno|(?:ruby|perl|php|lua|luajit)(?:\d+(?:\.\d+)*)?|npm|npx|yarn|pnpm)", name):
             paths.add(cwd)
             if re.fullmatch(r"python(?:\d+(?:\.\d+)*)?", name):
                 index = 1
@@ -399,23 +450,21 @@ def startup_code_paths(startup):
                         break
                     index += 1
                 return
-            if name in ("node", "nodejs", "bun"):
-                for index, option in enumerate(args[1:], 1):
-                    if option == "--":
-                        if index + 1 < len(args):
-                            paths.add(resolve(cwd, args[index + 1]))
-                        return
-                    if not option.startswith("-"):
-                        paths.add(resolve(cwd, option))
-                        return
-                    if re.fullmatch(r"(?:--(?:no-warnings|trace-warnings|use-strict|enable-source-maps)|--(?:max-old-space-size|stack-size)=\d+)", option):
-                        continue
-                    unqualified = True
-                    return
+            if name in ("deno", "npm", "npx", "yarn", "pnpm"):
+                unqualified = True
                 return
-            script = next((arg for arg in args[1:] if not arg.startswith("-")), None)
-            if script and not any(arg in args for arg in ("-m", "-c", "-e", "--eval", "--print")):
-                paths.add(resolve(cwd, script))
+            for index, option in enumerate(args[1:], 1):
+                if option == "--":
+                    if index + 1 < len(args):
+                        paths.add(resolve(cwd, args[index + 1]))
+                    return
+                if not option.startswith("-"):
+                    paths.add(resolve(cwd, option))
+                    return
+                if name in ("node", "nodejs", "bun") and re.fullmatch(r"(?:--(?:no-warnings|trace-warnings|use-strict|enable-source-maps)|--(?:max-old-space-size|stack-size)=\d+)", option):
+                    continue
+                unqualified = True
+                return
     first, second = argv(startup.get("entrypoint")), argv(startup.get("command"))
     cwd = resolve("/", startup.get("working_dir") or "/")
     inspect(first + second, cwd)

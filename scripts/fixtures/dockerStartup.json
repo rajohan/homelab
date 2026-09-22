@@ -2423,5 +2423,661 @@
         "working_dir": "/",
         "mount": "/custom",
         "blocked": false
+    },
+    {
+        "name": "other runtime preload ruby -r/custom/hook",
+        "entrypoint": ["ruby", "-r/custom/hook"],
+        "command": ["/vendor/app.rb"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime preload ruby -r /custom/hook",
+        "entrypoint": ["ruby", "-r", "/custom/hook"],
+        "command": ["/vendor/app.rb"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime preload ruby -I/custom -rhook",
+        "entrypoint": ["ruby", "-I/custom", "-rhook"],
+        "command": ["/vendor/app.rb"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime preload perl -I/custom -MHook",
+        "entrypoint": ["perl", "-I/custom", "-MHook"],
+        "command": ["/vendor/app.pl"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime preload perl -M/custom/hook",
+        "entrypoint": ["perl", "-M/custom/hook"],
+        "command": ["/vendor/app.pl"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime preload php -dauto_prepend_file=/custom/start",
+        "entrypoint": ["php", "-dauto_prepend_file=/custom/start"],
+        "command": ["/vendor/app.php"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime preload php -d auto_prepend_file=/custom/start",
+        "entrypoint": ["php", "-d", "auto_prepend_file=/custom/start"],
+        "command": ["/vendor/app.php"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime preload lua -l/custom/hook",
+        "entrypoint": ["lua", "-l/custom/hook"],
+        "command": ["/vendor/app.lua"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime preload lua -l /custom/hook",
+        "entrypoint": ["lua", "-l", "/custom/hook"],
+        "command": ["/vendor/app.lua"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime preload luajit -j/custom/hook",
+        "entrypoint": ["luajit", "-j/custom/hook"],
+        "command": ["/vendor/app.lua"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime preload deno --import-map=/custom/imports.json run",
+        "entrypoint": ["deno", "--import-map=/custom/imports.json", "run"],
+        "command": ["/vendor/app.ts"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime preload deno run --import-map=/custom/imports.json",
+        "entrypoint": ["deno", "run", "--import-map=/custom/imports.json"],
+        "command": ["/vendor/app.ts"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime preload npm exec --require=/custom/hook",
+        "entrypoint": ["npm", "exec", "--require=/custom/hook"],
+        "command": ["/vendor/app.js"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime preload npx --node-options=--require=/custom/hook",
+        "entrypoint": ["npx", "--node-options=--require=/custom/hook"],
+        "command": ["/vendor/app.js"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime preload yarn node --require=/custom/hook",
+        "entrypoint": ["yarn", "node", "--require=/custom/hook"],
+        "command": ["/vendor/app.js"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime preload pnpm node --require=/custom/hook",
+        "entrypoint": ["pnpm", "node", "--require=/custom/hook"],
+        "command": ["/vendor/app.js"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime preload ruby3.3 -r/custom/hook",
+        "entrypoint": ["ruby3.3", "-r/custom/hook"],
+        "command": ["/vendor/app.rb"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime preload php8.4 -dauto_prepend_file=/custom/start",
+        "entrypoint": ["php8.4", "-dauto_prepend_file=/custom/start"],
+        "command": ["/vendor/app.php"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime preload perl5.40 -MHook -I/custom",
+        "entrypoint": ["perl5.40", "-MHook", "-I/custom"],
+        "command": ["/vendor/app.pl"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime preload lua5.4 -l/custom/hook",
+        "entrypoint": ["lua5.4", "-l/custom/hook"],
+        "command": ["/vendor/app.lua"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime script data ruby",
+        "entrypoint": ["ruby", "/vendor/app"],
+        "command": ["-r/custom/data"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "other runtime delimiter ruby",
+        "entrypoint": ["ruby", "--"],
+        "command": ["/custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime unknown option ruby",
+        "entrypoint": ["ruby", "--unqualified"],
+        "command": ["/vendor/app"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime script data perl",
+        "entrypoint": ["perl", "/vendor/app"],
+        "command": ["-r/custom/data"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "other runtime delimiter perl",
+        "entrypoint": ["perl", "--"],
+        "command": ["/custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime unknown option perl",
+        "entrypoint": ["perl", "--unqualified"],
+        "command": ["/vendor/app"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime script data php",
+        "entrypoint": ["php", "/vendor/app"],
+        "command": ["-r/custom/data"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "other runtime delimiter php",
+        "entrypoint": ["php", "--"],
+        "command": ["/custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime unknown option php",
+        "entrypoint": ["php", "--unqualified"],
+        "command": ["/vendor/app"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime script data lua",
+        "entrypoint": ["lua", "/vendor/app"],
+        "command": ["-r/custom/data"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "other runtime delimiter lua",
+        "entrypoint": ["lua", "--"],
+        "command": ["/custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime unknown option lua",
+        "entrypoint": ["lua", "--unqualified"],
+        "command": ["/vendor/app"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime script data luajit",
+        "entrypoint": ["luajit", "/vendor/app"],
+        "command": ["-r/custom/data"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "other runtime delimiter luajit",
+        "entrypoint": ["luajit", "--"],
+        "command": ["/custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime unknown option luajit",
+        "entrypoint": ["luajit", "--unqualified"],
+        "command": ["/vendor/app"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime script data ruby3.3",
+        "entrypoint": ["ruby3.3", "/vendor/app"],
+        "command": ["-r/custom/data"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "other runtime delimiter ruby3.3",
+        "entrypoint": ["ruby3.3", "--"],
+        "command": ["/custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime unknown option ruby3.3",
+        "entrypoint": ["ruby3.3", "--unqualified"],
+        "command": ["/vendor/app"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime script data php8.4",
+        "entrypoint": ["php8.4", "/vendor/app"],
+        "command": ["-r/custom/data"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "other runtime delimiter php8.4",
+        "entrypoint": ["php8.4", "--"],
+        "command": ["/custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime unknown option php8.4",
+        "entrypoint": ["php8.4", "--unqualified"],
+        "command": ["/vendor/app"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime script data perl5.40",
+        "entrypoint": ["perl5.40", "/vendor/app"],
+        "command": ["-r/custom/data"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "other runtime delimiter perl5.40",
+        "entrypoint": ["perl5.40", "--"],
+        "command": ["/custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime unknown option perl5.40",
+        "entrypoint": ["perl5.40", "--unqualified"],
+        "command": ["/vendor/app"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime script data lua5.4",
+        "entrypoint": ["lua5.4", "/vendor/app"],
+        "command": ["-r/custom/data"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "other runtime delimiter lua5.4",
+        "entrypoint": ["lua5.4", "--"],
+        "command": ["/custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "other runtime unknown option lua5.4",
+        "entrypoint": ["lua5.4", "--unqualified"],
+        "command": ["/vendor/app"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "hash dispatch hash -p /custom/start run; run",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["hash -p /custom/start run; run"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "hash dispatch hash -p/custom/start run; run",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["hash -p/custom/start run; run"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "hash dispatch builtin hash -p /custom/start run; run",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["builtin hash -p /custom/start run; run"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "hash dispatch command hash -p /custom/start run; run",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["command hash -p /custom/start run; run"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "hash dispatch hash -rp /custom/start run; run",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["hash -rp /custom/start run; run"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "exec option -a synthetic",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["exec -a synthetic /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "exec argument zero is data -a synthetic",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["exec -a synthetic /vendor/server /custom/config"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "exec option -asynthetic",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["exec -asynthetic /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "exec argument zero is data -asynthetic",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["exec -asynthetic /vendor/server /custom/config"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "exec option -la synthetic",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["exec -la synthetic /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "exec argument zero is data -la synthetic",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["exec -la synthetic /vendor/server /custom/config"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "exec option -cla synthetic",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["exec -cla synthetic /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "exec argument zero is data -cla synthetic",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["exec -cla synthetic /vendor/server /custom/config"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "exec option -c -l -a synthetic",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["exec -c -l -a synthetic /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "exec argument zero is data -c -l -a synthetic",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["exec -c -l -a synthetic /vendor/server /custom/config"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "exec option --",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["exec -- /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "exec argument zero is data --",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["exec -- /vendor/server /custom/config"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "exec option -l --",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["exec -l -- /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "exec argument zero is data -l --",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["exec -l -- /vendor/server /custom/config"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "exec option -a /custom/data",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["exec -a /custom/data /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "exec argument zero is data -a /custom/data",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["exec -a /custom/data /vendor/server /custom/config"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "exec dispatch aliases",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["builtin command exec -a synthetic /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "exec custom search before empty environment",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["exec -c start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["PATH=/custom:/usr/bin"]
+    },
+    {
+        "name": "exec child search after empty environment",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["exec -c /bin/sh -c start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false,
+        "environment": ["PATH=/custom:/usr/bin"]
+    },
+    {
+        "name": "exec unsupported option",
+        "entrypoint": ["exec", "--unsupported"],
+        "command": ["/vendor/server"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "wrapper operand tini -p SIGTERM -- /custom/start",
+        "entrypoint": ["tini", "-p", "SIGTERM", "--", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "wrapper operand tini -e 143 -- /custom/start",
+        "entrypoint": ["tini", "-e", "143", "--", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "wrapper operand tini -gpSIGTERM -- /custom/start",
+        "entrypoint": ["tini", "-gpSIGTERM", "--", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "wrapper operand tini -p SIGTERM -- /vendor/server /custom/data",
+        "entrypoint": ["tini", "-p", "SIGTERM", "--", "/vendor/server", "/custom/data"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "wrapper operand dumb-init --rewrite 2:3 -- /custom/start",
+        "entrypoint": ["dumb-init", "--rewrite", "2:3", "--", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "wrapper operand dumb-init -r2:3 -- /custom/start",
+        "entrypoint": ["dumb-init", "-r2:3", "--", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "wrapper operand dumb-init --rewrite=2:3 -- /vendor/server /custom/data",
+        "entrypoint": [
+            "dumb-init",
+            "--rewrite=2:3",
+            "--",
+            "/vendor/server",
+            "/custom/data"
+        ],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "wrapper operand tini --unsupported /vendor/server",
+        "entrypoint": ["tini", "--unsupported", "/vendor/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "wrapper operand docker-entrypoint.sh --unsupported /vendor/server",
+        "entrypoint": ["docker-entrypoint.sh", "--unsupported", "/vendor/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
     }
 ]

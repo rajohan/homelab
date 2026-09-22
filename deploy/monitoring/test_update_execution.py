@@ -225,6 +225,26 @@ class UpdateExecutionTests(unittest.TestCase):
         self.assertIsNone(remote.startup_code_paths({"entrypoint": ["/bin/sh", "-c"], "command": ["python -$OPTIONS /vendor/app.py"]}))
         self.assertIsNotNone(remote.startup_code_paths({"entrypoint": ["/bin/sh", "-c"], "command": ["python /vendor/app.py --mode=$OPTIONS"]}))
 
+    def test_actual_bash_exec_operand_and_hash_dispatch(self):
+        with tempfile.TemporaryDirectory(prefix="homelab-shell-dispatch-") as temporary:
+            script = Path(temporary) / "start"
+            script.write_text("#!/bin/sh\nprintf executed")
+            script.chmod(0o700)
+            for options in (["-a", "synthetic"], ["-asynthetic"], ["-cla", "synthetic"], ["-c", "-l", "-a", "synthetic"], ["--"]):
+                result = subprocess.run(["/bin/bash", "-c", 'exec "$@"', "fixture", *options, str(script)], env={"PATH": "/usr/bin:/bin", "HOME": temporary}, capture_output=True, text=True, check=True, timeout=5)
+                self.assertEqual(result.stdout, "executed")
+            result = subprocess.run(["/bin/bash", "-c", 'hash -p "$1" fixture_run; fixture_run', "fixture", str(script)], env={"PATH": "/usr/bin:/bin", "HOME": temporary}, capture_output=True, text=True, check=True, timeout=5)
+            self.assertEqual(result.stdout, "executed")
+
+    def test_non_node_preloads_and_dispatch_inherited_healthchecks(self):
+        for command in (["ruby", "-r/custom/hook", "/vendor/app.rb"], ["/bin/bash", "-c", "hash -p /custom/start run; run"], ["/bin/bash", "-c", "exec -a synthetic /custom/start"], ["tini", "-p", "SIGTERM", "--", "/custom/start"]):
+            defaults = {"entrypoint": ["/vendor/server"], "healthcheck": {"Test": ["CMD", *command]}}
+            for kind in ("bind", "volume", "tmpfs"):
+                service = {"volumes": [{"type": kind, "target": "/custom"}]}
+                with self.subTest(command=command, kind=kind), self.assertRaises(remote.UpdateRefusal):
+                    remote.verify_code_mounts(service, remote.compose_startup({"healthcheck": {"interval": "1s"}}, defaults))
+                remote.verify_code_mounts(service, remote.compose_startup({"healthcheck": {"disable": True}}, defaults))
+
     def docker_fixture(self, mode="running", mutate=False, fail=False, with_environment=False, manifest_store=False, wrong_pull=False, new_consumer=None):
         with tempfile.TemporaryDirectory(prefix="homelab-updater-fixture-") as temporary:
             directory = Path(temporary).resolve()
