@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.4](https://github.com/rajohan/homelab/compare/v0.7.3...v0.7.4) (2026-09-22)
+
+
+### Bug Fixes
+
+* **updates:** handle recreated Docker targets and direct code overlays ([#31](https://github.com/rajohan/homelab/issues/31)) ([3c6ab48](https://github.com/rajohan/homelab/commit/3c6ab48911974aa9c445a13ea9df1e9d287b084a))
+
 ## [0.7.3](https://github.com/rajohan/homelab/compare/v0.7.2...v0.7.3) (2026-09-21)
 
 
