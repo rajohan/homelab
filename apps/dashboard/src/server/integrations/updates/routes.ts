@@ -10,6 +10,7 @@ import {
 
 import { runOperation, trpc } from "../../api/trpc";
 import { requireCapability } from "../../automation/authentication";
+import { lockQueue } from "../../jobs/queue";
 import { authorizedOperations } from "../../operations/authorization";
 import type { OperationsContext } from "../../operations/context";
 import { OperationFailure } from "../../operations/errors";
@@ -17,6 +18,7 @@ import { sortedInventory } from "../../operations/sortedInventory";
 import { requestUpdate } from "./actions";
 import { readUpdateBatchPlan, requestUpdateBatch } from "./batch";
 import { readUpdateSources, readUpdateReport, staleUpdateReport } from "./inventory";
+import { queueUpdateCheck } from "./job";
 import { readUpdatePolicies, writeUpdatePolicy } from "./policies";
 import { recordRestartObservation } from "./restartObservation";
 import { matchesUpdateTarget, updateControl } from "./selection";
@@ -237,6 +239,7 @@ export const updatesRouter = trpc.router({
                 }),
             };
             return operations.client.begin(async (transaction) => {
+                await lockQueue(transaction);
                 const [row] = await transaction<
                     { key: string }[]
                 >`INSERT INTO operation_snapshots (key, value, captured_at) VALUES (${`updates:${source.id}`}, ${JSON.stringify(observation)}::text::jsonb, ${new Date(time)}) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, captured_at = EXCLUDED.captured_at WHERE operation_snapshots.captured_at < EXCLUDED.captured_at RETURNING key`;
@@ -256,6 +259,13 @@ export const updatesRouter = trpc.router({
                         observedAt
                     );
                 }
+                const checker = row && operations.registry.get("updates.releases");
+                if (checker)
+                    await queueUpdateCheck(
+                        transaction,
+                        checker.definition,
+                        `updates-publication:${source.id}:${input.capturedAt}`
+                    );
                 return { accepted: Boolean(row) };
             });
         })
