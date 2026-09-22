@@ -35,6 +35,7 @@ def main():
     inherited_image = "homelab-fixtures/" + owner + ":inherited"
     config_image = "homelab-fixtures/" + owner + ":config"
     health_image = "homelab-fixtures/" + owner + ":health"
+    shell_image = "homelab-fixtures/" + owner + ":shell"
     with tempfile.TemporaryDirectory(prefix=owner + "-") as temporary:
         directory = Path(temporary).resolve()
         provider_file = directory / "provider.yaml"
@@ -56,7 +57,7 @@ def main():
                 helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sh, " + destination + "]", "entrypoint: [/bin/sleep]\n    command: ['3600']"))
             if service in ("inherited-helper", "option-helper"):
                 helper_file.write_text(helper_file.read_text().replace(original, inherited_image))
-        for service, kind in (("assignment-helper", "volumes"), ("config-helper", "configs"), ("secret-helper", "secrets"), ("newline-helper", "volumes"), ("volume-helper", "named-volume"), ("expansion-helper", "volumes"), ("health-helper", "volumes"), ("inherited-health-helper", "volumes"), ("compound-helper", "volumes"), ("conditional-helper", "volumes"), ("compound-health-helper", "volumes"), ("dispatch-helper", "volumes"), ("dispatch-cwd-helper", "volumes"), ("dispatch-health-helper", "volumes"), ("launcher-helper", "volumes"), ("loader-helper", "named-volume"), ("shell-option-helper", "volumes"), ("trap-helper", "volumes"), ("jvm-helper", "volumes"), ("post-hook-helper", "volumes"), ("pre-hook-helper", "volumes"), ("hook-environment-helper", "volumes"), ("path-helper", "volumes"), ("expanded-script-helper", "volumes"), ("runtime-option-helper", "volumes"), ("ruby-option-helper", "volumes"), ("hash-helper", "volumes"), ("exec-arg-helper", "volumes"), ("init-arg-helper", "volumes"), ("volumes-from-helper", "inherited-volume"), ("external-volumes-helper", "inherited-volume"), ("coproc-helper", "named-volume"), ("coproc-health-helper", "volumes")):
+        for service, kind in (("assignment-helper", "volumes"), ("config-helper", "configs"), ("secret-helper", "secrets"), ("newline-helper", "volumes"), ("volume-helper", "named-volume"), ("expansion-helper", "volumes"), ("health-helper", "volumes"), ("inherited-health-helper", "volumes"), ("compound-helper", "volumes"), ("conditional-helper", "volumes"), ("compound-health-helper", "volumes"), ("dispatch-helper", "volumes"), ("dispatch-cwd-helper", "volumes"), ("dispatch-health-helper", "volumes"), ("launcher-helper", "volumes"), ("loader-helper", "named-volume"), ("shell-option-helper", "volumes"), ("trap-helper", "volumes"), ("jvm-helper", "volumes"), ("post-hook-helper", "volumes"), ("pre-hook-helper", "volumes"), ("hook-environment-helper", "volumes"), ("path-helper", "volumes"), ("expanded-script-helper", "volumes"), ("runtime-option-helper", "volumes"), ("ruby-option-helper", "volumes"), ("hash-helper", "volumes"), ("exec-arg-helper", "volumes"), ("init-arg-helper", "volumes"), ("volumes-from-helper", "inherited-volume"), ("external-volumes-helper", "inherited-volume"), ("coproc-helper", "named-volume"), ("coproc-health-helper", "volumes"), ("builtin-loader-helper", "named-volume"), ("custom-shell-helper", "volumes")):
             helper_file = directory / (service + ".yaml")
             source_file = directory / (service + ".source")
             source_file.write_text("# Synthetic startup code, never executed.\n")
@@ -73,6 +74,11 @@ def main():
             helper_file.write_text(text)
             if service == "inherited-health-helper":
                 helper_file.write_text(text.replace(original, health_image) + "    healthcheck:\n      disable: true\n")
+            elif service == "custom-shell-helper":
+                shell_file = directory / (service + "-code") / "shell"
+                shell_file.write_text('#!/bin/sh\nexec /bin/sh "$@"\n')
+                shell_file.chmod(0o755)
+                helper_file.write_text(text.replace(original, shell_image) + "    healthcheck:\n      test: [CMD, /bin/true]\n      interval: 1s\n")
             helpers.append((service, helper_file))
         # A mounted executable can also be invoked later, outside startup argv.
         executable = directory / "extensionless-binary"
@@ -97,7 +103,7 @@ def main():
         (config_data / "settings.json").write_text("{}\n")
         config_file.write_text("services:\n  config-app:\n    image: " + config_image + "\n    command: [/config/settings.json]\n    network_mode: none\n    mem_limit: 64m\n    pids_limit: 32\n    labels:\n      homelab.smoke: " + owner + "\n    volumes:\n      - type: bind\n        source: " + str(config_data) + "\n        target: /config\n        read_only: true\n")
         config_file.write_text(config_file.read_text() + "    configs: [ordinary-settings]\n    secrets: [ordinary-token]\nconfigs:\n  ordinary-settings:\n    file: " + str(config_data / "settings.json") + "\nsecrets:\n  ordinary-token:\n    file: " + str(config_data / "settings.json") + "\n")
-        config_file.write_text(config_file.read_text().replace("    command: [/config/settings.json]\n", "    command: [/config/settings.json]\n    healthcheck:\n      test: [CMD-SHELL, 'command -v /vendor/server']\n      interval: 1s\n"))
+        config_file.write_text(config_file.read_text().replace("    command: [/config/settings.json]\n", "    command: [/config/settings.json]\n    healthcheck:\n      test: [CMD, /bin/bash, '-c', 'FOO=x coproc /vendor/server']\n      interval: 1s\n"))
         main_file.write_text(json.dumps({"include": [str(provider_file), str(consumer_file), str(overlay_file), str(config_file)] + [str(path) for _, path in helpers], "services": {"stopped": {**shared, "network_mode": "service:provider"}, "leaf": {**shared, "network_mode": "service:consumer"}}, "volumes": {"marker": {"labels": {"homelab.smoke": owner}}}}))
         base = ["/usr/bin/docker", "compose", "--project-directory", str(directory), "--project-name", owner, "--file", str(main_file)]
         def compose(args, timeout=120):
@@ -118,12 +124,16 @@ def main():
             command(["/usr/bin/docker", "build", "--pull=false", "--network=none", "--label", "homelab.smoke=" + owner, "--tag", inherited_image, str(build_directory)], environment={"HOME": str(build_directory)})
             built_images.append(inherited_image)
             (build_directory / "server").write_text('#!/bin/sh\ntest -f "$1" || exit 1\nexec /bin/sleep 3600\n')
-            (build_directory / "Dockerfile").write_text('FROM postgres:18\nCOPY --chmod=755 server /vendor/server\nENTRYPOINT ["/vendor/server"]\n')
+            (build_directory / "coproc").write_text('#!/bin/sh\nexit 0\n')
+            (build_directory / "Dockerfile").write_text('FROM postgres:18\nCOPY --chmod=755 server /vendor/server\nCOPY --chmod=755 coproc /vendor/coproc\nENV PATH=/vendor:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\nENTRYPOINT ["/vendor/server"]\n')
             command(["/usr/bin/docker", "build", "--pull=false", "--network=none", "--label", "homelab.smoke=" + owner, "--tag", config_image, str(build_directory)], environment={"HOME": str(build_directory)})
             built_images.append(config_image)
             (build_directory / "Dockerfile").write_text('FROM postgres:18\nENTRYPOINT ["/bin/sleep"]\nCMD ["3600"]\nHEALTHCHECK CMD ["/bin/sh", "/custom/start"]\n')
             command(["/usr/bin/docker", "build", "--pull=false", "--network=none", "--label", "homelab.smoke=" + owner, "--tag", health_image, str(build_directory)], environment={"HOME": str(build_directory)})
             built_images.append(health_image)
+            (build_directory / "Dockerfile").write_text('FROM postgres:18\nSHELL ["/custom/shell", "-c"]\nENTRYPOINT ["/bin/sleep"]\nCMD ["3600"]\n')
+            command(["/usr/bin/docker", "build", "--pull=false", "--network=none", "--label", "homelab.smoke=" + owner, "--tag", shell_image, str(build_directory)], environment={"HOME": str(build_directory)})
+            built_images.append(shell_image)
             # Compose 2.38 --wait incorrectly requires State.Health even when an
             # inherited image healthcheck is explicitly disabled. Start this
             # exact fixture separately and assert its effective disabled state;
@@ -213,6 +223,17 @@ def main():
                     helper_file.write_text(helper_file.read_text().replace("    entrypoint: [/bin/sleep]\n    command: ['3600']", "    entrypoint: [/bin/bash, '-c']\n    command: ['coproc /custom/start']"))
                 elif service == "coproc-health-helper":
                     helper_file.write_text(helper_file.read_text() + "    healthcheck:\n      test: " + json.dumps(["CMD", "/bin/bash", "-c", "co\\\nproc /custom/start"]) + "\n")
+                elif service == "builtin-loader-helper":
+                    helper_file.write_text(helper_file.read_text().replace("    entrypoint: [/bin/sleep]\n    command: ['3600']", "    entrypoint: [/bin/bash, '-c']\n    command: ['enable -f /custom/plugin.so worker; worker']"))
+                elif service == "custom-shell-helper":
+                    live = json.loads(command(["/usr/bin/docker", "inspect", owner + "-" + service + "-1"]))[0]
+                    # Some Engine versions omit image SHELL from live Config.
+                    # Pending qualification must still use immutable image defaults,
+                    # not infer them from that old container or a mutable tag.
+                    defaults = json.loads(command(["/usr/bin/docker", "image", "inspect", live["Image"]]))[0]
+                    assert defaults["Config"]["Shell"] == ["/custom/shell", "-c"]
+                    assert live["Config"]["Healthcheck"]["Test"] == ["CMD", "/bin/true"]
+                    helper_file.write_text(helper_file.read_text().replace("test: [CMD, /bin/true]", "test: [CMD-SHELL, /bin/true]"))
                 elif service == "loader-helper":
                     helper_file.write_text(helper_file.read_text().replace("    command: ['3600']", "    command: ['3600']\n    environment:\n      LD_PRELOAD: /custom/libapp.so"))
                 elif service in ("post-hook-helper", "pre-hook-helper", "hook-environment-helper"):
@@ -264,6 +285,8 @@ def main():
                         overlay_item.update(image=inherited_image, installed=overlay_before[3], available=overlay_before[3], availableImage="docker.io/homelab-fixtures/" + owner + ":candidate@sha256:" + "a" * 64)
                     elif overlay_service == "inherited-health-helper":
                         overlay_item.update(image=health_image, installed=overlay_before[3], available=overlay_before[3], availableImage="docker.io/homelab-fixtures/" + owner + ":candidate@sha256:" + "a" * 64)
+                    elif overlay_service == "custom-shell-helper":
+                        overlay_item.update(image=shell_image, installed=overlay_before[3], available=overlay_before[3], availableImage="docker.io/homelab-fixtures/" + owner + ":candidate@sha256:" + "a" * 64)
                     remote.docker_update({**driver, "name": overlay_name, "service": overlay_service, "imageFile": str(overlay_source), "namespaceDependents": []}, overlay_item)
                     raise AssertionError("An obsolete executable overlay was allowed through the updater")
                 except remote.UpdateRefusal as error:

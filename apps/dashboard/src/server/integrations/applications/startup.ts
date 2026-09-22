@@ -96,6 +96,7 @@ function dynamicShellWord(raw: string): boolean {
  * @param workingDirectory - Runtime directory used for relative scripts and module imports.
  * @param healthcheck - Effective Docker healthcheck test vector, never persisted.
  * @param environment - Effective container environment, inspected in memory; only normalized executable search candidates may be returned.
+ * @param shell - Image-selected shell vector for CMD-SHELL healthchecks; absent/empty uses Docker's Linux default.
  * @returns Code paths, or null for execution/loading semantics requiring separate qualification. Callers persist booleans only.
  */
 export function startupCodePaths(
@@ -103,7 +104,8 @@ export function startupCodePaths(
     command: readonly string[] | string | null | undefined,
     workingDirectory = "/",
     healthcheck?: readonly string[] | null,
-    environment?: readonly string[] | null
+    environment?: readonly string[] | null,
+    shell?: readonly string[] | null
 ): readonly string[] | null {
     const paths = new Set<string>();
     let unqualified = false;
@@ -287,6 +289,13 @@ export function startupCodePaths(
             }
             if (name === "timeout") index++; // The duration is not a command.
             inspect(args.slice(index), cwd, depth + 1);
+            return;
+        }
+        if (name === "enable") {
+            // Listing builtins is harmless. Loading/disabling/replacing one can
+            // change the meaning of every later shell command, beyond PATH.
+            if (!args.slice(1).every((arg) => /^-[anps]+$/.test(arg) || arg === "--help"))
+                unqualified = true;
             return;
         }
         if (
@@ -506,9 +515,11 @@ export function startupCodePaths(
                             group.every((word) =>
                                 /^[A-Za-z_][A-Za-z0-9_]*=/.test(word)
                             ) &&
-                            (/^(?:if|then|elif|else|fi|while|until|for|select|in|do|done|case|esac|function|coproc|time|!|\{|\}|\[\[|\]\])$/.test(
-                                token.raw.replaceAll("\\\n", "")
-                            ) ||
+                            ((group.length === 0 &&
+                                token.raw.replaceAll("\\\n", "") === "coproc") ||
+                                /^(?:if|then|elif|else|fi|while|until|for|select|in|do|done|case|esac|function|time|!|\{|\}|\[\[|\]\])$/.test(
+                                    token.raw.replaceAll("\\\n", "")
+                                ) ||
                                 token.value === "eval")
                         ) {
                             unqualified = true;
@@ -660,7 +671,7 @@ export function startupCodePaths(
         inspect(healthcheck.slice(1), path.posix.resolve("/", workingDirectory || "/"));
     else if (healthcheck?.[0] === "CMD-SHELL")
         inspect(
-            ["/bin/sh", "-c", healthcheck[1] ?? ""],
+            [...(shell?.length ? shell : ["/bin/sh", "-c"]), healthcheck[1] ?? ""],
             path.posix.resolve("/", workingDirectory || "/")
         );
     // CMD is otherwise an argument tail, not an independent executable vector.

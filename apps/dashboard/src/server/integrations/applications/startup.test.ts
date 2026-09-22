@@ -9,8 +9,9 @@ test.each(cases)("startup code positions: $name", (scenario) => {
         scenario.entrypoint,
         scenario.command,
         scenario.working_dir,
-        undefined,
-        "environment" in scenario ? scenario.environment : undefined
+        "healthcheck" in scenario ? scenario.healthcheck.test : undefined,
+        "environment" in scenario ? scenario.environment : undefined,
+        "shell" in scenario ? scenario.shell : undefined
     );
     const mount = path.posix.normalize(scenario.mount);
     expect(

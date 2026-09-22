@@ -1,5 +1,407 @@
 [
     {
+        "name": "assignment prefixed coproc ordinary plain",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["FOO=x coproc /vendor/server"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "assignment prefixed coproc PATH code plain",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["FOO=x coproc /vendor/server"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["PATH=/custom:/usr/bin:/bin"]
+    },
+    {
+        "name": "assignment prefixed coproc ordinary multiple",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["FOO=x BAR= coproc /vendor/server"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "assignment prefixed coproc PATH code multiple",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["FOO=x BAR= coproc /vendor/server"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["PATH=/custom:/usr/bin:/bin"]
+    },
+    {
+        "name": "assignment prefixed coproc ordinary continued",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["FOO=x co\\\nproc /vendor/server"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "assignment prefixed coproc PATH code continued",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["FOO=x co\\\nproc /vendor/server"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["PATH=/custom:/usr/bin:/bin"]
+    },
+    {
+        "name": "assignment prefixed coproc ordinary after-list",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["/bin/true; FOO=x coproc /vendor/server"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "assignment prefixed coproc PATH code after-list",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["/bin/true; FOO=x coproc /vendor/server"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["PATH=/custom:/usr/bin:/bin"]
+    },
+    {
+        "name": "assignment prefixed coproc ordinary quoted",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["FOO='some data' coproc /vendor/server"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "assignment prefixed coproc PATH code quoted",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["FOO='some data' coproc /vendor/server"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["PATH=/custom:/usr/bin:/bin"]
+    },
+    {
+        "name": "assignment prefixed coproc ordinary dispatch",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["FOO=x command coproc /vendor/server"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "assignment prefixed coproc PATH code dispatch",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["FOO=x command coproc /vendor/server"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true,
+        "environment": ["PATH=/custom:/usr/bin:/bin"]
+    },
+    {
+        "name": "dynamic builtin enable -f /custom/plugin.so worker; worker",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["enable -f /custom/plugin.so worker; worker"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "dynamic builtin enable -f/custom/plugin.so worker",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["enable -f/custom/plugin.so worker"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "dynamic builtin enable -nf /custom/plugin.so worker",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["enable -nf /custom/plugin.so worker"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "dynamic builtin builtin enable -f /custom/plugin.so worker",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["builtin enable -f /custom/plugin.so worker"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "dynamic builtin command enable -f /custom/plugin.so worker",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["command enable -f /custom/plugin.so worker"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "dynamic builtin enable -d worker; worker",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["enable -d worker; worker"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "dynamic builtin enable -n printf; printf hello",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["enable -n printf; printf hello"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "builtin information enable",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["enable"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "builtin information enable -a",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["enable -a"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "builtin information enable -p",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["enable -p"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "builtin information enable -s",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["enable -s"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "builtin information enable -np",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["enable -np"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "builtin information enable --help",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["enable --help"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "builtin information command -v enable",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["command -v enable"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "builtin information /vendor/server 'enable -f /custom/data'",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["/vendor/server 'enable -f /custom/data'"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "image shell null CMD-SHELL",
+        "entrypoint": ["/vendor/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "shell": null,
+        "healthcheck": {
+            "test": ["CMD-SHELL", "/vendor/check"]
+        },
+        "blocked": false
+    },
+    {
+        "name": "image shell null CMD",
+        "entrypoint": ["/vendor/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "shell": null,
+        "healthcheck": {
+            "test": ["CMD", "/vendor/check"]
+        },
+        "blocked": false
+    },
+    {
+        "name": "image shell null NONE",
+        "entrypoint": ["/vendor/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "shell": null,
+        "healthcheck": {
+            "test": ["NONE", "/vendor/check"]
+        },
+        "blocked": false
+    },
+    {
+        "name": "image shell [] CMD-SHELL",
+        "entrypoint": ["/vendor/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "shell": [],
+        "healthcheck": {
+            "test": ["CMD-SHELL", "/vendor/check"]
+        },
+        "blocked": false
+    },
+    {
+        "name": "image shell [] CMD",
+        "entrypoint": ["/vendor/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "shell": [],
+        "healthcheck": {
+            "test": ["CMD", "/vendor/check"]
+        },
+        "blocked": false
+    },
+    {
+        "name": "image shell [] NONE",
+        "entrypoint": ["/vendor/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "shell": [],
+        "healthcheck": {
+            "test": ["NONE", "/vendor/check"]
+        },
+        "blocked": false
+    },
+    {
+        "name": "image shell [\"/bin/sh\",\"-c\"] CMD-SHELL",
+        "entrypoint": ["/vendor/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "shell": ["/bin/sh", "-c"],
+        "healthcheck": {
+            "test": ["CMD-SHELL", "/vendor/check"]
+        },
+        "blocked": false
+    },
+    {
+        "name": "image shell [\"/bin/sh\",\"-c\"] CMD",
+        "entrypoint": ["/vendor/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "shell": ["/bin/sh", "-c"],
+        "healthcheck": {
+            "test": ["CMD", "/vendor/check"]
+        },
+        "blocked": false
+    },
+    {
+        "name": "image shell [\"/bin/sh\",\"-c\"] NONE",
+        "entrypoint": ["/vendor/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "shell": ["/bin/sh", "-c"],
+        "healthcheck": {
+            "test": ["NONE", "/vendor/check"]
+        },
+        "blocked": false
+    },
+    {
+        "name": "image shell [\"/custom/shell\",\"-c\"] CMD-SHELL",
+        "entrypoint": ["/vendor/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "shell": ["/custom/shell", "-c"],
+        "healthcheck": {
+            "test": ["CMD-SHELL", "/vendor/check"]
+        },
+        "blocked": true
+    },
+    {
+        "name": "image shell [\"/custom/shell\",\"-c\"] CMD",
+        "entrypoint": ["/vendor/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "shell": ["/custom/shell", "-c"],
+        "healthcheck": {
+            "test": ["CMD", "/vendor/check"]
+        },
+        "blocked": false
+    },
+    {
+        "name": "image shell [\"/custom/shell\",\"-c\"] NONE",
+        "entrypoint": ["/vendor/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "shell": ["/custom/shell", "-c"],
+        "healthcheck": {
+            "test": ["NONE", "/vendor/check"]
+        },
+        "blocked": false
+    },
+    {
+        "name": "image shell [\"/bin/bash\",\"--rcfile\",\"/custom/rc\",\"-c\"] CMD-SHELL",
+        "entrypoint": ["/vendor/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "shell": ["/bin/bash", "--rcfile", "/custom/rc", "-c"],
+        "healthcheck": {
+            "test": ["CMD-SHELL", "/vendor/check"]
+        },
+        "blocked": true
+    },
+    {
+        "name": "image shell [\"/bin/bash\",\"--rcfile\",\"/custom/rc\",\"-c\"] CMD",
+        "entrypoint": ["/vendor/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "shell": ["/bin/bash", "--rcfile", "/custom/rc", "-c"],
+        "healthcheck": {
+            "test": ["CMD", "/vendor/check"]
+        },
+        "blocked": false
+    },
+    {
+        "name": "image shell [\"/bin/bash\",\"--rcfile\",\"/custom/rc\",\"-c\"] NONE",
+        "entrypoint": ["/vendor/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "shell": ["/bin/bash", "--rcfile", "/custom/rc", "-c"],
+        "healthcheck": {
+            "test": ["NONE", "/vendor/check"]
+        },
+        "blocked": false
+    },
+    {
         "name": "coproc mounted command",
         "entrypoint": ["/bin/bash", "-c"],
         "command": ["coproc /custom/start"],

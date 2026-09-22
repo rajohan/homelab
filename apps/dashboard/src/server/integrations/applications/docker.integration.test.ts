@@ -22,6 +22,21 @@ import {
 } from "./selection";
 
 test.each([
+    { test: ["CMD", "/bin/bash", "-c", "FOO=x coproc /vendor/check"], blocked: false },
+    {
+        test: [
+            "CMD",
+            "/bin/bash",
+            "-c",
+            "enable -f /custom/SYNTHETIC_PRIVATE.so worker; worker",
+        ],
+        blocked: true,
+    },
+    {
+        test: ["CMD", "/bin/bash", "-c", "builtin enable -f/custom/plugin.so worker"],
+        blocked: true,
+    },
+    { test: ["CMD", "/bin/bash", "-c", "enable -p"], blocked: false },
     {
         test: [
             "CMD",
@@ -89,6 +104,42 @@ test.each([
         }
     }
 );
+
+test.each([
+    {
+        shell: ["/custom/shell", "-c", "SYNTHETIC_PRIVATE"],
+        mode: "CMD-SHELL",
+        blocked: true,
+    },
+    { shell: ["/custom/shell", "-c"], mode: "CMD", blocked: false },
+    { shell: ["/custom/shell", "-c"], mode: "NONE", blocked: false },
+    { shell: ["/bin/sh", "-c"], mode: "CMD-SHELL", blocked: false },
+    { shell: [], mode: "CMD-SHELL", blocked: false },
+    { shell: null, mode: "CMD-SHELL", blocked: false },
+])("Docker image-selected healthcheck shell stays private: %j", async (scenario) => {
+    const fixture = createApplicationFixture();
+    try {
+        const detail = fixture.containers.get("a".repeat(64))!;
+        detail.Config.Entrypoint = ["/vendor/server"];
+        detail.Config.Cmd = [];
+        detail.Config.Shell = scenario.shell ? [...scenario.shell] : null;
+        detail.Config.Healthcheck = { Test: [scenario.mode, "/vendor/check"] };
+        detail.Mounts = [
+            { Type: "volume", Source: "fixture-data", Destination: "/custom", RW: false },
+        ];
+        const inspected = await createDockerPort(fixture.target, {}).inspect(
+            detail.Id,
+            AbortSignal.timeout(3000)
+        );
+        const mapped = mapDockerApplication(fixture.target, inspected);
+        expect(hasApplicationCodeMount(mapped)).toBe(scenario.blocked);
+        expect(JSON.stringify(mapped)).not.toContain("SYNTHETIC_PRIVATE");
+        expect(mapped).not.toHaveProperty("Shell");
+        expect(mapped).not.toHaveProperty("Config");
+    } finally {
+        await fixture.close();
+    }
+});
 
 test.each([
     ["LD_PRELOAD", true],

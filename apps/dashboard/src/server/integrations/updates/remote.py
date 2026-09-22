@@ -252,6 +252,10 @@ def startup_code_paths(startup):
             if name == "timeout":
                 index += 1
             inspect(args[index:], cwd, depth + 1)
+        elif name == "enable":
+            # Listing is harmless; changing loaded builtins changes later lookup.
+            if not all(re.fullmatch(r"-[anps]+", arg) or arg == "--help" for arg in args[1:]):
+                unqualified = True
         elif name in ("hash", "trap", "eval", "xargs", "parallel", "chroot", "su", "runuser", "sudo", "doas", "setpriv", "setsid", "chrt", "ionice", "taskset", "stdbuf", "flock", "watch"):
             unqualified = True
         elif name in ("exec", "tini", "dumb-init", "gosu", "su-exec", "docker-entrypoint.sh", "docker-entrypoint"):
@@ -374,7 +378,7 @@ def startup_code_paths(startup):
                             search_path = inherited
                         group = []
                     else:
-                        if all(re.match(r"[A-Za-z_][A-Za-z0-9_]*=", word) for word in group) and (re.fullmatch(r"(?:if|then|elif|else|fi|while|until|for|select|in|do|done|case|esac|function|coproc|time|!|\{|\}|\[\[|\]\])", raw.replace("\\\n", "")) or token == "eval"):
+                        if all(re.match(r"[A-Za-z_][A-Za-z0-9_]*=", word) for word in group) and ((not group and raw.replace("\\\n", "") == "coproc") or re.fullmatch(r"(?:if|then|elif|else|fi|while|until|for|select|in|do|done|case|esac|function|time|!|\{|\}|\[\[|\]\])", raw.replace("\\\n", "")) or token == "eval"):
                             unqualified = True
                             return
                         group.append(token + ("\0" if dynamic_shell_word(raw) else ""))
@@ -476,7 +480,7 @@ def startup_code_paths(startup):
         if health_test and health_test[0] == "CMD":
             inspect(health_test[1:], cwd)
         elif health_test and health_test[0] == "CMD-SHELL":
-            inspect(["/bin/sh", "-c", health_test[1] if len(health_test) > 1 else ""], cwd)
+            inspect([*(startup.get("shell") or ["/bin/sh", "-c"]), health_test[1] if len(health_test) > 1 else ""], cwd)
     return None if unqualified else paths
 
 
@@ -496,6 +500,10 @@ def compose_startup(service, defaults):
         "command": command if command is not None else defaults.get("command") if entrypoint is None else [],
         "working_dir": service.get("working_dir") or defaults.get("working_dir") or "/",
     }
+    # Compose cannot replace Dockerfile SHELL. It selects CMD-SHELL execution
+    # even when Compose overrides the healthcheck's command or interval.
+    if "shell" in defaults:
+        result["shell"] = defaults["shell"]
     health = defaults.get("healthcheck") or {}
     override = service.get("healthcheck") or {}
     health_test = health.get("Test", health.get("test"))
@@ -682,12 +690,12 @@ def docker_update(driver, item, automatic=False):
         service = config.get("services", {}).get(driver["service"], {})
         # Inspect bounded startup/loader inputs in memory, never complete Config
         # or environment values in output, inventory or update receipts.
-        startup = json.loads(command(["/usr/bin/docker", "inspect", "--format", '{"entrypoint":{{json .Config.Entrypoint}},"command":{{json .Config.Cmd}},"working_dir":{{json .Config.WorkingDir}},"healthcheck":{{json .Config.Healthcheck}},"environment":{{json .Config.Env}}}', identity]))
+        startup = json.loads(command(["/usr/bin/docker", "inspect", "--format", '{"entrypoint":{{json .Config.Entrypoint}},"command":{{json .Config.Cmd}},"working_dir":{{json .Config.WorkingDir}},"healthcheck":{{json .Config.Healthcheck}},"environment":{{json .Config.Env}},"shell":{{json .Config.Shell}}}', identity]))
         verify_code_mounts(service, startup)
         # Container Config may contain old Compose overrides. Inherit from the
         # immutable installed image, not from those old container overrides.
         # Never classify an unmerged CMD argument tail as an executable vector.
-        defaults = json.loads(command(["/usr/bin/docker", "image", "inspect", "--format", '{"entrypoint":{{json .Config.Entrypoint}},"command":{{json .Config.Cmd}},"working_dir":{{json .Config.WorkingDir}},"healthcheck":{{json .Config.Healthcheck}},"environment":{{json .Config.Env}}}', before[2]]))
+        defaults = json.loads(command(["/usr/bin/docker", "image", "inspect", "--format", '{"entrypoint":{{json .Config.Entrypoint}},"command":{{json .Config.Cmd}},"working_dir":{{json .Config.WorkingDir}},"healthcheck":{{json .Config.Healthcheck}},"environment":{{json .Config.Env}},"shell":{{json .Config.Shell}}}', before[2]]))
         verify_code_mounts(service, compose_startup(service, defaults))
         if config.get("services", {}).get(driver["service"], {}).get("image") != item["image"]:
             raise RuntimeError("Compose and the observed image differ")
@@ -703,7 +711,7 @@ def docker_update(driver, item, automatic=False):
         updated = original[:match.start()] + replacement + original[match.end():]
         progress("pulling")
         command(["/usr/bin/docker", "pull", candidate], timeout=600)
-        candidate_startup = json.loads(command(["/usr/bin/docker", "image", "inspect", "--format", '{"entrypoint":{{json .Config.Entrypoint}},"command":{{json .Config.Cmd}},"working_dir":{{json .Config.WorkingDir}},"healthcheck":{{json .Config.Healthcheck}},"environment":{{json .Config.Env}}}', candidate]))
+        candidate_startup = json.loads(command(["/usr/bin/docker", "image", "inspect", "--format", '{"entrypoint":{{json .Config.Entrypoint}},"command":{{json .Config.Cmd}},"working_dir":{{json .Config.WorkingDir}},"healthcheck":{{json .Config.Healthcheck}},"environment":{{json .Config.Env}},"shell":{{json .Config.Shell}}}', candidate]))
         verify_code_mounts(service, compose_startup(service, candidate_startup))
         pulled = command(["/usr/bin/docker", "image", "inspect", "--format", "{{.Id}}", candidate])
         if pulled != item["available"]:

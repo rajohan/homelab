@@ -113,6 +113,8 @@ export async function refreshDockerObservations(
             capturedAt: string;
             mutatedAt: string;
             mutationXid: string;
+            applications: ManagedApplication[];
+            owners: DockerOwner[];
         } | null
     >();
     for (const host of inventory.hosts) {
@@ -159,7 +161,12 @@ export async function refreshDockerObservations(
                     snapshots.set(
                         key,
                         stored
-                            ? { ...stored, original: JSON.stringify(stored.value) }
+                            ? {
+                                  ...stored,
+                                  original: JSON.stringify(stored.value),
+                                  applications: [],
+                                  owners: [],
+                              }
                             : null
                     );
                 }
@@ -184,13 +191,21 @@ export async function refreshDockerObservations(
                     );
                     return !sourceOwnsName || target.source === source ? [driver] : [];
                 });
-                row.value = reconcileDockerObservations(row.value, allowed, owners);
+                row.applications.push(...allowed);
+                row.owners.push(...owners);
             }
         }
     }
     // All hosts compare against the original locked mutation watermark. Write once
-    // after composing their changes so our trigger cannot fence sibling hosts.
+    // after collecting their matches so duplicate names across daemons cannot
+    // overwrite one another based on host configuration order.
     for (const [key, row] of snapshots) {
+        if (row)
+            row.value = reconcileDockerObservations(
+                row.value,
+                row.applications,
+                row.owners
+            );
         if (row && JSON.stringify(row.value) !== row.original)
             await transaction`UPDATE operation_snapshots SET value=${JSON.stringify(row.value)}::text::jsonb WHERE key=${key}`;
     }

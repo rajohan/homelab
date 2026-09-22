@@ -477,14 +477,18 @@ test.each([-86_400_000, 86_400_000])(
     }
 );
 
-test.each([
-    { reverse: false, firstStale: false },
-    { reverse: true, firstStale: false },
-    { reverse: false, firstStale: true },
-    { reverse: true, firstStale: true },
-])(
+test.each(
+    [
+        { reverse: false, firstStale: false },
+        { reverse: true, firstStale: false },
+        { reverse: false, firstStale: true },
+        { reverse: true, firstStale: true },
+    ].flatMap((scenario) =>
+        [false, true].map((collision) => ({ ...scenario, collision }))
+    )
+)(
     "shared-source host observations retain their original mutation fence: %j",
-    async ({ reverse, firstStale }) => {
+    async ({ reverse, firstStale, collision }) => {
         const state = await operationFixture();
         try {
             const names = ["alpha", "bravo"];
@@ -493,7 +497,7 @@ test.each([
             const digest = "sha256:" + "c".repeat(64);
             const targets = parseUpdateTargets(
                 JSON.stringify(
-                    names.map((name) => ({
+                    (collision ? names.slice(0, 1) : names).map((name) => ({
                         id: name,
                         label: name,
                         source: "software",
@@ -517,7 +521,7 @@ test.each([
                 id: name,
                 label: name,
                 endpoint: `http://${name}.invalid:2375`,
-                projects: [name],
+                projects: [collision ? "alpha" : name],
                 updateSources: ["software"],
             }));
             const report: UpdateReport = {
@@ -525,7 +529,7 @@ test.each([
                 repositoryMetadataAt: null,
                 complete: true,
                 coveredKinds: ["container"],
-                items: names.map((name, index) => ({
+                items: (collision ? names.slice(0, 1) : names).map((name, index) => ({
                     id: "docker:" + String(index + 1).repeat(64),
                     name: `${name}-web`,
                     kind: "container",
@@ -555,9 +559,9 @@ test.each([
                         id: `${name}:` + String(index + 3).repeat(64),
                         host: name,
                         containerId: String(index + 3).repeat(64),
-                        containerName: `${name}-web`,
+                        containerName: collision ? "alpha-web" : `${name}-web`,
                         name: "web",
-                        project: name,
+                        project: collision ? "alpha" : name,
                         image: "example/web:1",
                         imageId: digest,
                         state: "running",
@@ -587,10 +591,14 @@ test.each([
             >`SELECT value,captured_at FROM operation_snapshots WHERE key LIKE 'updates%'`;
             expect(rows).toHaveLength(2);
             for (const row of rows) {
-                expect(row.value.items.map((item) => item.id)).toEqual([
-                    "docker:" + (firstStale ? "1" : "3").repeat(64),
-                    "docker:" + "4".repeat(64),
-                ]);
+                expect(row.value.items.map((item) => item.id)).toEqual(
+                    collision
+                        ? ["docker:" + (firstStale ? "4" : "1").repeat(64)]
+                        : [
+                              "docker:" + (firstStale ? "1" : "3").repeat(64),
+                              "docker:" + "4".repeat(64),
+                          ]
+                );
                 expect(row.value.items.every((item) => item.candidateVerified)).toBe(
                     true
                 );

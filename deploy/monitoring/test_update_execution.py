@@ -28,6 +28,29 @@ exec(compile(SOURCE.with_name("toolchain.py").read_text(), str(SOURCE.with_name(
 class UpdateExecutionTests(unittest.TestCase):
     """Cover exact image pins, source fencing, package boundaries and private error handling."""
 
+    def test_actual_assignment_prefixed_coproc_uses_external_lookup(self):
+        with tempfile.TemporaryDirectory(prefix="homelab-coproc-command-") as temporary:
+            executable = Path(temporary) / "coproc"
+            executable.write_text('#!/bin/sh\nprintf "%s:%s" "$FOO" "$1"\n')
+            executable.chmod(0o700)
+            for keyword in ("coproc", "co\\\nproc"):
+                result = subprocess.run(["/bin/bash", "--noprofile", "--norc", "-c", "FOO=x " + keyword + " /vendor/server"], env={"PATH": temporary + ":/usr/bin:/bin", "HOME": temporary}, capture_output=True, text=True, check=True, timeout=5)
+                self.assertEqual(result.stdout, "x:/vendor/server")
+
+    def test_image_shell_healthcheck_effective_defaults(self):
+        for kind in ("bind", "volume", "tmpfs"):
+            service = {"volumes": [{"type": kind, "target": "/custom"}]}
+            defaults = {"entrypoint": ["/vendor/server"], "shell": ["/custom/shell", "-c", "SYNTHETIC_PRIVATE"], "healthcheck": {"Test": ["CMD-SHELL", "/vendor/check"]}}
+            for override in ({}, {"healthcheck": {"interval": "1s"}}, {"healthcheck": {"test": ["CMD-SHELL", "/vendor/other"]}}):
+                with self.subTest(kind=kind, override=override), self.assertRaises(remote.UpdateRefusal):
+                    remote.verify_code_mounts(service, remote.compose_startup(override, defaults))
+            for check in ({"disable": True}, {"test": ["NONE"]}, {"test": ["CMD", "/vendor/check"]}):
+                remote.verify_code_mounts(service, remote.compose_startup({"healthcheck": check}, defaults))
+            for shell in (None, [], ["/bin/sh", "-c"]):
+                remote.verify_code_mounts(service, remote.compose_startup({}, {**defaults, "shell": shell}))
+            paths = remote.startup_code_paths(defaults)
+            self.assertNotIn("SYNTHETIC_PRIVATE", repr(paths))
+
     def test_inherited_storage_requires_separate_qualification(self):
         # References are service/container identifiers, never host paths to stat.
         for reference in ("code-provider", "code-provider:ro", "code-provider:rw", "container:fixture", "container:fixture:ro", "container:fixture:rw"):

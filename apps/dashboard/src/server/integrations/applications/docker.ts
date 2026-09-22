@@ -26,6 +26,7 @@ const detailSchema = v.object({
         Labels: v.nullable(labels),
         Entrypoint: v.optional(v.nullable(v.pipe(v.array(text), v.maxLength(128)))),
         Cmd: v.optional(v.nullable(v.pipe(v.array(text), v.maxLength(128)))),
+        Shell: v.optional(v.nullable(commandVector)),
         WorkingDir: v.optional(text),
         Env: v.optional(v.nullable(environmentVector)),
         Healthcheck: v.optional(
