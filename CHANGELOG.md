@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.5](https://github.com/rajohan/homelab/compare/v0.7.4...v0.7.5) (2026-09-22)
+
+
+### Bug Fixes
+
+* **updates:** repair native updates and dashboard controls ([#33](https://github.com/rajohan/homelab/issues/33)) ([29e4007](https://github.com/rajohan/homelab/commit/29e4007b46a2ef4dfe40020b6cc4942da9c24b2a))
+
 ## [0.7.4](https://github.com/rajohan/homelab/compare/v0.7.3...v0.7.4) (2026-09-22)
 
 
