@@ -57,7 +57,7 @@ def main():
                 helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sh, " + destination + "]", "entrypoint: [/bin/sleep]\n    command: ['3600']"))
             if service in ("inherited-helper", "option-helper"):
                 helper_file.write_text(helper_file.read_text().replace(original, inherited_image))
-        for service, kind in (("assignment-helper", "volumes"), ("config-helper", "configs"), ("secret-helper", "secrets"), ("newline-helper", "volumes"), ("volume-helper", "named-volume"), ("expansion-helper", "volumes"), ("health-helper", "volumes"), ("inherited-health-helper", "volumes"), ("compound-helper", "volumes"), ("conditional-helper", "volumes"), ("compound-health-helper", "volumes"), ("dispatch-helper", "volumes"), ("dispatch-cwd-helper", "volumes"), ("dispatch-health-helper", "volumes"), ("launcher-helper", "volumes"), ("loader-helper", "named-volume"), ("shell-option-helper", "volumes"), ("trap-helper", "volumes"), ("jvm-helper", "volumes"), ("post-hook-helper", "volumes"), ("pre-hook-helper", "volumes"), ("hook-environment-helper", "volumes"), ("path-helper", "volumes"), ("expanded-script-helper", "volumes"), ("runtime-option-helper", "volumes"), ("ruby-option-helper", "volumes"), ("hash-helper", "volumes"), ("exec-arg-helper", "volumes"), ("init-arg-helper", "volumes"), ("volumes-from-helper", "inherited-volume"), ("external-volumes-helper", "inherited-volume"), ("coproc-helper", "named-volume"), ("coproc-health-helper", "volumes"), ("builtin-loader-helper", "named-volume"), ("custom-shell-helper", "volumes")):
+        for service, kind in (("assignment-helper", "volumes"), ("config-helper", "configs"), ("secret-helper", "secrets"), ("newline-helper", "volumes"), ("volume-helper", "named-volume"), ("expansion-helper", "volumes"), ("health-helper", "volumes"), ("inherited-health-helper", "volumes"), ("compound-helper", "volumes"), ("conditional-helper", "volumes"), ("compound-health-helper", "volumes"), ("dispatch-helper", "volumes"), ("dispatch-cwd-helper", "volumes"), ("dispatch-health-helper", "volumes"), ("launcher-helper", "volumes"), ("loader-helper", "named-volume"), ("shell-option-helper", "volumes"), ("trap-helper", "volumes"), ("jvm-helper", "volumes"), ("post-hook-helper", "volumes"), ("pre-hook-helper", "volumes"), ("hook-environment-helper", "volumes"), ("path-helper", "volumes"), ("expanded-script-helper", "volumes"), ("runtime-option-helper", "volumes"), ("ruby-option-helper", "volumes"), ("hash-helper", "volumes"), ("exec-arg-helper", "volumes"), ("init-arg-helper", "volumes"), ("volumes-from-helper", "inherited-volume"), ("external-volumes-helper", "inherited-volume"), ("coproc-helper", "named-volume"), ("coproc-health-helper", "volumes"), ("builtin-loader-helper", "named-volume"), ("custom-shell-helper", "volumes"), ("alias-helper", "named-volume"), ("python-inline-helper", "volumes"), ("awk-helper", "named-volume"), ("find-helper", "volumes")):
             helper_file = directory / (service + ".yaml")
             source_file = directory / (service + ".source")
             source_file.write_text("# Synthetic startup code, never executed.\n")
@@ -225,6 +225,14 @@ def main():
                     helper_file.write_text(helper_file.read_text() + "    healthcheck:\n      test: " + json.dumps(["CMD", "/bin/bash", "-c", "co\\\nproc /custom/start"]) + "\n")
                 elif service == "builtin-loader-helper":
                     helper_file.write_text(helper_file.read_text().replace("    entrypoint: [/bin/sleep]\n    command: ['3600']", "    entrypoint: [/bin/bash, '-c']\n    command: ['enable -f /custom/plugin.so worker; worker']"))
+                elif service in ("alias-helper", "python-inline-helper", "awk-helper", "find-helper"):
+                    invocation = {
+                        "alias-helper": ["/bin/bash", "-O", "expand_aliases", "-c", "alias run=/custom/start\nrun"],
+                        "python-inline-helper": ["python", "-Ic", "exec(open('/custom/start').read())"],
+                        "awk-helper": ["awk", "-f", "/custom/start"],
+                        "find-helper": ["find", "/tmp", "-execdir", "/custom/start", "{}", ";"],
+                    }[service]
+                    helper_file.write_text(helper_file.read_text().replace("    entrypoint: [/bin/sleep]\n    command: ['3600']", "    entrypoint: " + json.dumps(invocation) + "\n    command: []"))
                 elif service == "custom-shell-helper":
                     live = json.loads(command(["/usr/bin/docker", "inspect", owner + "-" + service + "-1"]))[0]
                     # Some Engine versions omit image SHELL from live Config.

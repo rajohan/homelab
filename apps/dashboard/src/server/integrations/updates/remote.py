@@ -252,6 +252,43 @@ def startup_code_paths(startup):
             if name == "timeout":
                 index += 1
             inspect(args[index:], cwd, depth + 1)
+        elif name == "alias":
+            if any("=" in arg or "\0" in arg or (arg.startswith("-") and arg not in ("-p", "--", "--help")) for arg in args[1:]):
+                unqualified = True
+        elif name == "unalias":
+            if len(args) > 1 and args[1] != "--help":
+                unqualified = True
+        elif name in ("busybox", "toybox"):
+            if len(args) > 1 and args[1] in ("--help", "--list", "--list-full"):
+                return
+            if len(args) < 2 or args[1].startswith("-"):
+                unqualified = True
+            else:
+                inspect(args[1:], cwd, depth + 1)
+        elif name in ("awk", "gawk", "mawk", "nawk"):
+            # Never evaluate program files, inline programs or extension loaders.
+            if not (len(args) == 2 and args[1] in ("--help", "--version", "-h", "-V", "-Whelp", "-Wversion")) and not (len(args) == 3 and args[1] == "-W" and args[2] in ("help", "version")):
+                unqualified = True
+        elif name == "find":
+            index = 1
+            while index < len(args):
+                arg = args[index]
+                if "\0" in arg or arg in ("-exec", "-execdir", "-ok", "-okdir"):
+                    unqualified = True
+                    return
+                if arg in ("--help", "--version"):
+                    return
+                if arg == "-fprintf":
+                    index += 3
+                    continue
+                if re.fullmatch(r"(?:-D|-(?:amin|anewer|atime|cmin|cnewer|ctime|context|fstype|gid|group|ilname|iname|inum|iwholename|iregex|links|lname|mmin|mtime|name|newer|path|perm|regex|wholename|size|type|uid|used|user|xtype|regextype|files0-from|maxdepth|mindepth|printf|fprint0|fprint|fls))", arg) or re.fullmatch(r"-newer[acmBt][acmBt]", arg):
+                    index += 2
+                    continue
+                if not arg.startswith("-") or re.fullmatch(r"(?:-[HLP]|-O[0-3]|--|-(?:a|and|o|or|not|daystart|follow|nowarn|warn|depth|mount|noleaf|xdev|ignore_readdir_race|noignore_readdir_race|empty|false|true|nouser|nogroup|readable|writable|executable|delete|print0|print|ls|prune|quit))", arg):
+                    index += 1
+                    continue
+                unqualified = True
+                return
         elif name == "enable":
             # Listing is harmless; changing loaded builtins changes later lookup.
             if not all(re.fullmatch(r"-[anps]+", arg) or arg == "--help" for arg in args[1:]):
@@ -443,16 +480,39 @@ def startup_code_paths(startup):
                     if arg == "--":
                         if len(args) > index + 1 and args[index + 1] != "-":
                             paths.add(resolve(cwd, args[index + 1]))
-                        break
-                    if arg == "-" or re.match(r"^-[cm]", arg):
-                        break
-                    if arg in ("-X", "-W", "--check-hash-based-pycs"):
+                        else:
+                            unqualified = True
+                        return
+                    if arg == "-":
+                        unqualified = True
+                        return
+                    if arg in ("--help", "--help-all", "--help-env", "--help-xoptions", "--version"):
+                        return
+                    if arg == "--check-hash-based-pycs":
                         index += 2
+                        continue
+                    if arg.startswith("--check-hash-based-pycs="):
+                        index += 1
                         continue
                     if not arg.startswith("-"):
                         paths.add(resolve(cwd, arg))
-                        break
+                        return
+                    for offset, option in enumerate(arg[1:], 1):
+                        if option in ("h", "?", "V"):
+                            return
+                        if option in ("c", "i"):
+                            unqualified = True
+                        if option in ("c", "m"):
+                            return
+                        if option in ("X", "W"):
+                            if offset == len(arg) - 1:
+                                index += 1
+                            break
+                        if option not in "bBdEiIOPqRsStuUvx":
+                            unqualified = True
+                            return
                     index += 1
+                unqualified = True
                 return
             if name in ("deno", "npm", "npx", "yarn", "pnpm"):
                 unqualified = True

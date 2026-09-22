@@ -291,6 +291,86 @@ export function startupCodePaths(
             inspect(args.slice(index), cwd, depth + 1);
             return;
         }
+        if (name === "alias") {
+            if (
+                args
+                    .slice(1)
+                    .some(
+                        (arg) =>
+                            arg.includes("=") ||
+                            arg.includes("\0") ||
+                            (arg.startsWith("-") && !["-p", "--", "--help"].includes(arg))
+                    )
+            )
+                unqualified = true;
+            return;
+        }
+        if (name === "unalias") {
+            if (args.length > 1 && args[1] !== "--help") unqualified = true;
+            return;
+        }
+        if (["busybox", "toybox"].includes(name)) {
+            if (["--help", "--list", "--list-full"].includes(args[1] ?? "")) return;
+            if (!args[1] || args[1].startsWith("-")) unqualified = true;
+            else inspect(args.slice(1), cwd, depth + 1);
+            return;
+        }
+        if (["awk", "gawk", "mawk", "nawk"].includes(name)) {
+            // Program files, inline programs, includes and extension loaders
+            // can execute arbitrary code; no AWK program is evaluated here.
+            if (
+                !(
+                    args.length === 2 &&
+                    ["--help", "--version", "-h", "-V", "-Whelp", "-Wversion"].includes(
+                        args[1]!
+                    )
+                ) &&
+                !(
+                    args.length === 3 &&
+                    args[1] === "-W" &&
+                    ["help", "version"].includes(args[2]!)
+                )
+            )
+                unqualified = true;
+            return;
+        }
+        if (name === "find") {
+            for (let index = 1; index < args.length; index++) {
+                const arg = args[index]!;
+                if (
+                    arg.includes("\0") ||
+                    ["-exec", "-execdir", "-ok", "-okdir"].includes(arg)
+                ) {
+                    unqualified = true;
+                    return;
+                }
+                if (["--help", "--version"].includes(arg)) return;
+                // Predicate operands are data, even if spelled "-exec".
+                if (["-fprintf"].includes(arg)) {
+                    index += 2;
+                    continue;
+                }
+                if (
+                    /^(?:-D|-(?:amin|anewer|atime|cmin|cnewer|ctime|context|fstype|gid|group|ilname|iname|inum|iwholename|iregex|links|lname|mmin|mtime|name|newer|path|perm|regex|wholename|size|type|uid|used|user|xtype|regextype|files0-from|maxdepth|mindepth|printf|fprint0|fprint|fls))$/.test(
+                        arg
+                    ) ||
+                    /^-newer[acmBt][acmBt]$/.test(arg)
+                ) {
+                    index++;
+                    continue;
+                }
+                if (
+                    !arg.startsWith("-") ||
+                    /^(?:-[HLP]|-O[0-3]|--|-(?:a|and|o|or|not|daystart|follow|nowarn|warn|depth|mount|noleaf|xdev|ignore_readdir_race|noignore_readdir_race|empty|false|true|nouser|nogroup|readable|writable|executable|delete|print0|print|ls|prune|quit))$/.test(
+                        arg
+                    )
+                )
+                    continue;
+                unqualified = true;
+                return;
+            }
+            return;
+        }
         if (name === "enable") {
             // Listing builtins is harmless. Loading/disabling/replacing one can
             // change the meaning of every later shell command, beyond PATH.
@@ -619,19 +699,51 @@ export function startupCodePaths(
                     if (arg === "--") {
                         if (args[index + 1] && args[index + 1] !== "-")
                             paths.add(resolve(cwd, args[index + 1]!));
-                        break;
+                        else unqualified = true;
+                        return;
                     }
-                    if (arg === "-" || /^-[cm]/.test(arg)) break;
-                    // These interpreter options consume an operand, unlike script
-                    // arguments, which are ignored once the script is located.
-                    if (["-X", "-W", "--check-hash-based-pycs"].includes(arg)) {
+                    if (arg === "-") {
+                        unqualified = true;
+                        return;
+                    }
+                    if (
+                        [
+                            "--help",
+                            "--help-all",
+                            "--help-env",
+                            "--help-xoptions",
+                            "--version",
+                        ].includes(arg)
+                    )
+                        return;
+                    if (arg === "--check-hash-based-pycs") {
                         index++;
                         continue;
                     }
-                    if (arg.startsWith("-")) continue;
-                    paths.add(resolve(cwd, arg));
-                    break;
+                    if (arg.startsWith("--check-hash-based-pycs=")) continue;
+                    if (!arg.startsWith("-")) {
+                        paths.add(resolve(cwd, arg));
+                        return;
+                    }
+                    // Consume clustered flags before locating -c/-m. -X/-W
+                    // own the rest of their word (or the next argument).
+                    for (let offset = 1; offset < arg.length; offset++) {
+                        const option = arg[offset]!;
+                        if (["h", "?", "V"].includes(option)) return;
+                        if (option === "c" || option === "i") unqualified = true;
+                        if (option === "c" || option === "m") return;
+                        if (option === "X" || option === "W") {
+                            if (offset === arg.length - 1) index++;
+                            break;
+                        }
+                        if (!/[bBdEiIOPqRsStuUvx]/.test(option)) {
+                            unqualified = true;
+                            return;
+                        }
+                    }
                 }
+                // No script/module means a program can arrive on standard input.
+                unqualified = true;
                 return;
             }
             if (["deno", "npm", "npx", "yarn", "pnpm"].includes(name)) {

@@ -1,5 +1,859 @@
 [
     {
+        "name": "alias deferred alias run=/custom/start\nrun",
+        "entrypoint": [
+            "/bin/bash",
+            "-O",
+            "expand_aliases",
+            "-c",
+            "alias run=/custom/start\nrun"
+        ],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "alias deferred alias -p run=/custom/start\nrun",
+        "entrypoint": [
+            "/bin/bash",
+            "-O",
+            "expand_aliases",
+            "-c",
+            "alias -p run=/custom/start\nrun"
+        ],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "alias deferred builtin alias run=/custom/start\nrun",
+        "entrypoint": [
+            "/bin/bash",
+            "-O",
+            "expand_aliases",
+            "-c",
+            "builtin alias run=/custom/start\nrun"
+        ],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "alias deferred command alias run=/custom/start\nrun",
+        "entrypoint": [
+            "/bin/bash",
+            "-O",
+            "expand_aliases",
+            "-c",
+            "command alias run=/custom/start\nrun"
+        ],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "alias deferred alias 'run=/custom/start '\nrun",
+        "entrypoint": [
+            "/bin/bash",
+            "-O",
+            "expand_aliases",
+            "-c",
+            "alias 'run=/custom/start '\nrun"
+        ],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "alias deferred alias run=$PRIVATE\nrun",
+        "entrypoint": [
+            "/bin/bash",
+            "-O",
+            "expand_aliases",
+            "-c",
+            "alias run=$PRIVATE\nrun"
+        ],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "alias deferred unalias -a\nrun",
+        "entrypoint": ["/bin/bash", "-O", "expand_aliases", "-c", "unalias -a\nrun"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "alias information alias",
+        "entrypoint": ["/bin/bash", "-c", "alias"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "alias information alias -p",
+        "entrypoint": ["/bin/bash", "-c", "alias -p"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "alias information alias run",
+        "entrypoint": ["/bin/bash", "-c", "alias run"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "alias information alias --help",
+        "entrypoint": ["/bin/bash", "-c", "alias --help"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "alias information command -v alias",
+        "entrypoint": ["/bin/bash", "-c", "command -v alias"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "alias information /vendor/server 'run=/custom/data'",
+        "entrypoint": ["/bin/bash", "-c", "/vendor/server 'run=/custom/data'"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "python unqualified program [\"python\",\"-c\",\"exec(open('/custom/app.py').read())\"]",
+        "entrypoint": ["python", "-c", "exec(open('/custom/app.py').read())"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "python unqualified program [\"python3.13\",\"-cprint('x')\"]",
+        "entrypoint": ["python3.13", "-cprint('x')"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "python unqualified program [\"python\",\"-Isc\",\"SYNTHETIC_PRIVATE\"]",
+        "entrypoint": ["python", "-Isc", "SYNTHETIC_PRIVATE"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "python unqualified program [\"python\",\"-X\",\"dev\",\"-W\",\"error\",\"-c\",\"pass\"]",
+        "entrypoint": ["python", "-X", "dev", "-W", "error", "-c", "pass"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "python unqualified program [\"python\",\"-\"]",
+        "entrypoint": ["python", "-"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "python unqualified program [\"python\"]",
+        "entrypoint": ["python"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "python unqualified program [\"python\",\"--\",\"-\"]",
+        "entrypoint": ["python", "--", "-"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "python unqualified program [\"python\",\"-B\"]",
+        "entrypoint": ["python", "-B"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "python unqualified program [\"python\",\"-Eim\",\"vendor\"]",
+        "entrypoint": ["python", "-Eim", "vendor"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "python code vs data [\"python\",\"/vendor/app.py\",\"-c\",\"/custom/data\"]",
+        "entrypoint": ["python", "/vendor/app.py", "-c", "/custom/data"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "python code vs data [\"python\",\"--\",\"/vendor/app.py\",\"-c\",\"/custom/data\"]",
+        "entrypoint": ["python", "--", "/vendor/app.py", "-c", "/custom/data"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "python code vs data [\"python\",\"-W\",\"-c\",\"/vendor/app.py\"]",
+        "entrypoint": ["python", "-W", "-c", "/vendor/app.py"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "python code vs data [\"python\",\"-X-c\",\"/vendor/app.py\"]",
+        "entrypoint": ["python", "-X-c", "/vendor/app.py"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "python code vs data [\"python\",\"-BEm\",\"vendor\"]",
+        "entrypoint": ["python", "-BEm", "vendor"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "python code vs data [\"python\",\"--help\"]",
+        "entrypoint": ["python", "--help"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "python code vs data [\"python\",\"-V\"]",
+        "entrypoint": ["python", "-V"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "awk program awk[\"-f\",\"/custom/program.awk\"]",
+        "entrypoint": ["awk", "-f", "/custom/program.awk"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "awk program awk[\"-f/custom/program.awk\"]",
+        "entrypoint": ["awk", "-f/custom/program.awk"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "awk program awk[\"--file=/custom/program.awk\"]",
+        "entrypoint": ["awk", "--file=/custom/program.awk"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "awk program awk[\"-E\",\"/custom/program.awk\"]",
+        "entrypoint": ["awk", "-E", "/custom/program.awk"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "awk program awk[\"-i\",\"/custom/program.awk\"]",
+        "entrypoint": ["awk", "-i", "/custom/program.awk"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "awk program awk[\"-l\",\"/custom/plugin\"]",
+        "entrypoint": ["awk", "-l", "/custom/plugin"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "awk program awk[\"BEGIN {system(\\\"/custom/start\\\")}\"]",
+        "entrypoint": ["awk", "BEGIN {system(\"/custom/start\")}"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "awk info awk[\"--help\"]",
+        "entrypoint": ["awk", "--help"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "awk info awk[\"--version\"]",
+        "entrypoint": ["awk", "--version"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "awk info awk[\"-W\",\"help\"]",
+        "entrypoint": ["awk", "-W", "help"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "awk info awk[\"-Wversion\"]",
+        "entrypoint": ["awk", "-Wversion"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "awk program gawk[\"-f\",\"/custom/program.awk\"]",
+        "entrypoint": ["gawk", "-f", "/custom/program.awk"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "awk program gawk[\"-f/custom/program.awk\"]",
+        "entrypoint": ["gawk", "-f/custom/program.awk"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "awk program gawk[\"--file=/custom/program.awk\"]",
+        "entrypoint": ["gawk", "--file=/custom/program.awk"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "awk program gawk[\"-E\",\"/custom/program.awk\"]",
+        "entrypoint": ["gawk", "-E", "/custom/program.awk"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "awk program gawk[\"-i\",\"/custom/program.awk\"]",
+        "entrypoint": ["gawk", "-i", "/custom/program.awk"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "awk program gawk[\"-l\",\"/custom/plugin\"]",
+        "entrypoint": ["gawk", "-l", "/custom/plugin"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "awk program gawk[\"BEGIN {system(\\\"/custom/start\\\")}\"]",
+        "entrypoint": ["gawk", "BEGIN {system(\"/custom/start\")}"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "awk info gawk[\"--help\"]",
+        "entrypoint": ["gawk", "--help"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "awk info gawk[\"--version\"]",
+        "entrypoint": ["gawk", "--version"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "awk info gawk[\"-W\",\"help\"]",
+        "entrypoint": ["gawk", "-W", "help"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "awk info gawk[\"-Wversion\"]",
+        "entrypoint": ["gawk", "-Wversion"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "awk program mawk[\"-f\",\"/custom/program.awk\"]",
+        "entrypoint": ["mawk", "-f", "/custom/program.awk"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "awk program mawk[\"-f/custom/program.awk\"]",
+        "entrypoint": ["mawk", "-f/custom/program.awk"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "awk program mawk[\"--file=/custom/program.awk\"]",
+        "entrypoint": ["mawk", "--file=/custom/program.awk"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "awk program mawk[\"-E\",\"/custom/program.awk\"]",
+        "entrypoint": ["mawk", "-E", "/custom/program.awk"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "awk program mawk[\"-i\",\"/custom/program.awk\"]",
+        "entrypoint": ["mawk", "-i", "/custom/program.awk"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "awk program mawk[\"-l\",\"/custom/plugin\"]",
+        "entrypoint": ["mawk", "-l", "/custom/plugin"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "awk program mawk[\"BEGIN {system(\\\"/custom/start\\\")}\"]",
+        "entrypoint": ["mawk", "BEGIN {system(\"/custom/start\")}"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "awk info mawk[\"--help\"]",
+        "entrypoint": ["mawk", "--help"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "awk info mawk[\"--version\"]",
+        "entrypoint": ["mawk", "--version"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "awk info mawk[\"-W\",\"help\"]",
+        "entrypoint": ["mawk", "-W", "help"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "awk info mawk[\"-Wversion\"]",
+        "entrypoint": ["mawk", "-Wversion"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "awk program nawk[\"-f\",\"/custom/program.awk\"]",
+        "entrypoint": ["nawk", "-f", "/custom/program.awk"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "awk program nawk[\"-f/custom/program.awk\"]",
+        "entrypoint": ["nawk", "-f/custom/program.awk"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "awk program nawk[\"--file=/custom/program.awk\"]",
+        "entrypoint": ["nawk", "--file=/custom/program.awk"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "awk program nawk[\"-E\",\"/custom/program.awk\"]",
+        "entrypoint": ["nawk", "-E", "/custom/program.awk"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "awk program nawk[\"-i\",\"/custom/program.awk\"]",
+        "entrypoint": ["nawk", "-i", "/custom/program.awk"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "awk program nawk[\"-l\",\"/custom/plugin\"]",
+        "entrypoint": ["nawk", "-l", "/custom/plugin"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "awk program nawk[\"BEGIN {system(\\\"/custom/start\\\")}\"]",
+        "entrypoint": ["nawk", "BEGIN {system(\"/custom/start\")}"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "awk info nawk[\"--help\"]",
+        "entrypoint": ["nawk", "--help"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "awk info nawk[\"--version\"]",
+        "entrypoint": ["nawk", "--version"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "awk info nawk[\"-W\",\"help\"]",
+        "entrypoint": ["nawk", "-W", "help"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "awk info nawk[\"-Wversion\"]",
+        "entrypoint": ["nawk", "-Wversion"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "find deferred -exec",
+        "entrypoint": ["find", "/tmp", "-exec", "/custom/start", "{}", ";"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "find grouped deferred -exec",
+        "entrypoint": ["find", "/tmp", "-type", "f", "-exec", "/custom/start", "{}", "+"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "find literal pattern -exec",
+        "entrypoint": ["find", "/custom", "-name", "-exec", "-print"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "find deferred -execdir",
+        "entrypoint": ["find", "/tmp", "-execdir", "/custom/start", "{}", ";"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "find grouped deferred -execdir",
+        "entrypoint": [
+            "find",
+            "/tmp",
+            "-type",
+            "f",
+            "-execdir",
+            "/custom/start",
+            "{}",
+            "+"
+        ],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "find literal pattern -execdir",
+        "entrypoint": ["find", "/custom", "-name", "-execdir", "-print"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "find deferred -ok",
+        "entrypoint": ["find", "/tmp", "-ok", "/custom/start", "{}", ";"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "find grouped deferred -ok",
+        "entrypoint": ["find", "/tmp", "-type", "f", "-ok", "/custom/start", "{}", "+"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "find literal pattern -ok",
+        "entrypoint": ["find", "/custom", "-name", "-ok", "-print"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "find deferred -okdir",
+        "entrypoint": ["find", "/tmp", "-okdir", "/custom/start", "{}", ";"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "find grouped deferred -okdir",
+        "entrypoint": [
+            "find",
+            "/tmp",
+            "-type",
+            "f",
+            "-okdir",
+            "/custom/start",
+            "{}",
+            "+"
+        ],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "find literal pattern -okdir",
+        "entrypoint": ["find", "/custom", "-name", "-okdir", "-print"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "find ordinary [\"find\",\"/custom\",\"-type\",\"f\",\"-print\"]",
+        "entrypoint": ["find", "/custom", "-type", "f", "-print"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "find ordinary [\"find\",\"/custom\",\"-printf\",\"-exec\"]",
+        "entrypoint": ["find", "/custom", "-printf", "-exec"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "find ordinary [\"find\",\"/custom\",\"-fprintf\",\"/tmp/list\",\"-exec\"]",
+        "entrypoint": ["find", "/custom", "-fprintf", "/tmp/list", "-exec"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "find ordinary [\"find\",\"--help\"]",
+        "entrypoint": ["find", "--help"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "find ordinary [\"/bin/sh\",\"-c\",\"find /data -name '-exec' -print\"]",
+        "entrypoint": ["/bin/sh", "-c", "find /data -name '-exec' -print"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "multicall dispatch busybox[\"awk\",\"-f\",\"/custom/program\"]",
+        "entrypoint": ["busybox", "awk", "-f", "/custom/program"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "multicall dispatch busybox[\"find\",\"/tmp\",\"-exec\",\"/custom/start\",\"{}\",\";\"]",
+        "entrypoint": ["busybox", "find", "/tmp", "-exec", "/custom/start", "{}", ";"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "multicall dispatch busybox[\"sh\",\"-c\",\"/custom/start\"]",
+        "entrypoint": ["busybox", "sh", "-c", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "multicall help busybox",
+        "entrypoint": ["busybox", "--help", "awk"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "multicall ordinary busybox",
+        "entrypoint": ["busybox", "find", "/custom", "-type", "f", "-print"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "multicall dispatch toybox[\"awk\",\"-f\",\"/custom/program\"]",
+        "entrypoint": ["toybox", "awk", "-f", "/custom/program"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "multicall dispatch toybox[\"find\",\"/tmp\",\"-exec\",\"/custom/start\",\"{}\",\";\"]",
+        "entrypoint": ["toybox", "find", "/tmp", "-exec", "/custom/start", "{}", ";"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "multicall dispatch toybox[\"sh\",\"-c\",\"/custom/start\"]",
+        "entrypoint": ["toybox", "sh", "-c", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "multicall help toybox",
+        "entrypoint": ["toybox", "--help", "awk"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "multicall ordinary toybox",
+        "entrypoint": ["toybox", "find", "/custom", "-type", "f", "-print"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
         "name": "assignment prefixed coproc ordinary plain",
         "entrypoint": ["/bin/bash", "-c"],
         "command": ["FOO=x coproc /vendor/server"],
@@ -1556,12 +2410,12 @@
         "blocked": false
     },
     {
-        "name": "python stdin operands are not scripts",
+        "name": "python stdin program requires qualification independently of data operands",
         "entrypoint": ["python3.14"],
         "command": ["-", "/custom/operand"],
         "working_dir": "/",
         "mount": "/custom",
-        "blocked": false
+        "blocked": true
     },
     {
         "name": "postgres data operand",

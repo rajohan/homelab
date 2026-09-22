@@ -478,17 +478,15 @@ test.each([-86_400_000, 86_400_000])(
 );
 
 test.each(
-    [
-        { reverse: false, firstStale: false },
-        { reverse: true, firstStale: false },
-        { reverse: false, firstStale: true },
-        { reverse: true, firstStale: true },
-    ].flatMap((scenario) =>
-        [false, true].map((collision) => ({ ...scenario, collision }))
+    ["fresh", "stale", "unavailable", "missing", "no-clock", "empty"].flatMap(
+        (firstState) =>
+            [false, true].flatMap((reverse) =>
+                [false, true].map((collision) => ({ firstState, reverse, collision }))
+            )
     )
 )(
     "shared-source host observations retain their original mutation fence: %j",
-    async ({ reverse, firstStale, collision }) => {
+    async ({ reverse, firstState, collision }) => {
         const state = await operationFixture();
         try {
             const names = ["alpha", "bravo"];
@@ -551,8 +549,9 @@ test.each(
             const hosts: ApplicationInventory["hosts"] = names.map((name, index) => ({
                 id: name,
                 label: name,
-                available: true,
-                observationStartedAt: firstStale && index === 0 ? staleStart : startedAt,
+                available: !(firstState === "unavailable" && index === 0),
+                observationStartedAt:
+                    firstState === "stale" && index === 0 ? staleStart : startedAt,
                 observationVisibility: visibility,
                 applications: [
                     {
@@ -574,13 +573,20 @@ test.each(
                     },
                 ],
             }));
+            if (["empty", "unavailable"].includes(firstState))
+                hosts[0]!.applications = [];
+            if (firstState === "no-clock") {
+                delete hosts[0]!.observationStartedAt;
+                delete hosts[0]!.observationVisibility;
+            }
+            const selectedHosts = firstState === "missing" ? hosts.slice(1) : hosts;
             await state.client.begin(async (transaction) => {
                 await lockQueue(transaction);
                 await refreshDockerObservations(
                     transaction,
                     {
                         capturedAt: startedAt,
-                        hosts: reverse ? hosts.toReversed() : hosts,
+                        hosts: reverse ? selectedHosts.toReversed() : selectedHosts,
                     },
                     bindings,
                     targets
@@ -593,12 +599,13 @@ test.each(
             for (const row of rows) {
                 expect(row.value.items.map((item) => item.id)).toEqual(
                     collision
-                        ? ["docker:" + (firstStale ? "4" : "1").repeat(64)]
+                        ? ["docker:" + "1".repeat(64)]
                         : [
-                              "docker:" + (firstStale ? "1" : "3").repeat(64),
+                              "docker:" + (firstState === "fresh" ? "3" : "1").repeat(64),
                               "docker:" + "4".repeat(64),
                           ]
                 );
+                if (collision) expect(row.value).toEqual(report);
                 expect(row.value.items.every((item) => item.candidateVerified)).toBe(
                     true
                 );

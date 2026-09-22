@@ -115,6 +115,8 @@ export async function refreshDockerObservations(
             mutationXid: string;
             applications: ManagedApplication[];
             owners: DockerOwner[];
+            bindings: readonly ApplicationTarget[];
+            observedHosts: Set<string>;
         } | null
     >();
     for (const host of inventory.hosts) {
@@ -166,6 +168,14 @@ export async function refreshDockerObservations(
                                   original: JSON.stringify(stored.value),
                                   applications: [],
                                   owners: [],
+                                  bindings: applications.filter((target) =>
+                                      boundHostSources(
+                                          target.updateSources ?? [target.id],
+                                          targets,
+                                          applications
+                                      ).includes(source)
+                                  ),
+                                  observedHosts: new Set<string>(),
                               }
                             : null
                     );
@@ -193,6 +203,7 @@ export async function refreshDockerObservations(
                 });
                 row.applications.push(...allowed);
                 row.owners.push(...owners);
+                row.observedHosts.add(host.id);
             }
         }
     }
@@ -204,7 +215,19 @@ export async function refreshDockerObservations(
             row.value = reconcileDockerObservations(
                 row.value,
                 row.applications,
-                row.owners
+                row.owners.filter((owner) => {
+                    const peers = row.bindings.filter((binding) =>
+                        binding.projects.includes(owner.project)
+                    );
+                    // A shared publication source does not identify a daemon.
+                    // Skipping an old/missing observation must never elect a
+                    // foreign endpoint as this recipe's now-unique owner.
+                    return (
+                        new Set(peers.map((peer) => new URL(peer.endpoint).origin))
+                            .size === 1 &&
+                        peers.every((peer) => row.observedHosts.has(peer.id))
+                    );
+                })
             );
         if (row && JSON.stringify(row.value) !== row.original)
             await transaction`UPDATE operation_snapshots SET value=${JSON.stringify(row.value)}::text::jsonb WHERE key=${key}`;

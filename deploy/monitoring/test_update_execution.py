@@ -28,6 +28,36 @@ exec(compile(SOURCE.with_name("toolchain.py").read_text(), str(SOURCE.with_name(
 class UpdateExecutionTests(unittest.TestCase):
     """Cover exact image pins, source fencing, package boundaries and private error handling."""
 
+    def test_actual_alias_inline_python_awk_and_find_dispatch(self):
+        with tempfile.TemporaryDirectory(prefix="homelab-indirect-program-") as temporary:
+            script = Path(temporary) / "start"
+            script.write_text("#!/bin/sh\nprintf executed\n")
+            script.chmod(0o700)
+            program = Path(temporary) / "program.py"
+            program.write_text("print('executed', end='')\n")
+            awk = Path(temporary) / "program.awk"
+            awk.write_text('BEGIN {printf "executed"}\n')
+            commands = [
+                ["/bin/bash", "--noprofile", "--norc", "-O", "expand_aliases", "-c", "alias run='" + str(script) + "'\nrun"],
+                [sys.executable, "-Ic", "import sys;exec(open(sys.argv[1]).read())", str(program)],
+                ["/usr/bin/awk", "-f", str(awk)],
+                ["/usr/bin/find", temporary, "-maxdepth", "0", "-exec", str(script), ";"],
+            ]
+            for command in commands:
+                result = subprocess.run(command, env={"PATH": "/usr/bin:/bin", "HOME": temporary}, capture_output=True, text=True, check=True, timeout=5)
+                self.assertEqual(result.stdout, "executed")
+
+    def test_indirect_program_healthchecks_preserve_disabled_modes(self):
+        for command in (["/bin/bash", "-O", "expand_aliases", "-c", "alias run=/custom/start\nrun"], ["python", "-Ic", "SYNTHETIC_PRIVATE"], ["awk", "-f", "/custom/program.awk"], ["find", "/tmp", "-execdir", "/custom/start", "{}", ";"]):
+            defaults = {"entrypoint": ["/vendor/server"], "healthcheck": {"Test": ["CMD", *command]}}
+            for kind in ("bind", "volume", "tmpfs"):
+                service = {"volumes": [{"type": kind, "target": "/custom"}]}
+                with self.subTest(command=command, kind=kind):
+                    with self.assertRaises(remote.UpdateRefusal):
+                        remote.verify_code_mounts(service, remote.compose_startup({"healthcheck": {"interval": "1s"}}, defaults))
+                    remote.verify_code_mounts(service, remote.compose_startup({"healthcheck": {"disable": True}}, defaults))
+                    self.assertNotIn("SYNTHETIC_PRIVATE", repr(remote.startup_code_paths(remote.compose_startup({}, defaults))))
+
     def test_actual_assignment_prefixed_coproc_uses_external_lookup(self):
         with tempfile.TemporaryDirectory(prefix="homelab-coproc-command-") as temporary:
             executable = Path(temporary) / "coproc"

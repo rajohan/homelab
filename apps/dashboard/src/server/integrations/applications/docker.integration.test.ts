@@ -22,6 +22,33 @@ import {
 } from "./selection";
 
 test.each([
+    {
+        test: [
+            "CMD",
+            "/bin/bash",
+            "-O",
+            "expand_aliases",
+            "-c",
+            "alias run=/custom/SYNTHETIC_PRIVATE\nrun",
+        ],
+        blocked: true,
+    },
+    { test: ["CMD", "/bin/bash", "-c", "alias -p"], blocked: false },
+    { test: ["CMD", "python", "-Ic", "SYNTHETIC_PRIVATE"], blocked: true },
+    {
+        test: ["CMD", "python", "/vendor/app.py", "-c", "/custom/SYNTHETIC_PRIVATE"],
+        blocked: false,
+    },
+    { test: ["CMD", "awk", "-f", "/custom/SYNTHETIC_PRIVATE"], blocked: true },
+    { test: ["CMD", "gawk", "--file=/custom/program.awk"], blocked: true },
+    { test: ["CMD", "awk", "--help"], blocked: false },
+    { test: ["CMD", "find", "/tmp", "-exec", "/custom/start", "{}", ";"], blocked: true },
+    {
+        test: ["CMD", "find", "/tmp", "-okdir", "/custom/start", "{}", ";"],
+        blocked: true,
+    },
+    { test: ["CMD", "find", "/custom", "-name", "-exec", "-print"], blocked: false },
+    { test: ["CMD", "busybox", "awk", "-f", "/custom/program"], blocked: true },
     { test: ["CMD", "/bin/bash", "-c", "FOO=x coproc /vendor/check"], blocked: false },
     {
         test: [
