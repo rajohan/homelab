@@ -3,7 +3,10 @@ import { expect, test } from "bun:test";
 import type { ManagedApplication } from "@homelab/contracts/applications";
 import type { UpdateReport } from "@homelab/contracts/updates";
 
-import { hasApplicationCodeMount, reconcileDockerObservations } from "./observations";
+import {
+    hasApplicationCodeMount,
+    reconcileDockerObservations as reconcile,
+} from "./observations";
 
 const app: ManagedApplication = {
     id: "main:" + "b".repeat(64),
@@ -42,6 +45,15 @@ const report: UpdateReport = {
         },
     ],
 };
+const owner = { name: app.containerName, project: app.project, service: app.name };
+
+function reconcileDockerObservations(
+    value: UpdateReport,
+    applications: readonly ManagedApplication[],
+    owners: readonly (typeof owner)[] = [owner]
+) {
+    return reconcile(value, applications, owners);
+}
 
 test("same-image discovery refreshes the exact container identity without changing publication time or candidate", () => {
     const next = reconcileDockerObservations(report, [app]);
@@ -86,6 +98,10 @@ test.each([
     "/app/cw_platform/orchestrator",
     "/usr/local/lib/site-packages/module.py",
     "/app",
+    "/opt/homelab/custom-entrypoint.py",
+    "/opt/homelab/custom-worker.js",
+    "/opt/homelab/logout-worker.js/extra.js",
+    "/opt/homelab/../homelab/logout-worker.js",
 ])("executable overlay %s blocks installation", (destination) => {
     const patched = {
         ...app,
@@ -142,4 +158,29 @@ test("removing an overlay clears only its installation block on the next observa
     expect(
         reconcileDockerObservations(blocked, [app]).items[0]?.installationBlock
     ).toBeUndefined();
+});
+
+test.each(["project", "service"])(
+    "a reused container name with another Compose %s is not reconciled",
+    (kind) => {
+        const changed = {
+            ...app,
+            ...(kind === "project" ? { project: "other" } : { name: "other" }),
+        };
+        expect(reconcileDockerObservations(report, [changed])).toEqual(report);
+    }
+);
+
+test("missing or ambiguous configured owners cannot rebind identities", () => {
+    expect(reconcileDockerObservations(report, [app], [])).toEqual(report);
+    expect(
+        reconcileDockerObservations(
+            report,
+            [app],
+            [owner, { ...owner, project: "other" }]
+        )
+    ).toEqual(report);
+    expect(
+        reconcileDockerObservations(report, [app], [owner, { ...owner }]).items[0]?.id
+    ).toBe(`docker:${app.containerId}`);
 });

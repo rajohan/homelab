@@ -83,6 +83,8 @@ export interface ApplicationInventory {
         id: string;
         label: string;
         available: boolean;
+        /** Start of this host's Docker reads; older snapshots cannot reconcile software reports. */
+        observationStartedAt?: string;
         applications: readonly ManagedApplication[];
     }[];
 }

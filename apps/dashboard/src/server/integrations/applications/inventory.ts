@@ -161,6 +161,9 @@ export async function collectApplications(
     if (targets.length > 20) throw new Error("Host inventory exceeds its budget");
     const hosts = await Promise.all(
         targets.map(async (target) => {
+            // Completion time cannot fence a software report published while Docker
+            // reads are in flight. Preserve the conservative per-host start instead.
+            const observationStartedAt = new Date().toISOString();
             const hostSignal = AbortSignal.any([
                 signal,
                 AbortSignal.timeout(hostTimeoutMs),
@@ -195,6 +198,7 @@ export async function collectApplications(
                     id: target.id,
                     label: target.label,
                     available: true,
+                    observationStartedAt,
                     applications,
                 };
             } catch {

@@ -7,8 +7,11 @@ import type {
 import type { UpdateReport } from "@homelab/contracts/updates";
 
 import { lockQueue } from "../../jobs/queue";
+import { createApplicationFixture } from "../../testing/applications";
 import { operationFixture } from "../../testing/operations";
 import { bindApplicationHosts } from "../applications/configuration";
+import { createDockerPort } from "../applications/docker";
+import { collectApplications } from "../applications/inventory";
 import { parseUpdateTargets } from "./configuration";
 import { refreshDockerObservations } from "./observations";
 import { updateControl } from "./selection";
@@ -18,6 +21,12 @@ test.each([
     "unavailable",
     "unbound",
     "wrong-project",
+    "reused-project-name",
+    "wrong-service",
+    "missing-watermark",
+    "equal-publication",
+    "source-owner-demo",
+    "source-owner-other",
     "newer-publication",
     "active-host",
     "overlay",
@@ -48,14 +57,29 @@ test.each([
                     },
                 ])
             );
+            const conflictingOwners = scenario.startsWith("source-owner-");
+            if (conflictingOwners) {
+                const original = targets[0]!;
+                if (original.driver.kind !== "docker")
+                    throw new Error("Missing Docker fixture");
+                targets.push({
+                    ...original,
+                    id: "other-web",
+                    source: "alias",
+                    driver: { ...original.driver, project: "other" },
+                });
+            }
             const bindings = bindApplicationHosts(
                 [
                     {
                         id: "main",
                         label: "Main",
                         endpoint: "http://fixture.invalid:2375",
-                        projects: ["demo"],
-                        updateSources: ["software", "alias"],
+                        projects:
+                            scenario === "reused-project-name" || conflictingOwners
+                                ? ["demo", "other"]
+                                : ["demo"],
+                        updateSources: ["software", "alias", "read-only"],
                     },
                 ],
                 targets
@@ -90,9 +114,15 @@ test.each([
                 id: `main:${newId}`,
                 host: "main",
                 containerId: newId,
-                name: "web",
+                name: scenario === "wrong-service" ? "another-service" : "web",
                 containerName: "demo-web-1",
-                project: scenario === "wrong-project" ? "other" : "demo",
+                project: [
+                    "wrong-project",
+                    "reused-project-name",
+                    "source-owner-other",
+                ].includes(scenario)
+                    ? "other"
+                    : "demo",
                 image: "example/web:1",
                 imageId: digest,
                 state: "running",
@@ -113,6 +143,10 @@ test.each([
                           ]
                         : [],
             };
+            let observationStartedAt = new Date().toISOString();
+            if (scenario === "equal-publication") observationStartedAt = capturedAt;
+            if (scenario === "newer-publication")
+                observationStartedAt = new Date(Date.now() - 120_000).toISOString();
             const inventory: ApplicationInventory = {
                 capturedAt:
                     scenario === "newer-publication"
@@ -123,6 +157,9 @@ test.each([
                         id: "main",
                         label: "Main",
                         available: scenario !== "unavailable",
+                        ...(scenario === "missing-watermark"
+                            ? {}
+                            : { observationStartedAt }),
                         applications: [app],
                     },
                 ],
@@ -132,6 +169,8 @@ test.each([
                 "updates.resolved:software",
                 "updates:alias",
                 "updates.resolved:alias",
+                "updates:read-only",
+                "updates.resolved:read-only",
                 "updates:unrelated",
             ])
                 await state.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES(${key},${JSON.stringify(report)}::text::jsonb,${capturedAt}::timestamptz)`;
@@ -156,9 +195,12 @@ test.each([
                 { key: string; value: UpdateReport; captured_at: Date }[]
             >`SELECT key,value,captured_at FROM operation_snapshots WHERE key LIKE 'updates%' ORDER BY key`;
             for (const row of rows) {
-                const refreshed =
-                    ["refresh", "overlay"].includes(scenario) &&
-                    row.key !== "updates:unrelated";
+                const ownedSource =
+                    scenario === "source-owner-demo" ? "software" : "alias";
+                const refreshed = conflictingOwners
+                    ? row.key.endsWith(":" + ownedSource)
+                    : ["refresh", "overlay"].includes(scenario) &&
+                      row.key !== "updates:unrelated";
                 expect(row.value.items[0]?.id).toBe(
                     `docker:${refreshed ? newId : oldId}`
                 );
@@ -180,6 +222,120 @@ test.each([
                 }
             }
         } finally {
+            await state.close();
+        }
+    }
+);
+
+test.each([
+    { changedImage: false, delayedPublication: false },
+    { changedImage: true, delayedPublication: false },
+    { changedImage: false, delayedPublication: true },
+    { changedImage: true, delayedPublication: true },
+])(
+    "software publication during Docker reads is preserved: %j",
+    async ({ changedImage, delayedPublication }) => {
+        const state = await operationFixture();
+        const fixture = createApplicationFixture();
+        try {
+            const targets = parseUpdateTargets(
+                JSON.stringify([
+                    {
+                        id: "web",
+                        label: "Web",
+                        source: "software",
+                        host: "fixture.invalid",
+                        user: "updater",
+                        identityFile: "/run/secrets/test-key",
+                        knownHostsFile: "/run/secrets/test-hosts",
+                        driver: {
+                            kind: "docker",
+                            name: "demo-web",
+                            project: "demo",
+                            service: "web",
+                            directory: "/srv/demo",
+                            file: "/srv/demo/compose.yaml",
+                            imageFile: "/srv/demo/web.yaml",
+                        },
+                    },
+                ])
+            );
+            const bindings = bindApplicationHosts(
+                [{ ...fixture.target, updateSources: ["software"] }],
+                targets
+            );
+            const port = createDockerPort(fixture.target, {});
+            let published: UpdateReport | undefined;
+            const oldTime = new Date(Date.now() - 60_000).toISOString();
+            const inventory = await collectApplications(
+                bindings,
+                () => ({
+                    ...port,
+                    async inspect(id, signal) {
+                        const stale = await port.inspect(id, signal);
+                        if (stale.Name === "/demo-web") {
+                            // The Docker response has already been read. Publish a newer
+                            // container identity on a real independent PostgreSQL transaction.
+                            await Bun.sleep(3);
+                            published = {
+                                capturedAt: delayedPublication
+                                    ? oldTime
+                                    : new Date().toISOString(),
+                                repositoryMetadataAt: null,
+                                complete: true,
+                                coveredKinds: ["container"],
+                                items: [
+                                    {
+                                        id: `docker:${"e".repeat(64)}`,
+                                        name: "demo-web",
+                                        kind: "container",
+                                        installed: changedImage
+                                            ? "sha256:" + "f".repeat(64)
+                                            : stale.Image,
+                                        image: changedImage
+                                            ? "example/web:2.0.0"
+                                            : stale.Config.Image,
+                                        available: "sha256:" + "d".repeat(64),
+                                        status: "available",
+                                        candidateVerified: true,
+                                        security: false,
+                                        held: false,
+                                    },
+                                ],
+                            };
+                            await state.client.begin(async (transaction) => {
+                                await lockQueue(transaction);
+                                for (const prefix of ["updates:", "updates.resolved:"])
+                                    await transaction`INSERT INTO operation_snapshots(key,value,captured_at)
+                                VALUES(${prefix + "software"},${JSON.stringify(published)}::text::jsonb,clock_timestamp())`;
+                            });
+                        }
+                        return stale;
+                    },
+                }),
+                AbortSignal.timeout(5000)
+            );
+            expect(published).toBeDefined();
+            expect(inventory.hosts[0]?.observationStartedAt).toBeDefined();
+            expect(Date.parse(inventory.hosts[0]!.observationStartedAt!)).toBeLessThan(
+                Date.parse(inventory.capturedAt)
+            );
+            await state.client.begin(async (transaction) => {
+                await lockQueue(transaction);
+                await refreshDockerObservations(
+                    transaction,
+                    inventory,
+                    bindings,
+                    targets
+                );
+            });
+            const rows = await state.client<{ value: UpdateReport }[]>`
+            SELECT value FROM operation_snapshots WHERE key LIKE 'updates%'`;
+            expect(rows).toHaveLength(2);
+            for (const row of rows) expect(row.value).toEqual(published!);
+            expect(fixture.calls).toEqual([]);
+        } finally {
+            await fixture.close();
             await state.close();
         }
     }

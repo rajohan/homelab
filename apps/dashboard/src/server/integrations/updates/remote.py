@@ -74,8 +74,8 @@ def verify_code_mounts(service):
         if mount.get("type") != "bind":
             continue
         destination = mount.get("target", "")
-        # Standalone Homelab helpers do not replace vendor application modules.
-        if destination.startswith("/opt/homelab/"):
+        # Only the qualified standalone logout helper is exempt, not this directory.
+        if destination == "/opt/homelab/logout-worker.js":
             continue
         if re.search(r"\.(?:py|pyc|js|mjs|cjs|jsx|ts|tsx|so|node)$", destination, re.I) or re.fullmatch(r"/app(?:/(?:src|lib|services|providers|api|utils|cw_platform)(?:/.*)?)?/?", destination):
             raise UpdateRefusal("local_code_override")
