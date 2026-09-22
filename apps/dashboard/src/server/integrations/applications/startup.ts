@@ -506,7 +506,7 @@ export function startupCodePaths(
                             group.every((word) =>
                                 /^[A-Za-z_][A-Za-z0-9_]*=/.test(word)
                             ) &&
-                            (/^(?:if|then|elif|else|fi|while|until|for|select|in|do|done|case|esac|function|time|!|\{|\}|\[\[|\]\])$/.test(
+                            (/^(?:if|then|elif|else|fi|while|until|for|select|in|do|done|case|esac|function|coproc|time|!|\{|\}|\[\[|\]\])$/.test(
                                 token.raw.replaceAll("\\\n", "")
                             ) ||
                                 token.value === "eval")

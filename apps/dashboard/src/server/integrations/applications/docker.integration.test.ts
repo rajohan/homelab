@@ -22,6 +22,20 @@ import {
 } from "./selection";
 
 test.each([
+    {
+        test: [
+            "CMD",
+            "/bin/bash",
+            "-c",
+            "coproc /custom/check --token=SYNTHETIC_PRIVATE",
+        ],
+        blocked: true,
+    },
+    { test: ["CMD", "/bin/bash", "-c", "co\\\nproc /custom/check"], blocked: true },
+    {
+        test: ["CMD", "/bin/bash", "-c", "/vendor/check 'coproc /custom/data'"],
+        blocked: false,
+    },
     { test: ["CMD", "/custom/check", "SYNTHETIC_PRIVATE"], blocked: true },
     {
         test: ["CMD-SHELL", "/vendor/prep; /custom/check --token=SYNTHETIC_PRIVATE"],

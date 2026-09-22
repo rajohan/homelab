@@ -56,7 +56,7 @@ def main():
                 helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sh, " + destination + "]", "entrypoint: [/bin/sleep]\n    command: ['3600']"))
             if service in ("inherited-helper", "option-helper"):
                 helper_file.write_text(helper_file.read_text().replace(original, inherited_image))
-        for service, kind in (("assignment-helper", "volumes"), ("config-helper", "configs"), ("secret-helper", "secrets"), ("newline-helper", "volumes"), ("volume-helper", "named-volume"), ("expansion-helper", "volumes"), ("health-helper", "volumes"), ("inherited-health-helper", "volumes"), ("compound-helper", "volumes"), ("conditional-helper", "volumes"), ("compound-health-helper", "volumes"), ("dispatch-helper", "volumes"), ("dispatch-cwd-helper", "volumes"), ("dispatch-health-helper", "volumes"), ("launcher-helper", "volumes"), ("loader-helper", "named-volume"), ("shell-option-helper", "volumes"), ("trap-helper", "volumes"), ("jvm-helper", "volumes"), ("post-hook-helper", "volumes"), ("pre-hook-helper", "volumes"), ("hook-environment-helper", "volumes"), ("path-helper", "volumes"), ("expanded-script-helper", "volumes"), ("runtime-option-helper", "volumes"), ("ruby-option-helper", "volumes"), ("hash-helper", "volumes"), ("exec-arg-helper", "volumes"), ("init-arg-helper", "volumes")):
+        for service, kind in (("assignment-helper", "volumes"), ("config-helper", "configs"), ("secret-helper", "secrets"), ("newline-helper", "volumes"), ("volume-helper", "named-volume"), ("expansion-helper", "volumes"), ("health-helper", "volumes"), ("inherited-health-helper", "volumes"), ("compound-helper", "volumes"), ("conditional-helper", "volumes"), ("compound-health-helper", "volumes"), ("dispatch-helper", "volumes"), ("dispatch-cwd-helper", "volumes"), ("dispatch-health-helper", "volumes"), ("launcher-helper", "volumes"), ("loader-helper", "named-volume"), ("shell-option-helper", "volumes"), ("trap-helper", "volumes"), ("jvm-helper", "volumes"), ("post-hook-helper", "volumes"), ("pre-hook-helper", "volumes"), ("hook-environment-helper", "volumes"), ("path-helper", "volumes"), ("expanded-script-helper", "volumes"), ("runtime-option-helper", "volumes"), ("ruby-option-helper", "volumes"), ("hash-helper", "volumes"), ("exec-arg-helper", "volumes"), ("init-arg-helper", "volumes"), ("volumes-from-helper", "inherited-volume"), ("external-volumes-helper", "inherited-volume"), ("coproc-helper", "named-volume"), ("coproc-health-helper", "volumes")):
             helper_file = directory / (service + ".yaml")
             source_file = directory / (service + ".source")
             source_file.write_text("# Synthetic startup code, never executed.\n")
@@ -68,7 +68,7 @@ def main():
                 text += "    volumes:\n      - type: bind\n        source: " + str(source_directory) + "\n        target: /custom\n        read_only: true\n"
             elif kind == "named-volume":
                 text += "    volumes:\n      - type: volume\n        source: startup-code\n        target: /custom\nvolumes:\n  startup-code:\n    labels:\n      homelab.smoke: " + owner + "\n"
-            else:
+            elif kind in ("configs", "secrets"):
                 text += "    " + kind + ":\n      - source: " + service + "\n        target: /custom/start\n" + kind + ":\n  " + service + ":\n    file: " + str(source_file) + "\n"
             helper_file.write_text(text)
             if service == "inherited-health-helper":
@@ -135,7 +135,11 @@ def main():
             assert disabled_health["Config"]["Healthcheck"]["Test"] == ["NONE"]
             assert disabled_health["State"]["Status"] == "running" and not disabled_health["State"].get("Health")
             wait_services = [name for name in compose(["config", "--services"]).split() if name != disabled_health_service]
-            compose(["up", "--detach", "--no-build", "--pull", "never", "--wait", "--wait-timeout", "20", *wait_services])
+            # Bound setup fan-out as the owned fixture set grows. Compose still
+            # starts required dependencies and each group retains the original
+            # command deadline and twenty-second readiness check.
+            for offset in range(0, len(wait_services), 8):
+                compose(["up", "--detach", "--no-build", "--pull", "never", "--wait", "--wait-timeout", "20", *wait_services[offset:offset + 8]])
             # Change Compose only, keeping the live startup vector on /bin/sleep.
             # Both pending extensionless scripts and cwd module execution must
             # fail before a pull, pin edit or replacement of the current container.
@@ -196,6 +200,19 @@ def main():
                         "init-arg-helper": ["tini", "-p", "SIGTERM", "--", "/custom/start"],
                     }[service]
                     helper_file.write_text(helper_file.read_text().replace("    entrypoint: [/bin/sleep]\n    command: ['3600']", "    entrypoint: " + json.dumps(selected) + "\n    command: []"))
+                elif service in ("volumes-from-helper", "external-volumes-helper"):
+                    reference = "volume-helper:ro" if service == "volumes-from-helper" else "container:" + owner + "-volume-helper-1:ro"
+                    helper_file.write_text(helper_file.read_text().replace("    entrypoint: [/bin/sleep]\n    command: ['3600']", "    entrypoint: [/custom/start]\n    command: []") + "    volumes_from: " + json.dumps([reference]) + "\n")
+                    effective_service = json.loads(compose(["config", "--format", "json"]))["services"][service]
+                    assert effective_service.get("volumes_from") and not effective_service.get("volumes")
+                    # The running container has not inherited this mount yet.
+                    live = json.loads(command(["/usr/bin/docker", "inspect", owner + "-" + service + "-1"]))[0]
+                    assert live["Config"]["Labels"]["homelab.smoke"] == owner
+                    assert not any(mount["Destination"] == "/custom" for mount in live["Mounts"])
+                elif service == "coproc-helper":
+                    helper_file.write_text(helper_file.read_text().replace("    entrypoint: [/bin/sleep]\n    command: ['3600']", "    entrypoint: [/bin/bash, '-c']\n    command: ['coproc /custom/start']"))
+                elif service == "coproc-health-helper":
+                    helper_file.write_text(helper_file.read_text() + "    healthcheck:\n      test: " + json.dumps(["CMD", "/bin/bash", "-c", "co\\\nproc /custom/start"]) + "\n")
                 elif service == "loader-helper":
                     helper_file.write_text(helper_file.read_text().replace("    command: ['3600']", "    command: ['3600']\n    environment:\n      LD_PRELOAD: /custom/libapp.so"))
                 elif service in ("post-hook-helper", "pre-hook-helper", "hook-environment-helper"):

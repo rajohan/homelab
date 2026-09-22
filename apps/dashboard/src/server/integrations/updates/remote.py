@@ -374,7 +374,7 @@ def startup_code_paths(startup):
                             search_path = inherited
                         group = []
                     else:
-                        if all(re.match(r"[A-Za-z_][A-Za-z0-9_]*=", word) for word in group) and (re.fullmatch(r"(?:if|then|elif|else|fi|while|until|for|select|in|do|done|case|esac|function|time|!|\{|\}|\[\[|\]\])", raw.replace("\\\n", "")) or token == "eval"):
+                        if all(re.match(r"[A-Za-z_][A-Za-z0-9_]*=", word) for word in group) and (re.fullmatch(r"(?:if|then|elif|else|fi|while|until|for|select|in|do|done|case|esac|function|coproc|time|!|\{|\}|\[\[|\]\])", raw.replace("\\\n", "")) or token == "eval"):
                             unqualified = True
                             return
                         group.append(token + ("\0" if dynamic_shell_word(raw) else ""))
@@ -512,6 +512,11 @@ def compose_startup(service, defaults):
 
 def verify_code_mounts(service, startup=None):
     """Refuse executable deployment mounts without reading config/secret contents."""
+    # Compose does not expand inherited service/container storage into volumes.
+    # Its effective targets and future provider identity need separate deployment
+    # qualification. Never treat these references as paths or assume no mounts.
+    if service.get("volumes_from"):
+        raise UpdateRefusal("local_code_override")
     paths = startup_code_paths(startup or service)
     effective = startup or service
     # Hooks run independently of ENTRYPOINT/CMD but inherit cwd/environment.

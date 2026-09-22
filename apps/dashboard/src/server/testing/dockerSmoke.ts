@@ -125,7 +125,10 @@ export async function main(): Promise<void> {
         projects: [owner],
     };
     const port = createDockerPort(target, {});
-    const signal = AbortSignal.timeout(180_000);
+    // This bounds the entire sequential real-Engine suite, not one lifecycle
+    // operation. Keep room for its setup/recovery cases without replacing the
+    // coordinator's own readiness failures with an unrelated suite timeout.
+    const signal = AbortSignal.timeout(300_000);
     const intent = async (id: string, operation: ApplicationOperation) => {
         for (let attempt = 0; ; attempt += 1) {
             const ids = await port.list(signal);

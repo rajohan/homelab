@@ -1,5 +1,109 @@
 [
     {
+        "name": "coproc mounted command",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["coproc /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "coproc after a command",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["/bin/true; coproc /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "coproc after a newline",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["/bin/true\ncoproc /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "continued coproc keyword",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["co\\\nproc /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "coproc with relative command",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["cd /custom; coproc ./start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "named coproc compound",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["coproc worker { /custom/start; }"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "coproc nested shell",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["/bin/bash -c 'coproc /custom/start'"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "coproc keyword literal data",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["/vendor/server coproc /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "quoted coproc is an ordinary command",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["'coproc' /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "escaped coproc is an ordinary command",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["co\\proc /custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "coproc information query",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["command -v coproc"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "literal multiline coproc operand",
+        "entrypoint": ["/bin/bash", "-c"],
+        "command": ["/vendor/server 'data\ncoproc /custom/start'"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "direct exec coproc is not shell grammar",
+        "entrypoint": ["coproc"],
+        "command": ["/custom/start"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
         "name": "shell command dynamic executable",
         "entrypoint": ["/bin/bash", "-c"],
         "command": ["command \"$RUN\""],

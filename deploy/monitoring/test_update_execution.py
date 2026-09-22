@@ -28,6 +28,45 @@ exec(compile(SOURCE.with_name("toolchain.py").read_text(), str(SOURCE.with_name(
 class UpdateExecutionTests(unittest.TestCase):
     """Cover exact image pins, source fencing, package boundaries and private error handling."""
 
+    def test_inherited_storage_requires_separate_qualification(self):
+        # References are service/container identifiers, never host paths to stat.
+        for reference in ("code-provider", "code-provider:ro", "code-provider:rw", "container:fixture", "container:fixture:ro", "container:fixture:rw"):
+            for startup in ({}, {"entrypoint": ["/custom/start"]}, {"entrypoint": ["/vendor/server"]}, {"healthcheck": {"test": ["CMD", "/custom/check"]}}):
+                service = {"volumes_from": [reference]}
+                before = copy.deepcopy(service)
+                with self.subTest(reference=reference, startup=startup), patch.object(remote.Path, "stat", side_effect=AssertionError("Inherited storage references are not paths")):
+                    with self.assertRaises(remote.UpdateRefusal) as caught:
+                        remote.verify_code_mounts(service, startup)
+                    self.assertEqual(caught.exception.reason, "local_code_override")
+                    self.assertEqual(service, before)
+        remote.verify_code_mounts({"volumes_from": [], "entrypoint": ["/vendor/server"]})
+        remote.verify_code_mounts({"entrypoint": ["/vendor/server"], "volumes": [{"type": "volume", "source": "ordinary-data", "target": "/data"}]})
+
+    def test_coproc_in_effective_and_disabled_healthchecks(self):
+        for expression in ("coproc /custom/check", "co\\\nproc /custom/check", "/bin/true; coproc /custom/check"):
+            defaults = {"entrypoint": ["/vendor/server"], "healthcheck": {"Test": ["CMD", "/bin/bash", "-c", expression]}}
+            for kind in ("bind", "volume", "tmpfs"):
+                service = {"volumes": [{"type": kind, "target": "/custom"}]}
+                with self.subTest(expression=expression, kind=kind):
+                    with self.assertRaises(remote.UpdateRefusal):
+                        remote.verify_code_mounts(service, remote.compose_startup({}, defaults))
+                    with self.assertRaises(remote.UpdateRefusal):
+                        remote.verify_code_mounts(service, remote.compose_startup({"healthcheck": {"interval": "1s"}}, defaults))
+                    remote.verify_code_mounts(service, remote.compose_startup({"healthcheck": {"disable": True}}, defaults))
+                    remote.verify_code_mounts({}, remote.compose_startup({}, defaults))
+
+    def test_actual_bash_coproc_executes_its_operand(self):
+        with tempfile.TemporaryDirectory(prefix="homelab-coproc-") as temporary:
+            script = Path(temporary) / "start"
+            marker = Path(temporary) / "marker"
+            script.write_text('#!/bin/sh\nprintf executed > "$1"\n')
+            script.chmod(0o700)
+            for keyword in ("coproc", "co\\\nproc"):
+                marker.unlink(missing_ok=True)
+                result = subprocess.run(["/bin/bash", "--noprofile", "--norc", "-c", keyword + ' "$1" "$2"; wait "$!"', "fixture", str(script), str(marker)], env={"PATH": "/usr/bin:/bin", "HOME": temporary}, capture_output=True, text=True, check=True, timeout=5)
+                self.assertEqual(result.stdout, "")
+                self.assertEqual(marker.read_text(), "executed")
+
     def test_compose_startup_inherits_only_omitted_or_null_image_defaults(self):
         defaults = {"entrypoint": ["python"], "command": ["/vendor/app.py"], "working_dir": "/vendor"}
         for overrides in ({}, {"entrypoint": None, "command": None, "working_dir": None}):
