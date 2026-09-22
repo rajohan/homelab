@@ -109,3 +109,24 @@ Container smoke tests require Linux Docker host networking for their loopback-on
 and OIDC endpoints. They run as the image's unprivileged user with a read-only root filesystem,
 no capabilities, a bounded temporary directory and only the synthetic policy mounted read-only.
 Their exact temporary containers are removed on success or failure.
+
+## Package metadata before inventory
+
+The inventory collector reads installed versions and existing package lists; publishing
+a fresh report does not itself refresh APT metadata. The dashboard considers OS reports
+stale when their package-list timestamp is missing or more than 48 hours old.
+
+For an explicitly approved host whose normal `apt-daily` refresh is unavailable,
+`monitoring/homelab-update-inventory-refresh.conf` is an optional per-instance drop-in
+for `homelab-update-inventory@<source>.service`. Install it root-owned under that
+instance's `.service.d` directory and reload systemd. It runs only `apt-get update`
+before the existing publisher, never `install`, `upgrade`, service restarts or reboots.
+APT must already maintain `/var/lib/apt/periodic/update-success-stamp` through its
+standard success hook. Any repository refresh failure prevents a new report.
+
+The `+` prefix gives only this fixed APT preparation command its normal root context
+(including its own `_apt` privilege drop); the publisher retains its existing sandbox.
+This avoids releasing unrelated package-upgrade jobs queued behind incomplete
+cloud-init provisioning. It does not repair or resume cloud-init itself. Qualify the
+host's APT sources/hooks first, compare installed package versions before and after,
+and verify both report and package-list timestamps. Do not install the drop-in globally.

@@ -15,6 +15,27 @@ import { JobActivityItem } from "./JobActivityItem";
 import { RunDetailDialog } from "./RunDetailDialog";
 import { useJobCompletionRefresh } from "./useJobCompletionRefresh";
 
+const dismissalKey = "homelab:job-activity:dismissed";
+
+function readDismissed(): ReadonlySet<string> {
+    try {
+        const stored: unknown = JSON.parse(
+            globalThis.localStorage.getItem(dismissalKey) ?? "[]"
+        );
+        return new Set(
+            Array.isArray(stored)
+                ? stored
+                      .slice(-1000)
+                      .filter(
+                          (id): id is string => typeof id === "string" && id.length === 36
+                      )
+                : []
+        );
+    } catch {
+        return new Set();
+    }
+}
+
 /**
  * Keep the current operator's jobs accessible across routes and browser refreshes.
  * @returns An animated header trigger and an on-demand activity panel with optional details.
@@ -25,7 +46,17 @@ export function JobActivity({
     readonly controlRef?: Ref<PopoverControl>;
 }) {
     const [selected, setSelected] = useState<string>();
-    const [dismissed, setDismissed] = useState<ReadonlySet<string>>(() => new Set());
+    const [dismissed, setDismissed] = useState(readDismissed);
+    function dismiss(id: string) {
+        const next = new Set([...readDismissed(), ...dismissed, id].slice(-1000));
+        setDismissed(next);
+        try {
+            // Store only opaque completed-run IDs, never messages or job payloads.
+            globalThis.localStorage.setItem(dismissalKey, JSON.stringify([...next]));
+        } catch {
+            // Restricted storage must not prevent dismissal in the current page.
+        }
+    }
     const query = useQuery({
         queryKey: ["operations", "jobs", "activity"],
         queryFn: ({ signal }) => api.jobs.activity.query(undefined, { signal }),
@@ -43,7 +74,10 @@ export function JobActivity({
     useJobCompletionRefresh(query.data?.runs);
     const runs = [
         ...new Map((query.data?.runs ?? []).map((run) => [run.id, run])).values(),
-    ].filter((run) => !dismissed.has(run.id));
+    ].filter(
+        (run) =>
+            run.state === "queued" || run.state === "running" || !dismissed.has(run.id)
+    );
     const running = runs.filter((run) => run.state === "running").length;
     const queued = runs.filter((run) => run.state === "queued").length;
     const active = running + queued;
@@ -124,11 +158,7 @@ export function JobActivity({
                                             close();
                                             setSelected(run.id);
                                         }}
-                                        onDismiss={() =>
-                                            setDismissed(
-                                                (current) => new Set([...current, run.id])
-                                            )
-                                        }
+                                        onDismiss={() => dismiss(run.id)}
                                     />
                                 )}
                             />

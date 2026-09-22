@@ -61,7 +61,7 @@ def progress(phase):
 
 
 class UpdateRefusal(RuntimeError):
-    """Expose a fixed preflight reason without forwarding command output."""
+    """Expose a fixed update failure reason without forwarding command output."""
 
     def __init__(self, reason):
         super().__init__(reason)
@@ -300,7 +300,7 @@ def apt_update(item, automatic):
         progress("verifying")
         return package.installed.version
     if not package.installed or not package.candidate or package.installed.version != item["installed"] or package.candidate.version != item["available"] or package._pkg.selected_state == apt_pkg.SELSTATE_HOLD:
-        raise RuntimeError("Package state or repository candidate changed")
+        raise UpdateRefusal("apt_candidate_changed")
     package.mark_install(auto_fix=True, auto_inst=True, from_user=False)
     changes = cache.get_changes()
     if cache.broken_count or any(change.marked_delete or change._pkg.selected_state == apt_pkg.SELSTATE_HOLD for change in changes):

@@ -90,6 +90,18 @@ const batchPlan: UpdateBatchPlan = {
 test.each([true, false])(
     "bulk confirmation is scoped and cancellable (one host: %s)",
     async (scoped) => {
+        const height = Object.getOwnPropertyDescriptor(
+            HTMLElement.prototype,
+            "offsetHeight"
+        )!;
+        const width = Object.getOwnPropertyDescriptor(
+            HTMLElement.prototype,
+            "offsetWidth"
+        )!;
+        Object.defineProperties(HTMLElement.prototype, {
+            offsetHeight: { configurable: true, value: 400 },
+            offsetWidth: { configurable: true, value: 960 },
+        });
         const source = scoped ? "demo" : undefined;
         const cleanup = fixture(
             <UpdateBatchAction
@@ -118,10 +130,23 @@ test.each([true, false])(
             expect(dialog).toHaveAccessibleDescription(/Updates run in sequence/);
             expect(screen.getByText("1 update included")).toBeVisible();
             expect(screen.getByRole("button", { name: "Update all" })).toBeEnabled();
+            const checkbox = screen.getByRole("checkbox", {
+                name: "Include Demo on Demo",
+            });
+            expect(checkbox).toBeChecked();
+            await user.click(checkbox);
+            expect(screen.getByText("0 updates included")).toBeVisible();
+            expect(screen.getByRole("button", { name: "Update all" })).toBeDisabled();
+            await user.click(checkbox);
+            expect(screen.getByRole("button", { name: "Update all" })).toBeEnabled();
             await user.click(screen.getByRole("button", { name: "Cancel" }));
             expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
         } finally {
             cleanup();
+            Object.defineProperties(HTMLElement.prototype, {
+                offsetHeight: height,
+                offsetWidth: width,
+            });
         }
     }
 );
@@ -212,6 +237,12 @@ test("source inventory includes per-host counts, one global action and full-widt
     );
     try {
         expect(screen.getByRole("columnheader", { name: "Updates" })).toBeInTheDocument();
+        expect(
+            screen.getByRole("columnheader", { name: "Inventory observed" })
+        ).toBeInTheDocument();
+        expect(
+            screen.getByRole("columnheader", { name: "Package lists refreshed" })
+        ).toBeInTheDocument();
         expect(screen.getByRole("button", { name: "Update all hosts" })).toBeEnabled();
         expect(screen.getByRole("button", { name: "Update all on Demo" })).toHaveClass(
             "w-full"

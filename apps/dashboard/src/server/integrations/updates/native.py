@@ -140,18 +140,33 @@ def adguard_install(recipe, installed, candidate, run, emit, replace, lock):
 
 
 def openclaw_install(recipe, installed, candidate, run, emit):
-    """Use the installation owner's official updater with an exact temporary version tag."""
+    """Run the exact-version updater offline; only reactivate a verified successful update."""
     base = recipe["command"]
     if native_version(run(base + ["--version"])) != installed:
         raise RuntimeError("OpenClaw version changed")
     active = native_service(recipe["service"], run)
-    emit("installing")
-    run(base + ["update", "--tag", candidate, "--yes", "--no-restart"], timeout=1200)
-    if native_version(run(base + ["--version"])) != candidate:
-        raise RuntimeError("OpenClaw updater did not install the approved version")
+    # --no-restart leaves lifecycle ownership here. Doctor needs the gateway's
+    # state coordinator released before it can perform update maintenance.
+    try:
+        if active:
+            emit("stopping_application")
+            run(["/usr/bin/systemctl", "stop", recipe["service"]])
+        if native_service(recipe["service"], run):
+            raise RuntimeError("OpenClaw service did not stop")
+    except Exception:
+        raise UpdateRefusal("openclaw_stop_failed") from None
+    try:
+        emit("installing")
+        run(base + ["update", "--tag", candidate, "--yes", "--no-restart"], timeout=1200)
+        if native_version(run(base + ["--version"])) != candidate:
+            raise RuntimeError("OpenClaw updater did not install the approved version")
+    except Exception:
+        # A package rollback alone does not prove Doctor/state recovery is safe.
+        # Leave recovery to the operator instead of booting a partial update.
+        raise UpdateRefusal("openclaw_update_failed") from None
     if active:
         emit("restarting")
-        run(["/usr/bin/systemctl", "restart", recipe["service"]])
+        run(["/usr/bin/systemctl", "start", recipe["service"]])
     if native_service(recipe["service"], run) != active:
         raise RuntimeError("OpenClaw activation failed")
     return active
@@ -206,7 +221,9 @@ def nextcloud_install(recipe, installed, candidate, run, emit, lock):
         offered = feed.findtext("version", "")
         expected_url = "https://download.nextcloud.com/server/releases/nextcloud-" + candidate + ".zip"
         urls = [feed.findtext("url", "")] + [entry.text for entry in feed.findall("downloads/zip/*")] + [feed.findtext("downloads/zip", "")]
-        signature = feed.findtext("signature", "")
+        # The official feed wraps base64 signatures across lines. Whitespace is
+        # transport formatting; the updater still verifies the complete signature.
+        signature = re.sub(r"[ \t\r\n]", "", feed.findtext("signature", ""))
         if offered.split(".")[:3] != candidate.split(".") or feed.findtext("autoupdater") != "1" or expected_url not in urls or not re.fullmatch(r"[A-Za-z0-9+/]{100,2000}={0,2}", signature):
             raise RuntimeError("Nextcloud does not offer this exact signed upgrade for the installation")
         if status().get("versionstring") != installed:
@@ -247,5 +264,24 @@ def install_native_recipe(driver, item, run, emit, replace, lock):
         raise RuntimeError("Unsupported native recipe")
     emit("verifying")
     if active:
-        run(driver["health"])
+        if application == "loki":
+            # Loki deliberately delays readiness after joining its ring (15s by
+            # default). Retry only the read-only health probe, never installation.
+            deadline = time.monotonic() + 60
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise UpdateRefusal("loki_readiness_failed")
+                try:
+                    run(driver["health"], timeout=min(10, remaining))
+                    break
+                except RuntimeError as error:
+                    if str(error) not in {"Update command failed", "Command deadline exceeded"}:
+                        raise
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise UpdateRefusal("loki_readiness_failed") from None
+                    time.sleep(min(2, remaining))
+        else:
+            run(driver["health"])
     return item["available"]

@@ -1,8 +1,9 @@
 import type { UpdateItem, UpdateReport, UpdateSource } from "@homelab/contracts/updates";
-import type { SQL } from "bun";
+import type { SQL, TransactionSQL } from "bun";
 import * as v from "valibot";
 
-import type { JobHandler } from "../../jobs/types";
+import { enqueueJob } from "../../jobs/queue";
+import type { JobDefinition, JobHandler } from "../../jobs/types";
 import { resolveImageUpdate, type ImageUpdate } from "./registry";
 import { compareRelease, latestRelease } from "./releases";
 
@@ -155,13 +156,40 @@ export async function resolveUpdates(
 }
 
 /**
- * Register release lookups independently of publisher delivery or application control.
+ * Coalesce automatic release checks while retaining a follow-up to running work.
+ * @param transaction - Queue-locked dashboard transaction, shared with its triggering write.
+ * @param definition - The registered read-only update-check policy.
+ * @param key - Stable identity of the accepted publication or superseded check.
+ * @returns Completion after queue admission, or no change when queued/disabled.
+ */
+export async function queueUpdateCheck(
+    transaction: TransactionSQL,
+    definition: JobDefinition,
+    key: string
+): Promise<void> {
+    const [schedule] = await transaction<{ enabled: boolean }[]>`
+        SELECT enabled FROM job_schedules WHERE action = 'updates.releases'`;
+    const [pending] = await transaction<{ id: string }[]>`
+        SELECT id FROM job_runs WHERE action = 'updates.releases' AND state = 'queued' LIMIT 1`;
+    // A queued checker reads the newest reports. A running one may already have
+    // read this source, so do not let it suppress a needed follow-up.
+    if (schedule?.enabled !== false && !pending)
+        await enqueueJob(transaction, definition, "system:updates", key);
+}
+
+/**
+ * Register read-only release lookups for hourly and publication-triggered checks.
  * @param sources - Exact expected publishers.
  * @param client - Dashboard-only state.
- * @returns An hourly read-only update checker.
+ * @param request - Release/registry HTTP boundary, replaceable with loopback fixtures.
+ * @returns A bounded read-only update checker; installation remains separate.
  */
-export function updatesJob(sources: readonly UpdateSource[], client: SQL): JobHandler {
-    return {
+export function updatesJob(
+    sources: readonly UpdateSource[],
+    client: SQL,
+    request: typeof fetch = fetch
+): JobHandler {
+    const handler: JobHandler = {
         definition: {
             key: "updates.releases",
             label: "Check available updates",
@@ -193,7 +221,12 @@ export function updatesJob(sources: readonly UpdateSource[], client: SQL): JobHa
                 await context.reportProgress(
                     `Checking available versions for ${source.label}.`
                 );
-                const report = await resolveUpdates(row.value, context.signal, releases);
+                const report = await resolveUpdates(
+                    row.value,
+                    context.signal,
+                    releases,
+                    request
+                );
                 if (
                     !(await context.commit(async (transaction) => {
                         // Receipts change installed versions without changing the
@@ -202,12 +235,20 @@ export function updatesJob(sources: readonly UpdateSource[], client: SQL): JobHa
                         const [unchanged] = await transaction<
                             { key: string }[]
                         >`SELECT key FROM operation_snapshots WHERE key = ${`updates:${source.id}`} AND value = ${JSON.stringify(row.value)}::text::jsonb FOR UPDATE`;
-                        if (!unchanged) return;
+                        if (!unchanged) {
+                            await queueUpdateCheck(
+                                transaction,
+                                handler.definition,
+                                `updates-superseded:${context.runId}:${source.id}:${new Bun.CryptoHasher("sha256").update(JSON.stringify(row.value)).digest("hex")}`
+                            );
+                            return;
+                        }
                         await transaction`INSERT INTO operation_snapshots (key, value, captured_at) VALUES (${`updates.resolved:${source.id}`}, ${JSON.stringify(report)}::text::jsonb, now()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, captured_at = EXCLUDED.captured_at`;
-                    }))
+                    }, true))
                 )
                     throw new Error("Update checker ownership changed");
             }
         },
     };
+    return handler;
 }

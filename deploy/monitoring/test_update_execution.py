@@ -347,6 +347,17 @@ class UpdateExecutionTests(unittest.TestCase):
             command.assert_not_called()
             progress.assert_called_once_with("verifying")
 
+    def test_changed_package_candidates_are_reported_without_installing(self):
+        for name, installed, approved, current in (
+            ('raspi-firmware:arm64', '1:1.20260521-3', '1:1.20260907-1', '1:1.20260915-1'),
+            ('wpasupplicant:arm64', '2:2.10-24', '2:2.10-24+rpt1', '2:2.10-24+rpt2'),
+        ):
+            package = types.SimpleNamespace(installed=types.SimpleNamespace(version=installed), candidate=types.SimpleNamespace(version=current), _pkg=types.SimpleNamespace(selected_state=0))
+            modules = {'apt': types.SimpleNamespace(Cache=lambda: {name: package}), 'apt_pkg': types.SimpleNamespace(SELSTATE_HOLD=2)}
+            with self.subTest(package=name), patch.dict(sys.modules, modules), patch.object(remote, 'command') as command, self.assertRaisesRegex(remote.UpdateRefusal, '^apt_candidate_changed$'):
+                remote.apt_update({'id': 'apt:' + name, 'installed': installed, 'available': approved}, False)
+            command.assert_not_called()
+
     def test_failure_receipt_omits_updater_output_and_private_data(self):
         payload = {"driver": {"kind": "native", "inspect": [sys.executable, "-c", "raise Exception('synthetic-private-value')"]}, "item": {"installed": "1.0.0"}, "automatic": False}
         result = subprocess.run([sys.executable, str(SOURCE)], input=json.dumps(payload), capture_output=True, text=True, timeout=10)
@@ -450,20 +461,107 @@ class NativeRecipeTests(unittest.TestCase):
         for active in (False, True):
             with self.subTest(active=active):
                 calls = []
+                running = active
+                version = "2026.9.1"
                 def run(args, **_options):
+                    nonlocal running, version
                     calls.append(args)
                     if "--property=ActiveState" in args:
-                        return "active" if active else "inactive"
+                        return "active" if running else "inactive"
                     if args[-1] == "--version":
-                        return "2026.9.2" if any("update" in call for call in calls) else "2026.9.1"
+                        return version
+                    if args[1] == "stop": running = False
+                    if args[1] == "start": running = True
+                    if args[1] == "update":
+                        if running: raise RuntimeError("Doctor cannot acquire gateway-lifecycle")
+                        version = "2026.9.2"
+                        self.assertEqual(_options, {"timeout": 1200})
                     return ""
                 recipe = {"application": "openclaw", "command": ["/fixture/openclaw"], "service": "openclaw.service"}
                 with patch.object(remote, "progress"):
                     self.assertEqual(remote.openclaw_install(recipe, "2026.9.1", "2026.9.2", run, remote.progress), active)
                 self.assertIn(["/fixture/openclaw", "update", "--tag", "2026.9.2", "--yes", "--no-restart"], calls)
-                self.assertEqual(sum("restart" in call for call in calls), int(active))
+                self.assertEqual(sum("stop" in call for call in calls), int(active))
+                self.assertEqual(sum("start" in call for call in calls), int(active))
+                self.assertFalse(any("restart" in call for call in calls))
+                self.assertEqual(running, active)
 
-    def nextcloud_fixture(self, *, offered="33.0.1.1", wrong_url=False, modified=False, pending=False, failed_database=False, missing_option=None, required_values=False, extra_help=""):
+    def test_openclaw_failed_stop_or_update_never_starts_an_unverified_runtime(self):
+        for failure in ("stop", "still_active", "update", "wrong_version", "version_probe", "start"):
+            with self.subTest(failure=failure):
+                calls = []; running = True; updated = False
+                def run(args, **_options):
+                    nonlocal running, updated
+                    calls.append(args)
+                    if "--property=ActiveState" in args: return "active" if running else "inactive"
+                    if args[-1] == "--version":
+                        if updated and failure == "version_probe": raise RuntimeError("private diagnostic")
+                        return "2026.9.2" if updated and failure != "wrong_version" else "2026.9.1"
+                    if args[1] == failure: raise RuntimeError("private diagnostic")
+                    if args[1] == "stop": running = failure == "still_active"
+                    if args[1] == "update":
+                        self.assertFalse(running)
+                        updated = True
+                    return ""
+                recipe = {"command": ["/fixture/openclaw"], "service": "openclaw.service"}
+                with self.assertRaises(RuntimeError) as result:
+                    remote.openclaw_install(recipe, "2026.9.1", "2026.9.2", run, lambda _phase: None)
+                if failure != "start":
+                    self.assertIsInstance(result.exception, remote.UpdateRefusal)
+                    self.assertEqual(result.exception.reason, "openclaw_stop_failed" if failure in {"stop", "still_active"} else "openclaw_update_failed")
+                    self.assertNotIn("private diagnostic", str(result.exception))
+                    self.assertFalse(any(args[1] == "start" for args in calls))
+                self.assertEqual(any(args[1] == "update" for args in calls), failure not in {"stop", "still_active"})
+
+    def test_openclaw_maintenance_releases_a_real_process_lock_before_update(self):
+        # An isolated process models the resident gateway's coordinator. Neither
+        # this executable nor the systemctl adapter can address a real service.
+        with tempfile.TemporaryDirectory(prefix="homelab-openclaw-fixture-") as temporary:
+            directory = Path(temporary)
+            version = directory / "version"; version.write_text("2026.9.1")
+            cli = directory / "openclaw.py"
+            cli.write_text("""import fcntl, pathlib, sys, time
+root = pathlib.Path(__file__).parent
+if sys.argv[1] == '--version':
+    print((root / 'version').read_text())
+else:
+    with (root / 'coordinator').open('a') as coordinator:
+        fcntl.flock(coordinator, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if sys.argv[1] == 'gateway':
+            print('ready', flush=True)
+            time.sleep(60)
+        else:
+            assert sys.argv[1:] == ['update', '--tag', '2026.9.2', '--yes', '--no-restart']
+            (root / 'version').write_text('2026.9.2')
+""")
+            def gateway():
+                process = subprocess.Popen([sys.executable, str(cli), "gateway"], stdout=subprocess.PIPE, text=True)
+                self.assertEqual(process.stdout.readline().strip(), "ready")
+                return process
+            resident = gateway()
+            try:
+                base = [sys.executable, str(cli)]
+                with self.assertRaisesRegex(RuntimeError, "command failed"):
+                    remote.command(base + ["update", "--tag", "2026.9.2", "--yes", "--no-restart"])
+                self.assertEqual(version.read_text(), "2026.9.1")
+                def run(args, **options):
+                    nonlocal resident
+                    if args[0] != "/usr/bin/systemctl": return remote.command(args, **options)
+                    self.assertEqual(args[-1], "fixture-openclaw.service")
+                    if args[1] == "show": return "active" if resident.poll() is None else "inactive"
+                    if args[1] == "stop":
+                        resident.terminate(); resident.wait(timeout=5); resident.stdout.close()
+                    elif args[1] == "start": resident = gateway()
+                    else: self.fail("Unexpected fixture service command")
+                    return ""
+                self.assertTrue(remote.openclaw_install({"command": base, "service": "fixture-openclaw.service"}, "2026.9.1", "2026.9.2", run, lambda _phase: None))
+                self.assertEqual(version.read_text(), "2026.9.2")
+                self.assertIsNone(resident.poll())
+            finally:
+                if resident.poll() is None: resident.terminate(); resident.wait(timeout=5)
+                resident.stdout.close()
+
+    def nextcloud_fixture(self, *, offered="33.0.1.1", wrong_url=False, modified=False, pending=False, failed_database=False, missing_option=None, required_values=False, extra_help="", signature=None):
         with tempfile.TemporaryDirectory(prefix="homelab-nextcloud-fixture-") as temporary:
             directory = Path(temporary).resolve()
             (directory / "updater").mkdir()
@@ -496,16 +594,18 @@ class NativeRecipeTests(unittest.TestCase):
                     return "8x4x1"
                 return ""
             url = "https://evil.invalid/nextcloud-33.0.1.zip" if wrong_url else "https://download.nextcloud.com/server/releases/nextcloud-33.0.1.zip"
-            metadata = f"<nextcloud><version>{offered}</version><autoupdater>1</autoupdater><url>{url}</url><signature>{'a' * 344}</signature></nextcloud>".encode()
+            signature = 'a' * 344 if signature is None else signature
+            invalid_signature = "!" in signature
+            metadata = f"<nextcloud><version>{offered}</version><autoupdater>1</autoupdater><url>{url}</url><signature>{signature}</signature></nextcloud>".encode()
             recipe = {"application": "nextcloud", "directory": str(directory), "php": "/usr/bin/php", "user": "www-data"}
             with patch.object(remote, "native_download", return_value=metadata), patch.object(remote, "progress"):
-                if offered != "33.0.1.1" or wrong_url or modified or pending or failed_database or missing_option:
+                if offered != "33.0.1.1" or wrong_url or modified or pending or failed_database or missing_option or invalid_signature:
                     with self.assertRaises(RuntimeError):
                         remote.nextcloud_install(recipe, "33.0.0", "33.0.1", run, remote.progress, remote.locked_directory)
                 else:
                     self.assertTrue(remote.nextcloud_install(recipe, "33.0.0", "33.0.1", run, remote.progress, remote.locked_directory))
             installs = [call for call in calls if "--no-interaction" in call]
-            self.assertEqual(len(installs), int(not (offered != "33.0.1.1" or wrong_url or modified or pending or missing_option)))
+            self.assertEqual(len(installs), int(not (offered != "33.0.1.1" or wrong_url or modified or pending or missing_option or invalid_signature)))
             if installs:
                 self.assertIn("--no-backup", installs[0])
                 self.assertNotIn("--no-verify", installs[0])
@@ -515,6 +615,40 @@ class NativeRecipeTests(unittest.TestCase):
 
     def test_nextcloud_uses_signed_exact_archive_and_checks_database_state(self):
         self.nextcloud_fixture()
+        self.nextcloud_fixture(signature="\n" + "\n".join(['a' * 64] * 5 + ['a' * 24]))
+        self.nextcloud_fixture(signature=" \t" + 'a' * 172 + "\r\n" + 'a' * 172 + "\n")
+        self.nextcloud_fixture(signature='a' * 343 + '!')
+
+    def test_loki_retries_only_readiness_with_a_bounded_deadline(self):
+        driver = {"release": "loki", "recipe": {"application": "loki"}, "health": ["/fixture/health"]}
+        item = {"release": "loki", "installed": "3.7.7", "available": "3.7.8"}
+        for active, ready in ((True, True), (True, False), (False, True)):
+            with self.subTest(active=active, ready=ready):
+                clock, calls = [0.0], []
+                def run(args, **options):
+                    self.assertEqual(args, driver['health'])
+                    self.assertLessEqual(options['timeout'], 10)
+                    calls.append(clock[0])
+                    clock[0] += min(10, options['timeout'])
+                    if not ready or clock[0] < 15:
+                        raise RuntimeError('Update command failed')
+                    return ''
+                def sleep(seconds): clock[0] += seconds
+                with patch.object(remote, 'binary_install', return_value=active) as install, patch.object(remote.time, 'monotonic', side_effect=lambda: clock[0]), patch.object(remote.time, 'sleep', side_effect=sleep):
+                    if active and not ready:
+                        with self.assertRaisesRegex(remote.UpdateRefusal, '^loki_readiness_failed$'):
+                            remote.install_native_recipe(driver, item, run, lambda _phase: None, remote.atomic_content, remote.locked_directory)
+                        self.assertEqual(clock[0], 60)
+                    else:
+                        self.assertEqual(remote.install_native_recipe(driver, item, run, lambda _phase: None, remote.atomic_content, remote.locked_directory), '3.7.8')
+                    install.assert_called_once()
+                self.assertEqual(bool(calls), active)
+                if active and ready: self.assertEqual(len(calls), 2)
+        with patch.object(remote, 'binary_install', return_value=True), patch.object(remote.time, 'sleep') as sleep:
+            def interrupted(_args, **_options): raise RuntimeError('Update interrupted')
+            with self.assertRaisesRegex(RuntimeError, '^Update interrupted$'):
+                remote.install_native_recipe(driver, item, interrupted, lambda _phase: None, remote.atomic_content, remote.locked_directory)
+            sleep.assert_not_called()
 
     def test_nextcloud_accepts_required_value_help_notation(self):
         self.nextcloud_fixture(required_values=True)
