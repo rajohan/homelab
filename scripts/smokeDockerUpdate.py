@@ -135,7 +135,7 @@ def main():
             (build_directory / "Dockerfile").write_text('FROM postgres:18\nSHELL ["/custom/shell", "-c"]\nENTRYPOINT ["/bin/sleep"]\nCMD ["3600"]\n')
             command(["/usr/bin/docker", "build", "--pull=false", "--network=none", "--label", "homelab.smoke=" + owner, "--tag", shell_image, str(build_directory)], environment={"HOME": str(build_directory)})
             built_images.append(shell_image)
-            (build_directory / "Dockerfile").write_text('FROM postgres:18\nRUN mkdir -p /vendor /custom && ln -s /custom/start /vendor/start\nENTRYPOINT ["/bin/sleep"]\nCMD ["3600"]\n')
+            (build_directory / "Dockerfile").write_text('FROM postgres:18\nRUN mkdir -p /vendor /custom && ln -s /vendor/../custom/./start /vendor/start\nENTRYPOINT ["/bin/sleep"]\nCMD ["3600"]\n')
             command(["/usr/bin/docker", "build", "--pull=false", "--network=none", "--label", "homelab.smoke=" + owner, "--tag", symlink_image, str(build_directory)], environment={"HOME": str(build_directory)})
             built_images.append(symlink_image)
             symlink_file = directory / "symlink-helper.yaml"

@@ -43,12 +43,14 @@ export function hasApplicationCodeMount(application: ManagedApplication): boolea
  * @param report - Existing software publication or compatible release resolution.
  * @param applications - Current, explicitly bound project inventory.
  * @param owners - Configured Compose owners for this source, not unbound recipes.
+ * @param origins - Configured host-to-Docker-origin map; absent origins cannot deduplicate.
  * @returns A report whose changed identities invalidate old confirmation revisions.
  */
 export function reconcileDockerObservations(
     report: UpdateReport,
     applications: readonly ManagedApplication[],
-    owners: readonly DockerOwner[]
+    owners: readonly DockerOwner[],
+    origins?: ReadonlyMap<string, string>
 ): UpdateReport {
     return {
         ...report,
@@ -64,9 +66,28 @@ export function reconcileDockerObservations(
             )
                 return item;
             const owner = configured[0]!;
-            const matches = applications.filter((app) => app.containerName === item.name);
-            if (matches.length !== 1) return item;
-            const app = matches[0]!;
+            const matches = new Map<string, ManagedApplication>();
+            for (const app of applications) {
+                if (app.containerName !== item.name) continue;
+                const origin = origins?.get(app.host);
+                // Host IDs label observations, not physical containers. Collapse
+                // only agreeing identity/owner/image/code-qualification evidence.
+                const key =
+                    origin === undefined
+                        ? `unqualified:${matches.size}`
+                        : JSON.stringify([
+                              origin,
+                              app.containerId,
+                              app.project,
+                              app.name,
+                              app.image,
+                              app.imageId,
+                              hasApplicationCodeMount(app),
+                          ]);
+                matches.set(key, app);
+            }
+            if (matches.size !== 1) return item;
+            const app = matches.values().next().value!;
             if (app.project !== owner.project || app.name !== owner.service) return item;
             // Recompute only discovery-owned blocks. Publisher refusals retain
             // their provenance even when a code overlay is added or removed.
@@ -227,7 +248,13 @@ export async function refreshDockerObservations(
                             .size === 1 &&
                         peers.every((peer) => row.observedHosts.has(peer.id))
                     );
-                })
+                }),
+                new Map(
+                    row.bindings.map((binding) => [
+                        binding.id,
+                        new URL(binding.endpoint).origin,
+                    ])
+                )
             );
         if (row && JSON.stringify(row.value) !== row.original)
             await transaction`UPDATE operation_snapshots SET value=${JSON.stringify(row.value)}::text::jsonb WHERE key=${key}`;

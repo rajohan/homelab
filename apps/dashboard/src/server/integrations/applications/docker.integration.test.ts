@@ -21,7 +21,7 @@ import {
     selectApplications,
 } from "./selection";
 
-test.each(["direct", "parent", "mount", "loop", "denied", "safe"])(
+test.each(["direct", "parent", "mount", "loop", "denied", "safe", "dot", "dotdot"])(
     "metadata-only startup link qualification through Docker HTTP: %s",
     async (mode) => {
         const fixture = createApplicationFixture();
@@ -43,6 +43,8 @@ test.each(["direct", "parent", "mount", "loop", "denied", "safe"])(
                 mount: "/alias",
             };
             const targets: Record<string, string> = {
+                dot: "/custom/./start",
+                dotdot: "/vendor/../custom/start",
                 safe: "/usr/bin/sleep",
                 loop: "/vendor",
                 mount: "/vendor",

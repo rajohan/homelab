@@ -477,16 +477,33 @@ test.each([-86_400_000, 86_400_000])(
     }
 );
 
-test.each(
-    ["fresh", "stale", "unavailable", "missing", "no-clock", "empty"].flatMap(
+test.each([
+    ...["fresh", "stale", "unavailable", "missing", "no-clock", "empty"].flatMap(
         (firstState) =>
             [false, true].flatMap((reverse) =>
-                [false, true].map((collision) => ({ firstState, reverse, collision }))
+                [false, true].flatMap((collision) =>
+                    (collision ? [false, true] : [false]).map((sameOrigin) => ({
+                        firstState,
+                        reverse,
+                        collision,
+                        sameOrigin,
+                        conflict: "",
+                    }))
+                )
             )
-    )
-)(
+    ),
+    ...[false, true].flatMap((reverse) =>
+        ["id", "image", "block"].map((conflict) => ({
+            firstState: "fresh",
+            reverse,
+            collision: true,
+            sameOrigin: true,
+            conflict,
+        }))
+    ),
+])(
     "shared-source host observations retain their original mutation fence: %j",
-    async ({ reverse, firstState, collision }) => {
+    async ({ reverse, firstState, collision, sameOrigin, conflict }) => {
         const state = await operationFixture();
         try {
             const names = ["alpha", "bravo"];
@@ -518,7 +535,7 @@ test.each(
             const bindings = names.map((name) => ({
                 id: name,
                 label: name,
-                endpoint: `http://${name}.invalid:2375`,
+                endpoint: `http://${sameOrigin ? "alpha" : name}.invalid:2375`,
                 projects: [collision ? "alpha" : name],
                 updateSources: ["software"],
             }));
@@ -557,18 +574,33 @@ test.each(
                     {
                         id: `${name}:` + String(index + 3).repeat(64),
                         host: name,
-                        containerId: String(index + 3).repeat(64),
+                        containerId: String(
+                            sameOrigin && conflict !== "id" ? 3 : index + 3
+                        ).repeat(64),
                         containerName: collision ? "alpha-web" : `${name}-web`,
                         name: "web",
                         project: collision ? "alpha" : name,
                         image: "example/web:1",
-                        imageId: digest,
+                        imageId:
+                            conflict === "image" && index === 1
+                                ? "sha256:" + "e".repeat(64)
+                                : digest,
                         state: "running",
                         health: "healthy",
                         startedAt,
                         revision: "f".repeat(64),
                         ports: [],
-                        mounts: [],
+                        mounts:
+                            conflict === "block" && index === 1
+                                ? [
+                                      {
+                                          type: "volume",
+                                          source: "fixture",
+                                          destination: "/app/code.js",
+                                          readOnly: true,
+                                      },
+                                  ]
+                                : [],
                         networks: [],
                     },
                 ],
@@ -597,15 +629,33 @@ test.each(
             >`SELECT value,captured_at FROM operation_snapshots WHERE key LIKE 'updates%'`;
             expect(rows).toHaveLength(2);
             for (const row of rows) {
+                const sameContainer =
+                    collision &&
+                    sameOrigin &&
+                    ["fresh", "empty"].includes(firstState) &&
+                    !conflict;
                 expect(row.value.items.map((item) => item.id)).toEqual(
                     collision
-                        ? ["docker:" + "1".repeat(64)]
+                        ? ["docker:" + (sameContainer ? "3" : "1").repeat(64)]
                         : [
                               "docker:" + (firstState === "fresh" ? "3" : "1").repeat(64),
                               "docker:" + "4".repeat(64),
                           ]
                 );
-                if (collision) expect(row.value).toEqual(report);
+                if (collision)
+                    expect(row.value).toEqual(
+                        sameContainer
+                            ? {
+                                  ...report,
+                                  items: [
+                                      {
+                                          ...report.items[0]!,
+                                          id: "docker:" + "3".repeat(64),
+                                      },
+                                  ],
+                              }
+                            : report
+                    );
                 expect(row.value.items.every((item) => item.candidateVerified)).toBe(
                     true
                 );

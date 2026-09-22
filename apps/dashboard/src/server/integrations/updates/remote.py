@@ -608,7 +608,7 @@ def qualify_startup_mounts(paths, destinations, path_stat):
                 target = metadata['linkTarget']
                 if hops > 32 or not target.startswith('/') or '\0' in target or len(target) > 2000:
                     raise UpdateRefusal('local_code_override')
-                remaining = [part for part in target.split('/') if part] + remaining
+                remaining = [part for part in posixpath.normpath(target).split('/') if part] + remaining
                 current = '/'
         return current
     try:

@@ -94,6 +94,62 @@ test("ambiguous names never rebind a software observation", () => {
 });
 
 test.each([
+    "same",
+    "different-origin",
+    "different-id",
+    "different-image",
+    "different-owner",
+    "different-block",
+    "unknown-origin",
+])("only agreeing physical-container observations deduplicate: %s", (mode) => {
+    const peer: ManagedApplication = {
+        ...app,
+        id: "peer:" + app.containerId,
+        host: "peer",
+        revision: "e".repeat(64),
+        ...(mode === "different-id" ? { containerId: "f".repeat(64) } : {}),
+        ...(mode === "different-image" ? { imageId: "sha256:" + "f".repeat(64) } : {}),
+        ...(mode === "different-owner" ? { project: "other" } : {}),
+        ...(mode === "different-block"
+            ? {
+                  mounts: [
+                      {
+                          type: "volume",
+                          source: "fixture",
+                          destination: "/app/code.js",
+                          readOnly: true,
+                      },
+                  ],
+              }
+            : {}),
+    };
+    const origins = new Map([
+        ["main", "http://fixture.invalid:2375"],
+        [
+            "peer",
+            mode === "different-origin"
+                ? "http://other.invalid:2375"
+                : "http://fixture.invalid:2375",
+        ],
+    ]);
+    if (mode === "unknown-origin") origins.delete("peer");
+    for (const observed of [
+        [app, peer],
+        [peer, app],
+    ]) {
+        const actual = reconcile(report, observed, [owner], origins);
+        expect(actual).toEqual(
+            mode === "same"
+                ? {
+                      ...report,
+                      items: [{ ...report.items[0]!, id: "docker:" + app.containerId }],
+                  }
+                : report
+        );
+    }
+});
+
+test.each([
     "/app/providers/sync/stremio/_history.py",
     "/app/lib/plugin.js",
     "/app/src",

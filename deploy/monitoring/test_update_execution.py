@@ -49,6 +49,30 @@ class UpdateExecutionTests(unittest.TestCase):
         self.assertEqual(remote.qualify_startup_mounts({"/vendor/start"}, ["/custom"], lambda name: None), [True])
         self.assertEqual(remote.qualify_startup_mounts(None, ["/custom"], lambda name: self.fail("Unqualified programs do not need filesystem reads")), [True])
 
+    def test_absolute_link_components_are_normalized_before_matching_mounts(self):
+        for target, mount, expected in [
+            ("/vendor/../custom/start", "/custom", True),
+            ("/custom/./start", "/custom", True),
+            ("/vendor/../../custom/start", "/custom", True),
+            ("/vendor/../usr/bin/./sleep", "/custom", False),
+        ]:
+            for missing in (False, True):
+                def metadata(name):
+                    cleaned = remote.posixpath.normpath(name)
+                    if cleaned == "/vendor/start":
+                        return {"mode": 0x08000000, "linkTarget": target}
+                    if cleaned != "/" and missing:
+                        return None
+                    return {"mode": 0x80000000, "linkTarget": ""}
+                # The image's /vendor parent must exist to reach its symlink.
+                def image_metadata(name):
+                    return {"mode": 0x80000000, "linkTarget": ""} if name == "/vendor" else metadata(name)
+                with self.subTest(target=target, missing=missing):
+                    self.assertEqual(remote.qualify_startup_mounts({"/vendor/start"}, [mount], image_metadata), [expected])
+        def alias_metadata(name):
+            return {"mode": 0x08000000, "linkTarget": "/vendor/../custom/."} if name == "/storage" else {"mode": 0x80000000, "linkTarget": ""}
+        self.assertEqual(remote.qualify_startup_mounts({"/custom/start"}, ["/storage"], alias_metadata), [True])
+
     def test_image_qualification_never_starts_code_and_cleans_on_refusal(self):
         for link in (False, True):
             calls, owner = [], []
