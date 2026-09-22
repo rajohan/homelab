@@ -8,6 +8,19 @@ import type { ClaimedJob } from "./types";
 
 export const claimLeaseSeconds = 30;
 
+async function hasQueuedUpdateCheck(
+    transaction: Transaction,
+    run: { id: string; action: string }
+): Promise<boolean> {
+    // This empty-payload, read-only job always checks the latest reports. Its
+    // queued successor covers a retry too; installation and other jobs do not.
+    if (run.action !== "updates.releases") return false;
+    const [pending] = await transaction<{ id: string }[]>`
+        SELECT id FROM job_runs WHERE action = 'updates.releases' AND state = 'queued'
+        AND NOT cancel_requested AND id <> ${run.id} LIMIT 1`;
+    return Boolean(pending);
+}
+
 /**
  * Recover expired claims and acquire one runnable job and all of its resources atomically.
  * @param client - The dashboard database pool.
@@ -32,15 +45,20 @@ export async function claimJob(
         const expired = await transaction<
             {
                 id: string;
+                action: string;
                 retry_safe: boolean;
                 attempt: number;
                 attempt_limit: number;
                 cancel_requested: boolean;
             }[]
-        >`SELECT id, retry_safe, attempt, attempt_limit, cancel_requested FROM job_runs WHERE state = 'running' AND lease_expires_at <= now() LIMIT 100 FOR UPDATE SKIP LOCKED`;
+        >`SELECT id, action, retry_safe, attempt, attempt_limit, cancel_requested FROM job_runs WHERE state = 'running' AND lease_expires_at <= now() LIMIT 100 FOR UPDATE SKIP LOCKED`;
         for (const run of expired) {
             const retryState =
-                run.retry_safe && run.attempt < run.attempt_limit ? "queued" : "failed";
+                run.retry_safe &&
+                run.attempt < run.attempt_limit &&
+                !(await hasQueuedUpdateCheck(transaction, run))
+                    ? "queued"
+                    : "failed";
             const state = run.cancel_requested ? "cancelled" : retryState;
             await transaction`DELETE FROM resource_leases WHERE run_id = ${run.id}`;
             await transaction`UPDATE job_runs SET state = ${state}, worker_id = NULL, lease_token = NULL, lease_expires_at = NULL, available_at = now() + interval '5 seconds', finished_at = CASE WHEN ${state} = 'queued' THEN NULL ELSE now() END, message = 'Worker ownership expired; external outcome may be unknown.' WHERE id = ${run.id}`;
@@ -129,7 +147,11 @@ export async function settleClaim(
         if (!current[0]) return;
         const terminalState = outcome === "timed_out" ? "timed_out" : "failed";
         let state =
-            run.retry_safe && run.attempt < run.attempt_limit ? "queued" : terminalState;
+            run.retry_safe &&
+            run.attempt < run.attempt_limit &&
+            !(await hasQueuedUpdateCheck(transaction, run))
+                ? "queued"
+                : terminalState;
         if (outcome === "succeeded") state = "succeeded";
         if (current[0].cancel_requested) state = "cancelled";
         const messages = {

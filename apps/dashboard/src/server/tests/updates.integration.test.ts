@@ -263,160 +263,182 @@ test("update publishers are source-bound, monotonic and distinct from human read
     }
 });
 
-test("accepted publications coalesce read-only checks and retain an in-flight follow-up", async () => {
-    const fixture = await operationFixture();
-    const sources = ["alpha", "beta"].map((id) => ({
-        id,
-        label: id,
-        publisher: crypto.randomUUID(),
-    }));
-    const started = Promise.withResolvers<void>();
-    const release = Promise.withResolvers<void>();
-    let requests = 0;
-    let executing: Promise<void> | undefined;
-    const feed = Bun.serve({
-        hostname: "127.0.0.1",
-        port: 0,
-        fetch: () => Response.json({ version: "1.1.0" }),
-    });
-    const request: typeof fetch = Object.assign(
-        async (
-            input: Parameters<typeof fetch>[0],
-            options?: Parameters<typeof fetch>[1]
-        ) => {
-            expect(new URL(input instanceof Request ? input.url : input).href).toBe(
-                "https://registry.npmjs.org/openclaw/latest"
-            );
-            if (++requests === 1) {
-                started.resolve();
-                await release.promise;
-            }
-            return fetch(feed.url, options);
-        },
-        { preconnect: fetch.preconnect }
-    );
-    const handler = updatesJob(sources, fixture.client, request);
-    const registry = createJobRegistry([handler]);
-    const machines = sources.map((source) =>
-        appRouter.createCaller({
-            operations: { ...fixture, registry, updateSources: sources },
-            principal: {
-                kind: "automation",
-                id: source.publisher,
-                capabilities: ["updates:publish"],
-            },
-        })
-    );
-    const capturedAt = Date.now() - 20_000;
-    const observation = (offset: number): UpdateReport => ({
-        ...report(),
-        capturedAt: new Date(capturedAt + offset).toISOString(),
-        coveredKinds: ["application"],
-        items: [
-            {
-                id: "native:openclaw",
-                name: "OpenClaw",
-                kind: "application",
-                release: "openclaw",
-                installed: "1.0.0",
-                available: null,
-                status: "unknown",
-                security: false,
-                held: false,
-            },
-        ],
-    });
-    const run = (claim: ClaimedJob) =>
-        handler.execute(claim.payload, {
-            runId: claim.id,
-            leaseToken: claim.lease_token,
-            signal: AbortSignal.timeout(5000),
-            reportProgress: () => Promise.resolve(),
-            commit: (write, queue) => commitClaim(fixture.client, claim, write, queue),
+test.each(["succeeded", "failed", "timed_out", "expired"] as const)(
+    "accepted publications retain one follow-up when the running check is %s",
+    async (outcome) => {
+        const fixture = await operationFixture();
+        const sources = ["alpha", "beta"].map((id) => ({
+            id,
+            label: id,
+            publisher: crypto.randomUUID(),
+        }));
+        const started = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        let requests = 0;
+        let executing: Promise<void> | undefined;
+        const feed = Bun.serve({
+            hostname: "127.0.0.1",
+            port: 0,
+            fetch: () => Response.json({ version: "1.1.0" }),
         });
-    try {
-        const first = observation(0);
-        expect(await machines[0]!.updates.publish(first)).toEqual({ accepted: true });
-        expect(await machines[0]!.updates.publish(first)).toEqual({ accepted: false });
-        expect(
-            await machines[0]!.updates.publish({
-                ...first,
-                capturedAt: new Date(Date.parse(first.capturedAt) - 1).toISOString(),
-            })
-        ).toEqual({ accepted: false });
-        await Promise.all(
-            machines.map((machine) => machine.updates.publish(observation(1000)))
-        );
-        expect(
-            await fixture.client<
-                {
-                    action: string;
-                    state: string;
-                    requested_by: string;
-                    payload: Record<string, unknown>;
-                }[]
-            >`SELECT action,state,requested_by,payload FROM job_runs`
-        ).toEqual([
-            {
-                action: "updates.releases",
-                state: "queued",
-                requested_by: "system:updates",
-                payload: {},
+        const request: typeof fetch = Object.assign(
+            async (
+                input: Parameters<typeof fetch>[0],
+                options?: Parameters<typeof fetch>[1]
+            ) => {
+                expect(new URL(input instanceof Request ? input.url : input).href).toBe(
+                    "https://registry.npmjs.org/openclaw/latest"
+                );
+                if (++requests === 1) {
+                    started.resolve();
+                    await release.promise;
+                }
+                return fetch(feed.url, options);
             },
-        ]);
-        const worker = await fixture.registerWorker();
-        const current = (await claimJob(fixture.client, worker, [
-            handler.definition.key,
-        ]))!;
-        executing = run(current);
-        await started.promise;
-        const newest = observation(2000);
-        await Promise.all(machines.map((machine) => machine.updates.publish(newest)));
-        expect(
-            await fixture.client<
-                { state: string }[]
-            >`SELECT state FROM job_runs ORDER BY id`
-        ).toEqual([{ state: "running" }, { state: "queued" }]);
-        expect(
-            await claimJob(fixture.client, worker, [handler.definition.key])
-        ).toBeUndefined();
-        release.resolve();
-        await executing;
-        // The running check read alpha before publication and must not publish its old result.
-        const pending = await readUpdateReport(fixture.client, "alpha");
-        expect(pending?.checkedAt).toBeNull();
-        await settleClaim(fixture.client, current, "succeeded");
-        const following = (await claimJob(fixture.client, worker, [
-            handler.definition.key,
-        ]))!;
-        await run(following);
-        await settleClaim(fixture.client, following, "succeeded");
-        for (const source of sources) {
-            const checked = await readUpdateReport(fixture.client, source.id);
-            expect(checked?.capturedAt).toBe(newest.capturedAt);
-            expect(checked?.checkedAt).not.toBeNull();
-            expect(checked?.items[0]).toMatchObject({
-                status: "available",
-                available: "1.1.0",
-                candidateVerified: true,
+            { preconnect: fetch.preconnect }
+        );
+        const handler = updatesJob(sources, fixture.client, request);
+        const registry = createJobRegistry([handler]);
+        const machines = sources.map((source) =>
+            appRouter.createCaller({
+                operations: { ...fixture, registry, updateSources: sources },
+                principal: {
+                    kind: "automation",
+                    id: source.publisher,
+                    capabilities: ["updates:publish"],
+                },
+            })
+        );
+        const capturedAt = Date.now() - 20_000;
+        const observation = (offset: number): UpdateReport => ({
+            ...report(),
+            capturedAt: new Date(capturedAt + offset).toISOString(),
+            coveredKinds: ["application"],
+            items: [
+                {
+                    id: "native:openclaw",
+                    name: "OpenClaw",
+                    kind: "application",
+                    release: "openclaw",
+                    installed: "1.0.0",
+                    available: null,
+                    status: "unknown",
+                    security: false,
+                    held: false,
+                },
+            ],
+        });
+        const run = (claim: ClaimedJob, failLater = false) =>
+            handler.execute(claim.payload, {
+                runId: claim.id,
+                leaseToken: claim.lease_token,
+                signal: AbortSignal.timeout(5000),
+                reportProgress: (message) =>
+                    failLater && message === "Checking available versions for beta."
+                        ? Promise.reject(new Error("Synthetic later-source failure"))
+                        : Promise.resolve(),
+                commit: (write, queue) =>
+                    commitClaim(fixture.client, claim, write, queue),
             });
+        try {
+            const first = observation(0);
+            expect(await machines[0]!.updates.publish(first)).toEqual({ accepted: true });
+            expect(await machines[0]!.updates.publish(first)).toEqual({
+                accepted: false,
+            });
+            expect(
+                await machines[0]!.updates.publish({
+                    ...first,
+                    capturedAt: new Date(Date.parse(first.capturedAt) - 1).toISOString(),
+                })
+            ).toEqual({ accepted: false });
+            await Promise.all(
+                machines.map((machine) => machine.updates.publish(observation(1000)))
+            );
+            expect(
+                await fixture.client<
+                    {
+                        action: string;
+                        state: string;
+                        requested_by: string;
+                        payload: Record<string, unknown>;
+                    }[]
+                >`SELECT action,state,requested_by,payload FROM job_runs`
+            ).toEqual([
+                {
+                    action: "updates.releases",
+                    state: "queued",
+                    requested_by: "system:updates",
+                    payload: {},
+                },
+            ]);
+            const worker = await fixture.registerWorker();
+            const current = (await claimJob(fixture.client, worker, [
+                handler.definition.key,
+            ]))!;
+            executing = run(current, outcome !== "succeeded");
+            const completion =
+                outcome === "succeeded"
+                    ? executing
+                    : expectOperationFailure(executing, "later-source failure");
+            await started.promise;
+            const newest = observation(2000);
+            await Promise.all(machines.map((machine) => machine.updates.publish(newest)));
+            expect(
+                await fixture.client<
+                    { state: string }[]
+                >`SELECT state FROM job_runs ORDER BY id`
+            ).toEqual([{ state: "running" }, { state: "queued" }]);
+            expect(
+                await claimJob(fixture.client, worker, [handler.definition.key])
+            ).toBeUndefined();
+            release.resolve();
+            await completion;
+            // The running check read alpha before publication and must not publish its old result.
+            const pending = await readUpdateReport(fixture.client, "alpha");
+            expect(pending?.checkedAt).toBeNull();
+            await (outcome === "expired"
+                ? fixture.client`UPDATE job_runs SET lease_expires_at = now() - interval '1 second' WHERE id = ${current.id}`
+                : settleClaim(fixture.client, current, outcome));
+            const following = (await claimJob(fixture.client, worker, [
+                handler.definition.key,
+            ]))!;
+            expect(following.id).not.toBe(current.id);
+            expect(
+                await fixture.client`SELECT id FROM job_runs WHERE state = 'queued'`
+            ).toHaveLength(0);
+            await run(following);
+            await settleClaim(fixture.client, following, "succeeded");
+            for (const source of sources) {
+                const checked = await readUpdateReport(fixture.client, source.id);
+                expect(checked?.capturedAt).toBe(newest.capturedAt);
+                expect(checked?.checkedAt).not.toBeNull();
+                expect(checked?.items[0]).toMatchObject({
+                    status: "available",
+                    available: "1.1.0",
+                    candidateVerified: true,
+                });
+            }
+            expect(
+                await fixture.client<
+                    { action: string; state: string }[]
+                >`SELECT action,state FROM job_runs ORDER BY id`
+            ).toEqual([
+                {
+                    action: "updates.releases",
+                    state: outcome === "expired" ? "failed" : outcome,
+                },
+                { action: "updates.releases", state: "succeeded" },
+            ]);
+            expect(requests).toBe(2);
+        } finally {
+            release.resolve();
+            await executing?.catch(() => {});
+            await feed.stop(true);
+            await fixture.close();
         }
-        expect(
-            await fixture.client<
-                { action: string; state: string }[]
-            >`SELECT action,state FROM job_runs ORDER BY id`
-        ).toEqual([
-            { action: "updates.releases", state: "succeeded" },
-            { action: "updates.releases", state: "succeeded" },
-        ]);
-        expect(requests).toBe(2);
-    } finally {
-        release.resolve();
-        await executing?.catch(() => {});
-        await feed.stop(true);
-        await fixture.close();
     }
-});
+);
 
 test("publication-triggered checks respect disabled schedules, worker pause and queue admission", async () => {
     const fixture = await operationFixture();
@@ -456,6 +478,17 @@ test("publication-triggered checks respect disabled schedules, worker pause and 
         expect(
             await fixture.client<{ state: string }[]>`SELECT state FROM job_runs`
         ).toEqual([{ state: "queued" }]);
+        // Without a successor, ordinary retry must retain the same check.
+        await fixture.client`UPDATE worker_control SET paused = false WHERE id = 1`;
+        const original = (await claimJob(fixture.client, worker, [
+            handler.definition.key,
+        ]))!;
+        await settleClaim(fixture.client, original, "failed");
+        expect(
+            await fixture.client<
+                { id: string; state: string; attempt: number }[]
+            >`SELECT id,state,attempt FROM job_runs`
+        ).toEqual([{ id: original.id, state: "queued", attempt: 1 }]);
         // Fill the existing bounded queue with unrelated synthetic jobs; publication
         // and its required check must fail atomically, without replacing the report.
         await fixture.client`UPDATE job_runs SET action='fixture.other'`;
