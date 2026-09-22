@@ -1,5 +1,101 @@
 [
     {
+        "name": "python split X",
+        "entrypoint": ["python3.14"],
+        "command": ["-X", "dev", "/custom/app.py"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "python split W",
+        "entrypoint": ["python3.14"],
+        "command": ["-W", "error", "/custom/app.py"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "python multiple option operands",
+        "entrypoint": ["python3.14"],
+        "command": ["-B", "-X", "dev", "-W", "ignore", "/custom/app.py"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "python attached options",
+        "entrypoint": ["python3.14"],
+        "command": ["-Xdev", "-Wignore", "/custom/app.py"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "python hash policy operand",
+        "entrypoint": ["python3.14"],
+        "command": ["--check-hash-based-pycs", "always", "/custom/app.py"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "python option terminator",
+        "entrypoint": ["python3.14"],
+        "command": ["--", "/custom/app.py", "-X", "dev"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "python module after options",
+        "entrypoint": ["python3.14"],
+        "command": ["-X", "dev", "-m", "app"],
+        "working_dir": "/custom",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "python attached module",
+        "entrypoint": ["python3.14"],
+        "command": ["-mapp"],
+        "working_dir": "/custom",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "python attached inline code",
+        "entrypoint": ["python3.14"],
+        "command": ["-cimport app"],
+        "working_dir": "/custom",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "python script data operands",
+        "entrypoint": ["python3.14"],
+        "command": ["-X", "dev", "/vendor/app.py", "--data", "/data"],
+        "working_dir": "/",
+        "mount": "/data",
+        "blocked": false
+    },
+    {
+        "name": "python option operand is not a script",
+        "entrypoint": ["python3.14"],
+        "command": ["-W", "/custom/operand", "/vendor/app.py"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "python stdin operands are not scripts",
+        "entrypoint": ["python3.14"],
+        "command": ["-", "/custom/operand"],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
         "name": "postgres data operand",
         "entrypoint": ["docker-entrypoint.sh"],
         "command": ["postgres", "-D", "/var/lib/postgresql/data"],

@@ -115,6 +115,24 @@ def startup_code_paths(startup):
                 paths.add(resolve(cwd, args[1]))
         elif re.fullmatch(r"(?:python(?:\d+(?:\.\d+)*)?|node|nodejs|bun|deno|ruby|perl|php|lua|luajit|npm|npx|yarn|pnpm)", name):
             paths.add(cwd)
+            if re.fullmatch(r"python(?:\d+(?:\.\d+)*)?", name):
+                index = 1
+                while index < len(args):
+                    arg = args[index]
+                    if arg == "--":
+                        if len(args) > index + 1 and args[index + 1] != "-":
+                            paths.add(resolve(cwd, args[index + 1]))
+                        break
+                    if arg == "-" or re.match(r"^-[cm]", arg):
+                        break
+                    if arg in ("-X", "-W", "--check-hash-based-pycs"):
+                        index += 2
+                        continue
+                    if not arg.startswith("-"):
+                        paths.add(resolve(cwd, arg))
+                        break
+                    index += 1
+                return
             script = next((arg for arg in args[1:] if not arg.startswith("-")), None)
             if script and not any(arg in args for arg in ("-m", "-c", "-e", "--eval", "--print")):
                 paths.add(resolve(cwd, script))

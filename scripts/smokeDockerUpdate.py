@@ -40,19 +40,19 @@ def main():
         main_file = directory / "compose.yaml"
         overlay_file = directory / "overlay.yaml"
         helpers = []
-        for service, destination in [("custom-helper", "/opt/homelab/custom-entrypoint.py"), ("shell-helper", "/usr/local/bin/custom-entrypoint.sh"), ("extensionless-helper", "/custom/start"), ("pending-helper", "/custom/start"), ("module-helper", "/custom"), ("inherited-helper", "/custom"), ("library-helper", "/usr/local/lib/python3.13/site-packages")]:
+        for service, destination in [("custom-helper", "/opt/homelab/custom-entrypoint.py"), ("shell-helper", "/usr/local/bin/custom-entrypoint.sh"), ("extensionless-helper", "/custom/start"), ("pending-helper", "/custom/start"), ("module-helper", "/custom"), ("inherited-helper", "/custom"), ("option-helper", "/custom"), ("library-helper", "/usr/local/lib/python3.13/site-packages")]:
             helper_file = directory / (service + ".yaml")
             entrypoint_file = directory / (service + ".source")
             entrypoint_file.write_text("#!/bin/sh\nexec /bin/sleep 3600\n")
-            if service in ("module-helper", "inherited-helper", "library-helper"):
+            if service in ("module-helper", "inherited-helper", "option-helper", "library-helper"):
                 entrypoint_file = directory / (service + "-code")
                 entrypoint_file.mkdir()
                 (entrypoint_file / "app.py").write_text("# Synthetic module source, never executed.\n")
             helper_file.write_text("services:\n  " + service + ":\n    image: " + original + "\n    entrypoint: [/bin/sh, " + destination + "]\n    network_mode: none\n    mem_limit: 64m\n    pids_limit: 32\n    labels:\n      homelab.smoke: " + owner + "\n    volumes:\n      - type: bind\n        source: " + str(entrypoint_file) + "\n        target: " + destination + "\n        read_only: true\n")
             helpers.append((service, helper_file))
-            if service in ("pending-helper", "module-helper", "inherited-helper", "library-helper"):
+            if service in ("pending-helper", "module-helper", "inherited-helper", "option-helper", "library-helper"):
                 helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sh, " + destination + "]", "entrypoint: [/bin/sleep]\n    command: ['3600']"))
-            if service == "inherited-helper":
+            if service in ("inherited-helper", "option-helper"):
                 helper_file.write_text(helper_file.read_text().replace(original, inherited_image))
         # A mounted executable can also be invoked later, outside startup argv.
         executable = directory / "extensionless-binary"
@@ -97,6 +97,8 @@ def main():
                     # Remove the OLD container override: the image supplies Python,
                     # while pending Compose supplies only module args and cwd.
                     helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sleep]\n    command: ['3600']", "working_dir: /custom\n    command: ['-m', app]"))
+                elif service == "option-helper":
+                    helper_file.write_text(helper_file.read_text().replace("entrypoint: [/bin/sleep]\n    command: ['3600']", "command: ['-X', dev, '-W', error, /custom/app.py]"))
             compose(["stop", "stopped"])
             before = {service: remote.namespace_snapshot(owner + "-" + service + "-1") for service in ("provider", "consumer", "stopped", "leaf")}
             command(["/usr/bin/docker", "exec", before["consumer"][0], "/bin/sh", "-ec", "printf persistent > /marker/probe"])
@@ -111,7 +113,7 @@ def main():
                         return command(arguments, **options)
                     remote.command = no_pull
                     overlay_item = {**item, "id": "docker:" + overlay_before[0]}
-                    if overlay_service == "inherited-helper":
+                    if overlay_service in ("inherited-helper", "option-helper"):
                         overlay_item.update(image=inherited_image, installed=overlay_before[3], available=overlay_before[3], availableImage="docker.io/homelab-fixtures/" + owner + ":candidate@sha256:" + "a" * 64)
                     remote.docker_update({**driver, "name": overlay_name, "service": overlay_service, "imageFile": str(overlay_source), "namespaceDependents": []}, overlay_item)
                     raise AssertionError("An obsolete executable overlay was allowed through the updater")

@@ -87,6 +87,8 @@ export interface ApplicationInventory {
         available: boolean;
         /** Start of this host's Docker reads; older snapshots cannot reconcile software reports. */
         observationStartedAt?: string;
+        /** PostgreSQL transaction visibility captured before Docker reads. */
+        observationVisibility?: string;
         applications: readonly ManagedApplication[];
     }[];
 }

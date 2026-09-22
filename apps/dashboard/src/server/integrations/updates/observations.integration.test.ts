@@ -21,6 +21,167 @@ import { parseUpdateTargets } from "./configuration";
 import { refreshDockerObservations } from "./observations";
 import { updateControl } from "./selection";
 
+test.each(
+    [false, true].flatMap((existing) =>
+        ["before-read", "during-read", "during-reconcile"].map((commit) => ({
+            existing,
+            commit,
+        }))
+    )
+)(
+    "software mutation must be visible before observation starts: %j",
+    async ({ existing, commit }) => {
+        const state = await operationFixture();
+        const fixture = createApplicationFixture();
+        const ready = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        let publisher: Promise<unknown> | undefined;
+        try {
+            const targets = parseUpdateTargets(
+                JSON.stringify([
+                    {
+                        id: "web",
+                        label: "Web",
+                        source: "software",
+                        host: "fixture.invalid",
+                        user: "updater",
+                        identityFile: "/run/secrets/test-key",
+                        knownHostsFile: "/run/secrets/test-hosts",
+                        driver: {
+                            kind: "docker",
+                            name: "demo-web",
+                            project: "demo",
+                            service: "web",
+                            directory: "/srv/demo",
+                            file: "/srv/demo/compose.yaml",
+                            imageFile: "/srv/demo/web.yaml",
+                        },
+                    },
+                ])
+            );
+            const bindings = bindApplicationHosts(
+                [{ ...fixture.target, updateSources: ["software"] }],
+                targets
+            );
+            const port = createDockerPort(fixture.target, {});
+            const ids = await port.list(AbortSignal.timeout(3000));
+            const details = await Promise.all(
+                ids.map((id) => port.inspect(id, AbortSignal.timeout(3000)))
+            );
+            const detail = details.find((row) => row.Name === "/demo-web")!;
+            const capturedAt = new Date(Date.now() - 60_000).toISOString();
+            const report: UpdateReport = {
+                capturedAt,
+                repositoryMetadataAt: null,
+                complete: true,
+                coveredKinds: ["container"],
+                items: [
+                    {
+                        id: "docker:" + "e".repeat(64),
+                        name: "demo-web",
+                        kind: "container",
+                        image: detail.Config.Image,
+                        installed: detail.Image,
+                        available: "sha256:" + "f".repeat(64),
+                        candidateVerified: true,
+                        status: "available",
+                        security: false,
+                        held: false,
+                    },
+                ],
+            };
+            if (existing)
+                for (const key of ["updates:software", "updates.resolved:software"])
+                    await state.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES(${key},${JSON.stringify({ ...report, items: [] })}::text::jsonb,${capturedAt}::timestamptz)`;
+            publisher = state.client.begin(async (transaction) => {
+                // A savepoint gives writes a subtransaction, but the trigger must
+                // retain the top-level xid used by pg_current_snapshot visibility.
+                await transaction`SAVEPOINT publication`;
+                for (const key of ["updates:software", "updates.resolved:software"])
+                    await transaction`INSERT INTO operation_snapshots(key,value,captured_at) VALUES(${key},${JSON.stringify(report)}::text::jsonb,${capturedAt}::timestamptz) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,captured_at=EXCLUDED.captured_at`;
+                await transaction`RELEASE SAVEPOINT publication`;
+                ready.resolve();
+                await release.promise;
+            });
+            await Promise.race([
+                ready.promise,
+                publisher.then(() => {
+                    throw new Error("Publisher ended before barrier");
+                }),
+            ]);
+            if (commit === "before-read") {
+                release.resolve();
+                await publisher;
+            }
+            const inventory = await collectApplications(
+                bindings,
+                () => ({
+                    ...port,
+                    async inspect(id, signal) {
+                        const result = await port.inspect(id, signal);
+                        if (commit === "during-read") {
+                            release.resolve();
+                            await publisher;
+                        }
+                        return result;
+                    },
+                }),
+                AbortSignal.timeout(5000),
+                undefined,
+                undefined,
+                () => readApplicationObservationTime(state.client)
+            );
+            const refresh = state.client.begin(async (transaction) => {
+                await lockQueue(transaction);
+                await refreshDockerObservations(
+                    transaction,
+                    inventory,
+                    bindings,
+                    targets
+                );
+            });
+            if (commit === "during-reconcile") {
+                if (existing) {
+                    let blocked = false;
+                    for (let attempt = 0; attempt < 100 && !blocked; attempt++) {
+                        const [row] = await state.client<
+                            { blocked: boolean }[]
+                        >`SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%FOR UPDATE%') AS blocked`;
+                        blocked = row?.blocked ?? false;
+                        if (!blocked) await Bun.sleep(5);
+                    }
+                    expect(blocked).toBe(true);
+                } else await refresh;
+                release.resolve();
+            }
+            await Promise.all([publisher, refresh]);
+            const rows = await state.client<
+                { value: UpdateReport; visible: boolean; older: boolean }[]
+            >`SELECT value, pg_visible_in_snapshot(mutation_xid::xid8, ${inventory.hosts[0]!.observationVisibility}::pg_snapshot) AS visible, mutated_at < ${inventory.hosts[0]!.observationStartedAt}::timestamptz AS older FROM operation_snapshots WHERE key LIKE 'updates%'`;
+            expect(rows).toHaveLength(2);
+            for (const row of rows) {
+                expect(row.value).toEqual(
+                    commit === "before-read"
+                        ? {
+                              ...report,
+                              items: [{ ...report.items[0]!, id: "docker:" + detail.Id }],
+                          }
+                        : report
+                );
+                if (commit !== "before-read") {
+                    expect(row.visible).toBe(false);
+                    expect(row.older).toBe(true);
+                }
+            }
+        } finally {
+            release.resolve();
+            await publisher?.catch(() => {});
+            await fixture.close();
+            await state.close();
+        }
+    }
+);
+
 test.each([-86_400_000, 86_400_000])(
     "worker discovery uses the database watermark despite clock skew %i",
     async (skew) => {
@@ -109,9 +270,8 @@ test.each([-86_400_000, 86_400_000])(
             const inventory = result.rows.find(
                 (row) => row.key === "applications.inventory"
             )!.value as ApplicationInventory;
-            const databaseTime = Date.parse(
-                await readApplicationObservationTime(state.client)
-            );
+            const databaseClock = await readApplicationObservationTime(state.client);
+            const databaseTime = Date.parse(databaseClock.time);
             expect(
                 Math.abs(
                     Date.parse(inventory.hosts[0]!.observationStartedAt!) - databaseTime
@@ -195,12 +355,15 @@ test.each([
             for (const key of ["updates:software", "updates.resolved:software"])
                 await state.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES(${key},${JSON.stringify(report)}::text::jsonb,${capturedAt}::timestamptz)`;
             await Bun.sleep(3);
-            const startedAt = new Date().toISOString();
+            const { time: startedAt, visibility } = await readApplicationObservationTime(
+                state.client
+            );
             const hosts: ApplicationInventory["hosts"] = names.map((name, index) => ({
                 id: name,
                 label: name,
                 available: true,
                 observationStartedAt: firstStale && index === 0 ? staleStart : startedAt,
+                observationVisibility: visibility,
                 applications: [
                     {
                         id: `${name}:` + String(index + 3).repeat(64),
@@ -393,7 +556,8 @@ test.each([
             ])
                 await state.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES(${key},${JSON.stringify(report)}::text::jsonb,${capturedAt}::timestamptz)`;
             await Bun.sleep(3);
-            let observationStartedAt = new Date().toISOString();
+            const watermark = await readApplicationObservationTime(state.client);
+            let observationStartedAt = watermark.time;
             if (scenario === "equal-publication") observationStartedAt = capturedAt;
             if (scenario === "newer-publication")
                 observationStartedAt = new Date(Date.now() - 120_000).toISOString();
@@ -409,7 +573,10 @@ test.each([
                         available: scenario !== "unavailable",
                         ...(scenario === "missing-watermark"
                             ? {}
-                            : { observationStartedAt }),
+                            : {
+                                  observationStartedAt,
+                                  observationVisibility: watermark.visibility,
+                              }),
                         applications: [app],
                     },
                 ],

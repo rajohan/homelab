@@ -17,13 +17,16 @@ const hostByteLimit = 1024 * 1024;
 /**
  * Capture the same database clock that stamps software snapshot mutations.
  * @param client - Dashboard database pool, outside the later fenced write transaction.
- * @returns UTC pre-read watermark preserving PostgreSQL microsecond precision.
+ * @returns UTC pre-read clock and top-level transaction visibility from the same statement.
  */
-export async function readApplicationObservationTime(client: SQL): Promise<string> {
-    const [row] = await client<{ time: string }[]>`
-        SELECT to_char(clock_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS time`;
+export async function readApplicationObservationTime(
+    client: SQL
+): Promise<{ time: string; visibility: string }> {
+    const [row] = await client<{ time: string; visibility: string }[]>`
+        SELECT to_char(clock_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS time,
+               pg_current_snapshot()::text AS visibility`;
     if (!row) throw new Error("Application observation clock unavailable");
-    return row.time;
+    return row;
 }
 
 function metadataBytes(value: unknown): number {
@@ -187,7 +190,7 @@ export async function collectApplications(
     signal: AbortSignal,
     previous?: ApplicationInventory | null,
     hostTimeoutMs = 20_000,
-    observationClock?: () => Promise<string>
+    observationClock?: () => Promise<{ time: string; visibility: string }>
 ): Promise<ApplicationInventory> {
     signal.throwIfAborted();
     if (targets.length > 20) throw new Error("Host inventory exceeds its budget");
@@ -195,12 +198,15 @@ export async function collectApplications(
         targets.map(async (target) => {
             // Completion time cannot fence a software report published while Docker
             // reads are in flight. Preserve the conservative per-host start instead.
+            // Database failures are job failures, never evidence that Docker is down.
+            // Start the independent Docker budget only after obtaining the watermark.
+            const watermark = await observationClock?.();
+            signal.throwIfAborted();
             const hostSignal = AbortSignal.any([
                 signal,
                 AbortSignal.timeout(hostTimeoutMs),
             ]);
             try {
-                const observationStartedAt = await observationClock?.();
                 hostSignal.throwIfAborted();
                 const port = connect(target);
                 const applications: ManagedApplication[] = [];
@@ -231,7 +237,12 @@ export async function collectApplications(
                     id: target.id,
                     label: target.label,
                     available: true,
-                    ...(observationStartedAt ? { observationStartedAt } : {}),
+                    ...(watermark
+                        ? {
+                              observationStartedAt: watermark.time,
+                              observationVisibility: watermark.visibility,
+                          }
+                        : {}),
                     applications,
                 };
             } catch {

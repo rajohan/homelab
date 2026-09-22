@@ -195,6 +195,9 @@ export const snapshots = pgTable("operation_snapshots", {
     mutatedAt: time("mutated_at")
         .notNull()
         .default(sql`clock_timestamp()`),
+    mutationXid: text("mutation_xid")
+        .notNull()
+        .default(sql`pg_current_xact_id()::text`),
 });
 export const rateWindows = pgTable("operation_rate_windows", {
     key: text().primaryKey(),

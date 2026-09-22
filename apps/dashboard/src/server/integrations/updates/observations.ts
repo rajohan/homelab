@@ -111,15 +111,18 @@ export async function refreshDockerObservations(
             original: string;
             capturedAt: string;
             mutatedAt: string;
+            mutationXid: string;
         } | null
     >();
     for (const host of inventory.hosts) {
         const binding = applications.find((target) => target.id === host.id);
         const startedAt = host.observationStartedAt;
+        const visibility = host.observationVisibility;
         if (
             !binding ||
             !host.available ||
             !startedAt ||
+            !visibility ||
             !Number.isFinite(Date.parse(startedAt))
         )
             continue;
@@ -143,9 +146,14 @@ export async function refreshDockerObservations(
                 const key = `${prefix}${source}`;
                 if (!snapshots.has(key)) {
                     const [stored] = await transaction<
-                        { value: UpdateReport; capturedAt: string; mutatedAt: string }[]
+                        {
+                            value: UpdateReport;
+                            capturedAt: string;
+                            mutatedAt: string;
+                            mutationXid: string;
+                        }[]
                     >`
-                        SELECT value, captured_at::text AS "capturedAt", mutated_at::text AS "mutatedAt"
+                        SELECT value, captured_at::text AS "capturedAt", mutated_at::text AS "mutatedAt", mutation_xid AS "mutationXid"
                         FROM operation_snapshots WHERE key=${key} FOR UPDATE`;
                     snapshots.set(
                         key,
@@ -155,13 +163,13 @@ export async function refreshDockerObservations(
                     );
                 }
                 const row = snapshots.get(key);
-                if (
-                    !row ||
-                    [row.capturedAt, row.mutatedAt, row.value.capturedAt].some(
-                        (time) => Date.parse(time) >= Date.parse(startedAt)
-                    )
-                )
-                    continue;
+                if (!row) continue;
+                const [visible] = await transaction<{ yes: boolean }[]>`
+                    SELECT pg_visible_in_snapshot(${row.mutationXid}::xid8, ${visibility}::pg_snapshot)
+                       AND ${row.capturedAt}::timestamptz < ${startedAt}::timestamptz
+                       AND ${row.mutatedAt}::timestamptz < ${startedAt}::timestamptz
+                       AND ${row.value.capturedAt}::timestamptz < ${startedAt}::timestamptz AS yes`;
+                if (!visible?.yes) continue;
                 const owners = recipes.flatMap((target) => {
                     const driver = target.driver;
                     if (driver.kind !== "docker") return [];

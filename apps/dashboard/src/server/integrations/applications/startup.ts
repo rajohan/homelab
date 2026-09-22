@@ -91,6 +91,27 @@ export function startupCodePaths(
             // These runtimes can import modules/project code from their working
             // directory even when no startup argument contains a slash.
             paths.add(cwd);
+            if (/^python(?:\d+(?:\.\d+)*)?$/.test(name)) {
+                for (let index = 1; index < args.length; index++) {
+                    const arg = args[index]!;
+                    if (arg === "--") {
+                        if (args[index + 1] && args[index + 1] !== "-")
+                            paths.add(path.posix.resolve(cwd, args[index + 1]!));
+                        break;
+                    }
+                    if (arg === "-" || /^-[cm]/.test(arg)) break;
+                    // These interpreter options consume an operand, unlike script
+                    // arguments, which are ignored once the script is located.
+                    if (["-X", "-W", "--check-hash-based-pycs"].includes(arg)) {
+                        index++;
+                        continue;
+                    }
+                    if (arg.startsWith("-")) continue;
+                    paths.add(path.posix.resolve(cwd, arg));
+                    break;
+                }
+                return;
+            }
             const script = args.slice(1).find((arg) => !arg.startsWith("-"));
             if (
                 script &&
