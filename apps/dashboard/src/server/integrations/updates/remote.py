@@ -4,8 +4,10 @@ No service is installed. Input is created by the worker, never accepted as a bro
 command. Output contains only fixed progress phases and the verified version receipt.
 """
 import copy
+import base64
 from contextlib import contextmanager
 import fcntl
+import http.client
 import json
 import os
 import posixpath
@@ -13,10 +15,13 @@ from pathlib import Path
 import re
 import selectors
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
 import time
+from urllib.parse import quote
+import uuid
 
 
 def command(arguments, timeout=120, environment=None, output_limit=2_000_000):
@@ -80,7 +85,7 @@ def startup_code_paths(startup):
         if value.startswith("PATH="):
             search_path = value[5:]
         # Loader values stay in memory; never return paths or options from them.
-        if re.fullmatch(r"(?:LD_[A-Z_]+|DYLD_[A-Z_]+|BASH_ENV|ENV|ZDOTDIR|PYTHONPATH|PYTHONHOME|PYTHONSTARTUP|NODE_OPTIONS|NODE_PATH|RUBYOPT|RUBYLIB|PERL5OPT|PERL5LIB|PERLLIB|LUA_PATH|LUA_CPATH|PHP_INI_SCAN_DIR|PHPRC|CLASSPATH|JAVA_TOOL_OPTIONS|JDK_JAVA_OPTIONS|_JAVA_OPTIONS)=[\s\S]+", value):
+        if re.fullmatch(r"(?:LD_[A-Z_]+|DYLD_[A-Z_]+|BASH_ENV|ENV|CDPATH|ZDOTDIR|PYTHONPATH|PYTHONHOME|PYTHONSTARTUP|NODE_OPTIONS|NODE_PATH|RUBYOPT|RUBYLIB|PERL5OPT|PERL5LIB|PERLLIB|LUA_PATH|LUA_CPATH|PHP_INI_SCAN_DIR|PHPRC|CLASSPATH|JAVA_TOOL_OPTIONS|JDK_JAVA_OPTIONS|_JAVA_OPTIONS)=[\s\S]+", value):
             unqualified = True
     for key, value in startup_environment(startup.get("environment")).items():
         if value is not None:
@@ -265,6 +270,9 @@ def startup_code_paths(startup):
                 unqualified = True
             else:
                 inspect(args[1:], cwd, depth + 1)
+        elif name in ("make", "gmake", "bmake"):
+            if not (len(args) == 2 and args[1] in ("--help", "--version", "-h", "-v")):
+                unqualified = True
         elif name in ("awk", "gawk", "mawk", "nawk"):
             # Never evaluate program files, inline programs or extension loaders.
             if not (len(args) == 2 and args[1] in ("--help", "--version", "-h", "-V", "-Whelp", "-Wversion")) and not (len(args) == 3 and args[1] == "-W" and args[2] in ("help", "version")):
@@ -500,7 +508,7 @@ def startup_code_paths(startup):
                     for offset, option in enumerate(arg[1:], 1):
                         if option in ("h", "?", "V"):
                             return
-                        if option in ("c", "i"):
+                        if option in ("c", "i", "m"):
                             unqualified = True
                         if option in ("c", "m"):
                             return
@@ -578,7 +586,99 @@ def compose_startup(service, defaults):
     return result
 
 
-def verify_code_mounts(service, startup=None):
+def qualify_startup_mounts(paths, destinations, path_stat):
+    """Resolve path components from metadata only, with a shared bounded probe cache."""
+    if paths is None or len(paths) > 128 or len(destinations) > 64:
+        return [True] * len(destinations)
+    cache = {}
+    def resolve(original):
+        remaining = [part for part in posixpath.normpath('/' + original.lstrip('/')).split('/') if part]
+        current, hops = '/', 0
+        while remaining:
+            current = posixpath.join(current, remaining.pop(0))
+            if current not in cache:
+                if len(cache) >= 256:
+                    raise UpdateRefusal('local_code_override')
+                cache[current] = path_stat(current)
+            metadata = cache[current]
+            if metadata is None:
+                return posixpath.join(current, *remaining)
+            if metadata['mode'] & 0x08000000:
+                hops += 1
+                target = metadata['linkTarget']
+                if hops > 32 or not target.startswith('/') or '\0' in target or len(target) > 2000:
+                    raise UpdateRefusal('local_code_override')
+                remaining = [part for part in target.split('/') if part] + remaining
+                current = '/'
+        return current
+    try:
+        root = path_stat('/')
+        if root is None or not root['mode'] & 0x80000000:
+            return [True] * len(destinations)
+        cache['/'] = root
+        mounts = [resolve(destination) for destination in destinations]
+        code = [resolve(name) for name in paths]
+        return [any(name == mount or name.startswith(mount.rstrip('/') + '/') for name in code) for mount in mounts]
+    except Exception:
+        return [True] * len(destinations)
+
+
+def container_path_stat(identity):
+    """Use Docker HEAD metadata only; never download a container archive or file."""
+    if not re.fullmatch('[a-f0-9]{64}', identity):
+        raise UpdateRefusal('local_code_override')
+    endpoint = json.loads(command(['/usr/bin/docker', 'context', 'inspect', '--format', '{{json .Endpoints.docker.Host}}'], timeout=10, output_limit=8192))
+    if not isinstance(endpoint, str) or not endpoint.startswith('unix:///') or '\0' in endpoint:
+        raise UpdateRefusal('local_code_override')
+    deadline = time.monotonic() + 20
+    def read(name):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise UpdateRefusal('local_code_override')
+        connection = http.client.HTTPConnection('localhost', timeout=min(remaining, 5))
+        try:
+            connection.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            connection.sock.settimeout(min(remaining, 5))
+            connection.sock.connect(endpoint[7:])
+            connection.request('HEAD', '/v1.47/containers/' + identity + '/archive?path=' + quote(name, safe=''))
+            response = connection.getresponse()
+            if response.status == 404:
+                return None
+            encoded = response.getheader('X-Docker-Container-Path-Stat')
+            if response.status != 200 or not encoded or len(encoded) > 8192:
+                raise UpdateRefusal('local_code_override')
+            value = json.loads(base64.b64decode(encoded, validate=True))
+            if not isinstance(value, dict) or type(value.get('mode')) is not int or not 0 <= value['mode'] <= 0xffffffff or not isinstance(value.get('linkTarget'), str) or len(value['linkTarget']) > 2000:
+                raise UpdateRefusal('local_code_override')
+            return value
+        finally:
+            connection.close()
+    return read
+
+
+def verify_image_mounts(service, startup, image):
+    """Inspect an immutable image in an owned, never-started container with no application storage."""
+    verify_code_mounts(service, startup)
+    if not any(service.get(kind) for kind in ('volumes', 'configs', 'secrets')):
+        return
+    if not re.fullmatch('sha256:[a-f0-9]{64}', image):
+        raise UpdateRefusal('local_code_override')
+    owner = 'homelab-image-qualification-' + uuid.uuid4().hex
+    try:
+        identity = command(['/usr/bin/docker', 'create', '--name', owner, '--label', 'homelab.image-qualification=' + owner, '--network', 'none', '--read-only', '--entrypoint', '/bin/false', image], timeout=30, output_limit=8192)
+        if not re.fullmatch('[a-f0-9]{64}', identity):
+            raise UpdateRefusal('local_code_override')
+        verify_code_mounts(service, startup, container_path_stat(identity))
+    finally:
+        # Even failed/timed-out CLI output may leave a created container. Resolve
+        # its unique name, then remove only the exact never-started owned image.
+        owned = json.loads(command(['/usr/bin/docker', 'inspect', '--format', '[{{json .Id}},{{json .State.Status}},{{json (index .Config.Labels "homelab.image-qualification")}},{{json .Image}}]', owner], timeout=10, output_limit=8192))
+        if not isinstance(owned, list) or len(owned) != 4 or not isinstance(owned[0], str) or not re.fullmatch('[a-f0-9]{64}', owned[0]) or owned[1:] != ['created', owner, image]:
+            raise UpdateRefusal('local_code_override')
+        command(['/usr/bin/docker', 'rm', '--volumes', owned[0]], timeout=30, output_limit=8192)
+
+
+def verify_code_mounts(service, startup=None, path_stat=None):
     """Refuse executable deployment mounts without reading config/secret contents."""
     # Compose does not expand inherited service/container storage into volumes.
     # Its effective targets and future provider identity need separate deployment
@@ -608,13 +708,14 @@ def verify_code_mounts(service, startup=None):
             # These sources are Compose object names, never filesystem paths.
             # Only their effective container destinations are needed to qualify code.
             mounts.append({"target": posixpath.join(base, target)})
-    for mount in mounts:
+    qualified = qualify_startup_mounts(paths, [mount.get('target', '') for mount in mounts], path_stat) if path_stat is not None else None
+    for index, mount in enumerate(mounts):
         destination = mount.get("target", "")
         # Only the qualified standalone logout helper is exempt, not this directory.
         if destination == "/opt/homelab/logout-worker.js":
             continue
         normalized = posixpath.normpath(destination)
-        startup_code = paths is None or any(path == normalized or path.startswith(normalized.rstrip("/") + "/") for path in paths)
+        startup_code = paths is None or qualified is not None and qualified[index] or any(path == normalized or path.startswith(normalized.rstrip("/") + "/") for path in paths)
         # Named-volume identifiers are not host paths. Their target/startup
         # relationship still matters: updating the image does not replace them.
         source = mount.get("source") if mount.get("type") == "bind" else None
@@ -752,11 +853,13 @@ def docker_update(driver, item, automatic=False):
         # or environment values in output, inventory or update receipts.
         startup = json.loads(command(["/usr/bin/docker", "inspect", "--format", '{"entrypoint":{{json .Config.Entrypoint}},"command":{{json .Config.Cmd}},"working_dir":{{json .Config.WorkingDir}},"healthcheck":{{json .Config.Healthcheck}},"environment":{{json .Config.Env}},"shell":{{json .Config.Shell}}}', identity]))
         verify_code_mounts(service, startup)
+        if any(service.get(kind) for kind in ('volumes', 'configs', 'secrets')):
+            verify_code_mounts(service, startup, container_path_stat(identity))
         # Container Config may contain old Compose overrides. Inherit from the
         # immutable installed image, not from those old container overrides.
         # Never classify an unmerged CMD argument tail as an executable vector.
         defaults = json.loads(command(["/usr/bin/docker", "image", "inspect", "--format", '{"entrypoint":{{json .Config.Entrypoint}},"command":{{json .Config.Cmd}},"working_dir":{{json .Config.WorkingDir}},"healthcheck":{{json .Config.Healthcheck}},"environment":{{json .Config.Env}},"shell":{{json .Config.Shell}}}', before[2]]))
-        verify_code_mounts(service, compose_startup(service, defaults))
+        verify_image_mounts(service, compose_startup(service, defaults), before[2])
         if config.get("services", {}).get(driver["service"], {}).get("image") != item["image"]:
             raise RuntimeError("Compose and the observed image differ")
         namespace_plan = prepare_namespace_plan(config, driver, compose)
@@ -772,10 +875,10 @@ def docker_update(driver, item, automatic=False):
         progress("pulling")
         command(["/usr/bin/docker", "pull", candidate], timeout=600)
         candidate_startup = json.loads(command(["/usr/bin/docker", "image", "inspect", "--format", '{"entrypoint":{{json .Config.Entrypoint}},"command":{{json .Config.Cmd}},"working_dir":{{json .Config.WorkingDir}},"healthcheck":{{json .Config.Healthcheck}},"environment":{{json .Config.Env}},"shell":{{json .Config.Shell}}}', candidate]))
-        verify_code_mounts(service, compose_startup(service, candidate_startup))
         pulled = command(["/usr/bin/docker", "image", "inspect", "--format", "{{.Id}}", candidate])
         if pulled != item["available"]:
             raise RuntimeError("Pulled image does not match the approved platform image")
+        verify_image_mounts(service, compose_startup(service, candidate_startup), pulled)
         if automatic:
             old = image_version(item["image"], item["installed"])
             new = image_version(candidate, pulled)

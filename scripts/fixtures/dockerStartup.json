@@ -1,5 +1,342 @@
 [
     {
+        "name": "module CLI -m doctest /custom/app.py",
+        "entrypoint": ["python3.14", "-m", "doctest", "/custom/app.py"],
+        "mount": "/custom",
+        "blocked": true,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "module CLI -Im doctest /custom/app.py",
+        "entrypoint": ["python3.14", "-Im", "doctest", "/custom/app.py"],
+        "mount": "/custom",
+        "blocked": true,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "module CLI -mdoctest /custom/app.py",
+        "entrypoint": ["python3.14", "-mdoctest", "/custom/app.py"],
+        "mount": "/custom",
+        "blocked": true,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "module CLI -Imdoctest /custom/app.py",
+        "entrypoint": ["python3.14", "-Imdoctest", "/custom/app.py"],
+        "mount": "/custom",
+        "blocked": true,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "module CLI -W ignore -m doctest /custom/app.py",
+        "entrypoint": ["python3.14", "-W", "ignore", "-m", "doctest", "/custom/app.py"],
+        "mount": "/custom",
+        "blocked": true,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "module CLI -X dev -m doctest /custom/app.py",
+        "entrypoint": ["python3.14", "-X", "dev", "-m", "doctest", "/custom/app.py"],
+        "mount": "/custom",
+        "blocked": true,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "make recipe -f /custom/Makefile",
+        "entrypoint": ["make", "-f", "/custom/Makefile"],
+        "mount": "/custom",
+        "blocked": true,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "make recipe -C /custom",
+        "entrypoint": ["make", "-C", "/custom"],
+        "mount": "/custom",
+        "blocked": true,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "make recipe --file=/custom/Makefile",
+        "entrypoint": ["make", "--file=/custom/Makefile"],
+        "mount": "/custom",
+        "blocked": true,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "make recipe --directory=/custom",
+        "entrypoint": ["make", "--directory=/custom"],
+        "mount": "/custom",
+        "blocked": true,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "make recipe ",
+        "entrypoint": ["make"],
+        "mount": "/custom",
+        "blocked": true,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "make recipe --eval=include /custom/Makefile",
+        "entrypoint": ["make", "--eval=include /custom/Makefile"],
+        "mount": "/custom",
+        "blocked": true,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "make recipe -n -f /custom/Makefile",
+        "entrypoint": ["make", "-n", "-f", "/custom/Makefile"],
+        "mount": "/custom",
+        "blocked": true,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "make recipe --help",
+        "entrypoint": ["make", "--help"],
+        "mount": "/custom",
+        "blocked": false,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "make recipe --version",
+        "entrypoint": ["make", "--version"],
+        "mount": "/custom",
+        "blocked": false,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "gmake recipe -f /custom/Makefile",
+        "entrypoint": ["gmake", "-f", "/custom/Makefile"],
+        "mount": "/custom",
+        "blocked": true,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "gmake recipe -C /custom",
+        "entrypoint": ["gmake", "-C", "/custom"],
+        "mount": "/custom",
+        "blocked": true,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "gmake recipe --file=/custom/Makefile",
+        "entrypoint": ["gmake", "--file=/custom/Makefile"],
+        "mount": "/custom",
+        "blocked": true,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "gmake recipe --directory=/custom",
+        "entrypoint": ["gmake", "--directory=/custom"],
+        "mount": "/custom",
+        "blocked": true,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "gmake recipe ",
+        "entrypoint": ["gmake"],
+        "mount": "/custom",
+        "blocked": true,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "gmake recipe --eval=include /custom/Makefile",
+        "entrypoint": ["gmake", "--eval=include /custom/Makefile"],
+        "mount": "/custom",
+        "blocked": true,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "gmake recipe -n -f /custom/Makefile",
+        "entrypoint": ["gmake", "-n", "-f", "/custom/Makefile"],
+        "mount": "/custom",
+        "blocked": true,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "gmake recipe --help",
+        "entrypoint": ["gmake", "--help"],
+        "mount": "/custom",
+        "blocked": false,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "gmake recipe --version",
+        "entrypoint": ["gmake", "--version"],
+        "mount": "/custom",
+        "blocked": false,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "bmake recipe -f /custom/Makefile",
+        "entrypoint": ["bmake", "-f", "/custom/Makefile"],
+        "mount": "/custom",
+        "blocked": true,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "bmake recipe -C /custom",
+        "entrypoint": ["bmake", "-C", "/custom"],
+        "mount": "/custom",
+        "blocked": true,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "bmake recipe --file=/custom/Makefile",
+        "entrypoint": ["bmake", "--file=/custom/Makefile"],
+        "mount": "/custom",
+        "blocked": true,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "bmake recipe --directory=/custom",
+        "entrypoint": ["bmake", "--directory=/custom"],
+        "mount": "/custom",
+        "blocked": true,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "bmake recipe ",
+        "entrypoint": ["bmake"],
+        "mount": "/custom",
+        "blocked": true,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "bmake recipe --eval=include /custom/Makefile",
+        "entrypoint": ["bmake", "--eval=include /custom/Makefile"],
+        "mount": "/custom",
+        "blocked": true,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "bmake recipe -n -f /custom/Makefile",
+        "entrypoint": ["bmake", "-n", "-f", "/custom/Makefile"],
+        "mount": "/custom",
+        "blocked": true,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "bmake recipe --help",
+        "entrypoint": ["bmake", "--help"],
+        "mount": "/custom",
+        "blocked": false,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "bmake recipe --version",
+        "entrypoint": ["bmake", "--version"],
+        "mount": "/custom",
+        "blocked": false,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "cdpath CDPATH=/custom",
+        "entrypoint": ["/bin/sh", "-c", "CDPATH=/custom; cd app; ./start"],
+        "mount": "/custom",
+        "blocked": true,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "cdpath export CDPATH=/custom",
+        "entrypoint": ["/bin/sh", "-c", "export CDPATH=/custom; cd app; ./start"],
+        "mount": "/custom",
+        "blocked": true,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "cdpath env CDPATH=/custom /bin/sh -c 'cd app; ./start'",
+        "entrypoint": [
+            "/bin/sh",
+            "-c",
+            "env CDPATH=/custom /bin/sh -c 'cd app; ./start'"
+        ],
+        "mount": "/custom",
+        "blocked": true,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "environment cdpath /custom",
+        "entrypoint": ["/bin/sh", "-c", "cd app; ./start"],
+        "environment": ["CDPATH=/custom"],
+        "mount": "/custom",
+        "blocked": true,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "environment cdpath :/custom",
+        "entrypoint": ["/bin/sh", "-c", "cd app; ./start"],
+        "environment": ["CDPATH=:/custom"],
+        "mount": "/custom",
+        "blocked": true,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "environment cdpath .:/custom",
+        "entrypoint": ["/bin/sh", "-c", "cd app; ./start"],
+        "environment": ["CDPATH=.:/custom"],
+        "mount": "/custom",
+        "blocked": true,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "environment cdpath SYNTHETIC_PRIVATE",
+        "entrypoint": ["/bin/sh", "-c", "cd app; ./start"],
+        "environment": ["CDPATH=SYNTHETIC_PRIVATE"],
+        "mount": "/custom",
+        "blocked": true,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
+        "name": "empty cdpath preserves ordinary storage",
+        "entrypoint": ["/bin/sh", "-c", "cd /vendor; ./start"],
+        "environment": ["CDPATH="],
+        "mount": "/custom",
+        "blocked": false,
+        "command": [],
+        "working_dir": "/"
+    },
+    {
         "name": "alias deferred alias run=/custom/start\nrun",
         "entrypoint": [
             "/bin/bash",
@@ -249,7 +586,7 @@
         "command": [],
         "working_dir": "/",
         "mount": "/custom",
-        "blocked": false
+        "blocked": true
     },
     {
         "name": "python code vs data [\"python\",\"--help\"]",

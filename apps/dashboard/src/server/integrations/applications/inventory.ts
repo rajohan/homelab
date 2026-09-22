@@ -166,12 +166,13 @@ export function mapDockerApplication(
             ),
         ].toSorted(),
         networks: Object.keys(detail.NetworkSettings.Networks).toSorted(),
-        mounts: detail.Mounts.map((mount) => ({
+        mounts: detail.Mounts.map((mount, index) => ({
             type: mount.Type,
             source: mount.Source,
             destination: mount.Destination,
             readOnly: !mount.RW,
             startupCode:
+                detail.startupMounts?.[index] ||
                 startupPaths === null ||
                 startupPaths.some(
                     (item) =>
@@ -244,7 +245,7 @@ export async function collectApplications(
                             .map(async (id) =>
                                 mapDockerApplication(
                                     target,
-                                    await port.inspect(id, hostSignal)
+                                    await port.inspect(id, hostSignal, true)
                                 )
                             )
                     );

@@ -3,6 +3,8 @@ import * as v from "valibot";
 
 import { readBoundedJson } from "../http/readJson";
 import type { ApplicationTarget } from "./configuration";
+import { startupCodePaths } from "./startup";
+import { qualifyStartupMounts } from "./startupMounts";
 
 const id = v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/));
 const text = v.pipe(v.string(), v.maxLength(2000));
@@ -60,11 +62,18 @@ const detailSchema = v.object({
         v.maxLength(64)
     ),
 });
-export type DockerDetail = v.InferOutput<typeof detailSchema>;
+export type DockerDetail = v.InferOutput<typeof detailSchema> & {
+    /** Adapter-owned qualification; never accepted from Docker JSON or persisted directly. */
+    startupMounts?: readonly boolean[];
+};
 export interface DockerPort {
     /** Limit discovery to one allowlisted project when supplied; otherwise list the configured host inventory. */
     readonly list: (signal: AbortSignal, project?: string) => Promise<readonly string[]>;
-    readonly inspect: (container: string, signal: AbortSignal) => Promise<DockerDetail>;
+    readonly inspect: (
+        container: string,
+        signal: AbortSignal,
+        qualifyStartup?: boolean
+    ) => Promise<DockerDetail>;
     readonly act: (
         container: string,
         operation: ApplicationOperation,
@@ -97,7 +106,7 @@ export function createDockerPort(
             method,
             signal: AbortSignal.any([
                 signal,
-                AbortSignal.timeout(method === "GET" ? 10_000 : 40_000),
+                AbortSignal.timeout(method === "POST" ? 40_000 : 10_000),
             ]),
             redirect: "error",
             ...(tls ? { tls } : {}),
@@ -131,7 +140,7 @@ export function createDockerPort(
             }
             return [...new Set(result)];
         },
-        async inspect(container, signal) {
+        async inspect(container, signal, qualifyStartup) {
             v.parse(id, container);
             const detail = v.parse(
                 detailSchema,
@@ -147,7 +156,43 @@ export function createDockerPort(
                 )
             )
                 throw new Error("Container is outside the managed inventory");
-            return detail;
+            if (!qualifyStartup) return detail;
+            const startupMounts = await qualifyStartupMounts(
+                startupCodePaths(
+                    detail.Config.Entrypoint,
+                    detail.Config.Cmd,
+                    detail.Config.WorkingDir,
+                    detail.Config.Healthcheck?.Test,
+                    detail.Config.Env,
+                    detail.Config.Shell
+                ),
+                detail.Mounts.map((mount) => mount.Destination),
+                async (name) => {
+                    const response = await request(
+                        `/containers/${container}/archive?${new URLSearchParams({ path: name }).toString()}`,
+                        signal,
+                        "HEAD"
+                    );
+                    await response.body?.cancel();
+                    if (response.status === 404) return null;
+                    const encoded = response.headers.get("X-Docker-Container-Path-Stat");
+                    if (response.status !== 200 || !encoded || encoded.length > 8192)
+                        throw new Error("Filesystem metadata unavailable");
+                    return v.parse(
+                        v.object({
+                            mode: v.pipe(
+                                v.number(),
+                                v.integer(),
+                                v.minValue(0),
+                                v.maxValue(4_294_967_295)
+                            ),
+                            linkTarget: text,
+                        }),
+                        JSON.parse(Buffer.from(encoded, "base64").toString("utf8"))
+                    );
+                }
+            );
+            return { ...detail, startupMounts };
         },
         async act(container, operation, signal) {
             v.parse(id, container);

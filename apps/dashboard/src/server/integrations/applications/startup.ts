@@ -134,7 +134,7 @@ export function startupCodePaths(
         // Loader/search options can contain expansion syntax or private values.
         // Require separate qualification rather than returning any of their data.
         if (
-            /^(?:LD_[A-Z_]+|DYLD_[A-Z_]+|BASH_ENV|ENV|ZDOTDIR|PYTHONPATH|PYTHONHOME|PYTHONSTARTUP|NODE_OPTIONS|NODE_PATH|RUBYOPT|RUBYLIB|PERL5OPT|PERL5LIB|PERLLIB|LUA_PATH|LUA_CPATH|PHP_INI_SCAN_DIR|PHPRC|CLASSPATH|JAVA_TOOL_OPTIONS|JDK_JAVA_OPTIONS|_JAVA_OPTIONS)=[\s\S]+$/.test(
+            /^(?:LD_[A-Z_]+|DYLD_[A-Z_]+|BASH_ENV|ENV|CDPATH|ZDOTDIR|PYTHONPATH|PYTHONHOME|PYTHONSTARTUP|NODE_OPTIONS|NODE_PATH|RUBYOPT|RUBYLIB|PERL5OPT|PERL5LIB|PERLLIB|LUA_PATH|LUA_CPATH|PHP_INI_SCAN_DIR|PHPRC|CLASSPATH|JAVA_TOOL_OPTIONS|JDK_JAVA_OPTIONS|_JAVA_OPTIONS)=[\s\S]+$/.test(
                 value
             )
         )
@@ -313,6 +313,17 @@ export function startupCodePaths(
             if (["--help", "--list", "--list-full"].includes(args[1] ?? "")) return;
             if (!args[1] || args[1].startsWith("-")) unqualified = true;
             else inspect(args.slice(1), cwd, depth + 1);
+            return;
+        }
+        if (["make", "gmake", "bmake"].includes(name)) {
+            // Recipes and includes define their own executable input grammar.
+            if (
+                !(
+                    args.length === 2 &&
+                    ["--help", "--version", "-h", "-v"].includes(args[1]!)
+                )
+            )
+                unqualified = true;
             return;
         }
         if (["awk", "gawk", "mawk", "nawk"].includes(name)) {
@@ -730,7 +741,7 @@ export function startupCodePaths(
                     for (let offset = 1; offset < arg.length; offset++) {
                         const option = arg[offset]!;
                         if (["h", "?", "V"].includes(option)) return;
-                        if (option === "c" || option === "i") unqualified = true;
+                        if (["c", "i", "m"].includes(option)) unqualified = true;
                         if (option === "c" || option === "m") return;
                         if (option === "X" || option === "W") {
                             if (offset === arg.length - 1) index++;

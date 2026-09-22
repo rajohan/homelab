@@ -21,7 +21,63 @@ import {
     selectApplications,
 } from "./selection";
 
+test.each(["direct", "parent", "mount", "loop", "denied", "safe"])(
+    "metadata-only startup link qualification through Docker HTTP: %s",
+    async (mode) => {
+        const fixture = createApplicationFixture();
+        try {
+            const detail = [...fixture.containers.values()][0]!;
+            detail.Config.Entrypoint = ["/vendor/start"];
+            detail.Config.Env = ["PRIVATE_KEY=SYNTHETIC_PRIVATE"];
+            detail.Mounts = [
+                {
+                    Type: "volume",
+                    Source: "SYNTHETIC_PRIVATE",
+                    Destination: mode === "mount" ? "/alias" : "/custom",
+                    RW: true,
+                },
+            ];
+            const names: Record<string, string> = {
+                parent: "/vendor",
+                loop: "/vendor",
+                mount: "/alias",
+            };
+            const targets: Record<string, string> = {
+                safe: "/usr/bin/sleep",
+                loop: "/vendor",
+                mount: "/vendor",
+                parent: "/custom",
+            };
+            const name = names[mode] ?? "/vendor/start";
+            const target = targets[mode] ?? "/custom/start";
+            fixture.pathMetadata.set(name, { mode: 134_217_728, linkTarget: target });
+            fixture.behavior.statUnavailable = mode === "denied";
+            const inventory = await collectApplications(
+                [fixture.target],
+                () => createDockerPort(fixture.target, {}),
+                AbortSignal.timeout(5000)
+            );
+            const application = inventory.hosts[0]!.applications.find(
+                (item) => item.containerId === detail.Id
+            )!;
+            expect(inventory.hosts[0]!.available).toBe(true);
+            expect(application.mounts[0]!.startupCode).toBe(mode !== "safe");
+            expect(JSON.stringify(application)).not.toContain("/vendor/start");
+            expect(JSON.stringify(application)).not.toContain("PRIVATE_KEY");
+            expect(fixture.calls).toEqual([]);
+        } finally {
+            await fixture.close();
+        }
+    }
+);
+
 test.each([
+    { test: ["CMD", "python", "-m", "doctest", "/custom/app.py"], blocked: true },
+    { test: ["CMD", "python", "-Imdoctest", "/custom/app.py"], blocked: true },
+    { test: ["CMD", "make", "-f", "/custom/Makefile"], blocked: true },
+    { test: ["CMD", "make", "-C", "/custom"], blocked: true },
+    { test: ["CMD", "make", "--help"], blocked: false },
+    { test: ["CMD", "/bin/sh", "-c", "CDPATH=/custom; cd app; ./start"], blocked: true },
     {
         test: [
             "CMD",

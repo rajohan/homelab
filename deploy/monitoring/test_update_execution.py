@@ -28,6 +28,77 @@ exec(compile(SOURCE.with_name("toolchain.py").read_text(), str(SOURCE.with_name(
 class UpdateExecutionTests(unittest.TestCase):
     """Cover exact image pins, source fencing, package boundaries and private error handling."""
 
+    def test_actual_module_and_cdpath_execution(self):
+        with tempfile.TemporaryDirectory(prefix="homelab-program-input-") as temporary:
+            root = Path(temporary)
+            (root / "program.py").write_text("print('executed', end='')\n")
+            (root / "app").mkdir()
+            (root / "app/start").write_text("#!/bin/sh\nprintf executed\n")
+            (root / "app/start").chmod(0o700)
+            cases = [([sys.executable, "-Im", "doctest", str(root / "program.py")], {}), (["/bin/sh", "-c", "cd app >/dev/null; ./start"], {"CDPATH": temporary})]
+            for arguments, environment in cases:
+                result = subprocess.run(arguments, cwd="/", env={"PATH": "/usr/bin:/bin", "HOME": temporary, **environment}, capture_output=True, text=True, check=True, timeout=5)
+                self.assertEqual(result.stdout, "executed")
+
+    def test_metadata_only_symlink_mount_qualification(self):
+        for links, code, mount, expected in [({"/vendor/start": "/custom/start"}, "/vendor/start", "/custom", True), ({"/vendor": "/custom"}, "/vendor/start", "/custom", True), ({"/storage": "/custom"}, "/custom/start", "/storage", True), ({"/bin": "/usr/bin"}, "/bin/sleep", "/custom", False), ({"/vendor": "/vendor"}, "/vendor/start", "/custom", True)]:
+            def metadata(name):
+                return {"mode": 0x08000000 if name in links else 0x80000000, "linkTarget": links.get(name, "")}
+            with self.subTest(links=links):
+                self.assertEqual(remote.qualify_startup_mounts({code}, [mount], metadata), [expected])
+        self.assertEqual(remote.qualify_startup_mounts({"/vendor/start"}, ["/custom"], lambda name: None), [True])
+        self.assertEqual(remote.qualify_startup_mounts(None, ["/custom"], lambda name: self.fail("Unqualified programs do not need filesystem reads")), [True])
+
+    def test_image_qualification_never_starts_code_and_cleans_on_refusal(self):
+        for link in (False, True):
+            calls, owner = [], []
+            def command(arguments, **options):
+                calls.append(arguments)
+                if arguments[1] == 'create':
+                    owner.append(arguments[arguments.index('--name') + 1])
+                    self.assertIn('--read-only', arguments)
+                    self.assertEqual(arguments[arguments.index('--network') + 1], 'none')
+                    return 'a' * 64
+                if arguments[1] == 'inspect':
+                    self.assertEqual(arguments[-1], owner[0])
+                    return json.dumps(['a' * 64, 'created', owner[0], 'sha256:' + 'b' * 64])
+                if arguments[1] == 'rm':
+                    self.assertEqual(arguments[2:], ['--volumes', 'a' * 64])
+                    return 'a' * 64
+                self.fail('Unexpected image qualification command')
+            def metadata(name):
+                return {'mode': 0x08000000 if link and name == '/vendor/start' else 0x80000000, 'linkTarget': '/custom/start' if link and name == '/vendor/start' else ''}
+            with patch.object(remote, 'command', side_effect=command), patch.object(remote, 'container_path_stat', return_value=metadata):
+                if link:
+                    with self.assertRaises(remote.UpdateRefusal):
+                        remote.verify_image_mounts({'volumes': [{'type': 'volume', 'target': '/custom'}]}, {'entrypoint': ['/vendor/start']}, 'sha256:' + 'b' * 64)
+                else:
+                    remote.verify_image_mounts({'volumes': [{'type': 'volume', 'target': '/custom'}]}, {'entrypoint': ['/vendor/start']}, 'sha256:' + 'b' * 64)
+            self.assertEqual([call[1] for call in calls], ['create', 'inspect', 'rm'])
+
+    def test_image_qualification_cleans_uncertain_create_only_with_exact_ownership(self):
+        for receipt in ('warning\n' + 'a' * 64, RuntimeError('Command deadline exceeded')):
+            for mismatch in (None, 'owner', 'state', 'image', 'missing'):
+                calls, owner = [], []
+                def command(arguments, **options):
+                    calls.append(arguments)
+                    if arguments[1] == 'create':
+                        owner.append(arguments[arguments.index('--name') + 1])
+                        if isinstance(receipt, Exception):
+                            raise receipt
+                        return receipt
+                    if arguments[1] == 'inspect':
+                        self.assertEqual(arguments[-1], owner[0])
+                        if mismatch == 'missing':
+                            raise RuntimeError('No created container')
+                        return json.dumps(['a' * 64, 'running' if mismatch == 'state' else 'created', 'foreign' if mismatch == 'owner' else owner[0], 'sha256:' + ('c' if mismatch == 'image' else 'b') * 64])
+                    self.assertEqual(arguments, ['/usr/bin/docker', 'rm', '--volumes', 'a' * 64])
+                    return 'a' * 64
+                with self.subTest(receipt=str(receipt), mismatch=mismatch), patch.object(remote, 'command', side_effect=command), patch.object(remote, 'container_path_stat', side_effect=AssertionError('Invalid create receipt cannot qualify files')):
+                    with self.assertRaises(RuntimeError):
+                        remote.verify_image_mounts({'volumes': [{'type': 'volume', 'target': '/custom'}]}, {'entrypoint': ['/vendor/start']}, 'sha256:' + 'b' * 64)
+                self.assertEqual([call[1] for call in calls], ['create', 'inspect', 'rm'] if mismatch is None else ['create', 'inspect'])
+
     def test_actual_alias_inline_python_awk_and_find_dispatch(self):
         with tempfile.TemporaryDirectory(prefix="homelab-indirect-program-") as temporary:
             script = Path(temporary) / "start"

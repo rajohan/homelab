@@ -90,7 +90,7 @@ export async function main(): Promise<void> {
         async fetch(request) {
             const url = new URL(request.url);
             const match =
-                /^\/v1\.47\/containers\/([a-f0-9]{64})\/(json|start|stop|restart)$/.exec(
+                /^\/v1\.47\/containers\/([a-f0-9]{64})\/(json|archive|start|stop|restart)$/.exec(
                     url.pathname
                 );
             let path = url.pathname + url.search;
@@ -104,9 +104,11 @@ export async function main(): Promise<void> {
             } else if (
                 !match?.[1] ||
                 !owned.has(match[1]) ||
-                (match[2] === "json"
-                    ? request.method !== "GET"
-                    : request.method !== "POST")
+                request.method !==
+                    (new Map([
+                        ["archive", "HEAD"],
+                        ["json", "GET"],
+                    ]).get(match[2] ?? "") ?? "POST")
             ) {
                 return new Response(null, { status: 404 });
             }

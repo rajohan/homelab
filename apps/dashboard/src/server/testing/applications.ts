@@ -90,7 +90,13 @@ export function createApplicationFixture(
                 : `Synthetic application event ${index + 1}: request completed.`,
         level: index % 9 === 0 ? "warning" : "info",
     }));
-    const behavior = { unavailable: false, redirect: false, large: false };
+    const behavior = {
+        unavailable: false,
+        redirect: false,
+        large: false,
+        statUnavailable: false,
+    };
+    const pathMetadata = new Map<string, { mode: number; linkTarget: string }>();
     const server = Bun.serve({
         hostname: "127.0.0.1",
         port: 0,
@@ -169,11 +175,25 @@ export function createApplicationFixture(
                 );
             }
             const match =
-                /^\/v1\.47\/containers\/([a-f0-9]{64})\/(json|start|stop|restart)$/.exec(
+                /^\/v1\.47\/containers\/([a-f0-9]{64})\/(json|archive|start|stop|restart)$/.exec(
                     url.pathname
                 );
             const detail = match?.[1] ? containers.get(match[1]) : undefined;
             if (!detail) return new Response(null, { status: 404 });
+            if (match?.[2] === "archive" && request.method === "HEAD") {
+                if (behavior.statUnavailable) return new Response(null, { status: 403 });
+                const metadata = pathMetadata.get(url.searchParams.get("path") ?? "") ?? {
+                    mode: 2_147_483_648,
+                    linkTarget: "",
+                };
+                return new Response(null, {
+                    headers: {
+                        "X-Docker-Container-Path-Stat": Buffer.from(
+                            JSON.stringify(metadata)
+                        ).toString("base64"),
+                    },
+                });
+            }
             const readyAt = readiness.get(detail.Id);
             if (readyAt !== undefined && Date.now() >= readyAt) {
                 detail.State.Health = {
@@ -258,6 +278,7 @@ export function createApplicationFixture(
         calls,
         logs,
         queries,
+        pathMetadata,
         behavior,
         close: () => {
             lifetime.abort();
