@@ -1,5 +1,289 @@
 [
     {
+        "name": "loader/resource dispatch /lib64/ld-linux-x86-64.so.2 /custom/server",
+        "entrypoint": ["/lib64/ld-linux-x86-64.so.2", "/custom/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "loader/resource dispatch /lib/ld-linux.so.2 /custom/server",
+        "entrypoint": ["/lib/ld-linux.so.2", "/custom/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "loader/resource dispatch /lib/ld-linux-aarch64.so.1 /custom/server",
+        "entrypoint": ["/lib/ld-linux-aarch64.so.1", "/custom/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "loader/resource dispatch /lib/ld-linux-armhf.so.3 /custom/server",
+        "entrypoint": ["/lib/ld-linux-armhf.so.3", "/custom/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "loader/resource dispatch /lib/ld-musl-x86_64.so.1 /custom/server",
+        "entrypoint": ["/lib/ld-musl-x86_64.so.1", "/custom/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "loader/resource dispatch /lib/ld-musl-aarch64.so.1 /custom/server",
+        "entrypoint": ["/lib/ld-musl-aarch64.so.1", "/custom/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "loader/resource dispatch /lib/ld-2.39.so /custom/server",
+        "entrypoint": ["/lib/ld-2.39.so", "/custom/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "loader/resource dispatch /lib64/ld64.so.2 /custom/server",
+        "entrypoint": ["/lib64/ld64.so.2", "/custom/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "loader/resource dispatch /lib/ld.so /custom/server",
+        "entrypoint": ["/lib/ld.so", "/custom/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "loader/resource dispatch /lib/libc.so /custom/server",
+        "entrypoint": ["/lib/libc.so", "/custom/server"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "loader/resource dispatch /lib64/ld-linux-x86-64.so.2 --preload /custom/input /vendor/server",
+        "entrypoint": [
+            "/lib64/ld-linux-x86-64.so.2",
+            "--preload",
+            "/custom/input",
+            "/vendor/server"
+        ],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "loader/resource dispatch /lib64/ld-linux-x86-64.so.2 --library-path /custom/input /vendor/server",
+        "entrypoint": [
+            "/lib64/ld-linux-x86-64.so.2",
+            "--library-path",
+            "/custom/input",
+            "/vendor/server"
+        ],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "loader/resource dispatch /lib64/ld-linux-x86-64.so.2 --audit /custom/input /vendor/server",
+        "entrypoint": [
+            "/lib64/ld-linux-x86-64.so.2",
+            "--audit",
+            "/custom/input",
+            "/vendor/server"
+        ],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "loader/resource dispatch /lib64/ld-linux-x86-64.so.2 --argv0 /custom/input /vendor/server",
+        "entrypoint": [
+            "/lib64/ld-linux-x86-64.so.2",
+            "--argv0",
+            "/custom/input",
+            "/vendor/server"
+        ],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "loader/resource dispatch time /custom/start",
+        "entrypoint": ["time", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "loader/resource dispatch /usr/bin/time -p /custom/start",
+        "entrypoint": ["/usr/bin/time", "-p", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "loader/resource dispatch /usr/bin/time -f %e /custom/start",
+        "entrypoint": ["/usr/bin/time", "-f", "%e", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "loader/resource dispatch /usr/bin/time --output=/data/timing -- /custom/start",
+        "entrypoint": ["/usr/bin/time", "--output=/data/timing", "--", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "loader/resource dispatch busybox time /custom/start",
+        "entrypoint": ["busybox", "time", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "loader/resource dispatch toybox time -p /custom/start",
+        "entrypoint": ["toybox", "time", "-p", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "loader/resource dispatch prlimit /custom/start",
+        "entrypoint": ["prlimit", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "loader/resource dispatch prlimit --nofile=64 -- /custom/start",
+        "entrypoint": ["prlimit", "--nofile=64", "--", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "loader/resource dispatch prlimit --pid 0 /custom/start",
+        "entrypoint": ["prlimit", "--pid", "0", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "loader/resource dispatch env prlimit /custom/start",
+        "entrypoint": ["env", "prlimit", "/custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "loader/resource dispatch /bin/sh -c command /usr/bin/time /custom/start",
+        "entrypoint": ["/bin/sh", "-c", "command /usr/bin/time /custom/start"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": true
+    },
+    {
+        "name": "loader/resource dispatch time --help",
+        "entrypoint": ["time", "--help"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "loader/resource dispatch time --version",
+        "entrypoint": ["time", "--version"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "loader/resource dispatch prlimit --help",
+        "entrypoint": ["prlimit", "--help"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "loader/resource dispatch prlimit --version",
+        "entrypoint": ["prlimit", "--version"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "loader/resource dispatch prlimit -h",
+        "entrypoint": ["prlimit", "-h"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "loader/resource dispatch time -V",
+        "entrypoint": ["time", "-V"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "loader/resource dispatch /vendor/server /custom/ld-linux-x86-64.so.2",
+        "entrypoint": ["/vendor/server", "/custom/ld-linux-x86-64.so.2"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
+        "name": "loader/resource dispatch /vendor/server prlimit /custom/input",
+        "entrypoint": ["/vendor/server", "prlimit", "/custom/input"],
+        "command": [],
+        "working_dir": "/",
+        "mount": "/custom",
+        "blocked": false
+    },
+    {
         "name": "append lookup PATH+=:/custom; run",
         "entrypoint": ["/bin/bash", "-c"],
         "command": ["PATH+=:/custom; run"],

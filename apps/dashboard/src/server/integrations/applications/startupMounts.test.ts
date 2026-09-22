@@ -4,6 +4,33 @@ import { startupCodePaths } from "./startup";
 import { qualifyStartupMounts } from "./startupMounts";
 
 test.each([
+    ["/alias", "/etc/ld.so.conf.d/extra.conf", false, true],
+    ["/alias", "/etc/ld.so.conf.d/nested/extra.conf", false, true],
+    ["/alias", "/etc/ld.so.conf.debug/extra.conf", false, false],
+    ["/alias", "/data/settings.conf", false, false],
+    ["/entry", "/lib64/ld-linux-x86-64.so.2", true, true],
+    ["/entry", "/lib/ld-musl-aarch64.so.1", true, true],
+    ["/entry", "/usr/bin/time", true, true],
+    ["/entry", "/usr/bin/prlimit", true, true],
+    ["/entry", "/usr/bin/sleep", true, false],
+] as const)(
+    "resolved loader/resource alias %s -> %s",
+    async (alias, target, executable, blocked) => {
+        expect(
+            await qualifyStartupMounts(
+                executable ? [alias] : ["/vendor/server"],
+                executable ? ["/custom"] : [alias],
+                (name) =>
+                    Promise.resolve({
+                        mode: name === alias ? 134_217_728 : 2_147_483_648,
+                        linkTarget: name === alias ? target : "",
+                    })
+            )
+        ).toEqual([blocked]);
+    }
+);
+
+test.each([
     ["/app/package.json", true],
     ["/app/manifest-alias", true],
     ["/data/settings.json", false],

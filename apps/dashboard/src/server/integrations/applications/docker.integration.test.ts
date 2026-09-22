@@ -10,6 +10,80 @@ import { performApplicationAction } from "./actions";
 import { waitForApplicationReady } from "./dependencies";
 
 test.each([
+    "loader",
+    "time",
+    "prlimit",
+    "loader-alias",
+    "fragment-alias",
+    "fragment-chain",
+    "data-alias",
+    "time-help",
+])("Docker HTTP qualifies loader/resource dispatch and fragments: %s", async (mode) => {
+    const fixture = createApplicationFixture();
+    try {
+        const detail = [...fixture.containers.values()][0]!;
+        detail.Config.Entrypoint = ["/vendor/server"];
+        detail.Config.Cmd = [];
+        detail.Config.Env = ["PRIVATE_KEY=SYNTHETIC_PRIVATE"];
+        const commands: Record<string, string[]> = {
+            loader: [
+                "/lib64/ld-linux-x86-64.so.2",
+                "--preload",
+                "/custom/SYNTHETIC_PRIVATE",
+                "/vendor/server",
+            ],
+            time: ["/usr/bin/time", "/custom/start"],
+            prlimit: ["prlimit", "--nofile=64", "/custom/start"],
+            "loader-alias": ["/entry", "/custom/start"],
+            "time-help": ["/usr/bin/time", "--help"],
+        };
+        detail.Config.Healthcheck = {
+            Test: ["CMD", ...(commands[mode] ?? ["/vendor/server"])],
+        };
+        detail.Mounts = [
+            {
+                Type: "volume",
+                Source: "fixture-storage",
+                Destination:
+                    mode.includes("fragment") || mode === "data-alias"
+                        ? "/alias"
+                        : "/custom",
+                RW: false,
+            },
+        ];
+        fixture.pathMetadata.set("/entry", {
+            mode: 134_217_728,
+            linkTarget: "/lib64/ld-linux-x86-64.so.2",
+        });
+        const target =
+            mode === "data-alias"
+                ? "/data/settings.conf"
+                : "/etc/ld.so.conf.d/extra.conf";
+        fixture.pathMetadata.set("/alias", {
+            mode: 134_217_728,
+            linkTarget: mode === "fragment-chain" ? "/bridge" : target,
+        });
+        fixture.pathMetadata.set("/bridge", { mode: 134_217_728, linkTarget: target });
+        const inventory = await collectApplications(
+            [fixture.target],
+            () => createDockerPort(fixture.target, {}),
+            AbortSignal.timeout(5000)
+        );
+        const application = inventory.hosts[0]!.applications.find(
+            (row) => row.containerId === detail.Id
+        )!;
+        expect(inventory.hosts[0]!.available).toBe(true);
+        expect(hasApplicationCodeMount(application)).toBe(
+            !["data-alias", "time-help"].includes(mode)
+        );
+        expect(JSON.stringify(application)).not.toContain("SYNTHETIC_PRIVATE");
+        expect(fixture.calls).toEqual([]);
+    } finally {
+        await fixture.close();
+    }
+});
+
+test.each([
     "append",
     "unset-function",
     "tar",

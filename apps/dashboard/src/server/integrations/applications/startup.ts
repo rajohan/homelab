@@ -240,6 +240,26 @@ export function startupCodePaths(
         if (executable.includes("/")) paths.add(resolve(cwd, executable));
         else if (!(shellCommand && name === "exec"))
             lookup(executable, cwd, selectedPath);
+        if (
+            /^(?:ld(?:64)?(?:[-.][A-Za-z0-9_.+-]+)?|libc(?:-[0-9.]+)?)\.so(?:\.\d+)*$/.test(
+                name
+            )
+        ) {
+            // Direct loaders have executable/library operands and private search
+            // options. Require qualification instead of guessing their ABI.
+            unqualified = true;
+            return;
+        }
+        if (["time", "prlimit"].includes(name)) {
+            if (
+                !(
+                    args.length === 2 &&
+                    ["--help", "--version", "-h", "-V"].includes(args[1]!)
+                )
+            )
+                unqualified = true;
+            return;
+        }
         if (name === "env") {
             let current = cwd,
                 options = true,

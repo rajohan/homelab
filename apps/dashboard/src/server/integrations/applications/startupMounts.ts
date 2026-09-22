@@ -72,10 +72,24 @@ export async function qualifyStartupMounts(
         const mounts: string[] = [],
             code: string[] = [];
         for (const destination of destinations) mounts.push(await resolve(destination));
-        for (const name of paths) code.push(await resolve(name));
+        for (const original of paths) {
+            const resolved = await resolve(original);
+            const name = path.posix.basename(resolved);
+            if (
+                path.posix.basename(original) !== name &&
+                (["time", "prlimit"].includes(name) ||
+                    /^(?:ld(?:64)?(?:[-.][A-Za-z0-9_.+-]+)?|libc(?:-[0-9.]+)?)\.so(?:\.\d+)*$/.test(
+                        name
+                    ))
+            )
+                return blocked;
+            code.push(resolved);
+        }
         return mounts.map(
             (mount) =>
-                /(?:\/package\.json|^\/etc\/ld-musl-[^/]+\.path)$/.test(mount) ||
+                /(?:\/package\.json|^\/etc\/ld-musl-[^/]+\.path|^\/etc\/ld\.so\.conf\.d(?:\/.*)?)$/.test(
+                    mount
+                ) ||
                 code.some(
                     (name) =>
                         name === mount || name.startsWith(mount.replace(/\/$/, "") + "/")

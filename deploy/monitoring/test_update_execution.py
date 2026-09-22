@@ -28,6 +28,39 @@ exec(compile(SOURCE.with_name("toolchain.py").read_text(), str(SOURCE.with_name(
 class UpdateExecutionTests(unittest.TestCase):
     """Cover exact image pins, source fencing, package boundaries and private error handling."""
 
+    def test_loader_fragment_and_dispatcher_aliases(self):
+        for target, executable, blocked in (
+            ("/etc/ld.so.conf.d/extra.conf", False, True),
+            ("/etc/ld.so.conf.d/nested/extra.conf", False, True),
+            ("/etc/ld.so.conf.debug/extra.conf", False, False),
+            ("/data/settings.conf", False, False),
+            ("/lib64/ld-linux-x86-64.so.2", True, True),
+            ("/lib/ld-musl-aarch64.so.1", True, True),
+            ("/usr/bin/time", True, True),
+            ("/usr/bin/prlimit", True, True),
+            ("/usr/bin/sleep", True, False),
+        ):
+            with self.subTest(target=target):
+                metadata = lambda name: {"mode": 0x08000000 if name == "/alias" else 0x80000000, "linkTarget": target if name == "/alias" else ""}
+                paths, mounts = ({"/alias"}, ["/custom"]) if executable else ({"/vendor/server"}, ["/alias"])
+                self.assertEqual(remote.qualify_startup_mounts(paths, mounts, metadata), [blocked])
+                service = {"volumes": [{"type": "volume", "target": mounts[0]}]}
+                startup = {"entrypoint": [next(iter(paths))], "command": ["/custom/start"] if executable else []}
+                if blocked:
+                    with self.assertRaises(remote.UpdateRefusal):
+                        remote.verify_code_mounts(service, startup, metadata)
+                else:
+                    remote.verify_code_mounts(service, startup, metadata)
+
+    def test_actual_dynamic_loader_time_and_prlimit_execute_their_program(self):
+        loader = next(path for path in ("/lib64/ld-linux-x86-64.so.2", "/lib/ld-linux-aarch64.so.1") if Path(path).exists())
+        for prefix in ([loader], ["/usr/bin/time", "-p"], ["/usr/bin/prlimit", "--nofile=64", "--"]):
+            with self.subTest(prefix=prefix), tempfile.TemporaryDirectory(prefix="homelab-dispatch-proof-") as temporary:
+                # Use an actual ELF shell, not a multicall coreutils dispatcher
+                # whose argv[0] changes under direct loader invocation.
+                result = subprocess.run([*prefix, "/bin/dash", "-c", "printf SYNTHETIC_EXECUTED"], cwd=temporary, env={"PATH": "/usr/bin:/bin"}, capture_output=True, text=True, check=True, timeout=5)
+                self.assertEqual(result.stdout, "SYNTHETIC_EXECUTED")
+
     def test_namespace_image_pins_are_immutable_and_same_reference(self):
         installed, digest = "sha256:" + "a" * 64, "sha256:" + "b" * 64
         row = ["c" * 64, "fixture-worker", "postgres:fixture-owned", installed, "running", "", "fixture", "worker", "", "", "", []]

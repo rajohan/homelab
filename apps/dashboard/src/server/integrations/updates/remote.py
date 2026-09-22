@@ -212,7 +212,13 @@ def startup_code_paths(startup):
             paths.add(resolve(cwd, executable))
         elif not (shell_command and name == "exec"):
             lookup(executable, cwd, selected_path)
-        if name == "env":
+        if re.fullmatch(r"(?:ld(?:64)?(?:[-.][A-Za-z0-9_.+-]+)?|libc(?:-[0-9.]+)?)\.so(?:\.\d+)*", name):
+            # Loader executable/library/search operands need separate qualification.
+            unqualified = True
+        elif name in ("time", "prlimit"):
+            if not (len(args) == 2 and args[1] in ("--help", "--version", "-h", "-V")):
+                unqualified = True
+        elif name == "env":
             current, options, splits, index = cwd, True, 0, 1
             expanded = list(args)
             while index < len(expanded):
@@ -686,7 +692,11 @@ def qualify_startup_mounts(paths, destinations, path_stat):
         cache['/'] = root
         mounts = [resolve(destination) for destination in destinations]
         code = [resolve(name) for name in paths]
-        return [bool(re.search(r"(?:/package\.json|^/etc/ld-musl-[^/]+\.path)$", mount)) or
+        for original, resolved in zip(paths, code):
+            name = posixpath.basename(resolved)
+            if posixpath.basename(original) != name and (name in ("time", "prlimit") or re.fullmatch(r"(?:ld(?:64)?(?:[-.][A-Za-z0-9_.+-]+)?|libc(?:-[0-9.]+)?)\.so(?:\.\d+)*", name)):
+                return [True] * len(destinations)
+        return [bool(re.search(r"(?:/package\.json|^/etc/ld-musl-[^/]+\.path|^/etc/ld\.so\.conf\.d(?:/.*)?)$", mount)) or
                 any(name == mount or name.startswith(mount.rstrip('/') + '/') for name in code) for mount in mounts]
     except Exception:
         return [True] * len(destinations)
