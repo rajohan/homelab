@@ -147,14 +147,32 @@ test.each([true, false])(
             expect(checkbox).toBeChecked();
             expect(checkbox).toHaveClass("cursor-pointer", "data-focus:ring-2");
             expect(checkbox.querySelector("svg")).toHaveClass("text-white");
+            await user.hover(checkbox);
+            expect(checkbox).toHaveAttribute("data-hover");
+            expect(checkbox).toHaveClass(
+                "data-hover:data-checked:not-data-disabled:border-accent-400",
+                "data-hover:data-checked:not-data-disabled:bg-accent-400",
+                "transition-colors",
+                "motion-reduce:transition-none"
+            );
+            await user.unhover(checkbox);
+            expect(checkbox).not.toHaveAttribute("data-hover");
             const blocked = screen.getByRole("checkbox", {
                 name: "Include Blocked on Demo",
             });
             expect(blocked).toHaveAttribute("aria-disabled", "true");
+            await user.hover(blocked);
+            expect(blocked).not.toHaveAttribute("data-hover");
             await user.click(blocked);
             expect(blocked).not.toBeChecked();
             expect(screen.getByText("1 update included")).toBeVisible();
             await user.click(checkbox);
+            expect(checkbox).not.toBeChecked();
+            expect(checkbox).toHaveAttribute("data-hover");
+            expect(checkbox).toHaveClass(
+                "data-hover:not-data-checked:not-data-disabled:border-accent-400",
+                "data-hover:not-data-checked:not-data-disabled:bg-primary-700"
+            );
             expect(screen.getByText("0 updates included")).toBeVisible();
             expect(screen.getByRole("button", { name: "Update all" })).toBeDisabled();
             checkbox.focus();
