@@ -39,10 +39,10 @@ export function NotificationItem({
                     {notification.title}
                 </h3>
                 <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+                    {unread && <Badge tone="info">Unread</Badge>}
                     <Badge tone={tones[notification.severity]} className="capitalize">
                         {notification.severity}
                     </Badge>
-                    {unread && <Badge>Unread</Badge>}
                 </div>
             </div>
             <p className="mt-1 text-sm leading-6 wrap-anywhere text-primary-300">

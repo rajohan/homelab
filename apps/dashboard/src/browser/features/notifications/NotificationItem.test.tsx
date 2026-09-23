@@ -26,7 +26,14 @@ test("notifications expose personal read controls, safe text and internal links"
         "border-primary-700"
     );
     expect(screen.getByText("Unread")).toBeVisible();
-    expect(screen.getByText("Unread")).toHaveClass("rounded-md", "bg-primary-700");
+    expect(screen.getByText("Unread")).toHaveClass(
+        "rounded-md",
+        "bg-accent-500/10",
+        "text-accent-300"
+    );
+    expect(screen.getByText("Unread").nextElementSibling).toBe(
+        screen.getByText("success")
+    );
     expect(screen.getByText("Unread").parentElement).toBe(
         screen.getByText("success").parentElement
     );
@@ -64,6 +71,7 @@ test("notifications expose personal read controls, safe text and internal links"
         <NotificationItem
             notification={{
                 ...notification,
+                severity: "error",
                 destination: null,
                 source: "automation:123",
             }}
@@ -72,6 +80,7 @@ test("notifications expose personal read controls, safe text and internal links"
         />
     );
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    expect(screen.getByText("Unread").nextElementSibling).toBe(screen.getByText("error"));
     expect(
         screen.getByRole("button", { name: "Mark read: Job completed" })
     ).toBeDisabled();
