@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.8](https://github.com/rajohan/homelab/compare/v0.7.7...v0.7.8) (2026-09-23)
+
+
+### Bug Fixes
+
+* **ui:** restore shared checkbox hover feedback ([#39](https://github.com/rajohan/homelab/issues/39)) ([1950a46](https://github.com/rajohan/homelab/commit/1950a460754e80066c323c499ec42ceb93011797))
+
 ## [0.7.7](https://github.com/rajohan/homelab/compare/v0.7.6...v0.7.7) (2026-09-23)
 
 
