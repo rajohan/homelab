@@ -13,6 +13,12 @@ in both dashboard and worker, with the legacy inline variable absent. Merely shi
 the file grants no access and enables no automatic policies. Keys remain separately
 mounted in the worker; target source publishers must also be configured.
 
+Jackett tracks LinuxServer's `latest` image channel instead of scanning its large
+version-tag catalog. Its source publisher must set
+`imageTrackingTags["stremio-jackett-1"]` to `"latest"` as well. This changes only
+version discovery and the matching execution recipe, not the installed digest or
+automatic-update consent. Deployment still requires a reviewed release.
+
 Review changes through PR and deploy a released image. Do not edit production's
 container copy. See [update management](../../../docs/update-management.md) for
 privilege boundaries, external-file overrides and native activation prerequisites.

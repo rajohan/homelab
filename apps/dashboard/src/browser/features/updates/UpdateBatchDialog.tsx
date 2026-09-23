@@ -1,5 +1,12 @@
 import type { updateBatchRequestSchema } from "@homelab/contracts/updates";
-import { Badge, ConfirmDialog, DataTable, ErrorNotice, LoadingState } from "@homelab/ui";
+import {
+    Badge,
+    Checkbox,
+    ConfirmDialog,
+    DataTable,
+    ErrorNotice,
+    LoadingState,
+} from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import type { InferOutput } from "valibot";
@@ -104,10 +111,8 @@ export function UpdateBatchDialog({
                                             entry.item.id,
                                         ]);
                                         return (
-                                            <input
-                                                type="checkbox"
-                                                className="size-4 accent-accent-500"
-                                                aria-label={`Include ${entry.item.name} on ${entry.sourceLabel}`}
+                                            <Checkbox
+                                                label={`Include ${entry.item.name} on ${entry.sourceLabel}`}
                                                 checked={
                                                     entry.reason === null &&
                                                     !excluded.has(key)
@@ -116,9 +121,7 @@ export function UpdateBatchDialog({
                                                     entry.reason !== null ||
                                                     operation.isPending
                                                 }
-                                                onChange={(event) => {
-                                                    const checked =
-                                                        event.currentTarget.checked;
+                                                onChange={(checked) => {
                                                     setExcluded((current) => {
                                                         const next = new Set(current);
                                                         if (checked) next.delete(key);

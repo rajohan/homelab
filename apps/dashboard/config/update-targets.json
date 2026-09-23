@@ -282,6 +282,7 @@
             "directory": "/srv/workspaces/stremio",
             "file": "/srv/workspaces/stremio/compose.yaml",
             "imageFile": "/srv/workspaces/stremio/apps/jackett/compose.yaml",
+            "trackingTag": "latest",
             "environment": {
                 "variables": [
                     "BITMAGNET_LOCAL_HOSTNAME",

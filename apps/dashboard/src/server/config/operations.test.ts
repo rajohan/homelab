@@ -44,6 +44,13 @@ test("packaged deployment targets validate without reading credentials or granti
     expect(targets.filter((target) => target.driver.kind === "apt")).toHaveLength(11);
     expect(targets.filter((target) => target.driver.kind === "docker")).toHaveLength(19);
     expect(
+        targets.find((target) => target.id === "stremio-jackett")?.driver
+    ).toMatchObject({
+        kind: "docker",
+        name: "stremio-jackett-1",
+        trackingTag: "latest",
+    });
+    expect(
         [
             ...new Set(
                 targets

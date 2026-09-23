@@ -110,10 +110,18 @@ test.each([true, false])(
             />,
             [],
             (query) => {
-                query.setQueryData(
-                    ["operations", "updates", "batch", source ?? null],
-                    batchPlan
-                );
+                query.setQueryData(["operations", "updates", "batch", source ?? null], {
+                    ...batchPlan,
+                    excluded: 1,
+                    entries: [
+                        ...batchPlan.entries,
+                        {
+                            ...batchPlan.entries[0]!,
+                            item: { ...item, id: "blocked", name: "Blocked" },
+                            reason: "Separate confirmation required.",
+                        },
+                    ],
+                });
             }
         );
         try {
@@ -137,10 +145,20 @@ test.each([true, false])(
                 name: "Include Demo on Demo",
             });
             expect(checkbox).toBeChecked();
+            expect(checkbox).toHaveClass("cursor-pointer", "data-focus:ring-2");
+            expect(checkbox.querySelector("svg")).toHaveClass("text-white");
+            const blocked = screen.getByRole("checkbox", {
+                name: "Include Blocked on Demo",
+            });
+            expect(blocked).toHaveAttribute("aria-disabled", "true");
+            await user.click(blocked);
+            expect(blocked).not.toBeChecked();
+            expect(screen.getByText("1 update included")).toBeVisible();
             await user.click(checkbox);
             expect(screen.getByText("0 updates included")).toBeVisible();
             expect(screen.getByRole("button", { name: "Update all" })).toBeDisabled();
-            await user.click(checkbox);
+            checkbox.focus();
+            await user.keyboard(" ");
             expect(screen.getByRole("button", { name: "Update all" })).toBeEnabled();
             await user.click(screen.getByRole("button", { name: "Cancel" }));
             expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
