@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.7](https://github.com/rajohan/homelab/compare/v0.7.6...v0.7.7) (2026-09-23)
+
+
+### Bug Fixes
+
+* **dashboard:** align Jackett tracking and selection indicators ([#37](https://github.com/rajohan/homelab/issues/37)) ([9c44afa](https://github.com/rajohan/homelab/commit/9c44afa52968554e6a6fcf3b5b6bb4ff3f37497c))
+
 ## [0.7.6](https://github.com/rajohan/homelab/compare/v0.7.5...v0.7.6) (2026-09-22)
 
 
