@@ -231,6 +231,7 @@ export function updatesJob(
                 throw new Error("Unknown update source");
             const releases = new Map<string, Promise<string>>();
             const aptChecks: (() => Promise<void>)[] = [];
+            let superseded = false;
             const history = await client<
                 { key: string; time: number }[]
             >`SELECT key, extract(epoch FROM captured_at)::float8 AS time FROM operation_snapshots WHERE key LIKE 'updates.resolved:%'`;
@@ -314,6 +315,7 @@ export function updatesJob(
                                 { key: string }[]
                             >`SELECT key FROM operation_snapshots WHERE key = ${`updates:${source.id}`} AND value = ${JSON.stringify(row.value)}::text::jsonb FOR UPDATE`;
                             if (!unchanged) {
+                                superseded = true;
                                 await queueUpdateCheck(
                                     transaction,
                                     handler.definition,
@@ -351,6 +353,12 @@ export function updatesJob(
             await Promise.all(
                 Array.from({ length: Math.min(8, aptChecks.length) }, lane)
             );
+            if (superseded && input.purpose === "prepare") {
+                await context.reportProgress(
+                    "The inventory changed during preparation. Reopen the update plan to prepare current versions."
+                );
+                throw new Error("Update inventory changed during preparation");
+            }
         },
     };
     return handler;

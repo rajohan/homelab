@@ -50,7 +50,9 @@ export const updatesRouter = trpc.router({
             runOperation(async () => {
                 const { operations, principal } = authorizedOperations(
                     ctx,
-                    "updates:refresh"
+                    ctx.principal?.capabilities.includes("updates:apply")
+                        ? "updates:apply"
+                        : "updates:refresh"
                 );
                 requireCapability(principal, "jobs:run");
                 const target = input.target

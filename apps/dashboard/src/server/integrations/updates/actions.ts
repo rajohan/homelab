@@ -119,9 +119,11 @@ export function updateActionJobs(
                 validate: (input) => v.parse(v.strictObject({}), input),
             },
             execute: async (_input, context) => {
-                const policies = await readUpdatePolicies(client, targets);
-                if (refresh && policies.some((policy) => policy.enabled))
+                let policies = await readUpdatePolicies(client, targets);
+                if (refresh && policies.some((policy) => policy.enabled)) {
                     await refresh.execute({}, context);
+                    policies = await readUpdatePolicies(client, targets);
+                }
                 let queued = 0;
                 for (const target of targets) {
                     context.signal.throwIfAborted();
@@ -158,6 +160,22 @@ export function updateActionJobs(
                             .digest("hex");
                         if (
                             !(await context.commit(async (transaction) => {
+                                // Serialize admission with operator policy writes so a
+                                // disable committed during checking cannot enqueue work.
+                                const [currentPolicy] = await transaction<
+                                    {
+                                        enabled: boolean;
+                                        version: number;
+                                        configuration: string;
+                                    }[]
+                                >`SELECT enabled,version,configuration FROM update_policies WHERE target=${target.id} FOR SHARE`;
+                                if (
+                                    !currentPolicy?.enabled ||
+                                    currentPolicy.version !== policy.version ||
+                                    currentPolicy.configuration !==
+                                        updateTargetRevision(target)
+                                )
+                                    return;
                                 // Failed/expired automatic runs are not silently retried for the same candidate.
                                 const key = `automatic-update:${target.id}:${candidateKey}`;
                                 const [existing] = await transaction<

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { capabilities } from "@homelab/contracts/operations";
+import { capabilities, type Capability } from "@homelab/contracts/operations";
 import type { UpdateReport } from "@homelab/contracts/updates";
 
 import { appRouter } from "../api/router";
@@ -1106,3 +1106,207 @@ test("large inventories finish release checks before bounded concurrent APT obse
         await fixture.close();
     }
 }, 15_000);
+
+test.each(["apply", "refresh", "missing-run", "read-only"] as const)(
+    "preparation retains scoped automation authorization: %s",
+    async (mode) => {
+        const fixture = await operationFixture();
+        try {
+            const scopes: Capability[] = [];
+            if (mode === "apply" || mode === "missing-run") scopes.push("updates:apply");
+            if (mode === "refresh") scopes.push("updates:refresh");
+            if (mode === "read-only") scopes.push("updates:read");
+            if (mode !== "missing-run") scopes.push("jobs:run");
+            const handler = updatesJob([], fixture.client);
+            const caller = appRouter.createCaller({
+                operations: { ...fixture, registry: createJobRegistry([handler]) },
+                principal: {
+                    kind: "automation",
+                    id: "minimal-client",
+                    capabilities: scopes,
+                },
+            });
+            const request = caller.updates.prepare({ requestId: crypto.randomUUID() });
+            if (mode === "apply" || mode === "refresh") {
+                const prepared = await request;
+                expect(prepared.id).toBeString();
+                expect(
+                    await fixture.client`SELECT id FROM job_runs WHERE action='updates.releases'`
+                ).toHaveLength(1);
+            } else {
+                await expectOperationFailure(request, "permission");
+                expect(await fixture.client`SELECT id FROM job_runs`).toHaveLength(0);
+            }
+        } finally {
+            await fixture.close();
+        }
+    }
+);
+
+test.each(["prepare", "scheduled"] as const)(
+    "a superseded %s check retains its successor without claiming a usable preparation",
+    async (mode) => {
+        const fixture = await operationFixture();
+        try {
+            const sources = [{ id: "demo", label: "Demo", publisher: "publisher" }];
+            const targets = parseUpdateTargets(
+                JSON.stringify([
+                    {
+                        id: "demo-apt",
+                        source: "demo",
+                        label: "Demo",
+                        host: "fixture.invalid",
+                        user: "updater",
+                        identityFile: "/fixture/key",
+                        knownHostsFile: "/fixture/trust",
+                        driver: { kind: "apt" },
+                    },
+                ])
+            );
+            const original = report();
+            await fixture.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES ('updates:demo',${JSON.stringify(original)}::text::jsonb,now())`;
+            const handler = updatesJob(
+                sources,
+                fixture.client,
+                fetch,
+                targets,
+                async () => {
+                    const newer = {
+                        ...original,
+                        capturedAt: new Date(
+                            Date.parse(original.capturedAt) + 1
+                        ).toISOString(),
+                    };
+                    await fixture.client`UPDATE operation_snapshots SET value=${JSON.stringify(newer)}::text::jsonb WHERE key='updates:demo'`;
+                    return {
+                        items: original.items,
+                        repositoryMetadataAt: new Date().toISOString(),
+                    };
+                }
+            );
+            const operation = handler.execute(
+                mode === "prepare" ? { purpose: "prepare" } : {},
+                {
+                    runId: crypto.randomUUID(),
+                    leaseToken: crypto.randomUUID(),
+                    signal: AbortSignal.timeout(5000),
+                    reportProgress: () => Promise.resolve(),
+                    commit: async (write, queue) => {
+                        await fixture.client.begin(async (transaction) => {
+                            if (queue) await lockQueue(transaction);
+                            await write(transaction);
+                        });
+                        return true;
+                    },
+                }
+            );
+            await (mode === "prepare"
+                ? expectOperationFailure(
+                      operation,
+                      "inventory changed during preparation"
+                  )
+                : operation);
+            expect(
+                await fixture.client`SELECT key FROM operation_snapshots WHERE key='updates.resolved:demo'`
+            ).toHaveLength(0);
+            expect(
+                await fixture.client`SELECT id FROM job_runs WHERE action='updates.releases' AND state='queued'`
+            ).toHaveLength(1);
+        } finally {
+            await fixture.close();
+        }
+    }
+);
+
+test.each(["during-refresh", "during-admission"] as const)(
+    "a policy disabled %s cannot admit automatic installers",
+    async (mode) => {
+        const fixture = await operationFixture();
+        try {
+            const sources = [{ id: "demo", label: "Demo", publisher: "publisher" }];
+            const targets = parseUpdateTargets(
+                JSON.stringify([
+                    {
+                        id: "demo-apt",
+                        source: "demo",
+                        label: "Demo",
+                        host: "fixture.invalid",
+                        user: "updater",
+                        identityFile: "/fixture/key",
+                        knownHostsFile: "/fixture/trust",
+                        driver: { kind: "apt" },
+                    },
+                ])
+            );
+            const target = targets[0]!;
+            const original = report();
+            original.items = [
+                { ...original.items[0]!, installed: "1.0.0", available: "1.1.0" },
+            ];
+            await fixture.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES ('updates:demo',${JSON.stringify(original)}::text::jsonb,now())`;
+            await writeUpdatePolicy(fixture.client, target, "human:operator", {
+                version: 0,
+                enabled: true,
+            });
+            const disable = () =>
+                writeUpdatePolicy(fixture.client, target, "human:operator", {
+                    version: 1,
+                    enabled: false,
+                });
+            const checker = updatesJob(
+                sources,
+                fixture.client,
+                fetch,
+                targets,
+                async () => {
+                    if (mode === "during-refresh") await disable();
+                    return {
+                        items: original.items,
+                        repositoryMetadataAt: new Date().toISOString(),
+                    };
+                }
+            );
+            let refreshed = false;
+            const refresh = {
+                definition: checker.definition,
+                execute: async (...args: Parameters<typeof checker.execute>) => {
+                    await checker.execute(...args);
+                    refreshed = true;
+                },
+            };
+            const automatic = updateActionJobs(
+                targets,
+                fixture.client,
+                undefined,
+                [],
+                refresh
+            ).find((handler) => handler.definition.key === "updates.automatic")!;
+            await automatic.execute(
+                {},
+                {
+                    runId: crypto.randomUUID(),
+                    leaseToken: crypto.randomUUID(),
+                    signal: AbortSignal.timeout(5000),
+                    reportProgress: () => Promise.resolve(),
+                    commit: async (write, queue) => {
+                        if (mode === "during-admission" && refreshed) await disable();
+                        await fixture.client.begin(async (transaction) => {
+                            if (queue) await lockQueue(transaction);
+                            await write(transaction);
+                        });
+                        return true;
+                    },
+                }
+            );
+            expect(refreshed).toBe(true);
+            expect(
+                await fixture.client`SELECT id FROM job_runs WHERE action='updates.install.demo-apt'`
+            ).toHaveLength(0);
+            expect(
+                await fixture.client`SELECT id FROM dashboard_notifications`
+            ).toHaveLength(0);
+        } finally {
+            await fixture.close();
+        }
+    }
+);
