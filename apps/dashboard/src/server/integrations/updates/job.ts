@@ -210,9 +210,16 @@ export function updatesJob(
             resourceClass: "network",
             capability: "updates:refresh",
             resourceKeys: ["snapshot:updates"],
-            timeoutMs:
+            timeoutMs: Math.min(
+                3_540_000,
                 120_000 +
-                targets.filter((target) => target.driver.kind === "apt").length * 15_000,
+                    sources.length * 30_000 +
+                    Math.ceil(
+                        targets.filter((target) => target.driver.kind === "apt").length /
+                            8
+                    ) *
+                        15_000
+            ),
             attemptLimit: 2,
             retrySafe: true,
             intervalSeconds: 3600,
@@ -223,6 +230,7 @@ export function updatesJob(
             if (input.source && !sources.some((source) => source.id === input.source))
                 throw new Error("Unknown update source");
             const releases = new Map<string, Promise<string>>();
+            const aptChecks: (() => Promise<void>)[] = [];
             const history = await client<
                 { key: string; time: number }[]
             >`SELECT key, extract(epoch FROM captured_at)::float8 AS time FROM operation_snapshots WHERE key LIKE 'updates.resolved:%'`;
@@ -240,82 +248,109 @@ export function updatesJob(
                 await context.reportProgress(
                     `Checking available versions for ${source.label}.`
                 );
-                let observation = row.value;
-                let aptUnavailable = false;
+                const resolved = await resolveUpdates(
+                    row.value,
+                    context.signal,
+                    releases,
+                    request
+                );
                 const aptTargets = targets.filter(
                     (target) =>
                         target.source === source.id && target.driver.kind === "apt"
                 );
                 if (aptTargets.length > 1)
                     throw new Error("APT observation target is ambiguous");
-                if (aptTargets[0] && observation.coveredKinds.includes("os")) {
-                    await context.reportProgress(
-                        `Reading current installed packages and candidates for ${source.label}.`
-                    );
-                    try {
-                        const apt = await inspectApt(
-                            aptTargets[0],
-                            AbortSignal.any([context.signal, AbortSignal.timeout(15_000)])
-                        );
-                        observation = {
-                            ...observation,
-                            repositoryMetadataAt: apt.repositoryMetadataAt,
-                            aptObservedAt: new Date().toISOString(),
-                            items: [
-                                ...observation.items.filter((item) => item.kind !== "os"),
-                                ...apt.items,
-                            ],
-                        };
-                    } catch {
-                        // Cancellation ends the whole job; an unreachable host only
-                        // invalidates that source. Never retain its last eligible plan.
-                        context.signal.throwIfAborted();
-                        aptUnavailable = true;
-                        const { aptObservedAt: _previous, ...unavailable } = observation;
-                        observation = { ...unavailable, complete: false };
+                const aptTarget = resolved.coveredKinds.includes("os")
+                    ? aptTargets[0]
+                    : undefined;
+                const check = async () => {
+                    context.signal.throwIfAborted();
+                    let report = resolved;
+                    let aptUnavailable = false;
+                    if (aptTarget) {
                         await context.reportProgress(
-                            `Current package status for ${source.label} is unavailable; this source is excluded from updates.`
+                            `Reading current installed packages and candidates for ${source.label}.`
                         );
-                    }
-                }
-                const report = aptUnavailable
-                    ? observation
-                    : await resolveUpdates(
-                          observation,
-                          context.signal,
-                          releases,
-                          request
-                      );
-                if (
-                    !(await context.commit(async (transaction) => {
-                        // Receipts change installed versions without changing the
-                        // publisher timestamp. Fence the complete observation,
-                        // locking raw then resolved just like receipt persistence.
-                        const [unchanged] = await transaction<
-                            { key: string }[]
-                        >`SELECT key FROM operation_snapshots WHERE key = ${`updates:${source.id}`} AND value = ${JSON.stringify(row.value)}::text::jsonb FOR UPDATE`;
-                        if (!unchanged) {
-                            await queueUpdateCheck(
-                                transaction,
-                                handler.definition,
-                                `updates-superseded:${context.runId}:${source.id}:${new Bun.CryptoHasher("sha256").update(JSON.stringify(row.value)).digest("hex")}`
+                        try {
+                            const apt = await inspectApt(
+                                aptTarget,
+                                AbortSignal.any([
+                                    context.signal,
+                                    AbortSignal.timeout(15_000),
+                                ])
                             );
-                            return;
+                            report = {
+                                ...resolved,
+                                repositoryMetadataAt: apt.repositoryMetadataAt,
+                                aptObservedAt: new Date().toISOString(),
+                                items: [
+                                    ...resolved.items.filter(
+                                        (item) => item.kind !== "os"
+                                    ),
+                                    ...apt.items.map((item) => ({
+                                        ...item,
+                                        candidateVerified: false,
+                                    })),
+                                ],
+                            };
+                        } catch {
+                            // Cancellation ends the whole job; an unreachable host only
+                            // invalidates that source. Never retain its last eligible plan.
+                            context.signal.throwIfAborted();
+                            aptUnavailable = true;
+                            const { aptObservedAt: _previous, ...unavailable } = resolved;
+                            report = { ...unavailable, complete: false };
+                            await context.reportProgress(
+                                `Current package status for ${source.label} is unavailable; this source is excluded from updates.`
+                            );
                         }
-                        await transaction`INSERT INTO operation_snapshots (key, value, captured_at) VALUES (${`updates.resolved:${source.id}`}, ${JSON.stringify(report)}::text::jsonb, now()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, captured_at = EXCLUDED.captured_at`;
-                        if (aptUnavailable)
-                            await publishNotification(transaction, "updates", {
-                                key: `observation-failed:${context.runId}:${source.id}`,
-                                title: `${source.label}: update check unavailable`,
-                                message:
-                                    "Current package status could not be read. This source is excluded from updates; other sources can continue.",
-                                severity: "error",
-                                destination: "jobs",
-                            });
-                    }, true))
-                )
-                    throw new Error("Update checker ownership changed");
+                    }
+                    if (
+                        !(await context.commit(async (transaction) => {
+                            // Receipts change installed versions without changing the
+                            // publisher timestamp. Fence the complete observation,
+                            // locking raw then resolved just like receipt persistence.
+                            const [unchanged] = await transaction<
+                                { key: string }[]
+                            >`SELECT key FROM operation_snapshots WHERE key = ${`updates:${source.id}`} AND value = ${JSON.stringify(row.value)}::text::jsonb FOR UPDATE`;
+                            if (!unchanged) {
+                                await queueUpdateCheck(
+                                    transaction,
+                                    handler.definition,
+                                    `updates-superseded:${context.runId}:${source.id}:${new Bun.CryptoHasher("sha256").update(JSON.stringify(row.value)).digest("hex")}`
+                                );
+                                return;
+                            }
+                            await transaction`INSERT INTO operation_snapshots (key, value, captured_at) VALUES (${`updates.resolved:${source.id}`}, ${JSON.stringify(report)}::text::jsonb, now()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, captured_at = EXCLUDED.captured_at`;
+                            if (aptUnavailable)
+                                await publishNotification(transaction, "updates", {
+                                    key: `observation-failed:${context.runId}:${source.id}`,
+                                    title: `${source.label}: update check unavailable`,
+                                    message:
+                                        "Current package status could not be read. This source is excluded from updates; other sources can continue.",
+                                    severity: "error",
+                                    destination: "jobs",
+                                });
+                        }, true))
+                    )
+                        throw new Error("Update checker ownership changed");
+                };
+                if (aptTarget) aptChecks.push(check);
+                else await check();
             }
+            // Read local APT state after release lookups. At most 100 configured
+            // targets in eight lanes fit inside the five-minute observation window.
+            let next = 0;
+            const lane = async () => {
+                while (next < aptChecks.length) {
+                    context.signal.throwIfAborted();
+                    const check = aptChecks[next++];
+                    if (check) await check();
+                }
+            };
+            await Promise.all(
+                Array.from({ length: Math.min(8, aptChecks.length) }, lane)
+            );
         },
     };
     return handler;

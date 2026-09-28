@@ -416,3 +416,5 @@ automatic policies off until that succeeds and the operator opts in per target. 
 branch does not provision keys, activate production update policies or update hosts.
 
 Preparation waits for the worker's terminal job status rather than applying a separate browser timeout; closing the dialog cancels that wait. A failed APT observation invalidates only that host's resolved report, records an error notification without private SSH output, and leaves healthy hosts eligible. Cancellation still stops the entire check. The disposable preview uses the same preparation/admission flow with synthetic observations, including automatic policies and source-scoped refresh.
+
+For large inventories, public release lookups finish before live APT observations begin. Up to eight read-only host observations run concurrently, keeping the maximum 100 configured APT targets within the five-minute admission freshness window. The worker deadline includes the source lookup and bounded host-observation budgets.

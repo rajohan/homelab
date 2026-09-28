@@ -1030,3 +1030,79 @@ test("APT observation cancellation still aborts the checker without publishing a
         await fixture.close();
     }
 });
+
+test("large inventories finish release checks before bounded concurrent APT observations", async () => {
+    const fixture = await operationFixture();
+    try {
+        const sources = Array.from({ length: 100 }, (_, index) => ({
+            id: `source-${index}`,
+            label: `Source ${index}`,
+            publisher: `publisher-${index}`,
+        }));
+        const targets = parseUpdateTargets(
+            JSON.stringify(
+                sources.map((source) => ({
+                    id: source.id,
+                    source: source.id,
+                    label: source.label,
+                    host: source.id + ".invalid",
+                    user: "updater",
+                    identityFile: "/fixture/key",
+                    knownHostsFile: "/fixture/trust",
+                    driver: { kind: "apt" },
+                }))
+            )
+        );
+        const observed = report();
+        for (const source of sources)
+            await fixture.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES (${`updates:${source.id}`},${JSON.stringify(observed)}::text::jsonb,now())`;
+        let resolved = 0;
+        let active = 0;
+        let maximum = 0;
+        let reads = 0;
+        const handler = updatesJob(sources, fixture.client, fetch, targets, async () => {
+            expect(resolved).toBe(100);
+            reads += 1;
+            active += 1;
+            maximum = Math.max(maximum, active);
+            await Bun.sleep(5);
+            active -= 1;
+            return {
+                items: observed.items,
+                repositoryMetadataAt: new Date().toISOString(),
+            };
+        });
+        expect(
+            createJobRegistry([
+                handler,
+                ...updateActionJobs(targets, fixture.client, undefined, [], handler),
+            ]).has("updates.automatic")
+        ).toBe(true);
+        await handler.execute(
+            {},
+            {
+                runId: crypto.randomUUID(),
+                leaseToken: crypto.randomUUID(),
+                signal: AbortSignal.timeout(10_000),
+                reportProgress: (message) => {
+                    if (message.startsWith("Checking available versions")) resolved += 1;
+                    return Promise.resolve();
+                },
+                commit: async (write) => {
+                    await fixture.client.begin(write);
+                    return true;
+                },
+            }
+        );
+        expect(reads).toBe(100);
+        expect(maximum).toBe(8);
+        expect(active).toBe(0);
+        const refreshed = await fixture.client<
+            { fresh: boolean }[]
+        >`SELECT (value->>'aptObservedAt')::timestamptz > now()-interval '5 minutes' AS fresh FROM operation_snapshots WHERE key LIKE 'updates.resolved:%'`;
+        expect(refreshed).toHaveLength(100);
+        expect(refreshed.every((row) => row.fresh)).toBe(true);
+    } finally {
+        await fixture.close();
+    }
+}, 15_000);
