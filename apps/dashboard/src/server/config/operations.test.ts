@@ -266,3 +266,60 @@ test("monitoring endpoints and source publishers are explicitly scoped", () => {
         ).toThrow();
     }
 });
+
+test("GitHub credentials are optional protected-file input and failures omit file contents", () => {
+    const base = { HOMELAB_DASHBOARD_DATABASE_URL: "postgres://localhost/dashboard" };
+    expect(parseOperationsConfiguration(base)?.githubToken).toBeUndefined();
+    withTargetFile("ghp_synthetic_test_credential_only\n", (file) => {
+        expect(
+            parseOperationsConfiguration({
+                ...base,
+                HOMELAB_DASHBOARD_GITHUB_TOKEN_FILE: file,
+            })?.githubToken
+        ).toBe("ghp_synthetic_test_credential_only");
+    });
+    withTargetFile("invalid private fixture!", (file) => {
+        expect(() =>
+            parseOperationsConfiguration({
+                ...base,
+                HOMELAB_DASHBOARD_GITHUB_TOKEN_FILE: file,
+            })
+        ).toThrow("Invalid GitHub release credential");
+    });
+    expect(() =>
+        parseOperationsConfiguration({
+            ...base,
+            HOMELAB_DASHBOARD_GITHUB_TOKEN_FILE: "/nonexistent/synthetic-credential",
+        })
+    ).toThrow("GitHub release credential could not be read");
+});
+
+test("Docker Hub credentials require a complete protected file without exposing parse failures", () => {
+    const base = { HOMELAB_DASHBOARD_DATABASE_URL: "postgres://localhost/dashboard" };
+    expect(parseOperationsConfiguration(base)?.dockerHub).toBeUndefined();
+    withTargetFile(
+        JSON.stringify({ username: "fixture", token: "synthetic-token" }),
+        (file) => {
+            expect(
+                parseOperationsConfiguration({
+                    ...base,
+                    HOMELAB_DASHBOARD_DOCKER_HUB_CREDENTIAL_FILE: file,
+                })?.dockerHub
+            ).toEqual({ username: "fixture", token: "synthetic-token" });
+        }
+    );
+    for (const value of [
+        "not JSON secret",
+        '{"username":"fixture"}',
+        '{"username":"https://other.invalid","token":"synthetic-token"}',
+    ]) {
+        withTargetFile(value, (file) => {
+            expect(() =>
+                parseOperationsConfiguration({
+                    ...base,
+                    HOMELAB_DASHBOARD_DOCKER_HUB_CREDENTIAL_FILE: file,
+                })
+            ).toThrow("Docker Hub credential is missing or invalid");
+        });
+    }
+});

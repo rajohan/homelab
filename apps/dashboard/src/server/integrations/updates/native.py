@@ -12,13 +12,17 @@ import re
 import tarfile
 import tempfile
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 
 
-def native_download(url, limit):
-    """Read bounded official metadata/artifacts with TLS and a restricted redirect chain."""
+NATIVE_GITHUB_TOKEN = ""
+
+
+def native_download_to(url, limit, output):
+    """Stream a bounded official response without retaining archive chunks in memory."""
     def allowed(value):
         parsed = urllib.parse.urlsplit(value)
         return parsed.scheme == "https" and parsed.port in (None, 443) and not parsed.username and not parsed.password and parsed.hostname in {
@@ -27,25 +31,41 @@ def native_download(url, limit):
         }
     class Redirects(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, request, file, code, message, headers, target):
-            if not allowed(target):
+            if request.get_header("Authorization") or not allowed(target):
                 raise RuntimeError("Unexpected native download redirect")
             return super().redirect_request(request, file, code, message, headers, target)
     if not allowed(url):
         raise RuntimeError("Unexpected native download origin")
+    headers = {"User-Agent": "Homelab-Updater"}
+    if urllib.parse.urlsplit(url).hostname == "api.github.com" and NATIVE_GITHUB_TOKEN:
+        headers["Authorization"] = "Bearer " + NATIVE_GITHUB_TOKEN
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), Redirects())
     deadline = time.monotonic() + 240
-    with opener.open(urllib.request.Request(url, headers={"User-Agent": "Homelab-Updater"}), timeout=30) as response:
+    try:
+        response = opener.open(urllib.request.Request(url, headers=headers), timeout=30)
+    except urllib.error.HTTPError as error:
+        if error.code in (403, 429) and (error.headers.get("X-RateLimit-Remaining") == "0" or error.headers.get("Retry-After")):
+            raise UpdateRefusal("release_rate_limited") from None
+        raise UpdateRefusal("release_download_failed") from None
+    with response:
         if response.status != 200 or int(response.headers.get("Content-Length", "0")) > limit:
             raise RuntimeError("Native download exceeded its budget")
-        chunks, size = [], 0
+        size = 0
         while True:
             chunk = response.read(min(65536, limit - size + 1))
             size += len(chunk)
             if size > limit or time.monotonic() > deadline:
                 raise RuntimeError("Native download exceeded its budget")
             if not chunk:
-                return b"".join(chunks)
-            chunks.append(chunk)
+                return size
+            output.write(chunk)
+
+
+def native_download(url, limit):
+    """Read small bounded metadata and legacy artifacts through the same TLS policy."""
+    output = io.BytesIO()
+    native_download_to(url, limit, output)
+    return output.getvalue()
 
 
 def native_version(output):

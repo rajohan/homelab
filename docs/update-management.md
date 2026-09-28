@@ -420,3 +420,38 @@ Preparation waits for the worker's terminal job status rather than applying a se
 For large inventories, public release lookups finish before live APT observations begin. Up to eight read-only host observations run concurrently, keeping the maximum 100 configured APT targets within the five-minute admission freshness window. The worker deadline includes the source lookup and bounded host-observation budgets.
 
 Preparation accepts either `updates:refresh` or `updates:apply`, together with `jobs:run`, preserving the existing minimally scoped automation contract. If a source report changes before its fenced result is committed, preparation fails explicitly and retains the follow-up check; the dialog cannot treat that superseded result as a completed plan. Automatic admission reloads policies after checking and locks/revalidates each policy when enqueuing, so a concurrent disable cannot create new installers from stale consent.
+
+### Authenticated release checks and bounded native downloads
+
+The worker optionally reads `HOMELAB_DASHBOARD_GITHUB_TOKEN_FILE` from a protected,
+read-only secret file. Deliver it from the existing secrets manager to worker-only
+RAM, preserve delivery at boot, and do not put a token in Compose, Git, logs or the
+web service. A public-release read credential is sufficient. The shared checker
+sends it only to GitHub's HTTPS release API and rejects redirects. Successful JSON
+responses are cached for ten minutes across jobs; provider reset/retry headers cause
+bounded backoff instead of repeated failed calls. GitHub credentials never authenticate other providers.
+
+Every native installation path receives the optional credential over SSH stdin;
+it is never included in process arguments, receipts or host files. Native download
+code uses it only for the official GitHub API and refuses authenticated redirects.
+Large binary archives and selected executables are streamed through private staging
+files on the installation filesystem, including atomic replacement. Archive, digest,
+size, ELF, version, ownership and concurrent-change checks remain mandatory. All
+staging files are removed on ordinary success or failure. The regression fixture
+extracts and replaces a 526 MiB executable under a 256 MiB address-space limit.
+
+Deployment image references should retain both version and immutable digest, for
+example `ghcr.io/example/app:1.2.3@sha256:...`. A digest-only reference without an
+explicit tracking channel defaults to `latest`; repositories publishing only version
+tags have no such channel and therefore cannot be checked that way.
+
+Docker Hub checks optionally read `HOMELAB_DASHBOARD_DOCKER_HUB_CREDENTIAL_FILE`, a
+worker-only JSON file with `username` and `token`. Existing Doppler values can feed
+this file without creating another account or credential. The token authenticates
+only HTTPS GET requests to `auth.docker.io/token` with the fixed registry service
+and an exact repository `pull` scope; redirects are forbidden. Registry bearer tokens
+continue to be scoped per repository and never follow blob redirects. Successful
+public registry and tag metadata is cached for ten minutes, bounded by 128 entries
+and 8 MB per worker; pull-token caching respects its shorter expiry. HTTP 429 pauses
+that provider according to Retry-After (bounded to six hours). Authentication raises
+applicable account quotas; it does not remove Docker's limits or abuse protection.

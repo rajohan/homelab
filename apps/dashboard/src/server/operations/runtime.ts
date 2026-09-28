@@ -22,7 +22,10 @@ import type { MetricsConfiguration } from "../integrations/metrics/transport";
 import { snapshotJob } from "../integrations/snapshots/job";
 import { updateActionJobs } from "../integrations/updates/actions";
 import type { UpdateTarget } from "../integrations/updates/configuration";
+import { createUpdateExecutor } from "../integrations/updates/execution";
+import { githubReleaseRequest } from "../integrations/updates/github";
 import { updatesJob } from "../integrations/updates/job";
+import { registryRequest } from "../integrations/updates/registryRequest";
 import { restartStatusJob } from "../integrations/updates/restart";
 import { maintenanceJob } from "../jobs/maintenance";
 import { createJobRegistry } from "../jobs/registry";
@@ -40,7 +43,10 @@ export function createOperationsRuntime(
         ? updatesJob(
               configuration.updateSources,
               connection.client,
-              fetch,
+              githubReleaseRequest(
+                  configuration.githubToken,
+                  registryRequest(configuration.dockerHub)
+              ),
               configuration.updateTargets ?? []
           )
         : undefined;
@@ -48,7 +54,7 @@ export function createOperationsRuntime(
         ...updateActionJobs(
             configuration.updateTargets ?? [],
             connection.client,
-            undefined,
+            createUpdateExecutor(configuration.githubToken),
             configuration.applicationTargets ?? [],
             updateCheck
         ),

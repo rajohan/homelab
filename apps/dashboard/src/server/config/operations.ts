@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import type { UpdateSource } from "@homelab/contracts/updates";
 import * as v from "valibot";
 
@@ -14,6 +16,7 @@ import {
     loadUpdateTargets,
     type UpdateTarget,
 } from "../integrations/updates/configuration";
+import type { DockerHubCredential } from "../integrations/updates/registryRequest";
 
 const storeSchema = v.strictObject({
     datastore: v.pipe(v.string(), v.regex(/^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,99}$/)),
@@ -30,6 +33,8 @@ const storeSchema = v.strictObject({
 });
 
 export interface OperationsConfiguration {
+    readonly dockerHub?: DockerHubCredential | undefined;
+    readonly githubToken?: string | undefined;
     readonly updateTargets?: readonly UpdateTarget[];
     readonly rules?: RulesConfiguration | undefined;
     readonly backupCatalog?: BackupCatalogConfiguration | undefined;
@@ -61,6 +66,40 @@ export function parseOperationsConfiguration(
         database.pathname === "/"
     )
         throw new Error("A dashboard PostgreSQL database is required");
+    const githubTokenFile = environment.HOMELAB_DASHBOARD_GITHUB_TOKEN_FILE;
+    let githubToken: string | undefined;
+    if (githubTokenFile) {
+        try {
+            githubToken = readFileSync(githubTokenFile, "utf8").trim();
+        } catch {
+            throw new Error("GitHub release credential could not be read");
+        }
+    }
+    if (githubTokenFile && (!githubToken || !/^[A-Za-z0-9_]{20,255}$/.test(githubToken)))
+        throw new Error("Invalid GitHub release credential");
+    const dockerHubFile = environment.HOMELAB_DASHBOARD_DOCKER_HUB_CREDENTIAL_FILE;
+    let dockerHub: DockerHubCredential | undefined;
+    if (dockerHubFile) {
+        try {
+            dockerHub = v.parse(
+                v.strictObject({
+                    username: v.pipe(
+                        v.string(),
+                        v.regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]{1,99}$/)
+                    ),
+                    token: v.pipe(
+                        v.string(),
+                        v.minLength(10),
+                        v.maxLength(1024),
+                        v.regex(/^[\u0021-\u007E]+$/)
+                    ),
+                }),
+                JSON.parse(readFileSync(dockerHubFile, "utf8")) as unknown
+            );
+        } catch {
+            throw new Error("Docker Hub credential is missing or invalid");
+        }
+    }
     const metricsUrl = environment.HOMELAB_DASHBOARD_METRICS_URL;
     const logsUrl = environment.HOMELAB_DASHBOARD_LOGS_URL;
     const alertsUrl = environment.HOMELAB_DASHBOARD_ALERTMANAGER_URL;
@@ -189,6 +228,8 @@ export function parseOperationsConfiguration(
     )
         throw new Error("Every update target requires a configured reporting source");
     return {
+        dockerHub,
+        githubToken,
         updateTargets,
         rules: rulesUrl
             ? { url: rulesUrl, token: environment.HOMELAB_DASHBOARD_RULES_TOKEN }

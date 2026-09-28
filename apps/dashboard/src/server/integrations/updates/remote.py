@@ -106,7 +106,12 @@ def atomic_content(path, contents, expected):
     descriptor, temporary = tempfile.mkstemp(prefix=".homelab-update-", dir=path.parent)
     try:
         with os.fdopen(descriptor, "wb") as output:
-            output.write(contents)
+            if isinstance(contents, Path):
+                with contents.open("rb") as source:
+                    while chunk := source.read(65536):
+                        output.write(chunk)
+            else:
+                output.write(contents)
             output.flush()
             os.fchown(output.fileno(), metadata.st_uid, metadata.st_gid)
             os.fchmod(output.fileno(), metadata.st_mode & 0o777)
@@ -369,6 +374,11 @@ def main():
     if len(data) > 65536:
         raise RuntimeError("Update input exceeds its budget")
     request = json.loads(data)
+    global NATIVE_GITHUB_TOKEN
+    token = request.get("githubToken", "")
+    if token and (not isinstance(token, str) or not re.fullmatch(r"[A-Za-z0-9_]{20,255}", token)):
+        raise RuntimeError("Invalid release credential")
+    NATIVE_GITHUB_TOKEN = token
     progress("checking")
     driver, item = request["driver"], request["item"]
     if driver["kind"] == "docker":
