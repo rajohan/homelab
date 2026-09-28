@@ -30,6 +30,23 @@ All automatic policies default to **off**, including Docker and digest-pinned im
   A failed/expired automatic candidate is not silently requeued while its run remains
   in retained history. Hosts are never rebooted automatically.
 
+## Current package observations
+
+Manual single, per-host bulk and global bulk confirmations run the same scoped,
+read-only worker check before showing versions. It reads installed APT packages,
+current local candidates and holds through each configured SSH target, then resolves
+application/image releases. It does not run `apt-get update` or install software.
+The source's publisher timestamp remains unchanged; only the worker can record
+`aptObservedAt`, and publisher-supplied values are discarded. All APT admission paths,
+including direct API calls and automatic policy admission, require an observation
+within five minutes. Automatic admission invokes the same checker before selecting
+candidates. The target still verifies exact versions and holds immediately before
+installation. A repository change after confirmation requires a new plan, never an
+implicit upgrade to a different version.
+
+Successful automatic jobs and internal confirmation checks remain in Jobs history
+without creating notifications. Failures and timeouts still notify the operator.
+
 ## Bulk updates
 
 The global **Update all** action and each source's **Update all** action open the same
@@ -238,6 +255,13 @@ The repository metadata refresh remains the host's existing APT responsibility.
 
 ### Native software
 
+Native binary recipes allow up to 1 GiB for both installed and downloaded
+executables across all providers, 512 MiB for compressed archives, and 4 GiB for
+tar archive traversal. These bounds leave growth margin above Alloy's amd64
+binary, which already exceeds 512 MiB. Oversized executables are rejected before
+replacement with an actionable progress message; digest, ownership and exact-version
+checks remain mandatory.
+
 Fixed inspect/install/health commands must verify the exact version before and after
 the update. No generic tarball extraction or arbitrary installation-script execution
 is inferred from discovery. Qualify separate recipes for different installers, service
@@ -390,3 +414,9 @@ Loki aliases, review each update recipe, check strict SSH trust and actual Compo
 layout, test an explicitly approved low-risk target and verify its health/receipt. Keep
 automatic policies off until that succeeds and the operator opts in per target. This
 branch does not provision keys, activate production update policies or update hosts.
+
+Preparation waits for the worker's terminal job status rather than applying a separate browser timeout; closing the dialog cancels that wait. A failed APT observation invalidates only that host's resolved report, records an error notification without private SSH output, and leaves healthy hosts eligible. Cancellation still stops the entire check. The disposable preview uses the same preparation/admission flow with synthetic observations, including automatic policies and source-scoped refresh.
+
+For large inventories, public release lookups finish before live APT observations begin. Up to eight read-only host observations run concurrently, keeping the maximum 100 configured APT targets within the five-minute admission freshness window. The worker deadline includes the source lookup and bounded host-observation budgets.
+
+Preparation accepts either `updates:refresh` or `updates:apply`, together with `jobs:run`, preserving the existing minimally scoped automation contract. If a source report changes before its fenced result is committed, preparation fails explicitly and retains the follow-up check; the dialog cannot treat that superseded result as a completed plan. Automatic admission reloads policies after checking and locks/revalidates each policy when enqueuing, so a concurrent disable cannot create new installers from stale consent.

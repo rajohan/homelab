@@ -10,7 +10,7 @@ import { applyUpdate, updateTimeoutMs } from "./apply";
 import { updateBatchJobs } from "./batch";
 import { updateTargetRevision, type UpdateTarget } from "./configuration";
 import { executeUpdate, type UpdateExecutor } from "./execution";
-import { readUpdateReport, staleUpdateReport } from "./inventory";
+import { readUpdateReport, staleUpdateReport, freshAptObservation } from "./inventory";
 import { readUpdatePolicies } from "./policies";
 import {
     updateReceiptScope,
@@ -31,13 +31,15 @@ const payloadSchema = v.strictObject({
  * @param client - Dashboard state, never an application database.
  * @param execute - Worker-only SSH boundary; tests inject isolated execution fixtures.
  * @param applications - Explicit source bindings used only for verified identity reconciliation.
+ * @param refresh - Shared read-only inventory checker run before automatic admission.
  * @returns Jobs sharing the existing queue, resource leases, progress and notifications.
  */
 export function updateActionJobs(
     targets: readonly UpdateTarget[],
     client: SQL,
     execute: UpdateExecutor = executeUpdate,
-    applications: readonly ApplicationTarget[] = []
+    applications: readonly ApplicationTarget[] = [],
+    refresh?: JobHandler
 ): readonly JobHandler[] {
     if (targets.length === 0) return [];
     const installers: JobHandler[] = targets.map((target) => ({
@@ -106,15 +108,22 @@ export function updateActionJobs(
                     "Queue patch and minor updates only for explicitly enabled targets; never upgrade majors or reboot hosts.",
                 resourceClass: "network",
                 capability: "updates:configure",
-                resourceKeys: ["updates:admission"],
-                timeoutMs: 60_000,
+                resourceKeys: [
+                    "updates:admission",
+                    ...(refresh?.definition.resourceKeys ?? []),
+                ],
+                timeoutMs: 60_000 + (refresh?.definition.timeoutMs ?? 0),
                 attemptLimit: 1,
                 retrySafe: true,
                 intervalSeconds: 3600,
                 validate: (input) => v.parse(v.strictObject({}), input),
             },
             execute: async (_input, context) => {
-                const policies = await readUpdatePolicies(client, targets);
+                let policies = await readUpdatePolicies(client, targets);
+                if (refresh && policies.some((policy) => policy.enabled)) {
+                    await refresh.execute({}, context);
+                    policies = await readUpdatePolicies(client, targets);
+                }
                 let queued = 0;
                 for (const target of targets) {
                     context.signal.throwIfAborted();
@@ -128,6 +137,8 @@ export function updateActionJobs(
                             candidate.definition.key === `updates.install.${target.id}`
                     );
                     if (!report || staleUpdateReport(report) || !installer) continue;
+                    if (target.driver.kind === "apt" && !freshAptObservation(report))
+                        continue;
                     for (const item of report.items) {
                         if (queued >= 50) return;
                         if (!matchesUpdateTarget(target, item)) continue;
@@ -149,6 +160,22 @@ export function updateActionJobs(
                             .digest("hex");
                         if (
                             !(await context.commit(async (transaction) => {
+                                // Serialize admission with operator policy writes so a
+                                // disable committed during checking cannot enqueue work.
+                                const [currentPolicy] = await transaction<
+                                    {
+                                        enabled: boolean;
+                                        version: number;
+                                        configuration: string;
+                                    }[]
+                                >`SELECT enabled,version,configuration FROM update_policies WHERE target=${target.id} FOR SHARE`;
+                                if (
+                                    !currentPolicy?.enabled ||
+                                    currentPolicy.version !== policy.version ||
+                                    currentPolicy.configuration !==
+                                        updateTargetRevision(target)
+                                )
+                                    return;
                                 // Failed/expired automatic runs are not silently retried for the same candidate.
                                 const key = `automatic-update:${target.id}:${candidateKey}`;
                                 const [existing] = await transaction<
@@ -216,6 +243,11 @@ export async function requestUpdate(
                 throw new OperationFailure(
                     "NOT_FOUND",
                     "The software observation is no longer available."
+                );
+            if (target.driver.kind === "apt" && !freshAptObservation(report))
+                throw new OperationFailure(
+                    "PRECONDITION_FAILED",
+                    "Refresh the current package status and review the update before installing."
                 );
             const control = updateControl(target, report, item);
             if (!control.allowed)

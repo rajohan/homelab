@@ -58,6 +58,7 @@ export const updateReportSchema = v.strictObject({
     rebootRequired: v.optional(v.nullable(v.boolean())),
     rebootObservedAt: v.optional(v.pipe(v.string(), v.isoTimestamp())),
     repositoryMetadataAt: v.nullable(v.pipe(v.string(), v.isoTimestamp())),
+    aptObservedAt: v.optional(v.pipe(v.string(), v.isoTimestamp())),
     complete: v.boolean(),
     coveredKinds: v.pipe(
         v.array(v.picklist(["os", "runtime", "application", "container"])),

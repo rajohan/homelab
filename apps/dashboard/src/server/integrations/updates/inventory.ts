@@ -92,3 +92,17 @@ export async function readUpdateReport(
         WHERE observed.key = ${`updates:${source}`}`;
     return row ? { ...row.value, checkedAt: row.checkedAt } : null;
 }
+
+/**
+ * Require a recent worker observation before admitting any APT installation.
+ * @param report - Resolved report; publisher reports cannot assert this timestamp.
+ * @returns Whether local package candidates and holds were read within five minutes.
+ */
+export function freshAptObservation(report: UpdateReport): boolean {
+    const time = Date.parse(report.aptObservedAt ?? "");
+    return (
+        Number.isFinite(time) &&
+        time <= Date.now() + 60_000 &&
+        time >= Date.now() - 5 * 60_000
+    );
+}

@@ -13,6 +13,7 @@ import type { InferOutput } from "valibot";
 
 import { api } from "../../api/client";
 import { useJobOperation } from "../jobs/useJobOperation";
+import { prepareUpdate } from "./prepareUpdate";
 import { updateVersion } from "./updateVersion";
 
 /**
@@ -33,8 +34,10 @@ export function UpdateBatchDialog({
     const [excluded, setExcluded] = useState<ReadonlySet<string>>(() => new Set());
     const query = useQuery({
         queryKey: ["operations", "updates", "batch", source ?? null],
-        queryFn: ({ signal }) =>
-            api.updates.batchPlan.query(source ? { source } : {}, { signal }),
+        queryFn: async ({ signal }) => {
+            await prepareUpdate({ requestId, ...(source ? { source } : {}) }, signal);
+            return api.updates.batchPlan.query(source ? { source } : {}, { signal });
+        },
         refetchOnWindowFocus: false,
         retry: false,
     });
@@ -73,7 +76,9 @@ export function UpdateBatchDialog({
                 onClose();
             }}
         >
-            {query.isFetching && <LoadingState label="Checking available updates…" />}
+            {query.isFetching && (
+                <LoadingState label="Reading current package versions and preparing the update plan…" />
+            )}
             {query.isError && <ErrorNotice error={query.error} />}
             {plan && !query.isError && (
                 <div className="space-y-4">

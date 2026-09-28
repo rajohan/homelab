@@ -28,7 +28,7 @@ record to distinguish a full final batch from actual remaining work. UI processi
 always server-derived, never guessed from loaded pages.
 
 Final manual job outcomes and final scheduled failures/timeouts publish once with the run ID.
-Retries do not emit premature failures; regular successful scheduled runs do not flood the inbox.
+Retries do not emit premature failures. Successful automatic jobs and read-only update preparation stay in Jobs without creating inbox notifications; failures and timeouts remain visible. Explicit operator jobs retain their completion notifications.
 Application host availability publishes on transitions, not on every poll. Other integrations
 can call the same producer without coupling themselves to React or a delivery provider.
 

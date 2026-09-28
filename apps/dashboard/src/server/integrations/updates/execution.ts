@@ -35,6 +35,8 @@ const phases = {
         "Recreating dependent services against the new namespace, preserving their images and data.",
 } as const;
 const refusals = {
+    native_binary_too_large:
+        "The application executable exceeds this updater's supported size limit. Update the dashboard updater before retrying; no installation was started.",
     apt_candidate_changed:
         "The installed package, hold or repository candidate changed. Refresh this host's software report and approve the current version; no installation was started.",
     loki_readiness_failed:

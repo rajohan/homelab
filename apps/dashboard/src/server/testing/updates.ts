@@ -209,37 +209,45 @@ export function previewUpdateJobs(
     registry: ReadonlyMap<string, JobHandler>,
     client: SQL
 ): JobHandler[] {
+    const checker = registry.get("updates.releases");
+    const refresh: JobHandler | undefined = checker && {
+        definition: checker.definition,
+        execute: async (payload, context) => {
+            const input = checker.definition.validate(payload);
+            const source = typeof input.source === "string" ? input.source : null;
+            if (
+                source &&
+                !previewUpdateTargets.some((target) => target.source === source)
+            )
+                throw new Error("Unknown preview update source");
+            await context.reportProgress("Refreshing the synthetic update inventory.");
+            if (
+                !(await context.commit(async (transaction) => {
+                    // Preserve completed synthetic updates and refresh only the selected source.
+                    await transaction`UPDATE operation_snapshots SET value=value || jsonb_build_object('capturedAt',now()::text,'repositoryMetadataAt',now()::text,'aptObservedAt',now()::text), captured_at=now() WHERE key LIKE 'updates:demo-%' AND (${source}::text IS NULL OR key='updates:' || ${source}::text)`;
+                    await transaction`INSERT INTO operation_snapshots(key,value,captured_at) SELECT replace(key,'updates:','updates.resolved:'),value,now() FROM operation_snapshots WHERE key LIKE 'updates:demo-%' AND (${source}::text IS NULL OR key='updates:' || ${source}::text) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,captured_at=EXCLUDED.captured_at`;
+                }, true))
+            )
+                throw new Error("Preview refresh no longer owns its job");
+        },
+    };
     return [
         ...[...registry.values()].filter(
             (job) => !job.definition.key.startsWith("updates.")
         ),
-        ...updateActionJobs(previewUpdateTargets, client, executePreviewUpdate),
+        ...updateActionJobs(
+            previewUpdateTargets,
+            client,
+            executePreviewUpdate,
+            [],
+            refresh
+        ),
         restartStatusJob(previewUpdateTargets, async (target) => {
             const [row] = await client<
                 { required: boolean | null }[]
             >`SELECT value->'rebootRequired' AS required FROM operation_snapshots WHERE key=${`updates:${target.source}`}`;
             return row?.required ?? null;
         }),
-        ...[...registry.values()]
-            .filter((job) => job.definition.key === "updates.releases")
-            .map((job) => ({
-                definition: job.definition,
-                execute: async (
-                    _payload: Record<string, unknown>,
-                    context: Parameters<JobHandler["execute"]>[1]
-                ) => {
-                    await context.reportProgress(
-                        "Refreshing the synthetic update inventory."
-                    );
-                    if (
-                        !(await context.commit(async (transaction) => {
-                            // Preserve completed synthetic updates instead of restoring the initial seed.
-                            await transaction`UPDATE operation_snapshots SET value=jsonb_set(jsonb_set(value,'{capturedAt}',to_jsonb(now()::text)),'{repositoryMetadataAt}',to_jsonb(now()::text)), captured_at=now() WHERE key LIKE 'updates:demo-%'`;
-                            await transaction`INSERT INTO operation_snapshots(key,value,captured_at) SELECT replace(key,'updates:','updates.resolved:'),value,now() FROM operation_snapshots WHERE key LIKE 'updates:demo-%' ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,captured_at=EXCLUDED.captured_at`;
-                        }))
-                    )
-                        throw new Error("Preview refresh no longer owns its job");
-                },
-            })),
+        ...(refresh ? [refresh] : []),
     ];
 }

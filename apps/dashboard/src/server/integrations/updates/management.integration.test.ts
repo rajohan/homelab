@@ -364,6 +364,7 @@ async function batchFixture(fail = false, withDocker = false, sharedHost = false
     const report: UpdateReport = {
         capturedAt: new Date().toISOString(),
         repositoryMetadataAt: new Date().toISOString(),
+        aptObservedAt: new Date().toISOString(),
         complete: true,
         coveredKinds: [
             "os",
@@ -970,6 +971,7 @@ async function fixture(
         checkedAt: new Date().toISOString(),
         repositoryMetadataAt:
             observedItem.kind === "os" ? new Date().toISOString() : null,
+        aptObservedAt: new Date().toISOString(),
         complete: true,
         coveredKinds: [observedItem.kind],
         items: [observedItem],
@@ -1838,5 +1840,65 @@ test.each([
         if (!changed) throw new Error("Fixture target missing");
         expect(updateTargetRevision(parsed)).not.toBe(updateTargetRevision(changed));
         expect(JSON.stringify(configured).length).toBeLessThan(1000);
+    }
+);
+
+test.each(["single", "host", "all", "automatic"] as const)(
+    "stale APT observations cannot enter the %s installation path",
+    async (path) => {
+        const state = await batchFixture();
+        try {
+            const expired = new Date(Date.now() - 6 * 60_000).toISOString();
+            await state.client`UPDATE operation_snapshots SET value=jsonb_set(value,'{aptObservedAt}',to_jsonb(${expired}::text)) WHERE key LIKE 'updates%'`;
+            const plan = await state.caller.updates.batchPlan({ source: "alpha" });
+            const entry = plan.entries.find((entry) => entry.reason === null)!;
+            if (path === "single")
+                await expectOperationFailure(
+                    state.caller.updates.request({
+                        target: entry.control!.target,
+                        item: entry.item.id,
+                        revision: entry.control!.revision,
+                        requestId: crypto.randomUUID(),
+                    }),
+                    "current package status"
+                );
+            else if (path === "automatic") {
+                await writeUpdatePolicy(
+                    state.client,
+                    state.targets[0]!,
+                    "human:operator",
+                    { version: 0, enabled: true }
+                );
+                const handler = state.registry.get("updates.automatic")!;
+                await handler.execute(
+                    {},
+                    {
+                        runId: crypto.randomUUID(),
+                        leaseToken: crypto.randomUUID(),
+                        signal: AbortSignal.timeout(5000),
+                        reportProgress: () => Promise.resolve(),
+                        commit: async (write) => {
+                            await state.client.begin(write);
+                            return true;
+                        },
+                    }
+                );
+            } else {
+                const scope = path === "host" ? { source: "alpha" } : {};
+                const freshPlan = await state.caller.updates.batchPlan(scope);
+                await expectOperationFailure(
+                    state.caller.updates.batchRequest({
+                        ...scope,
+                        revision: freshPlan.revision,
+                        requestId: crypto.randomUUID(),
+                    }),
+                    "current package status"
+                );
+            }
+            expect(await state.client`SELECT id FROM job_runs`).toHaveLength(0);
+            expect(state.calls).toHaveLength(0);
+        } finally {
+            await state.close();
+        }
     }
 );
