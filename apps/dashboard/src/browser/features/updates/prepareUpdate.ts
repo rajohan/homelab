@@ -28,8 +28,9 @@ export async function prepareUpdate(
 ): Promise<void> {
     signal.throwIfAborted();
     const { id } = await client.start(input, signal);
-    const deadline = Date.now() + 10 * 60_000;
-    while (Date.now() < deadline) {
+    // The worker owns execution deadlines and retries. Queue time, large
+    // inventories and paused workers must not invalidate a still-live check.
+    while (true) {
         signal.throwIfAborted();
         const state = await client.state(id, signal);
         if (state === "succeeded") return;
@@ -53,7 +54,4 @@ export async function prepareUpdate(
             if (signal.aborted) abort();
         });
     }
-    throw new Error(
-        "The update check is still running. Open Jobs to inspect it, then reopen the update plan."
-    );
 }

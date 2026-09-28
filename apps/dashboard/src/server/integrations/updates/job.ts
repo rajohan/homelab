@@ -4,6 +4,7 @@ import * as v from "valibot";
 
 import { enqueueJob } from "../../jobs/queue";
 import type { JobDefinition, JobHandler } from "../../jobs/types";
+import { publishNotification } from "../../notifications/publish";
 import { readAptObservation } from "./apt";
 import type { UpdateTarget } from "./configuration";
 import { resolveImageUpdate, type ImageUpdate } from "./registry";
@@ -240,6 +241,7 @@ export function updatesJob(
                     `Checking available versions for ${source.label}.`
                 );
                 let observation = row.value;
+                let aptUnavailable = false;
                 const aptTargets = targets.filter(
                     (target) =>
                         target.source === source.id && target.driver.kind === "apt"
@@ -250,26 +252,40 @@ export function updatesJob(
                     await context.reportProgress(
                         `Reading current installed packages and candidates for ${source.label}.`
                     );
-                    const apt = await inspectApt(
-                        aptTargets[0],
-                        AbortSignal.any([context.signal, AbortSignal.timeout(15_000)])
-                    );
-                    observation = {
-                        ...observation,
-                        repositoryMetadataAt: apt.repositoryMetadataAt,
-                        aptObservedAt: new Date().toISOString(),
-                        items: [
-                            ...observation.items.filter((item) => item.kind !== "os"),
-                            ...apt.items,
-                        ],
-                    };
+                    try {
+                        const apt = await inspectApt(
+                            aptTargets[0],
+                            AbortSignal.any([context.signal, AbortSignal.timeout(15_000)])
+                        );
+                        observation = {
+                            ...observation,
+                            repositoryMetadataAt: apt.repositoryMetadataAt,
+                            aptObservedAt: new Date().toISOString(),
+                            items: [
+                                ...observation.items.filter((item) => item.kind !== "os"),
+                                ...apt.items,
+                            ],
+                        };
+                    } catch {
+                        // Cancellation ends the whole job; an unreachable host only
+                        // invalidates that source. Never retain its last eligible plan.
+                        context.signal.throwIfAborted();
+                        aptUnavailable = true;
+                        const { aptObservedAt: _previous, ...unavailable } = observation;
+                        observation = { ...unavailable, complete: false };
+                        await context.reportProgress(
+                            `Current package status for ${source.label} is unavailable; this source is excluded from updates.`
+                        );
+                    }
                 }
-                const report = await resolveUpdates(
-                    observation,
-                    context.signal,
-                    releases,
-                    request
-                );
+                const report = aptUnavailable
+                    ? observation
+                    : await resolveUpdates(
+                          observation,
+                          context.signal,
+                          releases,
+                          request
+                      );
                 if (
                     !(await context.commit(async (transaction) => {
                         // Receipts change installed versions without changing the
@@ -287,6 +303,15 @@ export function updatesJob(
                             return;
                         }
                         await transaction`INSERT INTO operation_snapshots (key, value, captured_at) VALUES (${`updates.resolved:${source.id}`}, ${JSON.stringify(report)}::text::jsonb, now()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, captured_at = EXCLUDED.captured_at`;
+                        if (aptUnavailable)
+                            await publishNotification(transaction, "updates", {
+                                key: `observation-failed:${context.runId}:${source.id}`,
+                                title: `${source.label}: update check unavailable`,
+                                message:
+                                    "Current package status could not be read. This source is excluded from updates; other sources can continue.",
+                                severity: "error",
+                                destination: "jobs",
+                            });
                     }, true))
                 )
                     throw new Error("Update checker ownership changed");

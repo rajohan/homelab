@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 
 import type {
     UpdateItem,
@@ -511,3 +511,49 @@ test.each(["missing", "failed", "current"] as const)(
         }
     }
 );
+
+test("preparation follows queued and running jobs beyond ten minutes without starting another check", async () => {
+    const clock = spyOn(Date, "now").mockReturnValue(0);
+    let started = 0;
+    let reads = 0;
+    try {
+        await prepareUpdate(
+            { requestId: crypto.randomUUID() },
+            new AbortController().signal,
+            {
+                start: () => {
+                    started += 1;
+                    return Promise.resolve({ id: "long-check" });
+                },
+                state: () => {
+                    reads += 1;
+                    clock.mockReturnValue(reads * 20 * 60_000);
+                    if (reads === 1) return Promise.resolve("queued");
+                    if (reads === 2) return Promise.resolve("running");
+                    return Promise.resolve("succeeded");
+                },
+            }
+        );
+        expect(started).toBe(1);
+        expect(reads).toBe(3);
+    } finally {
+        clock.mockRestore();
+    }
+});
+
+test("closing preparation interrupts the wait without starting an installation", async () => {
+    const lifecycle = new AbortController();
+    let reads = 0;
+    const result = prepareUpdate({ requestId: crypto.randomUUID() }, lifecycle.signal, {
+        start: () => Promise.resolve({ id: "queued-check" }),
+        state: () => {
+            reads += 1;
+            queueMicrotask(() => lifecycle.abort());
+            return Promise.resolve("queued");
+        },
+    });
+    const failure: unknown = await result.catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toContain("cancelled");
+    expect(reads).toBe(1);
+});

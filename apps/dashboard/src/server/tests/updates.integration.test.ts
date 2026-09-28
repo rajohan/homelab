@@ -7,6 +7,7 @@ import { appRouter } from "../api/router";
 import { createAutomation } from "../automation/service";
 import { startDashboardServer } from "../index";
 import { updateActionJobs } from "../integrations/updates/actions";
+import { updateBatchKey } from "../integrations/updates/batch";
 import { parseUpdateTargets } from "../integrations/updates/configuration";
 import { readUpdateReport } from "../integrations/updates/inventory";
 import { updatesJob } from "../integrations/updates/job";
@@ -832,6 +833,199 @@ test("automatic admission reads current APT candidates before choosing an exact 
                 },
             },
         ]);
+    } finally {
+        await fixture.close();
+    }
+});
+
+test.each(["all", "automatic"] as const)(
+    "an unavailable APT host is excluded without blocking healthy hosts in %s updates",
+    async (path) => {
+        const fixture = await operationFixture();
+        const sources = ["alpha", "beta", "gamma"].map((id) => ({
+            id,
+            label: id,
+            publisher: id,
+        }));
+        const targets = parseUpdateTargets(
+            JSON.stringify(
+                sources.map((source) => ({
+                    id: source.id + "-apt",
+                    source: source.id,
+                    label: source.label,
+                    host: source.id + ".invalid",
+                    user: "updater",
+                    identityFile: "/fixture/key",
+                    knownHostsFile: "/fixture/trust",
+                    driver: { kind: "apt" },
+                }))
+            )
+        );
+        let unreachable = true;
+        const reads: string[] = [];
+        const observed = report();
+        observed.items = [
+            { ...observed.items[0]!, installed: "1.0.0", available: "1.1.0" },
+        ];
+        observed.aptObservedAt = new Date().toISOString();
+        const refresh = updatesJob(sources, fixture.client, fetch, targets, (target) => {
+            reads.push(target.source);
+            return unreachable && target.source === "alpha"
+                ? Promise.reject(new Error("private SSH detail must not escape"))
+                : Promise.resolve({
+                      items: observed.items,
+                      repositoryMetadataAt: new Date().toISOString(),
+                  });
+        });
+        const registry = createJobRegistry([
+            refresh,
+            ...updateActionJobs(targets, fixture.client, undefined, [], refresh),
+        ]);
+        const principal = { kind: "human" as const, id: "operator", capabilities };
+        const caller = appRouter.createCaller({
+            operations: {
+                ...fixture,
+                registry,
+                updateSources: sources,
+                updateTargets: targets,
+            },
+            principal,
+            verifyHuman: () => Promise.resolve(principal),
+        });
+        try {
+            for (const source of sources)
+                for (const key of [
+                    `updates:${source.id}`,
+                    `updates.resolved:${source.id}`,
+                ])
+                    await fixture.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES (${key},${JSON.stringify(observed)}::text::jsonb,now())`;
+            const worker = await fixture.registerWorker();
+            const run = async (action: string) => {
+                const claim = await claimJob(fixture.client, worker, [action]);
+                if (!claim) throw new Error("Missing check claim");
+                await registry.get(action)!.execute(claim.payload, {
+                    runId: claim.id,
+                    leaseToken: claim.lease_token,
+                    signal: AbortSignal.timeout(5000),
+                    reportProgress: () => Promise.resolve(),
+                    commit: (write, queue) =>
+                        commitClaim(fixture.client, claim, write, queue),
+                });
+                await settleClaim(fixture.client, claim, "succeeded");
+            };
+            if (path === "automatic") {
+                for (const target of targets)
+                    await writeUpdatePolicy(fixture.client, target, "human:operator", {
+                        version: 0,
+                        enabled: true,
+                    });
+                await fixture.client.begin(async (transaction) => {
+                    await lockQueue(transaction);
+                    await enqueueJob(
+                        transaction,
+                        registry.get("updates.automatic")!.definition,
+                        "system:test",
+                        crypto.randomUUID()
+                    );
+                });
+                await run("updates.automatic");
+            } else {
+                await caller.updates.prepare({ requestId: crypto.randomUUID() });
+                await run("updates.releases");
+                const plan = await caller.updates.batchPlan({});
+                expect(plan.eligible).toBe(2);
+                expect(
+                    plan.entries.find((entry) => entry.source === "alpha")?.reason
+                ).toContain("Refresh");
+                await caller.updates.batchRequest({
+                    revision: plan.revision,
+                    requestId: crypto.randomUUID(),
+                });
+            }
+            expect(reads).toEqual(["alpha", "beta", "gamma"]);
+            const failed = (await readUpdateReport(fixture.client, "alpha"))!;
+            expect(failed.complete).toBe(false);
+            expect(failed.aptObservedAt).toBeUndefined();
+            expect(updateControl(targets[0]!, failed, failed.items[0]!).allowed).toBe(
+                false
+            );
+            const queued = await fixture.client<
+                { action: string }[]
+            >`SELECT action FROM job_runs WHERE state='queued' ORDER BY action`;
+            expect(queued.map((row) => row.action)).toEqual(
+                path === "all"
+                    ? [updateBatchKey("beta"), updateBatchKey("gamma")].toSorted()
+                    : ["updates.install.beta-apt", "updates.install.gamma-apt"]
+            );
+            const notifications = await fixture.client<
+                { severity: string; message: string }[]
+            >`SELECT severity,message FROM dashboard_notifications`;
+            expect(notifications).toHaveLength(1);
+            expect(notifications[0]?.severity).toBe("error");
+            expect(JSON.stringify(notifications)).not.toContain("private SSH");
+            unreachable = false;
+            await caller.updates.prepare({
+                requestId: crypto.randomUUID(),
+                source: "alpha",
+            });
+            await run("updates.releases");
+            const recovered = (await readUpdateReport(fixture.client, "alpha"))!;
+            expect(recovered.complete).toBe(true);
+            expect(
+                updateControl(targets[0]!, recovered, recovered.items[0]!).allowed
+            ).toBe(true);
+        } finally {
+            await fixture.close();
+        }
+    }
+);
+
+test("APT observation cancellation still aborts the checker without publishing a host failure", async () => {
+    const fixture = await operationFixture();
+    const lifecycle = new AbortController();
+    try {
+        const sources = [{ id: "demo", label: "Demo", publisher: "publisher" }];
+        const targets = parseUpdateTargets(
+            JSON.stringify([
+                {
+                    id: "demo-apt",
+                    source: "demo",
+                    label: "Demo",
+                    host: "fixture.invalid",
+                    user: "updater",
+                    identityFile: "/fixture/key",
+                    knownHostsFile: "/fixture/trust",
+                    driver: { kind: "apt" },
+                },
+            ])
+        );
+        await fixture.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES ('updates:demo',${JSON.stringify(report())}::text::jsonb,now())`;
+        const handler = updatesJob(sources, fixture.client, fetch, targets, () => {
+            lifecycle.abort(new Error("Operator cancelled check"));
+            return Promise.reject(new Error("Operator cancelled check"));
+        });
+        await expectOperationFailure(
+            handler.execute(
+                {},
+                {
+                    runId: crypto.randomUUID(),
+                    leaseToken: crypto.randomUUID(),
+                    signal: lifecycle.signal,
+                    reportProgress: () => Promise.resolve(),
+                    commit: async (write) => {
+                        await fixture.client.begin(write);
+                        return true;
+                    },
+                }
+            ),
+            "Operator cancelled"
+        );
+        expect(await fixture.client`SELECT id FROM dashboard_notifications`).toHaveLength(
+            0
+        );
+        expect(
+            await fixture.client`SELECT key FROM operation_snapshots WHERE key LIKE 'updates.resolved:%'`
+        ).toHaveLength(0);
     } finally {
         await fixture.close();
     }

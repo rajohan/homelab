@@ -414,3 +414,5 @@ Loki aliases, review each update recipe, check strict SSH trust and actual Compo
 layout, test an explicitly approved low-risk target and verify its health/receipt. Keep
 automatic policies off until that succeeds and the operator opts in per target. This
 branch does not provision keys, activate production update policies or update hosts.
+
+Preparation waits for the worker's terminal job status rather than applying a separate browser timeout; closing the dialog cancels that wait. A failed APT observation invalidates only that host's resolved report, records an error notification without private SSH output, and leaves healthy hosts eligible. Cancellation still stops the entire check. The disposable preview uses the same preparation/admission flow with synthetic observations, including automatic policies and source-scoped refresh.
