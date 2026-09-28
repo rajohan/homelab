@@ -2027,7 +2027,7 @@
             "health": [
                 "/usr/bin/python3",
                 "-c",
-                "import json,urllib.request; s=json.load(urllib.request.urlopen('https://nextcloud.home.rajohan.no/status.php',timeout=10)); assert s.get('installed') is True and s.get('maintenance') is False and s.get('needsDbUpgrade') is False"
+                "import json,urllib.request; r=urllib.request.Request('http://127.0.0.1/status.php',headers={'Host':'nextcloud.home.rajohan.no'}); s=json.load(urllib.request.urlopen(r,timeout=10)); assert s.get('installed') is True and s.get('maintenance') is False and s.get('needsDbUpgrade') is False"
             ]
         }
     },
