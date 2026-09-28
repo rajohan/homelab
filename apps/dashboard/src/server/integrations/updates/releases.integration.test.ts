@@ -3,9 +3,11 @@ import { expect, test } from "bun:test";
 import { updateChange, type UpdateItem } from "@homelab/contracts/updates";
 
 import { dockerHubVersionTag } from "./dockerHubTags";
+import { githubReleaseRequest } from "./github";
 import { publicImageReference, imageVersionTag } from "./imageReference";
 import { resolveUpdates } from "./job";
 import { latestImage, resolveImageUpdate } from "./registry";
+import { registryRequest } from "./registryRequest";
 import { compareRelease, latestRelease } from "./releases";
 
 const image: UpdateItem = {
@@ -1103,4 +1105,221 @@ test("release feeds use semantic order and discard arbitrary remote URLs", async
     } finally {
         await server.stop(true);
     }
+});
+
+test("GitHub release credentials stay on the exact API boundary and cached bodies remain independent", async () => {
+    const seen: { url: string; options: RequestInit | undefined }[] = [];
+    let clock = 1000;
+    const upstream: typeof fetch = Object.assign(
+        (input: Parameters<typeof fetch>[0], options?: Parameters<typeof fetch>[1]) => {
+            seen.push({
+                url: input instanceof Request ? input.url : String(input),
+                options,
+            });
+            return Promise.resolve(
+                Response.json({ tag_name: "v1.2.3", draft: false, prerelease: false })
+            );
+        },
+        { preconnect: fetch.preconnect }
+    );
+    const request = githubReleaseRequest("synthetic-github-token", upstream, () => clock);
+    const url = "https://api.github.com/repos/example/app/releases/latest";
+    const first = await request(
+        new Request(url, { headers: { Accept: "application/json" } })
+    );
+    expect(await first.json()).toMatchObject({ tag_name: "v1.2.3" });
+    const cached = await request(url);
+    expect(await cached.json()).toMatchObject({ tag_name: "v1.2.3" });
+    expect(seen).toHaveLength(1);
+    expect(new Headers(seen[0]?.options?.headers).get("Authorization")).toBe(
+        "Bearer synthetic-github-token"
+    );
+    expect(new Headers(seen[0]?.options?.headers).get("Accept")).toBe("application/json");
+    expect(seen[0]?.options?.redirect).toBe("error");
+    clock += 600_001;
+    await request(url);
+    expect(seen).toHaveLength(2);
+    for (const other of [
+        "https://registry.npmjs.org/example",
+        "https://ghcr.io/token",
+        "http://api.github.com/repos/example/app/releases/latest",
+        "https://api.github.com.evil.invalid/repos/example/app/releases/latest",
+        "https://api.github.com/user",
+        "https://github.com/example/app/releases/download/v1.2.3/app.zip",
+    ]) {
+        await request(other);
+        expect(new Headers(seen.at(-1)?.options?.headers).has("Authorization")).toBe(
+            false
+        );
+    }
+    await request(url, { method: "POST" });
+    expect(new Headers(seen.at(-1)?.options?.headers).has("Authorization")).toBe(false);
+    const controller = new AbortController();
+    controller.abort();
+    const before = seen.length;
+    const aborted = await request(new Request(url, { signal: controller.signal })).catch(
+        (error: unknown) => error
+    );
+    expect(aborted).toBeInstanceOf(Error);
+    expect(seen).toHaveLength(before);
+});
+
+test("GitHub release checks respect reset and retry dates, reject malformed bodies and recover", async () => {
+    for (const headers of [
+        { "x-ratelimit-remaining": "0", "x-ratelimit-reset": "120" },
+        { "retry-after": "120" },
+        { "retry-after": new Date(120_000).toUTCString() },
+        { "retry-after": "invalid" },
+    ]) {
+        let clock = 0;
+        let calls = 0;
+        const upstream: typeof fetch = Object.assign(
+            () => {
+                calls++;
+                return Promise.resolve(
+                    calls === 1
+                        ? new Response(null, { status: 403, headers })
+                        : Response.json({ tag_name: "v1.2.3" })
+                );
+            },
+            { preconnect: fetch.preconnect }
+        );
+        const request = githubReleaseRequest(undefined, upstream, () => clock);
+        const url = "https://api.github.com/repos/example/app/releases/latest";
+        const limited = await request(url);
+        expect(limited.status).toBe(403);
+        const deferred = await request(url);
+        expect(deferred.status).toBe(429);
+        expect(calls).toBe(1);
+        clock = 121_000;
+        const recovered = await request(url);
+        expect(recovered.status).toBe(200);
+        expect(calls).toBe(2);
+    }
+    let calls = 0;
+    const upstream: typeof fetch = Object.assign(
+        () => {
+            calls++;
+            return Promise.resolve(
+                calls === 1
+                    ? new Response("not JSON")
+                    : Response.json({ tag_name: "v1.2.3" })
+            );
+        },
+        { preconnect: fetch.preconnect }
+    );
+    const request = githubReleaseRequest(undefined, upstream);
+    const url = "https://api.github.com/repos/example/app/releases/latest";
+    const malformed = await request(url).catch((error: unknown) => error);
+    expect(malformed).toBeInstanceOf(Error);
+    const recovered = await request(url);
+    expect(recovered.status).toBe(200);
+    expect(calls).toBe(2);
+});
+
+test("Docker Hub credentials authenticate only exact read token exchanges and preserve registry cache headers", async () => {
+    const seen: {
+        url: string;
+        headers: Headers;
+        redirect: RequestInit["redirect"];
+    }[] = [];
+    let clock = 0;
+    const upstream: typeof fetch = Object.assign(
+        (input: Parameters<typeof fetch>[0], options?: Parameters<typeof fetch>[1]) => {
+            const url = input instanceof Request ? input.url : String(input);
+            seen.push({
+                url,
+                headers: new Headers(options?.headers),
+                redirect: options?.redirect,
+            });
+            return Promise.resolve(
+                url.startsWith("https://auth.docker.io/")
+                    ? Response.json({ token: "synthetic-pull-token", expires_in: 20 })
+                    : Response.json(
+                          { manifests: [] },
+                          {
+                              headers: {
+                                  "Docker-Content-Digest": fixtureDigest("a"),
+                                  Link: '</next>; rel="next"',
+                              },
+                          }
+                      )
+            );
+        },
+        { preconnect: fetch.preconnect }
+    );
+    const request = registryRequest(
+        { username: "fixture", token: "synthetic-secret" },
+        upstream,
+        () => clock
+    );
+    const tokenUrl =
+        "https://auth.docker.io/token?service=registry.docker.io&scope=repository:example/app:pull";
+    await request(tokenUrl);
+    await request(tokenUrl);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.headers.get("Authorization")).toBe(
+        "Basic " + Buffer.from("fixture:synthetic-secret").toString("base64")
+    );
+    expect(seen[0]?.redirect).toBe("error");
+    clock = 11_000;
+    await request(tokenUrl);
+    expect(seen).toHaveLength(2);
+    for (const url of [
+        tokenUrl.replace(":pull", ":pull,push"),
+        tokenUrl.replace("auth.docker.io", "ghcr.io"),
+        tokenUrl.replace("https:", "http:"),
+        tokenUrl + "&scope=repository:other/app:pull",
+        tokenUrl + "&account=someone",
+        "https://untrusted.invalid/token",
+    ]) {
+        await request(url);
+        expect(seen.at(-1)?.headers.has("Authorization")).toBe(false);
+    }
+    await request(tokenUrl, { method: "POST" });
+    expect(seen.at(-1)?.headers.has("Authorization")).toBe(false);
+    const manifest = "https://registry-1.docker.io/v2/example/app/manifests/latest";
+    const init = { headers: { Authorization: "Bearer synthetic-pull-token" } };
+    await request(manifest, init);
+    const count = seen.length;
+    const cached = await request(manifest, init);
+    expect(seen).toHaveLength(count);
+    expect(cached.headers.get("Docker-Content-Digest")).toBe(fixtureDigest("a"));
+    expect(cached.headers.get("Link")).toBe('</next>; rel="next"');
+    expect(cached.headers.get("Authorization")).toBeNull();
+    clock += 600_001;
+    await request(manifest, init);
+    expect(seen).toHaveLength(count + 1);
+});
+
+test("registry throttling waits without repeat requests and does not block another provider", async () => {
+    let clock = 0;
+    let calls = 0;
+    const upstream: typeof fetch = Object.assign(
+        () => {
+            calls++;
+            return Promise.resolve(
+                calls === 1
+                    ? new Response(null, {
+                          status: 429,
+                          headers: { "Retry-After": "300" },
+                      })
+                    : Response.json({ config: {} })
+            );
+        },
+        { preconnect: fetch.preconnect }
+    );
+    const request = registryRequest(undefined, upstream, () => clock);
+    const url = "https://registry-1.docker.io/v2/example/app/manifests/latest";
+    const first = await request(url);
+    expect(first.status).toBe(429);
+    const second = await request(url);
+    expect(second.status).toBe(429);
+    expect(calls).toBe(1);
+    const other = await request(url.replace("registry-1.docker.io", "ghcr.io"));
+    expect(other.status).toBe(200);
+    clock = 300_001;
+    const recovered = await request(url);
+    expect(recovered.status).toBe(200);
+    expect(calls).toBe(3);
 });

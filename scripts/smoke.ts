@@ -122,7 +122,7 @@ async function checkDashboard(origin: string) {
             );
             const body = await asset.text();
             assert.ok(body.length > 0, "The built asset must not be empty.");
-            assert.doesNotMatch(body, /192\.168\.1\.11|\/run\/secrets\/updates\/main/);
+            assert.doesNotMatch(body, /10\.77\.20\.2|\/run\/secrets\/updates\/main/);
         }
     }
 

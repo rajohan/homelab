@@ -50,7 +50,7 @@ def binary_metadata(binary):
     return value.st_ino, value.st_ctime_ns, value.st_mode, value.st_uid, value.st_gid
 
 
-def release_binary(component, version, architecture):
+def release_binary(component, version, architecture, destination):
     """Download an exact official asset, verify its digest and read only its executable."""
     repository, asset, member, _arguments, checksum = BINARY_RELEASES[component]
     substitutions = {"version": version, "arch": architecture}
@@ -71,43 +71,60 @@ def release_binary(component, version, architecture):
         if len(hashes) != 1 or not re.fullmatch(r"[a-f0-9]{64}", hashes[0]):
             raise RuntimeError("Native release checksum is unavailable")
         digest = "sha256:" + hashes[0]
-    archive = native_download(base + asset, 536_870_912)
-    if hashlib.sha256(archive).hexdigest() != digest.removeprefix("sha256:"):
-        raise RuntimeError("Native release integrity verification failed")
     limit = binary_size_limit(component)
-    if asset.endswith(".zip"):
-        with zipfile.ZipFile(io.BytesIO(archive)) as package:
-            members = [item for item in package.infolist() if item.filename == member]
-            if len(members) == 1 and members[0].file_size > limit:
-                raise UpdateRefusal("native_binary_too_large")
-            if len(members) != 1 or members[0].is_dir() or stat.S_ISLNK(members[0].external_attr >> 16) or not 0 < members[0].file_size <= limit:
-                raise RuntimeError("Native archive executable is invalid")
-            with package.open(members[0]) as stream:
-                contents = stream.read(limit + 1)
-    else:
-        # Stream multi-program archives (such as vmutils) instead of materializing
-        # every decompressed binary in RAM. Never extract archive-controlled paths.
-        contents = None
-        with tarfile.open(fileobj=io.BytesIO(archive), mode="r|gz") as package:
-            for count, entry in enumerate(package):
-                if count >= 10_000 or entry.offset_data + entry.size > 4_294_967_296:
-                    raise RuntimeError("Native archive expansion exceeds its budget")
-                if entry.name.removeprefix("./") != member:
-                    continue
-                if entry.size > limit:
+    def extract(stream, expected):
+        size = 0
+        with destination.open("xb") as output:
+            while True:
+                chunk = stream.read(min(65536, limit - size + 1))
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > limit:
                     raise UpdateRefusal("native_binary_too_large")
-                if contents is not None or not entry.isfile() or not 0 < entry.size <= limit:
+                output.write(chunk)
+        if size != expected or size == 0:
+            raise RuntimeError("Native archive executable size differs from its metadata")
+    # Keep both the compressed archive and executable on the destination filesystem.
+    # /tmp can be tmpfs, which would still charge the entire download to container RAM.
+    with tempfile.TemporaryFile(dir=destination.parent) as archive:
+        native_download_to(base + asset, 536_870_912, archive)
+        archive.seek(0)
+        if hashlib.file_digest(archive, "sha256").hexdigest() != digest.removeprefix("sha256:"):
+            raise RuntimeError("Native release integrity verification failed")
+        archive.seek(0)
+        if asset.endswith(".zip"):
+            with zipfile.ZipFile(archive) as package:
+                members = [item for item in package.infolist() if item.filename == member]
+                if len(members) == 1 and members[0].file_size > limit:
+                    raise UpdateRefusal("native_binary_too_large")
+                if len(members) != 1 or members[0].is_dir() or stat.S_ISLNK(members[0].external_attr >> 16) or not 0 < members[0].file_size <= limit:
                     raise RuntimeError("Native archive executable is invalid")
-                stream = package.extractfile(entry)
-                if stream is None:
-                    raise RuntimeError("Native archive executable is missing")
-                with stream:
-                    contents = stream.read(limit + 1)
-        if contents is None:
-            raise RuntimeError("Native archive executable is missing")
-    if not 0 < len(contents) <= limit or not contents.startswith(b"\x7fELF"):
-        raise RuntimeError("Native archive does not contain a bounded Linux executable")
-    return contents
+                with package.open(members[0]) as stream:
+                    extract(stream, members[0].file_size)
+        else:
+            found = False
+            with tarfile.open(fileobj=archive, mode="r|gz") as package:
+                for count, entry in enumerate(package):
+                    if count >= 10_000 or entry.offset_data + entry.size > 4_294_967_296:
+                        raise RuntimeError("Native archive expansion exceeds its budget")
+                    if entry.name.removeprefix("./") != member:
+                        continue
+                    if entry.size > limit:
+                        raise UpdateRefusal("native_binary_too_large")
+                    if found or not entry.isfile() or not 0 < entry.size <= limit:
+                        raise RuntimeError("Native archive executable is invalid")
+                    found = True
+                    stream = package.extractfile(entry)
+                    if stream is None:
+                        raise RuntimeError("Native archive executable is missing")
+                    with stream:
+                        extract(stream, entry.size)
+            if not found:
+                raise RuntimeError("Native archive executable is missing")
+    with destination.open("rb") as output:
+        if output.read(4) != b"\x7fELF":
+            raise RuntimeError("Native archive does not contain a bounded Linux executable")
 
 
 def binary_install(recipe, installed, candidate, run, emit, replace, lock):
@@ -130,17 +147,16 @@ def binary_install(recipe, installed, candidate, run, emit, replace, lock):
         if architecture is None:
             raise RuntimeError("Unsupported native architecture")
         emit("downloading")
-        contents = release_binary(component, candidate, architecture)
         with tempfile.TemporaryDirectory(prefix=".homelab-native-", dir=binary.parent) as temporary:
             staged = Path(temporary) / "application"
-            staged.write_bytes(contents)
+            release_binary(component, candidate, architecture, staged)
             staged.chmod(0o700)
             if version(staged) != candidate:
                 raise RuntimeError("Native release version differs from approval")
             if binary_metadata(binary) != metadata or version(binary) != installed or (service and native_service(service, run) != active):
                 raise RuntimeError("Native installation changed during preparation")
             emit("installing")
-            replace(binary, contents, before)
+            replace(binary, staged, before)
         if active:
             emit("restarting")
             run(["/usr/bin/systemctl", "restart", service])

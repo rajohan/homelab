@@ -171,7 +171,7 @@ jobs:
             docker pull "$image"
             digest="$(docker image inspect "$image" | jq -r --arg prefix "ghcr.io/$repository/$app@sha256:" '.[0].RepoDigests[] | select(startswith($prefix))')"
             [[ "$digest" == "ghcr.io/$repository/$app@sha256:"* ]]
-            jq -n --arg app "$app" --arg tag "$image" --arg reference "$digest" '{app:$app, tag:$tag, reference:$reference}' > "$app-image.json"
+            jq -n --arg app "$app" --arg tag "$image" --arg reference "$image@${digest##*@}" '{app:$app, tag:$tag, reference:$reference}' > "$app-image.json"
           done
           jq -s --arg version "$version" --arg revision "$SOURCE_SHA" '{version:$version, revision:$revision, platform:"linux/amd64", images:.}' auth-image.json dashboard-image.json > container-images.json
           {

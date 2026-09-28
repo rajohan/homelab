@@ -35,6 +35,10 @@ const phases = {
         "Recreating dependent services against the new namespace, preserving their images and data.",
 } as const;
 const refusals = {
+    release_rate_limited:
+        "GitHub has temporarily limited release requests. Retry after the limit resets or configure authenticated release access.",
+    release_download_failed:
+        "The official release could not be downloaded. No executable has been replaced.",
     native_binary_too_large:
         "The application executable exceeds this updater's supported size limit. Update the dashboard updater before retrying; no installation was started.",
     apt_candidate_changed:
@@ -151,82 +155,94 @@ export function updateSshArguments(target: UpdateTarget, source = program): stri
  * @param report - Fenced, code-owned progress sink.
  * @returns A verified version receipt; a failure may have partially changed the target.
  */
-export const executeUpdate: UpdateExecutor = async (
-    target,
-    item,
-    automatic,
-    signal,
-    report
-) => {
-    signal.throwIfAborted();
-    const process = Bun.spawn(updateSshArguments(target), {
-        stdin: new TextEncoder().encode(
-            JSON.stringify({ driver: target.driver, item, automatic })
-        ),
-        stdout: "pipe",
-        stderr: "ignore",
-        signal,
-        env: { PATH: "/usr/bin:/bin", LANG: "C", HOME: "/nonexistent" },
-    });
-    let receipt: UpdateReceipt | undefined;
-    let recreatedContainers: UpdateReceipt["recreatedContainers"];
-    let bytes = 0;
-    let pending = "";
-    try {
-        const decoder = new TextDecoder("utf-8", { fatal: true });
-        for await (const chunk of process.stdout) {
-            bytes += chunk.byteLength;
-            if (bytes > 65_536) throw new Error("Update receipt exceeded its budget");
-            pending += decoder.decode(chunk, { stream: true });
-            let end = pending.indexOf("\n");
-            while (end !== -1) {
-                const line = pending.slice(0, end);
-                pending = pending.slice(end + 1);
-                const value: unknown = JSON.parse(line);
-                const replacements = v.safeParse(recreatedContainersSchema, value);
-                if (replacements.success) {
-                    if (receipt || recreatedContainers)
-                        throw new Error("Unexpected namespace receipt");
-                    recreatedContainers = replacements.output.recreatedContainers;
-                    end = pending.indexOf("\n");
-                    continue;
-                }
-                const phase = v.safeParse(progressSchema, value);
-                if (phase.success) {
-                    if (receipt)
-                        throw new Error("Unexpected update event after completion");
-                    await report(phases[phase.output.phase]);
-                } else {
-                    const event = v.parse(eventSchema, value);
-                    if (!event.complete) {
-                        const message = event.reason
-                            ? refusals[event.reason]
-                            : "Update execution did not complete";
-                        if (event.reason) await report(message);
-                        throw new Error(message);
+export const executeUpdate: UpdateExecutor = createUpdateExecutor();
+
+/**
+ * Bind an optional server credential to native release downloads over the existing SSH channel.
+ * @param githubToken - Worker-only GitHub token; sent on stdin, never in argv or receipts.
+ * @returns The shared executor used by every installation entry point.
+ */
+export function createUpdateExecutor(githubToken?: string): UpdateExecutor {
+    return async (target, item, automatic, signal, report) => {
+        signal.throwIfAborted();
+        const process = Bun.spawn(updateSshArguments(target), {
+            stdin: new TextEncoder().encode(
+                JSON.stringify({
+                    driver: target.driver,
+                    item,
+                    automatic,
+                    ...(target.driver.kind === "native" && githubToken
+                        ? { githubToken }
+                        : {}),
+                })
+            ),
+            stdout: "pipe",
+            stderr: "ignore",
+            signal,
+            env: { PATH: "/usr/bin:/bin", LANG: "C", HOME: "/nonexistent" },
+        });
+        let receipt: UpdateReceipt | undefined;
+        let recreatedContainers: UpdateReceipt["recreatedContainers"];
+        let bytes = 0;
+        let pending = "";
+        try {
+            const decoder = new TextDecoder("utf-8", { fatal: true });
+            for await (const chunk of process.stdout) {
+                bytes += chunk.byteLength;
+                if (bytes > 65_536) throw new Error("Update receipt exceeded its budget");
+                pending += decoder.decode(chunk, { stream: true });
+                let end = pending.indexOf("\n");
+                while (end !== -1) {
+                    const line = pending.slice(0, end);
+                    pending = pending.slice(end + 1);
+                    const value: unknown = JSON.parse(line);
+                    const replacements = v.safeParse(recreatedContainersSchema, value);
+                    if (replacements.success) {
+                        if (receipt || recreatedContainers)
+                            throw new Error("Unexpected namespace receipt");
+                        recreatedContainers = replacements.output.recreatedContainers;
+                        end = pending.indexOf("\n");
+                        continue;
                     }
-                    if (receipt) throw new Error("Update execution did not complete");
-                    receipt = {
-                        installed: event.installed,
-                        rebootRequired: event.rebootRequired,
-                        ...(event.containerId ? { containerId: event.containerId } : {}),
-                        ...(recreatedContainers ? { recreatedContainers } : {}),
-                    };
+                    const phase = v.safeParse(progressSchema, value);
+                    if (phase.success) {
+                        if (receipt)
+                            throw new Error("Unexpected update event after completion");
+                        await report(phases[phase.output.phase]);
+                    } else {
+                        const event = v.parse(eventSchema, value);
+                        if (!event.complete) {
+                            const message = event.reason
+                                ? refusals[event.reason]
+                                : "Update execution did not complete";
+                            if (event.reason) await report(message);
+                            throw new Error(message);
+                        }
+                        if (receipt) throw new Error("Update execution did not complete");
+                        receipt = {
+                            installed: event.installed,
+                            rebootRequired: event.rebootRequired,
+                            ...(event.containerId
+                                ? { containerId: event.containerId }
+                                : {}),
+                            ...(recreatedContainers ? { recreatedContainers } : {}),
+                        };
+                    }
+                    end = pending.indexOf("\n");
                 }
-                end = pending.indexOf("\n");
             }
+            pending += decoder.decode();
+            if (
+                (await process.exited) !== 0 ||
+                pending.trim() ||
+                !receipt ||
+                receipt.installed !== item.available
+            )
+                throw new Error("Update execution could not be verified");
+            return receipt;
+        } finally {
+            if (process.exitCode === null) process.kill();
+            await process.exited;
         }
-        pending += decoder.decode();
-        if (
-            (await process.exited) !== 0 ||
-            pending.trim() ||
-            !receipt ||
-            receipt.installed !== item.available
-        )
-            throw new Error("Update execution could not be verified");
-        return receipt;
-    } finally {
-        if (process.exitCode === null) process.kill();
-        await process.exited;
-    }
-};
+    };
+}
