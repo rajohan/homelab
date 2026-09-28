@@ -12,12 +12,14 @@ async function hasQueuedUpdateCheck(
     transaction: Transaction,
     run: { id: string; action: string }
 ): Promise<boolean> {
-    // This empty-payload, read-only job always checks the latest reports. Its
-    // queued successor covers a retry too; installation and other jobs do not.
+    // A global or same-source read-only successor covers this retry. A scoped
+    // preparation must never suppress recovery for other sources.
     if (run.action !== "updates.releases") return false;
     const [pending] = await transaction<{ id: string }[]>`
         SELECT id FROM job_runs WHERE action = 'updates.releases' AND state = 'queued'
-        AND NOT cancel_requested AND id <> ${run.id} LIMIT 1`;
+        AND NOT cancel_requested AND id <> ${run.id}
+        AND (payload->>'source' IS NULL OR payload->>'source' =
+            (SELECT payload->>'source' FROM job_runs WHERE id = ${run.id})) LIMIT 1`;
     return Boolean(pending);
 }
 

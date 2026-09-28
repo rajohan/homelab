@@ -4,6 +4,8 @@ import * as v from "valibot";
 
 import { enqueueJob } from "../../jobs/queue";
 import type { JobDefinition, JobHandler } from "../../jobs/types";
+import { readAptObservation } from "./apt";
+import type { UpdateTarget } from "./configuration";
 import { resolveImageUpdate, type ImageUpdate } from "./registry";
 import { compareRelease, latestRelease } from "./releases";
 
@@ -170,7 +172,8 @@ export async function queueUpdateCheck(
     const [schedule] = await transaction<{ enabled: boolean }[]>`
         SELECT enabled FROM job_schedules WHERE action = 'updates.releases'`;
     const [pending] = await transaction<{ id: string }[]>`
-        SELECT id FROM job_runs WHERE action = 'updates.releases' AND state = 'queued' LIMIT 1`;
+        SELECT id FROM job_runs WHERE action = 'updates.releases' AND state = 'queued'
+        AND NOT cancel_requested AND payload->>'source' IS NULL LIMIT 1`;
     // A queued checker reads the newest reports. A running one may already have
     // read this source, so do not let it suppress a needed follow-up.
     if (schedule?.enabled !== false && !pending)
@@ -182,13 +185,21 @@ export async function queueUpdateCheck(
  * @param sources - Exact expected publishers.
  * @param client - Dashboard-only state.
  * @param request - Release/registry HTTP boundary, replaceable with loopback fixtures.
+ * @param targets - Approved APT connections for live package observations.
+ * @param inspectApt - Read-only host boundary, replaced by fixtures in tests.
  * @returns A bounded read-only update checker; installation remains separate.
  */
 export function updatesJob(
     sources: readonly UpdateSource[],
     client: SQL,
-    request: typeof fetch = fetch
+    request: typeof fetch = fetch,
+    targets: readonly UpdateTarget[] = [],
+    inspectApt = readAptObservation
 ): JobHandler {
+    const inputSchema = v.strictObject({
+        source: v.optional(v.pipe(v.string(), v.minLength(1), v.maxLength(100))),
+        purpose: v.optional(v.literal("prepare")),
+    });
     const handler: JobHandler = {
         definition: {
             key: "updates.releases",
@@ -198,22 +209,29 @@ export function updatesJob(
             resourceClass: "network",
             capability: "updates:refresh",
             resourceKeys: ["snapshot:updates"],
-            timeoutMs: 120_000,
+            timeoutMs:
+                120_000 +
+                targets.filter((target) => target.driver.kind === "apt").length * 15_000,
             attemptLimit: 2,
             retrySafe: true,
             intervalSeconds: 3600,
-            validate: (input) => v.parse(v.strictObject({}), input),
+            validate: (input) => v.parse(inputSchema, input),
         },
-        execute: async (_payload, context) => {
+        execute: async (payload, context) => {
+            const input = v.parse(inputSchema, payload);
+            if (input.source && !sources.some((source) => source.id === input.source))
+                throw new Error("Unknown update source");
             const releases = new Map<string, Promise<string>>();
             const history = await client<
                 { key: string; time: number }[]
             >`SELECT key, extract(epoch FROM captured_at)::float8 AS time FROM operation_snapshots WHERE key LIKE 'updates.resolved:%'`;
             const lastChecked = (id: string) =>
                 history.find((row) => row.key === `updates.resolved:${id}`)?.time ?? 0;
-            for (const source of [...sources].toSorted(
-                (left, right) => lastChecked(left.id) - lastChecked(right.id)
-            )) {
+            for (const source of sources
+                .filter((source) => !input.source || source.id === input.source)
+                .toSorted(
+                    (left, right) => lastChecked(left.id) - lastChecked(right.id)
+                )) {
                 const [row] = await client<
                     { value: UpdateReport }[]
                 >`SELECT value FROM operation_snapshots WHERE key = ${`updates:${source.id}`} AND captured_at > now() - interval '26 hours'`;
@@ -221,8 +239,33 @@ export function updatesJob(
                 await context.reportProgress(
                     `Checking available versions for ${source.label}.`
                 );
+                let observation = row.value;
+                const aptTargets = targets.filter(
+                    (target) =>
+                        target.source === source.id && target.driver.kind === "apt"
+                );
+                if (aptTargets.length > 1)
+                    throw new Error("APT observation target is ambiguous");
+                if (aptTargets[0] && observation.coveredKinds.includes("os")) {
+                    await context.reportProgress(
+                        `Reading current installed packages and candidates for ${source.label}.`
+                    );
+                    const apt = await inspectApt(
+                        aptTargets[0],
+                        AbortSignal.any([context.signal, AbortSignal.timeout(15_000)])
+                    );
+                    observation = {
+                        ...observation,
+                        repositoryMetadataAt: apt.repositoryMetadataAt,
+                        aptObservedAt: new Date().toISOString(),
+                        items: [
+                            ...observation.items.filter((item) => item.kind !== "os"),
+                            ...apt.items,
+                        ],
+                    };
+                }
                 const report = await resolveUpdates(
-                    row.value,
+                    observation,
                     context.signal,
                     releases,
                     request

@@ -1,19 +1,9 @@
 import type { UpdateControl, UpdateItem } from "@homelab/contracts/updates";
-import { Button, ConfirmDialog } from "@homelab/ui";
+import { Button } from "@homelab/ui";
 import { ArrowUpCircle } from "lucide-react";
 import { useState } from "react";
 
-import { api } from "../../api/client";
-import { useJobOperation } from "../jobs/useJobOperation";
-import { updateVersion } from "./updateVersion";
-
-function installationDescription(kind: UpdateItem["kind"]): string {
-    if (kind === "runtime")
-        return "The shared runtime and its default entrypoints will change. Existing version-pinned projects retain their current runtime.";
-    if (kind === "container")
-        return "The Compose image pin will be updated and the selected service recreated.";
-    return "Required dependencies may also be updated.";
-}
+import { UpdateDialog } from "./UpdateDialog";
 
 /**
  * Confirm one exact observed update and reveal its accepted job in shared worker activity.
@@ -29,52 +19,23 @@ export function UpdateAction({
     readonly control: UpdateControl;
     readonly disabled: boolean;
 }) {
-    const [intent, setIntent] = useState<{
-        target: string;
-        item: string;
-        revision: string;
-        requestId: string;
-    }>();
-    const operation = useJobOperation((input: NonNullable<typeof intent>, signal) =>
-        api.updates.request.mutate(input, { signal })
-    );
+    const [open, setOpen] = useState(false);
     return (
         <>
             <Button
                 variant="secondary"
                 className="w-full"
-                disabled={disabled || !control.allowed || operation.isPending}
+                disabled={disabled || !control.allowed}
                 title={control.reason ?? undefined}
-                onClick={() =>
-                    setIntent({
-                        target: control.target,
-                        item: item.id,
-                        revision: control.revision,
-                        requestId: crypto.randomUUID(),
-                    })
-                }
+                onClick={() => setOpen(true)}
             >
                 <ArrowUpCircle className="size-4" aria-hidden="true" /> Update
             </Button>
-            {intent && (
-                <ConfirmDialog
-                    title={`Update ${item.name}?`}
-                    description={`Install ${updateVersion(item, "available")}. ${installationDescription(item.kind)} Services may be interrupted. The host will not restart automatically.${control.change === "major" ? " This is a major upgrade." : ""}`}
-                    confirmLabel="Update"
-                    variant={control.change === "major" ? "danger" : "primary"}
-                    onClose={() => setIntent(undefined)}
-                    onConfirm={async () => {
-                        if (
-                            disabled ||
-                            !control.allowed ||
-                            control.revision !== intent.revision
-                        )
-                            throw new Error(
-                                "The update changed. Close this dialog and review the current version."
-                            );
-                        await operation.mutateAsync(intent);
-                        setIntent(undefined);
-                    }}
+            {open && (
+                <UpdateDialog
+                    item={item}
+                    target={control.target}
+                    onClose={() => setOpen(false)}
                 />
             )}
         </>

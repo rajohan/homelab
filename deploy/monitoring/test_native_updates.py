@@ -83,6 +83,40 @@ class NativeBinaryTests(unittest.TestCase):
                 self.assertEqual(neighbor.read_text(),'private configuration')
                 self.assertEqual(set(binary.parent.iterdir()), {binary, neighbor})
 
+    def test_large_alloy_installation_reaches_download_but_oversized_binaries_do_not(self):
+        for component, size, allowed in [('alloy', 551_551_848, True), ('alloy', 1_073_741_825, False), ('node-exporter', 551_551_848, True), ('node-exporter', 1_073_741_825, False)]:
+            with self.subTest(component=component, size=size), tempfile.TemporaryDirectory(prefix='homelab-native-fixture-') as temporary:
+                binary = Path(temporary).resolve() / 'application'
+                with binary.open('wb') as stream: stream.truncate(size)
+                binary.chmod(0o755)
+                def run(args, **_options):
+                    if '--property=ActiveState' in args: return 'inactive'
+                    if args == ['/usr/bin/uname', '-m']: return 'x86_64'
+                    return version_output(component, '1.2.3')
+                recipe = {'application':component,'binary':str(binary),'service':'fixture.service'}
+                with patch.object(remote, 'file_digest', return_value='fixture'), patch.object(remote, 'release_binary', side_effect=RuntimeError('download boundary')) as download:
+                    with self.assertRaisesRegex(RuntimeError, 'download boundary' if allowed else 'native_binary_too_large'):
+                        remote.binary_install(recipe, '1.2.3', '1.3.0', run, lambda _:None, lambda *_:self.fail('Unexpected replacement'), remote.locked_directory)
+                    self.assertEqual(download.call_count, int(allowed))
+                self.assertEqual(binary.stat().st_size, size)
+
+    def test_alloy_archive_uses_the_same_bounded_executable_budget(self):
+        for size, allowed in [(551_551_848, True), (1_073_741_825, False)]:
+            with self.subTest(size=size):
+                archive = b'verified synthetic archive'
+                metadata = {'tag_name':'v1.2.3','assets':[{'name':'alloy-linux-amd64.zip','browser_download_url':'https://github.com/grafana/alloy/releases/download/v1.2.3/alloy-linux-amd64.zip','digest':'sha256:'+hashlib.sha256(archive).hexdigest()}]}
+                entry = zipfile.ZipInfo('alloy-linux-amd64'); entry.file_size = size
+                with patch.object(remote, 'native_download', side_effect=[json.dumps(metadata).encode(), archive]), patch.object(remote.zipfile, 'ZipFile') as package:
+                    opened = package.return_value.__enter__.return_value
+                    opened.infolist.return_value = [entry]
+                    opened.open.return_value = io.BytesIO(b'\x7fELFfixture')
+                    if allowed:
+                        self.assertEqual(remote.release_binary('alloy','1.2.3','amd64'), b'\x7fELFfixture')
+                    else:
+                        with self.assertRaisesRegex(remote.UpdateRefusal, 'native_binary_too_large'):
+                            remote.release_binary('alloy','1.2.3','amd64')
+                        opened.open.assert_not_called()
+
     def test_wrong_archive_digest_never_reaches_an_executable(self):
         metadata = {'tag_name':'v1.2.3','assets':[{'name':'alloy-linux-amd64.zip','browser_download_url':'https://github.com/grafana/alloy/releases/download/v1.2.3/alloy-linux-amd64.zip','digest':'sha256:'+'a'*64}]}
         with patch.object(remote,'native_download',side_effect=[json.dumps(metadata).encode(),b'not trusted']), self.assertRaisesRegex(RuntimeError,'integrity'):

@@ -20,6 +20,11 @@ BINARY_RELEASES = {
 }
 
 
+def binary_size_limit(component):
+    """Allow growth across all providers while bounding installed and expanded executables."""
+    return 1_073_741_824
+
+
 def binary_version(component, output):
     """Parse the provider's release line, excluding embedded Go/runtime versions."""
     if component in {"victoriametrics", "vmalert", "vmbackup"}:
@@ -66,13 +71,15 @@ def release_binary(component, version, architecture):
         if len(hashes) != 1 or not re.fullmatch(r"[a-f0-9]{64}", hashes[0]):
             raise RuntimeError("Native release checksum is unavailable")
         digest = "sha256:" + hashes[0]
-    archive = native_download(base + asset, 268_435_456)
+    archive = native_download(base + asset, 536_870_912)
     if hashlib.sha256(archive).hexdigest() != digest.removeprefix("sha256:"):
         raise RuntimeError("Native release integrity verification failed")
-    limit = 536_870_912
+    limit = binary_size_limit(component)
     if asset.endswith(".zip"):
         with zipfile.ZipFile(io.BytesIO(archive)) as package:
             members = [item for item in package.infolist() if item.filename == member]
+            if len(members) == 1 and members[0].file_size > limit:
+                raise UpdateRefusal("native_binary_too_large")
             if len(members) != 1 or members[0].is_dir() or stat.S_ISLNK(members[0].external_attr >> 16) or not 0 < members[0].file_size <= limit:
                 raise RuntimeError("Native archive executable is invalid")
             with package.open(members[0]) as stream:
@@ -83,7 +90,7 @@ def release_binary(component, version, architecture):
         contents = None
         with tarfile.open(fileobj=io.BytesIO(archive), mode="r|gz") as package:
             for count, entry in enumerate(package):
-                if count >= 10_000 or entry.offset_data + entry.size > 1_073_741_824:
+                if count >= 10_000 or entry.offset_data + entry.size > 4_294_967_296:
                     raise RuntimeError("Native archive expansion exceeds its budget")
                 if entry.name.removeprefix("./") != member:
                     continue
@@ -108,8 +115,8 @@ def binary_install(recipe, installed, candidate, run, emit, replace, lock):
     arguments = BINARY_RELEASES[component][3]
     with lock(binary.parent):
         metadata = binary_metadata(binary)
-        if binary.stat().st_size > 536_870_912:
-            raise RuntimeError("Native executable exceeds its budget")
+        if binary.stat().st_size > binary_size_limit(component):
+            raise UpdateRefusal("native_binary_too_large")
         before = file_digest(binary)
         def version(path):
             return binary_version(component, run([str(path), *arguments]))

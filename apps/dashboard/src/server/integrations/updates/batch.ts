@@ -16,7 +16,7 @@ import type { ApplicationTarget } from "../applications/configuration";
 import { applyUpdate, updateTimeoutMs } from "./apply";
 import type { UpdateTarget } from "./configuration";
 import type { UpdateExecutor } from "./execution";
-import { readUpdateReport } from "./inventory";
+import { readUpdateReport, freshAptObservation } from "./inventory";
 import {
     updateReceiptScope,
     updateReceiptResourceKeys,
@@ -396,6 +396,18 @@ export async function requestUpdateBatch(
                 "PRECONDITION_FAILED",
                 "No updates in this plan can be installed."
             );
+        for (const source of new Set(
+            included
+                .filter((entry) => entry.item.kind === "os")
+                .map((entry) => entry.source)
+        )) {
+            const report = await readUpdateReport(transaction, source);
+            if (!report || !freshAptObservation(report))
+                throw new OperationFailure(
+                    "PRECONDITION_FAILED",
+                    "Refresh the current package status and review the update plan before installing."
+                );
+        }
         const ids: string[] = [];
         for (const source of sources) {
             const entries = included.filter((entry) => entry.source === source.id);

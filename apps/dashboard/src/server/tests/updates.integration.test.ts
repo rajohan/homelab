@@ -6,10 +6,14 @@ import type { UpdateReport } from "@homelab/contracts/updates";
 import { appRouter } from "../api/router";
 import { createAutomation } from "../automation/service";
 import { startDashboardServer } from "../index";
+import { updateActionJobs } from "../integrations/updates/actions";
+import { parseUpdateTargets } from "../integrations/updates/configuration";
 import { readUpdateReport } from "../integrations/updates/inventory";
 import { updatesJob } from "../integrations/updates/job";
+import { writeUpdatePolicy } from "../integrations/updates/policies";
+import { updateControl } from "../integrations/updates/selection";
 import { claimJob, commitClaim, settleClaim } from "../jobs/claims";
-import { lockQueue } from "../jobs/queue";
+import { enqueueJob, lockQueue } from "../jobs/queue";
 import { createJobRegistry } from "../jobs/registry";
 import type { ClaimedJob } from "../jobs/types";
 import { operationFixture, expectOperationFailure } from "../testing/operations";
@@ -214,9 +218,12 @@ test("update publishers are source-bound, monotonic and distinct from human read
             "not registered"
         );
         await expectOperationFailure(machine.updates.inventory(), "permission");
-        const current = report();
+        const current = { ...report(), aptObservedAt: new Date().toISOString() };
         expect(await machine.updates.publish(current)).toEqual({ accepted: true });
         expect(await machine.updates.publish(current)).toEqual({ accepted: false });
+        expect(await readUpdateReport(fixture.client, "demo")).not.toHaveProperty(
+            "aptObservedAt"
+        );
         const observation2 = await human.updates.inventory();
         expect(observation2[0]).toMatchObject({
             stale: false,
@@ -576,3 +583,256 @@ test.each(["publication", "receipt"] as const)(
         }
     }
 );
+
+test("release checks replace stale APT candidates and holds with live host observations", async () => {
+    const fixture = await operationFixture();
+    try {
+        const sources = [{ id: "demo", label: "Demo", publisher: crypto.randomUUID() }];
+        const original = report();
+        original.capturedAt = new Date(Date.now() - 8 * 3_600_000).toISOString();
+        const targets = parseUpdateTargets(
+            JSON.stringify([
+                {
+                    id: "demo-apt",
+                    source: "demo",
+                    label: "Demo packages",
+                    host: "fixture.invalid",
+                    user: "updater",
+                    identityFile: "/fixture/key",
+                    knownHostsFile: "/fixture/trust",
+                    driver: { kind: "apt" },
+                },
+            ])
+        );
+        const fresh = { ...original.items[0]!, available: "1.2-1", held: true };
+        const now = new Date().toISOString();
+        await fixture.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES ('updates:demo',${JSON.stringify(original)}::text::jsonb,now())`;
+        let reads = 0;
+        const handler = updatesJob(
+            sources,
+            fixture.client,
+            fetch,
+            targets,
+            (target, signal) => {
+                expect(target.id).toBe("demo-apt");
+                expect(signal.aborted).toBe(false);
+                reads += 1;
+                return Promise.resolve({ items: [fresh], repositoryMetadataAt: now });
+            }
+        );
+        await handler.execute(
+            {},
+            {
+                runId: crypto.randomUUID(),
+                leaseToken: crypto.randomUUID(),
+                signal: AbortSignal.timeout(5000),
+                reportProgress: () => Promise.resolve(),
+                commit: async (write) => {
+                    await fixture.client.begin(write);
+                    return true;
+                },
+            }
+        );
+        const observed = await readUpdateReport(fixture.client, "demo");
+        expect(reads).toBe(1);
+        expect(observed?.items).toEqual([{ ...fresh, candidateVerified: false }]);
+        expect(Date.parse(observed?.aptObservedAt ?? "")).toBeGreaterThan(
+            Date.now() - 10_000
+        );
+        expect(observed?.repositoryMetadataAt).toBe(now);
+        expect(observed?.capturedAt).toBe(original.capturedAt);
+        const [raw] = await fixture.client<
+            { value: UpdateReport }[]
+        >`SELECT value FROM operation_snapshots WHERE key='updates:demo'`;
+        expect(raw?.value).toEqual(original);
+    } finally {
+        await fixture.close();
+    }
+});
+
+test("scoped preparations validate access and scope, preserve idempotency, and cannot swallow global checks", async () => {
+    const fixture = await operationFixture();
+    const sources = ["alpha", "beta"].map((id) => ({ id, label: id, publisher: id }));
+    const handler = updatesJob(sources, fixture.client);
+    const operations = {
+        ...fixture,
+        updateSources: sources,
+        registry: createJobRegistry([handler]),
+    };
+    const caller = appRouter.createCaller({
+        operations,
+        principal: { kind: "human", id: "operator", capabilities },
+    });
+    try {
+        await expectOperationFailure(
+            appRouter
+                .createCaller({
+                    operations,
+                    principal: {
+                        kind: "human",
+                        id: "reader",
+                        capabilities: ["updates:read"],
+                    },
+                })
+                .updates.prepare({ requestId: crypto.randomUUID() }),
+            "permission"
+        );
+        await expectOperationFailure(
+            caller.updates.prepare({ requestId: crypto.randomUUID(), source: "missing" }),
+            "not configured"
+        );
+        await expectOperationFailure(
+            caller.updates.prepare({ requestId: crypto.randomUUID(), target: "missing" }),
+            "not configured"
+        );
+        const input = { requestId: crypto.randomUUID(), source: "alpha" };
+        const prepared = await caller.updates.prepare(input);
+        expect(await caller.updates.prepare(input)).toEqual(prepared);
+        await expectOperationFailure(
+            caller.updates.prepare({ ...input, source: "beta" }),
+            "different"
+        );
+        await appRouter
+            .createCaller({
+                operations,
+                principal: {
+                    kind: "automation",
+                    id: "beta",
+                    capabilities: ["updates:publish"],
+                },
+            })
+            .updates.publish(report());
+        expect(
+            await fixture.client<
+                { payload: unknown }[]
+            >`SELECT payload FROM job_runs ORDER BY id`
+        ).toEqual([
+            { payload: { source: "alpha", purpose: "prepare" } },
+            { payload: {} },
+        ]);
+    } finally {
+        await fixture.close();
+    }
+});
+
+test.each(["failed", "expired"] as const)(
+    "a scoped successor never suppresses a global check retry after %s",
+    async (outcome) => {
+        const fixture = await operationFixture();
+        const handler = updatesJob([], fixture.client);
+        const queue = (payload: Record<string, unknown>) =>
+            fixture.client.begin(async (transaction) => {
+                await lockQueue(transaction);
+                return enqueueJob(
+                    transaction,
+                    handler.definition,
+                    "system:test",
+                    crypto.randomUUID(),
+                    payload
+                );
+            });
+        try {
+            const id = await queue({});
+            const worker = await fixture.registerWorker();
+            const current = await claimJob(fixture.client, worker, [
+                handler.definition.key,
+            ]);
+            if (!current) throw new Error("Missing global check");
+            await queue({ source: "alpha", purpose: "prepare" });
+            if (outcome === "expired") {
+                await fixture.client`UPDATE job_runs SET lease_expires_at=now()-interval '1 second' WHERE id=${id}`;
+                await claimJob(fixture.client, worker, [handler.definition.key]);
+            } else await settleClaim(fixture.client, current, "failed");
+            expect(
+                await fixture.client<
+                    { state: string }[]
+                >`SELECT state FROM job_runs WHERE id=${id}`
+            ).toEqual([{ state: "queued" }]);
+        } finally {
+            await fixture.close();
+        }
+    }
+);
+
+test("automatic admission reads current APT candidates before choosing an exact version", async () => {
+    const fixture = await operationFixture();
+    try {
+        const sources = [{ id: "demo", label: "Demo", publisher: "publisher" }];
+        const targets = parseUpdateTargets(
+            JSON.stringify([
+                {
+                    id: "demo-apt",
+                    source: "demo",
+                    label: "Demo packages",
+                    host: "fixture.invalid",
+                    user: "updater",
+                    identityFile: "/fixture/key",
+                    knownHostsFile: "/fixture/trust",
+                    driver: { kind: "apt" },
+                },
+            ])
+        );
+        const target = targets[0]!;
+        const original = report();
+        original.items = [
+            { ...original.items[0]!, installed: "1.0.0", available: "1.0.1" },
+        ];
+        await fixture.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES ('updates:demo',${JSON.stringify(original)}::text::jsonb,now())`;
+        let reads = 0;
+        const refresh = updatesJob(sources, fixture.client, fetch, targets, () => {
+            reads += 1;
+            return Promise.resolve({
+                items: [{ ...original.items[0]!, available: "1.0.2" }],
+                repositoryMetadataAt: new Date().toISOString(),
+            });
+        });
+        const automatic = updateActionJobs(
+            targets,
+            fixture.client,
+            undefined,
+            [],
+            refresh
+        ).find((handler) => handler.definition.key === "updates.automatic")!;
+        const execute = () =>
+            automatic.execute(
+                {},
+                {
+                    runId: crypto.randomUUID(),
+                    leaseToken: crypto.randomUUID(),
+                    signal: AbortSignal.timeout(5000),
+                    reportProgress: () => Promise.resolve(),
+                    commit: async (write) => {
+                        await fixture.client.begin(write);
+                        return true;
+                    },
+                }
+            );
+        await execute();
+        expect(reads).toBe(0);
+        await writeUpdatePolicy(fixture.client, target, "human:operator", {
+            version: 0,
+            enabled: true,
+        });
+        await execute();
+        expect(reads).toBe(1);
+        const current = (await readUpdateReport(fixture.client, "demo"))!;
+        expect(current.items[0]!.available).toBe("1.0.2");
+        expect(
+            await fixture.client<
+                { payload: unknown }[]
+            >`SELECT payload FROM job_runs WHERE action='updates.install.demo-apt'`
+        ).toEqual([
+            {
+                payload: {
+                    target: target.id,
+                    item: "apt:example",
+                    revision: updateControl(target, current, current.items[0]!).revision,
+                    automatic: true,
+                    policyVersion: 1,
+                },
+            },
+        ]);
+    } finally {
+        await fixture.close();
+    }
+});

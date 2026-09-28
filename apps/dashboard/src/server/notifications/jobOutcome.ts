@@ -14,11 +14,17 @@ export async function notifyJobOutcome(
     id: string
 ): Promise<void> {
     const [run] = await transaction<
-        { label: string; state: string; requested_by: string; action: string }[]
-    >`SELECT label, state, requested_by, action FROM job_runs WHERE id = ${id}`;
+        {
+            label: string;
+            state: string;
+            requested_by: string;
+            action: string;
+            preparation: boolean;
+        }[]
+    >`SELECT label, state, requested_by, action, (action = 'updates.releases' AND payload->>'purpose' = 'prepare') AS preparation FROM job_runs WHERE id = ${id}`;
     if (!run || ["queued", "running"].includes(run.state)) return;
     const failed = ["failed", "timed_out"].includes(run.state);
-    if (!failed && run.requested_by === "system:scheduler") return;
+    if (!failed && (!run.requested_by.startsWith("human:") || run.preparation)) return;
     const successSeverity = run.state === "succeeded" ? "success" : "info";
     const severity: NotificationSeverity = failed ? "error" : successSeverity;
     const outcome = run.state === "timed_out" ? "timed out" : run.state;

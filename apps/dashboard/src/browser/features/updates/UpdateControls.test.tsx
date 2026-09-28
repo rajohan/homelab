@@ -13,9 +13,11 @@ import type { ReactNode } from "react";
 
 import { IdentityClientContext } from "../../identity/IdentityClientContext";
 import { AutomaticUpdates } from "./AutomaticUpdates";
+import { prepareUpdate } from "./prepareUpdate";
 import { UpdateAction } from "./UpdateAction";
 import { UpdateBatchAction } from "./UpdateBatchAction";
 import { UpdateBatchDialog } from "./UpdateBatchDialog";
+import { UpdateDialog } from "./UpdateDialog";
 import { UpdatePolicyControl } from "./UpdatePolicyControl";
 import { UpdatesPanel } from "./UpdatesPanel";
 
@@ -52,6 +54,16 @@ function fixture(
         },
     });
     query.setQueryData(["operations", "updates", "policies"], policies);
+    query.setQueryData(["operations", "updates", "single", "demo", "demo"], {
+        item,
+        control: {
+            target: "demo",
+            revision: "a".repeat(64),
+            change: "minor",
+            allowed: true,
+            reason: null,
+        },
+    });
     configure?.(query);
     const view = render(
         <QueryClientProvider client={query}>
@@ -429,3 +441,73 @@ test("long automatic update lists use a bounded virtual scroll region", () => {
         });
     }
 });
+
+test.each(["succeeded", "failed", "timed_out", "cancelled"] as const)(
+    "shared preparation only permits a successful check (%s)",
+    async (state) => {
+        const signal = new AbortController().signal;
+        const input = { requestId: crypto.randomUUID(), target: "demo" };
+        const seen: string[] = [];
+        const preparing = prepareUpdate(input, signal, {
+            start: (value, received) => {
+                expect(value).toEqual(input);
+                expect(received).toBe(signal);
+                seen.push("prepare");
+                return Promise.resolve({ id: "fixture" });
+            },
+            state: (id, received) => {
+                expect(id).toBe("fixture");
+                expect(received).toBe(signal);
+                seen.push("status");
+                return Promise.resolve(state);
+            },
+        });
+        const result = await preparing.then(
+            () => null,
+            (error: unknown) => error
+        );
+        const message = result instanceof Error ? result.message : null;
+        expect(message).toBe(
+            state === "succeeded"
+                ? null
+                : "Current software status could not be refreshed. Open Jobs to inspect the check before updating."
+        );
+        expect(seen).toEqual(["prepare", "status"]);
+    }
+);
+
+test.each(["missing", "failed", "current"] as const)(
+    "single confirmation cannot install before a usable fresh plan (%s)",
+    (state) => {
+        const cleanup = fixture(
+            <UpdateDialog item={item} target="demo" onClose={() => {}} />,
+            [],
+            (query) => {
+                const key = ["operations", "updates", "single", "demo", "demo"];
+                if (state === "missing") query.removeQueries({ queryKey: key });
+                if (state === "failed")
+                    query
+                        .getQueryCache()
+                        .find({ queryKey: key })
+                        ?.setState({
+                            status: "error",
+                            error: new Error("Could not refresh"),
+                        });
+                if (state === "current")
+                    query.setQueryData(key, {
+                        item: { ...item, status: "current" },
+                        control: {
+                            allowed: false,
+                            reason: "No verified update is available.",
+                            change: "patch",
+                        },
+                    });
+            }
+        );
+        try {
+            expect(screen.getByRole("button", { name: "Update" })).toBeDisabled();
+        } finally {
+            cleanup();
+        }
+    }
+);

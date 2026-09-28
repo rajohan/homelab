@@ -78,7 +78,7 @@ Monitoring incidents, backup protection and software observations are documented
 [Monitoring operations](monitoring-operations.md). They use separate registered jobs,
 permissions and source-freshness states.
 
-- Each worker process has a unique registration, not a permanent host identity. Orderly shutdown removes its registration after all claims settle. Hourly maintenance removes older stopped registrations and unresponsive registrations after 24 hours, only when they own no running jobs. Job and audit history remains independent of these temporary registrations.
+- Each worker process has a unique registration, not a permanent host identity. Orderly shutdown removes its registration after all claims settle. The Jobs overview hides registrations after five minutes without a heartbeat, unless they still own running work. Hourly maintenance deletes those abandoned registrations with the same running-job guard. Job and audit history remains independent of these temporary registrations.
 
 ## Scheduling and worker control
 

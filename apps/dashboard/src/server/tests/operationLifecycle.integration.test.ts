@@ -133,8 +133,19 @@ test("retention removes only aged completed history and preserves queued and cur
         const abandoned = crypto.randomUUID();
         const recent = crypto.randomUUID();
         const active = crypto.randomUUID();
-        await fixture.client`INSERT INTO workers (id, version, heartbeat_at, capacity, draining) VALUES (${stopped}, 'test', now(), 3, true), (${abandoned}, 'test', now() - interval '25 hours', 3, false), (${recent}, 'test', now() - interval '1 minute', 3, false), (${active}, 'test', now() - interval '25 hours', 3, true)`;
+        await fixture.client`INSERT INTO workers (id, version, heartbeat_at, capacity, draining) VALUES (${stopped}, 'test', now(), 3, true), (${abandoned}, 'test', now() - interval '6 minutes', 3, false), (${recent}, 'test', now() - interval '1 minute', 3, false), (${active}, 'test', now() - interval '6 minutes', 3, true)`;
         await fixture.client`UPDATE job_runs SET worker_id = ${active} WHERE id = ${run.id}`;
+        const overview = await appRouter
+            .createCaller({
+                operations: fixture,
+                principal: { kind: "human", id: "operator", capabilities },
+            })
+            .worker.overview();
+        expect(overview.workers.some((entry) => entry.id === abandoned)).toBe(false);
+        expect(
+            overview.workers.some((entry) => entry.id === active && entry.active === 1)
+        ).toBe(true);
+
         await fixture.client`INSERT INTO dashboard_notifications (id, source, source_key, title, message, severity, created_at) SELECT gen_random_uuid(), 'retention-test', number::text, 'Expired', 'Expired event', 'info', now() - interval '31 days' FROM generate_series(1, 2505) AS number`;
         await fixture.client`INSERT INTO notification_receipts (notification_id, actor, read_at) SELECT id, 'human:operator', now() FROM dashboard_notifications`;
         const current = crypto.randomUUID();
@@ -177,7 +188,7 @@ test("retention skips a locked recovering worker and retains its refreshed regis
     let transactionOpen = false;
     try {
         const worker = await fixture.registerWorker();
-        await fixture.client`UPDATE workers SET heartbeat_at = now() - interval '25 hours' WHERE id = ${worker}`;
+        await fixture.client`UPDATE workers SET heartbeat_at = now() - interval '6 minutes' WHERE id = ${worker}`;
         await recovery`BEGIN`;
         transactionOpen = true;
         await recovery`UPDATE workers SET heartbeat_at = now() WHERE id = ${worker}`;

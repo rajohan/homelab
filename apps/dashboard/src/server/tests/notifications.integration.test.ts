@@ -6,6 +6,7 @@ import type { SQL } from "bun";
 
 import { appRouter } from "../api/router";
 import type { Transaction } from "../database/connection";
+import { updatesJob } from "../integrations/updates/job";
 import { claimJob, settleClaim } from "../jobs/claims";
 import { maintenanceJob } from "../jobs/maintenance";
 import { enqueueJob, lockQueue } from "../jobs/queue";
@@ -484,3 +485,78 @@ test("final job notifications share settlement and retries do not report prematu
         await fixture.close();
     }
 });
+
+test.each([
+    "system:scheduler",
+    "system:updates",
+    "system:updates-auto",
+    "automation:publisher",
+    "human:operator",
+])(
+    "job outcome notifications suppress automatic success but retain failures for %s",
+    async (actor) => {
+        const fixture = await operationFixture();
+        try {
+            const definition = { ...maintenanceJob(30).definition, attemptLimit: 1 };
+            const worker = await fixture.registerWorker();
+            for (const outcome of ["succeeded", "failed", "timed_out"] as const) {
+                const id = await fixture.client.begin(async (transaction) => {
+                    await lockQueue(transaction);
+                    return enqueueJob(
+                        transaction,
+                        definition,
+                        actor,
+                        `${actor}:${outcome}`
+                    );
+                });
+                const claim = await claimJob(fixture.client, worker, [definition.key]);
+                if (!claim) throw new Error("Missing notification fixture claim");
+                await settleClaim(fixture.client, claim, outcome);
+                const rows = await fixture.client<
+                    { severity: string }[]
+                >`SELECT severity FROM dashboard_notifications WHERE source='jobs' AND source_key=${id}`;
+                const visible = outcome !== "succeeded" || actor.startsWith("human:");
+                const severity = outcome === "succeeded" ? "success" : "error";
+                expect(rows).toEqual(visible ? [{ severity }] : []);
+            }
+        } finally {
+            await fixture.close();
+        }
+    }
+);
+
+test.each(["succeeded", "failed", "timed_out"] as const)(
+    "operator update preparation suppresses only success notifications: %s",
+    async (outcome) => {
+        const fixture = await operationFixture();
+        try {
+            const definition = {
+                ...updatesJob([], fixture.client).definition,
+                attemptLimit: 1,
+            };
+            const id = await fixture.client.begin(async (transaction) => {
+                await lockQueue(transaction);
+                return enqueueJob(
+                    transaction,
+                    definition,
+                    "human:operator",
+                    crypto.randomUUID(),
+                    { purpose: "prepare" }
+                );
+            });
+            const claim = await claimJob(fixture.client, await fixture.registerWorker(), [
+                definition.key,
+            ]);
+            if (!claim) throw new Error("Missing preparation claim");
+            await settleClaim(fixture.client, claim, outcome);
+            const notifications = await fixture.client<
+                { severity: string }[]
+            >`SELECT severity FROM dashboard_notifications WHERE source_key=${id}`;
+            expect(notifications).toEqual(
+                outcome === "succeeded" ? [] : [{ severity: "error" }]
+            );
+        } finally {
+            await fixture.close();
+        }
+    }
+);

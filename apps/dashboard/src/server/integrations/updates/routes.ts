@@ -7,10 +7,11 @@ import {
     updateBatchScopeSchema,
     updateBatchRequestSchema,
 } from "@homelab/contracts/updates";
+import * as v from "valibot";
 
 import { runOperation, trpc } from "../../api/trpc";
 import { requireCapability } from "../../automation/authentication";
-import { lockQueue } from "../../jobs/queue";
+import { enqueueJob, lockQueue } from "../../jobs/queue";
 import { authorizedOperations } from "../../operations/authorization";
 import type { OperationsContext } from "../../operations/context";
 import { OperationFailure } from "../../operations/errors";
@@ -37,6 +38,82 @@ async function verifyOperator(context: OperationsContext, capability: Capability
 }
 
 export const updatesRouter = trpc.router({
+    prepare: trpc.procedure
+        .input(
+            v.strictObject({
+                requestId: updateRequestSchema.entries.requestId,
+                source: updateBatchScopeSchema.entries.source,
+                target: v.optional(updateRequestSchema.entries.target),
+            })
+        )
+        .mutation(({ ctx, input }) =>
+            runOperation(async () => {
+                const { operations, principal } = authorizedOperations(
+                    ctx,
+                    "updates:refresh"
+                );
+                requireCapability(principal, "jobs:run");
+                const target = input.target
+                    ? operations.updateTargets?.find((entry) => entry.id === input.target)
+                    : undefined;
+                if (input.target && !target)
+                    throw new OperationFailure(
+                        "NOT_FOUND",
+                        "This update target is not configured."
+                    );
+                const source = target?.source ?? input.source;
+                if (
+                    (target && input.source && target.source !== input.source) ||
+                    (source &&
+                        !operations.updateSources?.some((entry) => entry.id === source))
+                )
+                    throw new OperationFailure(
+                        "NOT_FOUND",
+                        "This update source is not configured."
+                    );
+                const handler = operations.registry.get("updates.releases");
+                if (!handler)
+                    throw new OperationFailure(
+                        "PRECONDITION_FAILED",
+                        "Update checks are not configured."
+                    );
+                return operations.client.begin(async (transaction) => {
+                    await lockQueue(transaction);
+                    return {
+                        id: await enqueueJob(
+                            transaction,
+                            handler.definition,
+                            `${principal.kind}:${principal.id}`,
+                            `${principal.kind}:${principal.id}:prepare-update:${input.requestId}`,
+                            { ...(source ? { source } : {}), purpose: "prepare" }
+                        ),
+                    };
+                });
+            })
+        ),
+    plan: trpc.procedure
+        .input(v.pick(updateRequestSchema, ["target", "item"]))
+        .query(({ ctx, input }) =>
+            runOperation(async () => {
+                const { operations } = authorizedOperations(ctx, "updates:read");
+                const target = operations.updateTargets?.find(
+                    (entry) => entry.id === input.target
+                );
+                if (!target)
+                    throw new OperationFailure(
+                        "NOT_FOUND",
+                        "This update target is not configured."
+                    );
+                const report = await readUpdateReport(operations.client, target.source);
+                const item = report?.items.find((entry) => entry.id === input.item);
+                if (!report || !item)
+                    throw new OperationFailure(
+                        "NOT_FOUND",
+                        "This software observation is no longer available."
+                    );
+                return { item, control: updateControl(target, report, item) };
+            })
+        ),
     batchPlan: trpc.procedure.input(updateBatchScopeSchema).query(({ ctx, input }) =>
         runOperation(async () => {
             const { operations } = authorizedOperations(ctx, "updates:read");
@@ -225,8 +302,10 @@ export const updatesRouter = trpc.router({
                     "BAD_REQUEST",
                     "Update report timestamps or item identities are invalid."
                 );
+            // Only a worker SSH observation can qualify current APT state for installation.
+            const { aptObservedAt: _untrustedAptObservation, ...published } = input;
             const observation = {
-                ...input,
+                ...published,
                 items: input.items.map((item) => {
                     const {
                         availableImage: _image,
