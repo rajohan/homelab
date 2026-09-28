@@ -1323,3 +1323,30 @@ test("registry throttling waits without repeat requests and does not block anoth
     expect(recovered.status).toBe(200);
     expect(calls).toBe(3);
 });
+
+test("the actual Docker Hub namespaced version catalog is cached across update checks", async () => {
+    let calls = 0;
+    const upstream: typeof fetch = Object.assign(
+        (input: Parameters<typeof fetch>[0]) => {
+            const url = new URL(input instanceof Request ? input.url : String(input));
+            expect(url.pathname).toBe("/v2/namespaces/example/repositories/app/tags");
+            calls++;
+            return Promise.resolve(
+                Response.json({ next: null, results: [{ name: "1.3.0" }] })
+            );
+        },
+        { preconnect: fetch.preconnect }
+    );
+    const request = registryRequest(undefined, upstream);
+    for (let index = 0; index < 2; index++) {
+        expect(
+            await dockerHubVersionTag(
+                "example/app",
+                "1.2.3",
+                AbortSignal.timeout(2000),
+                request
+            )
+        ).toBe("1.3.0");
+    }
+    expect(calls).toBe(1);
+});

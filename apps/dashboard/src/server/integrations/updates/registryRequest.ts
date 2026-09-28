@@ -53,7 +53,9 @@ export function registryRequest(
                 ) &&
                     /^\/v2\/.+\/(?:manifests|blobs|tags)\//.test(url.pathname)) ||
                     (url.origin === "https://hub.docker.com" &&
-                        /^\/v2\/repositories\/.+\/tags\/?$/.test(url.pathname)));
+                        /^\/v2\/namespaces\/[^/]+\/repositories\/[^/]+\/tags\/?$/.test(
+                            url.pathname
+                        )));
             if (!exchange && !metadata) return request(input, init);
             const signal =
                 init?.signal ?? (input instanceof Request ? input.signal : undefined);
