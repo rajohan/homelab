@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.11](https://github.com/rajohan/homelab/compare/v0.7.10...v0.7.11) (2026-09-28)
+
+
+### Bug Fixes
+
+* **dashboard:** verify Nextcloud updates through local HTTP ([#46](https://github.com/rajohan/homelab/issues/46)) ([f36e49e](https://github.com/rajohan/homelab/commit/f36e49e19362103a87f90528f8112bedb2aabd5c))
+
 ## [0.7.10](https://github.com/rajohan/homelab/compare/v0.7.9...v0.7.10) (2026-09-28)
 
 
