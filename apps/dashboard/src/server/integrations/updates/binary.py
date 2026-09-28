@@ -94,6 +94,8 @@ def release_binary(component, version, architecture):
                     raise RuntimeError("Native archive expansion exceeds its budget")
                 if entry.name.removeprefix("./") != member:
                     continue
+                if entry.size > limit:
+                    raise UpdateRefusal("native_binary_too_large")
                 if contents is not None or not entry.isfile() or not 0 < entry.size <= limit:
                     raise RuntimeError("Native archive executable is invalid")
                 stream = package.extractfile(entry)

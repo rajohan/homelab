@@ -117,6 +117,28 @@ class NativeBinaryTests(unittest.TestCase):
                             remote.release_binary('alloy','1.2.3','amd64')
                         opened.open.assert_not_called()
 
+    def test_tar_providers_report_oversized_executables_before_reading_payload(self):
+        for component, (repository, asset, member, _, _) in remote.BINARY_RELEASES.items():
+            if not asset.endswith('.tar.gz'):
+                continue
+            with self.subTest(component=component):
+                name = asset.format(version='1.2.3', arch='amd64')
+                entry = member.format(version='1.2.3', arch='amd64')
+                executable = b'\x7fELF' + b'x' * 61
+                stream = io.BytesIO()
+                with tarfile.open(fileobj=stream, mode='w:gz') as archive:
+                    selected = tarfile.TarInfo('./' + entry)
+                    selected.size = len(executable)
+                    archive.addfile(selected, io.BytesIO(executable))
+                content = stream.getvalue()
+                metadata = {'tag_name': 'v1.2.3', 'assets': [{'name': name,
+                    'browser_download_url': 'https://github.com/' + repository + '/releases/download/v1.2.3/' + name,
+                    'digest': 'sha256:' + hashlib.sha256(content).hexdigest()}]}
+                with patch.object(remote, 'native_download', side_effect=[json.dumps(metadata).encode(), content]), patch.object(remote, 'binary_size_limit', return_value=64), patch.object(remote.tarfile.TarFile, 'extractfile', side_effect=AssertionError('Oversized payload must not be read')) as extract:
+                    with self.assertRaisesRegex(remote.UpdateRefusal, 'native_binary_too_large'):
+                        remote.release_binary(component, '1.2.3', 'amd64')
+                    extract.assert_not_called()
+
     def test_wrong_archive_digest_never_reaches_an_executable(self):
         metadata = {'tag_name':'v1.2.3','assets':[{'name':'alloy-linux-amd64.zip','browser_download_url':'https://github.com/grafana/alloy/releases/download/v1.2.3/alloy-linux-amd64.zip','digest':'sha256:'+'a'*64}]}
         with patch.object(remote,'native_download',side_effect=[json.dumps(metadata).encode(),b'not trusted']), self.assertRaisesRegex(RuntimeError,'integrity'):
