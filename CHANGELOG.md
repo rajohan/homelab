@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.9](https://github.com/rajohan/homelab/compare/v0.7.8...v0.7.9) (2026-09-28)
+
+
+### Bug Fixes
+
+* **dashboard:** prepare current updates and clean worker notifications ([#42](https://github.com/rajohan/homelab/issues/42)) ([6977c2b](https://github.com/rajohan/homelab/commit/6977c2b17d2d863b7c28c17d15bbbed3b8fb5907))
+
 ## [0.7.8](https://github.com/rajohan/homelab/compare/v0.7.7...v0.7.8) (2026-09-23)
 
 
