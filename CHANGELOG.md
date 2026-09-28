@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.10](https://github.com/rajohan/homelab/compare/v0.7.9...v0.7.10) (2026-09-28)
+
+
+### Bug Fixes
+
+* **dashboard:** recover update checks and memory-bounded native installs ([#44](https://github.com/rajohan/homelab/issues/44)) ([5b7cf77](https://github.com/rajohan/homelab/commit/5b7cf77dadaaba19f4ee30230d9056d15da51134))
+
 ## [0.7.9](https://github.com/rajohan/homelab/compare/v0.7.8...v0.7.9) (2026-09-28)
 
 
