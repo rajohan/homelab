@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.7.12](https://github.com/rajohan/homelab/compare/v0.7.11...v0.7.12) (2026-10-22)
+
+
+### Bug Fixes
+
+* **deps:** refresh application dependencies and Bun runtime ([319f8cb](https://github.com/rajohan/homelab/commit/319f8cb38d225d939ba78c769e58631dbd060de7))
+
+
+### Dependencies
+
+* **deps:** update Bun and Drizzle, release dependency updates ([#53](https://github.com/rajohan/homelab/issues/53)) ([76df33d](https://github.com/rajohan/homelab/commit/76df33d3c20a9d72fc9dc6d18bb62accb1a91816))
+
 ## [0.7.11](https://github.com/rajohan/homelab/compare/v0.7.10...v0.7.11) (2026-09-28)
 
 
