@@ -1,4 +1,4 @@
-FROM oven/bun:1.4.3 AS build
+FROM oven/bun:1.4.4 AS build
 WORKDIR /app
 COPY . .
 RUN bun install --frozen-lockfile --ignore-scripts
@@ -7,7 +7,7 @@ RUN test "$APP" = "dashboard" || test "$APP" = "auth"
 RUN bun run build "$APP"
 RUN mkdir /output && cp -a "apps/$APP/dist/." /output/
 
-FROM oven/bun:1.4.3-slim AS runtime
+FROM oven/bun:1.4.4-slim AS runtime
 ARG APP
 RUN if [ "$APP" = dashboard ]; then apt-get update && apt-get install -y --no-install-recommends openssh-client && rm -rf /var/lib/apt/lists/*; fi
 WORKDIR /app

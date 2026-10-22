@@ -84,7 +84,7 @@ Bun/Happy DOM tests are intentionally used without Playwright, Storybook or Vite
 authenticators and real browser security behavior still have a manual acceptance checklist.
 
 `oidc-provider` officially targets Node LTS and emits an unsupported-runtime warning on Bun.
-The pinned library is tested here on Bun 1.4.3, including actual code exchange, refresh and logout;
+The pinned library is tested here on Bun 1.4.4, including actual code exchange, refresh and logout;
 this is compatibility evidence, not an upstream support guarantee. Do not suppress the warning.
 Re-run the protocol and device gates after runtime/library upgrades.
 

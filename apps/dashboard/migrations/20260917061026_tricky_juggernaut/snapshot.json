@@ -1,70 +1,315 @@
 {
-    "version": "8",
+    "type": "base",
+    "version": "9",
     "dialect": "postgres",
     "id": "feb7dc60-b31b-4f2c-a021-5b1acc14dbce",
     "prevIds": ["00000000-0000-0000-0000-000000000000"],
+    "footprints": [
+        {
+            "statementType": "create_table",
+            "statementTarget": ["table", "public", "operation_audit"],
+            "writes": [
+                "s|tbl|public.operation_audit",
+                "n|tbl|public.operation_audit",
+                "e|tbl|public.operation_audit",
+                "n|rel|public.operation_audit",
+                "n|type|public.operation_audit",
+                "n|rel|public.operation_audit_pkey"
+            ],
+            "reads": ["n|sch|public"]
+        },
+        {
+            "statementType": "create_table",
+            "statementTarget": ["table", "public", "automation_accounts"],
+            "writes": [
+                "s|tbl|public.automation_accounts",
+                "n|tbl|public.automation_accounts",
+                "e|tbl|public.automation_accounts",
+                "n|rel|public.automation_accounts",
+                "n|type|public.automation_accounts",
+                "n|rel|public.automation_accounts_pkey"
+            ],
+            "reads": ["n|sch|public"]
+        },
+        {
+            "statementType": "create_table",
+            "statementTarget": ["table", "public", "automation_credentials"],
+            "writes": [
+                "s|tbl|public.automation_credentials",
+                "n|tbl|public.automation_credentials",
+                "e|tbl|public.automation_credentials",
+                "n|rel|public.automation_credentials",
+                "n|type|public.automation_credentials",
+                "n|rel|public.automation_credentials_pkey",
+                "n|rel|public.automation_credentials_prefix_key"
+            ],
+            "reads": ["n|sch|public"]
+        },
+        {
+            "statementType": "create_table",
+            "statementTarget": ["table", "public", "job_runs"],
+            "writes": [
+                "s|tbl|public.job_runs",
+                "n|tbl|public.job_runs",
+                "e|tbl|public.job_runs",
+                "n|rel|public.job_runs",
+                "n|type|public.job_runs",
+                "n|rel|public.job_runs_pkey"
+            ],
+            "reads": ["n|sch|public"]
+        },
+        {
+            "statementType": "create_table",
+            "statementTarget": ["table", "public", "job_schedules"],
+            "writes": [
+                "s|tbl|public.job_schedules",
+                "n|tbl|public.job_schedules",
+                "e|tbl|public.job_schedules",
+                "n|rel|public.job_schedules",
+                "n|type|public.job_schedules",
+                "n|rel|public.job_schedules_pkey",
+                "n|rel|public.job_schedules_action_key"
+            ],
+            "reads": ["n|sch|public"]
+        },
+        {
+            "statementType": "create_table",
+            "statementTarget": ["table", "public", "operation_rate_windows"],
+            "writes": [
+                "s|tbl|public.operation_rate_windows",
+                "n|tbl|public.operation_rate_windows",
+                "e|tbl|public.operation_rate_windows",
+                "n|rel|public.operation_rate_windows",
+                "n|type|public.operation_rate_windows",
+                "n|rel|public.operation_rate_windows_pkey"
+            ],
+            "reads": ["n|sch|public"]
+        },
+        {
+            "statementType": "create_table",
+            "statementTarget": ["table", "public", "resource_leases"],
+            "writes": [
+                "s|tbl|public.resource_leases",
+                "n|tbl|public.resource_leases",
+                "e|tbl|public.resource_leases",
+                "n|rel|public.resource_leases",
+                "n|type|public.resource_leases",
+                "n|rel|public.resource_leases_pkey"
+            ],
+            "reads": ["n|sch|public"]
+        },
+        {
+            "statementType": "create_table",
+            "statementTarget": ["table", "public", "operation_snapshots"],
+            "writes": [
+                "s|tbl|public.operation_snapshots",
+                "n|tbl|public.operation_snapshots",
+                "e|tbl|public.operation_snapshots",
+                "n|rel|public.operation_snapshots",
+                "n|type|public.operation_snapshots",
+                "n|rel|public.operation_snapshots_pkey"
+            ],
+            "reads": ["n|sch|public"]
+        },
+        {
+            "statementType": "create_table",
+            "statementTarget": ["table", "public", "worker_control"],
+            "writes": [
+                "s|tbl|public.worker_control",
+                "n|tbl|public.worker_control",
+                "e|tbl|public.worker_control",
+                "n|rel|public.worker_control",
+                "n|type|public.worker_control",
+                "n|rel|public.worker_control_pkey"
+            ],
+            "reads": ["n|sch|public"]
+        },
+        {
+            "statementType": "create_table",
+            "statementTarget": ["table", "public", "workers"],
+            "writes": [
+                "s|tbl|public.workers",
+                "n|tbl|public.workers",
+                "e|tbl|public.workers",
+                "n|rel|public.workers",
+                "n|type|public.workers",
+                "n|rel|public.workers_pkey"
+            ],
+            "reads": ["n|sch|public"]
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": [
+                "index",
+                "public",
+                "operation_audit",
+                "operation_audit_target"
+            ],
+            "writes": [
+                "s|idx|public.operation_audit_target",
+                "n|idx|public.operation_audit_target",
+                "e|idx|public.operation_audit_target",
+                "n|rel|public.operation_audit_target"
+            ],
+            "reads": [
+                "n|tbl|public.operation_audit",
+                "n|sch|public",
+                "n|col|public.operation_audit.target",
+                "n|col|public.operation_audit.id"
+            ]
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": ["index", "public", "job_runs", "job_runs_idempotency"],
+            "writes": [
+                "s|idx|public.job_runs_idempotency",
+                "n|idx|public.job_runs_idempotency",
+                "e|idx|public.job_runs_idempotency",
+                "n|rel|public.job_runs_idempotency"
+            ],
+            "reads": [
+                "n|tbl|public.job_runs",
+                "n|sch|public",
+                "n|col|public.job_runs.idempotency_key"
+            ]
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": ["index", "public", "job_runs", "job_runs_queue"],
+            "writes": [
+                "s|idx|public.job_runs_queue",
+                "n|idx|public.job_runs_queue",
+                "e|idx|public.job_runs_queue",
+                "n|rel|public.job_runs_queue"
+            ],
+            "reads": [
+                "n|tbl|public.job_runs",
+                "n|sch|public",
+                "n|col|public.job_runs.state",
+                "n|col|public.job_runs.available_at",
+                "n|col|public.job_runs.priority"
+            ]
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": ["index", "public", "job_runs", "job_runs_action_history"],
+            "writes": [
+                "s|idx|public.job_runs_action_history",
+                "n|idx|public.job_runs_action_history",
+                "e|idx|public.job_runs_action_history",
+                "n|rel|public.job_runs_action_history"
+            ],
+            "reads": [
+                "n|tbl|public.job_runs",
+                "n|sch|public",
+                "n|col|public.job_runs.action",
+                "n|col|public.job_runs.id"
+            ]
+        },
+        {
+            "statementType": "create_fk",
+            "statementTarget": ["table", "public", "automation_credentials"],
+            "writes": [
+                "s|fk|public.automation_credentials.automation_credentials_account_id_automation_accounts_id_fkey",
+                "n|fk|public.automation_credentials.automation_credentials_account_id_automation_accounts_id_fkey",
+                "e|fk|public.automation_credentials.automation_credentials_account_id_automation_accounts_id_fkey",
+                "n|con|public.automation_credentials.automation_credentials_account_id_automation_accounts_id_fkey"
+            ],
+            "reads": [
+                "n|tbl|public.automation_credentials",
+                "n|sch|public",
+                "n|tbl|public.automation_accounts",
+                "n|sch|public",
+                "n|col|public.automation_credentials.account_id",
+                "n|col|public.automation_accounts.id",
+                "e|uniqueness|public.automation_accounts.id"
+            ]
+        },
+        {
+            "statementType": "create_fk",
+            "statementTarget": ["table", "public", "resource_leases"],
+            "writes": [
+                "s|fk|public.resource_leases.resource_leases_run_id_job_runs_id_fkey",
+                "n|fk|public.resource_leases.resource_leases_run_id_job_runs_id_fkey",
+                "e|fk|public.resource_leases.resource_leases_run_id_job_runs_id_fkey",
+                "n|con|public.resource_leases.resource_leases_run_id_job_runs_id_fkey"
+            ],
+            "reads": [
+                "n|tbl|public.resource_leases",
+                "n|sch|public",
+                "n|tbl|public.job_runs",
+                "n|sch|public",
+                "n|col|public.resource_leases.run_id",
+                "n|col|public.job_runs.id",
+                "e|uniqueness|public.job_runs.id"
+            ]
+        }
+    ],
     "ddl": [
         {
-            "isRlsEnabled": false,
+            "schema": "public",
             "name": "operation_audit",
-            "entityType": "tables",
-            "schema": "public"
+            "isRlsEnabled": false,
+            "entityType": "tables"
         },
         {
-            "isRlsEnabled": false,
+            "schema": "public",
             "name": "automation_accounts",
-            "entityType": "tables",
-            "schema": "public"
+            "isRlsEnabled": false,
+            "entityType": "tables"
         },
         {
-            "isRlsEnabled": false,
+            "schema": "public",
             "name": "automation_credentials",
-            "entityType": "tables",
-            "schema": "public"
+            "isRlsEnabled": false,
+            "entityType": "tables"
         },
         {
-            "isRlsEnabled": false,
+            "schema": "public",
             "name": "job_runs",
-            "entityType": "tables",
-            "schema": "public"
+            "isRlsEnabled": false,
+            "entityType": "tables"
         },
         {
-            "isRlsEnabled": false,
+            "schema": "public",
             "name": "job_schedules",
-            "entityType": "tables",
-            "schema": "public"
+            "isRlsEnabled": false,
+            "entityType": "tables"
         },
         {
-            "isRlsEnabled": false,
+            "schema": "public",
             "name": "operation_rate_windows",
-            "entityType": "tables",
-            "schema": "public"
+            "isRlsEnabled": false,
+            "entityType": "tables"
         },
         {
-            "isRlsEnabled": false,
+            "schema": "public",
             "name": "resource_leases",
-            "entityType": "tables",
-            "schema": "public"
+            "isRlsEnabled": false,
+            "entityType": "tables"
         },
         {
-            "isRlsEnabled": false,
+            "schema": "public",
             "name": "operation_snapshots",
-            "entityType": "tables",
-            "schema": "public"
+            "isRlsEnabled": false,
+            "entityType": "tables"
         },
         {
-            "isRlsEnabled": false,
+            "schema": "public",
             "name": "worker_control",
-            "entityType": "tables",
-            "schema": "public"
-        },
-        {
             "isRlsEnabled": false,
-            "name": "workers",
-            "entityType": "tables",
-            "schema": "public"
+            "entityType": "tables"
         },
         {
+            "schema": "public",
+            "name": "workers",
+            "isRlsEnabled": false,
+            "entityType": "tables"
+        },
+        {
+            "schema": "public",
+            "table": "operation_audit",
+            "name": "id",
             "type": "uuid",
             "typeSchema": null,
             "notNull": true,
@@ -72,25 +317,12 @@
             "default": null,
             "generated": null,
             "identity": null,
-            "name": "id",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "operation_audit"
+            "entityType": "columns"
         },
         {
-            "type": "text",
-            "typeSchema": null,
-            "notNull": true,
-            "dimensions": 0,
-            "default": null,
-            "generated": null,
-            "identity": null,
+            "schema": "public",
+            "table": "operation_audit",
             "name": "actor",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "operation_audit"
-        },
-        {
             "type": "text",
             "typeSchema": null,
             "notNull": true,
@@ -98,12 +330,12 @@
             "default": null,
             "generated": null,
             "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "operation_audit",
             "name": "action",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "operation_audit"
-        },
-        {
             "type": "text",
             "typeSchema": null,
             "notNull": true,
@@ -111,12 +343,25 @@
             "default": null,
             "generated": null,
             "identity": null,
-            "name": "target",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "operation_audit"
+            "entityType": "columns"
         },
         {
+            "schema": "public",
+            "table": "operation_audit",
+            "name": "target",
+            "type": "text",
+            "typeSchema": null,
+            "notNull": true,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "operation_audit",
+            "name": "created_at",
             "type": "timestamp with time zone",
             "typeSchema": null,
             "notNull": true,
@@ -124,12 +369,12 @@
             "default": "now()",
             "generated": null,
             "identity": null,
-            "name": "created_at",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "operation_audit"
+            "entityType": "columns"
         },
         {
+            "schema": "public",
+            "table": "automation_accounts",
+            "name": "id",
             "type": "uuid",
             "typeSchema": null,
             "notNull": true,
@@ -137,12 +382,12 @@
             "default": null,
             "generated": null,
             "identity": null,
-            "name": "id",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "automation_accounts"
+            "entityType": "columns"
         },
         {
+            "schema": "public",
+            "table": "automation_accounts",
+            "name": "label",
             "type": "text",
             "typeSchema": null,
             "notNull": true,
@@ -150,12 +395,12 @@
             "default": null,
             "generated": null,
             "identity": null,
-            "name": "label",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "automation_accounts"
+            "entityType": "columns"
         },
         {
+            "schema": "public",
+            "table": "automation_accounts",
+            "name": "capabilities",
             "type": "jsonb",
             "typeSchema": null,
             "notNull": true,
@@ -163,12 +408,12 @@
             "default": null,
             "generated": null,
             "identity": null,
-            "name": "capabilities",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "automation_accounts"
+            "entityType": "columns"
         },
         {
+            "schema": "public",
+            "table": "automation_accounts",
+            "name": "version",
             "type": "integer",
             "typeSchema": null,
             "notNull": true,
@@ -176,25 +421,25 @@
             "default": "1",
             "generated": null,
             "identity": null,
-            "name": "version",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "automation_accounts"
+            "entityType": "columns"
         },
         {
-            "type": "timestamp with time zone",
-            "typeSchema": null,
-            "notNull": false,
-            "dimensions": 0,
-            "default": null,
-            "generated": null,
-            "identity": null,
+            "schema": "public",
+            "table": "automation_accounts",
             "name": "disabled_at",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "automation_accounts"
+            "type": "timestamp with time zone",
+            "typeSchema": null,
+            "notNull": false,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "entityType": "columns"
         },
         {
+            "schema": "public",
+            "table": "automation_accounts",
+            "name": "created_at",
             "type": "timestamp with time zone",
             "typeSchema": null,
             "notNull": true,
@@ -202,25 +447,12 @@
             "default": "now()",
             "generated": null,
             "identity": null,
-            "name": "created_at",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "automation_accounts"
+            "entityType": "columns"
         },
         {
-            "type": "uuid",
-            "typeSchema": null,
-            "notNull": true,
-            "dimensions": 0,
-            "default": null,
-            "generated": null,
-            "identity": null,
+            "schema": "public",
+            "table": "automation_credentials",
             "name": "id",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "automation_credentials"
-        },
-        {
             "type": "uuid",
             "typeSchema": null,
             "notNull": true,
@@ -228,90 +460,12 @@
             "default": null,
             "generated": null,
             "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "automation_credentials",
             "name": "account_id",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "automation_credentials"
-        },
-        {
-            "type": "text",
-            "typeSchema": null,
-            "notNull": true,
-            "dimensions": 0,
-            "default": null,
-            "generated": null,
-            "identity": null,
-            "name": "prefix",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "automation_credentials"
-        },
-        {
-            "type": "text",
-            "typeSchema": null,
-            "notNull": true,
-            "dimensions": 0,
-            "default": null,
-            "generated": null,
-            "identity": null,
-            "name": "digest",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "automation_credentials"
-        },
-        {
-            "type": "timestamp with time zone",
-            "typeSchema": null,
-            "notNull": true,
-            "dimensions": 0,
-            "default": "now()",
-            "generated": null,
-            "identity": null,
-            "name": "created_at",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "automation_credentials"
-        },
-        {
-            "type": "timestamp with time zone",
-            "typeSchema": null,
-            "notNull": false,
-            "dimensions": 0,
-            "default": null,
-            "generated": null,
-            "identity": null,
-            "name": "expires_at",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "automation_credentials"
-        },
-        {
-            "type": "timestamp with time zone",
-            "typeSchema": null,
-            "notNull": false,
-            "dimensions": 0,
-            "default": null,
-            "generated": null,
-            "identity": null,
-            "name": "revoked_at",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "automation_credentials"
-        },
-        {
-            "type": "timestamp with time zone",
-            "typeSchema": null,
-            "notNull": false,
-            "dimensions": 0,
-            "default": null,
-            "generated": null,
-            "identity": null,
-            "name": "last_used_at",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "automation_credentials"
-        },
-        {
             "type": "uuid",
             "typeSchema": null,
             "notNull": true,
@@ -319,25 +473,103 @@
             "default": null,
             "generated": null,
             "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "automation_credentials",
+            "name": "prefix",
+            "type": "text",
+            "typeSchema": null,
+            "notNull": true,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "automation_credentials",
+            "name": "digest",
+            "type": "text",
+            "typeSchema": null,
+            "notNull": true,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "automation_credentials",
+            "name": "created_at",
+            "type": "timestamp with time zone",
+            "typeSchema": null,
+            "notNull": true,
+            "dimensions": 0,
+            "default": "now()",
+            "generated": null,
+            "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "automation_credentials",
+            "name": "expires_at",
+            "type": "timestamp with time zone",
+            "typeSchema": null,
+            "notNull": false,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "automation_credentials",
+            "name": "revoked_at",
+            "type": "timestamp with time zone",
+            "typeSchema": null,
+            "notNull": false,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "automation_credentials",
+            "name": "last_used_at",
+            "type": "timestamp with time zone",
+            "typeSchema": null,
+            "notNull": false,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "job_runs",
             "name": "id",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "job_runs"
-        },
-        {
-            "type": "text",
+            "type": "uuid",
             "typeSchema": null,
             "notNull": true,
             "dimensions": 0,
             "default": null,
             "generated": null,
             "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "job_runs",
             "name": "action",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "job_runs"
-        },
-        {
             "type": "text",
             "typeSchema": null,
             "notNull": true,
@@ -345,12 +577,12 @@
             "default": null,
             "generated": null,
             "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "job_runs",
             "name": "label",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "job_runs"
-        },
-        {
             "type": "text",
             "typeSchema": null,
             "notNull": true,
@@ -358,12 +590,12 @@
             "default": null,
             "generated": null,
             "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "job_runs",
             "name": "resource_class",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "job_runs"
-        },
-        {
             "type": "text",
             "typeSchema": null,
             "notNull": true,
@@ -371,12 +603,25 @@
             "default": null,
             "generated": null,
             "identity": null,
-            "name": "state",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "job_runs"
+            "entityType": "columns"
         },
         {
+            "schema": "public",
+            "table": "job_runs",
+            "name": "state",
+            "type": "text",
+            "typeSchema": null,
+            "notNull": true,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "job_runs",
+            "name": "payload",
             "type": "jsonb",
             "typeSchema": null,
             "notNull": true,
@@ -384,25 +629,12 @@
             "default": null,
             "generated": null,
             "identity": null,
-            "name": "payload",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "job_runs"
+            "entityType": "columns"
         },
         {
-            "type": "text",
-            "typeSchema": null,
-            "notNull": true,
-            "dimensions": 0,
-            "default": null,
-            "generated": null,
-            "identity": null,
+            "schema": "public",
+            "table": "job_runs",
             "name": "fingerprint",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "job_runs"
-        },
-        {
             "type": "text",
             "typeSchema": null,
             "notNull": true,
@@ -410,12 +642,12 @@
             "default": null,
             "generated": null,
             "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "job_runs",
             "name": "idempotency_key",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "job_runs"
-        },
-        {
             "type": "text",
             "typeSchema": null,
             "notNull": true,
@@ -423,25 +655,25 @@
             "default": null,
             "generated": null,
             "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "job_runs",
             "name": "requested_by",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "job_runs"
-        },
-        {
-            "type": "integer",
+            "type": "text",
             "typeSchema": null,
             "notNull": true,
             "dimensions": 0,
-            "default": "0",
+            "default": null,
             "generated": null,
             "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "job_runs",
             "name": "priority",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "job_runs"
-        },
-        {
             "type": "integer",
             "typeSchema": null,
             "notNull": true,
@@ -449,12 +681,25 @@
             "default": "0",
             "generated": null,
             "identity": null,
-            "name": "attempt",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "job_runs"
+            "entityType": "columns"
         },
         {
+            "schema": "public",
+            "table": "job_runs",
+            "name": "attempt",
+            "type": "integer",
+            "typeSchema": null,
+            "notNull": true,
+            "dimensions": 0,
+            "default": "0",
+            "generated": null,
+            "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "job_runs",
+            "name": "attempt_limit",
             "type": "integer",
             "typeSchema": null,
             "notNull": true,
@@ -462,12 +707,12 @@
             "default": null,
             "generated": null,
             "identity": null,
-            "name": "attempt_limit",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "job_runs"
+            "entityType": "columns"
         },
         {
+            "schema": "public",
+            "table": "job_runs",
+            "name": "retry_safe",
             "type": "boolean",
             "typeSchema": null,
             "notNull": true,
@@ -475,12 +720,12 @@
             "default": null,
             "generated": null,
             "identity": null,
-            "name": "retry_safe",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "job_runs"
+            "entityType": "columns"
         },
         {
+            "schema": "public",
+            "table": "job_runs",
+            "name": "timeout_ms",
             "type": "integer",
             "typeSchema": null,
             "notNull": true,
@@ -488,12 +733,12 @@
             "default": null,
             "generated": null,
             "identity": null,
-            "name": "timeout_ms",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "job_runs"
+            "entityType": "columns"
         },
         {
+            "schema": "public",
+            "table": "job_runs",
+            "name": "resource_keys",
             "type": "text",
             "typeSchema": null,
             "notNull": true,
@@ -501,25 +746,12 @@
             "default": null,
             "generated": null,
             "identity": null,
-            "name": "resource_keys",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "job_runs"
+            "entityType": "columns"
         },
         {
-            "type": "timestamp with time zone",
-            "typeSchema": null,
-            "notNull": true,
-            "dimensions": 0,
-            "default": "now()",
-            "generated": null,
-            "identity": null,
+            "schema": "public",
+            "table": "job_runs",
             "name": "created_at",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "job_runs"
-        },
-        {
             "type": "timestamp with time zone",
             "typeSchema": null,
             "notNull": true,
@@ -527,25 +759,25 @@
             "default": "now()",
             "generated": null,
             "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "job_runs",
             "name": "available_at",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "job_runs"
-        },
-        {
             "type": "timestamp with time zone",
             "typeSchema": null,
-            "notNull": false,
+            "notNull": true,
             "dimensions": 0,
-            "default": null,
+            "default": "now()",
             "generated": null,
             "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "job_runs",
             "name": "started_at",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "job_runs"
-        },
-        {
             "type": "timestamp with time zone",
             "typeSchema": null,
             "notNull": false,
@@ -553,38 +785,12 @@
             "default": null,
             "generated": null,
             "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "job_runs",
             "name": "finished_at",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "job_runs"
-        },
-        {
-            "type": "uuid",
-            "typeSchema": null,
-            "notNull": false,
-            "dimensions": 0,
-            "default": null,
-            "generated": null,
-            "identity": null,
-            "name": "worker_id",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "job_runs"
-        },
-        {
-            "type": "uuid",
-            "typeSchema": null,
-            "notNull": false,
-            "dimensions": 0,
-            "default": null,
-            "generated": null,
-            "identity": null,
-            "name": "lease_token",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "job_runs"
-        },
-        {
             "type": "timestamp with time zone",
             "typeSchema": null,
             "notNull": false,
@@ -592,12 +798,51 @@
             "default": null,
             "generated": null,
             "identity": null,
-            "name": "lease_expires_at",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "job_runs"
+            "entityType": "columns"
         },
         {
+            "schema": "public",
+            "table": "job_runs",
+            "name": "worker_id",
+            "type": "uuid",
+            "typeSchema": null,
+            "notNull": false,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "job_runs",
+            "name": "lease_token",
+            "type": "uuid",
+            "typeSchema": null,
+            "notNull": false,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "job_runs",
+            "name": "lease_expires_at",
+            "type": "timestamp with time zone",
+            "typeSchema": null,
+            "notNull": false,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "job_runs",
+            "name": "cancel_requested",
             "type": "boolean",
             "typeSchema": null,
             "notNull": true,
@@ -605,12 +850,12 @@
             "default": "false",
             "generated": null,
             "identity": null,
-            "name": "cancel_requested",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "job_runs"
+            "entityType": "columns"
         },
         {
+            "schema": "public",
+            "table": "job_runs",
+            "name": "message",
             "type": "text",
             "typeSchema": null,
             "notNull": false,
@@ -618,12 +863,12 @@
             "default": null,
             "generated": null,
             "identity": null,
-            "name": "message",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "job_runs"
+            "entityType": "columns"
         },
         {
+            "schema": "public",
+            "table": "job_schedules",
+            "name": "id",
             "type": "uuid",
             "typeSchema": null,
             "notNull": true,
@@ -631,12 +876,12 @@
             "default": null,
             "generated": null,
             "identity": null,
-            "name": "id",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "job_schedules"
+            "entityType": "columns"
         },
         {
+            "schema": "public",
+            "table": "job_schedules",
+            "name": "action",
             "type": "text",
             "typeSchema": null,
             "notNull": true,
@@ -644,12 +889,12 @@
             "default": null,
             "generated": null,
             "identity": null,
-            "name": "action",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "job_schedules"
+            "entityType": "columns"
         },
         {
+            "schema": "public",
+            "table": "job_schedules",
+            "name": "enabled",
             "type": "boolean",
             "typeSchema": null,
             "notNull": true,
@@ -657,168 +902,12 @@
             "default": "true",
             "generated": null,
             "identity": null,
-            "name": "enabled",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "job_schedules"
+            "entityType": "columns"
         },
         {
-            "type": "jsonb",
-            "typeSchema": null,
-            "notNull": true,
-            "dimensions": 0,
-            "default": null,
-            "generated": null,
-            "identity": null,
+            "schema": "public",
+            "table": "job_schedules",
             "name": "schedule",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "job_schedules"
-        },
-        {
-            "type": "text",
-            "typeSchema": null,
-            "notNull": false,
-            "dimensions": 0,
-            "default": null,
-            "generated": null,
-            "identity": null,
-            "name": "disable_reason",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "job_schedules"
-        },
-        {
-            "type": "timestamp with time zone",
-            "typeSchema": null,
-            "notNull": false,
-            "dimensions": 0,
-            "default": null,
-            "generated": null,
-            "identity": null,
-            "name": "disabled_until",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "job_schedules"
-        },
-        {
-            "type": "integer",
-            "typeSchema": null,
-            "notNull": true,
-            "dimensions": 0,
-            "default": "1",
-            "generated": null,
-            "identity": null,
-            "name": "version",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "job_schedules"
-        },
-        {
-            "type": "timestamp with time zone",
-            "typeSchema": null,
-            "notNull": true,
-            "dimensions": 0,
-            "default": null,
-            "generated": null,
-            "identity": null,
-            "name": "next_run_at",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "job_schedules"
-        },
-        {
-            "type": "text",
-            "typeSchema": null,
-            "notNull": true,
-            "dimensions": 0,
-            "default": null,
-            "generated": null,
-            "identity": null,
-            "name": "key",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "operation_rate_windows"
-        },
-        {
-            "type": "integer",
-            "typeSchema": null,
-            "notNull": true,
-            "dimensions": 0,
-            "default": null,
-            "generated": null,
-            "identity": null,
-            "name": "count",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "operation_rate_windows"
-        },
-        {
-            "type": "timestamp with time zone",
-            "typeSchema": null,
-            "notNull": true,
-            "dimensions": 0,
-            "default": null,
-            "generated": null,
-            "identity": null,
-            "name": "expires_at",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "operation_rate_windows"
-        },
-        {
-            "type": "text",
-            "typeSchema": null,
-            "notNull": true,
-            "dimensions": 0,
-            "default": null,
-            "generated": null,
-            "identity": null,
-            "name": "key",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "resource_leases"
-        },
-        {
-            "type": "uuid",
-            "typeSchema": null,
-            "notNull": true,
-            "dimensions": 0,
-            "default": null,
-            "generated": null,
-            "identity": null,
-            "name": "run_id",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "resource_leases"
-        },
-        {
-            "type": "uuid",
-            "typeSchema": null,
-            "notNull": true,
-            "dimensions": 0,
-            "default": null,
-            "generated": null,
-            "identity": null,
-            "name": "lease_token",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "resource_leases"
-        },
-        {
-            "type": "text",
-            "typeSchema": null,
-            "notNull": true,
-            "dimensions": 0,
-            "default": null,
-            "generated": null,
-            "identity": null,
-            "name": "key",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "operation_snapshots"
-        },
-        {
             "type": "jsonb",
             "typeSchema": null,
             "notNull": true,
@@ -826,77 +915,12 @@
             "default": null,
             "generated": null,
             "identity": null,
-            "name": "value",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "operation_snapshots"
+            "entityType": "columns"
         },
         {
-            "type": "timestamp with time zone",
-            "typeSchema": null,
-            "notNull": true,
-            "dimensions": 0,
-            "default": null,
-            "generated": null,
-            "identity": null,
-            "name": "captured_at",
-            "entityType": "columns",
             "schema": "public",
-            "table": "operation_snapshots"
-        },
-        {
-            "type": "integer",
-            "typeSchema": null,
-            "notNull": true,
-            "dimensions": 0,
-            "default": "1",
-            "generated": null,
-            "identity": null,
-            "name": "id",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "worker_control"
-        },
-        {
-            "type": "boolean",
-            "typeSchema": null,
-            "notNull": true,
-            "dimensions": 0,
-            "default": "false",
-            "generated": null,
-            "identity": null,
-            "name": "paused",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "worker_control"
-        },
-        {
-            "type": "integer",
-            "typeSchema": null,
-            "notNull": true,
-            "dimensions": 0,
-            "default": "1",
-            "generated": null,
-            "identity": null,
-            "name": "version",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "worker_control"
-        },
-        {
-            "type": "timestamp with time zone",
-            "typeSchema": null,
-            "notNull": false,
-            "dimensions": 0,
-            "default": null,
-            "generated": null,
-            "identity": null,
-            "name": "updated_at",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "worker_control"
-        },
-        {
+            "table": "job_schedules",
+            "name": "disable_reason",
             "type": "text",
             "typeSchema": null,
             "notNull": false,
@@ -904,12 +928,103 @@
             "default": null,
             "generated": null,
             "identity": null,
-            "name": "updated_by",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "worker_control"
+            "entityType": "columns"
         },
         {
+            "schema": "public",
+            "table": "job_schedules",
+            "name": "disabled_until",
+            "type": "timestamp with time zone",
+            "typeSchema": null,
+            "notNull": false,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "job_schedules",
+            "name": "version",
+            "type": "integer",
+            "typeSchema": null,
+            "notNull": true,
+            "dimensions": 0,
+            "default": "1",
+            "generated": null,
+            "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "job_schedules",
+            "name": "next_run_at",
+            "type": "timestamp with time zone",
+            "typeSchema": null,
+            "notNull": true,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "operation_rate_windows",
+            "name": "key",
+            "type": "text",
+            "typeSchema": null,
+            "notNull": true,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "operation_rate_windows",
+            "name": "count",
+            "type": "integer",
+            "typeSchema": null,
+            "notNull": true,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "operation_rate_windows",
+            "name": "expires_at",
+            "type": "timestamp with time zone",
+            "typeSchema": null,
+            "notNull": true,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "resource_leases",
+            "name": "key",
+            "type": "text",
+            "typeSchema": null,
+            "notNull": true,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "resource_leases",
+            "name": "run_id",
             "type": "uuid",
             "typeSchema": null,
             "notNull": true,
@@ -917,12 +1032,25 @@
             "default": null,
             "generated": null,
             "identity": null,
-            "name": "id",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "workers"
+            "entityType": "columns"
         },
         {
+            "schema": "public",
+            "table": "resource_leases",
+            "name": "lease_token",
+            "type": "uuid",
+            "typeSchema": null,
+            "notNull": true,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "operation_snapshots",
+            "name": "key",
             "type": "text",
             "typeSchema": null,
             "notNull": true,
@@ -930,12 +1058,25 @@
             "default": null,
             "generated": null,
             "identity": null,
-            "name": "version",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "workers"
+            "entityType": "columns"
         },
         {
+            "schema": "public",
+            "table": "operation_snapshots",
+            "name": "value",
+            "type": "jsonb",
+            "typeSchema": null,
+            "notNull": true,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "operation_snapshots",
+            "name": "captured_at",
             "type": "timestamp with time zone",
             "typeSchema": null,
             "notNull": true,
@@ -943,25 +1084,25 @@
             "default": null,
             "generated": null,
             "identity": null,
-            "name": "heartbeat_at",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "workers"
+            "entityType": "columns"
         },
         {
+            "schema": "public",
+            "table": "worker_control",
+            "name": "id",
             "type": "integer",
             "typeSchema": null,
             "notNull": true,
             "dimensions": 0,
-            "default": null,
+            "default": "1",
             "generated": null,
             "identity": null,
-            "name": "capacity",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "workers"
+            "entityType": "columns"
         },
         {
+            "schema": "public",
+            "table": "worker_control",
+            "name": "paused",
             "type": "boolean",
             "typeSchema": null,
             "notNull": true,
@@ -969,12 +1110,116 @@
             "default": "false",
             "generated": null,
             "identity": null,
-            "name": "draining",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "workers"
+            "entityType": "columns"
         },
         {
+            "schema": "public",
+            "table": "worker_control",
+            "name": "version",
+            "type": "integer",
+            "typeSchema": null,
+            "notNull": true,
+            "dimensions": 0,
+            "default": "1",
+            "generated": null,
+            "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "worker_control",
+            "name": "updated_at",
+            "type": "timestamp with time zone",
+            "typeSchema": null,
+            "notNull": false,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "worker_control",
+            "name": "updated_by",
+            "type": "text",
+            "typeSchema": null,
+            "notNull": false,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "workers",
+            "name": "id",
+            "type": "uuid",
+            "typeSchema": null,
+            "notNull": true,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "workers",
+            "name": "version",
+            "type": "text",
+            "typeSchema": null,
+            "notNull": true,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "workers",
+            "name": "heartbeat_at",
+            "type": "timestamp with time zone",
+            "typeSchema": null,
+            "notNull": true,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "workers",
+            "name": "capacity",
+            "type": "integer",
+            "typeSchema": null,
+            "notNull": true,
+            "dimensions": 0,
+            "default": null,
+            "generated": null,
+            "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "workers",
+            "name": "draining",
+            "type": "boolean",
+            "typeSchema": null,
+            "notNull": true,
+            "dimensions": 0,
+            "default": "false",
+            "generated": null,
+            "identity": null,
+            "entityType": "columns"
+        },
+        {
+            "schema": "public",
+            "table": "workers",
+            "name": "started_at",
             "type": "timestamp with time zone",
             "typeSchema": null,
             "notNull": true,
@@ -982,12 +1227,12 @@
             "default": "now()",
             "generated": null,
             "identity": null,
-            "name": "started_at",
-            "entityType": "columns",
-            "schema": "public",
-            "table": "workers"
+            "entityType": "columns"
         },
         {
+            "schema": "public",
+            "table": "operation_audit",
+            "name": "operation_audit_target",
             "nameExplicit": true,
             "columns": [
                 {
@@ -1010,12 +1255,12 @@
             "with": "",
             "method": "btree",
             "concurrently": false,
-            "name": "operation_audit_target",
-            "entityType": "indexes",
-            "schema": "public",
-            "table": "operation_audit"
+            "entityType": "indexes"
         },
         {
+            "schema": "public",
+            "table": "job_runs",
+            "name": "job_runs_idempotency",
             "nameExplicit": true,
             "columns": [
                 {
@@ -1031,12 +1276,12 @@
             "with": "",
             "method": "btree",
             "concurrently": false,
-            "name": "job_runs_idempotency",
-            "entityType": "indexes",
-            "schema": "public",
-            "table": "job_runs"
+            "entityType": "indexes"
         },
         {
+            "schema": "public",
+            "table": "job_runs",
+            "name": "job_runs_queue",
             "nameExplicit": true,
             "columns": [
                 {
@@ -1066,12 +1311,12 @@
             "with": "",
             "method": "btree",
             "concurrently": false,
-            "name": "job_runs_queue",
-            "entityType": "indexes",
-            "schema": "public",
-            "table": "job_runs"
+            "entityType": "indexes"
         },
         {
+            "schema": "public",
+            "table": "job_runs",
+            "name": "job_runs_action_history",
             "nameExplicit": true,
             "columns": [
                 {
@@ -1094,12 +1339,12 @@
             "with": "",
             "method": "btree",
             "concurrently": false,
-            "name": "job_runs_action_history",
-            "entityType": "indexes",
-            "schema": "public",
-            "table": "job_runs"
+            "entityType": "indexes"
         },
         {
+            "schema": "public",
+            "table": "automation_credentials",
+            "name": "automation_credentials_account_id_automation_accounts_id_fkey",
             "nameExplicit": false,
             "columns": ["account_id"],
             "schemaTo": "public",
@@ -1107,12 +1352,12 @@
             "columnsTo": ["id"],
             "onUpdate": "NO ACTION",
             "onDelete": "CASCADE",
-            "name": "automation_credentials_account_id_automation_accounts_id_fkey",
-            "entityType": "fks",
-            "schema": "public",
-            "table": "automation_credentials"
+            "entityType": "fks"
         },
         {
+            "schema": "public",
+            "table": "resource_leases",
+            "name": "resource_leases_run_id_job_runs_id_fkey",
             "nameExplicit": false,
             "columns": ["run_id"],
             "schemaTo": "public",
@@ -1120,137 +1365,133 @@
             "columnsTo": ["id"],
             "onUpdate": "NO ACTION",
             "onDelete": "CASCADE",
-            "name": "resource_leases_run_id_job_runs_id_fkey",
-            "entityType": "fks",
-            "schema": "public",
-            "table": "resource_leases"
+            "entityType": "fks"
         },
         {
-            "columns": ["id"],
-            "nameExplicit": false,
-            "name": "operation_audit_pkey",
             "schema": "public",
             "table": "operation_audit",
+            "name": "operation_audit_pkey",
+            "columns": ["id"],
+            "nameExplicit": false,
             "entityType": "pks"
         },
         {
-            "columns": ["id"],
-            "nameExplicit": false,
-            "name": "automation_accounts_pkey",
             "schema": "public",
             "table": "automation_accounts",
+            "name": "automation_accounts_pkey",
+            "columns": ["id"],
+            "nameExplicit": false,
             "entityType": "pks"
         },
         {
-            "columns": ["id"],
-            "nameExplicit": false,
-            "name": "automation_credentials_pkey",
             "schema": "public",
             "table": "automation_credentials",
+            "name": "automation_credentials_pkey",
+            "columns": ["id"],
+            "nameExplicit": false,
             "entityType": "pks"
         },
         {
-            "columns": ["id"],
-            "nameExplicit": false,
-            "name": "job_runs_pkey",
             "schema": "public",
             "table": "job_runs",
+            "name": "job_runs_pkey",
+            "columns": ["id"],
+            "nameExplicit": false,
             "entityType": "pks"
         },
         {
-            "columns": ["id"],
-            "nameExplicit": false,
-            "name": "job_schedules_pkey",
             "schema": "public",
             "table": "job_schedules",
+            "name": "job_schedules_pkey",
+            "columns": ["id"],
+            "nameExplicit": false,
             "entityType": "pks"
         },
         {
-            "columns": ["key"],
-            "nameExplicit": false,
-            "name": "operation_rate_windows_pkey",
             "schema": "public",
             "table": "operation_rate_windows",
+            "name": "operation_rate_windows_pkey",
+            "columns": ["key"],
+            "nameExplicit": false,
             "entityType": "pks"
         },
         {
-            "columns": ["key"],
-            "nameExplicit": false,
-            "name": "resource_leases_pkey",
             "schema": "public",
             "table": "resource_leases",
-            "entityType": "pks"
-        },
-        {
+            "name": "resource_leases_pkey",
             "columns": ["key"],
             "nameExplicit": false,
-            "name": "operation_snapshots_pkey",
+            "entityType": "pks"
+        },
+        {
             "schema": "public",
             "table": "operation_snapshots",
+            "name": "operation_snapshots_pkey",
+            "columns": ["key"],
+            "nameExplicit": false,
             "entityType": "pks"
         },
         {
-            "columns": ["id"],
-            "nameExplicit": false,
-            "name": "worker_control_pkey",
             "schema": "public",
             "table": "worker_control",
-            "entityType": "pks"
-        },
-        {
+            "name": "worker_control_pkey",
             "columns": ["id"],
             "nameExplicit": false,
-            "name": "workers_pkey",
-            "schema": "public",
-            "table": "workers",
             "entityType": "pks"
         },
         {
+            "schema": "public",
+            "table": "workers",
+            "name": "workers_pkey",
+            "columns": ["id"],
+            "nameExplicit": false,
+            "entityType": "pks"
+        },
+        {
+            "schema": "public",
+            "table": "automation_credentials",
+            "name": "automation_credentials_prefix_key",
             "nameExplicit": false,
             "columns": ["prefix"],
             "nullsNotDistinct": false,
-            "name": "automation_credentials_prefix_key",
-            "schema": "public",
-            "table": "automation_credentials",
             "entityType": "uniques"
         },
         {
+            "schema": "public",
+            "table": "job_schedules",
+            "name": "job_schedules_action_key",
             "nameExplicit": false,
             "columns": ["action"],
             "nullsNotDistinct": false,
-            "name": "job_schedules_action_key",
-            "schema": "public",
-            "table": "job_schedules",
             "entityType": "uniques"
         },
         {
-            "value": "\"state\" in ('queued','running','succeeded','failed','timed_out','cancelled')",
+            "schema": "public",
+            "table": "job_runs",
             "name": "job_runs_state",
-            "entityType": "checks",
-            "schema": "public",
-            "table": "job_runs"
+            "value": "\"state\" in ('queued','running','succeeded','failed','timed_out','cancelled')",
+            "entityType": "checks"
         },
         {
-            "value": "\"attempt\" >= 0 and \"attempt_limit\" between 1 and 10 and \"timeout_ms\" between 1000 and 3600000",
+            "schema": "public",
+            "table": "job_runs",
             "name": "job_runs_attempts",
-            "entityType": "checks",
-            "schema": "public",
-            "table": "job_runs"
+            "value": "\"attempt\" >= 0 and \"attempt_limit\" between 1 and 10 and \"timeout_ms\" between 1000 and 3600000",
+            "entityType": "checks"
         },
         {
-            "value": "(\"enabled\" and \"disable_reason\" is null and \"disabled_until\" is null) or (not \"enabled\" and \"disable_reason\" is not null and length(\"disable_reason\") between 1 and 1000)",
+            "schema": "public",
+            "table": "job_schedules",
             "name": "job_schedules_disable_intent",
-            "entityType": "checks",
-            "schema": "public",
-            "table": "job_schedules"
+            "value": "(\"enabled\" and \"disable_reason\" is null and \"disabled_until\" is null) or (not \"enabled\" and \"disable_reason\" is not null and length(\"disable_reason\") between 1 and 1000)",
+            "entityType": "checks"
         },
         {
-            "value": "\"id\" = 1",
-            "name": "worker_control_singleton",
-            "entityType": "checks",
             "schema": "public",
-            "table": "worker_control"
+            "table": "worker_control",
+            "name": "worker_control_singleton",
+            "value": "\"id\" = 1",
+            "entityType": "checks"
         }
-    ],
-    "renames": []
+    ]
 }
