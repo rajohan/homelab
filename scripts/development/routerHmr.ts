@@ -23,6 +23,11 @@ export function deferRouterChunkBinding(source: string): string {
 const routerHmr: BunPlugin = {
     name: "tanstack-router-bun-hmr",
     target: "browser",
+    /**
+     * Register the guarded development-only router module transform.
+     * @param build - Bun plugin hooks for module loading.
+     * @returns Nothing; the transform is registered on the build.
+     */
     setup(build) {
         build.onLoad(
             {

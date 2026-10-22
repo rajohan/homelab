@@ -16,6 +16,10 @@ export const api = createTRPCClient<AppRouter>({
 
 export const systemStatusQuery = {
     queryKey: ["system", "status"] as const,
+    /**
+     * Fetch the passive system status for the dashboard query cache.
+     * @returns The current system status response.
+     */
     queryFn: () => api.system.status.query(),
     staleTime: 30_000,
     ...queryRefresh("slow"),

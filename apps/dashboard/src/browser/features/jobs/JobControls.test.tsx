@@ -70,8 +70,8 @@ function fixture(children: ReactNode, configure?: (query: QueryClient) => void) 
                             "section[tabindex]"
                         ) ?? []) {
                             Object.defineProperties(viewport, {
-                                offsetHeight: { value: 520, configurable: true },
-                                offsetWidth: { value: 960, configurable: true },
+                                clientHeight: { value: 520, configurable: true },
+                                clientWidth: { value: 960, configurable: true },
                             });
                         }
                     }}
@@ -90,17 +90,17 @@ function fixture(children: ReactNode, configure?: (query: QueryClient) => void) 
 
 function measurePortals() {
     // Portalled panels and dialogs are outside the fixture's measured container.
-    const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight");
-    const width = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetWidth");
+    const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
+    const width = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
     if (!height || !width) throw new Error("Expected browser dimension accessors");
     Object.defineProperties(HTMLElement.prototype, {
-        offsetHeight: { configurable: true, value: 288 },
-        offsetWidth: { configurable: true, value: 480 },
+        clientHeight: { configurable: true, value: 288 },
+        clientWidth: { configurable: true, value: 480 },
     });
     return () =>
         Object.defineProperties(HTMLElement.prototype, {
-            offsetHeight: height,
-            offsetWidth: width,
+            clientHeight: height,
+            clientWidth: width,
         });
 }
 

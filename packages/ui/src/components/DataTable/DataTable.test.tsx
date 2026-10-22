@@ -55,8 +55,8 @@ test.each(["actions", "footer-actions"] as const)(
                     const tableViewport = element?.querySelector("section");
                     if (tableViewport)
                         Object.defineProperties(tableViewport, {
-                            offsetHeight: { value: 520, configurable: true },
-                            offsetWidth: { value: 960, configurable: true },
+                            clientHeight: { value: 520, configurable: true },
+                            clientWidth: { value: 960, configurable: true },
                         });
                 }}
             >

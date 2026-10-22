@@ -29,8 +29,8 @@ function renderSized(children: ReactNode) {
                 for (const viewport of element?.querySelectorAll("section[aria-label]") ??
                     []) {
                     Object.defineProperties(viewport, {
-                        offsetHeight: { value: 520, configurable: true },
-                        offsetWidth: { value: 960, configurable: true },
+                        clientHeight: { value: 520, configurable: true },
+                        clientWidth: { value: 960, configurable: true },
                     });
                 }
             }}

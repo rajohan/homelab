@@ -1,12 +1,11 @@
+import { Window as HappyDomWindow } from "happy-dom";
+
 /**
  * Provide a per-test browser realm with manually delivered intersection observations.
  * @returns The render container, observer delivery and cleanup without changing shared globals.
  */
 export function intersectionFixture() {
-    const frame = document.createElement("iframe");
-    document.body.append(frame);
-    const target = frame.contentWindow;
-    if (!target) throw new Error("Expected a test frame window");
+    const target = new HappyDomWindow() as unknown as Window;
     const callbacks = new Map<Element, () => void>();
     Object.defineProperty(target, "IntersectionObserver", {
         configurable: true,
@@ -17,7 +16,7 @@ export function intersectionFixture() {
             readonly thresholds = [0];
             readonly #callback: IntersectionObserverCallback;
             readonly #elements = new Set<Element>();
-            /** Capture this observer's callback in its isolated frame. */
+            /** Capture this observer's callback in its isolated window. */
             constructor(callback: IntersectionObserverCallback) {
                 this.#callback = callback;
             }
@@ -66,7 +65,7 @@ export function intersectionFixture() {
             for (const callback of callbacks.values()) callback();
         },
         close() {
-            frame.remove();
+            target.close();
         },
     };
 }
