@@ -10,8 +10,9 @@ test("card lists window rows and automatically request their next cursor page", 
     const frameWindow = fixture.container.ownerDocument.defaultView;
     if (!frameWindow) throw new Error("Expected an isolated browser window");
     Object.defineProperties(frameWindow.HTMLElement.prototype, {
-        offsetHeight: { configurable: true, value: 520 },
-        offsetWidth: { configurable: true, value: 960 },
+        offsetHeight: { configurable: true, value: 96 },
+        clientHeight: { configurable: true, value: 520 },
+        clientWidth: { configurable: true, value: 960 },
     });
     const load = mock(() => {});
     const rows = Array.from({ length: 100 }, (_, index) => ({

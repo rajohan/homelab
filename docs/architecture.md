@@ -76,7 +76,7 @@ transaction, and application availability publishes only on transitions. See [no
 
 ## Runtime qualification
 
-Bun 1.4.2 runs both apps and the OIDC library's private Node-HTTP-compatible listener. That
+Bun 1.4.3 runs both apps and the OIDC library's private Node-HTTP-compatible listener. That
 listener binds an ephemeral loopback port and is never directly exposed. The public Bun
 listener bounds request size and normalizes proxy metadata before reaching the protocol engine.
 

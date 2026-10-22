@@ -104,15 +104,15 @@ test.each([true, false])(
     async (scoped) => {
         const height = Object.getOwnPropertyDescriptor(
             HTMLElement.prototype,
-            "offsetHeight"
+            "clientHeight"
         )!;
         const width = Object.getOwnPropertyDescriptor(
             HTMLElement.prototype,
-            "offsetWidth"
+            "clientWidth"
         )!;
         Object.defineProperties(HTMLElement.prototype, {
-            offsetHeight: { configurable: true, value: 400 },
-            offsetWidth: { configurable: true, value: 960 },
+            clientHeight: { configurable: true, value: 400 },
+            clientWidth: { configurable: true, value: 960 },
         });
         const source = scoped ? "demo" : undefined;
         const cleanup = fixture(
@@ -195,8 +195,8 @@ test.each([true, false])(
         } finally {
             cleanup();
             Object.defineProperties(HTMLElement.prototype, {
-                offsetHeight: height,
-                offsetWidth: width,
+                clientHeight: height,
+                clientWidth: width,
             });
         }
     }
@@ -250,12 +250,12 @@ test.each(["pending", "empty", "excluded", "failed"] as const)(
 test("source inventory includes per-host counts, one global action and full-width host actions", () => {
     const height = Object.getOwnPropertyDescriptor(
         HTMLElement.prototype,
-        "offsetHeight"
+        "clientHeight"
     )!;
-    const width = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetWidth")!;
+    const width = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth")!;
     Object.defineProperties(HTMLElement.prototype, {
-        offsetHeight: { configurable: true, value: 400 },
-        offsetWidth: { configurable: true, value: 960 },
+        clientHeight: { configurable: true, value: 400 },
+        clientWidth: { configurable: true, value: 960 },
     });
     const cleanup = fixture(<UpdatesPanel />, [], (query) =>
         query.setQueryData(
@@ -305,8 +305,8 @@ test("source inventory includes per-host counts, one global action and full-widt
     } finally {
         cleanup();
         Object.defineProperties(HTMLElement.prototype, {
-            offsetHeight: height,
-            offsetWidth: width,
+            clientHeight: height,
+            clientWidth: width,
         });
     }
 });
@@ -412,12 +412,20 @@ test("changed automatic updater recipes require renewed consent", () => {
 test("long automatic update lists use a bounded virtual scroll region", () => {
     const height = Object.getOwnPropertyDescriptor(
         HTMLElement.prototype,
+        "clientHeight"
+    )!;
+    const width = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth")!;
+    Object.defineProperties(HTMLElement.prototype, {
+        clientHeight: { configurable: true, value: 400 },
+        clientWidth: { configurable: true, value: 960 },
+    });
+    const rowHeight = Object.getOwnPropertyDescriptor(
+        HTMLElement.prototype,
         "offsetHeight"
     )!;
-    const width = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetWidth")!;
-    Object.defineProperties(HTMLElement.prototype, {
-        offsetHeight: { configurable: true, value: 400 },
-        offsetWidth: { configurable: true, value: 960 },
+    Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
+        configurable: true,
+        value: 96,
     });
     const cleanup = fixture(
         <AutomaticUpdates source="demo" />,
@@ -436,8 +444,9 @@ test("long automatic update lists use a bounded virtual scroll region", () => {
     } finally {
         cleanup();
         Object.defineProperties(HTMLElement.prototype, {
-            offsetHeight: height,
-            offsetWidth: width,
+            offsetHeight: rowHeight,
+            clientHeight: height,
+            clientWidth: width,
         });
     }
 });

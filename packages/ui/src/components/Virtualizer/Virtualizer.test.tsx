@@ -1,6 +1,7 @@
 import { expect, mock, test } from "bun:test";
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { Window as HappyDomWindow } from "happy-dom";
 import { useRef } from "react";
 
 import { Virtualizer } from "./Virtualizer";
@@ -8,8 +9,8 @@ import { VirtualListStore } from "./VirtualListStore";
 
 test("scrolling publishes a new visible range and unmount detaches observation", () => {
     const element = document.createElement("div");
-    Object.defineProperty(element, "offsetHeight", { value: 520 });
-    Object.defineProperty(element, "offsetWidth", { value: 960 });
+    Object.defineProperty(element, "clientHeight", { value: 520 });
+    Object.defineProperty(element, "clientWidth", { value: 960 });
     document.body.append(element);
     const store = new VirtualListStore(100, String);
     const listener = mock(() => {});
@@ -38,11 +39,11 @@ function MountedList() {
             ref={(element) => {
                 scrollRef.current = element;
                 if (element) {
-                    Object.defineProperty(element, "offsetHeight", {
+                    Object.defineProperty(element, "clientHeight", {
                         value: 520,
                         configurable: true,
                     });
-                    Object.defineProperty(element, "offsetWidth", {
+                    Object.defineProperty(element, "clientWidth", {
                         value: 960,
                         configurable: true,
                     });
@@ -76,10 +77,7 @@ test("the React adapter connects after its parent scroll container is committed"
 });
 
 test("resize measurements update spacers on the next frame rather than during observer delivery", async () => {
-    const frame = document.createElement("iframe");
-    document.body.append(frame);
-    const target = frame.contentWindow;
-    if (!target) throw new Error("Expected an isolated frame window");
+    const target = new HappyDomWindow() as unknown as Window;
     const callbacks = new Map<Element, ResizeObserverCallback>();
     Object.defineProperty(target, "ResizeObserver", {
         configurable: true,
@@ -106,7 +104,7 @@ test("resize measurements update spacers on the next frame rather than during ob
             unobserve(element: Element) {
                 callbacks.delete(element);
             }
-            /** Detach the observer's measurement callbacks from the isolated frame. */
+            /** Detach the observer's measurement callbacks from the isolated window. */
             disconnect() {
                 callbacks.clear();
             }
@@ -114,8 +112,8 @@ test("resize measurements update spacers on the next frame rather than during ob
     });
     const viewport = target.document.createElement("div");
     Object.defineProperties(viewport, {
-        offsetHeight: { value: 520 },
-        offsetWidth: { value: 960 },
+        clientHeight: { value: 520 },
+        clientWidth: { value: 960 },
     });
     const row = target.document.createElement("div");
     row.dataset.index = "0";
@@ -138,6 +136,6 @@ test("resize measurements update spacers on the next frame rather than during ob
         await waitFor(() => expect(store.getSnapshot().totalSize).toBe(144));
     } finally {
         unmount();
-        frame.remove();
+        target.close();
     }
 });
