@@ -11,7 +11,7 @@
         "@homelab/ui": "workspace:*",
         "@simplewebauthn/server": "14.0.3",
         "@tanstack/react-query": "5.104.5",
-        "drizzle-orm": "1.0.0-rc.5-5935859",
+        "drizzle-orm": "1.0.0-rc.5",
         "effect": "4.0.5",
         "oidc-provider": "9.12.2",
         "otpauth": "9.5.2",

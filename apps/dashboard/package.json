@@ -16,7 +16,7 @@
         "@tanstack/react-router": "1.170.45",
         "@trpc/client": "11.19.0",
         "@trpc/server": "11.19.0",
-        "drizzle-orm": "1.0.0-rc.5-5935859",
+        "drizzle-orm": "1.0.0-rc.5",
         "effect": "4.0.5",
         "jose": "6.2.13",
         "lucide-react": "1.61.0",
