@@ -77,10 +77,18 @@ def main():
     target = request["target"]
     before = observe(target)
     mode = request["mode"]
+    if mode == "preflight":
+        if target.get("preflight"):
+            run(target["preflight"], timeout=10)
+        return before
     if mode == "restart":
+        if not target.get("workerIndependent", True):
+            raise RuntimeError("This target requires an external restart")
         expected = request["expected"]
         if (before["bootId"], before["active"], before["invocationId"]) != (expected["bootId"], expected["active"], expected["invocationId"]):
             raise RuntimeError("Restart target changed")
+        if target.get("preflight"):
+            run(target["preflight"], timeout=10)
         if target["kind"] == "host":
             run(["/usr/bin/systemctl", "--no-block", "reboot"])
             return before

@@ -7,7 +7,7 @@ import { claimJob, commitClaim, settleClaim } from "../../jobs/claims";
 import { reportJobProgress } from "../../jobs/progress";
 import { createJobRegistry } from "../../jobs/registry";
 import { expectOperationFailure, operationFixture } from "../../testing/operations";
-import { parseUpdateTargets } from "../updates/configuration";
+import { parseUpdateTargets, updateResourceKeys } from "../updates/configuration";
 import {
     recordRestartObservation,
     restartObservationTime,
@@ -99,6 +99,9 @@ test("restart authority is disabled by default and requires a qualified fixed re
         { ...target, health: ["curl", "http://example.test"] },
         { ...target, service: "example.service; reboot" },
         { ...target, kind: "host" },
+        { ...target, lockConnections: ["missing"] },
+        { ...target, preflight: ["curl", "http://example.test"] },
+        { ...target, externalReason: "Not independent" },
     ]) {
         expect(() =>
             parseMaintenanceTargets(JSON.stringify([recipe]), connections)
@@ -111,7 +114,11 @@ test("restart authority is disabled by default and requires a qualified fixed re
 
 async function fixture(
     probe: MaintenanceProbe,
-    recipe = target,
+    recipe: typeof target & {
+        externalReason?: string;
+        lockConnections?: string[];
+        preflight?: string[];
+    } = target,
     connectionSet = connections
 ) {
     const state = await operationFixture();
@@ -162,6 +169,88 @@ async function fixture(
     };
     return { ...state, operations, principal, caller, execute, refresh };
 }
+
+test("external dependencies retain visible status without registering or admitting restarts", async () => {
+    const state = await fixture(
+        () =>
+            Promise.resolve({
+                bootId: Bun.randomUUIDv7(),
+                active: "active",
+                invocationId: "a".repeat(32),
+                rebootRequired: true,
+                serviceRestartRequired: true,
+                health: false,
+            }),
+        {
+            ...target,
+            workerIndependent: false,
+            externalReason: "The worker depends on this service.",
+        }
+    );
+    try {
+        const plan = await state.refresh();
+        expect(plan.external).toBe(true);
+        expect(plan.allowed).toBe(false);
+        expect(plan.reason).toBe("The worker depends on this service.");
+        expect(state.operations.registry.has("maintenance.restart.web")).toBe(false);
+        await expectOperationFailure(
+            state.caller.maintenance.request({
+                target: "web",
+                revision: plan.revision,
+                requestId: Bun.randomUUIDv7(),
+            }),
+            "not configured"
+        );
+    } finally {
+        await state.close();
+    }
+});
+
+test("restart prerequisites fail before mutation and redundant peers share update host leases", async () => {
+    const peer = {
+        ...connections[0]!,
+        id: "peer",
+        source: "peer",
+        host: "peer.example.test",
+    };
+    const modes: string[] = [];
+    const state = await fixture(
+        (_connection, _target, mode) => {
+            modes.push(mode);
+            if (mode === "preflight") throw new Error("Peer is unavailable");
+            return Promise.resolve({
+                bootId: "11111111-1111-4111-8111-111111111111",
+                active: "active",
+                invocationId: "a".repeat(32),
+                rebootRequired: false,
+                serviceRestartRequired: true,
+                health: false,
+            });
+        },
+        { ...target, lockConnections: ["peer"], preflight: ["/usr/bin/false"] },
+        [...connections, peer]
+    );
+    try {
+        const plan = await state.refresh();
+        const handler = state.operations.registry.get("maintenance.restart.web")!;
+        for (const key of updateResourceKeys(peer))
+            expect(handler.definition.resourceKeys).toContain(key);
+        await state.caller.maintenance.request({
+            target: "web",
+            revision: plan.revision,
+            requestId: Bun.randomUUIDv7(),
+        });
+        const failure = await state.execute("maintenance.restart.web").then(
+            () => null,
+            (error: Error) => error
+        );
+        expect(failure?.message).toBe("Peer is unavailable");
+        expect(modes).toContain("preflight");
+        expect(modes).not.toContain("restart");
+    } finally {
+        await state.close();
+    }
+});
 
 test("restart admission requires current human proof and preserves idempotency and verified results", async () => {
     const observation: MaintenanceObservation = {

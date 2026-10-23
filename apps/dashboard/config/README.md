@@ -22,3 +22,13 @@ automatic-update consent. Deployment still requires a reviewed release.
 Review changes through PR and deploy a released image. Do not edit production's
 container copy. See [update management](../../../docs/update-management.md) for
 privilege boundaries, external-file overrides and native activation prerequisites.
+
+## Restart targets
+
+`maintenance-targets.homelab.json` is the reviewed, nonsecret restart catalog. It
+references existing update connection IDs and pins service names, health checks,
+impact descriptions and prerequisite checks. It contains no SSH keys or new trust.
+Deploy its JSON as `HOMELAB_DASHBOARD_MAINTENANCE_TARGETS` identically in dashboard
+and worker after review and live read-only qualification. Merely packaging it does
+not activate restarts. DNS peers share update leases; worker/database dependencies
+are visible read-only entries. See [maintenance](../../../docs/maintenance.md).

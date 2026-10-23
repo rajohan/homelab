@@ -36,7 +36,7 @@ export function RunProgress({
         : 0;
     return (
         <div
-            className="space-y-2 rounded-lg border border-primary-700 p-3 text-sm"
+            className="space-y-2 rounded-lg border border-primary-700 bg-primary-950/40 p-3 text-sm"
             aria-label="Run progress"
         >
             <p>

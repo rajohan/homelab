@@ -54,11 +54,15 @@ export async function maintenancePlan(
         )
         .digest("hex");
     const allowed = Boolean(
+        target.workerIndependent &&
         row?.fresh &&
         observation &&
         (target.kind === "host" ||
             (observation.active === "active" && observation.invocationId !== null))
     );
+    const unavailableReason = allowed
+        ? null
+        : "Refresh the restart status. A stopped or unavailable service cannot be restarted here.";
     return {
         target: target.id,
         label: target.label,
@@ -69,9 +73,8 @@ export async function maintenancePlan(
         observation,
         capturedAt: row?.capturedAt ?? null,
         allowed,
-        reason: allowed
-            ? null
-            : "Refresh the restart status. A stopped or unavailable service cannot be restarted here.",
+        external: !target.workerIndependent,
+        reason: target.workerIndependent ? unavailableReason : target.externalReason!,
     };
 }
 
@@ -108,7 +111,7 @@ export function maintenanceJobs(
     return targets.flatMap((target): JobHandler[] => {
         const connection = connections.find((entry) => entry.id === target.connection)!;
         const configuration = maintenanceRevision(target, connection);
-        return [
+        const handlers: JobHandler[] = [
             {
                 definition: {
                     key: `maintenance.inspect.${target.id}`,
@@ -159,7 +162,16 @@ export function maintenanceJobs(
                     description: target.impact,
                     resourceClass: "interactive",
                     capability: "maintenance:restart",
-                    resourceKeys: updateResourceKeys(connection),
+                    resourceKeys: [
+                        ...new Set(
+                            [
+                                connection,
+                                ...connections.filter((entry) =>
+                                    target.lockConnections?.includes(entry.id)
+                                ),
+                            ].flatMap((entry) => updateResourceKeys(entry))
+                        ),
+                    ],
                     timeoutMs: target.kind === "host" ? 600_000 : 360_000,
                     attemptLimit: 1,
                     retrySafe: false,
@@ -168,6 +180,8 @@ export function maintenanceJobs(
                     validate: (input) => v.parse(payloadSchema, input),
                 },
                 execute: async (value, context) => {
+                    if (!target.workerIndependent)
+                        throw new Error("This target requires an external restart");
                     const input = v.parse(payloadSchema, value);
                     if (
                         input.target !== target.id ||
@@ -202,6 +216,11 @@ export function maintenanceJobs(
                         throw new Error("Restart target changed since confirmation");
                     context.signal.throwIfAborted();
                     await authorize();
+                    if (target.preflight) {
+                        await context.reportProgress("Checking restart prerequisites.");
+                        await probe(connection, target, "preflight", context.signal);
+                        await authorize();
+                    }
                     await context.reportProgress(
                         target.kind === "host"
                             ? "Requesting the confirmed host restart. This request cannot be undone once accepted."
@@ -288,5 +307,10 @@ export function maintenanceJobs(
                 },
             },
         ];
+        return handlers.filter(
+            (handler) =>
+                target.workerIndependent ||
+                handler.definition.key.startsWith("maintenance.inspect.")
+        );
     });
 }

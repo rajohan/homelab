@@ -100,7 +100,7 @@ test("release publication is displayed separately from running versions and stal
                 verified: true,
                 tests: "success",
                 url: "https://github.com/demo/homelab/releases/tag/v0.8.0",
-                buildUrl: null,
+                buildUrl: "https://github.com/demo/homelab/actions/runs/123",
             },
         },
     });
@@ -114,8 +114,39 @@ test("release publication is displayed separately from running versions and stal
             "https://github.com/demo/homelab/releases/tag/v0.8.0"
         );
         expect(screen.getByText("Status outdated")).toBeVisible();
+        expect(screen.getByRole("link", { name: "View release build" })).toHaveAttribute(
+            "href",
+            "https://github.com/demo/homelab/actions/runs/123"
+        );
         expect(screen.queryByText("Verified release")).not.toBeInTheDocument();
         expect(screen.queryByRole("button", { name: /deploy/i })).not.toBeInTheDocument();
+    } finally {
+        close();
+    }
+});
+
+test("external restart targets explain the dependency and offer read-only refresh", () => {
+    const close = fixture(<MaintenancePanel />, "maintenance", [
+        {
+            target: "worker-host",
+            label: "Worker host",
+            impact: "Dashboard and worker will be unavailable.",
+            kind: "host",
+            revision: "a".repeat(64),
+            allowed: false,
+            external: true,
+            required: true,
+            capturedAt: new Date().toISOString(),
+            reason: "Restart from the host console.",
+        },
+    ]);
+    try {
+        expect(screen.getByText("External restart")).toBeVisible();
+        expect(screen.getByText("Restart from the host console.")).toBeVisible();
+        expect(
+            screen.queryByRole("button", { name: "Restart…" })
+        ).not.toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Refresh status" })).toBeEnabled();
     } finally {
         close();
     }

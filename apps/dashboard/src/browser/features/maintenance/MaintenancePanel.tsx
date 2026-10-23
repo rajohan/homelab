@@ -62,7 +62,9 @@ export function MaintenancePanel() {
                                             : "neutral"
                                     }
                                 >
-                                    {requirementLabel(plan.allowed, plan.required)}
+                                    {plan.external
+                                        ? "External restart"
+                                        : requirementLabel(plan.allowed, plan.required)}
                                 </Badge>
                             </div>
                             <p className="text-sm text-primary-300">{plan.impact}</p>
@@ -84,13 +86,15 @@ export function MaintenancePanel() {
                                 >
                                     Refresh status
                                 </Button>
-                                <Button
-                                    variant="secondary"
-                                    disabled={!plan.allowed || query.isError}
-                                    onClick={() => setSelected(plan)}
-                                >
-                                    Restart…
-                                </Button>
+                                {!plan.external && (
+                                    <Button
+                                        variant="secondary"
+                                        disabled={!plan.allowed || query.isError}
+                                        onClick={() => setSelected(plan)}
+                                    >
+                                        Restart…
+                                    </Button>
+                                )}
                             </div>
                         </div>
                     ))}

@@ -52,6 +52,26 @@ try:
     raise AssertionError("A stopped service was restarted")
 except RuntimeError: pass
 assert not any("restart" in command for command in commands)
+active = "active"
+target["workerIndependent"] = False
+try:
+    invoke("restart", {"bootId": boot, "active": active, "invocationId": invocation})
+    raise AssertionError("External dependency restarted")
+except RuntimeError: pass
+assert not any("restart" in command for command in commands)
+target["workerIndependent"] = True
+target["preflight"] = ["/usr/bin/false"]
+def guarded_run(argv, timeout=30):
+    if argv == ["/usr/bin/false"]: raise RuntimeError("Peer unavailable")
+    return fake_run(argv, timeout)
+scope["run"] = guarded_run
+for mode in ["preflight", "restart"]:
+    try:
+        invoke(mode, {"bootId": boot, "active": active, "invocationId": invocation})
+        raise AssertionError("Failed prerequisite accepted")
+    except RuntimeError: pass
+assert not any("restart" in command for command in commands)
+scope["run"] = fake_run
 target = {"kind": "host", "health": ["/usr/bin/true"]}
 commands.clear()
 try:
