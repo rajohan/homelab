@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 
 import { capabilities } from "@homelab/contracts/operations";
 
@@ -55,15 +55,19 @@ test("restart authority is disabled by default and requires a qualified fixed re
     ).toThrow();
 });
 
-async function fixture(probe: MaintenanceProbe, recipe = target) {
+async function fixture(
+    probe: MaintenanceProbe,
+    recipe = target,
+    connectionSet = connections
+) {
     const state = await operationFixture();
-    const targets = parseMaintenanceTargets(JSON.stringify([recipe]), connections);
-    const registry = createJobRegistry(maintenanceJobs(targets, connections, probe));
+    const targets = parseMaintenanceTargets(JSON.stringify([recipe]), connectionSet);
+    const registry = createJobRegistry(maintenanceJobs(targets, connectionSet, probe));
     const operations = {
         ...state,
         registry,
         maintenanceTargets: targets,
-        updateTargets: connections,
+        updateTargets: connectionSet,
     };
     const principal = { kind: "human" as const, id: "operator", capabilities };
     const caller = appRouter.createCaller({
@@ -215,7 +219,7 @@ test("changed or stopped services and expired confirmations never issue a restar
             revision: next.revision,
             requestId: Bun.randomUUIDv7(),
         });
-        await state.client`UPDATE job_runs SET payload = jsonb_set(payload, '{expiresAt}', '0') WHERE id = ${pending.id}`;
+        await state.client`UPDATE job_runs SET created_at = now() - interval '6 minutes' WHERE id = ${pending.id}`;
         await expectOperationFailure(state.execute("maintenance.restart.web"), "expired");
         active = "inactive";
         const stopped = await state.refresh();
@@ -309,6 +313,13 @@ test("stale plans are refused and shared host leases prevent overlapping restart
             "maintenance.restart.web",
         ]);
         expect(first).toBeDefined();
+        await state.caller.jobs.run({
+            action: "maintenance.inspect.web",
+            requestId: Bun.randomUUIDv7(),
+        });
+        expect(
+            await claimJob(state.client, secondWorker, ["maintenance.inspect.web"], true)
+        ).toBeUndefined();
         const second = await state.caller.maintenance.request({
             target: "web",
             revision: plan.revision,
@@ -326,7 +337,100 @@ test("stale plans are refused and shared host leases prevent overlapping restart
         expect(detail.run.state).toBe("failed");
         expect(detail.run.results).toEqual([]);
         expect(restarts).toBe(1);
+        await state.execute("maintenance.inspect.web");
     } finally {
         await state.close();
     }
 });
+
+test.each([-86_400_000, 86_400_000])(
+    "restart authorization uses database time despite dashboard clock offset %s",
+    async (offset) => {
+        const observation: MaintenanceObservation = {
+            bootId: Bun.randomUUIDv7(),
+            active: "active",
+            rebootRequired: false,
+            serviceRestartRequired: true,
+            health: true,
+        };
+        const state = await fixture(() => Promise.resolve(observation));
+        try {
+            const plan = await state.refresh();
+            const clock = spyOn(Date, "now").mockReturnValue(Date.now() + offset);
+            let accepted: { id: string };
+            try {
+                accepted = await state.caller.maintenance.request({
+                    target: "web",
+                    revision: plan.revision,
+                    requestId: Bun.randomUUIDv7(),
+                });
+            } finally {
+                clock.mockRestore();
+            }
+            await state.execute("maintenance.restart.web");
+            const detail = await state.caller.jobs.detail({ id: accepted.id });
+            expect(detail.run.state).toBe("succeeded");
+            const next = await state.refresh();
+            const expired = await state.caller.maintenance.request({
+                target: "web",
+                revision: next.revision,
+                requestId: Bun.randomUUIDv7(),
+            });
+            await state.client`UPDATE job_runs SET created_at = now() - interval '6 minutes' WHERE id = ${expired.id}`;
+            const workerClock = spyOn(Date, "now").mockReturnValue(
+                Date.now() - 86_400_000
+            );
+            try {
+                await expectOperationFailure(
+                    state.execute("maintenance.restart.web"),
+                    "expired"
+                );
+            } finally {
+                workerClock.mockRestore();
+            }
+        } finally {
+            await state.close();
+        }
+    }
+);
+
+test.each([false, true])(
+    "restart receipts preserve unknown source requirements when multiple hosts share a source: %s",
+    async (differentHost) => {
+        const observation: MaintenanceObservation = {
+            bootId: Bun.randomUUIDv7(),
+            active: "active",
+            rebootRequired: false,
+            serviceRestartRequired: false,
+            health: true,
+        };
+        const second = {
+            ...connections[0]!,
+            id: "other",
+            host: differentHost
+                ? "other.example.test"
+                : connections[0]!.host.toUpperCase(),
+        };
+        const state = await fixture(() => Promise.resolve(observation), target, [
+            ...connections,
+            second,
+        ]);
+        try {
+            const plan = await state.refresh();
+            const queued = await state.caller.maintenance.request({
+                target: "web",
+                revision: plan.revision,
+                requestId: Bun.randomUUIDv7(),
+            });
+            await state.execute("maintenance.restart.web");
+            const [source] = await state.client<
+                { value: { required: boolean | null } }[]
+            >`SELECT value FROM operation_snapshots WHERE key = 'updates.restart:demo'`;
+            expect(source?.value.required).toBe(differentHost ? null : false);
+            const detail = await state.caller.jobs.detail({ id: queued.id });
+            expect(detail.run.results[0]?.rebootRequired).toBe(false);
+        } finally {
+            await state.close();
+        }
+    }
+);

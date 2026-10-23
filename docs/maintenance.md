@@ -63,6 +63,10 @@ available, the distribution's `needrestart -b -r l` service list. Missing inspec
 remains unknown. Plans expire after two minutes; an accepted queue request has a
 five-minute admission budget. Before mutation, the worker rechecks configuration,
 boot identity and service state. A stopped service is never implicitly started.
+The database clock controls admission age, including a second check after inspection.
+Status probes share the host lock with restarts and updates. A source spanning more
+than one host retains an unknown source-level restart requirement; each receipt
+still reports the individually verified host.
 
 Only a human with `maintenance:restart`, `jobs:run` and recent MFA may confirm.
 Automation tokens are refused even if assigned that capability. Each restart has

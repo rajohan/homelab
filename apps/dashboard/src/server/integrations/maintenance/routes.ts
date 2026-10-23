@@ -101,7 +101,6 @@ export const maintenanceRouter = trpc.router({
                         configuration: plan.configuration,
                         revision: input.revision,
                         expected: plan.observation,
-                        expiresAt: Date.now() + 300_000,
                     }),
                 };
             });

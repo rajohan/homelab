@@ -17,7 +17,6 @@ const payloadSchema = v.strictObject({
     target: maintenanceRequestSchema.entries.target,
     configuration: maintenanceRequestSchema.entries.revision,
     revision: maintenanceRequestSchema.entries.revision,
-    expiresAt: v.number(),
     expected: observationSchema,
 });
 
@@ -111,7 +110,10 @@ export function maintenanceJobs(
                         "Read restart requirements and service state without changing the host.",
                     resourceClass: "network",
                     capability: "updates:refresh",
-                    resourceKeys: [`snapshot:maintenance:${target.id}`],
+                    resourceKeys: [
+                        `snapshot:maintenance:${target.id}`,
+                        ...updateResourceKeys(connection),
+                    ],
                     timeoutMs: 45_000,
                     attemptLimit: 1,
                     retrySafe: true,
@@ -162,12 +164,22 @@ export function maintenanceJobs(
                     const input = v.parse(payloadSchema, value);
                     if (
                         input.target !== target.id ||
-                        input.configuration !== configuration ||
-                        input.expiresAt < Date.now()
+                        input.configuration !== configuration
                     )
                         throw new Error("Restart confirmation expired or changed");
-                    if (!(await context.commit(async () => {})))
-                        throw new Error("Restart ownership changed");
+                    const authorize = async () => {
+                        if (
+                            !(await context.commit(async (transaction) => {
+                                const [request] = await transaction<
+                                    { fresh: boolean }[]
+                                >`SELECT created_at >= clock_timestamp() - interval '5 minutes' AS fresh FROM job_runs WHERE id = ${context.runId}`;
+                                if (!request?.fresh)
+                                    throw new Error("Restart confirmation expired");
+                            }))
+                        )
+                            throw new Error("Restart ownership changed");
+                    };
+                    await authorize();
                     const before = await probe(
                         connection,
                         target,
@@ -180,6 +192,7 @@ export function maintenanceJobs(
                     )
                         throw new Error("Restart target changed since confirmation");
                     context.signal.throwIfAborted();
+                    await authorize();
                     await context.reportProgress(
                         target.kind === "host"
                             ? "Requesting the confirmed host restart. This request cannot be undone once accepted."
@@ -246,7 +259,14 @@ export function maintenanceJobs(
                             await recordRestartObservation(
                                 transaction,
                                 connection.source,
-                                after.rebootRequired,
+                                connections.some(
+                                    (other) =>
+                                        other.source === connection.source &&
+                                        other.host.toLowerCase() !==
+                                            connection.host.toLowerCase()
+                                )
+                                    ? null
+                                    : after.rebootRequired,
                                 new Date().toISOString()
                             );
                             await transaction`DELETE FROM operation_snapshots WHERE key = ${`maintenance:${target.id}`}`;
