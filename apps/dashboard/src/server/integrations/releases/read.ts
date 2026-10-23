@@ -1,6 +1,6 @@
 import * as v from "valibot";
 
-import { readBoundedJson } from "../http/readJson";
+import { readBoundedBytes, readBoundedJson } from "../http/readJson";
 
 const repositorySchema = v.pipe(
     v.string(),
@@ -42,6 +42,20 @@ const runsSchema = v.object({
                 status: v.string(),
                 conclusion: v.nullable(v.string()),
                 id: v.number(),
+                run_attempt: v.pipe(v.number(), v.integer(), v.minValue(1)),
+            })
+        ),
+        v.maxLength(100)
+    ),
+});
+const artifactsSchema = v.object({
+    artifacts: v.pipe(
+        v.array(
+            v.object({
+                name: v.string(),
+                expired: v.boolean(),
+                digest: v.nullable(v.string()),
+                workflow_run: v.object({ id: v.number(), head_sha: sha }),
             })
         ),
         v.maxLength(100)
@@ -110,7 +124,12 @@ export async function readHomelabRelease(
             headers: { Accept: "application/json" },
         });
     }
-    const manifest = v.parse(manifestSchema, await readBoundedJson(response, 16_384));
+    const bytes = await readBoundedBytes(response, 16_384);
+    const digest = `sha256:${new Bun.CryptoHasher("sha256").update(bytes).digest("hex")}`;
+    const manifest = v.parse(
+        manifestSchema,
+        JSON.parse(new TextDecoder().decode(bytes)) as unknown
+    );
     if (
         `v${manifest.version}` !== release.tag_name ||
         new Set(manifest.images.map((image) => image.app)).size !== 2 ||
@@ -157,13 +176,30 @@ export async function readHomelabRelease(
         )
         .toSorted((a, b) => b.id - a.id);
     const build = builds[0];
+    let verified = false;
+    if (build?.status === "completed" && build.conclusion === "success") {
+        const name = `release-manifest-${build.run_attempt}.json`;
+        const evidence = v.parse(
+            artifactsSchema,
+            await read(`/actions/runs/${build.id}/artifacts?per_page=100&name=${name}`)
+        );
+        const matches = evidence.artifacts.filter(
+            (artifact) =>
+                artifact.name === name &&
+                !artifact.expired &&
+                artifact.digest === digest &&
+                artifact.workflow_run.id === build.id &&
+                artifact.workflow_run.head_sha === manifest.revision
+        );
+        verified = matches.length === 1;
+    }
     return {
         repository,
         version: manifest.version,
         revision: manifest.revision,
         images: manifest.images,
         tests: build?.conclusion ?? build?.status ?? "unknown",
-        verified: build?.status === "completed" && build.conclusion === "success",
+        verified,
         url: `https://github.com/${repository}/releases/tag/${release.tag_name}`,
         buildUrl: build
             ? `https://github.com/${repository}/actions/runs/${build.id}`

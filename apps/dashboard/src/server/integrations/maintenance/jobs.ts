@@ -4,7 +4,10 @@ import * as v from "valibot";
 
 import type { JobHandler } from "../../jobs/types";
 import { updateResourceKeys, type UpdateTarget } from "../updates/configuration";
-import { recordRestartObservation } from "../updates/restartObservation";
+import {
+    recordRestartObservation,
+    restartObservationTime,
+} from "../updates/restartObservation";
 import { maintenanceRevision, type MaintenanceTarget } from "./configuration";
 import {
     observationSchema,
@@ -267,7 +270,7 @@ export function maintenanceJobs(
                                 )
                                     ? null
                                     : after.rebootRequired,
-                                new Date().toISOString()
+                                await restartObservationTime(transaction)
                             );
                             await transaction`DELETE FROM operation_snapshots WHERE key = ${`maintenance:${target.id}`}`;
                         }))

@@ -1,4 +1,4 @@
-import { expect, spyOn, test } from "bun:test";
+import { expect, setSystemTime, spyOn, test } from "bun:test";
 
 import { capabilities } from "@homelab/contracts/operations";
 
@@ -8,6 +8,10 @@ import { reportJobProgress } from "../../jobs/progress";
 import { createJobRegistry } from "../../jobs/registry";
 import { expectOperationFailure, operationFixture } from "../../testing/operations";
 import { parseUpdateTargets } from "../updates/configuration";
+import {
+    recordRestartObservation,
+    restartObservationTime,
+} from "../updates/restartObservation";
 import { parseMaintenanceTargets } from "./configuration";
 import type { MaintenanceObservation, MaintenanceProbe } from "./execution";
 import { maintenanceJobs } from "./jobs";
@@ -36,6 +40,55 @@ const target = {
     health: ["/usr/bin/true"],
     workerIndependent: true,
 };
+
+test.each([-86_400_000, 86_400_000])(
+    "restart observations stay ordered and fresh despite worker clock offset %s",
+    async (offset) => {
+        const observation: MaintenanceObservation = {
+            bootId: Bun.randomUUIDv7(),
+            active: "active",
+            rebootRequired: false,
+            serviceRestartRequired: false,
+            health: true,
+        };
+        const state = await fixture(() => Promise.resolve(observation));
+        try {
+            const plan = await state.refresh();
+            await state.caller.maintenance.request({
+                target: "web",
+                revision: plan.revision,
+                requestId: Bun.randomUUIDv7(),
+            });
+            setSystemTime(new Date(Date.now() + offset));
+            try {
+                await state.execute("maintenance.restart.web");
+            } finally {
+                setSystemTime();
+            }
+            const [record] = await state.client<{ age: number; required: boolean }[]>`
+                SELECT extract(epoch FROM clock_timestamp() - captured_at)::float AS age,
+                    (value->>'required')::boolean AS required
+                FROM operation_snapshots WHERE key = 'updates.restart:demo'`;
+            expect(record?.age).toBeGreaterThanOrEqual(-1);
+            expect(record?.age).toBeLessThan(10);
+            expect(record?.required).toBe(false);
+            // A later observation must replace the receipt, including after a fast worker clock.
+            await recordRestartObservation(
+                state.client,
+                "demo",
+                true,
+                await restartObservationTime(state.client)
+            );
+            const [next] = await state.client<
+                { required: boolean }[]
+            >`SELECT (value->>'required')::boolean AS required FROM operation_snapshots WHERE key = 'updates.restart:demo'`;
+            expect(next?.required).toBe(true);
+        } finally {
+            setSystemTime();
+            await state.close();
+        }
+    }
+);
 
 test("restart authority is disabled by default and requires a qualified fixed recipe", () => {
     expect(parseMaintenanceTargets(undefined, connections)).toEqual([]);

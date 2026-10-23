@@ -85,6 +85,9 @@ export async function scheduleDueJobs(
     client: SQL,
     registry: ReadonlyMap<string, JobHandler>
 ): Promise<void> {
+    const actions = [...registry.values()]
+        .filter(({ definition }) => definition.intervalSeconds !== null)
+        .map(({ definition }) => definition.key);
     await client.begin(async (transaction) => {
         await lockQueue(transaction);
         for (const { definition } of registry.values()) {
@@ -121,7 +124,7 @@ export async function scheduleDueJobs(
                 next_run_at: Date;
                 schedule: ScheduleConfiguration;
             }[]
-        >`SELECT id, action, next_run_at, schedule FROM job_schedules WHERE enabled AND next_run_at <= now() ORDER BY next_run_at LIMIT 50`;
+        >`SELECT id, action, next_run_at, schedule FROM job_schedules WHERE enabled AND action = ANY(${transaction.array(actions, "TEXT")}) AND next_run_at <= now() ORDER BY next_run_at LIMIT 50`;
         for (const schedule of due) {
             const handler = registry.get(schedule.action);
             if (!handler || handler.definition.intervalSeconds === null) continue;
@@ -205,6 +208,10 @@ export async function listSchedules(
     client: SQL,
     registry: ReadonlyMap<string, JobHandler>
 ): Promise<ScheduleSummary[]> {
+    // Keep unavailable targets' saved policies, but exclude them before pagination.
+    const actions = [...registry.values()]
+        .filter(({ definition }) => definition.intervalSeconds !== null)
+        .map(({ definition }) => definition.key);
     const rows = await client<
         Pick<
             ScheduleSummary,
@@ -218,7 +225,7 @@ export async function listSchedules(
             | "version"
             | "activeRun"
         >[]
-    >`SELECT id, action, enabled, schedule, disable_reason AS "disableReason", disabled_until::text AS "disabledUntil", next_run_at::text AS "nextRunAt", version, (SELECT jsonb_build_object('id', run.id, 'state', run.state) FROM job_runs run WHERE run.action = job_schedules.action AND run.state IN ('queued','running') ORDER BY run.id LIMIT 1) AS "activeRun" FROM job_schedules ORDER BY action LIMIT 100`;
+    >`SELECT id, action, enabled, schedule, disable_reason AS "disableReason", disabled_until::text AS "disabledUntil", next_run_at::text AS "nextRunAt", version, (SELECT jsonb_build_object('id', run.id, 'state', run.state) FROM job_runs run WHERE run.action = job_schedules.action AND run.state IN ('queued','running') ORDER BY run.id LIMIT 1) AS "activeRun" FROM job_schedules WHERE action = ANY(${client.array(actions, "TEXT")}) ORDER BY action LIMIT 100`;
     return rows.flatMap((row) => {
         const definition = registry.get(row.action)?.definition;
         return definition

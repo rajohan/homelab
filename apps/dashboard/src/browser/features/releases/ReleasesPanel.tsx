@@ -100,6 +100,11 @@ export function ReleasesPanel() {
                                     ? `Release tests: ${release.value.tests}`
                                     : "Release check is stale"}
                             </Badge>
+                            <p className="text-primary-400">
+                                {release.value.verified
+                                    ? "Image manifest matches the successful release build."
+                                    : "Image manifest has no matching build evidence. Publication is not verified."}
+                            </p>
                             {release.value.buildUrl && (
                                 <p>
                                     <a

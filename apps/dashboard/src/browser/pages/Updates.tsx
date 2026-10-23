@@ -15,9 +15,11 @@ export function Updates() {
                 title="Updates"
                 description="Installed software, available versions and check coverage."
             />
-            <UpdatesPanel />
-            <MaintenancePanel />
-            <ReleasesPanel />
+            <div className="space-y-6">
+                <UpdatesPanel />
+                <MaintenancePanel />
+                <ReleasesPanel />
+            </div>
         </>
     );
 }

@@ -12,6 +12,12 @@ const manifest = {
         reference: `ghcr.io/demo/homelab/${app}:0.8.0@sha256:${"b".repeat(64)}`,
     })),
 };
+const evidence = {
+    name: "release-manifest-1.json",
+    expired: false,
+    digest: `sha256:${new Bun.CryptoHasher("sha256").update(JSON.stringify(manifest)).digest("hex")}`,
+    workflow_run: { id: 100, head_sha: revision },
+};
 
 function fixture(
     options: {
@@ -19,6 +25,8 @@ function fixture(
         manifest?: unknown;
         conclusion?: string;
         redirect?: string;
+        artifacts?: unknown[];
+        attempt?: number;
     } = {}
 ) {
     const requests: { url: string; authorization: string | null }[] = [];
@@ -58,6 +66,7 @@ function fixture(
                 workflow_runs: [
                     {
                         id: 100,
+                        run_attempt: options.attempt ?? 1,
                         head_sha: revision,
                         event: "release",
                         path: ".github/workflows/container-images.yml",
@@ -66,6 +75,8 @@ function fixture(
                     },
                 ],
             });
+        if (url.includes("/actions/runs/100/artifacts?"))
+            return Response.json({ artifacts: options.artifacts ?? [evidence] });
         throw new Error("Unexpected request");
     };
     const request = Object.assign(
@@ -134,4 +145,62 @@ test("a failed release build is reported without claiming the publication is ver
     );
     expect(result.verified).toBe(false);
     expect(result.tests).toBe("failure");
+    expect(client.requests.some(({ url }) => url.includes("/artifacts?"))).toBe(false);
+});
+
+test("a replaced manifest cannot borrow successful tests from its tag's earlier build", async () => {
+    const client = fixture({
+        manifest: {
+            ...manifest,
+            images: manifest.images.map((image) => ({
+                ...image,
+                reference: image.reference.replace("b".repeat(64), "c".repeat(64)),
+            })),
+        },
+    });
+    const result = await readHomelabRelease(
+        "demo/homelab",
+        undefined,
+        AbortSignal.timeout(1000),
+        client.request
+    );
+    expect(result.tests).toBe("success");
+    expect(result.verified).toBe(false);
+});
+
+test("verification requires unexpired evidence from the exact workflow run and attempt", async () => {
+    for (const options of [
+        { artifacts: [] },
+        { artifacts: [{ ...evidence, expired: true }] },
+        { artifacts: [{ ...evidence, digest: null }] },
+        { artifacts: [{ ...evidence, workflow_run: { id: 101, head_sha: revision } }] },
+        {
+            artifacts: [
+                { ...evidence, workflow_run: { id: 100, head_sha: "c".repeat(40) } },
+            ],
+        },
+        { artifacts: [evidence, evidence] },
+        { attempt: 2 },
+    ]) {
+        const client = fixture(options);
+        const result = await readHomelabRelease(
+            "demo/homelab",
+            undefined,
+            AbortSignal.timeout(1000),
+            client.request
+        );
+        expect(result.verified).toBe(false);
+    }
+    const client = fixture({
+        attempt: 2,
+        artifacts: [{ ...evidence, name: "release-manifest-2.json" }],
+    });
+    const result = await readHomelabRelease(
+        "demo/homelab",
+        undefined,
+        AbortSignal.timeout(1000),
+        client.request
+    );
+    expect(result.verified).toBe(true);
+    expect(client.requests.at(-1)?.url).toContain("name=release-manifest-2.json");
 });

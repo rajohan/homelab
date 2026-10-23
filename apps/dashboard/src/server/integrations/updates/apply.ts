@@ -5,7 +5,7 @@ import { publishNotification } from "../../notifications/publish";
 import type { UpdateTarget } from "./configuration";
 import type { UpdateExecutor, UpdateReceipt } from "./execution";
 import { remapPendingUpdateBatches, type UpdateReceiptScope } from "./receipts";
-import { recordRestartObservation } from "./restartObservation";
+import { recordRestartObservation, restartObservationTime } from "./restartObservation";
 
 /** Maximum execution time for one installation, shared by individual and bulk jobs. */
 export const updateTimeoutMs = 1_500_000;
@@ -19,6 +19,7 @@ async function recordResult(
 ) {
     if (
         !(await context.commit(async (transaction) => {
+            const observedAt = await restartObservationTime(transaction);
             for (const source of scope.sources)
                 for (const key of [`updates:${source}`, `updates.resolved:${source}`]) {
                     const [row] = await transaction<
@@ -84,7 +85,7 @@ async function recordResult(
                         );
                     // Receipt time is also a publication watermark: a report collected before
                     // installation must not restore the old version when it arrives late.
-                    await transaction`UPDATE operation_snapshots SET value=${JSON.stringify({ ...row.value, items, ...(source === target.source ? { rebootRequired: receipt.rebootRequired, rebootObservedAt: new Date().toISOString() } : {}) })}::text::jsonb, captured_at=GREATEST(captured_at, now()) WHERE key=${key}`;
+                    await transaction`UPDATE operation_snapshots SET value=${JSON.stringify({ ...row.value, items, ...(source === target.source ? { rebootRequired: receipt.rebootRequired, rebootObservedAt: observedAt } : {}) })}::text::jsonb, captured_at=GREATEST(captured_at, now()) WHERE key=${key}`;
                 }
             const result = {
                 label: item.name,
@@ -95,7 +96,6 @@ async function recordResult(
                 warnings: receipt.warnings ?? [],
             };
             await transaction`UPDATE job_runs SET results = results || ${JSON.stringify([result])}::text::jsonb WHERE id = ${context.runId} AND jsonb_array_length(results) < 400`;
-            const observedAt = new Date().toISOString();
             await recordRestartObservation(
                 transaction,
                 target.source,

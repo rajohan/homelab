@@ -115,3 +115,32 @@ test("release publication is displayed separately from running versions and stal
         close();
     }
 });
+
+test("successful workflow tests without exact manifest evidence remain visibly unverified", () => {
+    const close = fixture(<ReleasesPanel />, "releases", {
+        configured: true,
+        dashboard: "0.7.12",
+        workers: [],
+        auth: [],
+        release: {
+            fresh: true,
+            capturedAt: "2026-10-23T10:00:00Z",
+            value: {
+                version: "0.8.0",
+                verified: false,
+                tests: "success",
+                url: "https://github.com/demo/homelab/releases/tag/v0.8.0",
+                buildUrl: null,
+            },
+        },
+    });
+    try {
+        expect(screen.getByText("Release tests: success")).toBeVisible();
+        expect(screen.getByText(/Publication is not verified/)).toBeVisible();
+        expect(
+            screen.queryByText("Image manifest matches the successful release build.")
+        ).not.toBeInTheDocument();
+    } finally {
+        close();
+    }
+});

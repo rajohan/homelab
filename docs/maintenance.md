@@ -63,7 +63,8 @@ available, the distribution's `needrestart -b -r l` service list. Missing inspec
 remains unknown. Plans expire after two minutes; an accepted queue request has a
 five-minute admission budget. Before mutation, the worker rechecks configuration,
 boot identity and service state. A stopped service is never implicitly started.
-The database clock controls admission age, including a second check after inspection.
+The database clock controls admission age, including a second check after inspection,
+and timestamps restart observations consistently across update and restart workers.
 Status probes share the host lock with restarts and updates. A source spanning more
 than one host retains an unknown source-level restart requirement; each receipt
 still reports the individually verified host.
@@ -86,10 +87,20 @@ are limited to official release storage and never carry that credential.
 The published manifest must contain both immutable Auth and dashboard images for
 the exact version and tag commit. The matching release-triggered Container images
 workflow must have completed successfully before publication is labelled verified.
+The exact manifest bytes must also match the SHA-256 digest of the unarchived
+`release-manifest-<attempt>.json` Actions artifact from that successful workflow run
+and attempt. A changed release asset cannot reuse evidence for different image
+digests. The release workflow retains this evidence for ninety days; older releases,
+expired evidence and builds without this artifact remain explicitly unverified.
+For a private repository, the optional credential also needs Actions read access.
 Failed refreshes and observations older than twenty minutes are shown as stale.
 The panel separately reports the serving dashboard version, live worker versions
 and timestamped Auth image observations from authorized inventory publishers.
 An available or verified release is not evidence of deployment.
+
+Schedules for removed targets retain their saved policy but are excluded before
+scheduler and UI pagination. They cannot block currently configured jobs, and a
+temporarily removed target can recover its existing schedule when reintroduced.
 
 ## Release qualification and rollout
 
