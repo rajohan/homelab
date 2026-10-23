@@ -1,0 +1,1204 @@
+[
+    {
+        "id": "main-host",
+        "connection": "main-apt",
+        "label": "Main",
+        "impact": "Dashboard, worker, media applications, OpenClaw and local web tools will be unavailable until Main returns.",
+        "kind": "host",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://10.77.20.2:3110/health/ready"
+        ],
+        "workerIndependent": false,
+        "externalReason": "Restart from Proxmox or an independent SSH session after draining the worker. This host runs the dashboard and its worker."
+    },
+    {
+        "id": "pve-host",
+        "connection": "pve-apt",
+        "label": "PVE",
+        "impact": "All hosted virtual machines and containers will be unavailable, including Main, the database, Auth, monitoring and application hosts.",
+        "kind": "host",
+        "health": ["/usr/bin/systemctl", "is-active", "pve-cluster.service"],
+        "workerIndependent": false,
+        "externalReason": "Restart from the physical or Proxmox console after an orderly guest shutdown. This hypervisor runs the worker and database VMs."
+    },
+    {
+        "id": "db-host",
+        "connection": "db-apt",
+        "label": "DB",
+        "impact": "PostgreSQL, connection pooling and pgAdmin will be unavailable. Applications using the database, including Auth and dashboard jobs, will be interrupted.",
+        "kind": "host",
+        "health": ["/usr/bin/pg_isready", "-h", "127.0.0.1", "-p", "5432"],
+        "workerIndependent": false,
+        "externalReason": "Pause dashboard jobs and restart from an independent SSH session. The worker cannot retain job ownership while its database is offline."
+    },
+    {
+        "id": "adguard-host",
+        "connection": "adguard-apt",
+        "label": "Adguard",
+        "impact": "The primary DNS node and configuration sync will be unavailable. Sentinel must answer DNS before this restart; DNS maintenance is serialized across both nodes.",
+        "kind": "host",
+        "health": [
+            "/usr/bin/python3",
+            "-c",
+            "import socket,struct; s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM); s.settimeout(2); q=struct.pack('!6H',12345,256,1,0,0,0)+b''.join(bytes([len(x)])+x.encode() for x in 'db.home.rajohan.no'.split('.'))+b'\\0\\0\\1\\0\\1'; s.sendto(q,('127.0.0.1',53)); r=s.recv(4096); h=struct.unpack('!6H',r[:12]); assert h[0]==12345 and h[1]&32768 and h[1]&15==0 and h[3]>0; s.close()"
+        ],
+        "workerIndependent": true,
+        "preflight": [
+            "/usr/bin/python3",
+            "-c",
+            "import socket,struct; s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM); s.settimeout(2); q=struct.pack('!6H',12345,256,1,0,0,0)+b''.join(bytes([len(x)])+x.encode() for x in 'db.home.rajohan.no'.split('.'))+b'\\0\\0\\1\\0\\1'; s.sendto(q,('10.77.10.12',53)); r=s.recv(4096); h=struct.unpack('!6H',r[:12]); assert h[0]==12345 and h[1]&32768 and h[1]&15==0 and h[3]>0; s.close()"
+        ],
+        "lockConnections": ["sentinel-apt", "adguard-apt"]
+    },
+    {
+        "id": "sentinel-host",
+        "connection": "sentinel-apt",
+        "label": "Sentinel",
+        "impact": "Backup DNS, UPS status and Sentinel remote access will be unavailable. Adguard must answer DNS and the UPS must be on mains power before restart.",
+        "kind": "host",
+        "health": [
+            "/usr/bin/python3",
+            "-c",
+            "import socket,struct; s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM); s.settimeout(2); q=struct.pack('!6H',12345,256,1,0,0,0)+b''.join(bytes([len(x)])+x.encode() for x in 'db.home.rajohan.no'.split('.'))+b'\\0\\0\\1\\0\\1'; s.sendto(q,('127.0.0.1',53)); r=s.recv(4096); h=struct.unpack('!6H',r[:12]); assert h[0]==12345 and h[1]&32768 and h[1]&15==0 and h[3]>0; s.close()"
+        ],
+        "workerIndependent": true,
+        "preflight": [
+            "/usr/bin/python3",
+            "-c",
+            "import socket,struct; s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM); s.settimeout(2); q=struct.pack('!6H',12345,256,1,0,0,0)+b''.join(bytes([len(x)])+x.encode() for x in 'db.home.rajohan.no'.split('.'))+b'\\0\\0\\1\\0\\1'; s.sendto(q,('10.77.10.13',53)); r=s.recv(4096); h=struct.unpack('!6H',r[:12]); assert h[0]==12345 and h[1]&32768 and h[1]&15==0 and h[3]>0; s.close(); import subprocess; assert 'OL' in subprocess.check_output(['/usr/bin/upsc','apc@localhost','ups.status'],stderr=subprocess.DEVNULL,timeout=3).decode().split()"
+        ],
+        "lockConnections": ["sentinel-apt", "adguard-apt"]
+    },
+    {
+        "id": "pbs-host",
+        "connection": "pbs-apt",
+        "label": "PBS",
+        "impact": "Backup APIs and scheduled backups will be unavailable. Restart is refused while PBS reports active tasks.",
+        "kind": "host",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "--resolve",
+            "pbs.home.rajohan.no:8007:127.0.0.1",
+            "https://pbs.home.rajohan.no:8007/"
+        ],
+        "workerIndependent": true,
+        "preflight": [
+            "/usr/bin/python3",
+            "-c",
+            "import json,subprocess; tasks=json.loads(subprocess.check_output(['/usr/sbin/proxmox-backup-manager','task','list','--output-format','json'],timeout=5)); assert not tasks, 'Backup tasks are active'"
+        ]
+    },
+    {
+        "id": "mesh-host",
+        "connection": "mesh-apt",
+        "label": "Mesh",
+        "impact": "Meshnet and VPN access through this host will disconnect until it returns. The dashboard worker uses a separate LAN connection.",
+        "kind": "host",
+        "health": ["/usr/bin/systemctl", "is-active", "nordvpnd.service"],
+        "workerIndependent": true
+    },
+    {
+        "id": "monitor-host",
+        "connection": "monitor-apt",
+        "label": "Monitor",
+        "impact": "Metrics, logs, Grafana and alert delivery will be unavailable. Dashboard monitoring panels may show temporary collection failures.",
+        "kind": "host",
+        "health": [
+            "/usr/bin/python3",
+            "-c",
+            "import urllib.request; urls=['http://127.0.0.1:8428/health','http://127.0.0.1:9093/-/ready','http://127.0.0.1:3000/api/health','http://127.0.0.1:3100/ready']; [urllib.request.urlopen(u,timeout=2).close() for u in urls]"
+        ],
+        "workerIndependent": true
+    },
+    {
+        "id": "edge-host",
+        "connection": "edge-apt",
+        "label": "Edge",
+        "impact": "Auth, public application routing and new sign-ins will be unavailable until Edge returns. The worker and database remain running.",
+        "kind": "host",
+        "health": [
+            "/usr/bin/python3",
+            "-c",
+            "import urllib.request; urls=['http://127.0.0.1:3111/health/ready','http://127.0.0.1:8082/ping']; [urllib.request.urlopen(u,timeout=2).close() for u in urls]"
+        ],
+        "workerIndependent": true
+    },
+    {
+        "id": "nas-host",
+        "connection": "nas-apt",
+        "label": "NAS",
+        "impact": "SMB shares and active file transfers will disconnect. Finish file writes before confirming this restart.",
+        "kind": "host",
+        "health": ["/usr/bin/smbcontrol", "smbd", "ping"],
+        "workerIndependent": true
+    },
+    {
+        "id": "nextcloud-host",
+        "connection": "nextcloud-apt",
+        "label": "Nextcloud",
+        "impact": "Nextcloud, PHP, web serving and its cache will be unavailable. Active uploads and synchronization may be interrupted.",
+        "kind": "host",
+        "health": [
+            "/usr/bin/python3",
+            "-c",
+            "import json,urllib.request; r=urllib.request.Request('http://127.0.0.1/status.php',headers={'Host':'nextcloud.home.rajohan.no'}); s=json.load(urllib.request.urlopen(r,timeout=10)); assert s.get('installed') is True and s.get('maintenance') is False and s.get('needsDbUpgrade') is False"
+        ],
+        "workerIndependent": true
+    },
+    {
+        "id": "adguard-native-adguard-home",
+        "connection": "adguard-native-adguard-home",
+        "label": "AdGuard Home",
+        "impact": "DNS on Adguard will pause briefly. The other DNS node must be healthy; both DNS hosts are locked against simultaneous maintenance.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/python3",
+            "-c",
+            "import socket,struct; s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM); s.settimeout(2); q=struct.pack('!6H',12345,256,1,0,0,0)+b''.join(bytes([len(x)])+x.encode() for x in 'db.home.rajohan.no'.split('.'))+b'\\0\\0\\1\\0\\1'; s.sendto(q,('127.0.0.1',53)); r=s.recv(4096); h=struct.unpack('!6H',r[:12]); assert h[0]==12345 and h[1]&32768 and h[1]&15==0 and h[3]>0; s.close()"
+        ],
+        "workerIndependent": true,
+        "service": "AdGuardHome.service",
+        "preflight": [
+            "/usr/bin/python3",
+            "-c",
+            "import socket,struct; s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM); s.settimeout(2); q=struct.pack('!6H',12345,256,1,0,0,0)+b''.join(bytes([len(x)])+x.encode() for x in 'db.home.rajohan.no'.split('.'))+b'\\0\\0\\1\\0\\1'; s.sendto(q,('10.77.10.12',53)); r=s.recv(4096); h=struct.unpack('!6H',r[:12]); assert h[0]==12345 and h[1]&32768 and h[1]&15==0 and h[3]>0; s.close()"
+        ],
+        "lockConnections": ["sentinel-apt", "adguard-apt"]
+    },
+    {
+        "id": "main-native-openclaw",
+        "connection": "main-native-openclaw",
+        "label": "OpenClaw",
+        "impact": "OpenClaw connections and active agent work will be interrupted while the gateway restarts. Dashboard jobs continue.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://127.0.0.1:18789/readyz"
+        ],
+        "workerIndependent": true,
+        "service": "openclaw-gateway.service"
+    },
+    {
+        "id": "main-node-exporter",
+        "connection": "main-node-exporter",
+        "label": "Node Exporter on main",
+        "impact": "Node Exporter on main will be unavailable briefly. Related monitoring, log ingestion or alerts may pause; the worker remains available.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://127.0.0.1:9100/metrics"
+        ],
+        "workerIndependent": true,
+        "service": "node-exporter.service"
+    },
+    {
+        "id": "main-alloy",
+        "connection": "main-alloy",
+        "label": "Grafana Alloy on main",
+        "impact": "Grafana Alloy on main will be unavailable briefly. Related monitoring, log ingestion or alerts may pause; the worker remains available.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://127.0.0.1:12345/-/ready"
+        ],
+        "workerIndependent": true,
+        "service": "alloy.service"
+    },
+    {
+        "id": "pve-node-exporter",
+        "connection": "pve-node-exporter",
+        "label": "Node Exporter on pve",
+        "impact": "Node Exporter on pve will be unavailable briefly. Related monitoring, log ingestion or alerts may pause; the worker remains available.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://127.0.0.1:9100/metrics"
+        ],
+        "workerIndependent": true,
+        "service": "node-exporter.service"
+    },
+    {
+        "id": "pve-alloy",
+        "connection": "pve-alloy",
+        "label": "Grafana Alloy on pve",
+        "impact": "Grafana Alloy on pve will be unavailable briefly. Related monitoring, log ingestion or alerts may pause; the worker remains available.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://127.0.0.1:12345/-/ready"
+        ],
+        "workerIndependent": true,
+        "service": "alloy.service"
+    },
+    {
+        "id": "sentinel-node-exporter",
+        "connection": "sentinel-node-exporter",
+        "label": "Node Exporter on sentinel",
+        "impact": "Node Exporter on sentinel will be unavailable briefly. Related monitoring, log ingestion or alerts may pause; the worker remains available.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://127.0.0.1:9100/metrics"
+        ],
+        "workerIndependent": true,
+        "service": "node-exporter.service"
+    },
+    {
+        "id": "sentinel-alloy",
+        "connection": "sentinel-alloy",
+        "label": "Grafana Alloy on sentinel",
+        "impact": "Grafana Alloy on sentinel will be unavailable briefly. Related monitoring, log ingestion or alerts may pause; the worker remains available.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://127.0.0.1:12345/-/ready"
+        ],
+        "workerIndependent": true,
+        "service": "alloy.service"
+    },
+    {
+        "id": "adguard-node-exporter",
+        "connection": "adguard-node-exporter",
+        "label": "Node Exporter on adguard",
+        "impact": "Node Exporter on adguard will be unavailable briefly. Related monitoring, log ingestion or alerts may pause; the worker remains available.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://127.0.0.1:9100/metrics"
+        ],
+        "workerIndependent": true,
+        "service": "node-exporter.service"
+    },
+    {
+        "id": "adguard-alloy",
+        "connection": "adguard-alloy",
+        "label": "Grafana Alloy on adguard",
+        "impact": "Grafana Alloy on adguard will be unavailable briefly. Related monitoring, log ingestion or alerts may pause; the worker remains available.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://127.0.0.1:12345/-/ready"
+        ],
+        "workerIndependent": true,
+        "service": "alloy.service"
+    },
+    {
+        "id": "pbs-node-exporter",
+        "connection": "pbs-node-exporter",
+        "label": "Node Exporter on pbs",
+        "impact": "Node Exporter on pbs will be unavailable briefly. Related monitoring, log ingestion or alerts may pause; the worker remains available.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://127.0.0.1:9100/metrics"
+        ],
+        "workerIndependent": true,
+        "service": "node-exporter.service"
+    },
+    {
+        "id": "pbs-alloy",
+        "connection": "pbs-alloy",
+        "label": "Grafana Alloy on pbs",
+        "impact": "Grafana Alloy on pbs will be unavailable briefly. Related monitoring, log ingestion or alerts may pause; the worker remains available.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://127.0.0.1:12345/-/ready"
+        ],
+        "workerIndependent": true,
+        "service": "alloy.service"
+    },
+    {
+        "id": "mesh-node-exporter",
+        "connection": "mesh-node-exporter",
+        "label": "Node Exporter on mesh",
+        "impact": "Node Exporter on mesh will be unavailable briefly. Related monitoring, log ingestion or alerts may pause; the worker remains available.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://127.0.0.1:9100/metrics"
+        ],
+        "workerIndependent": true,
+        "service": "node-exporter.service"
+    },
+    {
+        "id": "mesh-alloy",
+        "connection": "mesh-alloy",
+        "label": "Grafana Alloy on mesh",
+        "impact": "Grafana Alloy on mesh will be unavailable briefly. Related monitoring, log ingestion or alerts may pause; the worker remains available.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://127.0.0.1:12345/-/ready"
+        ],
+        "workerIndependent": true,
+        "service": "alloy.service"
+    },
+    {
+        "id": "monitor-node-exporter",
+        "connection": "monitor-node-exporter",
+        "label": "Node Exporter on monitor",
+        "impact": "Node Exporter on monitor will be unavailable briefly. Related monitoring, log ingestion or alerts may pause; the worker remains available.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://127.0.0.1:9100/metrics"
+        ],
+        "workerIndependent": true,
+        "service": "node-exporter.service"
+    },
+    {
+        "id": "monitor-alloy",
+        "connection": "monitor-alloy",
+        "label": "Grafana Alloy on monitor",
+        "impact": "Grafana Alloy on monitor will be unavailable briefly. Related monitoring, log ingestion or alerts may pause; the worker remains available.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://127.0.0.1:12345/-/ready"
+        ],
+        "workerIndependent": true,
+        "service": "alloy.service"
+    },
+    {
+        "id": "db-node-exporter",
+        "connection": "db-node-exporter",
+        "label": "Node Exporter on db",
+        "impact": "Node Exporter on db will be unavailable briefly. Related monitoring, log ingestion or alerts may pause; the worker remains available.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://127.0.0.1:9100/metrics"
+        ],
+        "workerIndependent": true,
+        "service": "node-exporter.service"
+    },
+    {
+        "id": "db-alloy",
+        "connection": "db-alloy",
+        "label": "Grafana Alloy on db",
+        "impact": "Grafana Alloy on db will be unavailable briefly. Related monitoring, log ingestion or alerts may pause; the worker remains available.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://127.0.0.1:12345/-/ready"
+        ],
+        "workerIndependent": true,
+        "service": "alloy.service"
+    },
+    {
+        "id": "edge-node-exporter",
+        "connection": "edge-node-exporter",
+        "label": "Node Exporter on edge",
+        "impact": "Node Exporter on edge will be unavailable briefly. Related monitoring, log ingestion or alerts may pause; the worker remains available.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://127.0.0.1:9100/metrics"
+        ],
+        "workerIndependent": true,
+        "service": "node-exporter.service"
+    },
+    {
+        "id": "edge-alloy",
+        "connection": "edge-alloy",
+        "label": "Grafana Alloy on edge",
+        "impact": "Grafana Alloy on edge will be unavailable briefly. Related monitoring, log ingestion or alerts may pause; the worker remains available.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://127.0.0.1:12345/-/ready"
+        ],
+        "workerIndependent": true,
+        "service": "alloy.service"
+    },
+    {
+        "id": "nas-node-exporter",
+        "connection": "nas-node-exporter",
+        "label": "Node Exporter on nas",
+        "impact": "Node Exporter on nas will be unavailable briefly. Related monitoring, log ingestion or alerts may pause; the worker remains available.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://127.0.0.1:9100/metrics"
+        ],
+        "workerIndependent": true,
+        "service": "node-exporter.service"
+    },
+    {
+        "id": "nas-alloy",
+        "connection": "nas-alloy",
+        "label": "Grafana Alloy on nas",
+        "impact": "Grafana Alloy on nas will be unavailable briefly. Related monitoring, log ingestion or alerts may pause; the worker remains available.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://127.0.0.1:12345/-/ready"
+        ],
+        "workerIndependent": true,
+        "service": "alloy.service"
+    },
+    {
+        "id": "nextcloud-node-exporter",
+        "connection": "nextcloud-node-exporter",
+        "label": "Node Exporter on nextcloud",
+        "impact": "Node Exporter on nextcloud will be unavailable briefly. Related monitoring, log ingestion or alerts may pause; the worker remains available.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://127.0.0.1:9100/metrics"
+        ],
+        "workerIndependent": true,
+        "service": "node-exporter.service"
+    },
+    {
+        "id": "nextcloud-alloy",
+        "connection": "nextcloud-alloy",
+        "label": "Grafana Alloy on nextcloud",
+        "impact": "Grafana Alloy on nextcloud will be unavailable briefly. Related monitoring, log ingestion or alerts may pause; the worker remains available.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://127.0.0.1:12345/-/ready"
+        ],
+        "workerIndependent": true,
+        "service": "alloy.service"
+    },
+    {
+        "id": "pve-smartctl-exporter",
+        "connection": "pve-smartctl-exporter",
+        "label": "SMART Exporter on pve",
+        "impact": "SMART Exporter on pve will be unavailable briefly. Related monitoring, log ingestion or alerts may pause; the worker remains available.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://127.0.0.1:9633/metrics"
+        ],
+        "workerIndependent": true,
+        "service": "smartctl-exporter.service"
+    },
+    {
+        "id": "adguard-adguardhome-sync",
+        "connection": "adguard-adguardhome-sync",
+        "label": "AdGuard Home Sync on adguard",
+        "impact": "DNS configuration synchronization pauses briefly. Both DNS servers continue answering queries.",
+        "kind": "service",
+        "health": ["/usr/bin/systemctl", "is-active", "adguardhome-sync.service"],
+        "workerIndependent": true,
+        "service": "adguardhome-sync.service"
+    },
+    {
+        "id": "monitor-alertmanager",
+        "connection": "monitor-alertmanager",
+        "label": "Alertmanager on monitor",
+        "impact": "Alertmanager on monitor will be unavailable briefly. Related monitoring, log ingestion or alerts may pause; the worker remains available.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://127.0.0.1:9093/-/ready"
+        ],
+        "workerIndependent": true,
+        "service": "alertmanager.service"
+    },
+    {
+        "id": "monitor-blackbox-exporter",
+        "connection": "monitor-blackbox-exporter",
+        "label": "Blackbox Exporter on monitor",
+        "impact": "Blackbox Exporter on monitor will be unavailable briefly. Related monitoring, log ingestion or alerts may pause; the worker remains available.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://127.0.0.1:9115/metrics"
+        ],
+        "workerIndependent": true,
+        "service": "blackbox-exporter.service"
+    },
+    {
+        "id": "monitor-loki",
+        "connection": "monitor-loki",
+        "label": "Grafana Loki on monitor",
+        "impact": "Grafana Loki on monitor will be unavailable briefly. Related monitoring, log ingestion or alerts may pause; the worker remains available.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://127.0.0.1:3100/ready"
+        ],
+        "workerIndependent": true,
+        "service": "loki.service"
+    },
+    {
+        "id": "edge-traefik",
+        "connection": "edge-traefik",
+        "label": "Traefik on edge",
+        "impact": "Public application routing and sign-in pages may disconnect briefly while Traefik restarts.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://127.0.0.1:8082/ping"
+        ],
+        "workerIndependent": true,
+        "service": "traefik-edge.service"
+    },
+    {
+        "id": "monitor-victoriametrics",
+        "connection": "monitor-victoriametrics",
+        "label": "victoriametrics on monitor",
+        "impact": "victoriametrics on monitor will be unavailable briefly. Related monitoring, log ingestion or alerts may pause; the worker remains available.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://127.0.0.1:8428/health"
+        ],
+        "workerIndependent": true,
+        "service": "victoriametrics.service"
+    },
+    {
+        "id": "monitor-vmalert",
+        "connection": "monitor-vmalert",
+        "label": "vmalert on monitor",
+        "impact": "vmalert on monitor will be unavailable briefly. Related monitoring, log ingestion or alerts may pause; the worker remains available.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://127.0.0.1:8880/health"
+        ],
+        "workerIndependent": true,
+        "service": "vmalert.service"
+    },
+    {
+        "id": "sentinel-adguard-home",
+        "connection": "sentinel-adguard-home",
+        "label": "AdGuard Home on Sentinel",
+        "impact": "DNS on Sentinel will pause briefly. The other DNS node must be healthy; both DNS hosts are locked against simultaneous maintenance.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/python3",
+            "-c",
+            "import socket,struct; s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM); s.settimeout(2); q=struct.pack('!6H',12345,256,1,0,0,0)+b''.join(bytes([len(x)])+x.encode() for x in 'db.home.rajohan.no'.split('.'))+b'\\0\\0\\1\\0\\1'; s.sendto(q,('127.0.0.1',53)); r=s.recv(4096); h=struct.unpack('!6H',r[:12]); assert h[0]==12345 and h[1]&32768 and h[1]&15==0 and h[3]>0; s.close()"
+        ],
+        "workerIndependent": true,
+        "service": "AdGuardHome.service",
+        "preflight": [
+            "/usr/bin/python3",
+            "-c",
+            "import socket,struct; s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM); s.settimeout(2); q=struct.pack('!6H',12345,256,1,0,0,0)+b''.join(bytes([len(x)])+x.encode() for x in 'db.home.rajohan.no'.split('.'))+b'\\0\\0\\1\\0\\1'; s.sendto(q,('10.77.10.13',53)); r=s.recv(4096); h=struct.unpack('!6H',r[:12]); assert h[0]==12345 and h[1]&32768 and h[1]&15==0 and h[3]>0; s.close()"
+        ],
+        "lockConnections": ["sentinel-apt", "adguard-apt"]
+    },
+    {
+        "id": "monitor-pve-exporter",
+        "connection": "monitor-pve-exporter",
+        "label": "PVE Exporter on Monitor",
+        "impact": "PVE Exporter on Monitor will be unavailable briefly. Related monitoring, log ingestion or alerts may pause; the worker remains available.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://127.0.0.1:9221/"
+        ],
+        "workerIndependent": true,
+        "service": "pve-exporter.service"
+    },
+    {
+        "id": "main-code-server",
+        "connection": "main-apt",
+        "label": "Code-server on Main",
+        "impact": "Browser IDE sessions disconnect briefly; finish terminal work before restarting.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://127.0.0.1:8080/healthz"
+        ],
+        "workerIndependent": true,
+        "service": "code-server.service"
+    },
+    {
+        "id": "main-nginx",
+        "connection": "main-apt",
+        "label": "Main web proxy on Main",
+        "impact": "Main-hosted web routes disconnect briefly; application processes continue running.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "--resolve",
+            "openclaw.home.rajohan.no:443:127.0.0.1",
+            "https://openclaw.home.rajohan.no/"
+        ],
+        "workerIndependent": true,
+        "service": "nginx.service"
+    },
+    {
+        "id": "main-dashboard",
+        "connection": "main-apt",
+        "label": "Dashboard web app on Main",
+        "impact": "The dashboard page and API disconnect briefly. The worker and queued jobs continue.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://10.77.20.2:3110/health/ready"
+        ],
+        "workerIndependent": true,
+        "service": "homelab-dashboard.service"
+    },
+    {
+        "id": "edge-auth",
+        "connection": "edge-apt",
+        "label": "Auth on Edge",
+        "impact": "New sign-ins and identity checks pause briefly. Existing account data and sessions are retained.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://127.0.0.1:3111/health/ready"
+        ],
+        "workerIndependent": true,
+        "service": "homelab-auth.service"
+    },
+    {
+        "id": "db-pgadmin",
+        "connection": "db-apt",
+        "label": "pgAdmin on Db",
+        "impact": "pgAdmin sessions disconnect briefly. PostgreSQL and application connections continue.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://10.77.60.2:18080/misc/ping"
+        ],
+        "workerIndependent": true,
+        "service": "homelab-pgadmin.service"
+    },
+    {
+        "id": "monitor-grafana",
+        "connection": "monitor-apt",
+        "label": "Grafana on Monitor",
+        "impact": "Grafana pages and live charts disconnect briefly. Metrics collection continues.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://127.0.0.1:3000/api/health"
+        ],
+        "workerIndependent": true,
+        "service": "grafana-server.service"
+    },
+    {
+        "id": "monitor-nginx",
+        "connection": "monitor-apt",
+        "label": "Monitoring web proxy on Monitor",
+        "impact": "Monitoring web routes and dashboard metrics requests pause briefly. The worker and database remain available.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "--resolve",
+            "monitor.home.rajohan.no:443:127.0.0.1",
+            "https://monitor.home.rajohan.no/health"
+        ],
+        "workerIndependent": true,
+        "service": "nginx.service"
+    },
+    {
+        "id": "nextcloud-nginx",
+        "connection": "nextcloud-apt",
+        "label": "Nextcloud web server on Nextcloud",
+        "impact": "Nextcloud requests, uploads and sync pause briefly while the web server restarts.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/python3",
+            "-c",
+            "import json,urllib.request; r=urllib.request.Request('http://127.0.0.1/status.php',headers={'Host':'nextcloud.home.rajohan.no'}); s=json.load(urllib.request.urlopen(r,timeout=10)); assert s.get('installed') is True and s.get('maintenance') is False and s.get('needsDbUpgrade') is False"
+        ],
+        "workerIndependent": true,
+        "service": "nginx.service"
+    },
+    {
+        "id": "nextcloud-php",
+        "connection": "nextcloud-apt",
+        "label": "Nextcloud PHP on Nextcloud",
+        "impact": "Active Nextcloud requests may be interrupted while PHP restarts.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/python3",
+            "-c",
+            "import json,urllib.request; r=urllib.request.Request('http://127.0.0.1/status.php',headers={'Host':'nextcloud.home.rajohan.no'}); s=json.load(urllib.request.urlopen(r,timeout=10)); assert s.get('installed') is True and s.get('maintenance') is False and s.get('needsDbUpgrade') is False"
+        ],
+        "workerIndependent": true,
+        "service": "php8.4-fpm.service"
+    },
+    {
+        "id": "nextcloud-valkey",
+        "connection": "nextcloud-apt",
+        "label": "Nextcloud cache on Nextcloud",
+        "impact": "Nextcloud cache and file locking are briefly unavailable; finish uploads before confirming.",
+        "kind": "service",
+        "health": ["/usr/bin/valkey-cli", "-s", "/run/valkey/valkey.sock", "ping"],
+        "workerIndependent": true,
+        "service": "valkey-server.service"
+    },
+    {
+        "id": "nas-samba",
+        "connection": "nas-apt",
+        "label": "SMB file sharing on Nas",
+        "impact": "SMB clients and active transfers disconnect briefly; finish file writes before confirming.",
+        "kind": "service",
+        "health": ["/usr/bin/smbcontrol", "smbd", "ping"],
+        "workerIndependent": true,
+        "service": "smbd.service"
+    },
+    {
+        "id": "pbs-api",
+        "connection": "pbs-apt",
+        "label": "PBS backup API on Pbs",
+        "impact": "Backup API access pauses briefly. Restart is refused while PBS reports active tasks.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "--resolve",
+            "pbs.home.rajohan.no:8007:127.0.0.1",
+            "https://pbs.home.rajohan.no:8007/"
+        ],
+        "workerIndependent": true,
+        "service": "proxmox-backup.service",
+        "preflight": [
+            "/usr/bin/python3",
+            "-c",
+            "import json,subprocess; tasks=json.loads(subprocess.check_output(['/usr/sbin/proxmox-backup-manager','task','list','--output-format','json'],timeout=5)); assert not tasks, 'Backup tasks are active'"
+        ]
+    },
+    {
+        "id": "pbs-proxy",
+        "connection": "pbs-apt",
+        "label": "PBS web proxy on Pbs",
+        "impact": "Backup clients and the PBS web interface disconnect briefly. Active tasks block restart.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "--resolve",
+            "pbs.home.rajohan.no:8007:127.0.0.1",
+            "https://pbs.home.rajohan.no:8007/"
+        ],
+        "workerIndependent": true,
+        "service": "proxmox-backup-proxy.service",
+        "preflight": [
+            "/usr/bin/python3",
+            "-c",
+            "import json,subprocess; tasks=json.loads(subprocess.check_output(['/usr/sbin/proxmox-backup-manager','task','list','--output-format','json'],timeout=5)); assert not tasks, 'Backup tasks are active'"
+        ]
+    },
+    {
+        "id": "adguard-keepalived",
+        "connection": "adguard-apt",
+        "label": "DNS failover on Adguard",
+        "impact": "DNS virtual IP ownership may move to the other node briefly. The peer must be healthy and simultaneous DNS maintenance is blocked.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/python3",
+            "-c",
+            "import subprocess; subprocess.run(['/usr/bin/systemctl','is-active','keepalived.service'],check=True); import socket,struct; s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM); s.settimeout(2); q=struct.pack('!6H',12345,256,1,0,0,0)+b''.join(bytes([len(x)])+x.encode() for x in 'db.home.rajohan.no'.split('.'))+b'\\0\\0\\1\\0\\1'; s.sendto(q,('127.0.0.1',53)); r=s.recv(4096); h=struct.unpack('!6H',r[:12]); assert h[0]==12345 and h[1]&32768 and h[1]&15==0 and h[3]>0; s.close()"
+        ],
+        "workerIndependent": true,
+        "service": "keepalived.service",
+        "preflight": [
+            "/usr/bin/python3",
+            "-c",
+            "import socket,struct; s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM); s.settimeout(2); q=struct.pack('!6H',12345,256,1,0,0,0)+b''.join(bytes([len(x)])+x.encode() for x in 'db.home.rajohan.no'.split('.'))+b'\\0\\0\\1\\0\\1'; s.sendto(q,('10.77.10.12',53)); r=s.recv(4096); h=struct.unpack('!6H',r[:12]); assert h[0]==12345 and h[1]&32768 and h[1]&15==0 and h[3]>0; s.close()"
+        ],
+        "lockConnections": ["sentinel-apt", "adguard-apt"]
+    },
+    {
+        "id": "sentinel-keepalived",
+        "connection": "sentinel-apt",
+        "label": "DNS failover on Sentinel",
+        "impact": "DNS virtual IP ownership may move to the other node briefly. The peer must be healthy and simultaneous DNS maintenance is blocked.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/python3",
+            "-c",
+            "import subprocess; subprocess.run(['/usr/bin/systemctl','is-active','keepalived.service'],check=True); import socket,struct; s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM); s.settimeout(2); q=struct.pack('!6H',12345,256,1,0,0,0)+b''.join(bytes([len(x)])+x.encode() for x in 'db.home.rajohan.no'.split('.'))+b'\\0\\0\\1\\0\\1'; s.sendto(q,('127.0.0.1',53)); r=s.recv(4096); h=struct.unpack('!6H',r[:12]); assert h[0]==12345 and h[1]&32768 and h[1]&15==0 and h[3]>0; s.close()"
+        ],
+        "workerIndependent": true,
+        "service": "keepalived.service",
+        "preflight": [
+            "/usr/bin/python3",
+            "-c",
+            "import socket,struct; s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM); s.settimeout(2); q=struct.pack('!6H',12345,256,1,0,0,0)+b''.join(bytes([len(x)])+x.encode() for x in 'db.home.rajohan.no'.split('.'))+b'\\0\\0\\1\\0\\1'; s.sendto(q,('10.77.10.13',53)); r=s.recv(4096); h=struct.unpack('!6H',r[:12]); assert h[0]==12345 and h[1]&32768 and h[1]&15==0 and h[3]>0; s.close()"
+        ],
+        "lockConnections": ["sentinel-apt", "adguard-apt"]
+    },
+    {
+        "id": "main-worker",
+        "connection": "main-apt",
+        "label": "Dashboard worker",
+        "impact": "Pause and drain jobs, then restart through an independent SSH session. The worker cannot verify its own restart.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://10.77.20.2:3112/health/ready"
+        ],
+        "workerIndependent": false,
+        "service": "homelab-dashboard-worker.service",
+        "externalReason": "Pause and drain jobs, then restart through an independent SSH session. The worker cannot verify its own restart."
+    },
+    {
+        "id": "main-docker",
+        "connection": "main-apt",
+        "label": "Main Docker engine",
+        "impact": "Use independent host maintenance after draining jobs. Restarting Docker can stop the dashboard and worker.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://10.77.20.2:3110/health/ready"
+        ],
+        "workerIndependent": false,
+        "service": "docker.service",
+        "externalReason": "Use independent host maintenance after draining jobs. Restarting Docker can stop the dashboard and worker."
+    },
+    {
+        "id": "main-containerd",
+        "connection": "main-apt",
+        "label": "Main container runtime",
+        "impact": "Use independent host maintenance after draining jobs. The worker depends on this container runtime.",
+        "kind": "service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://10.77.20.2:3110/health/ready"
+        ],
+        "workerIndependent": false,
+        "service": "containerd.service",
+        "externalReason": "Use independent host maintenance after draining jobs. The worker depends on this container runtime."
+    },
+    {
+        "id": "db-postgresql",
+        "connection": "db-apt",
+        "label": "PostgreSQL",
+        "impact": "Pause jobs and restart from an independent session. Dashboard and Auth depend on this database.",
+        "kind": "service",
+        "health": ["/usr/bin/pg_isready", "-h", "127.0.0.1", "-p", "5432"],
+        "workerIndependent": false,
+        "service": "postgresql@18-main.service",
+        "externalReason": "Pause jobs and restart from an independent session. Dashboard and Auth depend on this database."
+    },
+    {
+        "id": "db-pgbouncer",
+        "connection": "db-apt",
+        "label": "Database connection pool",
+        "impact": "Pause jobs and restart from an independent session. Losing this connection pool prevents reliable job verification.",
+        "kind": "service",
+        "health": ["/usr/bin/pg_isready", "-h", "127.0.0.1", "-p", "5432"],
+        "workerIndependent": false,
+        "service": "homelab-pgbouncer.service",
+        "externalReason": "Pause jobs and restart from an independent session. Losing this connection pool prevents reliable job verification."
+    }
+]

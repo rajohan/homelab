@@ -17,7 +17,7 @@ export type MaintenanceObservation = v.InferOutput<typeof observationSchema>;
 export type MaintenanceProbe = (
     connection: UpdateTarget,
     target: MaintenanceTarget,
-    mode: "inspect" | "restart" | "verify",
+    mode: "inspect" | "restart" | "verify" | "preflight",
     signal: AbortSignal,
     expected?: MaintenanceObservation
 ) => Promise<MaintenanceObservation>;

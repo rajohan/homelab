@@ -13,14 +13,15 @@ export const maintenanceRouter = trpc.router({
             const { operations } = authorizedOperations(ctx, "updates:read");
             return Promise.all(
                 (operations.maintenanceTargets ?? []).map(async (target) => {
-                    const connection = operations.updateTargets!.find(
-                        (entry) => entry.id === target.connection
-                    )!;
                     const {
                         observation,
                         configuration: _configuration,
                         ...plan
-                    } = await maintenancePlan(operations.client, target, connection);
+                    } = await maintenancePlan(
+                        operations.client,
+                        target,
+                        operations.updateTargets ?? []
+                    );
                     return {
                         ...plan,
                         active: observation?.active ?? null,
@@ -85,7 +86,11 @@ export const maintenanceRouter = trpc.router({
                         );
                     return { id: existing.id };
                 }
-                const plan = await maintenancePlan(transaction, target, connection);
+                const plan = await maintenancePlan(
+                    transaction,
+                    target,
+                    operations.updateTargets ?? []
+                );
                 if (
                     !plan.allowed ||
                     !plan.observation ||

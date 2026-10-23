@@ -21,7 +21,7 @@ export function MaintenanceResults({
             {results.map((result, index) => (
                 <div
                     key={`${index}:${result.label}`}
-                    className="space-y-1 rounded-lg border border-primary-700 p-3 text-sm"
+                    className="space-y-1 rounded-lg border border-primary-700 bg-primary-950/40 p-3 text-sm"
                 >
                     <p className="font-medium">{result.label}</p>
                     {result.installed && (

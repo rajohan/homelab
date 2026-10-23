@@ -19,7 +19,9 @@ advisories are not cleared by these receipts.
 
 `HOMELAB_DASHBOARD_MAINTENANCE_TARGETS` is deployment-owned JSON, supplied identically
 to dashboard and worker. It defaults to `[]`; existing update consent never grants
-restart authority. Each target refers to an existing update connection by ID. No SSH
+restart authority. The reviewed `apps/dashboard/config/maintenance-targets.homelab.json`
+catalog supplies this installation's hosts and native services; activate its exact JSON
+identically in both services through the deployment configuration. Each target refers to an existing update connection by ID. No SSH
 key, new login, shell command from the browser, daemon, persistent helper or network
 route is provisioned by this feature.
 
@@ -54,9 +56,25 @@ A host restart uses `"kind": "host"` and omits `service`; its health command run
 after reconnection. It must explicitly describe all affected services in `impact`.
 `workerIndependent: true` is a deployment attestation, not automatic dependency
 detection. Review the worker host, database, hypervisor, SSH/DNS/secret-delivery and
-other dependencies before granting this flag. Do not enable restarts that can stop
-the observing worker or its database. Those require the existing external operator
+other dependencies before granting this flag. Targets that can stop the observing worker or its database must use
+`workerIndependent: false` and a nonempty `externalReason`. They retain read-only
+status in the panel, but register no restart job and cannot accept restart requests. Those require the existing external operator
 procedure; this release does not add self-deployment or a second control plane.
+
+`lockConnections` optionally names additional existing update connections. A restart
+holds their source and host leases along with its own, so maintenance of redundant
+DNS nodes cannot overlap each other or an update on either peer. A fixed optional
+`preflight` command runs under these leases before requesting a restart and again on
+the remote host immediately before mutation. Failure never requests the restart.
+The Homelab DNS recipes check the other node's real DNS response. Sentinel host
+restart also requires UPS mains power; PBS host/API restarts require no active tasks.
+
+The catalog covers 11 hosts and 54 services. Eight worker/database dependencies
+remain externally managed: Main/PVE/DB hosts, the Main worker/Docker/containerd,
+and PostgreSQL/PgBouncer. Their reason is visible in Restarts instead of silently
+omitting them. Docker applications keep their existing confirmed controls in
+Applications. CLI tools, one-shot backup binaries and package managers have no
+long-running service to restart. Shared runtimes are covered by their consumers.
 
 Read-only checks observe the OS reboot flag, selected service state and, when
 available, the distribution's `needrestart -b -r l` service list. Missing inspection

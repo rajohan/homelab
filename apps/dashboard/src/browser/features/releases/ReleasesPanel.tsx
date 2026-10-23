@@ -111,31 +111,34 @@ export function ReleasesPanel() {
                                     </Badge>
                                 }
                                 actions={
-                                    <a
-                                        className={buttonStyles({
-                                            variant: "secondary",
-                                            size: "sm",
-                                        })}
-                                        href={release.value.url}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                    >
-                                        View release
-                                    </a>
+                                    <div className="flex w-full flex-col gap-2 min-[30rem]:w-auto min-[30rem]:flex-row">
+                                        <a
+                                            className={buttonStyles({
+                                                variant: "secondary",
+                                                size: "sm",
+                                            })}
+                                            href={release.value.url}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                        >
+                                            View release
+                                        </a>
+                                        {release.value.buildUrl && (
+                                            <a
+                                                className={buttonStyles({
+                                                    variant: "secondary",
+                                                    size: "sm",
+                                                })}
+                                                href={release.value.buildUrl}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                            >
+                                                View release build
+                                            </a>
+                                        )}
+                                    </div>
                                 }
                             />
-                            {release.value.buildUrl && (
-                                <p>
-                                    <a
-                                        className="underline"
-                                        href={release.value.buildUrl}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                    >
-                                        View release build
-                                    </a>
-                                </p>
-                            )}
                         </div>
                     ) : (
                         <p className="rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm text-primary-400">
