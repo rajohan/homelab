@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/rajohan/homelab/compare/v0.8.1...v0.9.0) (2026-10-23)
+
+
+### Features
+
+* **dashboard:** organize restarts and constrain modal height ([#58](https://github.com/rajohan/homelab/issues/58)) ([76f53df](https://github.com/rajohan/homelab/commit/76f53df1e7ef2dcc890a6b6955258bf4ba5cfe0a))
+
 ## [0.8.1](https://github.com/rajohan/homelab/compare/v0.8.0...v0.8.1) (2026-10-23)
 
 
