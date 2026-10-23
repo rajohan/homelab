@@ -96,3 +96,23 @@ test("status badges distinguish success, warnings and errors", () => {
     expect(screen.getByText("Healthy")).toHaveClass("bg-emerald-950", "text-emerald-300");
     expect(screen.getByText("Failed")).toHaveClass("bg-red-500/10", "text-red-300");
 });
+
+test("modal scroll content remains keyboard accessible without losing its close action", async () => {
+    const close = mock();
+    render(
+        <Modal title="Long details" onClose={close}>
+            {Array.from({ length: 30 }, (_, index) => (
+                <p key={index}>Detail {index + 1}</p>
+            ))}
+            <Button>Last action</Button>
+        </Modal>
+    );
+    const content = screen.getByRole("region", { name: "Long details content" });
+    content.focus();
+    expect(content).toHaveFocus();
+    expect(content).toHaveTextContent("Detail 30");
+    await userEvent.setup().tab();
+    expect(screen.getByRole("button", { name: "Last action" })).toHaveFocus();
+    await userEvent.setup().keyboard("{Escape}");
+    expect(close).toHaveBeenCalledTimes(1);
+});

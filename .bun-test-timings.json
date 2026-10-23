@@ -50,6 +50,8 @@
     "packages/ui/src/components/Chart/chartData.test.ts": 0,
     "packages/ui/src/features/identity/api/verificationCoordinator.test.ts": 0,
     "packages/ui/src/lib/formatDateTime.test.ts": 0,
-    "packages/ui/src/lib/queryRefresh.test.ts": 0
+    "packages/ui/src/lib/queryRefresh.test.ts": 0,
+    "apps/dashboard/src/browser/features/maintenance/restartNavigation.test.ts": 1,
+    "apps/dashboard/src/server/integrations/maintenance/hosts.test.ts": 1
   }
 }

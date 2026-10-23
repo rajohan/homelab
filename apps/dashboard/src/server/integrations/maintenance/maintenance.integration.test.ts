@@ -189,6 +189,16 @@ test("external dependencies retain visible status without registering or admitti
     );
     try {
         const plan = await state.refresh();
+        expect(plan.host.label).toBe("demo");
+        expect(plan.host.id).toMatch(/^host:[a-f0-9]{64}$/);
+        const publicPlan = JSON.stringify(plan);
+        for (const privateValue of [
+            "host.example.test",
+            "/run/secret",
+            "configuration",
+            "observation",
+        ])
+            expect(publicPlan).not.toContain(privateValue);
         expect(plan.external).toBe(true);
         expect(plan.required).toBe(true);
         await state.client`UPDATE operation_snapshots SET captured_at = now() - interval '3 minutes' WHERE key = 'maintenance:web'`;
