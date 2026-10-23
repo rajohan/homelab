@@ -41,7 +41,7 @@ export function AutomationAccountCard({
                 {credentials.map((credential) => (
                     <div
                         key={credential.id}
-                        className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary-700 bg-primary-950/40 p-3"
+                        className="@container/credential flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary-700 bg-primary-950/40 p-3"
                     >
                         <div className="min-w-0 grow basis-64 text-sm">
                             <p className="font-mono">{credential.prefix.slice(0, 13)}…</p>
@@ -66,7 +66,7 @@ export function AutomationAccountCard({
                                 <Button
                                     variant="danger"
                                     size="sm"
-                                    className="w-full shrink-0 min-[30rem]:w-auto"
+                                    className="w-full shrink-0 @min-[32rem]/credential:w-auto"
                                     onClick={() =>
                                         onAction({ kind: "revoke", account, credential })
                                     }

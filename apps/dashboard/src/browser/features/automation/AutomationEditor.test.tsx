@@ -95,7 +95,11 @@ test("a revoke action fills mobile rows and stays compact on desktop", async () 
     );
     try {
         const button = screen.getByRole("button", { name: "Revoke token" });
-        expect(button).toHaveClass("w-full", "min-[30rem]:w-auto", "shrink-0");
+        expect(button).toHaveClass(
+            "w-full",
+            "@min-[32rem]/credential:w-auto",
+            "shrink-0"
+        );
         await userEvent.setup().click(button);
         expect(onAction).toHaveBeenCalledWith({ kind: "revoke", account, credential });
     } finally {

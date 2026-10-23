@@ -22,12 +22,13 @@ export function ActionGroup({
     const ordered =
         wide && actions.length > 1 ? [...actions.slice(1), actions[0]] : actions;
     return (
-        <div className={className}>
+        <div className={cn("@container/actions", className)}>
             <div
                 className={cn(
-                    "flex flex-col justify-end gap-2 min-[30rem]:flex-row min-[30rem]:flex-wrap [&>button]:w-full [&>button]:max-w-full [&>button]:min-w-min min-[30rem]:[&>button]:w-auto",
-                    stretch &&
-                        "min-[30rem]:[&>button]:flex-1 min-[30rem]:[&>button:last-child]:flex-2"
+                    "flex flex-col justify-end gap-2 [&>button]:w-full [&>button]:max-w-full [&>button]:min-w-min",
+                    stretch
+                        ? "min-[30rem]:flex-row min-[30rem]:flex-wrap min-[30rem]:[&>button]:w-auto min-[30rem]:[&>button]:flex-1 min-[30rem]:[&>button:last-child]:flex-2"
+                        : "@min-[40rem]/actions:flex-row @min-[40rem]/actions:[&>button]:w-auto"
                 )}
             >
                 {ordered}
