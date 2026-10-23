@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 
 import { capabilities } from "@homelab/contracts/operations";
+import { createTRPCClient, httpBatchLink } from "@trpc/client";
+import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
+import superjson from "superjson";
 
 import { runWorker } from "../../worker/runtime";
 import { appRouter } from "../api/router";
@@ -134,83 +137,138 @@ test("reserved capacity preserves pause, shared resource locks and true exclusiv
     }
 });
 
-test("the actual three-slot worker starts a human control request while both general lanes are occupied", async () => {
-    const fixture = await operationFixture();
-    const lifecycle = new AbortController();
-    let worker: Promise<void> | undefined;
-    try {
-        let activeHeavy = 0;
-        let controls = 0;
-        const base = maintenanceJob(30);
-        const heavy = {
-            definition: {
-                ...base.definition,
-                key: "test.busy",
-                resourceClass: "interactive" as const,
-                resourceKeys: [],
-                timeoutMs: 60_000,
-                intervalSeconds: null,
-            },
-            execute: async (
-                _input: Record<string, unknown>,
-                context: Parameters<typeof base.execute>[1]
-            ) => {
-                activeHeavy += 1;
-                await new Promise<void>((resolve) => {
-                    if (context.signal.aborted) resolve();
-                    else
-                        context.signal.addEventListener("abort", () => resolve(), {
-                            once: true,
+test.each(["interactive", "network"] as const)(
+    "manual light and network jobs finish over HTTP while two long %s jobs remain running",
+    async (resourceClass) => {
+        const fixture = await operationFixture();
+        const lifecycle = new AbortController();
+        let worker: Promise<void> | undefined;
+        let server: ReturnType<typeof Bun.serve> | undefined;
+        try {
+            let activeHeavy = 0;
+            const base = maintenanceJob(30);
+            const heavy = {
+                definition: {
+                    ...base.definition,
+                    key: "test.busy",
+                    resourceClass,
+                    resourceKeys: [],
+                    timeoutMs: 1_500_000,
+                    intervalSeconds: null,
+                },
+                execute: async (
+                    _input: Record<string, unknown>,
+                    context: Parameters<typeof base.execute>[1]
+                ) => {
+                    activeHeavy += 1;
+                    try {
+                        await new Promise<void>((resolve) => {
+                            if (context.signal.aborted) resolve();
+                            else
+                                context.signal.addEventListener(
+                                    "abort",
+                                    () => resolve(),
+                                    { once: true }
+                                );
                         });
-                });
-            },
-        };
-        const control = {
-            definition: {
-                ...base.definition,
-                key: "test.user-status",
-                resourceClass: "network" as const,
-                resourceKeys: [],
-                intervalSeconds: null,
-            },
-            execute: () => {
-                controls += 1;
-                return Promise.resolve();
-            },
-        };
-        const registry = createJobRegistry([heavy, control]);
-        await fixture.client.begin(async (tx) => {
-            await lockQueue(tx);
+                    } finally {
+                        activeHeavy -= 1;
+                    }
+                },
+            };
+            const controls = (["light", "network"] as const).map((controlClass) => ({
+                definition: {
+                    ...base.definition,
+                    key: `test.user-${controlClass}`,
+                    resourceClass: controlClass,
+                    resourceKeys: [],
+                    intervalSeconds: null,
+                },
+                execute: async (
+                    _input: Record<string, unknown>,
+                    context: Parameters<typeof base.execute>[1]
+                ) => {
+                    await context.reportProgress(
+                        "Manual check completed while general work remains active."
+                    );
+                },
+            }));
+            const registry = createJobRegistry([heavy, ...controls]);
+            server = Bun.serve({
+                hostname: "127.0.0.1",
+                port: 0,
+                fetch: (req) =>
+                    fetchRequestHandler({
+                        endpoint: "/api/trpc",
+                        req,
+                        router: appRouter,
+                        // Synthetic authenticated human context; no production session or auth service.
+                        createContext: () => ({
+                            operations: { ...fixture, registry },
+                            principal: {
+                                kind: "human" as const,
+                                id: "operator",
+                                capabilities,
+                            },
+                        }),
+                    }),
+            });
+            const client = createTRPCClient<typeof appRouter>({
+                links: [
+                    httpBatchLink({
+                        url: `http://127.0.0.1:${server.port}/api/trpc`,
+                        transformer: superjson,
+                    }),
+                ],
+            });
+            const heavyRuns = [];
             for (let i = 0; i < 3; i += 1)
-                await enqueueJob(tx, heavy.definition, "human:test", `busy-${i}`);
-        });
-        worker = runWorker({
-            client: fixture.client,
-            registry,
-            concurrency: 3,
-            version: "test",
-            signal: lifecycle.signal,
-        });
-        for (let i = 0; i < 100 && activeHeavy < 2; i += 1) await Bun.sleep(20);
-        expect(activeHeavy).toBe(2);
-        const caller = appRouter.createCaller({
-            operations: { ...fixture, registry },
-            principal: { kind: "human", id: "operator", capabilities },
-        });
-        await caller.jobs.run({
-            action: control.definition.key,
-            requestId: Bun.randomUUIDv7(),
-        });
-        for (let i = 0; i < 100 && controls < 1; i += 1) await Bun.sleep(20);
-        expect(controls).toBe(1);
-        expect(activeHeavy).toBe(2);
-        const [registration] = await fixture.client<
-            { capacity: number; reserved: number }[]
-        >`SELECT capacity, reserved_capacity AS reserved FROM workers WHERE version='test'`;
-        expect(registration).toEqual({ capacity: 3, reserved: 1 });
-    } finally {
-        lifecycle.abort();
-        await worker;
-        await fixture.close();
+                heavyRuns.push(
+                    await client.jobs.run.mutate({
+                        action: heavy.definition.key,
+                        requestId: Bun.randomUUIDv7(),
+                    })
+                );
+            worker = runWorker({
+                client: fixture.client,
+                registry,
+                concurrency: 3,
+                version: "test",
+                signal: lifecycle.signal,
+            });
+            for (let i = 0; i < 100 && activeHeavy < 2; i += 1) await Bun.sleep(20);
+            expect(activeHeavy).toBe(2);
+            for (const control of controls) {
+                const submitted = await client.jobs.run.mutate({
+                    action: control.definition.key,
+                    requestId: Bun.randomUUIDv7(),
+                });
+                let detail = await client.jobs.detail.query({ id: submitted.id });
+                for (let i = 0; i < 100 && detail.run.state !== "succeeded"; i += 1) {
+                    await Bun.sleep(20);
+                    detail = await client.jobs.detail.query({ id: submitted.id });
+                }
+                expect(detail.run.state).toBe("succeeded");
+                expect(detail.run.requestedBy).toBe("human:operator");
+                expect(activeHeavy).toBe(2);
+                const heavyStates = await Promise.all(
+                    heavyRuns.map(async (run) => {
+                        const detail = await client.jobs.detail.query({ id: run.id });
+                        return detail.run.state;
+                    })
+                );
+                expect(heavyStates).toEqual(["running", "running", "queued"]);
+            }
+            const [registration] = await fixture.client<
+                { capacity: number; reserved: number }[]
+            >`
+                SELECT capacity, reserved_capacity AS reserved FROM workers WHERE version='test'`;
+            expect(registration).toEqual({ capacity: 3, reserved: 1 });
+        } finally {
+            lifecycle.abort();
+            await worker;
+            await server?.stop(true);
+            await fixture.close();
+        }
     }
-});
+);

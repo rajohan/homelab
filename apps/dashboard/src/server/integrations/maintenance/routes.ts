@@ -5,12 +5,17 @@ import { requireCapability } from "../../automation/authentication";
 import { enqueueJob, lockQueue } from "../../jobs/queue";
 import { authorizedOperations } from "../../operations/authorization";
 import { OperationFailure } from "../../operations/errors";
+import { maintenanceHosts } from "./hosts";
 import { maintenancePlan } from "./jobs";
 
 export const maintenanceRouter = trpc.router({
     plans: trpc.procedure.query(({ ctx }) =>
         runOperation(async () => {
             const { operations } = authorizedOperations(ctx, "updates:read");
+            const hosts = maintenanceHosts(
+                operations.maintenanceTargets ?? [],
+                operations.updateTargets ?? []
+            );
             return Promise.all(
                 (operations.maintenanceTargets ?? []).map(async (target) => {
                     const {
@@ -24,6 +29,7 @@ export const maintenanceRouter = trpc.router({
                     );
                     return {
                         ...plan,
+                        host: hosts.get(target.id)!,
                         active: observation?.active ?? null,
                         required:
                             target.kind === "host"

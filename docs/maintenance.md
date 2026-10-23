@@ -9,6 +9,14 @@ so a slow inventory lookup cannot occupy the reserved lane for several minutes.
 Installation and restart jobs keep their physical-host leases. The reservation does
 not bypass a pause, a shared resource lock, or deliberately exclusive work.
 
+The reserved-capacity integration test runs the actual three-lane worker against
+an isolated PostgreSQL database. Three long jobs are submitted over HTTP through
+the dashboard job API, two are held running, and the third remains queued. Both
+human-started light and bounded network checks must reach `succeeded` while those
+two jobs remain active. The same test covers long network jobs, which do not qualify
+for the reserved lane. Pause, shared-host leases and exclusive-work guards remain
+covered separately.
+
 Run details distinguish elapsed time, last progress and worker responsiveness.
 Quiet package managers are not classified as stuck. Update jobs retain bounded,
 verified per-item receipts even if a later item fails. Missing health probes remain
@@ -98,6 +106,17 @@ disconnect SSH; the worker only polls afterward and never resends the reboot.
 Success requires a new boot identity and the configured health check. Cancelling
 after the OS accepts a reboot cannot undo that reboot. Failure, cancellation or
 worker loss can leave an unknown external outcome requiring inspection.
+
+## Restart navigation
+
+Restart targets can be searched by host and service, with independent requirement
+and restart-location filters. Host groups use the same canonical host identity as
+execution leases, with the reviewed host label (or inventory source if no host
+recipe exists). SSH addresses and trust-file paths are not sent to the browser.
+Hosts with matching required work lead the list, and required targets lead each
+host. Unknown observations remain distinct from a confirmed no-restart result.
+Changing search or filters returns the bounded list to the top; polling preserves
+navigation choices.
 
 ## Homelab release overview
 
