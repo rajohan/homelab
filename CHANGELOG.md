@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/rajohan/homelab/compare/v0.8.0...v0.8.1) (2026-10-23)
+
+
+### Bug Fixes
+
+* **dashboard:** complete restart setup and maintenance presentation ([#56](https://github.com/rajohan/homelab/issues/56)) ([723c552](https://github.com/rajohan/homelab/commit/723c552d88d7448eeaa120f1e55a5f409623c43d))
+
 ## [0.8.0](https://github.com/rajohan/homelab/compare/v0.7.12...v0.8.0) (2026-10-23)
 
 
