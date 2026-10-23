@@ -107,40 +107,49 @@ test("release publication is displayed separately from running versions and stal
     try {
         expect(screen.getByText("0.7.12")).toBeVisible();
         expect(screen.getByText("0.7.12 (responding)")).toBeVisible();
-        expect(screen.getByText(/0.7.11.*stale/)).toBeVisible();
-        expect(screen.getByRole("link", { name: "Published 0.8.0" })).toBeVisible();
-        expect(screen.getByText("Release check is stale")).toBeVisible();
+        expect(screen.getByText(/0.7.11.*outdated/)).toBeVisible();
+        expect(screen.getByRole("heading", { name: "Published 0.8.0" })).toBeVisible();
+        expect(screen.getByRole("link", { name: "View release" })).toHaveAttribute(
+            "href",
+            "https://github.com/demo/homelab/releases/tag/v0.8.0"
+        );
+        expect(screen.getByText("Status outdated")).toBeVisible();
+        expect(screen.queryByText("Verified release")).not.toBeInTheDocument();
         expect(screen.queryByRole("button", { name: /deploy/i })).not.toBeInTheDocument();
     } finally {
         close();
     }
 });
 
-test("successful workflow tests without exact manifest evidence remain visibly unverified", () => {
-    const close = fixture(<ReleasesPanel />, "releases", {
-        configured: true,
-        dashboard: "0.7.12",
-        workers: [],
-        auth: [],
-        release: {
-            fresh: true,
-            capturedAt: "2026-10-23T10:00:00Z",
-            value: {
-                version: "0.8.0",
-                verified: false,
-                tests: "success",
-                url: "https://github.com/demo/homelab/releases/tag/v0.8.0",
-                buildUrl: null,
+test.each([false, true])(
+    "release status reflects exact publication verification: %s",
+    (verified) => {
+        const close = fixture(<ReleasesPanel />, "releases", {
+            configured: true,
+            dashboard: "0.7.12",
+            workers: [],
+            auth: [],
+            release: {
+                fresh: true,
+                capturedAt: "2026-10-23T10:00:00Z",
+                value: {
+                    version: "0.8.0",
+                    verified,
+                    tests: "success",
+                    url: "https://github.com/demo/homelab/releases/tag/v0.8.0",
+                    buildUrl: null,
+                },
             },
-        },
-    });
-    try {
-        expect(screen.getByText("Release tests: success")).toBeVisible();
-        expect(screen.getByText(/Publication is not verified/)).toBeVisible();
-        expect(
-            screen.queryByText("Image manifest matches the successful release build.")
-        ).not.toBeInTheDocument();
-    } finally {
-        close();
+        });
+        try {
+            expect(
+                screen.getByText(verified ? "Verified release" : "Not verified")
+            ).toBeVisible();
+            expect(
+                screen.queryByText(verified ? "Not verified" : "Verified release")
+            ).not.toBeInTheDocument();
+        } finally {
+            close();
+        }
     }
-});
+);

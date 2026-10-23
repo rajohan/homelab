@@ -95,7 +95,8 @@ expired evidence and builds without this artifact remain explicitly unverified.
 For a private repository, the optional credential also needs Actions read access.
 Failed refreshes and observations older than twenty minutes are shown as stale.
 The panel separately reports the serving dashboard version, live worker versions
-and timestamped Auth image observations from authorized inventory publishers.
+and Auth versions from authorized inventory publishers. The UI uses concise
+verification and stale-status badges without collection timestamps or build internals.
 An available or verified release is not evidence of deployment.
 
 Schedules for removed targets retain their saved policy but are excluded before

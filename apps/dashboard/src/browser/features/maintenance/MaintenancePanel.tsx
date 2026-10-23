@@ -6,7 +6,6 @@ import {
     LoadingState,
     SectionHeader,
     queryRefresh,
-    formatDateTime,
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 import { RotateCw } from "lucide-react";
@@ -44,9 +43,7 @@ export function MaintenancePanel() {
             {refresh.isError && <ErrorNotice error={refresh.error} />}
             {query.data?.length === 0 && (
                 <p className="text-sm text-primary-400">
-                    No restart targets are configured. Targets must be reviewed
-                    separately; the worker, its database and the hosts they depend on need
-                    external maintenance.
+                    No restart targets are configured.
                 </p>
             )}
             {query.data && query.data.length > 0 && (
@@ -69,11 +66,6 @@ export function MaintenancePanel() {
                                 </Badge>
                             </div>
                             <p className="text-sm text-primary-300">{plan.impact}</p>
-                            {plan.capturedAt && (
-                                <p className="text-xs text-primary-400">
-                                    Checked {formatDateTime(plan.capturedAt)}
-                                </p>
-                            )}
                             {plan.reason && (
                                 <p className="text-sm text-primary-400">{plan.reason}</p>
                             )}

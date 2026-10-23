@@ -5,11 +5,11 @@ import {
     ErrorNotice,
     LoadingState,
     SectionHeader,
+    buttonStyles,
     queryRefresh,
-    formatDateTime,
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
-import { PackageCheck } from "lucide-react";
+import { PackageCheck, Tag } from "lucide-react";
 
 import { api } from "../../api/client";
 import { useJobOperation } from "../jobs/useJobOperation";
@@ -31,11 +31,12 @@ export function ReleasesPanel() {
     );
     const data = query.data;
     const release = data?.release;
+    const verification = release?.value.verified ? "Verified release" : "Not verified";
     return (
         <Card className="@container space-y-4">
             <SectionHeader
                 title="Homelab release"
-                description="Published releases and independently deployed application versions."
+                description="Current app versions and the latest published release."
                 icon={PackageCheck}
                 actions={
                     <Button
@@ -61,9 +62,7 @@ export function ReleasesPanel() {
                 <>
                     <dl className="grid gap-3 text-sm @min-[48rem]:grid-cols-3">
                         <div className="space-y-2 rounded-lg border border-primary-700 bg-primary-950/40 p-4">
-                            <dt className="text-xs text-primary-400">
-                                Dashboard serving this request
-                            </dt>
+                            <dt className="text-xs text-primary-400">Dashboard</dt>
                             <dd className="font-medium wrap-anywhere">
                                 {data.dashboard}
                             </dd>
@@ -78,53 +77,53 @@ export function ReleasesPanel() {
                                                   `${worker.version} (${worker.online ? "responding" : "not responding"})`
                                           )
                                           .join(", ")
-                                    : "No recent worker registration"}
+                                    : "No workers available"}
                             </dd>
                         </div>
                         <div className="space-y-2 rounded-lg border border-primary-700 bg-primary-950/40 p-4">
-                            <dt className="text-xs text-primary-400">
-                                Auth observations
-                            </dt>
+                            <dt className="text-xs text-primary-400">Auth</dt>
                             <dd className="wrap-anywhere">
                                 {data.auth.length > 0
                                     ? data.auth
                                           .map(
                                               (auth) =>
-                                                  `${auth.version} — ${auth.name}${auth.stale ? " (stale)" : ""}; checked ${formatDateTime(auth.capturedAt)}`
+                                                  `${auth.version} — ${auth.name}${auth.stale ? " (outdated)" : ""}`
                                           )
                                           .join("; ")
-                                    : "No matching published image observation"}
+                                    : "Version unavailable"}
                             </dd>
                         </div>
                     </dl>
                     {release ? (
                         <div className="space-y-3 rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm">
-                            <div className="flex flex-wrap items-center gap-2">
-                                <a
-                                    className="font-medium underline"
-                                    href={release.value.url}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                >
-                                    Published {release.value.version}
-                                </a>
-                                <Badge
-                                    tone={
-                                        release.fresh && release.value.verified
-                                            ? "positive"
-                                            : "warning"
-                                    }
-                                >
-                                    {release.fresh
-                                        ? `Release tests: ${release.value.tests}`
-                                        : "Release check is stale"}
-                                </Badge>
-                            </div>
-                            <p className="text-primary-400">
-                                {release.value.verified
-                                    ? "Image manifest matches the successful release build."
-                                    : "Image manifest has no matching build evidence. Publication is not verified."}
-                            </p>
+                            <SectionHeader
+                                title={`Published ${release.value.version}`}
+                                icon={Tag}
+                                badge={
+                                    <Badge
+                                        tone={
+                                            release.fresh && release.value.verified
+                                                ? "positive"
+                                                : "warning"
+                                        }
+                                    >
+                                        {release.fresh ? verification : "Status outdated"}
+                                    </Badge>
+                                }
+                                actions={
+                                    <a
+                                        className={buttonStyles({
+                                            variant: "secondary",
+                                            size: "sm",
+                                        })}
+                                        href={release.value.url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                    >
+                                        View release
+                                    </a>
+                                }
+                            />
                             {release.value.buildUrl && (
                                 <p>
                                     <a
@@ -137,22 +136,14 @@ export function ReleasesPanel() {
                                     </a>
                                 </p>
                             )}
-                            <p className="text-primary-400">
-                                Checked {formatDateTime(release.capturedAt)}. A verified
-                                publication does not mean it has been deployed.
-                            </p>
                         </div>
                     ) : (
                         <p className="rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm text-primary-400">
                             {data.configured
-                                ? "No verified release observation yet. Refresh to inspect the published manifest and build."
-                                : "External release reporting is not configured."}
+                                ? "No release information yet. Refresh to check."
+                                : "Release checks are not configured."}
                         </p>
                     )}
-                    <p className="text-sm text-primary-400">
-                        Deployment remains a separate reviewed operation. This worker does
-                        not replace or restart itself.
-                    </p>
                 </>
             )}
         </Card>
