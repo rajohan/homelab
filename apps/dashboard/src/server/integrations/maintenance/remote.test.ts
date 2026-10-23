@@ -11,38 +11,55 @@ exec(source, scope)
 boot = "11111111-1111-4111-8111-111111111111"
 commands = []
 active = "active"
+invocation = "a" * 32
 class FakePath:
     def __init__(self, path): self.path = path
     def read_text(self): return boot
     def exists(self): return False
     def is_file(self): return False
 def fake_run(argv, timeout=30):
+    global invocation
     commands.append(argv)
-    return active if "show" in argv else ""
+    if "show" in argv:
+        return f"ActiveState={active}\\nInvocationID={invocation}"
+    if "restart" in argv:
+        invocation = "b" * 32
+    return ""
 scope["Path"] = FakePath
 scope["run"] = fake_run
 target = {"kind": "service", "service": "example.service", "health": ["/usr/bin/true"]}
 def invoke(mode, expected):
     scope["sys"].stdin = io.TextIOWrapper(io.BytesIO(json.dumps({"target": target, "mode": mode, "expected": expected}).encode()))
     return scope["main"]()
-before = {"bootId": boot, "active": "active"}
+before = {"bootId": boot, "active": "active", "invocationId": invocation}
 assert invoke("restart", before)["health"] is True
 assert commands.count(["/usr/bin/systemctl", "restart", "example.service"]) == 1
 commands.clear()
+try:
+    invoke("restart", before)
+    raise AssertionError("A previous invocation was restarted again")
+except RuntimeError: pass
+assert not any("restart" in command for command in commands)
+invocation = ""
+try:
+    invoke("inspect", None)
+    raise AssertionError("Missing service identity accepted")
+except RuntimeError: pass
+invocation = "b" * 32
 active = "inactive"
 try:
-    invoke("restart", {"bootId": boot, "active": "inactive"})
+    invoke("restart", {"bootId": boot, "active": "inactive", "invocationId": invocation})
     raise AssertionError("A stopped service was restarted")
 except RuntimeError: pass
 assert not any("restart" in command for command in commands)
 target = {"kind": "host", "health": ["/usr/bin/true"]}
 commands.clear()
 try:
-    invoke("restart", {"bootId": "22222222-2222-4222-8222-222222222222", "active": None})
+    invoke("restart", {"bootId": "22222222-2222-4222-8222-222222222222", "active": None, "invocationId": None})
     raise AssertionError("Changed boot identity accepted")
 except RuntimeError: pass
 assert not commands
-invoke("restart", {"bootId": boot, "active": None})
+invoke("restart", {"bootId": boot, "active": None, "invocationId": None})
 assert commands == [["/usr/bin/systemctl", "--no-block", "reboot"]]
 print("qualified")
 `;

@@ -46,7 +46,15 @@ def run(argv, timeout=30):
 def observe(target):
     """Read the boot identity and selected service; never return raw command output."""
     boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
-    active = run(["/usr/bin/systemctl", "show", "--value", "--property=ActiveState", target["service"]]) if target["kind"] == "service" else None
+    active, invocation = None, None
+    if target["kind"] == "service":
+        properties = dict(line.split("=", 1) for line in run([
+            "/usr/bin/systemctl", "show", "--property=ActiveState", "--property=InvocationID", target["service"]
+        ]).splitlines() if "=" in line)
+        active = properties.get("ActiveState")
+        invocation = properties.get("InvocationID") or None
+        if (invocation is not None and not re.fullmatch(r"[a-f0-9]{32}", invocation)) or (active == "active" and not invocation):
+            raise RuntimeError("Service invocation identity is unavailable")
     if active not in (None, "active", "inactive"):
         raise RuntimeError("Service is not in a stable state")
     required = Path("/var/run/reboot-required").exists()
@@ -57,7 +65,7 @@ def observe(target):
             service_required = target["service"] in re.findall(r"(?m)^NEEDRESTART-SVC:\s*(\S+)\s*$", output)
         except RuntimeError:
             pass
-    return {"bootId": boot, "active": active, "rebootRequired": required, "serviceRestartRequired": service_required, "health": False}
+    return {"bootId": boot, "active": active, "invocationId": invocation, "rebootRequired": required, "serviceRestartRequired": service_required, "health": False}
 
 
 def main():
@@ -71,7 +79,7 @@ def main():
     mode = request["mode"]
     if mode == "restart":
         expected = request["expected"]
-        if before["bootId"] != expected["bootId"] or before["active"] != expected["active"]:
+        if (before["bootId"], before["active"], before["invocationId"]) != (expected["bootId"], expected["active"], expected["invocationId"]):
             raise RuntimeError("Restart target changed")
         if target["kind"] == "host":
             run(["/usr/bin/systemctl", "--no-block", "reboot"])

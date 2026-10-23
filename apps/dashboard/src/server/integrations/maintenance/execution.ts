@@ -8,6 +8,7 @@ import program from "./remote.py" with { type: "text" };
 export const observationSchema = v.strictObject({
     bootId: v.pipe(v.string(), v.uuid()),
     active: v.nullable(v.picklist(["active", "inactive"])),
+    invocationId: v.nullable(v.pipe(v.string(), v.regex(/^[a-f0-9]{32}$/))),
     rebootRequired: v.boolean(),
     serviceRestartRequired: v.nullable(v.boolean()),
     health: v.boolean(),

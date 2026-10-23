@@ -62,7 +62,11 @@ Read-only checks observe the OS reboot flag, selected service state and, when
 available, the distribution's `needrestart -b -r l` service list. Missing inspection
 remains unknown. Plans expire after two minutes; an accepted queue request has a
 five-minute admission budget. Before mutation, the worker rechecks configuration,
-boot identity and service state. A stopped service is never implicitly started.
+boot identity, service state and the systemd invocation ID. Each service activation
+has a different invocation ID, so an earlier confirmed plan cannot restart the
+same service again after another queued or external restart. The remote command
+checks the identity again immediately before mutation. Missing invocation evidence
+requires a fresh inspection; a stopped service is never implicitly started.
 The database clock controls admission age, including a second check after inspection,
 and timestamps restart observations consistently across update and restart workers.
 Status probes share the host lock with restarts and updates. A source spanning more

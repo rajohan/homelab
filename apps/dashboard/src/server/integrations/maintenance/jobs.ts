@@ -43,8 +43,11 @@ export async function maintenancePlan(
         }[]
     >`SELECT value, captured_at::text AS "capturedAt", captured_at > now() - interval '2 minutes' AS fresh FROM operation_snapshots WHERE key = ${`maintenance:${target.id}`}`;
     const configuration = maintenanceRevision(target, connection);
+    const parsed = v.safeParse(observationSchema, row?.value.observation);
     const observation =
-        row?.value.configuration === configuration ? row.value.observation : null;
+        row?.value.configuration === configuration && parsed.success
+            ? parsed.output
+            : null;
     const revision = new Bun.CryptoHasher("sha256")
         .update(
             JSON.stringify({ configuration, observation, capturedAt: row?.capturedAt })
@@ -53,7 +56,8 @@ export async function maintenancePlan(
     const allowed = Boolean(
         row?.fresh &&
         observation &&
-        (target.kind === "host" || observation.active === "active")
+        (target.kind === "host" ||
+            (observation.active === "active" && observation.invocationId !== null))
     );
     return {
         target: target.id,
@@ -191,7 +195,9 @@ export function maintenanceJobs(
                     );
                     if (
                         before.bootId !== input.expected.bootId ||
-                        before.active !== input.expected.active
+                        before.active !== input.expected.active ||
+                        before.invocationId !== input.expected.invocationId ||
+                        (target.kind === "service" && before.invocationId === null)
                     )
                         throw new Error("Restart target changed since confirmation");
                     context.signal.throwIfAborted();

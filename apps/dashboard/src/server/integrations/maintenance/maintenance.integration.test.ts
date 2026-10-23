@@ -47,6 +47,7 @@ test.each([-86_400_000, 86_400_000])(
         const observation: MaintenanceObservation = {
             bootId: Bun.randomUUIDv7(),
             active: "active",
+            invocationId: "a".repeat(32),
             rebootRequired: false,
             serviceRestartRequired: false,
             health: true,
@@ -166,6 +167,7 @@ test("restart admission requires current human proof and preserves idempotency a
     const observation: MaintenanceObservation = {
         bootId: Bun.randomUUIDv7(),
         active: "active",
+        invocationId: "a".repeat(32),
         rebootRequired: false,
         serviceRestartRequired: true,
         health: false,
@@ -240,6 +242,93 @@ test("restart admission requires current human proof and preserves idempotency a
     }
 });
 
+test("two queued confirmations for one service invocation can restart it only once", async () => {
+    const bootId = Bun.randomUUIDv7();
+    let invocationId = "a".repeat(32);
+    let restarts = 0;
+    const state = await fixture((_connection, _target, mode) => {
+        if (mode === "restart") {
+            restarts += 1;
+            invocationId = "b".repeat(32);
+        }
+        return Promise.resolve({
+            bootId,
+            active: "active",
+            invocationId,
+            rebootRequired: false,
+            serviceRestartRequired: true,
+            health: mode !== "inspect",
+        });
+    });
+    try {
+        const plan = await state.refresh();
+        const other = { ...state.principal, id: "second-operator" };
+        const secondCaller = appRouter.createCaller({
+            operations: state.operations,
+            principal: other,
+            verifyHuman: () => Promise.resolve(other),
+        });
+        const queued = await Promise.all(
+            [state.caller, secondCaller].map((caller) =>
+                caller.maintenance.request({
+                    target: "web",
+                    revision: plan.revision,
+                    requestId: Bun.randomUUIDv7(),
+                })
+            )
+        );
+        await state.execute("maintenance.restart.web");
+        await expectOperationFailure(
+            state.execute("maintenance.restart.web"),
+            "changed since confirmation"
+        );
+        expect(restarts).toBe(1);
+        const details = await Promise.all(
+            queued.map(({ id }) => state.caller.jobs.detail({ id }))
+        );
+        expect(details.map((detail) => detail.run.state).toSorted()).toEqual([
+            "failed",
+            "succeeded",
+        ]);
+    } finally {
+        await state.close();
+    }
+});
+
+test.each([undefined, null])(
+    "service plans without invocation evidence require fresh inspection (%s)",
+    async (invocationId) => {
+        const observation: MaintenanceObservation = {
+            bootId: Bun.randomUUIDv7(),
+            active: "active",
+            invocationId: "a".repeat(32),
+            rebootRequired: false,
+            serviceRestartRequired: true,
+            health: false,
+        };
+        const state = await fixture(() => Promise.resolve(observation));
+        try {
+            await state.refresh();
+            const stale = JSON.stringify({ ...observation, invocationId });
+            await state.client`UPDATE operation_snapshots SET value = jsonb_set(value, '{observation}', ${stale}::text::jsonb) WHERE key = 'maintenance:web'`;
+            const [plan] = await state.caller.maintenance.plans();
+            expect(plan?.allowed).toBe(false);
+            await expectOperationFailure(
+                state.caller.maintenance.request({
+                    target: "web",
+                    revision: plan!.revision,
+                    requestId: Bun.randomUUIDv7(),
+                }),
+                "changed"
+            );
+            const fresh = await state.refresh();
+            expect(fresh.allowed).toBe(true);
+        } finally {
+            await state.close();
+        }
+    }
+);
+
 test("changed or stopped services and expired confirmations never issue a restart", async () => {
     let bootId = Bun.randomUUIDv7();
     let active: "active" | "inactive" = "active";
@@ -249,6 +338,7 @@ test("changed or stopped services and expired confirmations never issue a restar
         return Promise.resolve({
             bootId,
             active,
+            invocationId: "a".repeat(32),
             rebootRequired: false,
             serviceRestartRequired: null,
             health: false,
@@ -304,6 +394,7 @@ test("host reboot succeeds only after a changed boot identity and health verific
             return Promise.resolve({
                 bootId: restarting ? nextBoot : bootId,
                 active: null,
+                invocationId: null,
                 rebootRequired: !restarting,
                 serviceRestartRequired: null,
                 health: mode === "verify",
@@ -334,6 +425,7 @@ test("stale plans are refused and shared host leases prevent overlapping restart
     const observation: MaintenanceObservation = {
         bootId: Bun.randomUUIDv7(),
         active: "active",
+        invocationId: "a".repeat(32),
         rebootRequired: false,
         serviceRestartRequired: true,
         health: false,
@@ -402,6 +494,7 @@ test.each([-86_400_000, 86_400_000])(
         const observation: MaintenanceObservation = {
             bootId: Bun.randomUUIDv7(),
             active: "active",
+            invocationId: "a".repeat(32),
             rebootRequired: false,
             serviceRestartRequired: true,
             health: true,
@@ -453,6 +546,7 @@ test.each([false, true])(
         const observation: MaintenanceObservation = {
             bootId: Bun.randomUUIDv7(),
             active: "active",
+            invocationId: "a".repeat(32),
             rebootRequired: false,
             serviceRestartRequired: false,
             health: true,
