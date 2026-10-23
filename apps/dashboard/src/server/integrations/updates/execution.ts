@@ -56,11 +56,14 @@ const refusals = {
     local_code_override:
         "Local application code is mounted into this deployment. Review or remove the override before updating its image.",
 } as const;
+const warningSchema = v.pipe(v.string(), v.maxLength(500));
 const eventSchema = v.variant("complete", [
     v.object({
         complete: v.literal(true),
         installed: v.pipe(v.string(), v.maxLength(300)),
         rebootRequired: v.nullable(v.boolean()),
+        health: v.optional(v.picklist(["passed", "not-checked", "preserved-stopped"])),
+        warnings: v.optional(v.pipe(v.array(warningSchema), v.maxLength(10))),
         containerId: v.optional(v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/))),
     }),
     v.object({
@@ -83,6 +86,8 @@ const recreatedContainersSchema = v.strictObject({
     recreatedContainers: v.pipe(v.array(recreatedContainerSchema), v.maxLength(30)),
 });
 export interface UpdateReceipt {
+    readonly health?: "passed" | "not-checked" | "preserved-stopped";
+    readonly warnings?: readonly string[];
     readonly installed: string;
     readonly rebootRequired: boolean | null;
     readonly containerId?: string;
@@ -220,6 +225,8 @@ export function createUpdateExecutor(githubToken?: string): UpdateExecutor {
                         }
                         if (receipt) throw new Error("Update execution did not complete");
                         receipt = {
+                            ...(event.health ? { health: event.health } : {}),
+                            ...(event.warnings ? { warnings: event.warnings } : {}),
                             installed: event.installed,
                             rebootRequired: event.rebootRequired,
                             ...(event.containerId

@@ -55,6 +55,7 @@ Only code-registered, validated job types can execute. Queue admission, claims, 
 and audit transitions are transactional. Short PostgreSQL transaction locks work through
 PgBouncer transaction pooling; no session locks or LISTEN connection are required.
 
+- Workers with two or more slots reserve one existing slot for `light` and `network` control jobs. A three-slot worker has two general slots and one reserved slot; a one-slot worker remains general-purpose. Human-started checks use the same reserved capacity as scheduled checks. Long `interactive` updates cannot consume the reservation. Database admission enforces both total capacity and the non-control ceiling, including concurrent claims. Shared host/resource locks, intentional pauses and genuinely `exclusive` work still apply. A reserved slot can itself be busy with another bounded control job; it is not an immediate-execution guarantee.
 - Each run owns resource keys and a fenced 30-second lease renewed every five seconds.
 - Different resources can execute concurrently; overlapping resource keys cannot.
 - Work size is a code-owned resource class, captured on each run. `exclusive` runs

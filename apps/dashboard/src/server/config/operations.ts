@@ -13,6 +13,11 @@ import {
 import type { BackupCatalogConfiguration } from "../integrations/backups/catalog";
 import type { LogsConfiguration } from "../integrations/logs/transport";
 import {
+    parseMaintenanceTargets,
+    type MaintenanceTarget,
+} from "../integrations/maintenance/configuration";
+import { releaseRepository } from "../integrations/releases/read";
+import {
     loadUpdateTargets,
     type UpdateTarget,
 } from "../integrations/updates/configuration";
@@ -33,6 +38,8 @@ const storeSchema = v.strictObject({
 });
 
 export interface OperationsConfiguration {
+    readonly maintenanceTargets?: readonly MaintenanceTarget[];
+    readonly releaseRepository?: string | undefined;
     readonly dockerHub?: DockerHubCredential | undefined;
     readonly githubToken?: string | undefined;
     readonly updateTargets?: readonly UpdateTarget[];
@@ -228,6 +235,13 @@ export function parseOperationsConfiguration(
     )
         throw new Error("Every update target requires a configured reporting source");
     return {
+        maintenanceTargets: parseMaintenanceTargets(
+            environment.HOMELAB_DASHBOARD_MAINTENANCE_TARGETS,
+            updateTargets
+        ),
+        releaseRepository: releaseRepository(
+            environment.HOMELAB_DASHBOARD_RELEASE_REPOSITORY
+        ),
         dockerHub,
         githubToken,
         updateTargets,

@@ -1,6 +1,12 @@
 import * as v from "valibot";
 
 export const capabilityDetails = {
+    "maintenance:restart": {
+        group: "Maintenance",
+        label: "Restart approved services and hosts",
+        description:
+            "Recently verified human operators can confirm deployment-approved restarts; also requires Run jobs. Machine tokens cannot restart hosts or services.",
+    },
     "updates:apply": {
         group: "Updates",
         label: "Install software updates",

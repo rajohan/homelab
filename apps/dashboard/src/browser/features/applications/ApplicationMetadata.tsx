@@ -45,6 +45,7 @@ export function ApplicationMetadata({
                                 id: "container",
                                 sortValue: (row) => row.container,
                                 label: "Container port",
+                                width: "w-40",
                                 mobile: "title",
                                 render: (row) => row.container,
                             },
@@ -58,6 +59,7 @@ export function ApplicationMetadata({
                                 id: "port",
                                 sortValue: (row) => Number(row.hostPort),
                                 label: "Host port",
+                                width: "w-32",
                                 render: (row) => row.hostPort,
                             },
                         ]}
@@ -101,6 +103,7 @@ export function ApplicationMetadata({
                                 id: "access",
                                 sortValue: (row) => row.readOnly,
                                 label: "Access",
+                                width: "w-32",
                                 render: (row) =>
                                     row.readOnly ? "Read only" : "Read / write",
                             },
@@ -108,6 +111,7 @@ export function ApplicationMetadata({
                                 id: "type",
                                 sortValue: (row) => row.type,
                                 label: "Type",
+                                width: "w-24",
                                 render: (row) => row.type,
                             },
                         ]}

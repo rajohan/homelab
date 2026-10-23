@@ -283,6 +283,11 @@ def install_native_recipe(driver, item, run, emit, replace, lock):
     else:
         raise RuntimeError("Unsupported native recipe")
     emit("verifying")
+    global UPDATE_HEALTH
+    UPDATE_HEALTH = "preserved-stopped" if recipe.get("service") and not active else "not-checked"
+    if application in {"bun", "node", "github-cli"}:
+        # Toolchain activation already ran the configured verification before returning.
+        UPDATE_HEALTH = "passed"
     if active:
         if application in {"loki", "openclaw"}:
             # An active service can still be starting. Retry only the read-only
@@ -304,4 +309,5 @@ def install_native_recipe(driver, item, run, emit, replace, lock):
                     time.sleep(min(2, remaining))
         else:
             run(driver["health"])
+        UPDATE_HEALTH = "passed"
     return item["available"]

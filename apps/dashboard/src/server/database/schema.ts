@@ -1,3 +1,4 @@
+import type { MaintenanceResult } from "@homelab/contracts/maintenance";
 import type {
     Capability,
     InfrastructureSnapshot,
@@ -90,6 +91,7 @@ export const jobRuns = pgTable(
         leaseExpiresAt: time("lease_expires_at"),
         cancelRequested: boolean("cancel_requested").notNull().default(false),
         message: text(),
+        results: jsonb().$type<MaintenanceResult[]>().notNull().default([]),
     },
     (table) => [
         uniqueIndex("job_runs_idempotency").on(table.idempotencyKey),
@@ -147,6 +149,7 @@ export const workers = pgTable("workers", {
     version: text().notNull(),
     heartbeatAt: time("heartbeat_at").notNull(),
     capacity: integer().notNull(),
+    reservedCapacity: integer("reserved_capacity").notNull().default(0),
     draining: boolean().notNull().default(false),
     startedAt: time("started_at").notNull().defaultNow(),
 });

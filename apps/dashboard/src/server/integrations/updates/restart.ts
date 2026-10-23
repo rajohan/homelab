@@ -3,7 +3,7 @@ import * as v from "valibot";
 import type { JobHandler } from "../../jobs/types";
 import type { UpdateTarget } from "./configuration";
 import { updateSshArguments } from "./execution";
-import { recordRestartObservation } from "./restartObservation";
+import { recordRestartObservation, restartObservationTime } from "./restartObservation";
 
 const program = `import json, os
 try:
@@ -95,7 +95,13 @@ export function restartStatusJob(
                     const target = sources[index++];
                     if (!target) return;
                     context.signal.throwIfAborted();
-                    const observedAt = new Date().toISOString();
+                    let observedAt = "";
+                    if (
+                        !(await context.commit(async (transaction) => {
+                            observedAt = await restartObservationTime(transaction);
+                        }))
+                    )
+                        throw new Error("Restart observation ownership changed");
                     let required: boolean | null = null;
                     try {
                         if (!ambiguous.has(target.source))

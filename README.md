@@ -62,6 +62,7 @@ iPhone/NFC acceptance needs private HTTPS origins reachable by the actual device
 - Durable background work, schedule controls, per-run events and narrowly scoped automation tokens.
 - [Application controls](docs/applications.md): existing-container and project lifecycle operations,
   bounded safe metadata and allowlisted Loki history. Production control is opt-in.
+- [Maintenance](docs/maintenance.md): reserved control-job capacity, verified update receipts, reviewed restart targets and independent Homelab release reporting.
 - [Notifications](docs/notifications.md): durable producer events, personal acknowledgements,
   filters and virtualized history. Existing Alertmanager/Pushover delivery is unchanged.
 

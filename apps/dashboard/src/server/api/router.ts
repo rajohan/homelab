@@ -5,7 +5,9 @@ import { automationRouter } from "../automation/routes";
 import { alertsRouter } from "../integrations/alerts/routes";
 import { applicationsRouter } from "../integrations/applications/routes";
 import { backupsRouter } from "../integrations/backups/routes";
+import { maintenanceRouter } from "../integrations/maintenance/routes";
 import { infrastructureRouter } from "../integrations/metrics/routes";
+import { releasesRouter } from "../integrations/releases/routes";
 import { updatesRouter } from "../integrations/updates/routes";
 import { jobsRouter } from "../jobs/routes";
 import { schedulesRouter } from "../jobs/scheduleRoutes";
@@ -15,6 +17,8 @@ import { createSystemStatusLayer, readSystemStatus } from "./system";
 import { trpc } from "./trpc";
 
 export const appRouter = trpc.router({
+    maintenance: maintenanceRouter,
+    releases: releasesRouter,
     updates: updatesRouter,
     alerts: alertsRouter,
     backups: backupsRouter,

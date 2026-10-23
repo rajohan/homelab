@@ -44,6 +44,31 @@ def read_release_binary(component, version, arch):
 class NativeBinaryTests(unittest.TestCase):
     """Verify every registered artifact layout, executable identity and state boundary."""
 
+    def test_cli_health_is_not_reported_as_a_stopped_service(self):
+        cases = [
+            ('bun', 'toolchain_install', False, False, 'passed'),
+            ('node', 'toolchain_install', False, False, 'passed'),
+            ('github-cli', 'toolchain_install', False, False, 'passed'),
+            ('codex', 'codex_install', False, False, 'not-checked'),
+            ('victoriametrics', 'binary_install', False, False, 'not-checked'),
+            ('adguard-home', 'adguard_install', False, True, 'preserved-stopped'),
+            ('openclaw', 'openclaw_install', False, True, 'preserved-stopped'),
+            ('adguard-home', 'adguard_install', True, True, 'passed'),
+        ]
+        for application, installer, active, service, expected in cases:
+            with self.subTest(application=application, active=active):
+                recipe = {'application': application, **({'service': 'example.service'} if service else {})}
+                driver = {'release': application, 'recipe': recipe, 'health': ['/usr/bin/true']}
+                item = {'release': application, 'installed': '1.2.3', 'available': '1.2.4'}
+                calls = []
+                def install(*arguments):
+                    if installer == 'toolchain_install': arguments[-1]()
+                    return active
+                with patch.object(remote, installer, side_effect=install), patch.object(remote, 'UPDATE_HEALTH', 'not-checked'):
+                    remote.install_native_recipe(driver, item, lambda argv, **kw: calls.append(argv), lambda phase: None, None, None)
+                    self.assertEqual(remote.UPDATE_HEALTH, expected)
+                    self.assertEqual(calls, [driver['health']] if expected == 'passed' else [])
+
     def test_provider_versions_ignore_unrelated_runtime_versions(self):
         for component in remote.BINARY_RELEASES:
             with self.subTest(component=component):

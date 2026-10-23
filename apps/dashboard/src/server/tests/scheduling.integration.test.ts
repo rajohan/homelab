@@ -9,8 +9,38 @@ import {
 import { appRouter } from "../api/router";
 import { claimJob, renewClaim, settleClaim } from "../jobs/claims";
 import { readWorkerControl, setWorkerControl } from "../jobs/control";
-import { enqueueJob, listJobs, lockQueue, scheduleDueJobs } from "../jobs/queue";
+import {
+    enqueueJob,
+    listJobs,
+    listSchedules,
+    lockQueue,
+    scheduleDueJobs,
+} from "../jobs/queue";
 import { expectOperationFailure, operationFixture } from "../testing/operations";
+
+test("removed targets cannot starve current schedules or their visible inventory", async () => {
+    const fixture = await operationFixture();
+    try {
+        for (let index = 0; index < 105; index += 1)
+            await fixture.client`INSERT INTO job_schedules (id, action, schedule, next_run_at)
+                VALUES (${Bun.randomUUIDv7()}, ${`maintenance.inspect.old-${index}`}, '{"kind":"interval","intervalSeconds":60}'::jsonb, now() - interval '1 day')`;
+        await scheduleDueJobs(fixture.client, fixture.registry);
+        const jobs = await listJobs(fixture.client, 30, undefined);
+        expect(jobs).toHaveLength(1);
+        expect(fixture.registry.has(jobs[0]!.action)).toBe(true);
+        const schedules = await listSchedules(fixture.client, fixture.registry);
+        expect(schedules).toHaveLength(1);
+        expect(fixture.registry.has(schedules[0]!.action)).toBe(true);
+        expect(await listSchedules(fixture.client, new Map())).toEqual([]);
+        await scheduleDueJobs(fixture.client, new Map());
+        const [retained] = await fixture.client<
+            { count: number }[]
+        >`SELECT count(*)::int AS count FROM job_schedules WHERE action LIKE 'maintenance.inspect.old-%'`;
+        expect(retained?.count).toBe(105);
+    } finally {
+        await fixture.close();
+    }
+});
 
 test("durable pause blocks claims and scheduled submissions but lets current work finish", async () => {
     const fixture = await operationFixture();

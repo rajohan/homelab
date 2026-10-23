@@ -455,3 +455,17 @@ public registry and tag metadata is cached for ten minutes, bounded by 128 entri
 and 8 MB per worker; pull-token caching respects its shorter expiry. HTTP 429 pauses
 that provider according to Retry-After (bounded to six hours). Authentication raises
 applicable account quotas; it does not remove Docker's limits or abuse protection.
+
+## Maintenance progress and release reporting
+
+Run details show elapsed time, the latest code-owned progress message and its timestamp,
+separately from live worker ownership. No progress percentage or stuck diagnosis is
+inferred from quiet native installers. Verified per-item receipts remain visible after
+a partially failed batch; unverified changes are not reported as completed. Receipts
+distinguish checked health, skipped health probes, previously stopped applications and
+remaining host restart requirements. OpenClaw-specific advisories remain in its native
+update report; a successful version/health probe does not clear them.
+
+The Updates page also exposes explicitly reviewed host/service restart controls and
+read-only Homelab release evidence. See [maintenance operations](maintenance.md) for
+configuration, authority, migration and rollout qualification.

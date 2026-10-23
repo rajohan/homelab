@@ -8,6 +8,21 @@ export async function readBoundedJson(
     response: Response,
     maximumBytes = 2_000_000
 ): Promise<unknown> {
+    return JSON.parse(
+        new TextDecoder().decode(await readBoundedBytes(response, maximumBytes))
+    ) as unknown;
+}
+
+/**
+ * Read exact bounded upstream bytes for content-hash verification before JSON parsing.
+ * @param response - Successful response owned by the caller.
+ * @param maximumBytes - Hard streaming budget before allocation and decoding.
+ * @returns The unmodified response body; the stream is always closed.
+ */
+export async function readBoundedBytes(
+    response: Response,
+    maximumBytes: number
+): Promise<Uint8Array> {
     if (!response.ok || !response.body) {
         await response.body?.cancel();
         throw new Error("Integration request failed");
@@ -33,7 +48,7 @@ export async function readBoundedJson(
             body.set(part, offset);
             offset += part.byteLength;
         }
-        return JSON.parse(new TextDecoder().decode(body)) as unknown;
+        return body;
     } finally {
         await reader.cancel();
         reader.releaseLock();

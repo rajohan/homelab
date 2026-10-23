@@ -1,3 +1,4 @@
+import { maintenanceResultsSchema } from "@homelab/contracts/maintenance";
 import {
     idSchema,
     pageSchema,
@@ -87,8 +88,11 @@ export const jobsRouter = trpc.router({
                         resourceKeys: string[];
                         timeoutMs: number;
                         retrySafe: boolean;
+                        results: unknown;
+                        lastProgressAt: string | null;
+                        responding: boolean;
                     })[]
-                >`SELECT id, action, label, resource_class AS "resourceClass", state, attempt, attempt_limit AS "attemptLimit", requested_by AS "requestedBy", created_at::text AS "createdAt", started_at::text AS "startedAt", finished_at::text AS "finishedAt", message, cancel_requested AS "cancelRequested", resource_keys AS "resourceKeys", timeout_ms AS "timeoutMs", retry_safe AS "retrySafe" FROM job_runs WHERE id = ${input.id}`;
+                >`SELECT id, action, label, resource_class AS "resourceClass", state, attempt, attempt_limit AS "attemptLimit", requested_by AS "requestedBy", created_at::text AS "createdAt", started_at::text AS "startedAt", finished_at::text AS "finishedAt", message, cancel_requested AS "cancelRequested", resource_keys AS "resourceKeys", timeout_ms AS "timeoutMs", retry_safe AS "retrySafe", results, (SELECT max(created_at)::text FROM operation_audit WHERE target = job_runs.id::text AND action = 'jobs.progress' AND created_at >= job_runs.started_at) AS "lastProgressAt", COALESCE(lease_expires_at > now() AND EXISTS (SELECT 1 FROM workers WHERE workers.id = job_runs.worker_id AND heartbeat_at > now() - interval '30 seconds'), false) AS responding FROM job_runs WHERE id = ${input.id}`;
                 if (!run)
                     throw new OperationFailure(
                         "NOT_FOUND",
@@ -106,7 +110,10 @@ export const jobsRouter = trpc.router({
                     }[]
                 >`SELECT id, actor, action, COALESCE(message, CASE WHEN ${run.state} IN ('failed', 'timed_out', 'cancelled') AND id = (SELECT id FROM operation_audit WHERE target = ${input.id} AND action = ${`jobs.${run.state}`} ORDER BY created_at DESC, id DESC LIMIT 1) THEN ${run.message}::text END) AS message, created_at::text AS "createdAt" FROM operation_audit WHERE target = ${input.id} AND (${input.before ?? null}::uuid IS NULL OR id < ${input.before ?? null}::uuid) ORDER BY id DESC LIMIT ${input.limit}`;
                 return {
-                    run,
+                    run: {
+                        ...run,
+                        results: v.parse(maintenanceResultsSchema, run.results),
+                    },
                     events,
                     nextCursor:
                         events.length === input.limit
