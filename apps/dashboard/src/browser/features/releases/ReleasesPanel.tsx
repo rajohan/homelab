@@ -69,12 +69,12 @@ export function ReleasesPanel() {
                         </div>
                         <div className="space-y-2 rounded-lg border border-primary-700 bg-primary-950/40 p-4">
                             <dt className="text-xs text-primary-400">Workers</dt>
-                            <dd className="wrap-anywhere">
+                            <dd className="font-medium wrap-anywhere">
                                 {data.workers.length > 0
                                     ? data.workers
                                           .map(
                                               (worker) =>
-                                                  `${worker.version} (${worker.online ? "responding" : "not responding"})`
+                                                  `${worker.version}${worker.online ? "" : " (not responding)"}`
                                           )
                                           .join(", ")
                                     : "No workers available"}
@@ -82,12 +82,12 @@ export function ReleasesPanel() {
                         </div>
                         <div className="space-y-2 rounded-lg border border-primary-700 bg-primary-950/40 p-4">
                             <dt className="text-xs text-primary-400">Auth</dt>
-                            <dd className="wrap-anywhere">
+                            <dd className="font-medium wrap-anywhere">
                                 {data.auth.length > 0
                                     ? data.auth
                                           .map(
                                               (auth) =>
-                                                  `${auth.version} — ${auth.name}${auth.stale ? " (outdated)" : ""}`
+                                                  `${auth.version}${auth.stale ? " (outdated)" : ""}`
                                           )
                                           .join("; ")
                                     : "Version unavailable"}

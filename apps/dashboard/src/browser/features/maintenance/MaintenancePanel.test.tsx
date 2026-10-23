@@ -83,7 +83,7 @@ test("release publication is displayed separately from running versions and stal
     const close = fixture(<ReleasesPanel />, "releases", {
         configured: true,
         dashboard: "0.7.12",
-        workers: [{ version: "0.7.12", online: true }],
+        workers: [{ version: "0.7.10", online: true }],
         auth: [
             {
                 version: "0.7.11",
@@ -106,7 +106,7 @@ test("release publication is displayed separately from running versions and stal
     });
     try {
         expect(screen.getByText("0.7.12")).toBeVisible();
-        expect(screen.getByText("0.7.12 (responding)")).toBeVisible();
+        expect(screen.getByText("0.7.10")).toBeVisible();
         expect(screen.getByText(/0.7.11.*outdated/)).toBeVisible();
         expect(screen.getByRole("heading", { name: "Published 0.8.0" })).toBeVisible();
         expect(screen.getByRole("link", { name: "View release" })).toHaveAttribute(
