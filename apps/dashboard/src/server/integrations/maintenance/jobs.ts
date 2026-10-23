@@ -27,13 +27,13 @@ const payloadSchema = v.strictObject({
  * Read one recent successful observation, bound to the current restart authority.
  * @param client - Dashboard database or queue-admission transaction.
  * @param target - Reviewed restart target.
- * @param connection - Existing scoped update connection.
+ * @param connections - All scoped update connections needed by the recipe and its peer locks.
  * @returns A safe confirmation plan and private execution evidence, or an unavailable plan.
  */
 export async function maintenancePlan(
     client: SQL | TransactionSQL,
     target: MaintenanceTarget,
-    connection: UpdateTarget
+    connections: readonly UpdateTarget[]
 ) {
     const [row] = await client<
         {
@@ -42,10 +42,10 @@ export async function maintenancePlan(
             fresh: boolean;
         }[]
     >`SELECT value, captured_at::text AS "capturedAt", captured_at > now() - interval '2 minutes' AS fresh FROM operation_snapshots WHERE key = ${`maintenance:${target.id}`}`;
-    const configuration = maintenanceRevision(target, connection);
+    const configuration = maintenanceRevision(target, connections);
     const parsed = v.safeParse(observationSchema, row?.value.observation);
     const observation =
-        row?.value.configuration === configuration && parsed.success
+        row?.fresh && row.value.configuration === configuration && parsed.success
             ? parsed.output
             : null;
     const revision = new Bun.CryptoHasher("sha256")
@@ -110,7 +110,7 @@ export function maintenanceJobs(
 ): JobHandler[] {
     return targets.flatMap((target): JobHandler[] => {
         const connection = connections.find((entry) => entry.id === target.connection)!;
-        const configuration = maintenanceRevision(target, connection);
+        const configuration = maintenanceRevision(target, connections);
         const handlers: JobHandler[] = [
             {
                 definition: {

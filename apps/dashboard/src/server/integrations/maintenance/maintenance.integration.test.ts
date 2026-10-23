@@ -137,10 +137,10 @@ async function fixture(
         verifyHuman: () => Promise.resolve(principal),
     });
     const worker = await state.registerWorker();
-    const execute = async (key: string) => {
+    const execute = async (key: string, executionRegistry = registry) => {
         const run = await claimJob(state.client, worker, [key]);
         if (!run) throw new Error("Fixture claim missing");
-        const handler = registry.get(key)!;
+        const handler = executionRegistry.get(key)!;
         try {
             await handler.execute(run.payload, {
                 runId: run.id,
@@ -190,6 +190,10 @@ test("external dependencies retain visible status without registering or admitti
     try {
         const plan = await state.refresh();
         expect(plan.external).toBe(true);
+        expect(plan.required).toBe(true);
+        await state.client`UPDATE operation_snapshots SET captured_at = now() - interval '3 minutes' WHERE key = 'maintenance:web'`;
+        const stalePlans = await state.caller.maintenance.plans();
+        expect(stalePlans[0]?.required).toBeNull();
         expect(plan.allowed).toBe(false);
         expect(plan.reason).toBe("The worker depends on this service.");
         expect(state.operations.registry.has("maintenance.restart.web")).toBe(false);
@@ -665,6 +669,76 @@ test.each([false, true])(
             expect(source?.value.required).toBe(differentHost ? null : false);
             const detail = await state.caller.jobs.detail({ id: queued.id });
             expect(detail.run.results[0]?.rebootRequired).toBe(false);
+        } finally {
+            await state.close();
+        }
+    }
+);
+
+test.each(["host", "source"] as const)(
+    "changed peer %s invalidates displayed and queued restart consent before probing",
+    async (field) => {
+        const peer = {
+            ...connections[0]!,
+            id: "peer",
+            source: "peer",
+            host: "peer.example.test",
+        };
+        const connectionSet = [...connections, peer];
+        const recipe = { ...target, lockConnections: ["peer"] };
+        const modes: string[] = [];
+        const probe: MaintenanceProbe = (_connection, _target, mode) => {
+            modes.push(mode);
+            return Promise.resolve({
+                bootId: "11111111-1111-4111-8111-111111111111",
+                active: "active",
+                invocationId: "a".repeat(32),
+                rebootRequired: false,
+                serviceRestartRequired: true,
+                health: true,
+            });
+        };
+        const state = await fixture(probe, recipe, connectionSet);
+        try {
+            const plan = await state.refresh();
+            await state.caller.maintenance.request({
+                target: "web",
+                revision: plan.revision,
+                requestId: Bun.randomUUIDv7(),
+            });
+            const changed = [
+                ...connections,
+                {
+                    ...peer,
+                    [field]: field === "host" ? "moved.example.test" : "moved-peer",
+                },
+            ];
+            const registry = createJobRegistry(
+                maintenanceJobs(state.operations.maintenanceTargets, changed, probe)
+            );
+            const caller = appRouter.createCaller({
+                operations: { ...state.operations, registry, updateTargets: changed },
+                principal: state.principal,
+                verifyHuman: () => Promise.resolve(state.principal),
+            });
+            const [next] = await caller.maintenance.plans();
+            expect(next?.allowed).toBe(false);
+            expect(next?.required).toBeNull();
+            expect(next?.revision).not.toBe(plan.revision);
+            await expectOperationFailure(
+                caller.maintenance.request({
+                    target: "web",
+                    revision: plan.revision,
+                    requestId: Bun.randomUUIDv7(),
+                }),
+                "changed"
+            );
+            modes.length = 0;
+            await expectOperationFailure(
+                state.execute("maintenance.restart.web", registry),
+                "expired or changed"
+            );
+            expect(modes).toEqual([]);
         } finally {
             await state.close();
         }

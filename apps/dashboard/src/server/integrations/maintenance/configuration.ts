@@ -70,14 +70,23 @@ export function parseMaintenanceTargets(
 /**
  * Bind restart consent to the exact deployment recipe and its SSH authority.
  * @param target - Validated restart recipe.
- * @param connection - Its existing update connection.
- * @returns A stable digest that changes when either authority changes.
+ * @param connections - Existing update connections, including every peer sharing restart locks.
+ * @returns A stable digest that changes when the recipe or any required connection authority changes.
  */
 export function maintenanceRevision(
     target: MaintenanceTarget,
-    connection: UpdateTarget
+    connections: readonly UpdateTarget[]
 ): string {
+    const authorities = [
+        ...new Set([target.connection, ...(target.lockConnections ?? [])]),
+    ]
+        .toSorted()
+        .map((id) => {
+            const connection = connections.find((entry) => entry.id === id);
+            if (!connection) throw new Error("Maintenance connection is unavailable");
+            return connection;
+        });
     return new Bun.CryptoHasher("sha256")
-        .update(JSON.stringify({ target, connection }))
+        .update(JSON.stringify({ target, connections: authorities }))
         .digest("hex");
 }

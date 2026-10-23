@@ -121,7 +121,7 @@
         "health": [
             "/usr/bin/python3",
             "-c",
-            "import urllib.request; urls=['http://127.0.0.1:8428/health','http://127.0.0.1:9093/-/ready','http://127.0.0.1:3000/api/health']; [urllib.request.urlopen(u,timeout=2).close() for u in urls]"
+            "import urllib.request; urls=['http://127.0.0.1:8428/health','http://127.0.0.1:9093/-/ready','http://127.0.0.1:3000/api/health','http://127.0.0.1:3100/ready']; [urllib.request.urlopen(u,timeout=2).close() for u in urls]"
         ],
         "workerIndependent": true
     },
@@ -132,15 +132,9 @@
         "impact": "Auth, public application routing and new sign-ins will be unavailable until Edge returns. The worker and database remain running.",
         "kind": "host",
         "health": [
-            "/usr/bin/curl",
-            "--fail",
-            "--silent",
-            "--show-error",
-            "--max-time",
-            "5",
-            "--output",
-            "/dev/null",
-            "http://127.0.0.1:3111/health/ready"
+            "/usr/bin/python3",
+            "-c",
+            "import urllib.request; urls=['http://127.0.0.1:3111/health/ready','http://127.0.0.1:8082/ping']; [urllib.request.urlopen(u,timeout=2).close() for u in urls]"
         ],
         "workerIndependent": true
     },
