@@ -131,7 +131,7 @@ export function WorkerPanel() {
                                         sortValue: (row) => row.active,
                                         label: "Active / capacity",
                                         render: (worker) =>
-                                            `${worker.active} / ${worker.capacity} (${worker.reservedCapacity ?? 0} reserved for light/control work)`,
+                                            `${worker.active} / ${worker.capacity}`,
                                     },
                                     {
                                         id: "version",

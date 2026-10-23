@@ -66,7 +66,7 @@ test("disabled automation accounts have no credential or permission mutation con
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
 });
 
-test("a wrapped revoke action grows to the credential row width", async () => {
+test("a revoke action fills mobile rows and stays compact on desktop", async () => {
     const onAction = mock(() => {});
     const account = {
         id: "019959a7-4600-7000-8000-000000000001",
@@ -95,7 +95,7 @@ test("a wrapped revoke action grows to the credential row width", async () => {
     );
     try {
         const button = screen.getByRole("button", { name: "Revoke token" });
-        expect(button).toHaveClass("grow", "basis-32");
+        expect(button).toHaveClass("w-full", "min-[30rem]:w-auto", "shrink-0");
         await userEvent.setup().click(button);
         expect(onAction).toHaveBeenCalledWith({ kind: "revoke", account, credential });
     } finally {

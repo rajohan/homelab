@@ -66,7 +66,7 @@ export function AutomationAccountCard({
                                 <Button
                                     variant="danger"
                                     size="sm"
-                                    className="grow basis-32"
+                                    className="w-full shrink-0 min-[30rem]:w-auto"
                                     onClick={() =>
                                         onAction({ kind: "revoke", account, credential })
                                     }
@@ -79,7 +79,7 @@ export function AutomationAccountCard({
                 ))}
             </div>
             {!account.disabledAt && (
-                <ActionGroup>
+                <ActionGroup stretch={false}>
                     <Button onClick={() => onAction({ kind: "rotate", account })}>
                         Create replacement token
                     </Button>
