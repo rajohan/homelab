@@ -1,5 +1,6 @@
 import type { SQL } from "bun";
 
+import { reservedCapacity } from "../server/jobs/capacity";
 import { claimJob, commitClaim, renewClaim, settleClaim } from "../server/jobs/claims";
 import { readWorkerControl } from "../server/jobs/control";
 import { reportJobProgress } from "../server/jobs/progress";
@@ -111,10 +112,11 @@ export async function runWorker(options: {
     const signal = AbortSignal.any([options.signal, lifecycle.signal]);
     const id = Bun.randomUUIDv7();
     const state = options.state ?? createWorkerState();
-    await client`INSERT INTO workers (id, version, heartbeat_at, capacity) VALUES (${id}, ${options.version}, now(), ${concurrency})`;
-    const lane = async () => {
+    const reserved = reservedCapacity(concurrency);
+    await client`INSERT INTO workers (id, version, heartbeat_at, capacity, reserved_capacity) VALUES (${id}, ${options.version}, now(), ${concurrency}, ${reserved})`;
+    const lane = async (controlOnly: boolean) => {
         while (!signal.aborted) {
-            const run = await claimJob(client, id, [...registry.keys()]);
+            const run = await claimJob(client, id, [...registry.keys()], controlOnly);
             if (!run) {
                 await waitForWork(500, signal);
                 continue;
@@ -156,7 +158,10 @@ export async function runWorker(options: {
             await waitForWork(5000, signal);
         }
     };
-    const tasks = [control(), ...Array.from({ length: concurrency }, lane)].map((task) =>
+    const tasks = [
+        control(),
+        ...Array.from({ length: concurrency }, (_, index) => lane(index < reserved)),
+    ].map((task) =>
         task.catch((error: unknown) => {
             lifecycle.abort();
             throw error;

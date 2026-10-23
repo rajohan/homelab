@@ -1,0 +1,332 @@
+import { expect, test } from "bun:test";
+
+import { capabilities } from "@homelab/contracts/operations";
+
+import { appRouter } from "../../api/router";
+import { claimJob, commitClaim, settleClaim } from "../../jobs/claims";
+import { reportJobProgress } from "../../jobs/progress";
+import { createJobRegistry } from "../../jobs/registry";
+import { expectOperationFailure, operationFixture } from "../../testing/operations";
+import { parseUpdateTargets } from "../updates/configuration";
+import { parseMaintenanceTargets } from "./configuration";
+import type { MaintenanceObservation, MaintenanceProbe } from "./execution";
+import { maintenanceJobs } from "./jobs";
+
+const connections = parseUpdateTargets(
+    JSON.stringify([
+        {
+            id: "demo",
+            label: "Demo",
+            source: "demo",
+            host: "host.example.test",
+            user: "operator",
+            identityFile: "/run/secret/key",
+            knownHostsFile: "/run/secret/hosts",
+            driver: { kind: "apt" },
+        },
+    ])
+);
+const target = {
+    id: "web",
+    connection: "demo",
+    label: "Web",
+    impact: "The test web service will be unavailable briefly.",
+    kind: "service",
+    service: "example.service",
+    health: ["/usr/bin/true"],
+    workerIndependent: true,
+};
+
+test("restart authority is disabled by default and requires a qualified fixed recipe", () => {
+    expect(parseMaintenanceTargets(undefined, connections)).toEqual([]);
+    for (const recipe of [
+        { ...target, workerIndependent: false },
+        { ...target, connection: "missing" },
+        { ...target, health: ["curl", "http://example.test"] },
+        { ...target, service: "example.service; reboot" },
+        { ...target, kind: "host" },
+    ]) {
+        expect(() =>
+            parseMaintenanceTargets(JSON.stringify([recipe]), connections)
+        ).toThrow();
+    }
+    expect(() =>
+        parseMaintenanceTargets(JSON.stringify([target, target]), connections)
+    ).toThrow();
+});
+
+async function fixture(probe: MaintenanceProbe, recipe = target) {
+    const state = await operationFixture();
+    const targets = parseMaintenanceTargets(JSON.stringify([recipe]), connections);
+    const registry = createJobRegistry(maintenanceJobs(targets, connections, probe));
+    const operations = {
+        ...state,
+        registry,
+        maintenanceTargets: targets,
+        updateTargets: connections,
+    };
+    const principal = { kind: "human" as const, id: "operator", capabilities };
+    const caller = appRouter.createCaller({
+        operations,
+        principal,
+        verifyHuman: () => Promise.resolve(principal),
+    });
+    const worker = await state.registerWorker();
+    const execute = async (key: string) => {
+        const run = await claimJob(state.client, worker, [key]);
+        if (!run) throw new Error("Fixture claim missing");
+        const handler = registry.get(key)!;
+        try {
+            await handler.execute(run.payload, {
+                runId: run.id,
+                leaseToken: run.lease_token,
+                signal: AbortSignal.timeout(6000),
+                commit: (write, admission) =>
+                    commitClaim(state.client, run, write, admission),
+                reportProgress: (message) =>
+                    reportJobProgress(state.client, run, message),
+            });
+            await settleClaim(state.client, run, "succeeded");
+        } catch (error) {
+            await settleClaim(state.client, run, "failed");
+            throw error;
+        }
+        return run;
+    };
+    const refresh = async () => {
+        await caller.jobs.run({
+            action: "maintenance.inspect.web",
+            requestId: Bun.randomUUIDv7(),
+        });
+        await execute("maintenance.inspect.web");
+        const plans = await caller.maintenance.plans();
+        return plans[0]!;
+    };
+    return { ...state, operations, principal, caller, execute, refresh };
+}
+
+test("restart admission requires current human proof and preserves idempotency and verified results", async () => {
+    const observation: MaintenanceObservation = {
+        bootId: Bun.randomUUIDv7(),
+        active: "active",
+        rebootRequired: false,
+        serviceRestartRequired: true,
+        health: false,
+    };
+    const modes: string[] = [];
+    const state = await fixture((_connection, _target, mode) => {
+        modes.push(mode);
+        return Promise.resolve({
+            ...observation,
+            health: mode !== "inspect",
+            serviceRestartRequired: mode === "inspect",
+        });
+    });
+    try {
+        const plan = await state.refresh();
+        expect(plan.required).toBe(true);
+        expect(JSON.stringify(plan)).not.toContain("bootId");
+        expect(JSON.stringify(plan)).not.toContain("/run/secret");
+        const input = {
+            target: "web",
+            revision: plan.revision,
+            requestId: Bun.randomUUIDv7(),
+        };
+        const noProof = appRouter.createCaller({
+            operations: state.operations,
+            principal: state.principal,
+        });
+        await expectOperationFailure(
+            noProof.maintenance.request(input),
+            "verified human"
+        );
+        const machine = appRouter.createCaller({
+            operations: state.operations,
+            principal: { ...state.principal, kind: "automation" },
+        });
+        await expectOperationFailure(
+            machine.maintenance.request(input),
+            "verified human"
+        );
+        const changedIdentity = appRouter.createCaller({
+            operations: state.operations,
+            principal: state.principal,
+            verifyHuman: () => Promise.resolve({ ...state.principal, id: "different" }),
+        });
+        await expectOperationFailure(
+            changedIdentity.maintenance.request(input),
+            "account changed"
+        );
+        const queued = await state.caller.maintenance.request(input);
+        expect(await state.caller.maintenance.request(input)).toEqual(queued);
+        await expectOperationFailure(
+            state.caller.maintenance.request({ ...input, revision: "0".repeat(64) }),
+            "another restart"
+        );
+        await state.execute("maintenance.restart.web");
+        const detail = await state.caller.jobs.detail({ id: queued.id });
+        expect(detail.run.state).toBe("succeeded");
+        expect(detail.run.results).toEqual([
+            {
+                label: "Web",
+                operation: "service-restart",
+                installed: null,
+                health: "passed",
+                rebootRequired: false,
+                warnings: [],
+            },
+        ]);
+        expect(modes.filter((mode) => mode === "restart")).toHaveLength(1);
+        expect(await state.caller.maintenance.request(input)).toEqual(queued);
+    } finally {
+        await state.close();
+    }
+});
+
+test("changed or stopped services and expired confirmations never issue a restart", async () => {
+    let bootId = Bun.randomUUIDv7();
+    let active: "active" | "inactive" = "active";
+    let restarts = 0;
+    const state = await fixture((_connection, _target, mode) => {
+        if (mode === "restart") restarts += 1;
+        return Promise.resolve({
+            bootId,
+            active,
+            rebootRequired: false,
+            serviceRestartRequired: null,
+            health: false,
+        });
+    });
+    try {
+        const plan = await state.refresh();
+        await state.caller.maintenance.request({
+            target: "web",
+            revision: plan.revision,
+            requestId: Bun.randomUUIDv7(),
+        });
+        bootId = Bun.randomUUIDv7();
+        await expectOperationFailure(
+            state.execute("maintenance.restart.web"),
+            "changed since confirmation"
+        );
+        const next = await state.refresh();
+        const pending = await state.caller.maintenance.request({
+            target: "web",
+            revision: next.revision,
+            requestId: Bun.randomUUIDv7(),
+        });
+        await state.client`UPDATE job_runs SET payload = jsonb_set(payload, '{expiresAt}', '0') WHERE id = ${pending.id}`;
+        await expectOperationFailure(state.execute("maintenance.restart.web"), "expired");
+        active = "inactive";
+        const stopped = await state.refresh();
+        expect(stopped.allowed).toBe(false);
+        await expectOperationFailure(
+            state.caller.maintenance.request({
+                target: "web",
+                revision: stopped.revision,
+                requestId: Bun.randomUUIDv7(),
+            }),
+            "changed"
+        );
+        expect(restarts).toBe(0);
+    } finally {
+        await state.close();
+    }
+});
+
+test("host reboot succeeds only after a changed boot identity and health verification", async () => {
+    const bootId = Bun.randomUUIDv7();
+    const nextBoot = Bun.randomUUIDv7();
+    let restarting = false;
+    const state = await fixture(
+        (_connection, _target, mode) => {
+            if (mode === "restart") {
+                restarting = true;
+                throw new Error("SSH disconnected after reboot request");
+            }
+            return Promise.resolve({
+                bootId: restarting ? nextBoot : bootId,
+                active: null,
+                rebootRequired: !restarting,
+                serviceRestartRequired: null,
+                health: mode === "verify",
+            });
+        },
+        { ...target, kind: "host", service: undefined } as unknown as typeof target
+    );
+    try {
+        const plan = await state.refresh();
+        const queued = await state.caller.maintenance.request({
+            target: "web",
+            revision: plan.revision,
+            requestId: Bun.randomUUIDv7(),
+        });
+        await state.execute("maintenance.restart.web");
+        const detail = await state.caller.jobs.detail({ id: queued.id });
+        expect(detail.run.results[0]).toMatchObject({
+            operation: "host-restart",
+            health: "passed",
+            rebootRequired: false,
+        });
+    } finally {
+        await state.close();
+    }
+});
+
+test("stale plans are refused and shared host leases prevent overlapping restarts without inventing health", async () => {
+    const observation: MaintenanceObservation = {
+        bootId: Bun.randomUUIDv7(),
+        active: "active",
+        rebootRequired: false,
+        serviceRestartRequired: true,
+        health: false,
+    };
+    let restarts = 0;
+    const state = await fixture((_connection, _target, mode) => {
+        if (mode === "restart") restarts += 1;
+        return Promise.resolve(observation);
+    });
+    try {
+        const stale = await state.refresh();
+        await state.client`UPDATE operation_snapshots SET captured_at = now() - interval '3 minutes' WHERE key = 'maintenance:web'`;
+        await expectOperationFailure(
+            state.caller.maintenance.request({
+                target: "web",
+                revision: stale.revision,
+                requestId: Bun.randomUUIDv7(),
+            }),
+            "changed"
+        );
+        const plan = await state.refresh();
+        await state.caller.maintenance.request({
+            target: "web",
+            revision: plan.revision,
+            requestId: Bun.randomUUIDv7(),
+        });
+        const firstWorker = await state.registerWorker();
+        const secondWorker = await state.registerWorker();
+        const first = await claimJob(state.client, firstWorker, [
+            "maintenance.restart.web",
+        ]);
+        expect(first).toBeDefined();
+        const second = await state.caller.maintenance.request({
+            target: "web",
+            revision: plan.revision,
+            requestId: Bun.randomUUIDv7(),
+        });
+        expect(
+            await claimJob(state.client, secondWorker, ["maintenance.restart.web"])
+        ).toBeUndefined();
+        await settleClaim(state.client, first!, "interrupted");
+        await expectOperationFailure(
+            state.execute("maintenance.restart.web"),
+            "health verification failed"
+        );
+        const detail = await state.caller.jobs.detail({ id: second.id });
+        expect(detail.run.state).toBe("failed");
+        expect(detail.run.results).toEqual([]);
+        expect(restarts).toBe(1);
+    } finally {
+        await state.close();
+    }
+});

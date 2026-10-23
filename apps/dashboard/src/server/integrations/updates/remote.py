@@ -18,6 +18,8 @@ import tempfile
 import time
 
 
+UPDATE_HEALTH = "not-checked"
+
 def command(arguments, timeout=120, environment=None, output_limit=2_000_000):
     """Execute argv without a shell, bounding output, runtime and child lifetime."""
     selected_environment = {"PATH": "/usr/local/bin:/usr/bin:/bin", "LC_ALL": "C", "HOME": "/nonexistent", "DEBIAN_FRONTEND": "noninteractive"}
@@ -266,6 +268,12 @@ def docker_update(driver, item, automatic=False):
         replacements = restore_namespace_consumers(namespace_plan, driver["service"], compose)
         if before[3] == "running":
             docker_health_checks(driver)
+        global UPDATE_HEALTH
+        UPDATE_HEALTH = "preserved-stopped" if before[3] != "running" else "not-checked"
+        if before[3] == "running":
+            health = command(["/usr/bin/docker", "inspect", "--format", "{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}", driver["name"]])
+            if health == "healthy" or driver.get("healthChecks"):
+                UPDATE_HEALTH = "passed"
         if replacements:
             print(json.dumps({"recreatedContainers": replacements}), flush=True)
         return item["available"]
@@ -354,6 +362,8 @@ def native_update(driver, item):
     if version() != candidate:
         raise RuntimeError("Native version verification failed")
     command(driver["health"])
+    global UPDATE_HEALTH
+    UPDATE_HEALTH = "passed"
     return item["available"]
 
 
@@ -389,7 +399,9 @@ def main():
         installed = native_update(driver, item)
     else:
         raise RuntimeError("Unsupported updater")
-    receipt = {"complete": True, "installed": installed, "rebootRequired": reboot_required()}
+    receipt = {"complete": True, "installed": installed, "rebootRequired": reboot_required(), "health": UPDATE_HEALTH}
+    if driver.get("release") == "openclaw":
+        receipt["warnings"] = ["OpenClaw-specific advisories are retained in its native update report; version and health verification do not clear those advisories."]
     if driver["kind"] == "docker":
         receipt["containerId"] = command(["/usr/bin/docker", "inspect", "--format", "{{.Id}}", driver["name"]])
     print(json.dumps(receipt), flush=True)

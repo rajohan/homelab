@@ -86,6 +86,15 @@ async function recordResult(
                     // installation must not restore the old version when it arrives late.
                     await transaction`UPDATE operation_snapshots SET value=${JSON.stringify({ ...row.value, items, ...(source === target.source ? { rebootRequired: receipt.rebootRequired, rebootObservedAt: new Date().toISOString() } : {}) })}::text::jsonb, captured_at=GREATEST(captured_at, now()) WHERE key=${key}`;
                 }
+            const result = {
+                label: item.name,
+                operation: "update",
+                installed: receipt.installed,
+                health: receipt.health ?? "not-checked",
+                rebootRequired: receipt.rebootRequired,
+                warnings: receipt.warnings ?? [],
+            };
+            await transaction`UPDATE job_runs SET results = results || ${JSON.stringify([result])}::text::jsonb WHERE id = ${context.runId} AND jsonb_array_length(results) < 400`;
             const observedAt = new Date().toISOString();
             await recordRestartObservation(
                 transaction,

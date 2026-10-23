@@ -11,7 +11,9 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import { formatJobActor } from "./formatJobActor";
 import { JobStatus } from "./JobStatus";
+import { MaintenanceResults } from "./MaintenanceResults";
 import { RunEvent } from "./RunEvent";
+import { RunProgress } from "./RunProgress";
 
 /**
  * Show one run's immutable policy snapshot and bounded audit history, never its payload.
@@ -55,6 +57,8 @@ export function RunDetailDialog({
                 {run && (
                     <>
                         <JobStatus state={run.state} />
+                        <RunProgress run={run} />
+                        <MaintenanceResults results={run.results ?? []} />
                         <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm [&_dd]:wrap-anywhere [&_dt]:text-primary-400">
                             <dt>Run ID</dt>
                             <dd>{run.id}</dd>

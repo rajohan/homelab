@@ -14,11 +14,14 @@ import {
 import { backupsJob } from "../integrations/backups/job";
 import { readBackupInventory } from "../integrations/backups/routes";
 import type { LogsConfiguration } from "../integrations/logs/transport";
+import type { MaintenanceTarget } from "../integrations/maintenance/configuration";
+import { maintenanceJobs } from "../integrations/maintenance/jobs";
 import { collectInventory } from "../integrations/metrics/inventory";
 import { metricsJob } from "../integrations/metrics/job";
 import { createInventoryReader } from "../integrations/metrics/liveInventory";
 import { readSavedInventory } from "../integrations/metrics/snapshot";
 import type { MetricsConfiguration } from "../integrations/metrics/transport";
+import { readHomelabRelease } from "../integrations/releases/read";
 import { snapshotJob } from "../integrations/snapshots/job";
 import { updateActionJobs } from "../integrations/updates/actions";
 import type { UpdateTarget } from "../integrations/updates/configuration";
@@ -51,6 +54,27 @@ export function createOperationsRuntime(
           )
         : undefined;
     const registry = createJobRegistry([
+        ...maintenanceJobs(
+            configuration.maintenanceTargets ?? [],
+            configuration.updateTargets ?? []
+        ),
+        ...(configuration.releaseRepository
+            ? [
+                  snapshotJob({
+                      key: "homelab.release",
+                      label: "Check Homelab release",
+                      description: "Read published release images and their test status.",
+                      capability: "updates:refresh",
+                      intervalSeconds: 600,
+                      read: (signal) =>
+                          readHomelabRelease(
+                              configuration.releaseRepository!,
+                              configuration.githubToken,
+                              signal
+                          ),
+                  }),
+              ]
+            : []),
         ...updateActionJobs(
             configuration.updateTargets ?? [],
             connection.client,
@@ -123,6 +147,8 @@ export function createOperationsRuntime(
           )
         : undefined;
     return {
+        maintenanceTargets: configuration.maintenanceTargets ?? [],
+        releaseRepository: configuration.releaseRepository,
         updateTargets: configuration.updateTargets ?? [],
         rules: configuration.rules,
         backupCatalog: configuration.backupCatalog,
@@ -137,6 +163,8 @@ export function createOperationsRuntime(
     };
 }
 export type OperationsRuntime = ReturnType<typeof connectDashboardDatabase> & {
+    readonly maintenanceTargets?: readonly MaintenanceTarget[];
+    readonly releaseRepository?: string | undefined;
     readonly updateTargets?: readonly UpdateTarget[];
     readonly rules?: RulesConfiguration | undefined;
     readonly backupCatalog?: BackupCatalogConfiguration | undefined;

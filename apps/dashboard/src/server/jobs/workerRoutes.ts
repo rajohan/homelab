@@ -15,11 +15,12 @@ export const workerRouter = trpc.router({
                     heartbeatAt: string;
                     startedAt: string;
                     capacity: number;
+                    reservedCapacity: number;
                     active: number;
                     draining: boolean;
                     online: boolean;
                 }[]
-            >`SELECT id, version, heartbeat_at::text AS "heartbeatAt", started_at::text AS "startedAt", capacity, draining, (heartbeat_at > now() - interval '30 seconds' AND NOT draining) AS online, (SELECT count(*)::int FROM job_runs WHERE worker_id = workers.id AND state = 'running') AS active FROM workers WHERE heartbeat_at > now() - interval '5 minutes' OR EXISTS (SELECT 1 FROM job_runs WHERE worker_id = workers.id AND state = 'running') ORDER BY heartbeat_at DESC LIMIT 20`;
+            >`SELECT id, version, heartbeat_at::text AS "heartbeatAt", started_at::text AS "startedAt", capacity, reserved_capacity AS "reservedCapacity", draining, (heartbeat_at > now() - interval '30 seconds' AND NOT draining) AS online, (SELECT count(*)::int FROM job_runs WHERE worker_id = workers.id AND state = 'running') AS active FROM workers WHERE heartbeat_at > now() - interval '5 minutes' OR EXISTS (SELECT 1 FROM job_runs WHERE worker_id = workers.id AND state = 'running') ORDER BY heartbeat_at DESC LIMIT 20`;
             const counts = await operations.client<
                 { state: string; count: number }[]
             >`SELECT state, count(*)::int AS count FROM job_runs GROUP BY state`;

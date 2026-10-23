@@ -283,6 +283,8 @@ def install_native_recipe(driver, item, run, emit, replace, lock):
     else:
         raise RuntimeError("Unsupported native recipe")
     emit("verifying")
+    global UPDATE_HEALTH
+    UPDATE_HEALTH = "preserved-stopped" if not active else "not-checked"
     if active:
         if application in {"loki", "openclaw"}:
             # An active service can still be starting. Retry only the read-only
@@ -304,4 +306,5 @@ def install_native_recipe(driver, item, run, emit, replace, lock):
                     time.sleep(min(2, remaining))
         else:
             run(driver["health"])
+        UPDATE_HEALTH = "passed"
     return item["available"]

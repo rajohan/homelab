@@ -1,0 +1,63 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "cb2f224e-e5aa-45ca-8d80-f510ffc05e9d",
+    "prevIds": ["145e0908-d5bc-4d2c-bb92-a67420fb49ff"],
+    "footprints": [
+        {
+            "statementType": "add_column",
+            "statementTarget": ["column", "public", "job_runs", "results"],
+            "writes": [
+                "s|col|public.job_runs.results",
+                "n|col|public.job_runs.results",
+                "e|col|public.job_runs.results"
+            ],
+            "reads": ["n|tbl|public.job_runs", "n|sch|public"]
+        },
+        {
+            "statementType": "add_column",
+            "statementTarget": ["column", "public", "workers", "reserved_capacity"],
+            "writes": [
+                "s|col|public.workers.reserved_capacity",
+                "n|col|public.workers.reserved_capacity",
+                "e|col|public.workers.reserved_capacity"
+            ],
+            "reads": ["n|tbl|public.workers", "n|sch|public"]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "job_runs",
+                "name": "results",
+                "type": "jsonb",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "'[]'",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "workers",
+                "name": "reserved_capacity",
+                "type": "integer",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "0",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        }
+    ]
+}

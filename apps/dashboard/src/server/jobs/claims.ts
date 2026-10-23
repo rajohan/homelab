@@ -3,6 +3,7 @@ import type { SQL } from "bun";
 import type { Transaction } from "../database/connection";
 import { notifyJobOutcome } from "../notifications/jobOutcome";
 import { auditOperation } from "../operations/audit";
+import { controlWorkClasses } from "./capacity";
 import { lockQueue } from "./queue";
 import type { ClaimedJob } from "./types";
 
@@ -28,12 +29,14 @@ async function hasQueuedUpdateCheck(
  * @param client - The dashboard database pool.
  * @param workerId - This process's unique registration ID.
  * @param actionKeys - The exact executable inventory for this worker.
+ * @param controlOnly - Restrict the reserved lane to light/network work, including human requests.
  * @returns A fenced job claim, or undefined when no admissible work exists.
  */
 export async function claimJob(
     client: SQL,
     workerId: string,
-    actionKeys: readonly string[]
+    actionKeys: readonly string[],
+    controlOnly = false
 ): Promise<ClaimedJob | undefined> {
     return client.begin(async (transaction) => {
         await lockQueue(transaction);
@@ -79,7 +82,7 @@ export async function claimJob(
         if (control?.paused) return;
         const candidates = await transaction<
             ClaimedJob[]
-        >`SELECT id, action, payload, attempt, attempt_limit, retry_safe, timeout_ms, resource_keys FROM job_runs WHERE state = 'queued' AND available_at <= now() AND action = ANY(${transaction.array([...actionKeys], "TEXT")}) AND NOT EXISTS (SELECT 1 FROM resource_leases WHERE key = ANY(job_runs.resource_keys)) AND NOT EXISTS (SELECT 1 FROM job_runs active WHERE active.state = 'running' AND (active.resource_class = 'exclusive' OR job_runs.resource_class = 'exclusive' OR (active.resource_class = 'host-heavy' AND job_runs.resource_class = 'host-heavy'))) ORDER BY priority DESC, id LIMIT 1 FOR UPDATE SKIP LOCKED`;
+        >`SELECT id, action, payload, attempt, attempt_limit, retry_safe, timeout_ms, resource_keys FROM job_runs WHERE state = 'queued' AND available_at <= now() AND action = ANY(${transaction.array([...actionKeys], "TEXT")}) AND (${controlOnly} = false OR resource_class = ANY(${transaction.array([...controlWorkClasses], "TEXT")})) AND (SELECT count(*) FROM job_runs busy WHERE busy.state = 'running' AND busy.worker_id = ${workerId}) < (SELECT capacity FROM workers WHERE id = ${workerId}) AND (resource_class = ANY(${transaction.array([...controlWorkClasses], "TEXT")}) OR (SELECT count(*) FROM job_runs busy WHERE busy.state = 'running' AND busy.worker_id = ${workerId} AND NOT (busy.resource_class = ANY(${transaction.array([...controlWorkClasses], "TEXT")}))) < (SELECT capacity - reserved_capacity FROM workers WHERE id = ${workerId})) AND NOT EXISTS (SELECT 1 FROM resource_leases WHERE key = ANY(job_runs.resource_keys)) AND NOT EXISTS (SELECT 1 FROM job_runs active WHERE active.state = 'running' AND (active.resource_class = 'exclusive' OR job_runs.resource_class = 'exclusive' OR (active.resource_class = 'host-heavy' AND job_runs.resource_class = 'host-heavy'))) ORDER BY priority DESC, id LIMIT 1 FOR UPDATE SKIP LOCKED`;
         const run = candidates[0];
         if (!run) return;
         const token = Bun.randomUUIDv7();
