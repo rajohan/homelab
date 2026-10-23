@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/rajohan/homelab/compare/v0.7.12...v0.8.0) (2026-10-23)
+
+
+### Features
+
+* **dashboard:** reserve light-job capacity and improve maintenance visibility ([#54](https://github.com/rajohan/homelab/issues/54)) ([caed6fd](https://github.com/rajohan/homelab/commit/caed6fd90100fe1843c331d022be18ec9f0ea1ae))
+
 ## [0.7.12](https://github.com/rajohan/homelab/compare/v0.7.11...v0.7.12) (2026-10-22)
 
 
