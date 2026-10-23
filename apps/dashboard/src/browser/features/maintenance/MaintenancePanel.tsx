@@ -49,53 +49,61 @@ export function MaintenancePanel() {
                     external maintenance.
                 </p>
             )}
-            {query.data?.map((plan) => (
-                <div
-                    key={plan.target}
-                    className="space-y-3 rounded-lg border border-primary-700 p-4"
-                >
-                    <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="font-medium">{plan.label}</h3>
-                        <Badge
-                            tone={plan.required && plan.allowed ? "warning" : "neutral"}
+            {query.data && query.data.length > 0 && (
+                <div className="space-y-3">
+                    {query.data.map((plan) => (
+                        <div
+                            key={plan.target}
+                            className="space-y-3 rounded-lg border border-primary-700 bg-primary-950/40 p-4"
                         >
-                            {requirementLabel(plan.allowed, plan.required)}
-                        </Badge>
-                    </div>
-                    <p className="text-sm text-primary-300">{plan.impact}</p>
-                    {plan.capturedAt && (
-                        <p className="text-xs text-primary-400">
-                            Checked {formatDateTime(plan.capturedAt)}
-                        </p>
-                    )}
-                    {plan.reason && (
-                        <p className="text-sm text-primary-400">{plan.reason}</p>
-                    )}
-                    <div className="flex flex-wrap gap-2">
-                        <Button
-                            variant="secondary"
-                            disabled={refresh.isPending}
-                            onClick={() =>
-                                void refresh
-                                    .mutateAsync({
-                                        action: `maintenance.inspect.${plan.target}`,
-                                        requestId: crypto.randomUUID(),
-                                    })
-                                    .catch(() => {})
-                            }
-                        >
-                            Refresh status
-                        </Button>
-                        <Button
-                            variant="secondary"
-                            disabled={!plan.allowed || query.isError}
-                            onClick={() => setSelected(plan)}
-                        >
-                            Restart…
-                        </Button>
-                    </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <h3 className="font-medium">{plan.label}</h3>
+                                <Badge
+                                    tone={
+                                        plan.required && plan.allowed
+                                            ? "warning"
+                                            : "neutral"
+                                    }
+                                >
+                                    {requirementLabel(plan.allowed, plan.required)}
+                                </Badge>
+                            </div>
+                            <p className="text-sm text-primary-300">{plan.impact}</p>
+                            {plan.capturedAt && (
+                                <p className="text-xs text-primary-400">
+                                    Checked {formatDateTime(plan.capturedAt)}
+                                </p>
+                            )}
+                            {plan.reason && (
+                                <p className="text-sm text-primary-400">{plan.reason}</p>
+                            )}
+                            <div className="flex flex-wrap gap-2">
+                                <Button
+                                    variant="secondary"
+                                    disabled={refresh.isPending}
+                                    onClick={() =>
+                                        void refresh
+                                            .mutateAsync({
+                                                action: `maintenance.inspect.${plan.target}`,
+                                                requestId: crypto.randomUUID(),
+                                            })
+                                            .catch(() => {})
+                                    }
+                                >
+                                    Refresh status
+                                </Button>
+                                <Button
+                                    variant="secondary"
+                                    disabled={!plan.allowed || query.isError}
+                                    onClick={() => setSelected(plan)}
+                                >
+                                    Restart…
+                                </Button>
+                            </div>
+                        </div>
+                    ))}
                 </div>
-            ))}
+            )}
             {selected && (
                 <RestartDialog plan={selected} onClose={() => setSelected(undefined)} />
             )}

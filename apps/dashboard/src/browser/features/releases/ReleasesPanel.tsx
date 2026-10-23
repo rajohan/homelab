@@ -32,27 +32,45 @@ export function ReleasesPanel() {
     const data = query.data;
     const release = data?.release;
     return (
-        <Card className="space-y-4">
+        <Card className="@container space-y-4">
             <SectionHeader
                 title="Homelab release"
                 description="Published releases and independently deployed application versions."
                 icon={PackageCheck}
+                actions={
+                    <Button
+                        variant="secondary"
+                        disabled={!data?.configured || refresh.isPending}
+                        onClick={() =>
+                            void refresh
+                                .mutateAsync({
+                                    action: "homelab.release",
+                                    requestId: crypto.randomUUID(),
+                                })
+                                .catch(() => {})
+                        }
+                    >
+                        Refresh release
+                    </Button>
+                }
             />
             {query.isPending && <LoadingState label="Loading release status…" />}
             {query.isError && <ErrorNotice error={query.error} />}
             {refresh.isError && <ErrorNotice error={refresh.error} />}
             {data && (
                 <>
-                    <dl className="space-y-2 text-sm">
-                        <div>
-                            <dt className="text-primary-400">
+                    <dl className="grid gap-3 text-sm @min-[48rem]:grid-cols-3">
+                        <div className="space-y-2 rounded-lg border border-primary-700 bg-primary-950/40 p-4">
+                            <dt className="text-xs text-primary-400">
                                 Dashboard serving this request
                             </dt>
-                            <dd>{data.dashboard}</dd>
+                            <dd className="font-medium wrap-anywhere">
+                                {data.dashboard}
+                            </dd>
                         </div>
-                        <div>
-                            <dt className="text-primary-400">Workers</dt>
-                            <dd>
+                        <div className="space-y-2 rounded-lg border border-primary-700 bg-primary-950/40 p-4">
+                            <dt className="text-xs text-primary-400">Workers</dt>
+                            <dd className="wrap-anywhere">
                                 {data.workers.length > 0
                                     ? data.workers
                                           .map(
@@ -63,9 +81,11 @@ export function ReleasesPanel() {
                                     : "No recent worker registration"}
                             </dd>
                         </div>
-                        <div>
-                            <dt className="text-primary-400">Auth observations</dt>
-                            <dd>
+                        <div className="space-y-2 rounded-lg border border-primary-700 bg-primary-950/40 p-4">
+                            <dt className="text-xs text-primary-400">
+                                Auth observations
+                            </dt>
+                            <dd className="wrap-anywhere">
                                 {data.auth.length > 0
                                     ? data.auth
                                           .map(
@@ -78,28 +98,28 @@ export function ReleasesPanel() {
                         </div>
                     </dl>
                     {release ? (
-                        <div className="space-y-2 text-sm">
-                            <p>
+                        <div className="space-y-3 rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm">
+                            <div className="flex flex-wrap items-center gap-2">
                                 <a
-                                    className="underline"
+                                    className="font-medium underline"
                                     href={release.value.url}
                                     target="_blank"
                                     rel="noreferrer"
                                 >
                                     Published {release.value.version}
                                 </a>
-                            </p>
-                            <Badge
-                                tone={
-                                    release.fresh && release.value.verified
-                                        ? "positive"
-                                        : "warning"
-                                }
-                            >
-                                {release.fresh
-                                    ? `Release tests: ${release.value.tests}`
-                                    : "Release check is stale"}
-                            </Badge>
+                                <Badge
+                                    tone={
+                                        release.fresh && release.value.verified
+                                            ? "positive"
+                                            : "warning"
+                                    }
+                                >
+                                    {release.fresh
+                                        ? `Release tests: ${release.value.tests}`
+                                        : "Release check is stale"}
+                                </Badge>
+                            </div>
                             <p className="text-primary-400">
                                 {release.value.verified
                                     ? "Image manifest matches the successful release build."
@@ -123,26 +143,12 @@ export function ReleasesPanel() {
                             </p>
                         </div>
                     ) : (
-                        <p className="text-sm text-primary-400">
+                        <p className="rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm text-primary-400">
                             {data.configured
                                 ? "No verified release observation yet. Refresh to inspect the published manifest and build."
                                 : "External release reporting is not configured."}
                         </p>
                     )}
-                    <Button
-                        variant="secondary"
-                        disabled={!data.configured || refresh.isPending}
-                        onClick={() =>
-                            void refresh
-                                .mutateAsync({
-                                    action: "homelab.release",
-                                    requestId: crypto.randomUUID(),
-                                })
-                                .catch(() => {})
-                        }
-                    >
-                        Refresh release
-                    </Button>
                     <p className="text-sm text-primary-400">
                         Deployment remains a separate reviewed operation. This worker does
                         not replace or restart itself.
