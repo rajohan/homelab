@@ -11,66 +11,74 @@ import { enqueueJob, lockQueue } from "../jobs/queue";
 import { createJobRegistry } from "../jobs/registry";
 import { operationFixture } from "../testing/operations";
 
-test("a dashboard-started control job runs while two long updates occupy the general slots", async () => {
-    const fixture = await operationFixture();
-    try {
-        const base = maintenanceJob(30);
-        const heavy = {
-            ...base,
-            definition: {
-                ...base.definition,
-                key: "test.long-update",
-                resourceClass: "interactive" as const,
-                resourceKeys: [],
-                timeoutMs: 1_500_000,
-                intervalSeconds: null,
-            },
-        };
-        const control = {
-            ...base,
-            definition: {
-                ...base.definition,
-                key: "test.manual-check",
-                resourceClass: "network" as const,
-                resourceKeys: [],
-                intervalSeconds: null,
-            },
-        };
-        const registry = createJobRegistry([heavy, control]);
-        const worker = await fixture.registerWorker();
-        await fixture.client`UPDATE workers SET reserved_capacity = 1 WHERE id = ${worker}`;
-        await fixture.client.begin(async (tx) => {
-            await lockQueue(tx);
-            for (let index = 0; index < 3; index += 1)
-                await enqueueJob(tx, heavy.definition, "human:test", `heavy-${index}`);
-        });
-        const keys = [...registry.keys()];
-        const first = await claimJob(fixture.client, worker, keys);
-        const second = await claimJob(fixture.client, worker, keys);
-        expect(first?.action).toBe(heavy.definition.key);
-        expect(second?.action).toBe(heavy.definition.key);
-        expect(await claimJob(fixture.client, worker, keys)).toBeUndefined();
-        expect(await claimJob(fixture.client, worker, keys, true)).toBeUndefined();
-        const caller = appRouter.createCaller({
-            operations: { ...fixture, registry },
-            principal: { kind: "human", id: "operator", capabilities },
-        });
-        const submitted = await caller.jobs.run({
-            action: control.definition.key,
-            requestId: Bun.randomUUIDv7(),
-        });
-        const light = await claimJob(fixture.client, worker, keys, true);
-        expect(light?.id).toBe(submitted.id);
-        const detail = await caller.jobs.detail({ id: submitted.id });
-        expect(detail.run.requestedBy).toBe("human:operator");
-        expect(await claimJob(fixture.client, worker, keys)).toBeUndefined();
-        await settleClaim(fixture.client, first!, "succeeded");
-        const next = await claimJob(fixture.client, worker, keys);
-        expect(next?.action).toBe(heavy.definition.key);
-    } finally {
-        await fixture.close();
+test.each(["interactive", "network"] as const)(
+    "a dashboard-started control job runs while two long %s jobs occupy the general slots",
+    async (resourceClass) => {
+        const fixture = await operationFixture();
+        try {
+            const base = maintenanceJob(30);
+            const heavy = {
+                ...base,
+                definition: {
+                    ...base.definition,
+                    key: "test.long-update",
+                    resourceClass,
+                    resourceKeys: [],
+                    timeoutMs: 1_500_000,
+                    intervalSeconds: null,
+                },
+            };
+            const control = {
+                ...base,
+                definition: {
+                    ...base.definition,
+                    key: "test.manual-check",
+                    resourceClass: "network" as const,
+                    resourceKeys: [],
+                    intervalSeconds: null,
+                },
+            };
+            const registry = createJobRegistry([heavy, control]);
+            const worker = await fixture.registerWorker();
+            await fixture.client`UPDATE workers SET reserved_capacity = 1 WHERE id = ${worker}`;
+            await fixture.client.begin(async (tx) => {
+                await lockQueue(tx);
+                for (let index = 0; index < 3; index += 1)
+                    await enqueueJob(
+                        tx,
+                        heavy.definition,
+                        "human:test",
+                        `heavy-${index}`
+                    );
+            });
+            const keys = [...registry.keys()];
+            const first = await claimJob(fixture.client, worker, keys);
+            const second = await claimJob(fixture.client, worker, keys);
+            expect(first?.action).toBe(heavy.definition.key);
+            expect(second?.action).toBe(heavy.definition.key);
+            expect(await claimJob(fixture.client, worker, keys)).toBeUndefined();
+            expect(await claimJob(fixture.client, worker, keys, true)).toBeUndefined();
+            const caller = appRouter.createCaller({
+                operations: { ...fixture, registry },
+                principal: { kind: "human", id: "operator", capabilities },
+            });
+            const submitted = await caller.jobs.run({
+                action: control.definition.key,
+                requestId: Bun.randomUUIDv7(),
+            });
+            const light = await claimJob(fixture.client, worker, keys, true);
+            expect(light?.id).toBe(submitted.id);
+            const detail = await caller.jobs.detail({ id: submitted.id });
+            expect(detail.run.requestedBy).toBe("human:operator");
+            expect(await claimJob(fixture.client, worker, keys)).toBeUndefined();
+            await settleClaim(fixture.client, first!, "succeeded");
+            const next = await claimJob(fixture.client, worker, keys);
+            expect(next?.action).toBe(heavy.definition.key);
+        } finally {
+            await fixture.close();
+        }
     }
-});
+);
 
 test("reserved capacity preserves pause, shared resource locks and true exclusive work", async () => {
     const fixture = await operationFixture();

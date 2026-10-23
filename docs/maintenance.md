@@ -3,6 +3,9 @@
 The existing Bun worker owns job execution. With concurrency 3, one existing slot
 is reserved for light/network control jobs and two slots accept general work.
 Scheduled and human-started checks have identical access to the reservation.
+Only light/network jobs with a deadline of at most sixty seconds qualify. Broad
+release scans and update preparation with longer budgets use the general slots,
+so a slow inventory lookup cannot occupy the reserved lane for several minutes.
 Installation and restart jobs keep their physical-host leases. The reservation does
 not bypass a pause, a shared resource lock, or deliberately exclusive work.
 
