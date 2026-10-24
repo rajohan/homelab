@@ -5,6 +5,7 @@ import {
     type MiraModel,
     type MiraSchedule,
 } from "@homelab/contracts/mira";
+import type { MiraMailContent } from "@homelab/contracts/miraMail";
 import { sql } from "drizzle-orm";
 import {
     type AnyPgColumn,
@@ -413,6 +414,45 @@ export const miraIntegrationReceivers = pgTable("mira_integration_receivers", {
     bindingHash: text("binding_hash"),
     heartbeatAt: time("heartbeat_at").notNull().defaultNow(),
 });
+
+export const miraMailDrafts = pgTable(
+    "mira_mail_drafts",
+    {
+        id: uuid().primaryKey(),
+        owner: text().notNull(),
+        conversationId: uuid("conversation_id").references(() => miraConversations.id),
+        inboxId: text("inbox_id").notNull(),
+        bindingHash: text("binding_hash").notNull(),
+        version: integer().notNull().default(1),
+        state: text().notNull().default("draft"),
+        content: jsonb().$type<MiraMailContent>().notNull(),
+        contentHash: text("content_hash").notNull(),
+        approvedVersion: integer("approved_version"),
+        approvedBy: text("approved_by"),
+        approvedAt: time("approved_at"),
+        controlVersion: integer("control_version"),
+        attemptToken: uuid("attempt_token"),
+        startedAt: time("started_at"),
+        providerMessageId: text("provider_message_id"),
+        providerThreadId: text("provider_thread_id"),
+        message: text(),
+        createdAt: time("created_at").notNull().defaultNow(),
+        updatedAt: time("updated_at").notNull().defaultNow(),
+    },
+    (t) => [
+        index("mira_mail_drafts_owner").on(t.owner, t.createdAt, t.id),
+        index("mira_mail_drafts_dispatch").on(t.state, t.id),
+        check(
+            "mira_mail_drafts_state",
+            sql`${t.state} IN ('draft','queued','sending','sent','needs_attention','cancelled')`
+        ),
+        check("mira_mail_drafts_version", sql`${t.version} >= 1`),
+        check(
+            "mira_mail_drafts_approval",
+            sql`${t.state} NOT IN ('queued','sending','sent','needs_attention') OR (${t.approvedVersion} IS NOT NULL AND ${t.approvedBy} IS NOT NULL AND ${t.approvedAt} IS NOT NULL AND ${t.controlVersion} IS NOT NULL)`
+        ),
+    ]
+);
 
 // One account-wide watermark bounds durable quota suppression independently of traffic.
 export const miraMailIntake = pgTable("mira_mail_intake", {

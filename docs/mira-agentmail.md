@@ -16,8 +16,14 @@ return a retryable webhook failure. Inject credentials privately:
 
 - Dashboard receives only `HOMELAB_MIRA_AGENTMAIL_WEBHOOK_SECRET`, the webhook's
   own Svix signing secret.
-- Mira receives only `HOMELAB_MIRA_AGENTMAIL_API_KEY`, scoped to reading the selected
-  inbox. The native model child does not inherit this credential.
+- Mira receives `HOMELAB_MIRA_AGENTMAIL_API_KEY`, scoped to reading the selected inbox.
+- Outgoing delivery additionally requires `HOMELAB_MIRA_AGENTMAIL_SEND_API_KEY`,
+  scoped to `message_send` for that same inbox under the provider's
+  [permission model](https://docs.agentmail.to/permissions). Keep the read key read-only.
+  Missing send credentials disable approval and dispatch while incoming mail continues.
+  Neither credential is sent to the dashboard or inherited by the native model child.
+  Before activation, verify the send key's inbox and permission restrictions in AgentMail;
+  a synthetic development credential does not establish live send permission.
 
 `deploy/compose.mira.yaml` declares the separated environment delivery. Register
 only `message.received` for the selected inbox at
@@ -75,8 +81,9 @@ trashed and `agent-armor-held` messages are excluded. When Agent Armor metadata 
 present, pending/unavailable scans and review verdicts without a recorded human
 release are also excluded, including before the held label has appeared. Mail content cannot authorize actions.
 
-Sending/replying, attachment ingestion and reviewed outgoing drafts are separate
-remaining deliveries; this adapter cannot send mail.
+Received-mail tools remain read-only. The separate reviewed outbox below can send new
+plain-text messages with its dedicated credential; threaded replies and attachment
+ingestion remain separate deliveries.
 
 Provider declarations use stable discovery and invocation tools. Each resumed
 conversation receives the current trusted server instructions and resolves the
@@ -116,6 +123,16 @@ Recovery only admits received-label additions and held-label removals backed by 
 release override. Unrelated label changes never refresh a message's availability;
 ordinary received mail retains its original receipt age.
 
+### Outgoing draft review and delivery
+
+The chat's **Email drafts** library stores editable, owner-scoped plain-text drafts locally. Mira can propose a draft during a manual conversation but cannot approve or send it. Automatic mail-triggered work does not have draft-write permission. The review dialog displays the configured inbox, every To/Cc/Bcc recipient, subject and body before **Confirm and send**. The approval binds the current version, normalized content hash, inbox binding and integration-control version. Changes require a fresh review.
+
+The executor claims a queued draft once before invoking the official [AgentMail send-message API](https://docs.agentmail.to/api-reference/inboxes/messages/send). Each attempt disables redirects and uses a fixed provider origin and bounded timeout/response. It includes a stable `Idempotency-Key` per draft, following the provider's [24-hour send deduplication contract](https://www.agentmail.to/docs/idempotency); durable local claims still prevent automatic retries after uncertain results or after that retention expires. The contract validates the provider's combined 50-recipient limit before saving or approving. A verified provider acknowledgement means accepted by AgentMail, not delivered to the recipient. A network loss, rejection or malformed response leaves **Needs attention** without automatic retry; inspect the provider inbox before deliberately preparing a new send. A late verified acknowledgement can refine an abandoned attempt to accepted.
+
+Approval expires after fifteen minutes before dispatch. Disabling/re-enabling the integration returns same-inbox queued work to draft for another review. Removing or changing the inbox cancels obsolete approvals before sending. Already-started provider calls cannot be recalled by pausing. The receiver and executor must agree on the inbox before approval/dispatch. Cancellation is available only before dispatch; it does not claim to unsend mail. Repeated approval requests return the same queued/sent/unknown record and cannot send a second copy.
+
+This first outgoing implementation handles new plain-text messages. Threaded replies and outgoing attachments are not yet implemented. No actual inbox or outgoing provider transport is activated by a development preview.
+
 ### Mail-triggered workload limits
 
 Limits are shared by all inbox bindings and automatic subscribers for one owner: at most 60 new event references per rolling hour, 250 per rolling day and 1,000 retained references. Server receipt time controls metering, independently of provider timestamps. Verified duplicate deliveries do not consume additional event allowance. Deliberately paused mail remains bounded and does not generate quota notifications. References and delivery metadata expire after seven days; cleanup runs independently of provider availability. Older replayed receipt events are not reinserted after cleanup.
@@ -123,6 +140,8 @@ Limits are shared by all inbox bindings and automatic subscribers for one owner:
 One event can feed at most ten currently eligible subscribers. Automatic mail work shares a rolling allowance of 24 runs and 1,800 reserved execution seconds per day; each run is capped at 120 seconds even if an automation requests more. Queued and failed runs count, so cancellations cannot refund an attacker-controlled burst. These are execution allowances, not a promise about token usage or API cost. Ordinary user chat and other automation triggers retain their own admission.
 
 Excess triggers or deliveries are skipped, not accumulated into a later burst. Messages remain in AgentMail for manual review. The owner gets at most one private notification per quota category per UTC day while mail processing is enabled. This first version uses repository-defined limits; changing them is a reviewed configuration/code change.
+
+Queued approval reconciliation runs even when AgentMail credentials are absent. Expired approvals and access changes return same-inbox drafts for fresh review; removed or changed inboxes cancel the obsolete draft before sending, retaining its original inbox and content for inspection. The operator creates a new draft explicitly when needed; no approval or content is silently rebound to another sender.
 
 Quota suppression is durable. An owner-wide receipt-time watermark skips quota-rejected mail and earlier unseen mail even after an hourly allowance resets or a security scan later releases it. Existing recorded events retain their own delivery receipts. The watermark uses one row per account, so an inbox flood cannot grow a tombstone table. Messages remain available for manual inbox review.
 

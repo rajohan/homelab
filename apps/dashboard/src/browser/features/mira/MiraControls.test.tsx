@@ -2,6 +2,7 @@ import { expect, spyOn, test } from "bun:test";
 
 import { miraDefaultChatSettings, miraModelSchema } from "@homelab/contracts/mira";
 import type { MiraAttachment } from "@homelab/contracts/mira";
+import type { MiraMailDraft } from "@homelab/contracts/miraMail";
 import { IdentityClient } from "@homelab/ui/identity/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -17,6 +18,7 @@ import { ChatActivity } from "./ChatActivity";
 import { ChatComposer } from "./ChatComposer";
 import { ChatMessage } from "./ChatMessage";
 import { ChatSettings } from "./ChatSettings";
+import { MailReview } from "./MailReview";
 import { MiraRunTable } from "./MiraRunTable";
 import { ProposalReview } from "./ProposalReview";
 import { RunAutomationButton } from "./RunAutomationButton";
@@ -574,6 +576,86 @@ test("run history opens the selected old result and shows its uncertain tool rec
                 Object.defineProperty(HTMLElement.prototype, name, descriptor);
             else Reflect.deleteProperty(HTMLElement.prototype, name);
         }
+    }
+});
+
+test("email review displays every destination and retries only the same approved snapshot", async () => {
+    const draft: MiraMailDraft = {
+        id: crypto.randomUUID(),
+        inboxId: "mira@example.com",
+        version: 3,
+        state: "draft",
+        contentHash: "a".repeat(64),
+        conversationId: null,
+        message: null,
+        providerMessageId: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        content: {
+            to: ["to@example.com"],
+            cc: ["cc@example.com"],
+            bcc: ["hidden@example.com"],
+            subject: "Synthetic approval",
+            text: "<img src=x onerror=alert(1)>\nExact plain text",
+        },
+    };
+    const requested: unknown[] = [];
+    let closed = 0;
+    const request = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+            (_input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+                if (typeof init?.body !== "string")
+                    throw new Error("Expected serialized approval");
+                const body = JSON.parse(init.body) as { "0": { json: unknown } };
+                requested.push(body["0"].json);
+                if (requested.length === 1)
+                    return Promise.reject(new Error("Synthetic lost acknowledgement"));
+                return Promise.resolve(
+                    Response.json([
+                        { result: { data: serialize({ ...draft, state: "queued" }) } },
+                    ])
+                );
+            },
+            { preconnect: fetch.preconnect }
+        )
+    );
+    const cleanup = fixture(
+        <MailReview
+            draft={draft}
+            onClose={() => {
+                closed++;
+            }}
+        />
+    );
+    try {
+        for (const address of [
+            draft.inboxId,
+            ...draft.content.to,
+            ...draft.content.cc,
+            ...draft.content.bcc,
+        ])
+            expect(screen.getByText(address)).toBeInTheDocument();
+        expect(screen.getByText(/Exact plain text/)).toBeInTheDocument();
+        expect(document.querySelector("img")).toBeNull();
+        const user = userEvent.setup();
+        await user.click(screen.getByRole("button", { name: "Confirm and send" }));
+        await waitFor(() => expect(requested).toHaveLength(1));
+        expect(closed).toBe(0);
+        await waitFor(() =>
+            expect(screen.getByRole("button", { name: "Confirm and send" })).toBeEnabled()
+        );
+        await user.click(screen.getByRole("button", { name: "Confirm and send" }));
+        await waitFor(() => expect(closed).toBe(1));
+        expect(requested).toEqual(
+            Array.from({ length: 2 }, () => ({
+                id: draft.id,
+                version: 3,
+                contentHash: draft.contentHash,
+            }))
+        );
+    } finally {
+        cleanup();
+        request.mockRestore();
     }
 });
 

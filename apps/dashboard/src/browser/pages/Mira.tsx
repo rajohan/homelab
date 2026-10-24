@@ -1,6 +1,6 @@
 import { Button, Modal, PageHeader } from "@homelab/ui";
 import { useParams } from "@tanstack/react-router";
-import { Brain, Files } from "lucide-react";
+import { Brain, Files, Mail } from "lucide-react";
 import { useState } from "react";
 import * as v from "valibot";
 
@@ -8,6 +8,7 @@ import { ChatPanel } from "../features/mira/ChatPanel";
 import { ChatWelcome } from "../features/mira/ChatWelcome";
 import { ConversationList } from "../features/mira/ConversationList";
 import { FileLibrary } from "../features/mira/FileLibrary";
+import { MailLibrary } from "../features/mira/MailLibrary";
 import { MemoryLibrary } from "../features/mira/MemoryLibrary";
 
 /**
@@ -16,7 +17,7 @@ import { MemoryLibrary } from "../features/mira/MemoryLibrary";
  */
 export function Mira() {
     const [choosingConversation, setChoosingConversation] = useState(false);
-    const [library, setLibrary] = useState<"files" | "memory">();
+    const [library, setLibrary] = useState<"files" | "memory" | "mail">();
     const parsed = v.safeParse(
         v.object({ conversationId: v.optional(v.pipe(v.string(), v.uuid())) }),
         useParams({ strict: false })
@@ -32,6 +33,13 @@ export function Mira() {
                     description="Chat, plan work and keep your tasks and context together."
                     actions={
                         <>
+                            <Button
+                                variant="secondary"
+                                onClick={() => setLibrary("mail")}
+                            >
+                                <Mail size={16} aria-hidden="true" />
+                                Email drafts
+                            </Button>
                             <Button
                                 variant="secondary"
                                 onClick={() => setLibrary("memory")}
@@ -78,6 +86,12 @@ export function Mira() {
                         onSelect={() => setChoosingConversation(false)}
                     />
                 </Modal>
+            )}
+            {library === "mail" && (
+                <MailLibrary
+                    conversationId={conversationId}
+                    onClose={() => setLibrary(undefined)}
+                />
             )}
             {library === "files" && <FileLibrary onClose={() => setLibrary(undefined)} />}
             {library === "memory" && (
