@@ -40,3 +40,5 @@ task status separation, manual-versus-automatic admission, conversation recovery
 uncertain receipts and task deletion. Component coverage verifies that an uncertain
 submission preserves its request identity and input. The desktop/mobile preview
 uses synthetic responses and has no production or provider connection.
+
+Ordinary messages in a task-linked conversation use the same task admission lock and uncertainty gate as explicit task starts. They appear in task execution history and cannot overlap automatic work in another conversation. Review uncertain outcomes from the task dialog first. A conversation shared by multiple tasks must be split into separate task conversations before further work; the server does not guess which task owns a continuation. Identical request retries still return the original run.

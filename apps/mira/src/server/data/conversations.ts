@@ -16,6 +16,45 @@ import {
     type MiraContext,
     type MiraQuery,
 } from "./context";
+import { unreviewedTaskRun } from "./taskRecovery";
+
+// Conversation mutations already hold the conversation row. Use a nonblocking
+// task admission lock so a task start waiting for this row cannot deadlock us.
+async function linkedTaskForSend(
+    query: MiraQuery,
+    owner: string,
+    conversationId: string
+) {
+    const tasks = await query<
+        { id: string; assignee: string; status: string }[]
+    >`SELECT id, assignee, status FROM mira_tasks WHERE owner = ${owner} AND conversation_id = ${conversationId} AND deleted_at IS NULL ORDER BY id LIMIT 2 FOR SHARE`;
+    if (tasks.length > 1)
+        throw new MiraFailure(
+            "CONFLICT",
+            "This conversation is linked to multiple tasks. Link each task to a separate conversation before continuing."
+        );
+    const task = tasks[0];
+    if (!task) return;
+    const [lock] = await query<
+        { acquired: boolean }[]
+    >`SELECT pg_try_advisory_xact_lock(hashtextextended(${`mira:task:${owner}:${task.id}`}, 0)) AS acquired`;
+    if (!lock?.acquired)
+        throw new MiraFailure(
+            "CONFLICT",
+            "Task admission is busy. Retry after the current task action finishes."
+        );
+    if (task.assignee !== "mira" || task.status === "done")
+        throw new MiraFailure(
+            "PRECONDITION_FAILED",
+            "Assign the linked unfinished task to Mira before continuing, or start a separate conversation."
+        );
+    if (await unreviewedTaskRun(query, owner, task.id))
+        throw new MiraFailure(
+            "PRECONDITION_FAILED",
+            "Review the uncertain run on the linked task before continuing. Previous actions will not be replayed automatically."
+        );
+    return task.id;
+}
 
 /**
  * Search owned conversations and message content without leaking other accounts.
@@ -133,6 +172,19 @@ export async function enqueueTurn(
             );
         return { id: existing.id };
     }
+    if (source.taskId) {
+        const otherLinks = await query<
+            { id: string }[]
+        >`SELECT id FROM mira_tasks WHERE owner = ${context.owner} AND conversation_id = ${input.conversationId} AND deleted_at IS NULL AND id <> ${source.taskId} LIMIT 1`;
+        if (otherLinks.length > 0)
+            throw new MiraFailure(
+                "CONFLICT",
+                "This conversation is linked to multiple tasks. Link each task to a separate conversation before continuing."
+            );
+    }
+    const taskId =
+        source.taskId ??
+        (await linkedTaskForSend(query, context.owner, input.conversationId));
     const active = await query<
         { id: string }[]
     >`SELECT id FROM mira_runs WHERE conversation_id = ${input.conversationId} AND state IN ('queued','running')`;
@@ -141,11 +193,11 @@ export async function enqueueTurn(
             "CONFLICT",
             "Wait for the current reply or stop it before sending another message."
         );
-    if (source.taskId) {
-        await requireTask(query, context.owner, source.taskId);
+    if (taskId) {
+        await requireTask(query, context.owner, taskId);
         const busyTask = await query<
             { id: string }[]
-        >`SELECT id FROM mira_runs WHERE task_id = ${source.taskId} AND owner = ${context.owner} AND state IN ('queued','running') LIMIT 1`;
+        >`SELECT id FROM mira_runs WHERE task_id = ${taskId} AND owner = ${context.owner} AND state IN ('queued','running') LIMIT 1`;
         if (busyTask.length > 0)
             throw new MiraFailure(
                 "CONFLICT",
@@ -169,7 +221,7 @@ export async function enqueueTurn(
         userMessage = Bun.randomUUIDv7(),
         assistantMessage = Bun.randomUUIDv7();
     await query`INSERT INTO mira_messages (id, conversation_id, role, content, state, attachment_ids) VALUES (${userMessage}, ${input.conversationId}, 'user', ${input.text}, 'completed', ${JSON.stringify(input.attachmentIds)}::text::jsonb), (${assistantMessage}, ${input.conversationId}, 'assistant', '', 'queued', '[]'::jsonb)`;
-    await query`INSERT INTO mira_runs (id, owner, request_key, request_hash, conversation_id, user_message_id, assistant_message_id, automation_id, task_id, state, priority, budget_seconds, manual, settings) VALUES (${id}, ${context.owner}, ${requestKey}, ${hash}, ${input.conversationId}, ${userMessage}, ${assistantMessage}, ${source.automationId ?? null}, ${source.taskId ?? null}, 'queued', ${manual ? 100 : 0}, ${source.budgetSeconds ?? 300}, ${manual}, ${JSON.stringify(conversation.settings)}::text::jsonb)`;
+    await query`INSERT INTO mira_runs (id, owner, request_key, request_hash, conversation_id, user_message_id, assistant_message_id, automation_id, task_id, state, priority, budget_seconds, manual, settings) VALUES (${id}, ${context.owner}, ${requestKey}, ${hash}, ${input.conversationId}, ${userMessage}, ${assistantMessage}, ${source.automationId ?? null}, ${taskId ?? null}, 'queued', ${manual ? 100 : 0}, ${source.budgetSeconds ?? 300}, ${manual}, ${JSON.stringify(conversation.settings)}::text::jsonb)`;
     await query`UPDATE mira_conversations SET version = version + 1, updated_at = now() WHERE id = ${input.conversationId}`;
     await auditMira(query, context, "run.queued", id);
     return { id };
