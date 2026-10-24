@@ -7,6 +7,7 @@ import {
     type miraEnableSchema,
 } from "@homelab/contracts/mira";
 import { nextScheduleOccurrence } from "@homelab/scheduling";
+import type { SQL } from "bun";
 import * as v from "valibot";
 
 import { auditMira, MiraFailure, type MiraContext, type MiraQuery } from "./context";
@@ -207,21 +208,32 @@ export async function setMiraEnabled(
  * Resume elapsed deliberate pauses and move recurring schedules into the future.
  * @param query - Scheduler transaction, serialized with control mutations.
  * @param now - Scheduler clock.
+ * @param owner - Optional account filter for a verified event transaction.
  * @returns Completion without replaying missed invocations.
  */
-export async function resumeMiraControls(query: MiraQuery, now: Date): Promise<void> {
-    const rows = await query<
-        { owner: string; key: string }[]
-    >`SELECT owner, key FROM mira_switches WHERE NOT enabled AND until <= ${now} FOR UPDATE SKIP LOCKED`;
-    for (const row of rows) {
-        await query`UPDATE mira_switches SET enabled = true, reason = NULL, until = NULL, version = version + 1, changed_at = now() WHERE owner = ${row.owner} AND key = ${row.key}`;
-        await resetOccurrences(query, row.owner, row.key, now.getTime());
-        await auditMira(
-            query,
-            { owner: row.owner, actor: "mira:scheduler" },
-            "control.resumed",
-            row.key
-        );
+export async function resumeMiraControls(
+    query: MiraQuery,
+    now: Date,
+    owner?: string
+): Promise<void> {
+    const owners = await query<
+        { owner: string }[]
+    >`SELECT DISTINCT owner FROM mira_switches WHERE NOT enabled AND until <= ${now} AND (${owner ?? null}::text IS NULL OR owner = ${owner ?? null}) ORDER BY owner`;
+    for (const account of owners) {
+        await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${account.owner}`}, 0))`;
+        const rows = await query<
+            { owner: string; key: string }[]
+        >`SELECT owner, key FROM mira_switches WHERE owner = ${account.owner} AND NOT enabled AND until <= ${now} FOR UPDATE`;
+        for (const row of rows) {
+            await query`UPDATE mira_switches SET enabled = true, reason = NULL, changed_at = until, until = NULL, version = version + 1 WHERE owner = ${row.owner} AND key = ${row.key}`;
+            await resetOccurrences(query, row.owner, row.key, now.getTime());
+            await auditMira(
+                query,
+                { owner: row.owner, actor: "mira:scheduler" },
+                "control.resumed",
+                row.key
+            );
+        }
     }
 }
 
@@ -261,4 +273,20 @@ export async function miraDependenciesAllowed(
         { allowed: boolean }[]
     >`SELECT (schedule->>'event' IS DISTINCT FROM 'agentmail' OR EXISTS (SELECT 1 FROM mira_switches WHERE owner = ${owner} AND key = 'integration:agentmail' AND enabled)) AS allowed FROM mira_automations WHERE id = ${automationId} AND owner = ${owner} AND deleted_at IS NULL`;
     return row?.allowed === true;
+}
+
+/**
+ * Apply elapsed pause deadlines independently of inference-provider availability.
+ * @param client - Product database pool; this operation never queues or starts model work.
+ * @param now - Reconciliation clock, injectable for deterministic recovery tests.
+ * @returns Completion after expired controls and their next occurrences are committed.
+ */
+export async function reconcileMiraControls(
+    client: SQL,
+    now = new Date()
+): Promise<void> {
+    await client.begin(async (query) => {
+        await query`SELECT pg_advisory_xact_lock(hashtextextended('homelab:mira:scheduler', 0))`;
+        await resumeMiraControls(query, now);
+    });
 }

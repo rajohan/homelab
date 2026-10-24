@@ -279,6 +279,18 @@ export async function deleteMiraFile(
     const root = await miraFileDirectory(directory);
     await context.client.begin(async (query) => {
         await query`SELECT pg_advisory_xact_lock(hashtextextended('homelab:mira:files', 0))`;
+        const [file] = await query<
+            { id: string }[]
+        >`SELECT id FROM mira_attachments WHERE id = ${id} AND owner = ${context.owner} FOR UPDATE`;
+        if (!file) throw new MiraFailure("NOT_FOUND", "File not found.");
+        const active = await query<
+            { id: string }[]
+        >`SELECT r.id FROM mira_runs r JOIN mira_messages m ON m.conversation_id = r.conversation_id WHERE r.owner = ${context.owner} AND r.state IN ('queued','running') AND m.attachment_ids @> ${JSON.stringify([id])}::text::jsonb LIMIT 1`;
+        if (active.length > 0)
+            throw new MiraFailure(
+                "CONFLICT",
+                "Stop or finish the queued or running conversation before deleting this file."
+            );
         const rows = await query<
             { id: string }[]
         >`UPDATE mira_attachments SET deleted_at = coalesce(deleted_at,now()), name = 'Deleted file' WHERE id = ${id} AND owner = ${context.owner} RETURNING id`;
@@ -314,7 +326,7 @@ export async function cleanupMiraFiles(
         await query`SELECT pg_advisory_xact_lock(hashtextextended('homelab:mira:files', 0))`;
         const rows = await query<
             { id: string; owner: string }[]
-        >`SELECT id, owner FROM mira_attachments WHERE purged_at IS NULL AND (deleted_at IS NOT NULL OR (ready_at IS NULL AND created_at < now() - interval '1 day')) ORDER BY created_at LIMIT 20 FOR UPDATE SKIP LOCKED`;
+        >`SELECT id, owner FROM mira_attachments WHERE purged_at IS NULL AND (deleted_at IS NOT NULL OR (ready_at IS NULL AND created_at < now() - interval '1 day')) AND NOT EXISTS (SELECT 1 FROM mira_runs r JOIN mira_messages m ON m.conversation_id = r.conversation_id WHERE r.owner = mira_attachments.owner AND r.state IN ('queued','running') AND m.attachment_ids @> jsonb_build_array(mira_attachments.id::text)) ORDER BY created_at LIMIT 20 FOR UPDATE SKIP LOCKED`;
         for (const row of rows) {
             await removeFile(path.join(root, v.parse(idSchema, row.id)));
             await query`UPDATE mira_attachments SET deleted_at = coalesce(deleted_at,now()), purged_at = now(), sha256 = '', name = 'Deleted file' WHERE id = ${row.id}`;

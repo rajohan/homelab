@@ -1,6 +1,6 @@
 import type { TransactionSQL } from "bun";
 
-import { miraRunAllowed } from "./automations";
+import { miraRunAllowed, resumeMiraControls } from "./automations";
 import { miraQueueAvailable } from "./capacity";
 import { auditMira } from "./context";
 import { enqueueTurn } from "./conversations";
@@ -29,7 +29,10 @@ export async function recordMiraEvent(
         input.reference.length > 1000
     )
         throw new Error("Invalid Mira event reference.");
-    await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${input.owner}`}, 0))`;
+    if (input.kind === "agentmail") {
+        await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${input.owner}`}, 0))`;
+        await resumeMiraControls(query, new Date(), input.owner);
+    }
     const id = Bun.randomUUIDv7();
     const observedAt = input.observedAt ?? new Date();
     const inserted = await query<
