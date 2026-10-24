@@ -407,3 +407,40 @@ test("failed terminal tool receipts roll back product mutations and fence fresh-
         await fixture.close();
     }
 });
+
+test("concurrent read-only tools do not reserve transactions while waiting for product reads", async () => {
+    const fixture = await operationFixture();
+    const api = appRouter.createCaller({
+        operations: fixture,
+        principal: { kind: "human", id: "operator", capabilities },
+    }).mira;
+    try {
+        const chat = await api.conversations.create({ title: "Parallel reads" });
+        await api.conversations.send({
+            conversationId: chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Read synthetic state",
+        });
+        const run = await claimMiraRun(fixture.client, crypto.randomUUID(), "foreground");
+        if (!run) throw new Error("Expected run");
+        const tool = createMiraTools(fixture.client, run).find(
+            (tool) => tool.name === "mira_tasks_list"
+        )!;
+        const results = await Promise.all(
+            Array.from({ length: 8 }, (_, i) =>
+                tool.execute({ search: "" }, new AbortController().signal, {
+                    callId: `read-${i}`,
+                    threadId: "synthetic",
+                    turnId: "turn",
+                })
+            )
+        );
+        expect(results.every((result) => result.includes('"ok":true'))).toBe(true);
+        const [receipts] = await fixture.client<
+            { count: number }[]
+        >`SELECT count(*)::int AS count FROM mira_tool_receipts WHERE run_id=${run.id} AND state='succeeded'`;
+        expect(receipts?.count).toBe(8);
+    } finally {
+        await fixture.close();
+    }
+});

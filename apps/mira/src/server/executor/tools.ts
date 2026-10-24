@@ -8,7 +8,7 @@ import {
     miraTaskUpdateSchema,
 } from "@homelab/contracts/mira";
 import { idSchema } from "@homelab/contracts/operations";
-import type { SQL } from "bun";
+import type { SQL, TransactionSQL } from "bun";
 import * as v from "valibot";
 
 import { MiraFailure, type MiraContext } from "../data/context";
@@ -60,6 +60,7 @@ export function createMiraTools(
     let uncertain = false;
     const definitions: (Omit<RuntimeTool, "execute"> & {
         automatic: boolean;
+        transactional?: boolean;
         action: (
             input: unknown,
             signal: AbortSignal,
@@ -139,6 +140,7 @@ export function createMiraTools(
         },
         {
             name: "mira_task_create",
+            transactional: true,
             description:
                 "Create a task the operator requested. Assignment alone does not start execution.",
             inputSchema: object(taskProperties, Object.keys(taskProperties)),
@@ -148,6 +150,7 @@ export function createMiraTools(
         },
         {
             name: "mira_task_update",
+            transactional: true,
             description:
                 "Update an existing task using the current version returned by task search.",
             inputSchema: object(
@@ -160,6 +163,7 @@ export function createMiraTools(
         },
         {
             name: "mira_task_progress",
+            transactional: true,
             description: "Record factual progress on an owned task.",
             inputSchema: object({ taskId: uuid, text: string }, ["taskId", "text"]),
             automatic: false,
@@ -181,6 +185,7 @@ export function createMiraTools(
         },
         {
             name: "mira_report_create",
+            transactional: true,
             description:
                 "Save a factual report with available evidence, unavailable sources and the actual outcome. Do not invent an all-clear.",
             inputSchema: object(
@@ -206,6 +211,7 @@ export function createMiraTools(
         },
         {
             name: "mira_memory_create",
+            transactional: true,
             description:
                 "Remember a preference or fact only when the operator explicitly asks. Do not store secrets.",
             inputSchema: object({ title: string, content: string }, ["title", "content"]),
@@ -239,7 +245,7 @@ export function createMiraTools(
             },
         },
     ];
-    return definitions.map(({ action, automatic, ...definition }) => ({
+    return definitions.map(({ action, automatic, transactional, ...definition }) => ({
         ...definition,
         execute: async (input, signal, call) => {
             signal.throwIfAborted();
@@ -270,14 +276,16 @@ export function createMiraTools(
                         "This action was already attempted or the run no longer owns its lease. It was not replayed.",
                 });
             try {
-                return await client.begin(async (query) => {
+                const invoke = async (query?: TransactionSQL) => {
                     signal.throwIfAborted();
-                    const result = await action(input, signal, {
-                        ...context,
-                        transaction: query,
-                    });
+                    const result = await action(
+                        input,
+                        signal,
+                        query ? { ...context, transaction: query } : context
+                    );
                     signal.throwIfAborted();
-                    const saved = await query<
+                    const connection = query ?? client;
+                    const saved = await connection<
                         { id: string }[]
                     >`UPDATE mira_tool_receipts SET state='succeeded', finished_at=now() WHERE id=${receipt} AND state='running' AND EXISTS (SELECT 1 FROM mira_runs WHERE id=${run.id} AND state='running' AND NOT cancel_requested AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp()) RETURNING id`;
                     if (!saved[0])
@@ -286,7 +294,10 @@ export function createMiraTools(
                             "The action lost its execution lease and was rolled back."
                         );
                     return JSON.stringify({ ok: true, result });
-                });
+                };
+                return transactional
+                    ? await client.begin((query) => invoke(query))
+                    : await invoke();
             } catch (error) {
                 const known =
                     error instanceof MiraFailure || error instanceof v.ValiError;
