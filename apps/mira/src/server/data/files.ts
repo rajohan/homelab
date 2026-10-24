@@ -179,7 +179,8 @@ export async function readMiraFile(
     id: string
 ): Promise<{ metadata: MiraAttachment; bytes: Uint8Array }> {
     v.parse(idSchema, id);
-    const [metadata] = await context.client<
+    const query = context.transaction ?? context.client;
+    const [metadata] = await query<
         (MiraAttachment & { sha256: string })[]
     >`SELECT id, name, media_type AS "mediaType", bytes, created_at::text AS "createdAt", sha256 FROM mira_attachments WHERE id = ${id} AND owner = ${context.owner} AND deleted_at IS NULL AND ready_at IS NOT NULL`;
     if (!metadata) throw new MiraFailure("NOT_FOUND", "File not found.");

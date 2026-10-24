@@ -2,13 +2,14 @@ import type { MiraMailDraft } from "@homelab/contracts/miraMail";
 import {
     ActionGroup,
     Badge,
+    buttonStyles,
     Button,
     Card,
     ErrorNotice,
     Modal,
     SectionHeader,
 } from "@homelab/ui";
-import { Mail, Send } from "lucide-react";
+import { Mail, Send, Paperclip } from "lucide-react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
@@ -61,6 +62,31 @@ export function MailReview({
                             {draft.content.bcc.join(", ") || "None"}
                         </dd>
                     </dl>
+                    {(draft.content.attachments?.length ?? 0) > 0 && (
+                        <div className="space-y-2 border-t border-primary-700 pt-4">
+                            <SectionHeader title="Attachments" icon={Paperclip} />
+                            {draft.content.attachments!.map((file) => (
+                                <div
+                                    key={file.id}
+                                    className="flex flex-wrap items-center gap-2 text-sm"
+                                >
+                                    <span className="min-w-0 flex-1 wrap-anywhere">
+                                        {file.name}{" "}
+                                        <span className="text-primary-400">
+                                            ({(file.bytes / 1024).toFixed(1)} KiB)
+                                        </span>
+                                    </span>
+                                    <a
+                                        href={`/api/mira/files/${file.id}`}
+                                        className={buttonStyles({ variant: "secondary" })}
+                                        download={file.name}
+                                    >
+                                        Download
+                                    </a>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                     <div className="border-t border-primary-700 pt-4 text-sm wrap-anywhere whitespace-pre-wrap">
                         {draft.content.text}
                     </div>
