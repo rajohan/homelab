@@ -1391,3 +1391,38 @@ test("report observations change notification fingerprints without self-generate
         await fixture.close();
     }
 });
+
+test("heartbeat observations retain completed-task edits and control resume deadlines", async () => {
+    const fixture = await operationFixture();
+    try {
+        const fingerprint = () =>
+            fixture.client.begin((query) =>
+                miraObservationFingerprint(
+                    query,
+                    "operator",
+                    "00000000-0000-4000-8000-000000000000"
+                )
+            );
+        const taskId = crypto.randomUUID();
+        await fixture.client`INSERT INTO mira_tasks(id,owner,title,description,status,assignee,priority,completion_criteria) VALUES (${taskId},'operator','Completed task','','done','operator','normal','Finished')`;
+        const completed = await fingerprint();
+        await fixture.client`UPDATE mira_tasks SET title='Corrected completion details',version=version+1 WHERE id=${taskId}`;
+        expect(await fingerprint()).not.toBe(completed);
+        await fixture.client`INSERT INTO mira_switches(owner,key,enabled,reason,until) VALUES ('operator','integration:daytona',false,'Planned pause',now()+interval '1 day')`;
+        const paused = await fingerprint();
+        await fixture.client`UPDATE mira_switches SET until=until+interval '1 hour',version=version+1 WHERE owner='operator' AND key='integration:daytona'`;
+        const extended = await fingerprint();
+        expect(extended).not.toBe(paused);
+        expect(await fingerprint()).toBe(extended);
+        const automation = crypto.randomUUID();
+        await fixture.client`INSERT INTO mira_automations(id,owner,title,prompt,kind,delivery,budget_seconds,schedule) VALUES (${automation},'operator','Before rename','Observe','heartbeat','changes',60,'{}'::jsonb)`;
+        await fixture.client`INSERT INTO mira_switches(owner,key,enabled,reason) VALUES ('operator',${"automation:" + automation},false,'Paused')`;
+        const beforeRename = await fingerprint();
+        await fixture.client`UPDATE mira_automations SET title='Renamed automation',version=version+1 WHERE id=${automation}`;
+        expect(await fingerprint()).not.toBe(beforeRename);
+        await fixture.client`UPDATE mira_automations SET deleted_at=now() WHERE id=${automation}`;
+        expect(await fingerprint()).toBe(extended);
+    } finally {
+        await fixture.close();
+    }
+});

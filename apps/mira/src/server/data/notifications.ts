@@ -17,7 +17,7 @@ export async function miraObservationFingerprint(
 ): Promise<string> {
     const tasks = await query<
         Record<string, unknown>[]
-    >`SELECT id, version, due_at <= now() AS due FROM mira_tasks WHERE owner = ${owner} AND deleted_at IS NULL AND status <> 'done' ORDER BY id`;
+    >`SELECT id, version, status <> 'done' AND due_at <= now() AS due FROM mira_tasks WHERE owner = ${owner} AND deleted_at IS NULL ORDER BY id`;
     const progress = await query<
         Record<string, unknown>[]
     >`SELECT t.id,(SELECT p.id FROM mira_progress p WHERE p.task_id=t.id ORDER BY p.id DESC LIMIT 1) AS progress FROM mira_tasks t WHERE t.owner=${owner} AND t.deleted_at IS NULL ORDER BY t.id`;
@@ -26,7 +26,7 @@ export async function miraObservationFingerprint(
     >`SELECT id, version FROM mira_memory WHERE owner = ${owner} ORDER BY id`;
     const controls = await query<
         Record<string, unknown>[]
-    >`SELECT key, enabled, reason FROM mira_switches WHERE owner = ${owner} ORDER BY key`;
+    >`SELECT s.key,s.enabled,s.reason,s.until,a.title AS automation FROM mira_switches s LEFT JOIN mira_automations a ON s.key='automation:'||a.id::text AND a.owner=s.owner WHERE s.owner=${owner} AND (s.key NOT LIKE 'automation:%' OR (a.id IS NOT NULL AND a.deleted_at IS NULL)) ORDER BY s.key`;
     const reports = await query<
         Record<string, unknown>[]
     >`SELECT p.id,p.version,p.archived_at FROM mira_reports p LEFT JOIN mira_runs r ON r.id=p.run_id AND r.owner=p.owner WHERE p.owner=${owner} AND p.deleted_at IS NULL AND p.run_id IS DISTINCT FROM ${runId}::uuid AND (r.automation_id IS NULL OR r.automation_id IS DISTINCT FROM (SELECT automation_id FROM mira_runs WHERE id=${runId} AND owner=${owner})) ORDER BY p.id DESC LIMIT 30`;
