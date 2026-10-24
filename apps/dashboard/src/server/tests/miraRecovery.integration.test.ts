@@ -1,6 +1,15 @@
 import { expect, test } from "bun:test";
 import { rejects } from "node:assert/strict";
-import { mkdir, mkdtemp, readdir, rm, utimes, writeFile } from "node:fs/promises";
+import {
+    chmod,
+    mkdir,
+    mkdtemp,
+    readdir,
+    readFile,
+    rm,
+    utimes,
+    writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -14,6 +23,8 @@ import {
     cleanupMiraResources,
 } from "../../../../mira/src/server/executor/cleanup";
 import { readMiraTurnInput } from "../../../../mira/src/server/executor/context";
+import { createMiraTools } from "../../../../mira/src/server/executor/tools";
+import { executeMiraTurn } from "../../../../mira/src/server/executor/turn";
 import { appRouter } from "../api/router";
 import { operationFixture } from "../testing/operations";
 
@@ -264,6 +275,134 @@ test("replacement provider threads recover failed-turn context without mixing ow
         await fixture.client`UPDATE mira_conversations SET provider_thread='already-resumed' WHERE id=${chat.id}`;
         const resumed = await readMiraTurnInput(fixture.client, retry);
         expect(resumed.content).toBe("Try again");
+    } finally {
+        await fixture.close();
+    }
+});
+
+test("maximum run time cancels a stalled runtime setup before the inference timeout starts", async () => {
+    const fixture = await operationFixture();
+    const directory = await mkdtemp(path.join(tmpdir(), "mira-deadline-"));
+    const api = appRouter.createCaller({
+        operations: fixture,
+        principal: { kind: "human", id: "operator", capabilities },
+    }).mira;
+    try {
+        const command = path.join(directory, "synthetic-codex");
+        const marker = path.join(directory, "started");
+        const home = path.join(directory, "home"),
+            workspace = path.join(directory, "workspace");
+        await mkdir(home);
+        await mkdir(workspace);
+        await writeFile(
+            command,
+            `#!/usr/bin/env bun\nawait Bun.write(${JSON.stringify(marker)},'started');\nsetInterval(()=>{},1000);\n`
+        );
+        await chmod(command, 0o700);
+        const chat = await api.conversations.create({ title: "Deadline qualification" });
+        await api.conversations.send({
+            conversationId: chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Synthetic",
+        });
+        const claimed = await claimMiraRun(
+            fixture.client,
+            crypto.randomUUID(),
+            "foreground"
+        );
+        if (!claimed) throw new Error("Expected run");
+        const started = Date.now();
+        await executeMiraTurn(
+            fixture.client,
+            { command, codexHome: home, workspace },
+            { ...claimed, deadlineAt: started + 300 },
+            new AbortController().signal
+        );
+        expect(Date.now() - started).toBeLessThan(2000);
+        expect(await readFile(marker, "utf8")).toBe("started");
+        const runs = await api.runs.list({ search: "", archived: false });
+        expect(runs.rows[0]?.state).toBe("needs_attention");
+        expect(runs.rows[0]?.message).toContain("Maximum run time");
+    } finally {
+        await fixture.close();
+        await rm(directory, { recursive: true, force: true });
+    }
+});
+
+test("failed terminal tool receipts roll back product mutations and fence fresh-call retries", async () => {
+    const fixture = await operationFixture();
+    const api = appRouter.createCaller({
+        operations: fixture,
+        principal: { kind: "human", id: "operator", capabilities },
+    }).mira;
+    try {
+        const taskInput = {
+            title: "Synthetic",
+            description: "Data",
+            status: "todo" as const,
+            assignee: "mira" as const,
+            priority: "normal" as const,
+            labels: [],
+            dueAt: null,
+            completionCriteria: "Review",
+            conversationId: null,
+        };
+        const task = await api.tasks.create(taskInput);
+        await fixture.client`CREATE FUNCTION fail_tool_receipt() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN IF NEW.state='succeeded' THEN RAISE EXCEPTION 'Synthetic receipt failure'; END IF; RETURN NEW; END$$`;
+        await fixture.client`CREATE TRIGGER fail_tool_receipt BEFORE UPDATE ON mira_tool_receipts FOR EACH ROW EXECUTE FUNCTION fail_tool_receipt()`;
+        const counts = async () =>
+            fixture.client<
+                { tasks: number; progress: number; reports: number; memory: number }[]
+            >`SELECT (SELECT count(*)::int FROM mira_tasks) AS tasks,(SELECT count(*)::int FROM mira_progress) AS progress,(SELECT count(*)::int FROM mira_reports) AS reports,(SELECT count(*)::int FROM mira_memory) AS memory`;
+        for (const [name, input] of [
+            ["mira_task_create", taskInput],
+            ["mira_task_progress", { taskId: task.id, text: "Synthetic progress" }],
+            [
+                "mira_report_create",
+                { title: "Synthetic report", kind: "other", markdown: "Data" },
+            ],
+            ["mira_memory_create", { title: "Synthetic memory", content: "Data" }],
+        ] as const) {
+            const chat = await api.conversations.create({ title: "Atomic receipt" });
+            await api.conversations.send({
+                conversationId: chat.id,
+                requestId: crypto.randomUUID(),
+                text: "Synthetic product mutation",
+            });
+            const run = await claimMiraRun(
+                fixture.client,
+                crypto.randomUUID(),
+                "foreground"
+            );
+            if (!run) throw new Error("Expected run");
+            const tool = createMiraTools(fixture.client, run).find(
+                (tool) => tool.name === name
+            )!;
+            const before = await counts();
+            const result = await tool.execute(input, new AbortController().signal, {
+                callId: "first",
+                threadId: "synthetic",
+                turnId: "turn",
+            });
+            expect(result).toContain("uncertain");
+            expect(await counts()).toEqual(before);
+            const retry = await tool.execute(input, new AbortController().signal, {
+                callId: "fresh-retry",
+                threadId: "synthetic",
+                turnId: "turn",
+            });
+            expect(retry).toContain("Stop and review");
+            expect(await counts()).toEqual(before);
+            await finishMiraRun(fixture.client, run, {
+                state: "completed",
+                text: "Synthetic",
+                message: null,
+            });
+            const [terminal] = await fixture.client<
+                { state: string; pending: number }[]
+            >`SELECT state,(SELECT count(*)::int FROM mira_tool_receipts WHERE run_id=${run.id} AND state='running') AS pending FROM mira_runs WHERE id=${run.id}`;
+            expect(terminal).toEqual({ state: "needs_attention", pending: 0 });
+        }
     } finally {
         await fixture.close();
     }

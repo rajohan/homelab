@@ -11,6 +11,7 @@ export const agentMailMessageSchema = v.object({
     message_id: agentMailIdSchema,
     thread_id: agentMailIdSchema,
     timestamp: v.pipe(v.string(), v.isoTimestamp()),
+    created_at: v.pipe(v.string(), v.isoTimestamp()),
     labels: v.pipe(v.array(v.pipe(v.string(), v.maxLength(100))), v.maxLength(100)),
     from: v.pipe(v.string(), v.maxLength(1000)),
     subject: v.optional(v.pipe(v.string(), v.maxLength(5000)), ""),

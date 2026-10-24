@@ -524,3 +524,72 @@ test("due-task discovery yields to a human task start before acquiring task row 
         await fixture.close();
     }
 });
+
+test("event dispatch waits for edited instructions instead of snapshotting an unlocked automation", async () => {
+    const fixture = await operationFixture();
+    const api = appRouter.createCaller({
+        operations: fixture,
+        principal: { kind: "human", id: "operator", capabilities },
+    }).mira;
+    const held = Promise.withResolvers<void>(),
+        release = Promise.withResolvers<void>();
+    let editing: Promise<void> | undefined;
+    try {
+        const automation = await api.automations.create({
+            title: "Old title",
+            prompt: "Old instruction",
+            kind: "custom",
+            schedule: { kind: "event", event: "task_due" },
+            budgetSeconds: 60,
+        });
+        await api.controls.setEnabled({
+            key: `automation:${automation.id}`,
+            version: 1,
+            enabled: true,
+            reason: null,
+            until: null,
+        });
+        const task = await api.tasks.create({
+            title: "Due",
+            description: "Synthetic",
+            status: "todo",
+            assignee: "mira",
+            priority: "normal",
+            labels: [],
+            dueAt: new Date(Date.now() - 1000).toISOString(),
+            completionCriteria: "Review",
+            conversationId: null,
+        });
+        const [row] = await fixture.client<
+            { due: string }[]
+        >`SELECT due_at::text AS due FROM mira_tasks WHERE id=${task.id}`;
+        await fixture.client.begin((query) =>
+            recordMiraEvent(query, {
+                owner: "operator",
+                kind: "task_due",
+                key: `${task.id}:${row!.due}`,
+                reference: task.id,
+                taskId: task.id,
+            })
+        );
+        editing = fixture.client.begin(async (query) => {
+            await query`UPDATE mira_automations SET title='New title',prompt='New instruction',budget_seconds=120 WHERE id=${automation.id}`;
+            held.resolve();
+            await release.promise;
+        });
+        await held.promise;
+        expect(await scheduleMiraRuns(fixture.client)).toBe(0);
+        release.resolve();
+        await editing;
+        expect(await scheduleMiraRuns(fixture.client)).toBe(1);
+        const [dispatched] = await fixture.client<
+            { title: string; content: string; budget: number }[]
+        >`SELECT c.title,m.content,r.budget_seconds AS budget FROM mira_runs r JOIN mira_conversations c ON c.id=r.conversation_id JOIN mira_messages m ON m.id=r.user_message_id WHERE r.automation_id=${automation.id}`;
+        expect(dispatched).toMatchObject({ title: "New title", budget: 120 });
+        expect(dispatched?.content).toStartWith("New instruction");
+    } finally {
+        release.resolve();
+        await editing;
+        await fixture.close();
+    }
+});

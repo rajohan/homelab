@@ -13,7 +13,7 @@ const receivedSchema = v.object({
     message: v.object({
         inbox_id: agentMailIdSchema,
         message_id: agentMailIdSchema,
-        timestamp: v.pipe(v.string(), v.isoTimestamp()),
+        created_at: v.pipe(v.string(), v.isoTimestamp()),
     }),
 });
 
@@ -99,7 +99,7 @@ export function verifyAgentMailWebhook(
     return event.message.inbox_id === configuration.inboxId
         ? {
               messageId: event.message.message_id,
-              observedAt: new Date(event.message.timestamp),
+              observedAt: new Date(event.message.created_at),
           }
         : null;
 }

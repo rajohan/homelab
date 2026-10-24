@@ -61,9 +61,14 @@ export function createMiraTools(
         actor: `mira:${run.id}`,
         run: { id: run.id, leaseToken: run.leaseToken },
     };
+    let uncertain = false;
     const definitions: (Omit<RuntimeTool, "execute"> & {
         automatic: boolean;
-        action: (input: unknown, signal: AbortSignal) => Promise<unknown>;
+        action: (
+            input: unknown,
+            signal: AbortSignal,
+            context: MiraContext
+        ) => Promise<unknown>;
     })[] = [
         {
             name: "mira_attachment_read",
@@ -142,7 +147,8 @@ export function createMiraTools(
                 "Create a task the operator requested. Assignment alone does not start execution.",
             inputSchema: object(taskProperties, Object.keys(taskProperties)),
             automatic: false,
-            action: (input) => saveTask(context, v.parse(miraTaskInputSchema, input)),
+            action: (input, _signal, scoped) =>
+                saveTask(scoped, v.parse(miraTaskInputSchema, input)),
         },
         {
             name: "mira_task_update",
@@ -153,16 +159,17 @@ export function createMiraTools(
                 [...Object.keys(taskProperties), "id", "version"]
             ),
             automatic: false,
-            action: (input) => saveTask(context, v.parse(miraTaskUpdateSchema, input)),
+            action: (input, _signal, scoped) =>
+                saveTask(scoped, v.parse(miraTaskUpdateSchema, input)),
         },
         {
             name: "mira_task_progress",
             description: "Record factual progress on an owned task.",
             inputSchema: object({ taskId: uuid, text: string }, ["taskId", "text"]),
             automatic: false,
-            action: (input) => {
+            action: (input, _signal, scoped) => {
                 const parsed = v.parse(miraProgressInputSchema, input);
-                return addTaskProgress(context, parsed.taskId, parsed.text);
+                return addTaskProgress(scoped, parsed.taskId, parsed.text);
             },
         },
         {
@@ -190,8 +197,8 @@ export function createMiraTools(
                 ["title", "kind", "markdown"]
             ),
             automatic: true,
-            action: (input) =>
-                createReport(context, v.parse(miraReportInputSchema, input), run.id),
+            action: (input, _signal, scoped) =>
+                createReport(scoped, v.parse(miraReportInputSchema, input), run.id),
         },
         {
             name: "mira_memory_list",
@@ -207,7 +214,8 @@ export function createMiraTools(
                 "Remember a preference or fact only when the operator explicitly asks. Do not store secrets.",
             inputSchema: object({ title: string, content: string }, ["title", "content"]),
             automatic: false,
-            action: (input) => saveMemory(context, v.parse(miraMemoryInputSchema, input)),
+            action: (input, _signal, scoped) =>
+                saveMemory(scoped, v.parse(miraMemoryInputSchema, input)),
         },
         {
             name: "mira_dashboard_state",
@@ -240,6 +248,13 @@ export function createMiraTools(
         ...definition,
         execute: async (input, signal, call) => {
             signal.throwIfAborted();
+            if (uncertain)
+                return JSON.stringify({
+                    ok: false,
+                    retryable: false,
+                    message:
+                        "An earlier action has an uncertain outcome. Stop and review this run before continuing.",
+                });
             if (run.automationId && !automatic)
                 return JSON.stringify({
                     ok: false,
@@ -260,17 +275,44 @@ export function createMiraTools(
                         "This action was already attempted or the run no longer owns its lease. It was not replayed.",
                 });
             try {
-                signal.throwIfAborted();
-                const result = await action(input, signal);
-                await client`UPDATE mira_tool_receipts SET state = 'succeeded', finished_at = now() WHERE id = ${receipt} AND state = 'running'`;
-                return JSON.stringify({ ok: true, result });
+                return await client.begin(async (query) => {
+                    signal.throwIfAborted();
+                    const result = await action(input, signal, {
+                        ...context,
+                        transaction: query,
+                    });
+                    signal.throwIfAborted();
+                    const saved = await query<
+                        { id: string }[]
+                    >`UPDATE mira_tool_receipts SET state='succeeded', finished_at=now() WHERE id=${receipt} AND state='running' AND EXISTS (SELECT 1 FROM mira_runs WHERE id=${run.id} AND state='running' AND NOT cancel_requested AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp()) RETURNING id`;
+                    if (!saved[0])
+                        throw new MiraFailure(
+                            "CONFLICT",
+                            "The action lost its execution lease and was rolled back."
+                        );
+                    return JSON.stringify({ ok: true, result });
+                });
             } catch (error) {
-                const message =
-                    error instanceof MiraFailure
-                        ? error.message
-                        : "The action did not complete. Review the current record before retrying.";
-                await client`UPDATE mira_tool_receipts SET state = 'failed', message = ${message}, finished_at = now() WHERE id = ${receipt} AND state = 'running'`;
-                return JSON.stringify({ ok: false, message });
+                const known =
+                    error instanceof MiraFailure || error instanceof v.ValiError;
+                uncertain = !known;
+                let message =
+                    "The action outcome is uncertain. Do not retry; review this run before continuing.";
+                if (error instanceof MiraFailure) message = error.message;
+                else if (known)
+                    message = "The tool input was invalid; no change was committed.";
+                try {
+                    await client`UPDATE mira_tool_receipts SET state=${known ? "failed" : "unknown"}, message=${message}, finished_at=now() WHERE id=${receipt} AND state='running'`;
+                } catch {
+                    uncertain = true;
+                }
+                return JSON.stringify({
+                    ok: false,
+                    retryable: !uncertain,
+                    message: uncertain
+                        ? "The action outcome is uncertain. Do not retry; review this run before continuing."
+                        : message,
+                });
             }
         },
     }));

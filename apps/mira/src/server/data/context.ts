@@ -2,11 +2,27 @@ import type { SQL, TransactionSQL } from "bun";
 
 export interface MiraContext {
     readonly client: SQL;
+    readonly transaction?: TransactionSQL;
     readonly owner: string;
     readonly actor: string;
     readonly run?: { readonly id: string; readonly leaseToken: string };
 }
 export type MiraQuery = SQL | TransactionSQL;
+
+/**
+ * Join an enclosing tool transaction or create the ordinary product mutation transaction.
+ * @param context - Owned product context with an optional receipt transaction.
+ * @param operation - Mutation and audit work that must commit together.
+ * @returns The operation result after its owning transaction commits.
+ */
+export async function miraTransaction<T>(
+    context: MiraContext,
+    operation: (query: TransactionSQL) => Promise<T>
+): Promise<T> {
+    return context.transaction
+        ? operation(context.transaction)
+        : context.client.begin(operation);
+}
 
 /** A deliberately public domain error without provider, database or file details. */
 export class MiraFailure extends Error {
@@ -45,7 +61,7 @@ export async function auditMira(
     if (context.run) {
         const rows = await query<
             { id: string }[]
-        >`SELECT id FROM mira_runs WHERE id = ${context.run.id} AND owner = ${context.owner} AND lease_token = ${context.run.leaseToken} AND state = 'running' AND NOT cancel_requested AND lease_expires_at > now() FOR UPDATE`;
+        >`SELECT id FROM mira_runs WHERE id = ${context.run.id} AND owner = ${context.owner} AND lease_token = ${context.run.leaseToken} AND state = 'running' AND NOT cancel_requested AND lease_expires_at > clock_timestamp() FOR UPDATE`;
         if (!rows[0])
             throw new MiraFailure(
                 "CONFLICT",

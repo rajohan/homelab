@@ -88,6 +88,41 @@ export class AgentMailReader {
     }
 
     /**
+     * Scan a bounded inbox page and select receipt times without relying on sender-date filters.
+     * @param input - Durable receipt window and optional pagination cursor.
+     * @param signal - Service cancellation.
+     * @returns Eligible receipt-window metadata and the next cursor, including across empty pages.
+     */
+    async recover(
+        input: { after: string; before: string; cursor?: string | undefined },
+        signal: AbortSignal
+    ) {
+        const query = new URLSearchParams({ limit: "100", labels: "received" });
+        if (input.cursor) query.set("page_token", input.cursor);
+        const page = v.parse(
+            agentMailMessagePageSchema,
+            await this.get("", query, signal)
+        );
+        if (
+            page.messages.some(
+                (message) => message.inbox_id !== this.configuration.inboxId
+            )
+        )
+            throw new Error("AgentMail returned a different inbox.");
+        const after = Date.parse(input.after),
+            before = Date.parse(input.before);
+        if (!Number.isFinite(after) || !Number.isFinite(before) || after > before)
+            throw new Error("Invalid recovery window.");
+        return {
+            ...page,
+            messages: page.messages.filter((message) => {
+                const at = Date.parse(message.created_at);
+                return at >= after && at <= before;
+            }),
+        };
+    }
+
+    /**
      * Fetch passive mail content; messages cannot grant tools, send authority or credentials.
      * @param messageId - Validated provider identifier within the configured inbox.
      * @param signal - Cancellation for the current product run.
