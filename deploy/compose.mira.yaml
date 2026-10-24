@@ -2,6 +2,7 @@
 services:
   dashboard:
     environment:
+      HOMELAB_DASHBOARD_DATABASE_URL:
       HOMELAB_MIRA_FILES_DIR: /var/lib/mira/files
     volumes:
       - type: bind

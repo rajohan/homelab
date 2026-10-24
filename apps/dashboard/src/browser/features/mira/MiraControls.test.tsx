@@ -1,6 +1,10 @@
 import { expect, spyOn, test } from "bun:test";
 
-import { miraDefaultChatSettings, miraModelSchema } from "@homelab/contracts/mira";
+import {
+    miraDefaultChatSettings,
+    miraModelSchema,
+    miraTaskUpdateSchema,
+} from "@homelab/contracts/mira";
 import type { MiraAttachment } from "@homelab/contracts/mira";
 import { IdentityClient } from "@homelab/ui/identity/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -20,6 +24,7 @@ import { ChatSettings } from "./ChatSettings";
 import { MiraRunTable } from "./MiraRunTable";
 import { ProposalReview } from "./ProposalReview";
 import { RunAutomationButton } from "./RunAutomationButton";
+import { TaskEditor } from "./TaskEditor";
 
 function UploadHarness({ onBusy }: { readonly onBusy: (busy: boolean) => void }) {
     const [files, setFiles] = useState<MiraAttachment[]>([]);
@@ -505,5 +510,77 @@ test("run history opens the selected old result and shows its uncertain tool rec
                 Object.defineProperty(HTMLElement.prototype, name, descriptor);
             else Reflect.deleteProperty(HTMLElement.prototype, name);
         }
+    }
+});
+
+test("existing task edits submit only writable fields accepted by the public schema", async () => {
+    const task = {
+        id: crypto.randomUUID(),
+        version: 3,
+        title: "Existing task",
+        description: "Retain this",
+        status: "todo" as const,
+        assignee: "mira" as const,
+        priority: "normal" as const,
+        labels: ["existing"],
+        dueAt: null,
+        completionCriteria: "Verified",
+        conversationId: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+    };
+    const submitted: unknown[] = [];
+    let closed = false;
+    const request = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+            (_input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+                if (typeof init?.body !== "string")
+                    throw new Error("Expected request body");
+                const body = JSON.parse(init.body) as { "0": { json: unknown } };
+                submitted.push(v.parse(miraTaskUpdateSchema, body["0"].json));
+                return Promise.resolve(
+                    Response.json([
+                        {
+                            result: {
+                                data: serialize({
+                                    ...task,
+                                    title: "Updated task",
+                                    version: 4,
+                                }),
+                            },
+                        },
+                    ])
+                );
+            },
+            { preconnect: fetch.preconnect }
+        )
+    );
+    const cleanup = fixture(
+        <TaskEditor
+            task={task}
+            onClose={() => {
+                closed = true;
+            }}
+        />
+    );
+    try {
+        const user = userEvent.setup();
+        await user.clear(screen.getByRole("textbox", { name: "Title" }));
+        await user.type(screen.getByRole("textbox", { name: "Title" }), "Updated task");
+        await user.click(screen.getByRole("button", { name: "Save task" }));
+        await waitFor(() => expect(closed).toBe(true));
+        expect(submitted).toHaveLength(1);
+        expect(submitted[0]).toMatchObject({
+            id: task.id,
+            version: 3,
+            title: "Updated task",
+            description: "Retain this",
+            labels: ["existing"],
+        });
+        expect(submitted[0]).not.toHaveProperty("createdAt");
+        expect(submitted[0]).not.toHaveProperty("updatedAt");
+    } finally {
+        cleanup();
+        request.mockRestore();
     }
 });

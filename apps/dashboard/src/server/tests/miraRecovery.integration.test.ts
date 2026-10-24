@@ -451,11 +451,13 @@ test("concurrent read-only tools do not reserve transactions while waiting for p
     }
 });
 
-test.each(["none", "cleanup", "inspection"])(
+test.each(["none", "cleanup", "inspection", "scheduler"])(
     "explicit models and coordinator remain available during blocked provider work (%s)",
     async (blockedWork) => {
         const blockedCleanup = blockedWork === "cleanup";
         const blockedInspection = blockedWork === "inspection";
+        const blockedScheduler = blockedWork === "scheduler";
+        let schedulerLock: Promise<void> | undefined;
         const fixture = await operationFixture();
         const directory = await mkdtemp(path.join(tmpdir(), "mira-default-model-"));
         const abort = new AbortController();
@@ -505,6 +507,19 @@ test.each(["none", "cleanup", "inspection"])(
             };
             if (blockedCleanup)
                 await fixture.client`INSERT INTO mira_conversations (id,owner,title,deleted_at,provider_thread) VALUES (${Bun.randomUUIDv7()},'operator','Deleted',now(),'slow-delete')`;
+            const occurrence = Bun.randomUUIDv7();
+            const at = new Date(Date.now() - 1000);
+            await fixture.client`INSERT INTO mira_automations(id,owner,title,prompt,kind,schedule,budget_seconds,next_run_at) VALUES (${occurrence},'operator','Default work','Synthetic','custom',${JSON.stringify({ kind: "once", at: at.toISOString() })}::text::jsonb,60,${at})`;
+            await fixture.client`INSERT INTO mira_switches(owner,key,enabled) VALUES ('operator',${`automation:${occurrence}`},true)`;
+            if (blockedScheduler) {
+                const locked = Promise.withResolvers<void>();
+                schedulerLock = fixture.client.begin(async (query) => {
+                    await query`SELECT pg_advisory_xact_lock(hashtextextended('homelab:mira:scheduler',0))`;
+                    locked.resolve();
+                    await released.promise;
+                });
+                await locked.promise;
+            }
             executor = runMiraExecutor({
                 client: fixture.client,
                 config: { command, codexHome: home, workspace, model: "removed-model" },
@@ -540,6 +555,14 @@ test.each(["none", "cleanup", "inspection"])(
             expect(catalog.fresh).toBe(true);
             expect(catalog.defaultModel).toBe("removed-model");
             expect(catalog.models.map((model) => model.model)).toContain("synthetic");
+            const defaultChat = await api.conversations.create({
+                title: "Waiting for configured model",
+            });
+            const defaultRun = await api.conversations.send({
+                conversationId: defaultChat.id,
+                requestId: crypto.randomUUID(),
+                text: "Keep queued until model is available",
+            });
             const chat = await api.conversations.create({
                 title: "Explicit surviving model",
             });
@@ -563,9 +586,19 @@ test.each(["none", "cleanup", "inspection"])(
                 await delay(20);
             }
             expect(state).toBe("completed");
+            const [waiting] = await fixture.client<
+                { state: string }[]
+            >`SELECT state FROM mira_runs WHERE id=${defaultRun.id}`;
+            expect(waiting?.state).toBe("queued");
+            const [retained] = await fixture.client<
+                { at: Date }[]
+            >`SELECT next_run_at AS at FROM mira_automations WHERE id=${occurrence}`;
+            expect(retained?.at.getTime()).toBe(at.getTime());
+            expect(Date.now() - health.heartbeatAt).toBeLessThan(5000);
         } finally {
             abort.abort();
             released.resolve();
+            await schedulerLock;
             await executor;
             cleanup?.mockRestore();
             inspection?.mockRestore();

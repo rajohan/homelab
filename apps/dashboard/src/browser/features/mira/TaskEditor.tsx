@@ -30,19 +30,30 @@ export function TaskEditor({
     readonly task?: MiraTask | undefined;
     readonly onClose: () => void;
 }) {
-    const [value, setValue] = useState<MiraTaskInput>(
-        () =>
-            task ?? {
-                title: "",
-                description: "",
-                status: "todo",
-                assignee: "mira",
-                priority: "normal",
-                labels: [],
-                dueAt: null,
-                completionCriteria: "",
-                conversationId: null,
-            }
+    const [value, setValue] = useState<MiraTaskInput>(() =>
+        task
+            ? {
+                  title: task.title,
+                  description: task.description,
+                  status: task.status,
+                  assignee: task.assignee,
+                  priority: task.priority,
+                  labels: task.labels,
+                  dueAt: task.dueAt,
+                  completionCriteria: task.completionCriteria,
+                  conversationId: task.conversationId,
+              }
+            : {
+                  title: "",
+                  description: "",
+                  status: "todo",
+                  assignee: "mira",
+                  priority: "normal",
+                  labels: [],
+                  dueAt: null,
+                  completionCriteria: "",
+                  conversationId: null,
+              }
     );
     const [labels, setLabels] = useState(task?.labels.join(", ") ?? "");
     const [hasDue, setHasDue] = useState(Boolean(task?.dueAt));

@@ -37,6 +37,7 @@ export async function runMiraExecutor(options: {
     const workerId = crypto.randomUUID();
     let model: string | null = null;
     let models: MiraModel[] = [];
+    let defaultReady = false;
     let message: string | null = null;
     let cleanupPending = false;
     let inspectionChanged = Promise.withResolvers<void>();
@@ -51,14 +52,22 @@ export async function runMiraExecutor(options: {
         while (!signal.aborted) {
             const changed = inspectionChanged.promise;
             await reconcileMiraRuns(client);
-            await reconcileMiraControls(client);
             const currentMessage =
                 health.ready && cleanupPending
                     ? "Mira is connected, but deleted-data cleanup needs attention."
                     : message;
             await client`INSERT INTO mira_runtime_status (id, worker_id, version, model, ready, message, heartbeat_at, models) VALUES (1, ${workerId}, ${options.version}, ${model}, ${health.ready}, ${currentMessage}, now(), ${JSON.stringify(models)}::text::jsonb) ON CONFLICT (id) DO UPDATE SET worker_id = EXCLUDED.worker_id, version = EXCLUDED.version, model = EXCLUDED.model, ready = EXCLUDED.ready, message = EXCLUDED.message, heartbeat_at = EXCLUDED.heartbeat_at, models = EXCLUDED.models`;
-            if (health.ready) await scheduleMiraRuns(client);
             health.heartbeatAt = Date.now();
+            await Promise.race([wait(5000), changed]);
+        }
+    };
+    // Fan-out and schedule reconciliation can wait on many subscribers or control locks.
+    // Their progress must not own readiness or prevent explicit foreground chat claims.
+    const scheduler = async () => {
+        while (!signal.aborted) {
+            const changed = inspectionChanged.promise;
+            await reconcileMiraControls(client);
+            if (health.ready && defaultReady) await scheduleMiraRuns(client);
             await Promise.race([wait(5000), changed]);
         }
     };
@@ -83,11 +92,14 @@ export async function runMiraExecutor(options: {
                     config.model ??
                     models.find((entry) => entry.isDefault)?.model ??
                     null;
-                // A missing deployment default must not block explicit available choices.
-                // Each turn validates its own frozen selection before starting inference.
+                defaultReady = models.some((entry) => entry.model === model);
+                // Explicit available chats remain usable while default work waits.
                 health.ready = account.authenticated && models.length > 0;
-                message = health.ready
+                const defaultMessage = defaultReady
                     ? null
+                    : "The default model is unavailable. Automatic work is waiting; choose an available model in Chat settings.";
+                message = health.ready
+                    ? defaultMessage
                     : "Mira needs its own ChatGPT sign-in and an available model.";
             } catch {
                 health.ready = false;
@@ -133,7 +145,10 @@ export async function runMiraExecutor(options: {
     const lane = async (name: "foreground" | "general") => {
         while (!signal.aborted) {
             if (health.ready && Date.now() - health.heartbeatAt < 30_000) {
-                const run = await claimMiraRun(client, workerId, name);
+                const run = await claimMiraRun(client, workerId, name, {
+                    models: models.map((entry) => entry.model),
+                    defaultModel: model,
+                });
                 if (run) {
                     health.active++;
                     try {
@@ -163,6 +178,7 @@ export async function runMiraExecutor(options: {
     };
     const outcomes = await Promise.allSettled([
         stopOnFailure(coordinator()),
+        stopOnFailure(scheduler()),
         stopOnFailure(inspector()),
         stopOnFailure(cleaner()),
         stopOnFailure(lane("foreground")),

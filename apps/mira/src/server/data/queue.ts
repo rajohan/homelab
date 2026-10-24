@@ -62,12 +62,14 @@ async function reconcileExpired(query: TransactionSQL): Promise<number> {
  * @param client - Mira's bounded database pool, separate from infrastructure workers.
  * @param workerId - Current executor process identity.
  * @param lane - Foreground capacity never runs scheduled work.
+ * @param catalog - Current executor model catalog; unavailable choices remain queued.
  * @returns One leased run, or null when this lane is busy or has no eligible work.
  */
 export async function claimMiraRun(
     client: SQL,
     workerId: string,
-    lane: "foreground" | "general"
+    lane: "foreground" | "general",
+    catalog?: { models: string[]; defaultModel: string | null }
 ): Promise<MiraClaim | null> {
     return client.begin(async (query) => {
         await query`SELECT pg_advisory_xact_lock(hashtextextended('homelab:mira:claim', 0))`;
@@ -80,7 +82,7 @@ export async function claimMiraRun(
         for (let skipped = 0; skipped < 20; skipped++) {
             const [run] = await query<
                 Omit<MiraClaim, "leaseToken">[]
-            >`SELECT id, owner, conversation_id AS "conversationId", user_message_id AS "userMessageId", assistant_message_id AS "assistantMessageId", automation_id AS "automationId", task_id AS "taskId", budget_seconds AS "budgetSeconds", manual FROM mira_runs WHERE state = 'queued' AND NOT cancel_requested AND (${lane === "general"} OR manual) ORDER BY priority DESC, id LIMIT 1 FOR UPDATE SKIP LOCKED`;
+            >`SELECT id, owner, conversation_id AS "conversationId", user_message_id AS "userMessageId", assistant_message_id AS "assistantMessageId", automation_id AS "automationId", task_id AS "taskId", budget_seconds AS "budgetSeconds", manual FROM mira_runs WHERE state = 'queued' AND NOT cancel_requested AND (${lane === "general"} OR manual) AND (${catalog === undefined} OR COALESCE(settings->>'model',${catalog?.defaultModel ?? null}) IN (SELECT jsonb_array_elements_text(${JSON.stringify(catalog?.models ?? [])}::text::jsonb))) ORDER BY priority DESC, id LIMIT 1 FOR UPDATE SKIP LOCKED`;
             if (!run) return null;
             // A pause/delete may hold controls while waiting for this row. Never wait in reverse order.
             const [controls] = await query<
