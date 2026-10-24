@@ -46,6 +46,10 @@ export function ChatActivity({
     const Icon = icons[phase ?? "working"];
     const toolStates: Record<string, string> = {
         succeeded: "Completed",
+        awaiting_approval: "Awaiting approval",
+        approved: "Approved",
+        rejected: "Rejected",
+        expired: "Expired",
         unknown: "Needs review",
         running: "Running",
         failed: "Failed",

@@ -24,6 +24,7 @@ import { readChatDisplay, saveChatDisplay } from "./chatDisplay";
 import { ChatSettings } from "./ChatSettings";
 import { ChatTranscript } from "./ChatTranscript";
 import { FileLibrary } from "./FileLibrary";
+import { ProposedChanges } from "./ProposedChanges";
 
 /**
  * Send durable messages, observe streamed text and stop or manage an owned conversation.
@@ -201,6 +202,7 @@ export function ChatPanel({
                     <ErrorNotice error={error} />
                 </div>
             )}
+            <ProposedChanges conversationId={id} />
             <ChatTranscript
                 key={before ?? "latest"}
                 messages={messages}

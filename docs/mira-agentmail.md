@@ -123,3 +123,11 @@ The executor claims a queued draft once before invoking the official [AgentMail 
 Approval expires after fifteen minutes before dispatch. Disabling/re-enabling the integration or changing its inbox binding returns queued work to draft for another review. Already-started provider calls cannot be recalled by pausing. The receiver and executor must agree on the inbox before approval/dispatch. Cancellation is available only before dispatch; it does not claim to unsend mail. Repeated approval requests return the same queued/sent/unknown record and cannot send a second copy.
 
 This first outgoing implementation handles new plain-text messages. Threaded replies and outgoing attachments are not yet implemented. No actual inbox or outgoing provider transport is activated by a development preview.
+
+### Mail-triggered workload limits
+
+Limits are shared by all inbox bindings and automatic subscribers for one owner: at most 60 new event references per rolling hour, 250 per rolling day and 1,000 retained references. Server receipt time controls metering, independently of provider timestamps. Verified duplicate deliveries do not consume additional event allowance. Deliberately paused mail remains bounded and does not generate quota notifications. References and delivery metadata expire after seven days; cleanup runs independently of provider availability. Older replayed receipt events are not reinserted after cleanup.
+
+One event can feed at most ten currently eligible subscribers. Automatic mail work shares a rolling allowance of 24 runs and 1,800 reserved execution seconds per day; each run is capped at 120 seconds even if an automation requests more. Queued and failed runs count, so cancellations cannot refund an attacker-controlled burst. These are execution allowances, not a promise about token usage or API cost. Ordinary user chat and other automation triggers retain their own admission.
+
+Excess triggers or deliveries are skipped, not accumulated into a later burst. Messages remain in AgentMail for manual review. The owner gets at most one private notification per quota category per UTC day while mail processing is enabled. This first version uses repository-defined limits; changing them is a reviewed configuration/code change.

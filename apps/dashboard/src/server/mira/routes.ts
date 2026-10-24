@@ -1,4 +1,5 @@
 import {
+    miraProposalDecisionSchema,
     miraAutomationInputSchema,
     miraChatSettingsUpdateSchema,
     miraAutomationUpdateSchema,
@@ -63,6 +64,7 @@ import {
     listMiraMail,
     saveMiraMail,
 } from "@homelab/mira/data/mail";
+import { listMiraProposals, decideMiraProposal } from "@homelab/mira/data/proposals";
 import { listMiraRuns } from "@homelab/mira/data/queue";
 import { readTaskExecution, runMiraTask } from "@homelab/mira/data/taskExecution";
 import {
@@ -129,6 +131,18 @@ export const miraRouter = trpc.router({
             .input(versionedIdSchema)
             .mutation(({ ctx, input }) =>
                 execute(ctx, (mira) => cancelMiraMail(mira, input))
+            ),
+    }),
+    proposals: trpc.router({
+        list: trpc.procedure
+            .input(record)
+            .query(({ ctx, input }) =>
+                execute(ctx, (mira) => listMiraProposals(mira, input.id))
+            ),
+        decide: trpc.procedure
+            .input(miraProposalDecisionSchema)
+            .mutation(({ ctx, input }) =>
+                execute(ctx, (mira) => decideMiraProposal(mira, input))
             ),
     }),
     files: trpc.router({

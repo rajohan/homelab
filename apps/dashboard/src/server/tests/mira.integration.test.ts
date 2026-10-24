@@ -852,3 +852,194 @@ test.each(["needs_attention", "unknown receipt"])(
         }
     }
 );
+
+test("linked chat sends retain task history, admission and retry identity", async () => {
+    const database = await fixture();
+    try {
+        const api = database.caller().mira;
+        const saved = await api.tasks.create(task);
+        const initial = await api.tasks.run({
+            id: saved.id,
+            version: 1,
+            requestId: Bun.randomUUIDv7(),
+        });
+        await api.runs.cancel({ id: initial.id });
+        const input = {
+            conversationId: initial.conversationId,
+            requestId: Bun.randomUUIDv7(),
+            text: "Continue the saved task.",
+        };
+        const continued = await api.conversations.send(input);
+        expect(await api.conversations.send(input)).toEqual(continued);
+        const history = await api.tasks.execution({ id: saved.id });
+        expect(history.rows.map((run) => run.id)).toContain(continued.id);
+        await rejects(
+            api.tasks.run({
+                id: saved.id,
+                version: history.version,
+                requestId: Bun.randomUUIDv7(),
+            }),
+            /current task run/
+        );
+        await rejects(
+            database
+                .caller("other")
+                .mira.conversations.send({ ...input, requestId: Bun.randomUUIDv7() }),
+            /active conversation/
+        );
+        await api.runs.cancel({ id: continued.id });
+        await database.client`UPDATE mira_runs SET state = 'needs_attention' WHERE id = ${continued.id}`;
+        expect(await api.conversations.send(input)).toEqual(continued);
+        await rejects(
+            api.conversations.send({ ...input, requestId: Bun.randomUUIDv7() }),
+            /Review the uncertain run/
+        );
+        await database.client`UPDATE mira_runs SET state = 'failed' WHERE id = ${continued.id}`;
+        await database.client`INSERT INTO mira_tool_receipts (id, run_id, call_id, tool, input_hash, state) VALUES (${Bun.randomUUIDv7()}, ${continued.id}, 'synthetic', 'synthetic', 'synthetic', 'unknown')`;
+        await rejects(
+            api.conversations.send({ ...input, requestId: Bun.randomUUIDv7() }),
+            /Review the uncertain run/
+        );
+        const reviewed = await api.tasks.run({
+            id: saved.id,
+            version: history.version,
+            requestId: Bun.randomUUIDv7(),
+            reviewedRunId: continued.id,
+        });
+        await api.runs.cancel({ id: reviewed.id });
+        const afterReview = await api.conversations.send({
+            ...input,
+            requestId: Bun.randomUUIDv7(),
+        });
+        const reviewedHistory = await api.tasks.execution({ id: saved.id });
+        expect(reviewedHistory.rows.map((run) => run.id)).toContain(afterReview.id);
+    } finally {
+        await database.close();
+    }
+});
+
+test("linked chat cannot race task admission or overlap work in another conversation", async () => {
+    const database = await fixture();
+    try {
+        const api = database.caller().mira;
+        const chat = await api.conversations.create({ title: "Linked task" });
+        const saved = await api.tasks.create({ ...task, conversationId: chat.id });
+        const input = {
+            conversationId: chat.id,
+            requestId: Bun.randomUUIDv7(),
+            text: "Continue.",
+        };
+        await database.client.begin(async (query) => {
+            await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:task:operator:${saved.id}`}, 0))`;
+            await rejects(api.conversations.send(input), /Task admission is busy/);
+        });
+        const otherChat = await api.conversations.create({
+            title: "Automatic task context",
+        });
+        const automatic = await api.conversations.send({
+            ...input,
+            conversationId: otherChat.id,
+            requestId: Bun.randomUUIDv7(),
+        });
+        await database.client`UPDATE mira_runs SET task_id = ${saved.id} WHERE id = ${automatic.id}`;
+        await rejects(api.conversations.send(input), /current task run/);
+        await api.runs.cancel({ id: automatic.id });
+        await api.tasks.update({
+            ...task,
+            id: saved.id,
+            version: 1,
+            conversationId: chat.id,
+            status: "done",
+        });
+        await rejects(api.conversations.send(input), /unfinished task/);
+        await api.tasks.update({
+            ...task,
+            id: saved.id,
+            version: 2,
+            conversationId: chat.id,
+        });
+        const second = await api.tasks.create({ ...task, conversationId: chat.id });
+        await rejects(api.conversations.send(input), /multiple tasks/);
+        await rejects(
+            api.tasks.run({ id: saved.id, version: 3, requestId: Bun.randomUUIDv7() }),
+            /multiple tasks/
+        );
+        await api.tasks.delete({ id: second.id, version: 1 });
+        const run = await api.conversations.send(input);
+        const history = await api.tasks.execution({ id: saved.id });
+        expect(history.rows.map((entry) => entry.id)).toContain(run.id);
+    } finally {
+        await database.close();
+    }
+});
+
+test("automatic task conversations retain admission after uncertainty, relinking and deletion", async () => {
+    const database = await fixture();
+    try {
+        const api = database.caller().mira;
+        const saved = await api.tasks.create({
+            ...task,
+            dueAt: new Date(Date.now() - 1000).toISOString(),
+        });
+        const automation = await api.automations.create({
+            title: "Automatic task",
+            prompt: "Review task",
+            kind: "custom",
+            schedule: { kind: "event", event: "task_due" },
+            budgetSeconds: 60,
+        });
+        await api.controls.setEnabled({
+            key: `automation:${automation.id}`,
+            version: 1,
+            enabled: true,
+            reason: null,
+            until: null,
+        });
+        expect(await scheduleMiraRuns(database.client)).toBe(1);
+        let history = await api.tasks.execution({ id: saved.id });
+        const initial = history.rows[0]!;
+        expect(history.conversationId).toBeNull();
+        await api.runs.cancel({ id: initial.id });
+        await database.client`UPDATE mira_runs SET state='needs_attention' WHERE id=${initial.id}`;
+        const input = {
+            conversationId: initial.conversationId,
+            requestId: crypto.randomUUID(),
+            text: "Follow up on this automatic task",
+        };
+        await rejects(api.conversations.send(input), /Review the uncertain run/);
+        const reviewed = await api.tasks.run({
+            id: saved.id,
+            version: 1,
+            requestId: crypto.randomUUID(),
+            reviewedRunId: initial.id,
+        });
+        expect(reviewed.conversationId).not.toBe(initial.conversationId);
+        await rejects(api.conversations.send(input), /current task run/);
+        await api.runs.cancel({ id: reviewed.id });
+        const continued = await api.conversations.send(input);
+        history = await api.tasks.execution({ id: saved.id });
+        expect(history.rows.map((run) => run.id)).toContain(continued.id);
+        await api.runs.cancel({ id: continued.id });
+        const unrelated = await api.tasks.create({
+            ...task,
+            conversationId: initial.conversationId,
+        });
+        await rejects(
+            api.conversations.send({ ...input, requestId: crypto.randomUUID() }),
+            /multiple tasks/
+        );
+        await api.tasks.update({
+            ...task,
+            id: unrelated.id,
+            version: 1,
+            conversationId: null,
+        });
+        await api.tasks.delete({ id: saved.id, version: history.version });
+        await rejects(
+            api.conversations.send({ ...input, requestId: crypto.randomUUID() }),
+            /deleted task/
+        );
+    } finally {
+        await database.close();
+    }
+});

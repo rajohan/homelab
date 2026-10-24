@@ -211,6 +211,7 @@ export const miraRuns = pgTable(
     (t) => [
         index("mira_runs_queue").on(t.state, t.priority, t.id),
         index("mira_runs_owner").on(t.owner, t.id),
+        index("mira_runs_conversation").on(t.conversationId, t.id),
         index("mira_runs_task").on(t.owner, t.taskId, t.id),
         index("mira_runs_reviewed_run").on(t.reviewedRunId),
         uniqueIndex("mira_runs_one_active_conversation")
@@ -280,12 +281,18 @@ export const miraToolReceipts = pgTable(
         callId: text("call_id").notNull(),
         tool: text().notNull(),
         inputHash: text("input_hash").notNull(),
+        proposal: jsonb().$type<Record<string, unknown>>(),
         state: text().notNull(),
         message: text(),
         createdAt: time("created_at").notNull().defaultNow(),
         finishedAt: time("finished_at"),
     },
-    (t) => [uniqueIndex("mira_tool_receipts_call").on(t.runId, t.callId)]
+    (t) => [
+        uniqueIndex("mira_tool_receipts_call").on(t.runId, t.callId),
+        index("mira_tool_receipts_proposals")
+            .on(t.state, t.createdAt)
+            .where(sql`${t.proposal} is not null`),
+    ]
 );
 export const miraAudit = pgTable(
     "mira_audit",
@@ -326,10 +333,15 @@ export const miraEvents = pgTable(
         sourceKey: text("source_key").notNull(),
         reference: text().notNull(),
         taskId: uuid("task_id").references(() => miraTasks.id),
+        receivedAt: time("received_at").notNull().defaultNow(),
         createdAt: time("created_at").notNull().defaultNow(),
         eligibilityAt: time("eligibility_at"),
     },
-    (t) => [uniqueIndex("mira_events_source").on(t.owner, t.kind, t.sourceKey)]
+    (t) => [
+        uniqueIndex("mira_events_source").on(t.owner, t.kind, t.sourceKey),
+        index("mira_events_received_owner").on(t.owner, t.kind, t.receivedAt),
+        index("mira_events_received_cleanup").on(t.kind, t.receivedAt),
+    ]
 );
 export const miraEventDeliveries = pgTable(
     "mira_event_deliveries",
@@ -347,6 +359,7 @@ export const miraEventDeliveries = pgTable(
     (t) => [
         primaryKey({ columns: [t.eventId, t.automationId] }),
         index("mira_events_pending").on(t.state, t.nextAttemptAt),
+        index("mira_events_run").on(t.runId),
         check(
             "mira_events_delivery_state",
             sql`${t.state} in ('pending','dispatched','skipped')`

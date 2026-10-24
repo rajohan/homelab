@@ -12,6 +12,7 @@ import { claimMiraRun, finishMiraRun } from "@homelab/mira/data/queue";
 import { saveTask } from "@homelab/mira/data/tasks";
 
 import { createTestDatabase } from "../../../../../tests/database";
+import { createMiraTools } from "../../../../mira/src/server/executor/tools";
 import { syntheticPdf } from "../../../../mira/src/server/testing/document";
 import index from "../../index.html";
 import { connectDashboardDatabase } from "../database/connection";
@@ -103,6 +104,17 @@ export async function main(port = 3330): Promise<void> {
         );
         const initial = await claimMiraRun(database.client, worker, "foreground");
         if (!initial) throw new Error("Preview seed could not claim its own run.");
+        await createMiraTools(database.client, initial)
+            .find((tool) => tool.name === "mira_memory_create")!
+            .execute(
+                {
+                    title: "Preferred maintenance window",
+                    content:
+                        "Schedule routine maintenance on Sunday mornings. This is a synthetic suggestion awaiting your review.",
+                },
+                new AbortController().signal,
+                { callId: "preview-proposal", threadId: "synthetic", turnId: "synthetic" }
+            );
         await finishMiraRun(database.client, initial, {
             state: "completed",
             message: null,
@@ -129,7 +141,7 @@ export async function main(port = 3330): Promise<void> {
                         : null,
                 completionCriteria:
                     "The requested change has been verified and recorded.",
-                conversationId: chat.id,
+                conversationId: null,
             });
         }
         await createReport(

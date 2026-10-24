@@ -6,6 +6,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { capabilities } from "@homelab/contracts/operations";
 import { reconcileMiraControls } from "@homelab/mira/data/automations";
 import { publishAgentMailReceiver } from "@homelab/mira/data/integrations";
+import { cleanupMiraMailEvents } from "@homelab/mira/data/mailLimits";
 import { claimMiraRun, scheduleMiraRuns } from "@homelab/mira/data/queue";
 import { pollAgentMail } from "@homelab/mira/integrations/agentmail/poll";
 import { AgentMailReader } from "@homelab/mira/integrations/agentmail/reader";
@@ -1036,6 +1037,211 @@ test("transient read-only mail failures permit retry and unrelated tools in the 
         ]);
     } finally {
         read.mockRestore();
+        await fixture.close();
+    }
+});
+
+test("mail event quotas hold under concurrent intake, bound paused storage and clean up expired references", async () => {
+    const fixture = await operationFixture();
+    const binding = await provisionTestAgentMail(fixture.client);
+    const api = appRouter.createCaller({
+        operations: { ...fixture, agentMailHook: binding },
+        principal: { kind: "human", id: "operator", capabilities },
+    }).mira;
+    try {
+        const accepted = await Promise.all(
+            Array.from({ length: 70 }, (_, index) =>
+                acceptAgentMailMessage(fixture.client, binding, `burst-${index}`)
+            )
+        );
+        expect(accepted.filter(Boolean)).toHaveLength(60);
+        let notifications = await fixture.client<
+            { total: number }[]
+        >`SELECT count(*)::int AS total FROM dashboard_notifications`;
+        expect(notifications[0]?.total).toBe(0);
+        await api.controls.setEnabled({
+            key: "integration:agentmail",
+            version: 1,
+            enabled: true,
+            reason: null,
+            until: null,
+        });
+        expect(await acceptAgentMailMessage(fixture.client, binding, "overflow")).toBe(
+            false
+        );
+        expect(
+            await acceptAgentMailMessage(fixture.client, binding, "overflow-again")
+        ).toBe(false);
+        notifications = await fixture.client<
+            { total: number }[]
+        >`SELECT count(*)::int AS total FROM dashboard_notifications WHERE recipient='human:operator'`;
+        expect(notifications[0]?.total).toBe(1);
+        await fixture.client`UPDATE mira_events SET received_at=now()-interval '2 hours'`;
+        await fixture.client`INSERT INTO mira_events(id,owner,kind,source_key,reference,received_at) SELECT md5('daily-'||i)::uuid,'operator','agentmail','daily-'||i,'{}',now()-interval '2 hours' FROM generate_series(1,190) i`;
+        expect(
+            await acceptAgentMailMessage(fixture.client, binding, "daily-overflow")
+        ).toBe(false);
+        await fixture.client`UPDATE mira_events SET received_at=now()-interval '2 days'`;
+        await fixture.client`INSERT INTO mira_events(id,owner,kind,source_key,reference,received_at) SELECT md5('retained-'||i)::uuid,'operator','agentmail','retained-'||i,'{}',now()-interval '2 days' FROM generate_series(1,750) i`;
+        expect(
+            await acceptAgentMailMessage(fixture.client, binding, "retention-overflow")
+        ).toBe(false);
+        const other = await provisionTestAgentMail(fixture.client, {
+            owner: "other",
+            inboxId: "other@agentmail.to",
+        });
+        expect(
+            await acceptAgentMailMessage(fixture.client, other, "independent-owner")
+        ).toBe(true);
+        await fixture.client`UPDATE mira_events SET received_at=now()-interval '8 days' WHERE owner='operator'`;
+        expect(await cleanupMiraMailEvents(fixture.client)).toBe(1000);
+        expect(await cleanupMiraMailEvents(fixture.client)).toBe(0);
+        const remaining = await fixture.client<
+            { total: number }[]
+        >`SELECT count(*)::int AS total FROM mira_events`;
+        expect(remaining[0]?.total).toBe(1);
+        await provisionTestAgentMail(fixture.client, binding);
+        expect(
+            await acceptAgentMailMessage(
+                fixture.client,
+                binding,
+                "old-replay",
+                new Date(Date.now() - 8 * 86_400_000)
+            )
+        ).toBe(false);
+        expect(
+            await acceptAgentMailMessage(fixture.client, binding, "fresh-after-cleanup")
+        ).toBe(true);
+    } finally {
+        await fixture.close();
+    }
+});
+
+test("mail-triggered runs share daily count and reserved-time limits without blocking manual chat", async () => {
+    const fixture = await operationFixture();
+    const binding = await provisionTestAgentMail(fixture.client);
+    const api = appRouter.createCaller({
+        operations: { ...fixture, agentMailHook: binding },
+        principal: { kind: "human", id: "operator", capabilities },
+    }).mira;
+    try {
+        await api.controls.setEnabled({
+            key: "integration:agentmail",
+            version: 1,
+            enabled: true,
+            reason: null,
+            until: null,
+        });
+        const automation = await api.automations.create({
+            title: "Mail",
+            prompt: "Read as data",
+            kind: "custom",
+            schedule: { kind: "event", event: "agentmail" },
+            budgetSeconds: 900,
+        });
+        await api.controls.setEnabled({
+            key: `automation:${automation.id}`,
+            version: 1,
+            enabled: true,
+            reason: null,
+            until: null,
+        });
+        for (let index = 0; index < 15; index++) {
+            expect(
+                await acceptAgentMailMessage(fixture.client, binding, `budget-${index}`)
+            ).toBe(true);
+            expect(await scheduleMiraRuns(fixture.client)).toBe(1);
+            const history = await api.runs.list({ search: "" });
+            await api.runs.cancel({ id: history.rows[0]!.id });
+        }
+        const usage = await fixture.client<
+            { total: number; seconds: number; maximum: number }[]
+        >`SELECT count(*)::int AS total,sum(budget_seconds)::int AS seconds,max(budget_seconds)::int AS maximum FROM mira_runs WHERE owner='operator'`;
+        expect(usage[0]).toEqual({ total: 15, seconds: 1800, maximum: 120 });
+        await acceptAgentMailMessage(fixture.client, binding, "time-exhausted");
+        expect(await scheduleMiraRuns(fixture.client)).toBe(0);
+        await fixture.client`UPDATE mira_runs SET budget_seconds=30 WHERE owner='operator'`;
+        for (let index = 0; index < 9; index++) {
+            await acceptAgentMailMessage(fixture.client, binding, `count-${index}`);
+            expect(await scheduleMiraRuns(fixture.client)).toBe(1);
+            const history = await api.runs.list({ search: "" });
+            await api.runs.cancel({ id: history.rows[0]!.id });
+        }
+        await acceptAgentMailMessage(fixture.client, binding, "count-exhausted");
+        expect(await scheduleMiraRuns(fixture.client)).toBe(0);
+        const skipped = await fixture.client<
+            { total: number }[]
+        >`SELECT count(*)::int AS total FROM mira_event_deliveries WHERE state='skipped'`;
+        expect(skipped[0]?.total).toBe(2);
+        const notices = await fixture.client<
+            { total: number }[]
+        >`SELECT count(*)::int AS total FROM dashboard_notifications WHERE source_key LIKE 'mail-limit:%:runs:%' AND recipient='human:operator'`;
+        expect(notices[0]?.total).toBe(1);
+        const chat = await api.conversations.create({ title: "Independent manual work" });
+        await api.conversations.send({
+            conversationId: chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Continue other work",
+        });
+        const claimed = await claimMiraRun(
+            fixture.client,
+            crypto.randomUUID(),
+            "foreground"
+        );
+        expect(claimed?.conversationId).toBe(chat.id);
+    } finally {
+        await fixture.close();
+    }
+});
+
+test("one mail reference has bounded subscriber fan-out even after duplicate delivery", async () => {
+    const fixture = await operationFixture();
+    const binding = await provisionTestAgentMail(fixture.client);
+    const api = appRouter.createCaller({
+        operations: { ...fixture, agentMailHook: binding },
+        principal: { kind: "human", id: "operator", capabilities },
+    }).mira;
+    try {
+        await api.controls.setEnabled({
+            key: "integration:agentmail",
+            version: 1,
+            enabled: true,
+            reason: null,
+            until: null,
+        });
+        for (let index = 0; index < 12; index++) {
+            const automation = await api.automations.create({
+                title: `Subscriber ${index}`,
+                prompt: "Review mail",
+                kind: "custom",
+                schedule: { kind: "event", event: "agentmail" },
+                budgetSeconds: 30,
+            });
+            await api.controls.setEnabled({
+                key: `automation:${automation.id}`,
+                version: 1,
+                enabled: true,
+                reason: null,
+                until: null,
+            });
+        }
+        expect(await acceptAgentMailMessage(fixture.client, binding, "fanout")).toBe(
+            true
+        );
+        expect(await acceptAgentMailMessage(fixture.client, binding, "fanout")).toBe(
+            false
+        );
+        const deliveries = await fixture.client<
+            { total: number }[]
+        >`SELECT count(*)::int AS total FROM mira_event_deliveries`;
+        expect(deliveries[0]?.total).toBe(10);
+        await fixture.client`UPDATE mira_events SET received_at=now()-interval '8 days'`;
+        expect(await cleanupMiraMailEvents(fixture.client)).toBe(1);
+        const remaining = await fixture.client<
+            { total: number }[]
+        >`SELECT count(*)::int AS total FROM mira_event_deliveries`;
+        expect(remaining[0]?.total).toBe(0);
+    } finally {
         await fixture.close();
     }
 });

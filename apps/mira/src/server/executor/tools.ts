@@ -16,6 +16,7 @@ import { MiraFailure, type MiraContext } from "../data/context";
 import { createReport, listMemory, listReports, saveMemory } from "../data/documents";
 import { readMiraFile } from "../data/files";
 import { listMiraMail, saveMiraMail } from "../data/mail";
+import { parseMiraProposal } from "../data/proposals";
 import type { MiraClaim } from "../data/queue";
 import {
     addTaskProgress,
@@ -73,6 +74,7 @@ export function createMiraTools(
     const definitions: (Omit<RuntimeTool, "execute"> & {
         automatic: boolean;
         transactional?: boolean;
+        confirmation?: boolean;
         action: (
             input: unknown,
             signal: AbortSignal,
@@ -175,6 +177,7 @@ export function createMiraTools(
         },
         {
             name: "mira_task_create",
+            confirmation: true,
             transactional: true,
             description:
                 "Create a task the operator requested. Assignment alone does not start execution.",
@@ -185,6 +188,7 @@ export function createMiraTools(
         },
         {
             name: "mira_task_update",
+            confirmation: true,
             transactional: true,
             description:
                 "Update an existing task using the current version returned by task search.",
@@ -198,6 +202,7 @@ export function createMiraTools(
         },
         {
             name: "mira_task_progress",
+            confirmation: true,
             transactional: true,
             description: "Record factual progress on an owned task.",
             inputSchema: object({ taskId: uuid, text: string }, ["taskId", "text"]),
@@ -293,6 +298,7 @@ export function createMiraTools(
         },
         {
             name: "mira_memory_create",
+            confirmation: true,
             transactional: true,
             description:
                 "Remember a preference or fact only when the operator explicitly asks. Do not store secrets.",
@@ -368,81 +374,119 @@ export function createMiraTools(
         },
         ...createAgentMailTools(client, run, agentMail),
     ];
-    return definitions.map(({ action, automatic, transactional, ...definition }) => ({
-        ...definition,
-        execute: async (input, signal, call) => {
-            signal.throwIfAborted();
-            if (uncertain)
-                return JSON.stringify({
-                    ok: false,
-                    retryable: false,
-                    message:
-                        "An earlier action has an uncertain outcome. Stop and review this run before continuing.",
-                });
-            if (run.automationId && !automatic)
-                return JSON.stringify({
-                    ok: false,
-                    message:
-                        "This automatic run does not have permission for that action.",
-                });
-            const receipt = Bun.randomUUIDv7();
-            const hash = new Bun.CryptoHasher("sha256")
-                .update(JSON.stringify(input))
-                .digest("hex");
-            const reserved = await client<
-                { id: string }[]
-            >`INSERT INTO mira_tool_receipts (id, run_id, call_id, tool, input_hash, state) SELECT ${receipt}, id, ${call.callId}, ${definition.name}, ${hash}, 'running' FROM mira_runs WHERE id = ${run.id} AND state = 'running' AND NOT cancel_requested AND lease_token = ${run.leaseToken} AND lease_expires_at > now() ON CONFLICT (run_id, call_id) DO NOTHING RETURNING id`;
-            if (!reserved[0])
-                return JSON.stringify({
-                    ok: false,
-                    message:
-                        "This action was already attempted or the run no longer owns its lease. It was not replayed.",
-                });
-            try {
-                const invoke = async (query?: TransactionSQL) => {
-                    signal.throwIfAborted();
-                    const result = await action(
-                        input,
-                        signal,
-                        query ? { ...context, transaction: query } : context
-                    );
-                    signal.throwIfAborted();
-                    const connection = query ?? client;
-                    const saved = await connection<
-                        { id: string }[]
-                    >`UPDATE mira_tool_receipts SET state='succeeded', finished_at=now() WHERE id=${receipt} AND state='running' AND EXISTS (SELECT 1 FROM mira_runs WHERE id=${run.id} AND state='running' AND NOT cancel_requested AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp()) RETURNING id`;
-                    if (!saved[0])
-                        throw new MiraFailure(
-                            "CONFLICT",
-                            "The action lost its execution lease and was rolled back."
-                        );
-                    return JSON.stringify({ ok: true, result });
-                };
-                return transactional
-                    ? await client.begin((query) => invoke(query))
-                    : await invoke();
-            } catch (error) {
-                const known =
-                    error instanceof MiraFailure || error instanceof v.ValiError;
-                uncertain = !known;
-                let message =
-                    "The action outcome is uncertain. Do not retry; review this run before continuing.";
-                if (error instanceof MiraFailure) message = error.message;
-                else if (known)
-                    message = "The tool input was invalid; no change was committed.";
+    return definitions.map(
+        ({ action, automatic, transactional, confirmation, ...definition }) => ({
+            ...definition,
+            description: confirmation
+                ? `${definition.description} This tool only proposes a change. The operator must review and approve its exact fields in the conversation; never report it as applied before approval.`
+                : definition.description,
+            execute: async (input, signal, call) => {
+                signal.throwIfAborted();
+                if (uncertain)
+                    return JSON.stringify({
+                        ok: false,
+                        retryable: false,
+                        message:
+                            "An earlier action has an uncertain outcome. Stop and review this run before continuing.",
+                    });
+                if (run.automationId && !automatic)
+                    return JSON.stringify({
+                        ok: false,
+                        message:
+                            "This automatic run does not have permission for that action.",
+                    });
+                const receipt = Bun.randomUUIDv7();
+                const hash = new Bun.CryptoHasher("sha256")
+                    .update(JSON.stringify(input))
+                    .digest("hex");
+                const reserved = await client<
+                    { id: string }[]
+                >`INSERT INTO mira_tool_receipts (id, run_id, call_id, tool, input_hash, state) SELECT ${receipt}, id, ${call.callId}, ${definition.name}, ${hash}, 'running' FROM mira_runs WHERE id = ${run.id} AND state = 'running' AND NOT cancel_requested AND lease_token = ${run.leaseToken} AND lease_expires_at > now() ON CONFLICT (run_id, call_id) DO NOTHING RETURNING id`;
+                if (!reserved[0])
+                    return JSON.stringify({
+                        ok: false,
+                        message:
+                            "This action was already attempted or the run no longer owns its lease. It was not replayed.",
+                    });
                 try {
-                    await client`UPDATE mira_tool_receipts SET state=${known ? "failed" : "unknown"}, message=${message}, finished_at=now() WHERE id=${receipt} AND state='running'`;
-                } catch {
-                    uncertain = true;
+                    const invoke = async (query?: TransactionSQL) => {
+                        signal.throwIfAborted();
+                        if (confirmation) {
+                            const connection = query ?? client;
+                            await connection`SELECT id FROM mira_runs WHERE id=${run.id} FOR UPDATE`;
+                            const [count] = await connection<
+                                { total: number }[]
+                            >`SELECT count(*)::int AS total FROM mira_tool_receipts WHERE run_id=${run.id} AND tool IN ('mira_task_create','mira_task_update','mira_task_progress','mira_memory_create')`;
+                            if ((count?.total ?? 0) > 20)
+                                throw new MiraFailure(
+                                    "PRECONDITION_FAILED",
+                                    "This run has reached its proposal limit. Summarize the remaining changes without creating more proposals."
+                                );
+                            const proposal = parseMiraProposal(definition.name, input);
+                            const fingerprint = new Bun.CryptoHasher("sha256")
+                                .update(JSON.stringify(proposal))
+                                .digest("hex");
+                            const saved = await connection<
+                                { id: string }[]
+                            >`UPDATE mira_tool_receipts SET state='awaiting_approval',proposal=${JSON.stringify(proposal)}::text::jsonb,input_hash=${fingerprint},message='Review the exact proposed fields before approving.',finished_at=now() WHERE id=${receipt} AND state='running' AND EXISTS (SELECT 1 FROM mira_runs WHERE id=${run.id} AND state='running' AND NOT cancel_requested AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp()) RETURNING id`;
+                            if (!saved[0])
+                                throw new MiraFailure(
+                                    "CONFLICT",
+                                    "The proposal lost its execution lease and was rolled back."
+                                );
+                            return JSON.stringify({
+                                ok: true,
+                                result: {
+                                    proposalId: receipt,
+                                    state: "awaiting_approval",
+                                    message:
+                                        "No product change has been applied. Ask the operator to review Proposed changes in this conversation.",
+                                },
+                            });
+                        }
+                        const result = await action(
+                            input,
+                            signal,
+                            query ? { ...context, transaction: query } : context
+                        );
+                        signal.throwIfAborted();
+                        const connection = query ?? client;
+                        const saved = await connection<
+                            { id: string }[]
+                        >`UPDATE mira_tool_receipts SET state='succeeded', finished_at=now() WHERE id=${receipt} AND state='running' AND EXISTS (SELECT 1 FROM mira_runs WHERE id=${run.id} AND state='running' AND NOT cancel_requested AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp()) RETURNING id`;
+                        if (!saved[0])
+                            throw new MiraFailure(
+                                "CONFLICT",
+                                "The action lost its execution lease and was rolled back."
+                            );
+                        return JSON.stringify({ ok: true, result });
+                    };
+                    return transactional
+                        ? await client.begin((query) => invoke(query))
+                        : await invoke();
+                } catch (error) {
+                    const known =
+                        error instanceof MiraFailure || error instanceof v.ValiError;
+                    uncertain = !known;
+                    let message =
+                        "The action outcome is uncertain. Do not retry; review this run before continuing.";
+                    if (error instanceof MiraFailure) message = error.message;
+                    else if (known)
+                        message = "The tool input was invalid; no change was committed.";
+                    try {
+                        await client`UPDATE mira_tool_receipts SET state=${known ? "failed" : "unknown"}, message=${message}, finished_at=now() WHERE id=${receipt} AND state='running'`;
+                    } catch {
+                        uncertain = true;
+                    }
+                    return JSON.stringify({
+                        ok: false,
+                        retryable: !uncertain,
+                        message: uncertain
+                            ? "The action outcome is uncertain. Do not retry; review this run before continuing."
+                            : message,
+                    });
                 }
-                return JSON.stringify({
-                    ok: false,
-                    retryable: !uncertain,
-                    message: uncertain
-                        ? "The action outcome is uncertain. Do not retry; review this run before continuing."
-                        : message,
-                });
-            }
-        },
-    }));
+            },
+        })
+    );
 }
