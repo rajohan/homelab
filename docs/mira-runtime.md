@@ -120,3 +120,12 @@ Initialization must return the canonical dedicated `codexHome` before account in
 The cached system skills are verified against the complete SHA-256 manifest from the pinned upstream `rust-v0.164.0` bundle. Extra, missing, altered or linked entries fail closed, regardless of the Codex marker. A Codex dependency update must update the manifest from the corresponding official source and rerun live qualification; a test checks the versions stay aligned.
 
 The follow-up qualification passed with the stricter checks on 2026-10-24: streamed response, registered tool call, resume after process replacement, interruption and recovery using the isolated Mira login.
+
+Effective configuration must also preserve the supported official OpenAI/ChatGPT
+base URLs. Provider identity alone is insufficient: endpoint overrides, legacy
+notification commands, instruction/compaction/catalog overrides, external telemetry
+and alternate thread-storage paths fail initialization. The adapter force-reloads
+the complete skill catalog for its empty workspace and accepts only the exact
+pinned system skill paths; administrator skills and discovery errors fail closed.
+The echo qualification validates its input nonce and returns a different random
+receipt, proving both argument delivery and tool-output propagation.

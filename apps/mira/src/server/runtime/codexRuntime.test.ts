@@ -25,7 +25,32 @@ const options = (mode = "ok") => ({
 });
 
 describe("Mira runtime transport", () => {
+    test("accepts the supported official built-in endpoint defaults", async () => {
+        const runtime = await CodexRuntime.connect(options("official-endpoints"));
+        await runtime.close();
+    });
     test.each([
+        "admin-skill",
+        "disabled-admin-skill",
+        "outside-system-skill",
+        "duplicate-skill",
+        "missing-skill",
+        "skill-discovery-error",
+        ...[
+            "openai_base_url",
+            "chatgpt_base_url",
+            "instructions",
+            "developer_instructions",
+            "model_instructions_file",
+            "compact_prompt",
+            "experimental_compact_prompt_file",
+            "model_catalog_json",
+            "notify",
+            "otel",
+            "experimental_thread_store",
+            "experimental_thread_store_endpoint",
+            "sqlite_home",
+        ].map((key) => `override:${key}`),
         "configured-mcp",
         "project-docs",
         "wrong-home",

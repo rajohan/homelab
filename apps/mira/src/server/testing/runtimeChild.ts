@@ -1,6 +1,8 @@
+import path from "node:path";
 import { createInterface } from "node:readline";
 
 import { disabledRuntimeFeatures } from "../runtime/configuration";
+import manifest from "../runtime/systemSkills.json";
 
 // Synthetic process fixture. No provider access, account data or network calls.
 const mode = process.argv[2] ?? "ok";
@@ -67,6 +69,16 @@ for await (const line of reader) {
             id: message.id,
             result: {
                 config: {
+                    ...(mode.startsWith("override:")
+                        ? { [mode.slice("override:".length)]: "untrusted-override" }
+                        : {}),
+                    ...(mode === "official-endpoints"
+                        ? {
+                              openai_base_url: "https://api.openai.com/v1",
+                              chatgpt_base_url: "https://chatgpt.com/backend-api/",
+                          }
+                        : {}),
+
                     features: Object.fromEntries(
                         disabledRuntimeFeatures.map((feature) => [
                             feature,
@@ -86,6 +98,48 @@ for await (const line of reader) {
                             ? { external: { command: "/bin/false", enabled: false } }
                             : {},
                 },
+            },
+        });
+    } else if (message.method === "skills/list") {
+        const skills = Object.keys(manifest.entries)
+            .filter((file) => file.endsWith("/SKILL.md"))
+            .map((file) => ({
+                name: file.split("/")[0],
+                path: path.join(process.cwd(), "skills", ".system", file),
+                scope: "system",
+                enabled: true,
+                pluginId: null,
+            }));
+        if (mode === "admin-skill" || mode === "disabled-admin-skill")
+            skills.push({
+                name: "admin-extra",
+                path: "/etc/codex/skills/extra/SKILL.md",
+                scope: "admin",
+                enabled: mode !== "disabled-admin-skill",
+                pluginId: null,
+            });
+        if (mode === "outside-system-skill")
+            skills[0]!.path = "/etc/codex/skills/extra/SKILL.md";
+        if (mode === "duplicate-skill") skills[0] = skills[1]!;
+        if (mode === "missing-skill") skills.pop();
+        write({
+            id: message.id,
+            result: {
+                data: [
+                    {
+                        cwd: process.cwd(),
+                        skills,
+                        errors:
+                            mode === "skill-discovery-error"
+                                ? [
+                                      {
+                                          path: "/etc/codex/skills",
+                                          message: "Cannot inspect",
+                                      },
+                                  ]
+                                : [],
+                    },
+                ],
             },
         });
     } else if (message.method === "account/read") {

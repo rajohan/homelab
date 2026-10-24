@@ -135,6 +135,29 @@ export function assertRuntimeIsolation(input: unknown): void {
                 web_search: v.literal("disabled"),
                 cli_auth_credentials_store: v.literal("file"),
                 model_provider: v.literal("openai"),
+                openai_base_url: v.nullish(
+                    v.picklist([
+                        "https://api.openai.com/v1",
+                        "https://api.openai.com/v1/",
+                    ])
+                ),
+                chatgpt_base_url: v.nullish(
+                    v.picklist([
+                        "https://chatgpt.com/backend-api",
+                        "https://chatgpt.com/backend-api/",
+                    ])
+                ),
+                instructions: v.nullish(v.never()),
+                developer_instructions: v.nullish(v.never()),
+                model_instructions_file: v.nullish(v.never()),
+                compact_prompt: v.nullish(v.never()),
+                experimental_compact_prompt_file: v.nullish(v.never()),
+                model_catalog_json: v.nullish(v.never()),
+                notify: v.nullish(v.never()),
+                otel: v.nullish(v.never()),
+                experimental_thread_store: v.nullish(v.never()),
+                experimental_thread_store_endpoint: v.nullish(v.never()),
+                sqlite_home: v.nullish(v.never()),
                 model_providers: v.optional(v.record(v.string(), v.unknown())),
             }),
         }),

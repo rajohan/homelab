@@ -15,6 +15,7 @@ import {
     type TurnResult,
 } from "./protocol";
 import { RpcProcess, type RpcProcessOptions } from "./rpcProcess";
+import { assertSkillCatalog } from "./skillCatalog";
 import { assertSystemSkills } from "./systemSkills";
 
 interface ActiveTurn {
@@ -75,6 +76,15 @@ export class CodexRuntime {
                     cwd: options.cwd,
                 })
             );
+            assertSkillCatalog(
+                await runtime.connection.request("skills/list", {
+                    cwds: [options.cwd],
+                    forceReload: true,
+                }),
+                options.env.CODEX_HOME,
+                options.cwd
+            );
+            await assertSystemSkills(options.env.CODEX_HOME);
             return runtime;
         } catch (error) {
             await runtime.close();

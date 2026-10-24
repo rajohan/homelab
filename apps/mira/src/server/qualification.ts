@@ -27,12 +27,13 @@ export function qualifyRuntime(config: PilotConfig, progress: (message: string) 
         let echoCalls = 0;
         let deltas = 0;
         const nonce = crypto.randomUUID();
+        const receipt = crypto.randomUUID();
         const interrupted = new AbortController();
         const tools: RuntimeTool[] = [
             {
                 name: "mira_qualification_echo",
                 description:
-                    "Return the synthetic marker provided as input. This has no external effects.",
+                    "Validate the supplied synthetic marker and return a separate receipt. This has no external effects.",
                 inputSchema: {
                     type: "object",
                     properties: { marker: { type: "string" } },
@@ -40,12 +41,9 @@ export function qualifyRuntime(config: PilotConfig, progress: (message: string) 
                     additionalProperties: false,
                 },
                 execute: (input) => {
-                    const { marker } = v.parse(
-                        v.strictObject({ marker: v.string() }),
-                        input
-                    );
+                    v.parse(v.strictObject({ marker: v.literal(nonce) }), input);
                     echoCalls++;
-                    return Promise.resolve(marker);
+                    return Promise.resolve(receipt);
                 },
             },
             {
@@ -86,7 +84,7 @@ export function qualifyRuntime(config: PilotConfig, progress: (message: string) 
             const threadId = await runtime.startThread(model, config.workspace, tools);
             const first = await runtime.turn(
                 threadId,
-                `Call mira_qualification_echo with marker ${nonce}, then repeat that marker exactly. Remember this marker for the next turn.`,
+                `Call mira_qualification_echo with marker ${nonce}, then repeat the receipt returned by that tool exactly. Remember the returned receipt for the next turn.`,
                 {
                     onDelta: () => {
                         deltas++;
@@ -96,7 +94,7 @@ export function qualifyRuntime(config: PilotConfig, progress: (message: string) 
             if (
                 first.status !== "completed" ||
                 echoCalls !== 1 ||
-                !first.text.includes(nonce) ||
+                !first.text.includes(receipt) ||
                 deltas === 0
             )
                 throw new Error("Mira streaming/tool qualification did not pass.");
@@ -108,9 +106,9 @@ export function qualifyRuntime(config: PilotConfig, progress: (message: string) 
             await runtime.resumeThread(threadId, tools);
             const resumed = await runtime.turn(
                 threadId,
-                "Repeat the exact marker from our previous turn. Do not call tools."
+                "Repeat the exact receipt from our previous turn. Do not call tools."
             );
-            if (resumed.status !== "completed" || !resumed.text.includes(nonce))
+            if (resumed.status !== "completed" || !resumed.text.includes(receipt))
                 throw new Error(
                     "Mira did not restore the conversation after process replacement."
                 );
