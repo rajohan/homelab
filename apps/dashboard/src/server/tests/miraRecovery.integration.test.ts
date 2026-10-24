@@ -1141,3 +1141,132 @@ test("manual model mutations require immutable owner approval and commit exactly
         await rm(directory, { recursive: true, force: true });
     }
 });
+
+test("one broken upload tombstone cannot block unrelated cleanup or dominate the next batch", async () => {
+    const fixture = await operationFixture();
+    const directory = await mkdtemp(path.join(tmpdir(), "mira-purge-retry-"));
+    const owner = { client: fixture.client, owner: "operator", actor: "human:operator" };
+    try {
+        const bad = await saveMiraFile(owner, directory, {
+            id: crypto.randomUUID(),
+            name: "bad.txt",
+            bytes: new TextEncoder().encode("blocked"),
+        });
+        const good = await saveMiraFile(owner, directory, {
+            id: crypto.randomUUID(),
+            name: "good.txt",
+            bytes: new TextEncoder().encode("purge"),
+        });
+        await rm(path.join(directory, bad.id));
+        await mkdir(path.join(directory, bad.id));
+        await fixture.client`UPDATE mira_attachments SET deleted_at=now() WHERE id IN (${bad.id},${good.id})`;
+        await rejects(cleanupMiraFiles(fixture.client, directory), /retry them later/);
+        const rows = await fixture.client<
+            { id: string; purged: boolean; retry: boolean }[]
+        >`SELECT id,purged_at IS NOT NULL AS purged,purge_retry_at>now() AS retry FROM mira_attachments ORDER BY id`;
+        expect(rows.find((row) => row.id === good.id)?.purged).toBe(true);
+        expect(rows.find((row) => row.id === bad.id)).toMatchObject({
+            purged: false,
+            retry: true,
+        });
+        expect(await cleanupMiraFiles(fixture.client, directory)).toBe(0);
+        await rm(path.join(directory, bad.id), { recursive: true });
+        await fixture.client`UPDATE mira_attachments SET purge_retry_at=now()-interval '1 second' WHERE id=${bad.id}`;
+        expect(await cleanupMiraFiles(fixture.client, directory)).toBe(1);
+    } finally {
+        await fixture.close();
+        await rm(directory, { recursive: true, force: true });
+    }
+});
+
+test("heartbeat fingerprints track queued, running and successful infrastructure observations", async () => {
+    const fixture = await operationFixture();
+    try {
+        const fingerprint = () =>
+            fixture.client.begin((query) =>
+                miraObservationFingerprint(
+                    query,
+                    "operator",
+                    "00000000-0000-4000-8000-000000000000"
+                )
+            );
+        const before = await fingerprint(),
+            id = Bun.randomUUIDv7();
+        await fixture.client`INSERT INTO job_runs(id,action,label,resource_class,state,payload,fingerprint,idempotency_key,requested_by,attempt_limit,retry_safe,timeout_ms,resource_keys) VALUES (${id},'synthetic','Synthetic job','control','queued','{}','synthetic',${id},'human:operator',1,false,1000,'{}')`;
+        const queued = await fingerprint();
+        expect(queued).not.toBe(before);
+        await fixture.client`UPDATE job_runs SET state='running' WHERE id=${id}`;
+        const running = await fingerprint();
+        expect(running).not.toBe(queued);
+        await fixture.client`UPDATE job_runs SET state='succeeded',finished_at=now() WHERE id=${id}`;
+        const succeeded = await fingerprint();
+        expect(succeeded).not.toBe(running);
+        expect(await fingerprint()).toBe(succeeded);
+    } finally {
+        await fixture.close();
+    }
+});
+
+test("automatic tools read paginated owned pause reasons and safe integration defaults", async () => {
+    const fixture = await operationFixture();
+    const api = appRouter.createCaller({
+        operations: fixture,
+        principal: { kind: "human", id: "operator", capabilities },
+    }).mira;
+    try {
+        const chat = await api.conversations.create({ title: "Control observations" });
+        await api.conversations.send({
+            conversationId: chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Inspect pauses",
+        });
+        const run = await claimMiraRun(fixture.client, crypto.randomUUID(), "foreground");
+        if (!run) throw new Error("Expected run");
+        await fixture.client`INSERT INTO mira_switches(owner,key,enabled,reason) SELECT 'operator','automation:'||md5(i::text)::uuid,false,'Paused for planned work' FROM generate_series(1,60)i`;
+        await fixture.client`INSERT INTO mira_switches(owner,key,enabled,reason) VALUES ('other','integration:agentmail',false,'Private other reason')`;
+        const tool = createMiraTools(fixture.client, {
+            ...run,
+            automationId: crypto.randomUUID(),
+        }).find((item) => item.name === "mira_controls_list")!;
+        const reasonSchema = v.nullable(v.string());
+        const read = async (after?: string) =>
+            v.parse(
+                v.object({
+                    ok: v.literal(true),
+                    result: v.object({
+                        rows: v.array(
+                            v.object({
+                                key: v.string(),
+                                enabled: v.boolean(),
+                                reason: reasonSchema,
+                            })
+                        ),
+                        nextCursor: v.nullable(v.string()),
+                    }),
+                }),
+                JSON.parse(
+                    await tool.execute(
+                        after ? { after } : {},
+                        new AbortController().signal,
+                        {
+                            callId: after ?? "first",
+                            threadId: "synthetic",
+                            turnId: "synthetic",
+                        }
+                    )
+                )
+            );
+        const first = await read();
+        expect(first.result.rows).toHaveLength(50);
+        const second = await read(first.result.nextCursor!);
+        const controls = [...first.result.rows, ...second.result.rows];
+        expect(controls).toHaveLength(69);
+        expect(controls.some((row) => row.reason === "Private other reason")).toBe(false);
+        expect(controls.find((row) => row.key === "integration:agentmail")).toMatchObject(
+            { enabled: false, reason: "Not enabled yet." }
+        );
+        expect(second.result.nextCursor).toBeNull();
+    } finally {
+        await fixture.close();
+    }
+});

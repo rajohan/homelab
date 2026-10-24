@@ -32,7 +32,7 @@ export async function miraObservationFingerprint(
     >`SELECT id, name, host, service, severity FROM operational_incidents WHERE state = 'active' ORDER BY id`;
     const jobs = await query<
         Record<string, unknown>[]
-    >`SELECT id, state FROM job_runs WHERE state IN ('failed','needs_attention') ORDER BY id DESC LIMIT 30`;
+    >`SELECT id,label,state,created_at,finished_at FROM job_runs ORDER BY id DESC LIMIT 30`;
     const snapshots = await query<
         Record<string, unknown>[]
     >`SELECT key,captured_at FROM operation_snapshots ORDER BY key LIMIT 50`;

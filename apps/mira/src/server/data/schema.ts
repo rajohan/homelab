@@ -254,6 +254,7 @@ export const miraAttachments = pgTable(
         sha256: text().notNull(),
         readyAt: time("ready_at"),
         purgedAt: time("purged_at"),
+        purgeRetryAt: time("purge_retry_at"),
         deletedAt: time("deleted_at"),
         createdAt: time("created_at").notNull().defaultNow(),
     },

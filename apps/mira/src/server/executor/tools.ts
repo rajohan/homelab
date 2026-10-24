@@ -11,6 +11,7 @@ import { idSchema } from "@homelab/contracts/operations";
 import type { SQL, TransactionSQL } from "bun";
 import * as v from "valibot";
 
+import { readMiraControlPage } from "../data/automations";
 import { MiraFailure, type MiraContext } from "../data/context";
 import { createReport, listMemory, listReports, saveMemory } from "../data/documents";
 import { readMiraFile } from "../data/files";
@@ -300,6 +301,23 @@ export function createMiraTools(
             automatic: false,
             action: (input, _signal, scoped) =>
                 saveMemory(scoped, v.parse(miraMemoryInputSchema, input)),
+        },
+        {
+            name: "mira_controls_list",
+            description:
+                "Read the operator's current integration and automation controls, disable reasons and resume times. Check these before reporting intentionally paused work as a failure. Use after to read subsequent pages.",
+            inputSchema: object({ after: { type: "string", maxLength: 120 } }),
+            automatic: true,
+            action: (input) =>
+                readMiraControlPage(
+                    context,
+                    v.parse(
+                        v.strictObject({
+                            after: v.optional(v.pipe(v.string(), v.maxLength(120))),
+                        }),
+                        input
+                    ).after
+                ),
         },
         {
             name: "mira_dashboard_state",

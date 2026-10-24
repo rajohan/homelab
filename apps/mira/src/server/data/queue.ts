@@ -82,6 +82,11 @@ export async function claimMiraRun(
                 Omit<MiraClaim, "leaseToken">[]
             >`SELECT id, owner, conversation_id AS "conversationId", user_message_id AS "userMessageId", assistant_message_id AS "assistantMessageId", automation_id AS "automationId", task_id AS "taskId", budget_seconds AS "budgetSeconds", manual FROM mira_runs WHERE state = 'queued' AND NOT cancel_requested AND (${lane === "general"} OR manual) ORDER BY priority DESC, id LIMIT 1 FOR UPDATE SKIP LOCKED`;
             if (!run) return null;
+            // A pause/delete may hold controls while waiting for this row. Never wait in reverse order.
+            const [controls] = await query<
+                { acquired: boolean }[]
+            >`SELECT pg_try_advisory_xact_lock(hashtextextended(${`mira:controls:${run.owner}`},0)) AS acquired`;
+            if (!controls?.acquired) return null;
             if (
                 !(run.manual
                     ? await miraDependenciesAllowed(query, run.owner, run.automationId)

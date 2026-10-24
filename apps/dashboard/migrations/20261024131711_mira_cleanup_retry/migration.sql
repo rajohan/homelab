@@ -1,0 +1,1 @@
+ALTER TABLE "mira_attachments" ADD COLUMN "purge_retry_at" timestamp with time zone;

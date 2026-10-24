@@ -322,14 +322,23 @@ export async function cleanupMiraFiles(
 ): Promise<number> {
     if (!directory) return 0;
     const root = await miraFileDirectory(directory);
-    return client.begin(async (query) => {
+    const result = await client.begin(async (query) => {
         await query`SELECT pg_advisory_xact_lock(hashtextextended('homelab:mira:files', 0))`;
         const rows = await query<
             { id: string; owner: string }[]
-        >`SELECT id, owner FROM mira_attachments WHERE purged_at IS NULL AND (deleted_at IS NOT NULL OR (ready_at IS NULL AND created_at < now() - interval '1 day')) AND NOT EXISTS (SELECT 1 FROM mira_runs r JOIN mira_messages m ON m.conversation_id = r.conversation_id WHERE r.owner = mira_attachments.owner AND r.state IN ('queued','running') AND m.attachment_ids @> jsonb_build_array(mira_attachments.id::text)) ORDER BY created_at LIMIT 20 FOR UPDATE SKIP LOCKED`;
+        >`SELECT id, owner FROM mira_attachments WHERE purged_at IS NULL AND (purge_retry_at IS NULL OR purge_retry_at<=now()) AND (deleted_at IS NOT NULL OR (ready_at IS NULL AND created_at < now() - interval '1 day')) AND NOT EXISTS (SELECT 1 FROM mira_runs r JOIN mira_messages m ON m.conversation_id = r.conversation_id WHERE r.owner = mira_attachments.owner AND r.state IN ('queued','running') AND m.attachment_ids @> jsonb_build_array(mira_attachments.id::text)) ORDER BY created_at LIMIT 20 FOR UPDATE SKIP LOCKED`;
+        let deleted = 0;
+        let failed = false;
         for (const row of rows) {
-            await removeFile(path.join(root, v.parse(idSchema, row.id)));
-            await query`UPDATE mira_attachments SET deleted_at = coalesce(deleted_at,now()), purged_at = now(), sha256 = '', name = 'Deleted file' WHERE id = ${row.id}`;
+            try {
+                await removeFile(path.join(root, v.parse(idSchema, row.id)));
+            } catch {
+                await query`UPDATE mira_attachments SET purge_retry_at=now()+interval '5 minutes' WHERE id=${row.id}`;
+                failed = true;
+                continue;
+            }
+            deleted++;
+            await query`UPDATE mira_attachments SET deleted_at = coalesce(deleted_at,now()), purged_at = now(), purge_retry_at=NULL, sha256 = '', name = 'Deleted file' WHERE id = ${row.id}`;
             await auditMira(
                 query,
                 { owner: row.owner, actor: "mira:cleanup" },
@@ -337,6 +346,11 @@ export async function cleanupMiraFiles(
                 row.id
             );
         }
-        return rows.length;
+        return { deleted, failed };
     });
+    if (result.failed)
+        throw new Error(
+            "Some deleted files could not be purged; cleanup will retry them later."
+        );
+    return result.deleted;
 }

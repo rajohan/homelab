@@ -104,15 +104,11 @@ export async function enqueueTurn(
         manual?: boolean;
     } = {}
 ) {
-    const [conversation] = await query<
-        { id: string; settings: MiraChatSettings }[]
-    >`SELECT id, settings FROM mira_conversations WHERE id = ${input.conversationId} AND owner = ${context.owner} AND deleted_at IS NULL AND archived_at IS NULL FOR UPDATE`;
-    if (!conversation)
-        throw new MiraFailure("NOT_FOUND", "Open an active conversation before sending.");
     const requestKey = `${context.owner}:${input.requestId}`;
     const hash = new Bun.CryptoHasher("sha256")
         .update(JSON.stringify(input))
         .digest("hex");
+    await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:request:${requestKey}`},0))`;
     const [existing] = await query<
         { id: string; requestHash: string }[]
     >`SELECT id, request_hash AS "requestHash" FROM mira_runs WHERE request_key = ${requestKey}`;
@@ -124,6 +120,11 @@ export async function enqueueTurn(
             );
         return { id: existing.id };
     }
+    const [conversation] = await query<
+        { id: string; settings: MiraChatSettings }[]
+    >`SELECT id, settings FROM mira_conversations WHERE id = ${input.conversationId} AND owner = ${context.owner} AND deleted_at IS NULL AND archived_at IS NULL FOR UPDATE`;
+    if (!conversation)
+        throw new MiraFailure("NOT_FOUND", "Open an active conversation before sending.");
     const active = await query<
         { id: string }[]
     >`SELECT id FROM mira_runs WHERE conversation_id = ${input.conversationId} AND state IN ('queued','running')`;

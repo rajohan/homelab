@@ -290,3 +290,21 @@ export async function reconcileMiraControls(
         await resumeMiraControls(query, now);
     });
 }
+
+/**
+ * Read a bounded page of current operator controls and intentional pause reasons.
+ * @param context - Verified account; no credentials or other owners' controls are exposed.
+ * @param after - Exclusive key cursor from the preceding page.
+ * @returns Saved or default controls, automation titles and continuation metadata.
+ */
+export async function readMiraControlPage(context: MiraContext, after?: string) {
+    const defaults = miraControlKeys.map((key) => ({
+        key,
+        enabled: key === "autonomy",
+        reason: key === "autonomy" ? null : "Not enabled yet.",
+    }));
+    const rows = await context.client<
+        (MiraSwitch & { automationTitle: string | null })[]
+    >`WITH controls AS (SELECT key,enabled,reason,until,version FROM mira_switches WHERE owner=${context.owner} UNION ALL SELECT d.key,d.enabled,d.reason,NULL::timestamptz,1 FROM jsonb_to_recordset(${JSON.stringify(defaults)}::text::jsonb) AS d(key text,enabled boolean,reason text) WHERE NOT EXISTS(SELECT 1 FROM mira_switches s WHERE s.owner=${context.owner} AND s.key=d.key)) SELECT c.key,c.enabled,c.reason,c.until::text AS until,c.version,a.title AS "automationTitle" FROM controls c LEFT JOIN mira_automations a ON c.key='automation:'||a.id::text AND a.owner=${context.owner} WHERE (${after ?? null}::text IS NULL OR c.key>${after ?? null}) ORDER BY c.key LIMIT 50`;
+    return { rows, nextCursor: rows.length === 50 ? rows.at(-1)!.key : null };
+}

@@ -1,0 +1,37 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "a9576a2d-40fb-4b08-8536-1761fb230b8d",
+    "prevIds": ["fdaf0a49-4d30-4597-8b58-374257952c45"],
+    "footprints": [
+        {
+            "statementType": "add_column",
+            "statementTarget": ["column", "public", "mira_attachments", "purge_retry_at"],
+            "writes": [
+                "s|col|public.mira_attachments.purge_retry_at",
+                "n|col|public.mira_attachments.purge_retry_at",
+                "e|col|public.mira_attachments.purge_retry_at"
+            ],
+            "reads": ["n|tbl|public.mira_attachments", "n|sch|public"]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_attachments",
+                "name": "purge_retry_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        }
+    ]
+}

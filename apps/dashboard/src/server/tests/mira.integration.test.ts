@@ -661,3 +661,96 @@ test("historical run details retain uncertain receipts across later turns and ch
         await database.close();
     }
 });
+
+test.each(["archive", "delete"] as const)(
+    "chat retries recover committed submissions after conversation %s",
+    async (action) => {
+        const database = await fixture();
+        try {
+            const api = database.caller().mira;
+            const chat = await api.conversations.create({
+                title: "Retry after lifecycle change",
+            });
+            const input = {
+                conversationId: chat.id,
+                requestId: crypto.randomUUID(),
+                text: "Committed message",
+            };
+            const run = await api.conversations.send(input);
+            await api.runs.cancel(run);
+            const current = await api.conversations.read({ id: chat.id });
+            await api.conversations.change({
+                id: chat.id,
+                version: current.conversation.version,
+                action,
+            });
+            expect(await api.conversations.send(input)).toEqual(run);
+            await rejects(
+                api.conversations.send({ ...input, text: "Different message" }),
+                /already belongs/
+            );
+            await rejects(
+                api.conversations.send({ ...input, requestId: crypto.randomUUID() }),
+                /active conversation/
+            );
+            await rejects(
+                database.caller("other").mira.conversations.send(input),
+                /active conversation/
+            );
+        } finally {
+            await database.close();
+        }
+    }
+);
+
+test.each(["pause", "delete"])(
+    "run claims yield to an uncommitted automation %s",
+    async (action) => {
+        const database = await fixture();
+        try {
+            const api = database.caller().mira;
+            const automation = await api.automations.create({
+                title: "Claim controls",
+                prompt: "Inspect",
+                kind: "custom",
+                schedule: {
+                    kind: "once",
+                    at: new Date(Date.now() + 60_000).toISOString(),
+                },
+                budgetSeconds: 60,
+            });
+            await api.controls.setEnabled({
+                key: `automation:${automation.id}`,
+                version: 1,
+                enabled: true,
+                reason: null,
+                until: null,
+            });
+            await database.client`UPDATE mira_automations SET next_run_at=now()-interval '1 second' WHERE id=${automation.id}`;
+            expect(await scheduleMiraRuns(database.client)).toBe(1);
+            await database.client.begin(async (query) => {
+                await query`SELECT pg_advisory_xact_lock(hashtextextended('mira:controls:operator',0))`;
+                if (action === "pause")
+                    await query`UPDATE mira_switches SET enabled=false,reason='Intentional test pause' WHERE owner='operator' AND key=${`automation:${automation.id}`}`;
+                if (action === "delete")
+                    await query`UPDATE mira_automations SET deleted_at=now() WHERE id=${automation.id}`;
+                expect(
+                    await claimMiraRun(database.client, crypto.randomUUID(), "general")
+                ).toBeNull();
+                const [state] = await query<
+                    { state: string }[]
+                >`SELECT state FROM mira_runs WHERE automation_id=${automation.id}`;
+                expect(state?.state).toBe("queued");
+            });
+            expect(
+                await claimMiraRun(database.client, crypto.randomUUID(), "general")
+            ).toBeNull();
+            const [state] = await database.client<
+                { state: string }[]
+            >`SELECT state FROM mira_runs WHERE automation_id=${automation.id}`;
+            expect(state?.state).toBe("interrupted");
+        } finally {
+            await database.close();
+        }
+    }
+);
