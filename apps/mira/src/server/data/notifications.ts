@@ -27,6 +27,9 @@ export async function miraObservationFingerprint(
     const controls = await query<
         Record<string, unknown>[]
     >`SELECT key, enabled, reason FROM mira_switches WHERE owner = ${owner} ORDER BY key`;
+    const reports = await query<
+        Record<string, unknown>[]
+    >`SELECT p.id,p.version,p.archived_at FROM mira_reports p LEFT JOIN mira_runs r ON r.id=p.run_id AND r.owner=p.owner WHERE p.owner=${owner} AND p.deleted_at IS NULL AND p.run_id IS DISTINCT FROM ${runId}::uuid AND (r.automation_id IS NULL OR r.automation_id IS DISTINCT FROM (SELECT automation_id FROM mira_runs WHERE id=${runId} AND owner=${owner})) ORDER BY p.id DESC LIMIT 30`;
     const incidents = await query<
         Record<string, unknown>[]
     >`SELECT id, name, host, service, severity FROM operational_incidents WHERE state = 'active' ORDER BY id`;
@@ -49,6 +52,7 @@ export async function miraObservationFingerprint(
                 progress,
                 memory,
                 controls,
+                reports,
                 incidents,
                 jobs,
                 snapshots,

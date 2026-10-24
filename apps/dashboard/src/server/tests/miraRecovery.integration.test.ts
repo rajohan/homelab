@@ -20,6 +20,7 @@ import {
     installMiraPresets,
     deleteMiraAutomation,
 } from "@homelab/mira/data/automationActions";
+import { readMiraControlPage } from "@homelab/mira/data/automations";
 import { miraQueueAvailable } from "@homelab/mira/data/capacity";
 import { cleanupMiraFiles, readMiraFile, saveMiraFile } from "@homelab/mira/data/files";
 import { miraObservationFingerprint } from "@homelab/mira/data/notifications";
@@ -108,6 +109,12 @@ test("provider deletion retains retry intent on failure and clears it only after
             { count: number }[]
         >`SELECT count(*)::int AS count FROM mira_conversations WHERE deleted_at IS NOT NULL AND provider_thread IS NOT NULL`;
         expect(remaining?.count).toBe(1);
+        expect(
+            await cleanupMiraConversations(fixture.client, {
+                deleteThread: () => Promise.reject(new Error("Still deferred")),
+            })
+        ).toBe(0);
+        await fixture.client`UPDATE mira_conversations SET provider_purge_retry_at=now()-interval '1 second' WHERE id=${chat.id}`;
         const references: string[] = [];
         expect(
             await cleanupMiraConversations(fixture.client, {
@@ -444,15 +451,29 @@ test("concurrent read-only tools do not reserve transactions while waiting for p
     }
 });
 
-test.each([false, true])(
-    "explicit models run with a missing default even during blocked cleanup (%s)",
-    async (blockedCleanup) => {
+test.each(["none", "cleanup", "inspection"])(
+    "explicit models and coordinator remain available during blocked provider work (%s)",
+    async (blockedWork) => {
+        const blockedCleanup = blockedWork === "cleanup";
+        const blockedInspection = blockedWork === "inspection";
         const fixture = await operationFixture();
         const directory = await mkdtemp(path.join(tmpdir(), "mira-default-model-"));
         const abort = new AbortController();
         let executor: Promise<void> | undefined;
         const released = Promise.withResolvers<void>(),
             cleanupStarted = Promise.withResolvers<void>();
+        // oxlint-disable-next-line typescript/unbound-method -- Called with its original runtime receiver below.
+        const originalModels = CodexRuntime.prototype.models;
+        const inspectionStarted = Promise.withResolvers<void>();
+        const inspection = blockedInspection
+            ? spyOn(CodexRuntime.prototype, "models").mockImplementation(async function (
+                  this: CodexRuntime
+              ) {
+                  inspectionStarted.resolve();
+                  await released.promise;
+                  return originalModels.call(this);
+              })
+            : undefined;
         const cleanup = blockedCleanup
             ? spyOn(CodexRuntime.prototype, "deleteThread").mockImplementation(() => {
                   cleanupStarted.resolve();
@@ -496,7 +517,19 @@ test.each([false, true])(
                 principal: { kind: "human", id: "operator", capabilities },
             }).mira;
             if (blockedCleanup) await cleanupStarted.promise;
-            const deadline = Date.now() + 5000;
+            if (blockedInspection) {
+                await inspectionStarted.promise;
+                const heartbeatDeadline = Date.now() + 1000;
+                while (health.heartbeatAt === 0 && Date.now() < heartbeatDeadline)
+                    await delay(20);
+                expect(health.heartbeatAt).toBeGreaterThan(0);
+                const status = await fixture.client<
+                    { heartbeat_at: Date }[]
+                >`SELECT heartbeat_at FROM mira_runtime_status WHERE id=1`;
+                expect(status).toHaveLength(1);
+                released.resolve();
+            }
+            const deadline = Date.now() + 10_000;
             while (Date.now() < deadline) {
                 const catalog = await api.models();
                 if (catalog.fresh) break;
@@ -535,6 +568,7 @@ test.each([false, true])(
             released.resolve();
             await executor;
             cleanup?.mockRestore();
+            inspection?.mockRestore();
             await fixture.close();
             await rm(directory, { recursive: true, force: true });
         }
@@ -1222,6 +1256,7 @@ test("automatic tools read paginated owned pause reasons and safe integration de
         });
         const run = await claimMiraRun(fixture.client, crypto.randomUUID(), "foreground");
         if (!run) throw new Error("Expected run");
+        await fixture.client`INSERT INTO mira_automations(id,owner,title,prompt,kind,delivery,budget_seconds,schedule) SELECT md5(i::text)::uuid,'operator','Synthetic live automation','Inspect only','heartbeat','changes',60,'{"kind":"interval","minutes":60}'::jsonb FROM generate_series(1,60)i`;
         await fixture.client`INSERT INTO mira_switches(owner,key,enabled,reason) SELECT 'operator','automation:'||md5(i::text)::uuid,false,'Paused for planned work' FROM generate_series(1,60)i`;
         await fixture.client`INSERT INTO mira_switches(owner,key,enabled,reason) VALUES ('other','integration:agentmail',false,'Private other reason')`;
         const tool = createMiraTools(fixture.client, {
@@ -1266,6 +1301,92 @@ test("automatic tools read paginated owned pause reasons and safe integration de
             { enabled: false, reason: "Not enabled yet." }
         );
         expect(second.result.nextCursor).toBeNull();
+        await fixture.client`UPDATE mira_automations SET deleted_at=now() WHERE id IN (SELECT md5(i::text)::uuid FROM generate_series(1,55)i)`;
+        const liveControls = await api.controls.list();
+        expect(liveControls).toHaveLength(14);
+        const livePage = await readMiraControlPage({
+            client: fixture.client,
+            owner: "operator",
+            actor: "human:operator",
+        });
+        expect(livePage.rows).toHaveLength(14);
+        expect(livePage.nextCursor).toBeNull();
+        const retained = await fixture.client<
+            { key: string }[]
+        >`SELECT key FROM mira_switches WHERE owner='operator' AND key LIKE 'automation:%'`;
+        expect(retained).toHaveLength(60);
+    } finally {
+        await fixture.close();
+    }
+});
+
+test("failed provider cleanup batches defer retry and allow later tombstones to finish", async () => {
+    const fixture = await operationFixture();
+    try {
+        await fixture.client`INSERT INTO mira_conversations(id,owner,title,deleted_at,provider_thread) SELECT md5(i::text)::uuid,'operator','Deleted',now()-interval '1 day'+i*interval '1 second','thread-'||i FROM generate_series(1,21)i`;
+        const attempted: string[] = [];
+        const runtime = {
+            deleteThread: (id: string) => {
+                attempted.push(id);
+                return id === "thread-21"
+                    ? Promise.resolve()
+                    : Promise.reject(new Error("Persistent failure"));
+            },
+        };
+        await rejects(
+            cleanupMiraConversations(fixture.client, runtime),
+            /references remain pending/
+        );
+        expect(attempted).toHaveLength(20);
+        expect(await cleanupMiraConversations(fixture.client, runtime)).toBe(1);
+        expect(attempted).toHaveLength(21);
+        expect(await cleanupMiraConversations(fixture.client, runtime)).toBe(0);
+        const pending = await fixture.client<
+            { id: string }[]
+        >`SELECT id FROM mira_conversations WHERE provider_purge_retry_at>now() AND provider_thread IS NOT NULL`;
+        expect(pending).toHaveLength(20);
+    } finally {
+        await fixture.close();
+    }
+});
+
+test("report observations change notification fingerprints without self-generated report loops", async () => {
+    const fixture = await operationFixture();
+    const api = appRouter.createCaller({
+        operations: fixture,
+        principal: { kind: "human", id: "operator", capabilities },
+    }).mira;
+    try {
+        const chat = await api.conversations.create({ title: "Report observation" });
+        const queued = await api.conversations.send({
+            conversationId: chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Observe reports",
+        });
+        const automation = crypto.randomUUID();
+        await fixture.client`INSERT INTO mira_automations(id,owner,title,prompt,kind,delivery,budget_seconds,schedule) VALUES (${automation},'operator','Synthetic','Observe','heartbeat','changes',60,'{}'::jsonb)`;
+        await fixture.client`UPDATE mira_runs SET automation_id=${automation} WHERE id=${queued.id}`;
+        const fingerprint = () =>
+            fixture.client.begin((query) =>
+                miraObservationFingerprint(query, "operator", queued.id)
+            );
+        const empty = await fingerprint();
+        await fixture.client`INSERT INTO mira_reports(id,owner,title,kind,markdown,run_id) VALUES (${crypto.randomUUID()},'operator','Current output','summary','Synthetic',${queued.id})`;
+        expect(await fingerprint()).toBe(empty);
+        const previous = crypto.randomUUID();
+        await fixture.client`INSERT INTO mira_runs(id,owner,request_key,request_hash,conversation_id,user_message_id,assistant_message_id,automation_id,state,priority,budget_seconds) SELECT ${previous},owner,${previous},request_hash,conversation_id,user_message_id,assistant_message_id,automation_id,'completed',priority,budget_seconds FROM mira_runs WHERE id=${queued.id}`;
+        await fixture.client`INSERT INTO mira_reports(id,owner,title,kind,markdown,run_id) VALUES (${crypto.randomUUID()},'operator','Prior own output','summary','Synthetic',${previous})`;
+        expect(await fingerprint()).toBe(empty);
+        const report = crypto.randomUUID();
+        await fixture.client`INSERT INTO mira_reports(id,owner,title,kind,markdown) VALUES (${report},'operator','Manual report','summary','New observation')`;
+        const added = await fingerprint();
+        expect(added).not.toBe(empty);
+        await fixture.client`INSERT INTO mira_reports(id,owner,title,kind,markdown) VALUES (${crypto.randomUUID()},'other','Private','summary','Other owner')`;
+        expect(await fingerprint()).toBe(added);
+        await fixture.client`UPDATE mira_reports SET markdown='Changed observation',version=version+1 WHERE id=${report}`;
+        expect(await fingerprint()).not.toBe(added);
+        await fixture.client`UPDATE mira_reports SET deleted_at=now() WHERE id=${report}`;
+        expect(await fingerprint()).toBe(empty);
     } finally {
         await fixture.close();
     }

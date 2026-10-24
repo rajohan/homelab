@@ -53,7 +53,7 @@ export function nextMiraOccurrence(
 export async function listMiraSwitches(context: MiraContext): Promise<MiraSwitch[]> {
     const rows = await context.client<
         MiraSwitch[]
-    >`SELECT key, enabled, reason, until::text AS until, version FROM mira_switches WHERE owner = ${context.owner} ORDER BY key`;
+    >`SELECT key, enabled, reason, until::text AS until, version FROM mira_switches s WHERE owner = ${context.owner} AND (s.key NOT LIKE 'automation:%' OR EXISTS (SELECT 1 FROM mira_automations a WHERE s.key='automation:'||a.id::text AND a.owner=s.owner AND a.deleted_at IS NULL)) ORDER BY key`;
     for (const key of miraControlKeys)
         if (!rows.some((row) => row.key === key))
             rows.push({
@@ -305,6 +305,6 @@ export async function readMiraControlPage(context: MiraContext, after?: string) 
     }));
     const rows = await context.client<
         (MiraSwitch & { automationTitle: string | null })[]
-    >`WITH controls AS (SELECT key,enabled,reason,until,version FROM mira_switches WHERE owner=${context.owner} UNION ALL SELECT d.key,d.enabled,d.reason,NULL::timestamptz,1 FROM jsonb_to_recordset(${JSON.stringify(defaults)}::text::jsonb) AS d(key text,enabled boolean,reason text) WHERE NOT EXISTS(SELECT 1 FROM mira_switches s WHERE s.owner=${context.owner} AND s.key=d.key)) SELECT c.key,c.enabled,c.reason,c.until::text AS until,c.version,a.title AS "automationTitle" FROM controls c LEFT JOIN mira_automations a ON c.key='automation:'||a.id::text AND a.owner=${context.owner} WHERE (${after ?? null}::text IS NULL OR c.key>${after ?? null}) ORDER BY c.key LIMIT 50`;
+    >`WITH controls AS (SELECT key,enabled,reason,until,version FROM mira_switches WHERE owner=${context.owner} UNION ALL SELECT d.key,d.enabled,d.reason,NULL::timestamptz,1 FROM jsonb_to_recordset(${JSON.stringify(defaults)}::text::jsonb) AS d(key text,enabled boolean,reason text) WHERE NOT EXISTS(SELECT 1 FROM mira_switches s WHERE s.owner=${context.owner} AND s.key=d.key)) SELECT c.key,c.enabled,c.reason,c.until::text AS until,c.version,a.title AS "automationTitle" FROM controls c LEFT JOIN mira_automations a ON c.key='automation:'||a.id::text AND a.owner=${context.owner} WHERE (c.key NOT LIKE 'automation:%' OR (a.id IS NOT NULL AND a.deleted_at IS NULL)) AND (${after ?? null}::text IS NULL OR c.key>${after ?? null}) ORDER BY c.key LIMIT 50`;
     return { rows, nextCursor: rows.length === 50 ? rows.at(-1)!.key : null };
 }

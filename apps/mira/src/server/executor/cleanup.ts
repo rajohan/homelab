@@ -17,7 +17,7 @@ export async function cleanupMiraConversations(
 ): Promise<number> {
     const rows = await client<
         { id: string; owner: string; providerThread: string }[]
-    >`SELECT id, owner, provider_thread AS "providerThread" FROM mira_conversations c WHERE deleted_at IS NOT NULL AND provider_thread IS NOT NULL AND NOT EXISTS (SELECT 1 FROM mira_runs r WHERE r.conversation_id = c.id AND r.state IN ('queued','running')) ORDER BY deleted_at, id LIMIT 20`;
+    >`SELECT id, owner, provider_thread AS "providerThread" FROM mira_conversations c WHERE deleted_at IS NOT NULL AND provider_thread IS NOT NULL AND (provider_purge_retry_at IS NULL OR provider_purge_retry_at <= now()) AND NOT EXISTS (SELECT 1 FROM mira_runs r WHERE r.conversation_id = c.id AND r.state IN ('queued','running')) ORDER BY deleted_at, id LIMIT 20`;
     let deleted = 0;
     let failed = false;
     for (const row of rows) {
@@ -26,7 +26,7 @@ export async function cleanupMiraConversations(
             await client.begin(async (query) => {
                 const updated = await query<
                     { id: string }[]
-                >`UPDATE mira_conversations SET provider_thread = NULL WHERE id = ${row.id} AND deleted_at IS NOT NULL AND provider_thread = ${row.providerThread} RETURNING id`;
+                >`UPDATE mira_conversations SET provider_thread = NULL, provider_context_ready = false, provider_purge_retry_at = NULL WHERE id = ${row.id} AND deleted_at IS NOT NULL AND provider_thread = ${row.providerThread} RETURNING id`;
                 if (updated.length > 0)
                     await auditMira(
                         query,
@@ -37,6 +37,7 @@ export async function cleanupMiraConversations(
             });
             deleted++;
         } catch {
+            await client`UPDATE mira_conversations SET provider_purge_retry_at=now()+interval '5 minutes' WHERE id=${row.id} AND deleted_at IS NOT NULL AND provider_thread=${row.providerThread}`;
             failed = true;
         }
     }

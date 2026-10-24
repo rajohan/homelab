@@ -35,11 +35,11 @@ export async function runMiraExecutor(options: {
     const failed = new AbortController();
     const signal = AbortSignal.any([options.signal, failed.signal]);
     const workerId = crypto.randomUUID();
-    let inspectedAt = 0;
     let model: string | null = null;
     let models: MiraModel[] = [];
     let message: string | null = null;
     let cleanupPending = false;
+    let inspectionChanged = Promise.withResolvers<void>();
     const wait = async (ms: number) => {
         try {
             await delay(ms, undefined, { signal });
@@ -49,41 +49,9 @@ export async function runMiraExecutor(options: {
     };
     const coordinator = async () => {
         while (!signal.aborted) {
+            const changed = inspectionChanged.promise;
             await reconcileMiraRuns(client);
             await reconcileMiraControls(client);
-            if (Date.now() - inspectedAt >= 30_000) {
-                let runtime: CodexRuntime | undefined;
-                try {
-                    runtime = await CodexRuntime.connect({
-                        command: config.command,
-                        args: pilotArguments(),
-                        cwd: config.workspace,
-                        env: runtimeEnvironment(config),
-                        requestTimeoutMs: 5000,
-                        signal,
-                    });
-                    const account = await runtime.account();
-                    health.ready = account.authenticated;
-                    models = account.authenticated ? await runtime.models() : [];
-                    model =
-                        config.model ??
-                        models.find((entry) => entry.isDefault)?.model ??
-                        null;
-                    // A missing deployment default must not block explicit available choices.
-                    // Each turn validates its own frozen selection before starting inference.
-                    health.ready &&= models.length > 0;
-                    message = health.ready
-                        ? null
-                        : "Mira needs its own ChatGPT sign-in and an available model.";
-                } catch {
-                    health.ready = false;
-                    message =
-                        "The Mira runtime is unavailable. Queued work has not been started.";
-                } finally {
-                    await runtime?.close();
-                }
-                inspectedAt = Date.now();
-            }
             const currentMessage =
                 health.ready && cleanupPending
                     ? "Mira is connected, but deleted-data cleanup needs attention."
@@ -91,7 +59,46 @@ export async function runMiraExecutor(options: {
             await client`INSERT INTO mira_runtime_status (id, worker_id, version, model, ready, message, heartbeat_at, models) VALUES (1, ${workerId}, ${options.version}, ${model}, ${health.ready}, ${currentMessage}, now(), ${JSON.stringify(models)}::text::jsonb) ON CONFLICT (id) DO UPDATE SET worker_id = EXCLUDED.worker_id, version = EXCLUDED.version, model = EXCLUDED.model, ready = EXCLUDED.ready, message = EXCLUDED.message, heartbeat_at = EXCLUDED.heartbeat_at, models = EXCLUDED.models`;
             if (health.ready) await scheduleMiraRuns(client);
             health.heartbeatAt = Date.now();
-            await wait(5000);
+            await Promise.race([wait(5000), changed]);
+        }
+    };
+    const inspector = async () => {
+        while (!signal.aborted) {
+            let runtime: CodexRuntime | undefined;
+            try {
+                runtime = await CodexRuntime.connect({
+                    command: config.command,
+                    args: pilotArguments(),
+                    cwd: config.workspace,
+                    env: runtimeEnvironment(config),
+                    requestTimeoutMs: 5000,
+                    signal,
+                });
+                const account = await runtime.account();
+                const availableModels = account.authenticated
+                    ? await runtime.models()
+                    : [];
+                models = availableModels;
+                model =
+                    config.model ??
+                    models.find((entry) => entry.isDefault)?.model ??
+                    null;
+                // A missing deployment default must not block explicit available choices.
+                // Each turn validates its own frozen selection before starting inference.
+                health.ready = account.authenticated && models.length > 0;
+                message = health.ready
+                    ? null
+                    : "Mira needs its own ChatGPT sign-in and an available model.";
+            } catch {
+                health.ready = false;
+                message =
+                    "The Mira runtime is unavailable. Queued work has not been started.";
+            } finally {
+                inspectionChanged.resolve();
+                inspectionChanged = Promise.withResolvers<void>();
+                await runtime?.close();
+            }
+            await wait(30_000);
         }
     };
     const cleaner = async () => {
@@ -156,6 +163,7 @@ export async function runMiraExecutor(options: {
     };
     const outcomes = await Promise.allSettled([
         stopOnFailure(coordinator()),
+        stopOnFailure(inspector()),
         stopOnFailure(cleaner()),
         stopOnFailure(lane("foreground")),
         stopOnFailure(lane("general")),
