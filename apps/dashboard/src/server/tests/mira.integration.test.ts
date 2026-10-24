@@ -783,3 +783,72 @@ test("completed or operator-owned tasks cannot start and archived task context i
         await database.close();
     }
 });
+
+test.each(["needs_attention", "unknown receipt"])(
+    "automatic task delivery waits for explicit review after %s",
+    async (outcome) => {
+        const database = await fixture();
+        try {
+            const api = database.caller().mira;
+            const saved = await api.tasks.create({
+                ...task,
+                dueAt: new Date(Date.now() - 1000).toISOString(),
+            });
+            const first = await api.tasks.run({
+                id: saved.id,
+                version: 1,
+                requestId: crypto.randomUUID(),
+            });
+            const automation = await api.automations.create({
+                title: "Due task",
+                prompt: "Review due tasks",
+                kind: "custom",
+                schedule: { kind: "event", event: "task_due" },
+                budgetSeconds: 60,
+            });
+            await api.controls.setEnabled({
+                key: `automation:${automation.id}`,
+                version: 1,
+                enabled: true,
+                reason: null,
+                until: null,
+            });
+            expect(await scheduleMiraRuns(database.client)).toBe(0);
+            await api.runs.cancel({ id: first.id });
+            await (outcome === "needs_attention"
+                ? database.client`UPDATE mira_runs SET state='needs_attention' WHERE id=${first.id}`
+                : database.client`INSERT INTO mira_tool_receipts (id, run_id, call_id, tool, input_hash, state) VALUES (${Bun.randomUUIDv7()}, ${first.id}, 'uncertain', 'synthetic_action', 'synthetic', 'unknown')`);
+            const now = new Date(Date.now() + 31_000);
+            expect(await scheduleMiraRuns(database.client, now)).toBe(0);
+            const waiting = await database.client<
+                { state: string }[]
+            >`SELECT state FROM mira_event_deliveries`;
+            expect(waiting).toEqual([{ state: "pending" }]);
+            const blockedHistory = await api.tasks.execution({ id: saved.id });
+            expect(blockedHistory.rows).toHaveLength(1);
+            const reviewed = await api.tasks.run({
+                id: saved.id,
+                version: 2,
+                requestId: crypto.randomUUID(),
+                reviewedRunId: first.id,
+            });
+            expect(
+                await scheduleMiraRuns(database.client, new Date(now.getTime() + 31_000))
+            ).toBe(0);
+            await api.runs.cancel({ id: reviewed.id });
+            expect(
+                await scheduleMiraRuns(database.client, new Date(now.getTime() + 62_000))
+            ).toBe(1);
+            const history = await api.tasks.execution({ id: saved.id });
+            expect(history.reviewRunId).toBeNull();
+            expect(history.rows).toHaveLength(3);
+            expect(history.rows[0]?.automationId).toBe(automation.id);
+            const [index] = await database.client<
+                { definition: string }[]
+            >`SELECT indexdef AS definition FROM pg_indexes WHERE schemaname='public' AND indexname='mira_runs_task'`;
+            expect(index?.definition).toContain("(owner, task_id, id)");
+        } finally {
+            await database.close();
+        }
+    }
+);

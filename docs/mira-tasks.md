@@ -30,7 +30,8 @@ After executor loss or unknown tool outcomes, the operator must review the run
 before requesting continued work. Acceptance is recorded on the new run and never
 rewrites unknown tool receipts or silently replays prior actions. A reviewed
 outcome does not ask for the same confirmation on every later continuation; a new
-uncertain run requires its own review.
+uncertain run requires its own review. Due-task automation also stays pending until
+that review is recorded, subject to the ordinary event expiration window.
 
 ## Qualification
 

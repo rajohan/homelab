@@ -4,6 +4,7 @@ import type * as v from "valibot";
 import { auditMira, MiraFailure, requireTask, type MiraContext } from "./context";
 import { enqueueTurn } from "./conversations";
 import { listMiraRuns } from "./queue";
+import { unreviewedTaskRun } from "./taskRecovery";
 
 /**
  * Read execution history independently of the human-managed task status.
@@ -22,13 +23,11 @@ export async function readTaskExecution(
         { version: number; conversationId: string | null }[]
     >`SELECT version, conversation_id AS "conversationId" FROM mira_tasks WHERE id = ${id} AND owner = ${context.owner} AND deleted_at IS NULL`;
     if (!task) throw new MiraFailure("NOT_FOUND", "Task not found.");
-    const [uncertain] = await context.client<
-        { id: string }[]
-    >`SELECT r.id FROM mira_runs r WHERE r.task_id = ${id} AND r.owner = ${context.owner} AND NOT EXISTS (SELECT 1 FROM mira_runs reviewed WHERE reviewed.reviewed_run_id=r.id AND reviewed.owner=r.owner AND reviewed.task_id=r.task_id) AND (r.state = 'needs_attention' OR EXISTS (SELECT 1 FROM mira_tool_receipts t WHERE t.run_id = r.id AND t.state = 'unknown')) ORDER BY r.id DESC LIMIT 1`;
+    const uncertain = await unreviewedTaskRun(context.client, context.owner, id);
     return {
         ...(await listMiraRuns(context, before, id)),
         ...task,
-        reviewRunId: uncertain?.id ?? null,
+        reviewRunId: uncertain,
     };
 }
 
@@ -107,10 +106,8 @@ export async function runMiraTask(
                 "CONFLICT",
                 "Stop or finish the current task run before continuing."
             );
-        const [uncertain] = await query<
-            { id: string }[]
-        >`SELECT r.id FROM mira_runs r WHERE r.task_id = ${input.id} AND r.owner = ${context.owner} AND NOT EXISTS (SELECT 1 FROM mira_runs reviewed WHERE reviewed.reviewed_run_id=r.id AND reviewed.owner=r.owner AND reviewed.task_id=r.task_id) AND (r.state = 'needs_attention' OR EXISTS (SELECT 1 FROM mira_tool_receipts t WHERE t.run_id = r.id AND t.state = 'unknown')) ORDER BY r.id DESC LIMIT 1`;
-        if (uncertain && input.reviewedRunId !== uncertain.id)
+        const uncertain = await unreviewedTaskRun(query, context.owner, input.id);
+        if (uncertain && input.reviewedRunId !== uncertain)
             throw new MiraFailure(
                 "PRECONDITION_FAILED",
                 "Review the uncertain run before continuing. Previous actions will not be replayed automatically."

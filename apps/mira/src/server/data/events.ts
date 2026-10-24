@@ -4,6 +4,7 @@ import { miraRunAllowed, resumeMiraControls } from "./automations";
 import { miraQueueAvailable } from "./capacity";
 import { auditMira } from "./context";
 import { enqueueTurn } from "./conversations";
+import { unreviewedTaskRun } from "./taskRecovery";
 
 /**
  * Persist a verified event once and capture only currently enabled subscribers.
@@ -142,7 +143,12 @@ export async function scheduleMiraEvents(
         const busy = await query<
             { id: string }[]
         >`SELECT id FROM mira_runs WHERE (automation_id = ${event.automationId} OR (${event.taskId}::uuid IS NOT NULL AND task_id = ${event.taskId}::uuid AND owner = ${event.owner})) AND state IN ('queued','running') LIMIT 1`;
-        if (busy[0] || !(await miraQueueAvailable(query, event.owner, false))) {
+        if (
+            busy[0] ||
+            (event.taskId &&
+                (await unreviewedTaskRun(query, event.owner, event.taskId))) ||
+            !(await miraQueueAvailable(query, event.owner, false))
+        ) {
             await query`UPDATE mira_event_deliveries SET next_attempt_at = ${new Date(now.getTime() + 30_000)} WHERE event_id = ${event.eventId} AND automation_id = ${event.automationId}`;
             continue;
         }
