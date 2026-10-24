@@ -84,8 +84,9 @@ export async function runMiraExecutor(options: {
                         config.model ??
                         models.find((entry) => entry.isDefault)?.model ??
                         null;
-                    health.ready &&=
-                        model !== null && models.some((entry) => entry.model === model);
+                    // A missing deployment default must not block explicit available choices.
+                    // Each turn validates its own frozen selection before starting inference.
+                    health.ready &&= models.length > 0;
                     message = health.ready
                         ? null
                         : "Mira needs its own ChatGPT sign-in and an available model.";
