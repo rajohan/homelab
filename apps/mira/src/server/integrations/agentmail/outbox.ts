@@ -13,11 +13,15 @@ const unknownMessage =
     "Delivery could not be confirmed. Check the sent mailbox before taking any further action; this email will not be sent again automatically.";
 
 /**
- * Record abandoned sends as uncertain, including when the provider is no longer configured.
+ * Reconcile abandoned sends and invalidate approvals independently of provider availability.
  * @param client - Product pool; one durable notification is published per abandoned attempt.
+ * @param configuration - Current executor binding, absent when AgentMail has been removed.
  * @returns Completion after bounded reconciliation; no network retry is performed.
  */
-export async function reconcileMiraMail(client: SQL): Promise<void> {
+export async function reconcileMiraMail(
+    client: SQL,
+    configuration?: AgentMailReadConfiguration
+): Promise<void> {
     await client.begin(async (query) => {
         const rows = await query<
             { id: string; owner: string; token: string }[]
@@ -36,6 +40,43 @@ export async function reconcileMiraMail(client: SQL): Promise<void> {
                 `human:${row.owner}`
             );
     });
+    const binding = configuration ? agentMailBindingHash(configuration) : null;
+    const candidates = await client<
+        { id: string; owner: string }[]
+    >`SELECT id,owner FROM mira_mail_drafts WHERE state='queued' OR (state='draft' AND owner=${configuration?.owner ?? null} AND binding_hash<>${binding}) ORDER BY approved_at NULLS LAST,id LIMIT 50`;
+    for (const candidate of candidates) {
+        await client.begin(async (query) => {
+            await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${candidate.owner}`},0))`;
+            const [row] = await query<
+                {
+                    binding: string;
+                    state: string;
+                    controlVersion: number | null;
+                    fresh: boolean;
+                }[]
+            >`SELECT binding_hash AS binding,state,control_version AS "controlVersion",approved_at>now()-interval '15 minutes' AS fresh FROM mira_mail_drafts WHERE id=${candidate.id} AND owner=${candidate.owner} AND state IN ('draft','queued') FOR UPDATE`;
+            if (!row) return;
+            if (
+                !configuration ||
+                configuration.owner !== candidate.owner ||
+                row.binding !== binding
+            ) {
+                await query`UPDATE mira_mail_drafts SET state='cancelled',approved_version=NULL,approved_by=NULL,approved_at=NULL,control_version=NULL,message='AgentMail was removed or its inbox changed. This email was cancelled before sending. Create a new draft for the current inbox if needed.',version=version+1,updated_at=now() WHERE id=${candidate.id}`;
+                return;
+            }
+            if (row.state !== "queued") return;
+            const [control] = await query<
+                { enabled: boolean; version: number; binding: string | null }[]
+            >`SELECT enabled,version,binding_hash AS binding FROM mira_switches WHERE owner=${candidate.owner} AND key='integration:agentmail'`;
+            if (
+                !row.fresh ||
+                !control?.enabled ||
+                control.version !== row.controlVersion ||
+                control.binding !== row.binding
+            )
+                await query`UPDATE mira_mail_drafts SET state='draft',approved_version=NULL,approved_by=NULL,approved_at=NULL,control_version=NULL,message='Delivery approval expired or AgentMail access changed. Review this draft again before sending.',version=version+1,updated_at=now() WHERE id=${candidate.id}`;
+        });
+    }
 }
 
 /**
@@ -69,12 +110,15 @@ export async function dispatchMiraMail(
             }[]
         >`SELECT id,binding_hash AS binding,control_version AS "controlVersion",approved_at>now()-interval '15 minutes' AS fresh,content,content_hash AS hash FROM mira_mail_drafts WHERE owner=${configuration.owner} AND state='queued' ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED`;
         if (!row) return null;
+        if (row.binding !== agentMailBindingHash(configuration)) {
+            await query`UPDATE mira_mail_drafts SET state='cancelled',approved_version=NULL,approved_by=NULL,approved_at=NULL,control_version=NULL,message='The AgentMail inbox changed. This email was cancelled before sending. Create a new draft for the current inbox if needed.',version=version+1,updated_at=now() WHERE id=${row.id}`;
+            return null;
+        }
         if (
             !row.fresh ||
             !control?.enabled ||
             control.version !== row.controlVersion ||
-            control.binding !== row.binding ||
-            row.binding !== agentMailBindingHash(configuration)
+            control.binding !== row.binding
         ) {
             await query`UPDATE mira_mail_drafts SET state='draft',approved_version=NULL,approved_by=NULL,approved_at=NULL,control_version=NULL,message='Delivery approval expired or AgentMail changed. Review this draft again before sending.',version=version+1,updated_at=now() WHERE id=${row.id}`;
             return null;

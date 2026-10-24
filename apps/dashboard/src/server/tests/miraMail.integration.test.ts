@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
 import { rejects } from "node:assert/strict";
+import { cp, mkdtemp, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 import { capabilities } from "@homelab/contracts/operations";
 import { approveMiraMail } from "@homelab/mira/data/mail";
@@ -8,9 +11,17 @@ import {
     dispatchMiraMail,
     reconcileMiraMail,
 } from "@homelab/mira/integrations/agentmail/outbox";
+import { migrate } from "drizzle-orm/bun-sql/migrator";
 
+import { createTestDatabase } from "../../../../../tests/database";
 import { createMiraTools } from "../../../../mira/src/server/executor/tools";
 import { appRouter } from "../api/router";
+import { connectDashboardDatabase } from "../database/connection";
+import {
+    dashboardMigrationsFolder,
+    migrateDashboard,
+    assertDashboardSchema,
+} from "../database/migrations";
 import { provisionTestAgentMail } from "../testing/agentmail";
 import { operationFixture } from "../testing/operations";
 
@@ -282,9 +293,13 @@ for (const change of ["pause", "rebind", "expire", "receiver-offline"] as const)
             expect(calls).toBe(0);
             const page = await f.api.mail.list({});
             const [current] = page.rows;
-            expect(current?.state).toBe(
-                change === "receiver-offline" ? "queued" : "draft"
-            );
+            const expected = {
+                "receiver-offline": "queued",
+                rebind: "cancelled",
+                pause: "draft",
+                expire: "draft",
+            } as const;
+            expect(current?.state).toBe(expected[change]);
         } finally {
             await f.close();
         }
@@ -367,5 +382,113 @@ test("assistant tools can prepare owned drafts but expose no approval or send ca
         expect(denied).toMatchObject({ ok: false });
     } finally {
         await f.close();
+    }
+});
+
+test("removing AgentMail clears queued approvals without credentials or provider calls", async () => {
+    const f = await mailFixture();
+    try {
+        const draft = await f.create();
+        await f.api.mail.approve({
+            id: draft.id,
+            version: draft.version,
+            contentHash: draft.contentHash,
+        });
+        await reconcileMiraMail(f.client);
+        const page = await f.api.mail.list({});
+        expect(page.rows[0]).toMatchObject({
+            state: "cancelled",
+            inboxId: f.binding.inboxId,
+            content,
+        });
+        expect(page.rows[0]?.message).toContain("cancelled before sending");
+        const never = Object.assign(
+            () => Promise.reject(new Error("Provider must not be called")),
+            { preconnect: fetch.preconnect }
+        );
+        expect(await dispatchMiraMail(f.client, f.configuration, signal, never)).toBe(
+            false
+        );
+        await reconcileMiraMail(f.client);
+        const retained = await f.api.mail.list({});
+        expect(retained.rows[0]?.version).toBe(page.rows[0]?.version);
+    } finally {
+        await f.close();
+    }
+});
+
+test("reconciliation expires offline approvals and cancels obsolete inbox drafts without rebinding", async () => {
+    const f = await mailFixture();
+    try {
+        const draft = await f.create();
+        await f.api.mail.approve({
+            id: draft.id,
+            version: draft.version,
+            contentHash: draft.contentHash,
+        });
+        await f.client`UPDATE mira_mail_drafts SET approved_at=now()-interval '16 minutes' WHERE id=${draft.id}`;
+        await f.client`UPDATE mira_integration_receivers SET heartbeat_at=now()-interval '1 minute'`;
+        await reconcileMiraMail(f.client, f.configuration);
+        const expired = await f.api.mail.list({});
+        expect(expired.rows[0]?.state).toBe("draft");
+        await reconcileMiraMail(f.client, {
+            ...f.configuration,
+            inboxId: "changed@example.com",
+        });
+        const obsolete = await f.api.mail.list({});
+        expect(obsolete.rows[0]).toMatchObject({
+            state: "cancelled",
+            inboxId: f.binding.inboxId,
+            content,
+        });
+        expect(obsolete.rows[0]?.message).toContain("Create a new draft");
+        await rejects(
+            f.api.mail.save({
+                id: draft.id,
+                version: obsolete.rows[0]!.version,
+                conversationId: f.chat.id,
+                content,
+            }),
+            /changed/
+        );
+    } finally {
+        await f.close();
+    }
+});
+
+test("outbox migration upgrades an already migrated parent database", async () => {
+    const allocation = await createTestDatabase();
+    const connection = connectDashboardDatabase(allocation.url);
+    const prior = await mkdtemp(path.join(tmpdir(), "mira-parent-migrations-"));
+    try {
+        const source = dashboardMigrationsFolder();
+        const entries = await readdir(source, { withFileTypes: true });
+        const outbox = entries.find((entry) => entry.name.endsWith("_mira_mail_outbox"));
+        if (!outbox) throw new Error("Expected outbox migration");
+        const parents = entries.filter(
+            (entry) => entry.isDirectory() && entry.name !== outbox.name
+        );
+        expect(parents.every((entry) => entry.name < outbox.name)).toBe(true);
+        for (const entry of parents)
+            await cp(path.join(source, entry.name), path.join(prior, entry.name), {
+                recursive: true,
+            });
+        await migrate(connection.database, { migrationsFolder: prior });
+        const [before] = await connection.client<
+            { name: string | null }[]
+        >`SELECT to_regclass('public.mira_mail_drafts')::text AS name`;
+        expect(before?.name).toBeNull();
+        await migrateDashboard(connection);
+        await assertDashboardSchema(connection);
+        await migrateDashboard(connection);
+        await assertDashboardSchema(connection);
+        const [after] = await connection.client<
+            { name: string | null }[]
+        >`SELECT to_regclass('public.mira_mail_drafts')::text AS name`;
+        expect(after?.name).toBe("mira_mail_drafts");
+    } finally {
+        await connection.client.close();
+        await allocation.close();
+        await rm(prior, { recursive: true, force: true });
     }
 });

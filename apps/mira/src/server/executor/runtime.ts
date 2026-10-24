@@ -121,7 +121,7 @@ export async function runMiraExecutor(options: {
     };
     const mailDelivery = async () => {
         while (!signal.aborted) {
-            await reconcileMiraMail(client);
+            await reconcileMiraMail(client, options.agentMail);
             if (options.agentMail)
                 await dispatchMiraMail(client, options.agentMail, signal);
             await wait(5000);
