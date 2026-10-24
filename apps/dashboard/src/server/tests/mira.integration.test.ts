@@ -1161,3 +1161,70 @@ test("linking and ordinary send serialize without losing task history", async ()
         await database.close();
     }
 });
+
+test("historical run details retain uncertain receipts across later turns and chat deletion", async () => {
+    const database = await fixture();
+    try {
+        const api = database.caller().mira;
+        const chat = await api.conversations.create({ title: "Historical results" });
+        const first = await api.conversations.send({
+            conversationId: chat.id,
+            requestId: crypto.randomUUID(),
+            text: "First",
+        });
+        await api.runs.cancel({ id: first.id });
+        const ids: string[] = [];
+        for (let index = 0; index < 35; index++) {
+            const id = Bun.randomUUIDv7();
+            ids.push(id);
+            await database.client`INSERT INTO mira_tool_receipts (id,run_id,call_id,tool,input_hash,state,message) VALUES (${id},${first.id},${`old-${index}`},'mira_report_create',${"0".repeat(64)},${index === 0 ? "unknown" : "succeeded"},${index === 0 ? "Verify the original outcome before repeating." : "Recorded"})`;
+        }
+        const second = await api.conversations.send({
+            conversationId: chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Another turn",
+        });
+        const latest = await api.conversations.read({ id: chat.id });
+        expect(latest.run?.id).toBe(second.id);
+        const detail = await api.runs.read({ id: first.id });
+        expect(detail.run).toMatchObject({
+            id: first.id,
+            title: "Historical results",
+            conversationAvailable: true,
+        });
+        expect(detail.rows).toHaveLength(32);
+        const older = await api.runs.read({ id: first.id, before: detail.nextCursor! });
+        expect(older.rows).toHaveLength(3);
+        expect([...detail.rows, ...older.rows].map((row) => row.id)).toEqual(
+            ids.toReversed()
+        );
+        expect(older.rows.at(-1)).toMatchObject({
+            state: "unknown",
+            message: "Verify the original outcome before repeating.",
+        });
+        expect(JSON.stringify(detail)).not.toContain("inputHash");
+        await rejects(
+            database.caller("other").mira.runs.read({ id: first.id }),
+            /not found/
+        );
+        await api.runs.cancel({ id: second.id });
+        const current = await api.conversations.read({ id: chat.id });
+        await api.conversations.change({
+            id: chat.id,
+            version: current.conversation.version,
+            action: "delete",
+        });
+        const deleted = await api.runs.read({ id: first.id });
+        expect(deleted.run).toMatchObject({
+            title: "Deleted conversation",
+            conversationAvailable: false,
+        });
+        const retained = await api.runs.read({
+            id: first.id,
+            before: detail.nextCursor!,
+        });
+        expect(retained.rows.at(-1)?.state).toBe("unknown");
+    } finally {
+        await database.close();
+    }
+});

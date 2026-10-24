@@ -281,3 +281,16 @@ export interface MiraProposal {
     readonly input: Record<string, unknown>;
     readonly createdAt: string;
 }
+
+export const miraRunReadSchema = v.strictObject({
+    id: idSchema,
+    before: v.optional(idSchema),
+});
+export interface MiraToolReceipt {
+    id: string;
+    tool: string;
+    state: string;
+    message: string | null;
+    createdAt: string;
+    finishedAt: string | null;
+}
