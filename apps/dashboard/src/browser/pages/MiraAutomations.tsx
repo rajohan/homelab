@@ -22,6 +22,7 @@ import { api } from "../api/client";
 import { AutomationEditor } from "../features/mira/AutomationEditor";
 import { MiraDisableDialog } from "../features/mira/MiraDisableDialog";
 import { MiraRunHistory } from "../features/mira/MiraRunHistory";
+import { RunAutomationButton } from "../features/mira/RunAutomationButton";
 import { useOperation } from "../features/operations/useOperation";
 
 /**
@@ -60,9 +61,6 @@ export function MiraAutomations() {
         })
     );
     const presets = useOperation(() => api.mira.automations.presets.mutate());
-    const run = useOperation((input: { id: string; requestId: string }) =>
-        api.mira.automations.run.mutate(input)
-    );
     const remove = useOperation((automation: MiraAutomation) =>
         api.mira.automations.delete.mutate({
             id: automation.id,
@@ -71,8 +69,7 @@ export function MiraAutomations() {
     );
     const rows = query.data?.pages.flatMap((page) => page.rows) ?? [];
     const global = controls.data?.find((control) => control.key === "autonomy");
-    const error =
-        query.error ?? controls.error ?? enable.error ?? presets.error ?? run.error;
+    const error = query.error ?? controls.error ?? enable.error ?? presets.error;
     return (
         <div className="space-y-4">
             <PageHeader
@@ -236,31 +233,15 @@ export function MiraAutomations() {
                                         : ""}
                                 </p>
                             )}
-                            <Button
-                                fullWidth
-                                busy={
-                                    run.isPending && run.variables?.id === automation.id
-                                }
-                                onClick={() =>
-                                    void run
-                                        .mutateAsync({
-                                            id: automation.id,
-                                            requestId: crypto.randomUUID(),
-                                        })
-                                        .then((result) =>
-                                            navigate({
-                                                to: "/mira/$conversationId",
-                                                params: {
-                                                    conversationId: result.conversationId,
-                                                },
-                                            })
-                                        )
-                                        .catch(() => {})
-                                }
-                            >
-                                <Play size={16} aria-hidden="true" />
-                                Run now
-                            </Button>
+                            <RunAutomationButton
+                                id={automation.id}
+                                onStarted={(conversationId) => {
+                                    void navigate({
+                                        to: "/mira/$conversationId",
+                                        params: { conversationId },
+                                    });
+                                }}
+                            />
                         </Card>
                     );
                 })}

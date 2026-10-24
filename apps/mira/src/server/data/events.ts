@@ -35,12 +35,17 @@ export async function recordMiraEvent(
         { id: string }[]
     >`INSERT INTO mira_events (id, owner, kind, source_key, reference, task_id, created_at) VALUES (${id}, ${input.owner}, ${input.kind}, ${input.key}, ${input.reference}, ${input.taskId ?? null}, ${observedAt}) ON CONFLICT (owner, kind, source_key) DO NOTHING RETURNING id`;
     if (!inserted[0]) return false;
-    const automations = await query<
-        { id: string }[]
-    >`SELECT id FROM mira_automations WHERE owner = ${input.owner} AND deleted_at IS NULL AND schedule->>'kind' = 'event' AND schedule->>'event' = ${input.kind} ORDER BY id LIMIT 100`;
-    for (const automation of automations) {
-        if (!(await miraRunAllowed(query, input.owner, automation.id))) continue;
-        await query`INSERT INTO mira_event_deliveries (event_id, automation_id, next_attempt_at) VALUES (${id}, ${automation.id}, ${observedAt})`;
+    let cursor: string | null = null;
+    for (;;) {
+        const automations: { id: string }[] = await query<
+            { id: string }[]
+        >`SELECT id FROM mira_automations WHERE owner = ${input.owner} AND deleted_at IS NULL AND schedule->>'kind' = 'event' AND schedule->>'event' = ${input.kind} AND (${cursor}::uuid IS NULL OR id > ${cursor}::uuid) ORDER BY id LIMIT 100`;
+        for (const automation of automations) {
+            if (!(await miraRunAllowed(query, input.owner, automation.id))) continue;
+            await query`INSERT INTO mira_event_deliveries (event_id, automation_id, next_attempt_at) VALUES (${id}, ${automation.id}, ${observedAt})`;
+        }
+        if (automations.length < 100) break;
+        cursor = automations.at(-1)!.id;
     }
     await auditMira(
         query,

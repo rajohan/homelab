@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState, type ReactNode } from "react";
+import { serialize } from "superjson";
 import * as v from "valibot";
 
 import { IdentityClientContext } from "../../identity/IdentityClientContext";
@@ -16,6 +17,7 @@ import { ChatActivity } from "./ChatActivity";
 import { ChatComposer } from "./ChatComposer";
 import { ChatMessage } from "./ChatMessage";
 import { ChatSettings } from "./ChatSettings";
+import { RunAutomationButton } from "./RunAutomationButton";
 
 function UploadHarness({ onBusy }: { readonly onBusy: (busy: boolean) => void }) {
     const [files, setFiles] = useState<MiraAttachment[]>([]);
@@ -283,5 +285,63 @@ test("chat activity shows provider thinking and safe recorded tool outcomes", ()
         expect(screen.getByText("Completed")).toBeInTheDocument();
     } finally {
         cleanup();
+    }
+});
+
+test("Run now retries an uncertain response with its original request identity", async () => {
+    const requested: string[] = [];
+    const started: string[] = [];
+    const conversationId = crypto.randomUUID();
+    const request = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+            (_input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+                if (typeof init?.body !== "string")
+                    throw new Error("Expected a synthetic JSON request body");
+                const body = JSON.parse(init.body) as {
+                    "0": { json: { requestId: string } };
+                };
+                requested.push(body["0"].json.requestId);
+                if (requested.length === 1)
+                    return Promise.reject(
+                        new Error("Synthetic response lost after acceptance")
+                    );
+                return Promise.resolve(
+                    Response.json([
+                        {
+                            result: {
+                                data: serialize({
+                                    id: crypto.randomUUID(),
+                                    conversationId,
+                                }),
+                            },
+                        },
+                    ])
+                );
+            },
+            { preconnect: fetch.preconnect }
+        )
+    );
+    const cleanup = fixture(
+        <RunAutomationButton
+            id={crypto.randomUUID()}
+            onStarted={(id) => started.push(id)}
+        />
+    );
+    try {
+        const user = userEvent.setup();
+        await user.click(screen.getByRole("button", { name: "Run now" }));
+        await waitFor(() => expect(requested).toHaveLength(1));
+        await waitFor(() =>
+            expect(screen.getByRole("button", { name: "Run now" })).toBeEnabled()
+        );
+        await user.click(screen.getByRole("button", { name: "Run now" }));
+        await waitFor(() => expect(started).toHaveLength(1));
+        expect(requested[1]).toBe(requested[0]);
+        await user.click(screen.getByRole("button", { name: "Run now" }));
+        await waitFor(() => expect(started).toHaveLength(2));
+        expect(requested[2]).not.toBe(requested[1]);
+    } finally {
+        cleanup();
+        request.mockRestore();
     }
 });

@@ -1,5 +1,5 @@
 import type { MiraActivity, MiraRunSummary, MiraSchedule } from "@homelab/contracts/mira";
-import type { SQL } from "bun";
+import type { SQL, TransactionSQL } from "bun";
 
 import {
     miraDependenciesAllowed,
@@ -27,6 +27,36 @@ export interface MiraClaim {
 }
 
 /**
+ * Reconcile lost run ownership without requiring an authenticated inference provider.
+ * @param client - Executor database pool; no new work is claimed by this operation.
+ * @returns The number of expired runs whose outcomes now require review.
+ */
+export async function reconcileMiraRuns(client: SQL): Promise<number> {
+    return client.begin(async (query) => {
+        await query`SELECT pg_advisory_xact_lock(hashtextextended('homelab:mira:claim', 0))`;
+        return reconcileExpired(query);
+    });
+}
+
+async function reconcileExpired(query: TransactionSQL): Promise<number> {
+    const expired = await query<
+        { id: string; assistantMessageId: string; owner: string }[]
+    >`UPDATE mira_runs SET state = 'needs_attention', message = 'The executor disconnected. Review this run before continuing; actions were not replayed.', finished_at = now() WHERE state = 'running' AND lease_expires_at < now() RETURNING id, owner, assistant_message_id AS "assistantMessageId"`;
+    for (const run of expired) {
+        await notifyMiraRun(query, run.id);
+        await query`UPDATE mira_messages SET state = 'failed' WHERE id = ${run.assistantMessageId}`;
+        await query`UPDATE mira_tool_receipts SET state = 'unknown', message = 'Executor disconnected; reconcile before retrying.' WHERE run_id = ${run.id} AND state = 'running'`;
+        await auditMira(
+            query,
+            { owner: run.owner, actor: "mira:executor" },
+            "run.needs_attention",
+            run.id
+        );
+    }
+    return expired.length;
+}
+
+/**
  * Claim separate agent capacity, reserving one lane for user-started conversations.
  * @param client - Mira's bounded database pool, separate from infrastructure workers.
  * @param workerId - Current executor process identity.
@@ -40,20 +70,7 @@ export async function claimMiraRun(
 ): Promise<MiraClaim | null> {
     return client.begin(async (query) => {
         await query`SELECT pg_advisory_xact_lock(hashtextextended('homelab:mira:claim', 0))`;
-        const expired = await query<
-            { id: string; assistantMessageId: string; owner: string }[]
-        >`UPDATE mira_runs SET state = 'needs_attention', message = 'The executor disconnected. Review this run before continuing; actions were not replayed.', finished_at = now() WHERE state = 'running' AND lease_expires_at < now() RETURNING id, owner, assistant_message_id AS "assistantMessageId"`;
-        for (const run of expired) {
-            await notifyMiraRun(query, run.id);
-            await query`UPDATE mira_messages SET state = 'failed' WHERE id = ${run.assistantMessageId}`;
-            await query`UPDATE mira_tool_receipts SET state = 'unknown', message = 'Executor disconnected; reconcile before retrying.' WHERE run_id = ${run.id} AND state = 'running'`;
-            await auditMira(
-                query,
-                { owner: run.owner, actor: "mira:executor" },
-                "run.needs_attention",
-                run.id
-            );
-        }
+        await reconcileExpired(query);
         const busy = await query<
             { id: string }[]
         >`SELECT id FROM mira_runs WHERE state = 'running' AND lane = ${lane}`;
@@ -186,8 +203,10 @@ export async function scheduleMiraRuns(client: SQL, now = new Date()): Promise<n
                 now.getTime(),
                 new Date(automation.nextRunAt).getTime()
             );
-            await query`UPDATE mira_automations SET next_run_at = ${next} WHERE id = ${automation.id}`;
-            if (!(await miraRunAllowed(query, automation.owner, automation.id))) continue;
+            const allowed = await miraRunAllowed(query, automation.owner, automation.id);
+            if (automation.schedule.kind !== "once" || !allowed)
+                await query`UPDATE mira_automations SET next_run_at = ${next} WHERE id = ${automation.id}`;
+            if (!allowed) continue;
             const active = await query<
                 { id: string }[]
             >`SELECT id FROM mira_runs WHERE automation_id = ${automation.id} AND state IN ('queued','running')`;
@@ -206,6 +225,8 @@ export async function scheduleMiraRuns(client: SQL, now = new Date()): Promise<n
                 },
                 { automationId: automation.id, budgetSeconds: automation.budgetSeconds }
             );
+            if (automation.schedule.kind === "once")
+                await query`UPDATE mira_automations SET next_run_at = NULL WHERE id = ${automation.id}`;
             queued++;
         }
         return queued;

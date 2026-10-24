@@ -4,11 +4,13 @@ import { rejects } from "node:assert/strict";
 import { miraModelSchema } from "@homelab/contracts/mira";
 import type { MiraTaskInput } from "@homelab/contracts/mira";
 import { capabilities } from "@homelab/contracts/operations";
-import { saveMemory } from "@homelab/mira/data/documents";
+import { createReport, saveMemory } from "@homelab/mira/data/documents";
+import { recordMiraEvent } from "@homelab/mira/data/events";
 import {
     claimMiraRun,
     finishMiraRun,
     renewMiraRun,
+    reconcileMiraRuns,
     saveMiraDelta,
     saveMiraActivity,
     scheduleMiraRuns,
@@ -222,9 +224,9 @@ test("expired agent leases cannot overwrite reconciled outcomes or commit produc
         const run = await claimMiraRun(database.client, crypto.randomUUID(), "general");
         expect(run).not.toBeNull();
         await database.client`UPDATE mira_runs SET lease_expires_at = now() - interval '1 second' WHERE id = ${run!.id}`;
-        expect(
-            await claimMiraRun(database.client, crypto.randomUUID(), "general")
-        ).toBeNull();
+        await database.client`INSERT INTO mira_runtime_status (id,worker_id,version,ready,heartbeat_at) VALUES (1,${crypto.randomUUID()},'offline',false,now())`;
+        expect(await reconcileMiraRuns(database.client)).toBe(1);
+        expect(await reconcileMiraRuns(database.client)).toBe(0);
         expect(await saveMiraDelta(database.client, run!, "Stale overwrite")).toBe(false);
         expect(
             await finishMiraRun(database.client, run!, {
@@ -249,6 +251,11 @@ test("expired agent leases cannot overwrite reconciled outcomes or commit produc
         expect(memories.rows).toHaveLength(0);
         const reconciled = await api.conversations.read({ id: chat.id });
         expect(reconciled.run?.state).toBe("needs_attention");
+        await api.conversations.change({
+            id: chat.id,
+            version: reconciled.conversation.version,
+            action: "archive",
+        });
     } finally {
         await database.close();
     }
@@ -348,8 +355,30 @@ test("Mira refuses foreign attachments atomically and requires stopped runs befo
             api.conversations.change({ id: chat.id, version: 2, action: "delete" }),
             /Stop the active run/
         );
+        const linkedTask = await api.tasks.create({ ...task, conversationId: chat.id });
+        const report = await createReport(
+            { client: database.client, owner: "operator", actor: "human:operator" },
+            {
+                title: "Linked report",
+                kind: "other",
+                markdown: "Synthetic result",
+                taskId: null,
+            },
+            run.id
+        );
         await api.runs.cancel(run);
         await api.conversations.change({ id: chat.id, version: 2, action: "delete" });
+        const tasks = await api.tasks.list({ search: "" });
+        expect(tasks.rows.find((entry) => entry.id === linkedTask.id)).toMatchObject({
+            conversationId: null,
+            version: 2,
+        });
+        const readReport = await api.reports.read(report);
+        expect(readReport.conversationId).toBeNull();
+        const reports = await api.reports.list(page);
+        expect(reports.rows[0]?.conversationId).toBeNull();
+        const history = await api.runs.list(page);
+        expect(history.rows[0]?.conversationAvailable).toBe(false);
         await rejects(api.conversations.read({ id: chat.id }), /not found/);
         const content = await database.client<
             { content: string }[]
@@ -459,6 +488,108 @@ test("conversation settings validate model capabilities, isolate owners and rema
             api.conversations.settings({ id: chat.id, version: 3, settings }),
             /Reconnect/
         );
+    } finally {
+        await database.close();
+    }
+});
+
+test.each(["active run", "full queue"])(
+    "one-time automations retain a due occurrence during %s",
+    async (blocker) => {
+        const database = await fixture();
+        try {
+            const api = database.caller().mira;
+            const at = new Date(Date.now() + 60_000);
+            const automation = await api.automations.create({
+                title: "Run once",
+                prompt: "Synthetic check",
+                kind: "custom",
+                schedule: { kind: "once", at: at.toISOString() },
+                budgetSeconds: 60,
+            });
+            await api.controls.setEnabled({
+                key: `automation:${automation.id}`,
+                version: 1,
+                enabled: true,
+                reason: null,
+                until: null,
+            });
+            let blockedRun: string;
+            if (blocker === "active run") {
+                const manual = await api.automations.run({
+                    id: automation.id,
+                    requestId: crypto.randomUUID(),
+                });
+                blockedRun = manual.id;
+            } else {
+                blockedRun = "";
+                for (let index = 0; index < 28; index++) {
+                    const chat = await api.conversations.create({
+                        title: `Capacity ${index}`,
+                    });
+                    const queued = await api.conversations.send({
+                        conversationId: chat.id,
+                        requestId: crypto.randomUUID(),
+                        text: "Synthetic",
+                    });
+                    blockedRun = queued.id;
+                }
+            }
+            const now = new Date(at.getTime() + 1);
+            expect(await scheduleMiraRuns(database.client, now)).toBe(0);
+            const [waiting] = await database.client<
+                { due: Date | null }[]
+            >`SELECT next_run_at AS due FROM mira_automations WHERE id=${automation.id}`;
+            expect(waiting?.due).not.toBeNull();
+            await api.runs.cancel({ id: blockedRun });
+            expect(await scheduleMiraRuns(database.client, now)).toBe(1);
+            expect(await scheduleMiraRuns(database.client, now)).toBe(0);
+            const [finished] = await database.client<
+                { due: Date | null }[]
+            >`SELECT next_run_at AS due FROM mira_automations WHERE id=${automation.id}`;
+            expect(finished?.due).toBeNull();
+        } finally {
+            await database.close();
+        }
+    }
+);
+
+test("verified events reach every enabled subscriber across pagination boundaries exactly once", async () => {
+    const database = await fixture();
+    try {
+        const api = database.caller().mira;
+        for (let index = 0; index < 105; index++) {
+            const automation = await api.automations.create({
+                title: `Subscriber ${index}`,
+                prompt: "Synthetic event review",
+                kind: "custom",
+                schedule: { kind: "event", event: "task_due" },
+                budgetSeconds: 60,
+            });
+            await api.controls.setEnabled({
+                key: `automation:${automation.id}`,
+                version: 1,
+                enabled: true,
+                reason: null,
+                until: null,
+            });
+        }
+        const event = {
+            owner: "operator",
+            kind: "task_due" as const,
+            key: "synthetic-event",
+            reference: "synthetic",
+        };
+        expect(
+            await database.client.begin((query) => recordMiraEvent(query, event))
+        ).toBe(true);
+        expect(
+            await database.client.begin((query) => recordMiraEvent(query, event))
+        ).toBe(false);
+        const [deliveries] = await database.client<
+            { count: number }[]
+        >`SELECT count(*)::integer AS count FROM mira_event_deliveries`;
+        expect(deliveries?.count).toBe(105);
     } finally {
         await database.close();
     }

@@ -5,7 +5,7 @@ import type { SQL } from "bun";
 
 import { runtimeEnvironment } from "../config/environment";
 import { cleanupMiraFiles } from "../data/files";
-import { claimMiraRun, scheduleMiraRuns } from "../data/queue";
+import { claimMiraRun, reconcileMiraRuns, scheduleMiraRuns } from "../data/queue";
 import { CodexRuntime } from "../runtime/codexRuntime";
 import { pilotArguments, type PilotConfig } from "../runtime/configuration";
 import { cleanupMiraConversations } from "./cleanup";
@@ -49,6 +49,7 @@ export async function runMiraExecutor(options: {
     };
     const coordinator = async () => {
         while (!signal.aborted) {
+            await reconcileMiraRuns(client);
             if (Date.now() - inspectedAt >= 30_000) {
                 let runtime: CodexRuntime | undefined;
                 try {
