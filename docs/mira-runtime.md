@@ -129,3 +129,12 @@ the complete skill catalog for its empty workspace and accepts only the exact
 pinned system skill paths; administrator skills and discovery errors fail closed.
 The echo qualification validates its input nonce and returns a different random
 receipt, proving both argument delivery and tool-output propagation.
+
+The selected native executable must report exactly the pinned Codex version before
+it can be qualified. Launch arguments and effective configuration disable the
+built-in sleep tool as well as shell, browser and other implicit capabilities.
+Thread start and resume must retain the canonical workspace, an empty list of
+instruction sources, untrusted approvals and a read-only sandbox without network
+access. Resume qualification rejects a second echo-tool call, and the final
+recovery response must equal the requested marker. Cancellation is rechecked after
+listener registration so an abort cannot be lost in that interval.

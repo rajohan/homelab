@@ -163,6 +163,31 @@ for await (const line of reader) {
             id: message.id,
             result: {
                 thread: { id: "thread-test" },
+                cwd:
+                    mode ===
+                    `${message.method === "thread/start" ? "thread" : "resume"}-cwd`
+                        ? "/unexpected"
+                        : process.cwd(),
+                instructionSources:
+                    mode ===
+                    `${message.method === "thread/start" ? "thread" : "resume"}-instructions`
+                        ? ["/late/AGENTS.md"]
+                        : [],
+                approvalPolicy:
+                    mode ===
+                    `${message.method === "thread/start" ? "thread" : "resume"}-approval`
+                        ? "never"
+                        : "untrusted",
+                sandbox: {
+                    type:
+                        mode ===
+                        `${message.method === "thread/start" ? "thread" : "resume"}-sandbox`
+                            ? "dangerFullAccess"
+                            : "readOnly",
+                    networkAccess:
+                        mode ===
+                        `${message.method === "thread/start" ? "thread" : "resume"}-network`,
+                },
                 modelProvider:
                     mode === "thread-provider" ||
                     (mode === "resume-provider" && message.method === "thread/resume")

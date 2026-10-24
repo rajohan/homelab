@@ -28,11 +28,13 @@ interface ActiveTurn {
 
 /** A single-turn Codex adapter with explicit tools and no implicit approval grants. */
 export class CodexRuntime {
+    private readonly workspace: string;
     private readonly connection: RpcProcess;
     private readonly threads = new Map<string, RuntimeTool[]>();
     private active: ActiveTurn | null = null;
 
     private constructor(options: Omit<RpcProcessOptions, "onRequest">) {
+        this.workspace = options.cwd;
         this.connection = new RpcProcess({
             ...options,
             onRequest: (event, signal) => this.handleRequest(event, signal),
@@ -141,6 +143,8 @@ export class CodexRuntime {
         workspace: string,
         tools: RuntimeTool[]
     ): Promise<string> {
+        if (workspace !== this.workspace)
+            throw new Error("Mira thread workspace differs from its isolated workspace.");
         const result = v.parse(
             threadSchema,
             await this.connection.request("thread/start", {
@@ -158,6 +162,8 @@ export class CodexRuntime {
                 })),
             })
         );
+        if (result.cwd !== this.workspace)
+            throw new Error("Mira runtime changed the thread workspace.");
         this.threads.set(result.thread.id, tools);
         return result.thread.id;
     }
@@ -174,10 +180,13 @@ export class CodexRuntime {
             await this.connection.request("thread/resume", {
                 threadId,
                 excludeTurns: true,
+                cwd: this.workspace,
                 sandbox: "read-only",
                 approvalPolicy: "untrusted",
             })
         );
+        if (result.cwd !== this.workspace)
+            throw new Error("Mira runtime changed the restored workspace.");
         if (result.thread.id !== threadId)
             throw new Error("Mira restored an unexpected thread.");
         this.threads.set(threadId, tools);
@@ -261,6 +270,7 @@ export class CodexRuntime {
                 });
         };
         options.signal?.addEventListener("abort", abort, { once: true });
+        if (options.signal?.aborted) abort();
         const deadline = setTimeout(() => {
             completion.reject(
                 new Error("Mira turn exceeded its deadline; reconcile before retrying.")

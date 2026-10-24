@@ -108,7 +108,11 @@ export function qualifyRuntime(config: PilotConfig, progress: (message: string) 
                 threadId,
                 "Repeat the exact receipt from our previous turn. Do not call tools."
             );
-            if (resumed.status !== "completed" || !resumed.text.includes(receipt))
+            if (
+                resumed.status !== "completed" ||
+                resumed.text.trim() !== receipt ||
+                echoCalls !== 1
+            )
                 throw new Error(
                     "Mira did not restore the conversation after process replacement."
                 );
@@ -131,7 +135,7 @@ export function qualifyRuntime(config: PilotConfig, progress: (message: string) 
             );
             if (
                 recovered.status !== "completed" ||
-                !recovered.text.includes("MIRA_READY")
+                recovered.text.trim() !== "MIRA_READY"
             )
                 throw new Error("Mira did not recover after interruption.");
             progress("Completed a new turn after interruption.");

@@ -23,6 +23,13 @@ export const initializeSchema = v.object({ codexHome: v.string() });
 export const threadSchema = v.object({
     thread: v.object({ id: v.string() }),
     modelProvider: v.literal("openai"),
+    cwd: v.string(),
+    instructionSources: v.pipe(v.array(v.string()), v.maxLength(0)),
+    approvalPolicy: v.literal("untrusted"),
+    sandbox: v.object({
+        type: v.literal("readOnly"),
+        networkAccess: v.optional(v.literal(false), false),
+    }),
 });
 export const turnSchema = v.object({ turn: v.object({ id: v.string() }) });
 export const completedSchema = v.object({

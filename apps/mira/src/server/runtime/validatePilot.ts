@@ -1,8 +1,10 @@
 import { lstat, open, readFile, readdir, realpath } from "node:fs/promises";
 import path from "node:path";
 
+import { runtimeEnvironment } from "../config/environment";
 import { parsePilotConfig, type PilotConfig } from "./configuration";
 import { assertSystemSkills } from "./systemSkills";
+import manifest from "./systemSkills.json";
 
 async function exists(file: string): Promise<boolean> {
     try {
@@ -76,5 +78,20 @@ export async function validatePilot(input: unknown): Promise<PilotConfig> {
         if (content.trim())
             throw new Error("Mira requires a dedicated home without custom config.");
     }
+    const version = Bun.spawnSync({
+        cmd: [config.command, "--version"],
+        cwd: config.workspace,
+        env: runtimeEnvironment(config),
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "ignore",
+        timeout: 5000,
+        maxBuffer: 4096,
+    });
+    if (
+        version.exitCode !== 0 ||
+        version.stdout.toString().trim() !== `codex-cli ${manifest.version}`
+    )
+        throw new Error(`Mira requires the pinned Codex ${manifest.version} executable.`);
     return config;
 }

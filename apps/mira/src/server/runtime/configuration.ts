@@ -78,6 +78,7 @@ export function pilotEnvironment(
  * @returns Arguments for the supported stdio app-server transport.
  */
 export const disabledRuntimeFeatures = [
+    "sleep_tool",
     "shell_tool",
     "unified_exec",
     "apps",

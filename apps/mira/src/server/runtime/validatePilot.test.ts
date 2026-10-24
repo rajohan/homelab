@@ -1,4 +1,4 @@
-import { test, expect } from "bun:test";
+import { test, expect, spyOn } from "bun:test";
 import { rejects } from "node:assert/strict";
 import {
     mkdir,
@@ -104,7 +104,17 @@ test("retains canonical directories when an ancestor alias is retargeted", async
         await rename(path.join(root, "home"), path.join(actual, "home"));
         await rename(path.join(root, "workspace"), path.join(actual, "workspace"));
         await symlink(actual, alias, "junction");
-        const checked = await validatePilot(config(alias));
+        const probe = Bun.spawnSync({ cmd: [process.execPath, "--version"] });
+        const version = spyOn(Bun, "spawnSync").mockReturnValue({
+            ...probe,
+            stdout: Buffer.from(`codex-cli ${manifest.version}\n`),
+        });
+        let checked;
+        try {
+            checked = await validatePilot(config(alias));
+        } finally {
+            version.mockRestore();
+        }
         expect(checked.codexHome).toBe(await realpath(path.join(actual, "home")));
         expect(checked.workspace).toBe(await realpath(path.join(actual, "workspace")));
         await rm(alias);
@@ -122,4 +132,10 @@ test("retains canonical directories when an ancestor alias is retargeted", async
 
 test("system skill manifest tracks the pinned Codex dependency", () => {
     expect(manifest.version).toBe(miraPackage.dependencies["@openai/codex"]);
+});
+
+test("rejects an unrelated native executable instead of qualifying an unpinned runtime", async () => {
+    await fixture(async (root) => {
+        await rejects(validatePilot(config(root)), /pinned Codex/);
+    });
 });

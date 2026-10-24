@@ -7,9 +7,9 @@ import { qualifyRuntime } from "./qualification";
 import { CodexRuntime } from "./runtime/codexRuntime";
 import type { RuntimeTool } from "./runtime/protocol";
 
-test.each([false, true])(
-    "qualification proves the actual tool argument and returned receipt (corrupt=%s)",
-    async (corrupt) => {
+test.each(["ok", "nonce", "resume-tool", "recovery-refusal"])(
+    "qualification proves the actual tool argument and returned receipt (mode=%s)",
+    async (mode) => {
         let tools: RuntimeTool[] = [];
         let turn = 0;
         let receipt = "";
@@ -37,19 +37,31 @@ test.each([false, true])(
                     nonce = /with marker ([a-f0-9-]+)/.exec(text)![1]!;
                     receipt = String(
                         await tools[0]!.execute(
-                            { marker: corrupt ? "corrupted" : nonce },
+                            { marker: mode === "nonce" ? "corrupted" : nonce },
                             new AbortController().signal
                         )
                     );
                     options?.onDelta?.(receipt);
                     return { id: "one", status: "completed", text: receipt };
                 }
+                if (turn === 2 && mode === "resume-tool")
+                    await tools[0]!.execute(
+                        { marker: nonce },
+                        new AbortController().signal
+                    );
                 if (turn === 2) return { id: "two", status: "completed", text: receipt };
                 if (turn === 3) {
                     await tools[1]!.execute({}, options!.signal!).catch(() => {});
                     return { id: "three", status: "interrupted", text: "" };
                 }
-                return { id: "four", status: "completed", text: "MIRA_READY" };
+                return {
+                    id: "four",
+                    status: "completed",
+                    text:
+                        mode === "recovery-refusal"
+                            ? "Cannot comply; expected MIRA_READY"
+                            : "MIRA_READY",
+                };
             },
             close: () => {
                 closed++;
@@ -66,11 +78,7 @@ test.each([false, true])(
                     () => {}
                 )
             );
-            if (corrupt) {
-                await rejects(result);
-                expect(turn).toBe(1);
-                expect(closed).toBe(1);
-            } else {
+            if (mode === "ok") {
                 expect(await result).toMatchObject({
                     tools: true,
                     processResume: true,
@@ -78,6 +86,11 @@ test.each([false, true])(
                 });
                 expect(receipt).not.toBe(nonce);
                 expect(closed).toBe(2);
+            } else {
+                await rejects(result);
+                const expectedTurn = mode === "resume-tool" ? 2 : 4;
+                expect(turn).toBe(mode === "nonce" ? 1 : expectedTurn);
+                expect(closed).toBe(mode === "nonce" ? 1 : 2);
             }
         } finally {
             connect.mockRestore();

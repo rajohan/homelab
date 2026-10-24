@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { rejects } from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 
@@ -62,26 +62,26 @@ describe("Mira runtime transport", () => {
     ])("rejects effective %s configuration before any thread starts", async (mode) => {
         await rejects(CodexRuntime.connect(options(mode)));
     });
-    test.each(["thread-provider", "resume-provider"])(
-        "rejects the actual provider for %s before inference",
-        async (mode) => {
-            const runtime = await CodexRuntime.connect(options(mode));
-            try {
-                if (mode === "thread-provider")
-                    await rejects(runtime.startThread("synthetic", process.cwd(), []));
-                else {
-                    const thread = await runtime.startThread(
-                        "synthetic",
-                        process.cwd(),
-                        []
-                    );
-                    await rejects(runtime.resumeThread(thread, []));
-                }
-            } finally {
-                await runtime.close();
+    test.each([
+        "thread-provider",
+        "resume-provider",
+        ...["cwd", "instructions", "approval", "sandbox", "network"].flatMap((field) => [
+            `thread-${field}`,
+            `resume-${field}`,
+        ]),
+    ])("rejects the actual provider for %s before inference", async (mode) => {
+        const runtime = await CodexRuntime.connect(options(mode));
+        try {
+            if (mode.startsWith("thread-"))
+                await rejects(runtime.startThread("synthetic", process.cwd(), []));
+            else {
+                const thread = await runtime.startThread("synthetic", process.cwd(), []);
+                await rejects(runtime.resumeThread(thread, []));
             }
+        } finally {
+            await runtime.close();
         }
-    );
+    });
     test.each(["tool-ok", "tool-unknown", "tool-other-thread", "approval"])(
         "enforces host authority for %s",
         async (mode) => {
@@ -163,6 +163,29 @@ describe("Mira runtime transport", () => {
             const second = await resumed;
             expect(second.status).toBe("interrupted");
         } finally {
+            await runtime.close();
+        }
+    });
+
+    test("observes cancellation fired just before listener registration", async () => {
+        const runtime = await CodexRuntime.connect(options("wait"));
+        const abort = new AbortController();
+        const subscribe = abort.signal.addEventListener.bind(abort.signal);
+        const race = spyOn(abort.signal, "addEventListener").mockImplementation(
+            (...args: Parameters<AbortSignal["addEventListener"]>) => {
+                abort.abort();
+                subscribe(...args);
+            }
+        );
+        try {
+            const thread = await runtime.startThread("synthetic", process.cwd(), []);
+            const result = await runtime.turn(thread, "cancel", {
+                signal: abort.signal,
+                timeoutMs: 1000,
+            });
+            expect(result.status).toBe("interrupted");
+        } finally {
+            race.mockRestore();
             await runtime.close();
         }
     });
