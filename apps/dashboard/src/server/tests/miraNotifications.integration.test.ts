@@ -140,6 +140,7 @@ test("heartbeat reports stay quiet for unchanged observations and intentional pa
         expect(
             await listNotifications(fixture.client, "human:operator", page)
         ).toMatchObject({ unreadCount: 1 });
+        const changedDuringRun = await next();
         await api.tasks.create({
             title: "New blocker",
             description: "Synthetic change",
@@ -151,6 +152,10 @@ test("heartbeat reports stay quiet for unchanged observations and intentional pa
             completionCriteria: "Review",
             conversationId: null,
         });
+        await complete(changedDuringRun);
+        expect(
+            await listNotifications(fixture.client, "human:operator", page)
+        ).toMatchObject({ unreadCount: 2 });
         await complete(await next());
         expect(
             await listNotifications(fixture.client, "human:operator", page)

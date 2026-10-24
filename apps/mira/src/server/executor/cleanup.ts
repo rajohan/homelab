@@ -17,23 +17,34 @@ export async function cleanupMiraConversations(
 ): Promise<number> {
     const rows = await client<
         { id: string; owner: string; providerThread: string }[]
-    >`SELECT id, owner, provider_thread AS "providerThread" FROM mira_conversations c WHERE deleted_at IS NOT NULL AND provider_thread IS NOT NULL AND NOT EXISTS (SELECT 1 FROM mira_runs r WHERE r.conversation_id = c.id AND r.state IN ('queued','running')) ORDER BY deleted_at LIMIT 1`;
+    >`SELECT id, owner, provider_thread AS "providerThread" FROM mira_conversations c WHERE deleted_at IS NOT NULL AND provider_thread IS NOT NULL AND NOT EXISTS (SELECT 1 FROM mira_runs r WHERE r.conversation_id = c.id AND r.state IN ('queued','running')) ORDER BY deleted_at, id LIMIT 20`;
+    let deleted = 0;
+    let failed = false;
     for (const row of rows) {
-        await runtime.deleteThread(row.providerThread);
-        await client.begin(async (query) => {
-            const updated = await query<
-                { id: string }[]
-            >`UPDATE mira_conversations SET provider_thread = NULL WHERE id = ${row.id} AND deleted_at IS NOT NULL AND provider_thread = ${row.providerThread} RETURNING id`;
-            if (updated.length > 0)
-                await auditMira(
-                    query,
-                    { owner: row.owner, actor: "mira:cleanup" },
-                    "conversation.provider_deleted",
-                    row.id
-                );
-        });
+        try {
+            await runtime.deleteThread(row.providerThread);
+            await client.begin(async (query) => {
+                const updated = await query<
+                    { id: string }[]
+                >`UPDATE mira_conversations SET provider_thread = NULL WHERE id = ${row.id} AND deleted_at IS NOT NULL AND provider_thread = ${row.providerThread} RETURNING id`;
+                if (updated.length > 0)
+                    await auditMira(
+                        query,
+                        { owner: row.owner, actor: "mira:cleanup" },
+                        "conversation.provider_deleted",
+                        row.id
+                    );
+            });
+            deleted++;
+        } catch {
+            failed = true;
+        }
     }
-    return rows.length;
+    if (failed)
+        throw new Error(
+            "Some provider history could not be deleted; references remain pending for retry."
+        );
+    return deleted;
 }
 
 /**

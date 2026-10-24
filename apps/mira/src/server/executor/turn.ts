@@ -1,4 +1,4 @@
-import type { MiraChatSettings, MiraActivity } from "@homelab/contracts/mira";
+import type { MiraActivity } from "@homelab/contracts/mira";
 import type { SQL } from "bun";
 
 import { runtimeEnvironment } from "../config/environment";
@@ -16,6 +16,7 @@ import { CodexRuntime } from "../runtime/codexRuntime";
 import { pilotArguments, type PilotConfig } from "../runtime/configuration";
 import { createMiraToolRouter } from "../runtime/toolRouter";
 import { prepareMiraAttachments } from "./attachments";
+import { readMiraTurnInput } from "./context";
 import { createMiraTools } from "./tools";
 
 const instructions = `You are Mira, the operator's assistant inside Homelab. Reply in the user's language. Be concise, candid and useful. Use only the supplied tools. When mira_tools_list is offered, use it at the start of each turn to discover current capabilities and invoke the returned tools through mira_tool_call with their exact input schema. In an older conversation that offers only direct named tools, use those supplied tools directly; unavailable discovery or integrations cannot be simulated. Do not claim an action succeeded without a successful tool result. Task status, execution status and completion criteria are different: record actual progress and blockers.
@@ -92,15 +93,7 @@ export async function executeMiraTurn(
     }, 250);
     try {
         signal.throwIfAborted();
-        const [record] = await client<
-            {
-                providerThread: string | null;
-                content: string;
-                attachmentIds: string[];
-                settings: MiraChatSettings;
-            }[]
-        >`SELECT c.provider_thread AS "providerThread", m.content, m.attachment_ids AS "attachmentIds", r.settings FROM mira_conversations c JOIN mira_messages m ON m.id = ${run.userMessageId} AND m.conversation_id = c.id JOIN mira_runs r ON r.id = ${run.id} AND r.conversation_id = c.id WHERE c.id = ${run.conversationId} AND c.owner = ${run.owner} AND c.deleted_at IS NULL`;
-        if (!record) throw new Error("Conversation unavailable.");
+        const record = await readMiraTurnInput(client, run);
         runtime = await CodexRuntime.connect({
             command: config.command,
             args: pilotArguments(),

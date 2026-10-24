@@ -5,7 +5,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { capabilities } from "@homelab/contracts/operations";
 import { reconcileMiraControls } from "@homelab/mira/data/automations";
 import { recordMiraEvent } from "@homelab/mira/data/events";
-import { scheduleMiraRuns } from "@homelab/mira/data/queue";
+import { claimMiraRun, scheduleMiraRuns } from "@homelab/mira/data/queue";
 
 import { appRouter } from "../api/router";
 import { provisionTestAgentMail } from "../testing/agentmail";
@@ -428,3 +428,59 @@ test("due-task discovery skips an uncommitted completion instead of capturing it
         await fixture.close();
     }
 });
+
+test.each(["complete", "postpone", "delete"] as const)(
+    "queued due-task runs reject a task changed by %s before claiming",
+    async (action) => {
+        const fixture = await operationFixture();
+        const api = appRouter.createCaller({
+            operations: fixture,
+            principal: { kind: "human", id: "operator", capabilities },
+        }).mira;
+        try {
+            const automation = await api.automations.create({
+                title: "Queued due task",
+                prompt: "Review",
+                kind: "custom",
+                schedule: { kind: "event", event: "task_due" },
+                budgetSeconds: 60,
+            });
+            await api.controls.setEnabled({
+                key: `automation:${automation.id}`,
+                version: 1,
+                enabled: true,
+                reason: null,
+                until: null,
+            });
+            const task = await api.tasks.create({
+                title: "Previously due",
+                description: "Synthetic",
+                status: "todo",
+                assignee: "mira",
+                priority: "normal",
+                labels: [],
+                dueAt: new Date(Date.now() - 1000).toISOString(),
+                completionCriteria: "Review",
+                conversationId: null,
+            });
+            expect(await scheduleMiraRuns(fixture.client)).toBe(1);
+            await fixture.client`UPDATE mira_tasks SET status=${action === "complete" ? "done" : "todo"}, due_at=CASE WHEN ${action}='postpone' THEN now()+interval '1 day' ELSE due_at END, deleted_at=CASE WHEN ${action}='delete' THEN now() ELSE NULL END WHERE id=${task.id}`;
+            expect(
+                await claimMiraRun(fixture.client, crypto.randomUUID(), "general")
+            ).toBeNull();
+            const runs = await api.runs.list({ search: "", archived: false });
+            expect(runs.rows[0]).toMatchObject({
+                state: "interrupted",
+                message: "Task deadline changed before execution.",
+            });
+            const chat = await api.conversations.read({
+                id: runs.rows[0]!.conversationId,
+            });
+            expect(
+                chat.messages.find((message) => message.role === "assistant")?.state
+            ).toBe("interrupted");
+        } finally {
+            await fixture.close();
+        }
+    }
+);

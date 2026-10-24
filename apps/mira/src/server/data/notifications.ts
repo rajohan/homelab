@@ -5,7 +5,7 @@ import { miraRunAllowed } from "./automations";
 
 /**
  * Hash meaningful recorded inputs without volatile polling timestamps or Mira's own replies.
- * @param query - Claim transaction providing a consistent execution snapshot.
+ * @param query - Completion transaction, immediately before notification evaluation.
  * @param owner - Server-verified owner of personal tasks, memory and controls.
  * @returns An opaque digest used to suppress repeated unchanged heartbeat notices.
  */
