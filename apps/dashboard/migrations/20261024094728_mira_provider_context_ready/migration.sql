@@ -1,0 +1,1 @@
+ALTER TABLE "mira_conversations" ADD COLUMN "provider_context_ready" boolean DEFAULT false NOT NULL;

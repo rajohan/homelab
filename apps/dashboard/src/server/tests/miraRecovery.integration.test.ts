@@ -22,6 +22,7 @@ import {
 } from "@homelab/mira/data/automationActions";
 import { miraQueueAvailable } from "@homelab/mira/data/capacity";
 import { cleanupMiraFiles, readMiraFile, saveMiraFile } from "@homelab/mira/data/files";
+import { miraObservationFingerprint } from "@homelab/mira/data/notifications";
 import { claimMiraRun, finishMiraRun } from "@homelab/mira/data/queue";
 import * as v from "valibot";
 
@@ -283,7 +284,7 @@ test("replacement provider threads recover failed-turn context without mixing ow
         const bounded = await readMiraTurnInput(fixture.client, retry);
         expect(bounded.content.length).toBeLessThan(50_000);
         expect(bounded.content).toContain('"truncated":true');
-        await fixture.client`UPDATE mira_conversations SET provider_thread='already-resumed' WHERE id=${chat.id}`;
+        await fixture.client`UPDATE mira_conversations SET provider_thread='already-resumed',provider_context_ready=true WHERE id=${chat.id}`;
         const resumed = await readMiraTurnInput(fixture.client, retry);
         expect(resumed.content).toBe("Try again");
     } finally {
@@ -627,6 +628,157 @@ test("automatic tools read an exact old task without paging and reject foreign o
                 });
             else expect(result.message).toBe("Task not found.");
         }
+    } finally {
+        await fixture.close();
+    }
+});
+
+test("cancellation after creating a provider thread preserves historical context until its first acknowledged turn", async () => {
+    const fixture = await operationFixture();
+    const directory = await mkdtemp(path.join(tmpdir(), "mira-context-ack-"));
+    const api = appRouter.createCaller({
+        operations: fixture,
+        principal: { kind: "human", id: "operator", capabilities },
+    }).mira;
+    try {
+        const command = path.join(directory, "synthetic-codex");
+        const home = path.join(directory, "home"),
+            workspace = path.join(directory, "workspace");
+        await mkdir(home);
+        await mkdir(workspace);
+        const runtimeChild = fileURLToPath(
+            new URL(
+                "../../../../mira/src/server/testing/runtimeChild.ts",
+                import.meta.url
+            )
+        );
+        await writeFile(
+            command,
+            `#!/usr/bin/env bun\nprocess.argv=[process.argv[0],${JSON.stringify(runtimeChild)},'ok',${JSON.stringify(home)}];\nawait import(${JSON.stringify(runtimeChild)});\n`
+        );
+        await chmod(command, 0o700);
+        const config = { command, codexHome: home, workspace, model: "synthetic" };
+        const chat = await api.conversations.create({
+            title: "Interrupted context setup",
+        });
+        const next = async (text: string) => {
+            await api.conversations.send({
+                conversationId: chat.id,
+                requestId: crypto.randomUUID(),
+                text,
+            });
+            const run = await claimMiraRun(
+                fixture.client,
+                crypto.randomUUID(),
+                "foreground"
+            );
+            if (!run) throw new Error("Expected run");
+            return run;
+        };
+        const first = await next("Remember this original task context");
+        await finishMiraRun(fixture.client, first, {
+            state: "needs_attention",
+            text: "",
+            message: "Synthetic setup failure",
+        });
+        await fixture.client`CREATE FUNCTION cancel_created_thread() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN IF NEW.provider_thread IS NOT NULL AND OLD.provider_thread IS NULL THEN UPDATE mira_runs SET cancel_requested=true WHERE conversation_id=NEW.id AND state='running'; END IF; RETURN NEW; END$$`;
+        await fixture.client`CREATE TRIGGER cancel_created_thread AFTER UPDATE ON mira_conversations FOR EACH ROW EXECUTE FUNCTION cancel_created_thread()`;
+        const cancelled = await next("Continue the task");
+        await executeMiraTurn(
+            fixture.client,
+            config,
+            cancelled,
+            new AbortController().signal
+        );
+        const [before] = await fixture.client<
+            { thread: string; ready: boolean }[]
+        >`SELECT provider_thread AS thread,provider_context_ready AS ready FROM mira_conversations WHERE id=${chat.id}`;
+        expect(before).toEqual({ thread: "thread-test", ready: false });
+        const retry = await next("Retry after setup cancellation");
+        const recovered = await readMiraTurnInput(fixture.client, retry);
+        expect(recovered.content).toContain("Remember this original task context");
+        await executeMiraTurn(
+            fixture.client,
+            config,
+            retry,
+            new AbortController().signal
+        );
+        const [after] = await fixture.client<
+            { ready: boolean; turn: string }[]
+        >`SELECT c.provider_context_ready AS ready,r.provider_turn AS turn FROM mira_conversations c JOIN mira_runs r ON r.conversation_id=c.id WHERE r.id=${retry.id}`;
+        expect(after).toEqual({ ready: true, turn: "turn-1" });
+        const final = await next("Continue without duplicated context");
+        const resumed = await readMiraTurnInput(fixture.client, final);
+        expect(resumed.content).toBe("Continue without duplicated context");
+    } finally {
+        await fixture.close();
+        await rm(directory, { recursive: true, force: true });
+    }
+});
+
+test("heartbeat run history exposes owned failures without reports or paging through successful work", async () => {
+    const fixture = await operationFixture();
+    const api = appRouter.createCaller({
+        operations: fixture,
+        principal: { kind: "human", id: "operator", capabilities },
+    }).mira;
+    try {
+        const chat = await api.conversations.create({
+            title: "Heartbeat failure history",
+        });
+        await api.conversations.send({
+            conversationId: chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Review failures",
+        });
+        const run = await claimMiraRun(fixture.client, crypto.randomUUID(), "foreground");
+        if (!run) throw new Error("Expected run");
+        const fingerprint = () =>
+            fixture.client.begin((query) =>
+                miraObservationFingerprint(query, "operator")
+            );
+        const before = await fingerprint();
+        const failure = Bun.randomUUIDv7();
+        const row = (id: string, owner: string, state: string) => ({
+            id,
+            owner,
+            state,
+            request_key: `synthetic:${id}`,
+            request_hash: "synthetic",
+            conversation_id: chat.id,
+            user_message_id: run.userMessageId,
+            assistant_message_id: run.assistantMessageId,
+            priority: 1,
+            budget_seconds: 60,
+            message: "Synthetic failure without a report",
+        });
+        await fixture.client`INSERT INTO mira_runs ${fixture.client(row(failure, "operator", "failed"))}`;
+        const changed = await fingerprint();
+        expect(changed).not.toBe(before);
+        await fixture.client`INSERT INTO mira_runs ${fixture.client(row(Bun.randomUUIDv7(), "other", "failed"))}`;
+        await fixture.client`INSERT INTO mira_runs ${fixture.client(Array.from({ length: 40 }, () => row(Bun.randomUUIDv7(), "operator", "completed")))}`;
+        expect(await fingerprint()).toBe(changed);
+        const tool = createMiraTools(fixture.client, {
+            ...run,
+            automationId: crypto.randomUUID(),
+        }).find((item) => item.name === "mira_runs_list")!;
+        const output: unknown = JSON.parse(
+            await tool.execute({}, new AbortController().signal, {
+                callId: "failures",
+                threadId: "synthetic",
+                turnId: "turn",
+            })
+        );
+        const parsed = v.parse(
+            v.object({
+                ok: v.literal(true),
+                result: v.object({
+                    rows: v.array(v.object({ id: v.string(), state: v.string() })),
+                }),
+            }),
+            output
+        );
+        expect(parsed.result.rows).toEqual([{ id: failure, state: "failed" }]);
     } finally {
         await fixture.close();
     }

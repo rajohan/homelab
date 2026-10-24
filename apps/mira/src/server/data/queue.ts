@@ -185,7 +185,7 @@ export async function finishMiraRun(
 
         const rows = await query<
             { id: string }[]
-        >`UPDATE mira_runs SET state = ${terminal.state}, message = ${terminal.message}, provider_turn = ${terminal.providerTurn ?? null}, finished_at = now(), lease_expires_at = NULL WHERE id = ${run.id} AND state = 'running' AND lease_token = ${run.leaseToken} AND lease_expires_at > now() RETURNING id`;
+        >`UPDATE mira_runs SET state = ${terminal.state}, message = ${terminal.message}, provider_turn = COALESCE(${terminal.providerTurn ?? null}, provider_turn), finished_at = now(), lease_expires_at = NULL WHERE id = ${run.id} AND state = 'running' AND lease_token = ${run.leaseToken} AND lease_expires_at > now() RETURNING id`;
         if (!rows[0]) return false;
         await query`UPDATE mira_messages SET content = ${terminal.text}, state = ${terminal.state === "needs_attention" ? "failed" : terminal.state} WHERE id = ${run.assistantMessageId}`;
         await query`UPDATE mira_conversations SET updated_at = now() WHERE id = ${run.conversationId}`;

@@ -28,8 +28,16 @@ export async function miraObservationFingerprint(
     const jobs = await query<
         Record<string, unknown>[]
     >`SELECT id, state FROM job_runs WHERE state IN ('failed','needs_attention') ORDER BY id DESC LIMIT 30`;
+    const snapshots = await query<
+        Record<string, unknown>[]
+    >`SELECT key,captured_at FROM operation_snapshots ORDER BY key LIMIT 50`;
+    const runs = await query<
+        Record<string, unknown>[]
+    >`SELECT id,state FROM mira_runs WHERE owner=${owner} AND state IN ('failed','needs_attention','interrupted') ORDER BY id DESC LIMIT 30`;
     return new Bun.CryptoHasher("sha256")
-        .update(JSON.stringify({ tasks, memory, controls, incidents, jobs }))
+        .update(
+            JSON.stringify({ tasks, memory, controls, incidents, jobs, snapshots, runs })
+        )
         .digest("hex");
 }
 
