@@ -92,6 +92,6 @@ export async function agentMailReceiverCurrent(
 ): Promise<boolean> {
     const [receiver] = await query<
         { current: boolean }[]
-    >`SELECT binding_hash=${agentMailBindingHash(binding)} AND heartbeat_at>now()-interval '45 seconds' AS current FROM mira_integration_receivers WHERE key='agentmail'`;
+    >`SELECT binding_hash=${agentMailBindingHash(binding)} AND heartbeat_at>now()-interval '45 seconds' AS current FROM mira_integration_receivers WHERE key='agentmail' FOR SHARE`;
     return receiver?.current === true;
 }

@@ -379,6 +379,9 @@ export const miraIntegrationState = pgTable(
         cursor: text(),
         eventAnchor: text("event_anchor"),
         windowHead: text("window_head"),
+        pendingScans: jsonb("pending_scans")
+            .notNull()
+            .default(sql`'[]'::jsonb`),
         leaseToken: uuid("lease_token"),
         leaseExpiresAt: time("lease_expires_at"),
         nextAttemptAt: time("next_attempt_at").notNull(),

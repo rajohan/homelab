@@ -101,10 +101,12 @@ References: [webhook contract](https://docs.agentmail.to/webhooks-overview),
 [inbox events](https://docs.agentmail.to/api-reference/inboxes/events/list),
 [Agent Armor](https://docs.agentmail.to/agent-armor).
 
-Pending Agent Armor Monitor scans are deferred at webhook acceptance. Recovery retains
-its page checkpoint and retries after 30 seconds until scanned metadata becomes
-eligible; unavailable/review verdicts remain excluded. A pending scan can delay its
-recovery page, while already accepted webhook messages continue independently.
+Pending Agent Armor Monitor scans are deferred at webhook acceptance. Recovery commits
+clear messages and its feed cursor while storing pending/unavailable scan references
+separately. Each cycle revisits up to ten references in rotating order alongside the
+next feed page, so a busy inbox cannot starve already-clear mail. At most 1,000 scan
+references are retained for 24 hours; excess references remain in AgentMail for manual
+review. No body is stored and rejected verdicts remain excluded.
 Release/event freshness is stored separately from original receipt-time pause
 eligibility, so a newly released older message can be reviewed without reviving mail
 received during a deliberate pause. Read-only provider failures remain retryable and

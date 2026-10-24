@@ -2,7 +2,7 @@ import type { SQL } from "bun";
 
 import { agentMailReceiverCurrent } from "../../data/integrations";
 import { agentMailBindingHash, type AgentMailBinding } from "./configuration";
-import type { AgentMailReader } from "./reader";
+import type { AgentMailReader, PendingMailScan } from "./reader";
 import { ordinaryReceivedMail } from "./schema";
 import { recordAgentMailMessage } from "./webhook";
 
@@ -14,6 +14,7 @@ interface PollClaim {
     cursor: string | null;
     anchor: string | null;
     windowHead: string | null;
+    pending: PendingMailScan[];
 }
 
 async function claim(client: SQL, binding: AgentMailBinding): Promise<PollClaim | null> {
@@ -35,7 +36,7 @@ async function claim(client: SQL, binding: AgentMailBinding): Promise<PollClaim 
         >`SELECT binding, control_version AS version FROM mira_integration_state WHERE owner = ${binding.owner} AND key = 'agentmail' FOR UPDATE`;
         if (!previous || previous.binding !== binding.inboxId) {
             const start = new Date(control.activatedAt ?? control.changedAt);
-            await query`INSERT INTO mira_integration_state (owner, key, binding, control_version, started_at, completed_through, next_attempt_at) VALUES (${binding.owner}, 'agentmail', ${binding.inboxId}, ${control.version}, ${start}, ${start}, now()) ON CONFLICT (owner, key) DO UPDATE SET binding = EXCLUDED.binding, control_version = EXCLUDED.control_version, started_at = EXCLUDED.started_at, completed_through = EXCLUDED.completed_through, window_end = NULL, cursor = NULL, event_anchor = NULL, window_head = NULL, lease_token = NULL, lease_expires_at = NULL, next_attempt_at = EXCLUDED.next_attempt_at, last_success_at = NULL, message = NULL, heartbeat_at = now()`;
+            await query`INSERT INTO mira_integration_state (owner, key, binding, control_version, started_at, completed_through, next_attempt_at) VALUES (${binding.owner}, 'agentmail', ${binding.inboxId}, ${control.version}, ${start}, ${start}, now()) ON CONFLICT (owner, key) DO UPDATE SET binding = EXCLUDED.binding, control_version = EXCLUDED.control_version, started_at = EXCLUDED.started_at, completed_through = EXCLUDED.completed_through, window_end = NULL, cursor = NULL, event_anchor = NULL, window_head = NULL, pending_scans = '[]'::jsonb, lease_token = NULL, lease_expires_at = NULL, next_attempt_at = EXCLUDED.next_attempt_at, last_success_at = NULL, message = NULL, heartbeat_at = now()`;
         } else if (previous.version !== control.version) {
             await query`UPDATE mira_integration_state SET control_version = ${control.version}, cursor = NULL, window_head = NULL, lease_token = NULL, lease_expires_at = NULL, next_attempt_at = now(), message = NULL WHERE owner = ${binding.owner} AND key = 'agentmail'`;
         }
@@ -47,8 +48,9 @@ async function claim(client: SQL, binding: AgentMailBinding): Promise<PollClaim 
                 cursor: string | null;
                 anchor: string | null;
                 windowHead: string | null;
+                pending: PendingMailScan[];
             }[]
-        >`UPDATE mira_integration_state SET lease_token = ${token}, lease_expires_at = now() + interval '45 seconds', window_end = COALESCE(window_end, ${now}), heartbeat_at = now() WHERE owner = ${binding.owner} AND key = 'agentmail' AND next_attempt_at <= now() AND (lease_expires_at IS NULL OR lease_expires_at <= now()) RETURNING greatest(started_at, COALESCE(window_end, ${now}) - interval '24 hours') AS after, window_end AS before, cursor, event_anchor AS anchor, window_head AS "windowHead"`;
+        >`UPDATE mira_integration_state SET lease_token = ${token}, lease_expires_at = now() + interval '45 seconds', window_end = COALESCE(window_end, ${now}), heartbeat_at = now() WHERE owner = ${binding.owner} AND key = 'agentmail' AND next_attempt_at <= now() AND (lease_expires_at IS NULL OR lease_expires_at <= now()) RETURNING greatest(started_at, COALESCE(window_end, ${now}) - interval '24 hours') AS after, window_end AS before, cursor, event_anchor AS anchor, window_head AS "windowHead",pending_scans AS pending`;
         return row ? { ...row, token, version: control.version } : null;
     });
 }
@@ -76,6 +78,11 @@ export async function pollAgentMail(
                 after: new Date(claimed.after).toISOString(),
                 before: new Date(claimed.before).toISOString(),
                 anchor: claimed.anchor,
+                pending: claimed.pending
+                    .filter(
+                        (entry) => Date.parse(entry.firstSeenAt) > Date.now() - 86_400_000
+                    )
+                    .slice(0, 10),
                 ...(claimed.cursor ? { cursor: claimed.cursor } : {}),
             },
             signal
@@ -113,9 +120,16 @@ export async function pollAgentMail(
                         availableAt
                     );
             }
+            const checked = new Set(page.checked);
+            const deferred = claimed.pending.filter(
+                (entry) =>
+                    !checked.has(entry.messageId) &&
+                    Date.parse(entry.firstSeenAt) > Date.now() - 86_400_000
+            );
+            const pending = [...deferred, ...(page.pending ?? [])].slice(0, 1000);
             const cursor = page.next_page_token ?? null;
             const head = claimed.cursor ? claimed.windowHead : (page.head ?? null);
-            await query`UPDATE mira_integration_state SET cursor = ${cursor}, event_anchor = CASE WHEN ${cursor}::text IS NULL THEN COALESCE(${head},event_anchor) ELSE event_anchor END, window_head = CASE WHEN ${cursor}::text IS NULL THEN NULL ELSE ${head} END, completed_through = CASE WHEN ${cursor}::text IS NULL THEN window_end ELSE completed_through END, window_end = CASE WHEN ${cursor}::text IS NULL THEN NULL ELSE window_end END, next_attempt_at = now() + CASE WHEN ${cursor}::text IS NULL THEN interval '1 minute' ELSE interval '0 seconds' END, lease_token = NULL, lease_expires_at = NULL, last_success_at = now(), heartbeat_at = now(), message = NULL WHERE owner = ${binding.owner} AND key = 'agentmail' AND lease_token = ${claimed.token}`;
+            await query`UPDATE mira_integration_state SET pending_scans = ${JSON.stringify(pending)}::text::jsonb, cursor = ${cursor}, event_anchor = CASE WHEN ${cursor}::text IS NULL THEN COALESCE(${head},event_anchor) ELSE event_anchor END, window_head = CASE WHEN ${cursor}::text IS NULL THEN NULL ELSE ${head} END, completed_through = CASE WHEN ${cursor}::text IS NULL THEN window_end ELSE completed_through END, window_end = CASE WHEN ${cursor}::text IS NULL THEN NULL ELSE window_end END, next_attempt_at = now() + CASE WHEN ${cursor}::text IS NULL THEN interval '1 minute' ELSE interval '0 seconds' END, lease_token = NULL, lease_expires_at = NULL, last_success_at = now(), heartbeat_at = now(), message = NULL WHERE owner = ${binding.owner} AND key = 'agentmail' AND lease_token = ${claimed.token}`;
             return true;
         });
     } catch {

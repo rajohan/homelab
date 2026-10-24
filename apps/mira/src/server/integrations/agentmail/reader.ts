@@ -12,6 +12,12 @@ import {
     ordinaryReceivedMail,
 } from "./schema";
 
+export interface PendingMailScan {
+    messageId: string;
+    released: boolean;
+    firstSeenAt: string;
+}
+
 /** Fixed-origin, bounded AgentMail reads for one server-provisioned inbox. */
 export class AgentMailReader {
     private readonly configuration: AgentMailReadConfiguration;
@@ -105,12 +111,15 @@ export class AgentMailReader {
             before: string;
             cursor?: string | undefined;
             anchor?: string | null;
+            pending?: PendingMailScan[];
         },
         signal: AbortSignal
     ): Promise<{
         messages: (AgentMailMessage & { event_created_at?: string })[];
         next_page_token?: string | null | undefined;
         head?: string | null;
+        pending?: PendingMailScan[];
+        checked?: string[];
     }> {
         const after = Date.parse(input.after),
             before = Date.parse(input.before);
@@ -137,7 +146,14 @@ export class AgentMailReader {
                     (event.event_type === "label.removed" &&
                         event.label === "agent-armor-held"))
         );
-        const ids = [...new Set(eligibleEvents.map((event) => event.message_id))];
+        const retries = (input.pending ?? []).slice(0, 10);
+        const ids = [
+            ...new Set([
+                ...retries.map((entry) => entry.messageId),
+                ...eligibleEvents.map((event) => event.message_id),
+            ]),
+        ];
+        const pending: PendingMailScan[] = [];
         const messages: (AgentMailMessage & { event_created_at?: string })[] = [];
         for (let offset = 0; offset < ids.length; offset += 5) {
             bounded.throwIfAborted();
@@ -156,15 +172,27 @@ export class AgentMailReader {
                         message.message_id !== id
                     )
                         throw new Error("AgentMail returned a different message.");
-                    if (message.agent_armor?.status === "pending")
-                        throw new Error(
-                            "AgentMail security scan is pending; retry this page before advancing its checkpoint."
+                    const previous = retries.find((entry) => entry.messageId === id);
+                    const released =
+                        previous?.released === true ||
+                        eligibleEvents.some(
+                            (event) =>
+                                event.message_id === id &&
+                                event.event_type === "label.removed"
                         );
-                    const released = eligibleEvents.some(
-                        (event) =>
-                            event.message_id === id &&
-                            event.event_type === "label.removed"
-                    );
+                    if (
+                        ["pending", "unavailable"].includes(
+                            message.agent_armor?.status ?? ""
+                        )
+                    ) {
+                        pending.push({
+                            messageId: id,
+                            released,
+                            firstSeenAt:
+                                previous?.firstSeenAt ?? new Date().toISOString(),
+                        });
+                        return null;
+                    }
                     const releaseAt = message.agent_armor?.manual_override?.released_at;
                     if (released && !releaseAt) return null;
                     return {
@@ -185,6 +213,8 @@ export class AgentMailReader {
         bounded.throwIfAborted();
         return {
             messages,
+            pending,
+            checked: ids,
             head: page.events[0]?.event_id ?? null,
             next_page_token: boundary >= 0 ? null : page.next_page_token,
         };
