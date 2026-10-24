@@ -38,7 +38,11 @@ const signal = new AbortController().signal;
 async function mailFixture() {
     const fixture = await operationFixture();
     const binding = await provisionTestAgentMail(fixture.client);
-    const configuration = { ...binding, apiKey: "synthetic-api-key-not-a-secret" };
+    const configuration = {
+        ...binding,
+        apiKey: "synthetic-api-key-not-a-secret",
+        sendApiKey: "synthetic-send-key-not-a-secret",
+    };
     const caller = (owner = "operator") =>
         appRouter.createCaller({
             operations: { ...fixture, agentMailHook: binding },
@@ -187,7 +191,7 @@ test("one reviewed send survives concurrent dispatch and lost approval responses
                     `mira-mail-${draft.id}`
                 );
                 expect(new Headers(init?.headers).get("authorization")).toBe(
-                    `Bearer ${f.configuration.apiKey}`
+                    `Bearer ${f.configuration.sendApiKey}`
                 );
                 return Promise.resolve(
                     Response.json({
@@ -752,5 +756,75 @@ test("attachment drafts reject foreign, oversized and duplicate files and models
     } finally {
         await f.close();
         await rm(directory, { recursive: true, force: true });
+    }
+});
+
+test("removed credentials reconcile unapproved drafts and preserve their original binding", async () => {
+    const f = await mailFixture();
+    try {
+        const draft = await f.create();
+        await reconcileMiraMail(f.client);
+        const result = await f.api.mail.list({});
+        expect(result.rows[0]).toMatchObject({
+            id: draft.id,
+            state: "cancelled",
+            inboxId: f.binding.inboxId,
+            content,
+        });
+        await reconcileMiraMail(f.client);
+        const retained = await f.api.mail.list({});
+        expect(retained.rows[0]?.version).toBe(result.rows[0]?.version);
+    } finally {
+        await f.close();
+    }
+});
+
+test("read-only provisioning cannot approve or claim outgoing mail", async () => {
+    const f = await mailFixture();
+    try {
+        const draft = await f.create();
+        await f.client`UPDATE mira_runtime_status SET integrations=(SELECT jsonb_agg(value-'sendConfigured') FROM jsonb_array_elements(integrations))`;
+        await rejects(
+            f.api.mail.approve({
+                id: draft.id,
+                version: draft.version,
+                contentHash: draft.contentHash,
+            }),
+            /send credential/
+        );
+        const { sendApiKey: _key, ...readOnly } = f.configuration;
+        let called = false;
+        const request = Object.assign(
+            () => {
+                called = true;
+                return Promise.reject(new Error("Must not send"));
+            },
+            { preconnect: fetch.preconnect }
+        );
+        expect(await dispatchMiraMail(f.client, readOnly, signal, request)).toBe(false);
+        expect(called).toBe(false);
+        const retained = await f.api.mail.list({});
+        expect(retained.rows[0]?.state).toBe("draft");
+    } finally {
+        await f.close();
+    }
+});
+
+test("removing only the send credential revokes an existing approval without cancelling the editable draft", async () => {
+    const f = await mailFixture();
+    try {
+        const draft = await f.create();
+        await f.api.mail.approve({
+            id: draft.id,
+            version: draft.version,
+            contentHash: draft.contentHash,
+        });
+        const { sendApiKey: _key, ...readOnly } = f.configuration;
+        await reconcileMiraMail(f.client, readOnly);
+        const result = await f.api.mail.list({});
+        expect(result.rows[0]?.state).toBe("draft");
+        expect(await dispatchMiraMail(f.client, f.configuration, signal)).toBe(false);
+    } finally {
+        await f.close();
     }
 });

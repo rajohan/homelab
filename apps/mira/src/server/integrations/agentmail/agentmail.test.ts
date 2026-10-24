@@ -467,3 +467,29 @@ test("recovery ignores unrelated label changes and does not refresh original rec
     expect(result.head).toBe("unrelated-newest");
     expect(result.messages[0]?.event_created_at).toBe(old);
 });
+
+test("outgoing AgentMail requires a separate valid send credential without changing read authority", () => {
+    const values = {
+        HOMELAB_MIRA_AGENTMAIL_OWNER: binding.owner,
+        HOMELAB_MIRA_AGENTMAIL_INBOX: binding.inboxId,
+        HOMELAB_MIRA_AGENTMAIL_API_KEY: "synthetic-read-credential",
+        HOMELAB_MIRA_AGENTMAIL_SEND_API_KEY: "synthetic-send-credential",
+    };
+    expect(agentMailReadConfiguration(values)).toEqual({
+        ...binding,
+        apiKey: values.HOMELAB_MIRA_AGENTMAIL_API_KEY,
+        sendApiKey: values.HOMELAB_MIRA_AGENTMAIL_SEND_API_KEY,
+    });
+    expect(() =>
+        agentMailReadConfiguration({
+            ...values,
+            HOMELAB_MIRA_AGENTMAIL_SEND_API_KEY: "invalid",
+        })
+    ).toThrow(/configuration/);
+    expect(() =>
+        agentMailReadConfiguration({
+            ...values,
+            HOMELAB_MIRA_AGENTMAIL_API_KEY: undefined,
+        })
+    ).toThrow(/configuration/);
+});

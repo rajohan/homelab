@@ -13,6 +13,7 @@ export interface AgentMailHookConfiguration extends AgentMailBinding {
 }
 export interface AgentMailReadConfiguration extends AgentMailBinding {
     apiKey: string;
+    sendApiKey?: string;
 }
 
 /**
@@ -59,10 +60,16 @@ export function agentMailReadConfiguration(
 ): AgentMailReadConfiguration | undefined {
     const binding = agentMailBinding(environment);
     const apiKey = environment.HOMELAB_MIRA_AGENTMAIL_API_KEY;
-    if (!apiKey) return;
-    if (!binding || !/^[\u0021-\u007E]{20,2048}$/.test(apiKey))
+    const sendApiKey = environment.HOMELAB_MIRA_AGENTMAIL_SEND_API_KEY;
+    if (!apiKey && !sendApiKey) return;
+    if (
+        !binding ||
+        !apiKey ||
+        !/^[\u0021-\u007E]{20,2048}$/.test(apiKey) ||
+        (sendApiKey !== undefined && !/^[\u0021-\u007E]{20,2048}$/.test(sendApiKey))
+    )
         throw new Error("AgentMail read configuration is incomplete or invalid.");
-    return { ...binding, apiKey };
+    return { ...binding, apiKey, ...(sendApiKey ? { sendApiKey } : {}) };
 }
 
 /**

@@ -206,12 +206,13 @@ export async function approveMiraMail(
             !status.enabled ||
             !status.granted ||
             !status.matched ||
+            !status.sendConfigured ||
             !status.fresh ||
             !(await agentMailReceiverCurrent(query, configured))
         )
             throw new MiraFailure(
                 "PRECONDITION_FAILED",
-                "AgentMail must be enabled and connected before sending."
+                "AgentMail must be enabled, connected and provisioned with a send credential before sending."
             );
         const [control] = await query<
             { version: number }[]

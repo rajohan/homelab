@@ -50,6 +50,7 @@ export async function runMiraExecutor(options: {
                   owner: options.agentMail.owner,
                   key: "agentmail",
                   bindingHash: agentMailBindingHash(options.agentMail),
+                  sendConfigured: Boolean(options.agentMail.sendApiKey),
               },
           ]
         : [];

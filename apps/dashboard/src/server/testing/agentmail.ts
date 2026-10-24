@@ -17,7 +17,7 @@ export async function provisionTestAgentMail(
     client: SQL,
     binding: AgentMailBinding = defaultBinding
 ) {
-    await client`INSERT INTO mira_runtime_status (id, worker_id, version, ready, heartbeat_at, integrations) VALUES (1, ${crypto.randomUUID()}, 'synthetic', true, now(), ${JSON.stringify([{ owner: binding.owner, key: "agentmail", bindingHash: agentMailBindingHash(binding) }])}::text::jsonb) ON CONFLICT (id) DO UPDATE SET integrations=EXCLUDED.integrations, heartbeat_at=now()`;
+    await client`INSERT INTO mira_runtime_status (id, worker_id, version, ready, heartbeat_at, integrations) VALUES (1, ${crypto.randomUUID()}, 'synthetic', true, now(), ${JSON.stringify([{ owner: binding.owner, key: "agentmail", bindingHash: agentMailBindingHash(binding), sendConfigured: true }])}::text::jsonb) ON CONFLICT (id) DO UPDATE SET integrations=EXCLUDED.integrations, heartbeat_at=now()`;
     await publishAgentMailReceiver(client, binding);
     return {
         ...binding,
