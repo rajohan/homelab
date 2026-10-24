@@ -66,14 +66,31 @@ export async function decideMiraProposal(
             "Only the signed-in operator can approve proposed changes."
         );
     return context.client.begin(async (query) => {
-        const [link] = await query<
-            { conversationId: string }[]
-        >`SELECT r.conversation_id AS "conversationId" FROM mira_tool_receipts t JOIN mira_runs r ON r.id=t.run_id WHERE t.id=${input.id} AND r.owner=${context.owner}`;
-        if (!link) throw new MiraFailure("NOT_FOUND", "Proposed change not found.");
+        const decision = input.approve ? "approved" : "rejected";
+        const readDecision = async () => {
+            const [receipt] = await query<
+                { conversationId: string; inputHash: string; state: string }[]
+            >`SELECT r.conversation_id AS "conversationId",t.input_hash AS "inputHash",t.state FROM mira_tool_receipts t JOIN mira_runs r ON r.id=t.run_id WHERE t.id=${input.id} AND r.owner=${context.owner}`;
+            if (!receipt)
+                throw new MiraFailure("NOT_FOUND", "Proposed change not found.");
+            if (receipt.inputHash !== input.inputHash)
+                throw new MiraFailure(
+                    "CONFLICT",
+                    "The proposed change differs from the reviewed content."
+                );
+            return receipt;
+        };
+        const link = await readDecision();
+        if (link.state === decision) return { state: decision };
         const [conversation] = await query<
             { id: string }[]
-        >`SELECT id FROM mira_conversations WHERE id=${link.conversationId} AND owner=${context.owner} AND deleted_at IS NULL FOR SHARE`;
-        if (!conversation) throw new MiraFailure("NOT_FOUND", "Conversation not found.");
+        >`SELECT id FROM mira_conversations WHERE id=${link.conversationId} AND owner=${context.owner} AND deleted_at IS NULL FOR UPDATE`;
+        if (!conversation) {
+            // A committed decision followed by deletion may have raced the first read.
+            const completed = await readDecision();
+            if (completed.state === decision) return { state: decision };
+            throw new MiraFailure("NOT_FOUND", "Conversation not found.");
+        }
         const [proposal] = await query<
             {
                 tool: string;
@@ -88,7 +105,6 @@ export async function decideMiraProposal(
                 "CONFLICT",
                 "The proposed change differs from the reviewed content."
             );
-        const decision = input.approve ? "approved" : "rejected";
         if (proposal.state === decision) return { state: decision };
         if (proposal.state !== "awaiting_approval" || !proposal.fresh)
             throw new MiraFailure(

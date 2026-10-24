@@ -1,5 +1,6 @@
 import {
     miraProposalDecisionSchema,
+    miraRunReadSchema,
     miraAutomationInputSchema,
     miraChatSettingsUpdateSchema,
     miraAutomationUpdateSchema,
@@ -66,6 +67,7 @@ import {
 } from "@homelab/mira/data/mail";
 import { listMiraProposals, decideMiraProposal } from "@homelab/mira/data/proposals";
 import { listMiraRuns } from "@homelab/mira/data/queue";
+import { readMiraRun } from "@homelab/mira/data/runHistory";
 import { readTaskExecution, runMiraTask } from "@homelab/mira/data/taskExecution";
 import {
     addTaskProgress,
@@ -224,6 +226,11 @@ export const miraRouter = trpc.router({
             ),
     }),
     runs: trpc.router({
+        read: trpc.procedure
+            .input(miraRunReadSchema)
+            .query(({ ctx, input }) =>
+                execute(ctx, (mira) => readMiraRun(mira, input.id, input.before))
+            ),
         list: trpc.procedure
             .input(miraPageSchema)
             .query(({ ctx, input }) =>

@@ -260,3 +260,95 @@ test.each([false, true])(
         }
     }
 );
+
+test("distinct trigger events notify independently while retries and unrelated events stay quiet", async () => {
+    const fixture = await operationFixture();
+    const api = appRouter.createCaller({
+        operations: fixture,
+        principal: { kind: "human", id: "operator", capabilities },
+    }).mira;
+    try {
+        const automation = await api.automations.create({
+            title: "Due task observations",
+            prompt: "Review",
+            kind: "custom",
+            delivery: "changes",
+            budgetSeconds: 60,
+            schedule: { kind: "event", event: "task_due" },
+        });
+        await api.controls.setEnabled({
+            key: `automation:${automation.id}`,
+            version: 1,
+            enabled: true,
+            reason: null,
+            until: null,
+        });
+        for (const title of ["First due task", "Second due task"])
+            await api.tasks.create({
+                title,
+                description: "Synthetic",
+                status: "todo",
+                assignee: "mira",
+                priority: "normal",
+                labels: [],
+                dueAt: new Date(Date.now() - 60_000).toISOString(),
+                completionCriteria: "Review",
+                conversationId: null,
+            });
+        for (let index = 0; index < 2; index++) {
+            expect(
+                await scheduleMiraRuns(
+                    fixture.client,
+                    new Date(Date.now() + index * 120_000)
+                )
+            ).toBe(1);
+            const run = await claimMiraRun(
+                fixture.client,
+                crypto.randomUUID(),
+                "general"
+            );
+            if (!run) throw new Error("Expected event run");
+            await createReport(
+                {
+                    client: fixture.client,
+                    owner: "operator",
+                    actor: `mira:${run.id}`,
+                    run,
+                },
+                {
+                    title: "Event report",
+                    markdown: "Distinct observed event",
+                    kind: "other",
+                    taskId: null,
+                },
+                run.id
+            );
+            await finishMiraRun(fixture.client, run, {
+                state: "completed",
+                text: "Done",
+                message: null,
+            });
+            const notices = await listNotifications(
+                fixture.client,
+                "human:operator",
+                page
+            );
+            expect(notices.unreadCount).toBe(index + 1);
+            // A repeated terminal callback cannot publish a second receipt.
+            expect(
+                await finishMiraRun(fixture.client, run, {
+                    state: "completed",
+                    text: "Done",
+                    message: null,
+                })
+            ).toBe(false);
+        }
+        expect(
+            await scheduleMiraRuns(fixture.client, new Date(Date.now() + 240_000))
+        ).toBe(0);
+        const otherNotices = await listNotifications(fixture.client, "human:other", page);
+        expect(otherNotices.unreadCount).toBe(0);
+    } finally {
+        await fixture.close();
+    }
+});
