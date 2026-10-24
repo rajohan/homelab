@@ -29,9 +29,11 @@ export function MiraRunDetails({
     id,
     onClose,
     footer,
+    actions,
 }: {
     readonly id: string;
     readonly footer?: ReactNode;
+    readonly actions?: ReactNode;
     readonly onClose: () => void;
 }) {
     const query = useInfiniteQuery({
@@ -129,15 +131,12 @@ export function MiraRunDetails({
                         )}
                     </>
                 )}
-                {run &&
-                    !query.isError &&
-                    !query.isFetching &&
-                    !query.hasNextPage &&
-                    footer}
-                <ActionGroup>
+                {run && !query.isError && !query.hasNextPage && footer}
+                <ActionGroup stretch={false}>
                     <Button variant="secondary" onClick={onClose}>
                         Close
                     </Button>
+                    {run && !query.isError && !query.hasNextPage && actions}
                 </ActionGroup>
             </div>
         </Modal>
