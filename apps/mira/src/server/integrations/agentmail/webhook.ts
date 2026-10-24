@@ -5,7 +5,11 @@ import * as v from "valibot";
 import { recordMiraEvent } from "../../data/events";
 import { agentMailBindingStatus } from "../../data/integrations";
 import type { AgentMailBinding, AgentMailHookConfiguration } from "./configuration";
-import { agentMailIdSchema } from "./schema";
+import {
+    agentMailIdSchema,
+    agentMailMessageSchema,
+    ordinaryReceivedMail,
+} from "./schema";
 
 const envelopeSchema = v.object({ event_type: v.string(), event_id: agentMailIdSchema });
 const receivedSchema = v.object({
@@ -14,6 +18,8 @@ const receivedSchema = v.object({
         inbox_id: agentMailIdSchema,
         message_id: agentMailIdSchema,
         created_at: v.pipe(v.string(), v.isoTimestamp()),
+        labels: v.optional(agentMailMessageSchema.entries.labels, ["received"]),
+        agent_armor: agentMailMessageSchema.entries.agent_armor,
     }),
 });
 
@@ -22,21 +28,23 @@ const receivedSchema = v.object({
  * @param client - Mira product database; acknowledgement must follow this transaction.
  * @param binding - Server-owned inbox-to-account mapping.
  * @param messageId - Validated inbox-local message identity.
- * @param observedAt - Provider receive time during recovery, omitted for a live delivery.
+ * @param observedAt - Original provider receipt time for pause eligibility.
+ * @param availableAt - Release/event time for delivery freshness, defaulting to receipt time.
  * @returns Whether a new event was accepted; webhook retries and catch-up share the key.
  */
 export async function acceptAgentMailMessage(
     client: SQL,
     binding: AgentMailBinding,
     messageId: string,
-    observedAt?: Date
+    observedAt?: Date,
+    availableAt?: Date
 ): Promise<boolean> {
     return client.begin(async (query) => {
         await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${binding.owner}`}, 0))`;
         const status = await agentMailBindingStatus(query, binding);
         if (!status.matched || (status.enabled && !status.granted))
             throw new Error("AgentMail inbox binding has not been confirmed.");
-        return recordAgentMailMessage(query, binding, messageId, observedAt);
+        return recordAgentMailMessage(query, binding, messageId, observedAt, availableAt);
     });
 }
 
@@ -45,14 +53,16 @@ export async function acceptAgentMailMessage(
  * @param query - Owning transaction; failures roll back both messages and pagination.
  * @param binding - Server-provisioned account and inbox.
  * @param messageId - Verified provider identity.
- * @param observedAt - Provider receive time used to exclude mail from deliberate pauses.
+ * @param observedAt - Original receipt time used to exclude mail from deliberate pauses.
+ * @param availableAt - Fresh release/event time, independent of pause eligibility.
  * @returns Whether this reference was newly recorded.
  */
 export async function recordAgentMailMessage(
     query: Parameters<typeof recordMiraEvent>[0],
     binding: AgentMailBinding,
     messageId: string,
-    observedAt?: Date
+    observedAt?: Date,
+    availableAt?: Date
 ): Promise<boolean> {
     const id = v.parse(agentMailIdSchema, messageId);
     const reference = JSON.stringify({ inboxId: binding.inboxId, messageId: id });
@@ -62,7 +72,8 @@ export async function recordAgentMailMessage(
         kind: "agentmail",
         key,
         reference,
-        ...(observedAt ? { observedAt } : {}),
+        ...(observedAt ? { eligibilityAt: observedAt } : {}),
+        observedAt: availableAt ?? observedAt ?? new Date(),
     });
 }
 
@@ -77,7 +88,7 @@ export function verifyAgentMailWebhook(
     raw: string,
     headers: Headers,
     configuration: AgentMailHookConfiguration
-): { messageId: string; observedAt: Date } | null {
+): { messageId: string; observedAt: Date; availableAt: Date } | null {
     if (Buffer.byteLength(raw, "utf8") > 262_144)
         throw new Error("AgentMail event is too large.");
     const values = Object.fromEntries(
@@ -96,10 +107,15 @@ export function verifyAgentMailWebhook(
     const envelope = v.parse(envelopeSchema, payload);
     if (envelope.event_type !== "message.received") return null;
     const event = v.parse(receivedSchema, payload);
-    return event.message.inbox_id === configuration.inboxId
+    return event.message.inbox_id === configuration.inboxId &&
+        ordinaryReceivedMail(event.message)
         ? {
               messageId: event.message.message_id,
               observedAt: new Date(event.message.created_at),
+              availableAt: new Date(
+                  event.message.agent_armor?.manual_override?.released_at ??
+                      event.message.created_at
+              ),
           }
         : null;
 }

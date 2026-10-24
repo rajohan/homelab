@@ -21,6 +21,7 @@ export async function recordMiraEvent(
         reference: string;
         taskId?: string;
         observedAt?: Date;
+        eligibilityAt?: Date;
     }
 ): Promise<boolean> {
     if (
@@ -35,18 +36,19 @@ export async function recordMiraEvent(
         await resumeMiraControls(query, new Date(), input.owner);
     }
     let id = Bun.randomUUIDv7();
-    let observedAt = input.observedAt ?? new Date();
+    const observedAt = input.observedAt ?? new Date();
+    let eligibilityAt = input.eligibilityAt ?? observedAt;
     const inserted = await query<
         { id: string }[]
-    >`INSERT INTO mira_events (id, owner, kind, source_key, reference, task_id, created_at) VALUES (${id}, ${input.owner}, ${input.kind}, ${input.key}, ${input.reference}, ${input.taskId ?? null}, ${observedAt}) ON CONFLICT (owner, kind, source_key) DO NOTHING RETURNING id`;
+    >`INSERT INTO mira_events (id, owner, kind, source_key, reference, task_id, created_at, eligibility_at) VALUES (${id}, ${input.owner}, ${input.kind}, ${input.key}, ${input.reference}, ${input.taskId ?? null}, ${observedAt}, ${eligibilityAt}) ON CONFLICT (owner, kind, source_key) DO NOTHING RETURNING id`;
     if (!inserted[0]) {
         if (input.kind !== "agentmail") return false;
         const [existing] = await query<
             { id: string; at: Date }[]
-        >`SELECT id,created_at AS at FROM mira_events WHERE owner=${input.owner} AND kind=${input.kind} AND source_key=${input.key}`;
+        >`SELECT id,COALESCE(eligibility_at,created_at) AS at FROM mira_events WHERE owner=${input.owner} AND kind=${input.kind} AND source_key=${input.key}`;
         if (!existing) return false;
         id = existing.id;
-        observedAt = new Date(existing.at);
+        eligibilityAt = new Date(existing.at);
     }
     let cursor: string | null = null;
     for (;;) {
@@ -57,7 +59,7 @@ export async function recordMiraEvent(
             if (!(await miraRunAllowed(query, input.owner, automation.id))) continue;
             const [eligible] = await query<
                 { allowed: boolean }[]
-            >`SELECT NOT EXISTS (SELECT 1 FROM mira_switches s WHERE s.owner = ${input.owner} AND s.key IN ('autonomy', ${`automation:${automation.id}`}, ${input.kind === "agentmail" ? "integration:agentmail" : "autonomy"}) AND ((s.key='integration:agentmail' AND s.binding_activated_at > ${observedAt}) OR (NOT EXISTS (SELECT 1 FROM mira_control_windows w WHERE w.owner = s.owner AND w.key = s.key AND w.started_at <= ${observedAt} AND (w.ended_at IS NULL OR w.ended_at > ${observedAt})) AND (EXISTS (SELECT 1 FROM mira_control_windows w WHERE w.owner = s.owner AND w.key = s.key) OR s.changed_at > ${observedAt})))) AS allowed`;
+            >`SELECT NOT EXISTS (SELECT 1 FROM mira_switches s WHERE s.owner = ${input.owner} AND s.key IN ('autonomy', ${`automation:${automation.id}`}, ${input.kind === "agentmail" ? "integration:agentmail" : "autonomy"}) AND ((s.key='integration:agentmail' AND s.binding_activated_at > ${eligibilityAt}) OR (NOT EXISTS (SELECT 1 FROM mira_control_windows w WHERE w.owner = s.owner AND w.key = s.key AND w.started_at <= ${eligibilityAt} AND (w.ended_at IS NULL OR w.ended_at > ${eligibilityAt})) AND (EXISTS (SELECT 1 FROM mira_control_windows w WHERE w.owner = s.owner AND w.key = s.key) OR s.changed_at > ${eligibilityAt})))) AS allowed`;
             if (!eligible?.allowed) continue;
 
             await query`INSERT INTO mira_event_deliveries (event_id, automation_id, next_attempt_at) VALUES (${id}, ${automation.id}, ${observedAt}) ON CONFLICT DO NOTHING`;

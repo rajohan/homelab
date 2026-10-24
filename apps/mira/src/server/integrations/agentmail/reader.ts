@@ -108,7 +108,7 @@ export class AgentMailReader {
         },
         signal: AbortSignal
     ): Promise<{
-        messages: AgentMailMessage[];
+        messages: (AgentMailMessage & { event_created_at?: string })[];
         next_page_token?: string | null | undefined;
         head?: string | null;
     }> {
@@ -137,7 +137,7 @@ export class AgentMailReader {
                     .map((event) => event.message_id)
             ),
         ];
-        const messages: AgentMailMessage[] = [];
+        const messages: (AgentMailMessage & { event_created_at?: string })[] = [];
         for (let offset = 0; offset < ids.length; offset += 5) {
             bounded.throwIfAborted();
             const batch = await Promise.all(
@@ -155,12 +155,26 @@ export class AgentMailReader {
                         message.message_id !== id
                     )
                         throw new Error("AgentMail returned a different message.");
-                    return message;
+                    if (message.agent_armor?.status === "pending")
+                        throw new Error(
+                            "AgentMail security scan is pending; retry this page before advancing its checkpoint."
+                        );
+                    let eventAt = 0;
+                    for (const event of unseen) {
+                        if (event.message_id === id)
+                            eventAt = Math.max(eventAt, Date.parse(event.created_at));
+                    }
+                    return {
+                        ...message,
+                        event_created_at: new Date(eventAt).toISOString(),
+                    };
                 })
             );
             messages.push(
                 ...batch.filter(
-                    (message): message is AgentMailMessage =>
+                    (
+                        message
+                    ): message is AgentMailMessage & { event_created_at: string } =>
                         message !== null && ordinaryReceivedMail(message)
                 )
             );

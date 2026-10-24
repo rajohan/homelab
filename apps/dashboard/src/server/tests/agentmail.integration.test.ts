@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test, spyOn } from "bun:test";
 import { rejects } from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
@@ -6,12 +6,14 @@ import { setTimeout as delay } from "node:timers/promises";
 import { capabilities } from "@homelab/contracts/operations";
 import { reconcileMiraControls } from "@homelab/mira/data/automations";
 import { publishAgentMailReceiver } from "@homelab/mira/data/integrations";
-import { claimMiraRun } from "@homelab/mira/data/queue";
+import { claimMiraRun, scheduleMiraRuns } from "@homelab/mira/data/queue";
 import { pollAgentMail } from "@homelab/mira/integrations/agentmail/poll";
+import { AgentMailReader } from "@homelab/mira/integrations/agentmail/reader";
 import type { AgentMailMessage } from "@homelab/mira/integrations/agentmail/schema";
 import { createAgentMailTools } from "@homelab/mira/integrations/agentmail/tools";
 import { acceptAgentMailMessage } from "@homelab/mira/integrations/agentmail/webhook";
 
+import { createMiraTools } from "../../../../mira/src/server/executor/tools";
 import { appRouter } from "../api/router";
 import { startDashboardServer } from "../index";
 import { provisionTestAgentMail } from "../testing/agentmail";
@@ -775,6 +777,259 @@ test("recovery persists the first page event checkpoint and retains original rec
         >`SELECT event_anchor AS anchor,window_head AS head FROM mira_integration_state WHERE owner=${binding.owner}`;
         expect(saved).toEqual({ anchor: "newer-event", head: null });
     } finally {
+        await fixture.close();
+    }
+});
+
+test.each([false, true])(
+    "freshly released old mail retains original pause eligibility (%s)",
+    async (pausedAtReceipt) => {
+        const fixture = await operationFixture();
+        const binding = await provisionTestAgentMail(fixture.client);
+        const api = appRouter.createCaller({
+            operations: { ...fixture, agentMailHook: binding },
+            principal: { kind: "human", id: binding.owner, capabilities },
+        }).mira;
+        try {
+            const automation = await api.automations.create({
+                title: "Released mail",
+                prompt: "Review",
+                kind: "custom",
+                schedule: { kind: "event", event: "agentmail" },
+                budgetSeconds: 60,
+            });
+            for (const key of ["integration:agentmail", `automation:${automation.id}`])
+                await api.controls.setEnabled({
+                    key,
+                    version: 1,
+                    enabled: true,
+                    reason: null,
+                    until: null,
+                });
+            await fixture.client`UPDATE mira_switches SET binding_activated_at=now()-interval '3 days' WHERE owner=${binding.owner} AND key='integration:agentmail'`;
+            await fixture.client`UPDATE mira_control_windows SET started_at=now()-interval '3 days' WHERE owner=${binding.owner}`;
+            if (pausedAtReceipt)
+                await fixture.client`UPDATE mira_control_windows SET started_at=now()-interval '1 hour' WHERE owner=${binding.owner} AND key='integration:agentmail'`;
+            const receipt = new Date(Date.now() - 2 * 86_400_000).toISOString(),
+                release = new Date().toISOString();
+            const request = Object.assign(
+                (input: Parameters<typeof fetch>[0]) =>
+                    Promise.resolve(
+                        Response.json(
+                            (input instanceof Request
+                                ? input.url
+                                : String(input)
+                            ).includes("/events?")
+                                ? {
+                                      events: [
+                                          {
+                                              event_id: "release-event",
+                                              inbox_id: binding.inboxId,
+                                              message_id: "released",
+                                              created_at: release,
+                                          },
+                                      ],
+                                  }
+                                : {
+                                      inbox_id: binding.inboxId,
+                                      message_id: "released",
+                                      thread_id: "thread",
+                                      created_at: receipt,
+                                      timestamp: receipt,
+                                      from: "synthetic@example.test",
+                                      labels: ["received"],
+                                      agent_armor: {
+                                          status: "complete",
+                                          verdict: "review",
+                                          manual_override: { released_at: release },
+                                      },
+                                  }
+                        )
+                    ),
+                { preconnect: fetch.preconnect }
+            );
+            const reader = new AgentMailReader(
+                { ...binding, apiKey: "synthetic" },
+                request
+            );
+            expect(
+                await pollAgentMail(
+                    fixture.client,
+                    binding,
+                    reader,
+                    new AbortController().signal
+                )
+            ).toBe(true);
+            const [event] = await fixture.client<
+                { at: Date; eligibleAt: Date }[]
+            >`SELECT created_at AS at, eligibility_at AS "eligibleAt" FROM mira_events`;
+            expect(new Date(event!.at).toISOString()).toBe(release);
+            expect(new Date(event!.eligibleAt).toISOString()).toBe(receipt);
+            expect(await scheduleMiraRuns(fixture.client)).toBe(pausedAtReceipt ? 0 : 1);
+            expect(await scheduleMiraRuns(fixture.client)).toBe(0);
+        } finally {
+            await fixture.close();
+        }
+    }
+);
+
+test("pending Monitor scans retain recovery position until metadata is clear", async () => {
+    const fixture = await operationFixture();
+    const binding = await provisionTestAgentMail(fixture.client);
+    const api = appRouter.createCaller({
+        operations: { ...fixture, agentMailHook: binding },
+        principal: { kind: "human", id: binding.owner, capabilities },
+    }).mira;
+    try {
+        const automation = await api.automations.create({
+            title: "Scanned mail",
+            prompt: "Review",
+            kind: "custom",
+            schedule: { kind: "event", event: "agentmail" },
+            budgetSeconds: 60,
+        });
+        for (const key of ["integration:agentmail", `automation:${automation.id}`])
+            await api.controls.setEnabled({
+                key,
+                version: 1,
+                enabled: true,
+                reason: null,
+                until: null,
+            });
+        const received = new Date().toISOString();
+        let pending = true;
+        const request = Object.assign(
+            (input: Parameters<typeof fetch>[0]) =>
+                Promise.resolve(
+                    Response.json(
+                        (input instanceof Request ? input.url : String(input)).includes(
+                            "/events?"
+                        )
+                            ? {
+                                  events: [
+                                      {
+                                          event_id: "received-event",
+                                          inbox_id: binding.inboxId,
+                                          message_id: "pending",
+                                          created_at: received,
+                                      },
+                                  ],
+                              }
+                            : {
+                                  inbox_id: binding.inboxId,
+                                  message_id: "pending",
+                                  thread_id: "thread",
+                                  created_at: received,
+                                  timestamp: received,
+                                  from: "synthetic@example.test",
+                                  labels: ["received"],
+                                  agent_armor: pending
+                                      ? { status: "pending" }
+                                      : { status: "complete", verdict: "clear" },
+                              }
+                    )
+                ),
+            { preconnect: fetch.preconnect }
+        );
+        const reader = new AgentMailReader({ ...binding, apiKey: "synthetic" }, request);
+        expect(
+            await pollAgentMail(
+                fixture.client,
+                binding,
+                reader,
+                new AbortController().signal
+            )
+        ).toBe(false);
+        const [waiting] = await fixture.client<
+            { anchor: string | null; events: number }[]
+        >`SELECT event_anchor AS anchor,(SELECT count(*)::int FROM mira_events) AS events FROM mira_integration_state`;
+        expect(waiting).toEqual({ anchor: null, events: 0 });
+        expect(await scheduleMiraRuns(fixture.client)).toBe(0);
+        pending = false;
+        await fixture.client`UPDATE mira_integration_state SET next_attempt_at=now()`;
+        expect(
+            await pollAgentMail(
+                fixture.client,
+                binding,
+                reader,
+                new AbortController().signal
+            )
+        ).toBe(true);
+        expect(await scheduleMiraRuns(fixture.client)).toBe(1);
+        expect(await scheduleMiraRuns(fixture.client)).toBe(0);
+    } finally {
+        await fixture.close();
+    }
+});
+
+test("transient read-only mail failures permit retry and unrelated tools in the same run", async () => {
+    const fixture = await operationFixture();
+    const configuration = {
+        ...(await provisionTestAgentMail(fixture.client)),
+        apiKey: "synthetic",
+    };
+    const api = appRouter.createCaller({
+        operations: { ...fixture, agentMailHook: configuration },
+        principal: { kind: "human", id: configuration.owner, capabilities },
+    }).mira;
+    const read = spyOn(AgentMailReader.prototype, "read")
+        .mockRejectedValueOnce(new Error("Synthetic transport timeout"))
+        .mockResolvedValue({
+            messageId: "mail",
+            from: "synthetic@example.test",
+            subject: "Synthetic",
+            format: "untrusted_text",
+            content: "Passive content",
+            truncated: false,
+        });
+    try {
+        await api.controls.setEnabled({
+            key: "integration:agentmail",
+            version: 1,
+            enabled: true,
+            reason: null,
+            until: null,
+        });
+        const chat = await api.conversations.create({ title: "Read retry" });
+        await api.conversations.send({
+            conversationId: chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Synthetic",
+        });
+        const run = await claimMiraRun(fixture.client, crypto.randomUUID(), "foreground");
+        if (!run) throw new Error("Expected run");
+        const tools = createMiraTools(fixture.client, run, undefined, configuration);
+        const invoke = async (name: string, input: unknown): Promise<unknown> =>
+            JSON.parse(
+                await tools
+                    .find((tool) => tool.name === name)!
+                    .execute(input, new AbortController().signal, {
+                        callId: crypto.randomUUID(),
+                        threadId: "thread",
+                        turnId: "turn",
+                    })
+            );
+        expect(await invoke("mira_mail_read", { messageId: "mail" })).toMatchObject({
+            ok: false,
+            retryable: true,
+        });
+        expect(await invoke("mira_tasks_list", { search: "" })).toMatchObject({
+            ok: true,
+        });
+        expect(await invoke("mira_mail_read", { messageId: "mail" })).toMatchObject({
+            ok: true,
+            result: { content: "Passive content" },
+        });
+        const receipts = await fixture.client<
+            { state: string }[]
+        >`SELECT state FROM mira_tool_receipts WHERE run_id=${run.id} ORDER BY id`;
+        expect(receipts.map((row) => row.state)).toEqual([
+            "failed",
+            "succeeded",
+            "succeeded",
+        ]);
+    } finally {
+        read.mockRestore();
         await fixture.close();
     }
 });

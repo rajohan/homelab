@@ -1,0 +1,40 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "0c0746df-c3ec-4067-82cf-de54768c9179",
+    "prevIds": [
+        "85eebae2-f389-41ab-b7e8-46159ba97cfd",
+        "78643ff0-b250-4d55-bfcc-d627ff571e25"
+    ],
+    "footprints": [
+        {
+            "statementType": "add_column",
+            "statementTarget": ["column", "public", "mira_events", "eligibility_at"],
+            "writes": [
+                "s|col|public.mira_events.eligibility_at",
+                "n|col|public.mira_events.eligibility_at",
+                "e|col|public.mira_events.eligibility_at"
+            ],
+            "reads": ["n|tbl|public.mira_events", "n|sch|public"]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_events",
+                "name": "eligibility_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        }
+    ]
+}

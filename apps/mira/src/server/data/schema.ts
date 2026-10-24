@@ -326,6 +326,7 @@ export const miraEvents = pgTable(
         reference: text().notNull(),
         taskId: uuid("task_id").references(() => miraTasks.id),
         createdAt: time("created_at").notNull().defaultNow(),
+        eligibilityAt: time("eligibility_at"),
     },
     (t) => [uniqueIndex("mira_events_source").on(t.owner, t.kind, t.sourceKey)]
 );

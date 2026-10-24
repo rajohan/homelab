@@ -40,6 +40,7 @@ test("AgentMail verifies original signed bytes and rejects altered, unsigned and
     expect(verifyAgentMailWebhook(raw, signed(raw), configuration)).toEqual({
         messageId: message.message_id,
         observedAt: new Date(message.created_at),
+        availableAt: new Date(message.created_at),
     });
     expect(() =>
         verifyAgentMailWebhook(
@@ -366,4 +367,38 @@ test("AgentMail recovery rejects cross-inbox events before fetching mail", async
         ),
         /different inbox/
     );
+});
+
+test("webhooks defer pending and rejected scans and preserve a fresh release separately from receipt", () => {
+    for (const agent_armor of [
+        { status: "pending" },
+        { status: "unavailable" },
+        { status: "complete", verdict: "review" },
+    ]) {
+        const raw = JSON.stringify({
+            event_type: "message.received",
+            event_id: "pending",
+            message: { ...message, agent_armor },
+        });
+        expect(verifyAgentMailWebhook(raw, signed(raw), configuration)).toBeNull();
+    }
+    const releasedAt = new Date().toISOString();
+    const raw = JSON.stringify({
+        event_type: "message.received",
+        event_id: "released",
+        message: {
+            ...message,
+            created_at: "2026-10-20T00:00:00Z",
+            agent_armor: {
+                status: "complete",
+                verdict: "review",
+                manual_override: { released_at: releasedAt },
+            },
+        },
+    });
+    expect(verifyAgentMailWebhook(raw, signed(raw), configuration)).toEqual({
+        messageId: message.message_id,
+        observedAt: new Date("2026-10-20T00:00:00Z"),
+        availableAt: new Date(releasedAt),
+    });
 });

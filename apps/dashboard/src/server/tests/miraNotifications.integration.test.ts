@@ -141,7 +141,7 @@ test("heartbeat reports stay quiet for unchanged observations and intentional pa
             await listNotifications(fixture.client, "human:operator", page)
         ).toMatchObject({ unreadCount: 1 });
         const changedDuringRun = await next();
-        await api.tasks.create({
+        const task = await api.tasks.create({
             title: "New blocker",
             description: "Synthetic change",
             status: "blocked",
@@ -169,6 +169,18 @@ test("heartbeat reports stay quiet for unchanged observations and intentional pa
         expect(
             await listNotifications(fixture.client, "human:operator", page)
         ).toMatchObject({ unreadCount: 3 });
+        await api.tasks.addProgress({
+            taskId: task.id,
+            text: "Verified progress without a task edit",
+        });
+        await complete(await next());
+        expect(
+            await listNotifications(fixture.client, "human:operator", page)
+        ).toMatchObject({ unreadCount: 4 });
+        await complete(await next());
+        expect(
+            await listNotifications(fixture.client, "human:operator", page)
+        ).toMatchObject({ unreadCount: 4 });
         const running = await next();
         await api.controls.setEnabled({
             key: `automation:${automation.id}`,
@@ -184,7 +196,7 @@ test("heartbeat reports stay quiet for unchanged observations and intentional pa
         });
         expect(
             await listNotifications(fixture.client, "human:operator", page)
-        ).toMatchObject({ unreadCount: 3 });
+        ).toMatchObject({ unreadCount: 4 });
         expect(
             await listNotifications(fixture.client, "human:other", page)
         ).toMatchObject({ unreadCount: 0 });

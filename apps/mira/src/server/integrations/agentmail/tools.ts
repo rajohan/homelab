@@ -9,6 +9,18 @@ import { agentMailBindingHash, type AgentMailReadConfiguration } from "./configu
 import { AgentMailReader } from "./reader";
 import { agentMailIdSchema, ordinaryReceivedMail } from "./schema";
 
+async function readMail<T>(operation: () => Promise<T>): Promise<T> {
+    try {
+        return await operation();
+    } catch (error) {
+        if (error instanceof MiraFailure) throw error;
+        throw new MiraFailure(
+            "PRECONDITION_FAILED",
+            "AgentMail could not complete this read. Try again later."
+        );
+    }
+}
+
 /**
  * Declare stable mail tools with authority checked at every invocation, including resumed conversations.
  * @param client - Product database used to recheck the integration and run lease.
@@ -89,7 +101,7 @@ export function createAgentMailTools(
                         "Choose a mail window of at most 31 days ending no later than now."
                     );
                 const current = await requireAccess(signal);
-                const page = await current.reader.list(parsed, signal);
+                const page = await readMail(() => current.reader.list(parsed, signal));
                 await requireAccess(signal, current.version);
                 return {
                     messages: page.messages
@@ -122,7 +134,9 @@ export function createAgentMailTools(
                     input
                 );
                 const current = await requireAccess(signal);
-                const result = await current.reader.read(parsed.messageId, signal);
+                const result = await readMail(() =>
+                    current.reader.read(parsed.messageId, signal)
+                );
                 await requireAccess(signal, current.version);
                 return result;
             },

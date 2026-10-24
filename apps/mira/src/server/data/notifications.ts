@@ -16,6 +16,9 @@ export async function miraObservationFingerprint(
     const tasks = await query<
         Record<string, unknown>[]
     >`SELECT id, version, due_at <= now() AS due FROM mira_tasks WHERE owner = ${owner} AND deleted_at IS NULL AND status <> 'done' ORDER BY id`;
+    const progress = await query<
+        Record<string, unknown>[]
+    >`SELECT t.id,(SELECT p.id FROM mira_progress p WHERE p.task_id=t.id ORDER BY p.id DESC LIMIT 1) AS progress FROM mira_tasks t WHERE t.owner=${owner} AND t.deleted_at IS NULL ORDER BY t.id`;
     const memory = await query<
         Record<string, unknown>[]
     >`SELECT id, version FROM mira_memory WHERE owner = ${owner} ORDER BY id`;
@@ -36,7 +39,16 @@ export async function miraObservationFingerprint(
     >`SELECT id,state FROM mira_runs WHERE owner=${owner} AND state IN ('failed','needs_attention','interrupted') ORDER BY id DESC LIMIT 30`;
     return new Bun.CryptoHasher("sha256")
         .update(
-            JSON.stringify({ tasks, memory, controls, incidents, jobs, snapshots, runs })
+            JSON.stringify({
+                tasks,
+                progress,
+                memory,
+                controls,
+                incidents,
+                jobs,
+                snapshots,
+                runs,
+            })
         )
         .digest("hex");
 }
