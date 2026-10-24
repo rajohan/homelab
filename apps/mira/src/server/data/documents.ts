@@ -7,7 +7,13 @@ import type {
 } from "@homelab/contracts/mira";
 import type * as v from "valibot";
 
-import { auditMira, MiraFailure, requireTask, type MiraContext } from "./context";
+import {
+    miraTransaction,
+    auditMira,
+    MiraFailure,
+    requireTask,
+    type MiraContext,
+} from "./context";
 
 /**
  * Read bounded immutable report snapshots for the signed-in owner.
@@ -51,7 +57,7 @@ export async function createReport(
     input: v.InferOutput<typeof miraReportInputSchema>,
     runId: string | null = null
 ) {
-    return context.client.begin(async (query) => {
+    return miraTransaction(context, async (query) => {
         await requireTask(query, context.owner, input.taskId);
         const id = Bun.randomUUIDv7();
         await query`INSERT INTO mira_reports (id, owner, title, kind, markdown, task_id, run_id) VALUES (${id}, ${context.owner}, ${input.title}, ${input.kind}, ${input.markdown}, ${input.taskId}, ${runId})`;
@@ -70,7 +76,7 @@ export async function changeReport(
     context: MiraContext,
     input: { id: string; version: number; action: "archive" | "restore" | "delete" }
 ): Promise<void> {
-    await context.client.begin(async (query) => {
+    await miraTransaction(context, async (query) => {
         const rows = await query<
             { id: string }[]
         >`UPDATE mira_reports SET archived_at = ${input.action === "archive" ? new Date() : null}, deleted_at = ${input.action === "delete" ? new Date() : null}, markdown = CASE WHEN ${input.action === "delete"} THEN '' ELSE markdown END, title = CASE WHEN ${input.action === "delete"} THEN 'Deleted report' ELSE title END, version = version + 1 WHERE id = ${input.id} AND owner = ${context.owner} AND version = ${input.version} AND deleted_at IS NULL RETURNING id`;
@@ -109,7 +115,7 @@ export async function saveMemory(
     context: MiraContext,
     input: { id?: string; version?: number; title: string; content: string }
 ) {
-    return context.client.begin(async (query) => {
+    return miraTransaction(context, async (query) => {
         const id = input.id ?? Bun.randomUUIDv7();
         if (input.id) {
             const rows = await query<
@@ -144,7 +150,7 @@ export async function deleteMemory(
     id: string,
     version: number
 ): Promise<void> {
-    await context.client.begin(async (query) => {
+    await miraTransaction(context, async (query) => {
         const rows = await query<
             { id: string }[]
         >`DELETE FROM mira_memory WHERE id = ${id} AND owner = ${context.owner} AND version = ${version} RETURNING id`;

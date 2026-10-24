@@ -109,7 +109,7 @@ export async function scheduleMiraEvents(
             prompt: string;
             budget: number;
         }[]
-    >`SELECT d.event_id AS "eventId", d.automation_id AS "automationId", e.owner, e.kind, e.reference, e.task_id AS "taskId", e.created_at AS "createdAt", a.title, a.prompt, a.budget_seconds AS budget FROM mira_event_deliveries d JOIN mira_events e ON e.id = d.event_id JOIN mira_automations a ON a.id = d.automation_id WHERE d.state = 'pending' AND d.next_attempt_at <= ${now} ORDER BY d.next_attempt_at, e.id LIMIT 20 FOR UPDATE OF d SKIP LOCKED`;
+    >`SELECT d.event_id AS "eventId", d.automation_id AS "automationId", e.owner, e.kind, e.reference, e.task_id AS "taskId", e.created_at AS "createdAt", a.title, a.prompt, a.budget_seconds AS budget FROM mira_event_deliveries d JOIN mira_events e ON e.id = d.event_id JOIN mira_automations a ON a.id = d.automation_id WHERE d.state = 'pending' AND d.next_attempt_at <= ${now} ORDER BY d.next_attempt_at, e.id LIMIT 20 FOR UPDATE OF d, a SKIP LOCKED`;
     let queued = 0;
     for (const event of pending) {
         if (event.taskId)

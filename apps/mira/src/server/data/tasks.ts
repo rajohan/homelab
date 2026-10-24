@@ -6,6 +6,7 @@ import type {
 import type * as v from "valibot";
 
 import {
+    miraTransaction,
     auditMira,
     MiraFailure,
     requireConversation,
@@ -46,7 +47,7 @@ export async function saveTask(
     context: MiraContext,
     input: MiraTaskInput & { id?: string; version?: number }
 ) {
-    return context.client.begin(async (query) => {
+    return miraTransaction(context, async (query) => {
         await requireConversation(query, context.owner, input.conversationId);
         const id = input.id ?? Bun.randomUUIDv7();
         const due = input.dueAt ? new Date(input.dueAt) : null;
@@ -94,7 +95,7 @@ export async function addTaskProgress(
     taskId: string,
     content: string
 ) {
-    return context.client.begin(async (query) => {
+    return miraTransaction(context, async (query) => {
         await requireTask(query, context.owner, taskId);
         const id = Bun.randomUUIDv7();
         await query`INSERT INTO mira_progress (id, task_id, actor, content) VALUES (${id}, ${taskId}, ${context.actor}, ${content})`;
@@ -115,7 +116,7 @@ export async function deleteTask(
     id: string,
     version: number
 ): Promise<void> {
-    await context.client.begin(async (query) => {
+    await miraTransaction(context, async (query) => {
         const rows = await query<
             { id: string }[]
         >`UPDATE mira_tasks SET deleted_at = now(), title = 'Deleted task', description = '', completion_criteria = '', labels = '[]'::jsonb, version = version + 1 WHERE id = ${id} AND owner = ${context.owner} AND version = ${version} AND deleted_at IS NULL RETURNING id`;
