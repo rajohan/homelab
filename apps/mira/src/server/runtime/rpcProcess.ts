@@ -17,6 +17,7 @@ export interface RpcProcessOptions {
     cwd: string;
     env: Record<string, string>;
     requestTimeoutMs?: number;
+    signal?: AbortSignal;
     maxFrameBytes?: number;
     onRequest: (request: RuntimeEvent, signal: AbortSignal) => Promise<unknown>;
 }
@@ -34,6 +35,8 @@ export class RpcProcess {
     private nextId = 1;
     private failure: Error | null = null;
     private forceStop: ReturnType<typeof setTimeout> | null = null;
+    private readonly abort = () =>
+        this.fail(new Error("Mira runtime operation was cancelled."));
 
     /**
      * Start a child using explicit arguments and a caller-owned environment.
@@ -41,6 +44,7 @@ export class RpcProcess {
      */
     constructor(options: RpcProcessOptions) {
         this.options = options;
+        options.signal?.throwIfAborted();
         this.child = spawn(options.command, options.args, {
             cwd: options.cwd,
             env: options.env,
@@ -49,6 +53,7 @@ export class RpcProcess {
         });
         this.exited = new Promise((resolve) => {
             this.child.once("close", () => {
+                options.signal?.removeEventListener("abort", this.abort);
                 this.fail(
                     new Error(
                         "Mira runtime disconnected; reconcile the active turn before retrying."
@@ -67,6 +72,8 @@ export class RpcProcess {
         this.child.stdout.on("data", (chunk: Buffer) => this.receive(chunk));
         // Drain stderr without retaining prompts, credentials or provider diagnostics.
         this.child.stderr.resume();
+        options.signal?.addEventListener("abort", this.abort, { once: true });
+        if (options.signal?.aborted) this.abort();
     }
 
     /**

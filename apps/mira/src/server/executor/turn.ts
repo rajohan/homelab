@@ -38,7 +38,13 @@ export async function executeMiraTurn(
     filesDirectory?: string
 ): Promise<void> {
     const controller = new AbortController();
-    const signal = AbortSignal.any([stopping, controller.signal]);
+    const deadline = new AbortController();
+    const deadlineAt = run.deadlineAt ?? Date.now() + run.budgetSeconds * 1000;
+    const timer = setTimeout(
+        () => deadline.abort(),
+        Math.max(0, deadlineAt - Date.now())
+    );
+    const signal = AbortSignal.any([stopping, controller.signal, deadline.signal]);
     let runtime: CodexRuntime | undefined;
     let attachments: Awaited<ReturnType<typeof prepareMiraAttachments>> | undefined;
     let activity: MiraActivity = { phase: "starting", tool: null };
@@ -95,6 +101,7 @@ export async function executeMiraTurn(
             args: pilotArguments(),
             cwd: config.workspace,
             env: runtimeEnvironment(config),
+            signal,
         });
         const account = await runtime.account();
         if (!account.authenticated)
@@ -143,7 +150,7 @@ export async function executeMiraTurn(
             signal,
             settings,
             attachments: attachments.inputs,
-            timeoutMs: run.budgetSeconds * 1000,
+            timeoutMs: Math.max(1, deadlineAt - Date.now()),
             onActivity: (next) => {
                 activity = next;
             },
@@ -165,15 +172,15 @@ export async function executeMiraTurn(
     } catch (error) {
         clearInterval(flush);
         await update;
-        await finishMiraRun(client, run, {
-            state: "needs_attention",
-            text,
-            message:
-                error instanceof MiraFailure
-                    ? error.message
-                    : "The reply could not be verified. Review this run before continuing; actions were not replayed.",
-        });
+        let message =
+            "The reply could not be verified. Review this run before continuing; actions were not replayed.";
+        if (deadline.signal.aborted)
+            message =
+                "Maximum run time exceeded during preparation or execution. Review this run before continuing.";
+        else if (error instanceof MiraFailure) message = error.message;
+        await finishMiraRun(client, run, { state: "needs_attention", text, message });
     } finally {
+        clearTimeout(timer);
         clearInterval(flush);
         clearInterval(interval);
         await Promise.allSettled([update, renewal]);

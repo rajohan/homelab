@@ -24,6 +24,7 @@ export interface MiraClaim {
     leaseToken: string;
     budgetSeconds: number;
     manual: boolean;
+    deadlineAt?: number;
 }
 
 /**
@@ -101,6 +102,7 @@ export async function claimMiraRun(
                     continue;
                 }
             }
+            const deadlineAt = Date.now() + run.budgetSeconds * 1000;
             const leaseToken = crypto.randomUUID();
             await query`UPDATE mira_runs SET state = 'running', worker_id = ${workerId}, lease_token = ${leaseToken}, lease_expires_at = now() + interval '30 seconds', lane = ${lane}, started_at = now() WHERE id = ${run.id}`;
             await query`UPDATE mira_messages SET state = 'streaming' WHERE id = ${run.assistantMessageId}`;
@@ -110,7 +112,7 @@ export async function claimMiraRun(
                 "run.started",
                 run.id
             );
-            return { ...run, leaseToken };
+            return { ...run, leaseToken, deadlineAt };
         }
         return null;
     });
@@ -165,13 +167,29 @@ export async function finishMiraRun(
     }
 ): Promise<boolean> {
     return client.begin(async (query) => {
+        const [owned] = await query<
+            { id: string }[]
+        >`SELECT id FROM mira_runs WHERE id=${run.id} AND state='running' AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp() FOR UPDATE`;
+        if (!owned) return false;
+        await query`UPDATE mira_tool_receipts SET state='unknown', message='The tool receipt was not completed. Review before continuing.', finished_at=now() WHERE run_id=${run.id} AND state='running'`;
+        const [receipts] = await query<
+            { uncertain: boolean }[]
+        >`SELECT EXISTS(SELECT 1 FROM mira_tool_receipts WHERE run_id=${run.id} AND state='unknown') AS uncertain`;
+        const terminal = receipts?.uncertain
+            ? {
+                  ...outcome,
+                  state: "needs_attention" as const,
+                  message: "An action outcome needs review before continuing.",
+              }
+            : outcome;
+
         const rows = await query<
             { id: string }[]
-        >`UPDATE mira_runs SET state = ${outcome.state}, message = ${outcome.message}, provider_turn = ${outcome.providerTurn ?? null}, finished_at = now(), lease_expires_at = NULL WHERE id = ${run.id} AND state = 'running' AND lease_token = ${run.leaseToken} AND lease_expires_at > now() RETURNING id`;
+        >`UPDATE mira_runs SET state = ${terminal.state}, message = ${terminal.message}, provider_turn = ${terminal.providerTurn ?? null}, finished_at = now(), lease_expires_at = NULL WHERE id = ${run.id} AND state = 'running' AND lease_token = ${run.leaseToken} AND lease_expires_at > now() RETURNING id`;
         if (!rows[0]) return false;
-        await query`UPDATE mira_messages SET content = ${outcome.text}, state = ${outcome.state === "needs_attention" ? "failed" : outcome.state} WHERE id = ${run.assistantMessageId}`;
+        await query`UPDATE mira_messages SET content = ${terminal.text}, state = ${terminal.state === "needs_attention" ? "failed" : terminal.state} WHERE id = ${run.assistantMessageId}`;
         await query`UPDATE mira_conversations SET updated_at = now() WHERE id = ${run.conversationId}`;
-        if (run.automationId && outcome.state === "completed") {
+        if (run.automationId && terminal.state === "completed") {
             const fingerprint = await miraObservationFingerprint(query, run.owner);
             await query`UPDATE mira_runs SET observation_hash=${fingerprint} WHERE id=${run.id}`;
         }
@@ -179,7 +197,7 @@ export async function finishMiraRun(
         await auditMira(
             query,
             { owner: run.owner, actor: `mira:${run.id}` },
-            `run.${outcome.state}`,
+            `run.${terminal.state}`,
             run.id
         );
         return true;
