@@ -2,6 +2,8 @@ import { describe, expect, spyOn, test } from "bun:test";
 import { rejects } from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 
+import type { MiraActivity } from "@homelab/contracts/mira";
+
 import { CodexRuntime } from "./codexRuntime";
 import {
     disabledRuntimeFeatures,
@@ -134,8 +136,13 @@ describe("Mira runtime transport", () => {
                 authenticated: true,
                 plan: "plus",
             });
-            expect(await runtime.models()).toEqual([
-                { model: "synthetic", isDefault: true },
+            expect(await runtime.models()).toMatchObject([
+                {
+                    model: "synthetic",
+                    isDefault: true,
+                    supportedReasoningEfforts: [],
+                    serviceTiers: [],
+                },
             ]);
             const thread = await runtime.startThread("synthetic", process.cwd(), []);
             expect(await runtime.turn(thread, "test")).toEqual({
@@ -284,4 +291,28 @@ test("pilot configuration separates secrets, validates absolute paths and omits 
     expect(pilotArguments()).toContain("features.shell_tool=false");
     expect(pilotArguments()).toContain("project_doc_max_bytes=0");
     expect(pilotArguments()).toContain("stdio://");
+});
+
+test("each resumed turn receives explicit model settings and only its own activity events", async () => {
+    const runtime = await CodexRuntime.connect(options("settings-activity"));
+    const activity: MiraActivity[] = [];
+    try {
+        const thread = await runtime.startThread("synthetic", process.cwd(), []);
+        const chosen = { model: "model-a", effort: "high", serviceTier: "priority" };
+        const first = await runtime.turn(thread, "first", {
+            settings: chosen,
+            onActivity: (event) => activity.push(event),
+        });
+        expect(JSON.parse(first.text)).toEqual(chosen);
+        expect(activity).toEqual([
+            { phase: "thinking", tool: null },
+            { phase: "replying", tool: null },
+        ]);
+        await runtime.resumeThread(thread, []);
+        const defaults = { model: "model-b", effort: "low", serviceTier: null };
+        const next = await runtime.turn(thread, "next", { settings: defaults });
+        expect(JSON.parse(next.text)).toEqual(defaults);
+    } finally {
+        await runtime.close();
+    }
 });

@@ -1,19 +1,10 @@
-import {
-    Badge,
-    Button,
-    buttonStyles,
-    Card,
-    ErrorNotice,
-    formatDateTime,
-    LoadingState,
-    SectionHeader,
-} from "@homelab/ui";
+import { Card, ErrorNotice, LoadingState, SectionHeader } from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
 import { History } from "lucide-react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
+import { MiraRunTable } from "./MiraRunTable";
 
 /**
  * Reuse agent execution history in Jobs and Mira without copying run records.
@@ -45,69 +36,27 @@ export function MiraRunHistory() {
             {(query.error || stop.error) && (
                 <ErrorNotice error={query.error ?? stop.error} />
             )}
-            <div className="max-h-96 space-y-3 overflow-y-auto">
-                {rows.map((run) => (
-                    <article
-                        key={run.id}
-                        className="flex flex-col gap-3 rounded-lg border border-primary-700 bg-primary-900/40 p-3 sm:flex-row sm:items-center sm:justify-between"
-                    >
-                        <div className="min-w-0 space-y-2">
-                            <div className="flex flex-wrap items-center gap-2">
-                                <Badge
-                                    tone={
-                                        run.state === "needs_attention" ||
-                                        run.state === "failed"
-                                            ? "warning"
-                                            : "neutral"
-                                    }
-                                >
-                                    {run.state.replaceAll("_", " ")}
-                                </Badge>
-                                <Link
-                                    className={buttonStyles({
-                                        variant: "secondary",
-                                        className: "w-full sm:w-auto",
-                                    })}
-                                    to="/mira/$conversationId"
-                                    params={{ conversationId: run.conversationId }}
-                                >
-                                    {run.automationId
-                                        ? "Automation conversation"
-                                        : "Conversation"}
-                                </Link>
-                            </div>
-                            <p className="text-xs text-primary-400">
-                                {formatDateTime(run.createdAt)}
-                            </p>
-                            {run.message && (
-                                <p className="text-sm text-primary-300">{run.message}</p>
-                            )}
-                        </div>
-                        {["queued", "running"].includes(run.state) && (
-                            <Button
-                                variant="secondary"
-                                busy={stop.isPending && stop.variables === run.id}
-                                disabled={run.cancelRequested}
-                                onClick={() => stop.mutate(run.id)}
-                            >
-                                {run.cancelRequested ? "Stopping" : "Stop"}
-                            </Button>
-                        )}
-                    </article>
-                ))}
-            </div>
-            {!query.isPending && rows.length === 0 && (
-                <p className="text-sm text-primary-400">No Mira runs yet.</p>
+            {rows.length > 0 && (
+                <MiraRunTable
+                    rows={rows}
+                    onStop={(id) => stop.mutate(id)}
+                    stoppingId={stop.isPending ? stop.variables : undefined}
+                    continuation={{
+                        hasMore: query.hasNextPage,
+                        loading: query.isFetching,
+                        error: query.isError ? query.error : undefined,
+                        loadingLabel: "Loading more Mira runs…",
+                        onLoadMore: () =>
+                            void (query.isRefetchError
+                                ? query.refetch()
+                                : query.fetchNextPage()),
+                    }}
+                />
             )}
-            {query.hasNextPage && (
-                <Button
-                    fullWidth
-                    variant="secondary"
-                    busy={query.isFetchingNextPage}
-                    onClick={() => void query.fetchNextPage()}
-                >
-                    Load more runs
-                </Button>
+            {!query.isPending && !query.isError && rows.length === 0 && (
+                <p className="rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm text-primary-400">
+                    No Mira runs yet.
+                </p>
             )}
         </Card>
     );

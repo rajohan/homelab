@@ -1,17 +1,21 @@
 import { expect, spyOn, test } from "bun:test";
 
+import { miraDefaultChatSettings, miraModelSchema } from "@homelab/contracts/mira";
 import type { MiraAttachment } from "@homelab/contracts/mira";
 import { IdentityClient } from "@homelab/ui/identity/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState, type ReactNode } from "react";
+import * as v from "valibot";
 
 import { IdentityClientContext } from "../../identity/IdentityClientContext";
 import { AttachmentPicker } from "./AttachmentPicker";
 import { AutomationEditor } from "./AutomationEditor";
+import { ChatActivity } from "./ChatActivity";
 import { ChatComposer } from "./ChatComposer";
 import { ChatMessage } from "./ChatMessage";
+import { ChatSettings } from "./ChatSettings";
 
 function UploadHarness({ onBusy }: { readonly onBusy: (busy: boolean) => void }) {
     const [files, setFiles] = useState<MiraAttachment[]>([]);
@@ -174,3 +178,110 @@ test.each([false, true])(
         }
     }
 );
+
+test("chat model selection replaces unsupported thinking and speed choices", async () => {
+    const models = [
+        v.parse(miraModelSchema, {
+            model: "synthetic-a",
+            displayName: "Model A",
+            isDefault: true,
+            defaultReasoningEffort: "low",
+            supportedReasoningEfforts: [
+                { reasoningEffort: "low", description: "Quick" },
+                { reasoningEffort: "high", description: "Deeper" },
+            ],
+            serviceTiers: [
+                { id: "priority", name: "Fast", description: "Increased usage" },
+            ],
+        }),
+        v.parse(miraModelSchema, {
+            model: "synthetic-b",
+            displayName: "Model B",
+            isDefault: false,
+            defaultReasoningEffort: "medium",
+            supportedReasoningEfforts: [
+                { reasoningEffort: "medium", description: "Balanced" },
+            ],
+        }),
+    ];
+    const cleanup = fixture(
+        <ChatSettings
+            id={crypto.randomUUID()}
+            version={1}
+            settings={{
+                ...miraDefaultChatSettings,
+                model: "synthetic-a",
+                effort: "high",
+                serviceTier: "priority",
+            }}
+            models={models}
+            defaultModel="synthetic-a"
+            fresh
+            display={{
+                showActivity: true,
+                keepActivity: false,
+                showTools: true,
+                expandTools: false,
+            }}
+            onDisplayChange={() => {}}
+            onClose={() => {}}
+        />
+    );
+    try {
+        const user = userEvent.setup();
+        expect(screen.getByText("Increased usage")).toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: /Chat model/ }));
+        await user.click(screen.getByRole("option", { name: "Model B" }));
+        expect(screen.getByRole("button", { name: /Thinking level/ })).toHaveTextContent(
+            "Default (medium)"
+        );
+        expect(screen.getByRole("button", { name: /Response speed/ })).toHaveTextContent(
+            "Standard"
+        );
+        await user.click(screen.getByRole("button", { name: /Thinking level/ }));
+        expect(screen.queryByRole("option", { name: "High" })).not.toBeInTheDocument();
+    } finally {
+        cleanup();
+    }
+});
+
+test("chat activity shows provider thinking and safe recorded tool outcomes", () => {
+    const cleanup = fixture(
+        <ChatActivity
+            run={{
+                id: crypto.randomUUID(),
+                conversationId: crypto.randomUUID(),
+                taskId: null,
+                automationId: null,
+                state: "running",
+                cancelRequested: false,
+                message: null,
+                createdAt: new Date().toISOString(),
+                startedAt: null,
+                finishedAt: null,
+                activity: { phase: "thinking", tool: null },
+            }}
+            tools={[
+                {
+                    id: "synthetic",
+                    tool: "mira_tasks_list",
+                    state: "succeeded",
+                    message: null,
+                },
+            ]}
+            display={{
+                showActivity: true,
+                keepActivity: false,
+                showTools: true,
+                expandTools: true,
+            }}
+        />
+    );
+    try {
+        expect(screen.getByRole("status")).toHaveTextContent("Thinking");
+        expect(screen.getByText("tasks list")).toBeInTheDocument();
+        expect(screen.getByText("Completed")).toBeInTheDocument();
+    } finally {
+        cleanup();
+    }
+});

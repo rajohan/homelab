@@ -57,7 +57,14 @@ isolated synthetic preview before production deployment.
   submission, and can be reopened after the browser closes. Markdown, GFM tables and
   bounded code highlighting use shared components and the Monokai Sublime theme.
   Conversations and messages have separate scroll areas; controls remain available
-  at small viewport sizes.
+  at small viewport sizes. Messages include their date and time. Chat settings use
+  the isolated runtime's model catalog, refreshed every 30 seconds, including
+  supported thinking levels and speeds. Preferences are stored per conversation and
+  frozen per queued turn; unsupported combinations are rejected without silently
+  switching models. Catalog availability is not proof of inference entitlement.
+  Observed thinking/reply/tool stages and durable tool receipts can be displayed;
+  local display preferences do not expose private reasoning or tool arguments.
+  Jobs uses the shared responsive table for named conversations and run outcomes.
 - Uploads accept verified PNG/JPEG/WebP, PDF and UTF-8 text up to 25 MiB per file and
   eight files per message. Storage uses owned paths, bounded quotas, content checks
   and garbage collection. PDF extraction runs in a credential-free bounded child;

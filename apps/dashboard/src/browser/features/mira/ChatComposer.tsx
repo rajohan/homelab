@@ -1,6 +1,6 @@
 import type { MiraAttachment } from "@homelab/contracts/mira";
-import { Button, Textarea } from "@homelab/ui";
-import { Send, Square } from "lucide-react";
+import { Button, Textarea, IconButton } from "@homelab/ui";
+import { Send, Square, Settings2 } from "lucide-react";
 
 import { AttachmentPicker } from "./AttachmentPicker";
 
@@ -22,6 +22,7 @@ export function ChatComposer({
     onStop,
     onSend,
     onBrowse,
+    onSettings,
 }: {
     readonly text: string;
     readonly onText: (value: string) => void;
@@ -36,6 +37,7 @@ export function ChatComposer({
     readonly onStop: () => void;
     readonly onSend: () => void;
     readonly onBrowse: () => void;
+    readonly onSettings?: (() => void) | undefined;
 }) {
     const canSend = Boolean(text.trim()) && !active && !uploading && !sending;
     return (
@@ -75,6 +77,16 @@ export function ChatComposer({
                     onBusyChange={onUploading}
                     onBrowse={onBrowse}
                     disabled={sending || active}
+                    controls={
+                        onSettings && (
+                            <IconButton
+                                icon={Settings2}
+                                label="Chat settings"
+                                disabled={sending || active}
+                                onClick={onSettings}
+                            />
+                        )
+                    }
                     actions={
                         active ? (
                             <Button

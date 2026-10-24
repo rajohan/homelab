@@ -26,12 +26,14 @@ export function AttachmentPicker({
     onBrowse,
     compact = false,
     actions,
+    controls,
 }: {
     readonly value: MiraAttachment[];
     readonly onChange: (files: MiraAttachment[]) => void;
     readonly disabled?: boolean;
     readonly compact?: boolean;
     readonly actions?: ReactNode;
+    readonly controls?: ReactNode;
     readonly onBrowse?: () => void;
     readonly onBusyChange?: (busy: boolean) => void;
 }) {
@@ -133,6 +135,7 @@ export function AttachmentPicker({
                             Choose existing
                         </Button>
                     ))}
+                {controls}
                 {actions && (
                     <div className="ml-auto flex shrink-0 items-center gap-2">
                         {actions}

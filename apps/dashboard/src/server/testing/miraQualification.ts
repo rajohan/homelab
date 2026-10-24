@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { deflateSync } from "node:zlib";
 
+import { saveMiraChatSettings } from "@homelab/mira/data/chatSettings";
+
 import { createTestDatabase } from "../../../../../tests/database";
 import { runtimeEnvironment } from "../../../../mira/src/server/config/environment";
 import {
@@ -141,6 +143,35 @@ export async function main(): Promise<void> {
         process.stdout.write(
             "Passed real executor turn with owned text, PDF, image and recorded product tool.\n"
         );
+        const catalogRuntime = await CodexRuntime.connect({
+            command: config.command,
+            args: pilotArguments(),
+            cwd: config.workspace,
+            env: runtimeEnvironment(config),
+        });
+        let changedModel: string;
+        try {
+            const catalog = await catalogRuntime.models();
+            const current = catalog.find((entry) => entry.isDefault)!;
+            const choice =
+                catalog.find((entry) => entry.model.includes("luna")) ??
+                catalog.find((entry) => entry.model !== current.model) ??
+                current;
+            changedModel = choice.model;
+            await database.client`INSERT INTO mira_runtime_status (id, worker_id, version, model, models, ready, heartbeat_at) VALUES (1, ${crypto.randomUUID()}, 'qualification', ${current.model}, ${JSON.stringify(catalog)}::text::jsonb, true, now())`;
+            const beforeChange = await readConversation(context, conversation.id);
+            await saveMiraChatSettings(context, {
+                id: conversation.id,
+                version: beforeChange.conversation.version,
+                settings: {
+                    model: choice.model,
+                    effort: choice.defaultReasoningEffort,
+                    serviceTier: null,
+                },
+            });
+        } finally {
+            await catalogRuntime.close();
+        }
         const resumed = await turn(
             "Repeat the marker from the previous message exactly. Do not read files or call tools."
         );
@@ -149,7 +180,7 @@ export async function main(): Promise<void> {
             "Runtime replacement lost the conversation marker."
         );
         process.stdout.write(
-            "Passed product conversation continuation after runtime replacement.\n"
+            `Passed product conversation continuation after runtime replacement and model selection (${changedModel}).\n`
         );
         const stored = await readConversation(context, conversation.id);
         await changeConversation(context, {

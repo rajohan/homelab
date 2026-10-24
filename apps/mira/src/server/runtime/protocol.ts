@@ -1,3 +1,4 @@
+import { miraModelSchema } from "@homelab/contracts/mira";
 import * as v from "valibot";
 
 const id = v.union([v.string(), v.pipe(v.number(), v.integer())]);
@@ -16,7 +17,7 @@ export const accountSchema = v.object({
     account: v.nullable(v.object({ type: v.string(), planType: v.optional(v.string()) })),
 });
 export const modelsSchema = v.object({
-    data: v.array(v.object({ model: v.string(), isDefault: v.boolean() })),
+    data: v.pipe(v.array(miraModelSchema), v.maxLength(100)),
     nextCursor: v.nullable(v.string()),
 });
 export const initializeSchema = v.object({ codexHome: v.string() });

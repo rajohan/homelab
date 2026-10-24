@@ -1,5 +1,5 @@
 import type { MiraMessage } from "@homelab/contracts/mira";
-import { Badge, Markdown } from "@homelab/ui";
+import { Badge, Markdown, formatDateTime } from "@homelab/ui";
 
 import { MessageAttachments } from "./MessageAttachments";
 
@@ -20,9 +20,15 @@ export function ChatMessage({ message }: { readonly message: MiraMessage }) {
                 className={`max-w-[94%] min-w-0 rounded-2xl px-4 py-3 sm:max-w-[88%] ${user ? "bg-accent-700 text-white" : "bg-primary-950 text-primary-100"}`}
             >
                 <div
-                    className={`mb-2 flex items-center gap-2 text-xs font-semibold ${user ? "text-white/80" : "text-primary-400"}`}
+                    className={`mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-semibold ${user ? "text-white/80" : "text-primary-400"}`}
                 >
                     <span>{message.role === "user" ? "You" : "Mira"}</span>
+                    <time
+                        dateTime={message.createdAt}
+                        className="ml-auto font-normal tabular-nums"
+                    >
+                        {formatDateTime(message.createdAt)}
+                    </time>
                     {message.state !== "completed" && (
                         <Badge>
                             {message.state === "streaming"

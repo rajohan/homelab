@@ -145,7 +145,12 @@ export type MiraRunState =
     | "interrupted"
     | "failed"
     | "needs_attention";
+export interface MiraActivity {
+    phase: "starting" | "thinking" | "replying" | "tool" | "working";
+    tool: string | null;
+}
 export interface MiraRun {
+    activity?: MiraActivity | null;
     id: string;
     conversationId: string;
     automationId: string | null;
@@ -157,6 +162,12 @@ export interface MiraRun {
     startedAt: string | null;
     finishedAt: string | null;
 }
+export interface MiraRunSummary extends MiraRun {
+    title: string;
+    automationName: string | null;
+    conversationAvailable: boolean;
+}
+
 export interface MiraReport extends v.InferOutput<typeof miraReportInputSchema> {
     id: string;
     runId: string | null;
@@ -193,3 +204,61 @@ export interface MiraAttachment {
     createdAt: string;
 }
 export type MiraSchedule = v.InferOutput<typeof miraScheduleSchema>;
+
+const modelIdentifier = v.pipe(
+    v.string(),
+    v.minLength(1),
+    v.maxLength(160),
+    v.regex(/^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/)
+);
+export const miraChatSettingsSchema = v.strictObject({
+    model: v.nullable(modelIdentifier),
+    effort: v.nullable(modelIdentifier),
+    serviceTier: v.nullable(modelIdentifier),
+});
+export const miraDefaultChatSettings = { model: null, effort: null, serviceTier: null };
+export type MiraChatSettings = v.InferOutput<typeof miraChatSettingsSchema>;
+export const miraChatSettingsUpdateSchema = v.strictObject({
+    ...versionedIdSchema.entries,
+    settings: miraChatSettingsSchema,
+});
+const modelLabel = v.pipe(v.string(), v.maxLength(160));
+const modelDescription = v.pipe(v.string(), v.maxLength(4000));
+export const miraModelSchema = v.object({
+    model: modelIdentifier,
+    isDefault: v.boolean(),
+    displayName: v.optional(modelLabel, ""),
+    description: v.optional(modelDescription, ""),
+    defaultReasoningEffort: v.optional(v.nullable(modelIdentifier), null),
+    supportedReasoningEfforts: v.optional(
+        v.pipe(
+            v.array(
+                v.object({
+                    reasoningEffort: modelIdentifier,
+                    description: modelDescription,
+                })
+            ),
+            v.maxLength(32)
+        ),
+        []
+    ),
+    defaultServiceTier: v.optional(v.nullable(modelIdentifier), null),
+    serviceTiers: v.optional(
+        v.pipe(
+            v.array(
+                v.object({
+                    id: modelIdentifier,
+                    name: modelLabel,
+                    description: modelDescription,
+                })
+            ),
+            v.maxLength(16)
+        ),
+        []
+    ),
+    inputModalities: v.optional(v.array(v.picklist(["text", "image"])), [
+        "text",
+        "image",
+    ]),
+});
+export type MiraModel = v.InferOutput<typeof miraModelSchema>;

@@ -1,4 +1,10 @@
-import type { MiraSchedule } from "@homelab/contracts/mira";
+import {
+    miraDefaultChatSettings,
+    type MiraActivity,
+    type MiraChatSettings,
+    type MiraModel,
+    type MiraSchedule,
+} from "@homelab/contracts/mira";
 import { sql } from "drizzle-orm";
 import {
     boolean,
@@ -24,6 +30,10 @@ export const miraConversations = pgTable(
         version: integer().notNull().default(1),
         providerThread: text("provider_thread"),
         model: text(),
+        settings: jsonb()
+            .$type<MiraChatSettings>()
+            .notNull()
+            .default(miraDefaultChatSettings),
         archivedAt: time("archived_at"),
         deletedAt: time("deleted_at"),
         createdAt: time("created_at").notNull().defaultNow(),
@@ -158,6 +168,12 @@ export const miraRuns = pgTable(
         owner: text().notNull(),
         requestKey: text("request_key").notNull().unique(),
         requestHash: text("request_hash").notNull(),
+        activity: jsonb().$type<MiraActivity>(),
+        effectiveSettings: jsonb("effective_settings").$type<MiraChatSettings>(),
+        settings: jsonb()
+            .$type<MiraChatSettings>()
+            .notNull()
+            .default(miraDefaultChatSettings),
         conversationId: uuid("conversation_id")
             .notNull()
             .references(() => miraConversations.id),
@@ -284,6 +300,7 @@ export const miraRuntimeStatus = pgTable(
         ready: boolean().notNull(),
         message: text(),
         heartbeatAt: time("heartbeat_at").notNull(),
+        models: jsonb().$type<MiraModel[]>().notNull().default([]),
     },
     (t) => [check("mira_runtime_status_singleton", sql`${t.id} = 1`)]
 );

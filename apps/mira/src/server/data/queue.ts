@@ -1,4 +1,4 @@
-import type { MiraRun, MiraSchedule } from "@homelab/contracts/mira";
+import type { MiraActivity, MiraRunSummary, MiraSchedule } from "@homelab/contracts/mira";
 import type { SQL } from "bun";
 
 import {
@@ -220,7 +220,25 @@ export async function scheduleMiraRuns(client: SQL, now = new Date()): Promise<n
  */
 export async function listMiraRuns(context: MiraContext, before?: string) {
     const rows = await context.client<
-        MiraRun[]
-    >`SELECT id, conversation_id AS "conversationId", automation_id AS "automationId", task_id AS "taskId", state, cancel_requested AS "cancelRequested", message, created_at::text AS "createdAt", started_at::text AS "startedAt", finished_at::text AS "finishedAt" FROM mira_runs WHERE owner = ${context.owner} AND (${before ?? null}::uuid IS NULL OR id < ${before ?? null}::uuid) ORDER BY id DESC LIMIT 30`;
+        MiraRunSummary[]
+    >`SELECT r.id, r.conversation_id AS "conversationId", r.automation_id AS "automationId", r.task_id AS "taskId", r.state, r.cancel_requested AS "cancelRequested", r.message, r.created_at::text AS "createdAt", r.started_at::text AS "startedAt", r.finished_at::text AS "finishedAt", COALESCE(c.title, 'Deleted conversation') AS title, a.title AS "automationName", c.id IS NOT NULL AS "conversationAvailable" FROM mira_runs r LEFT JOIN mira_conversations c ON c.id = r.conversation_id AND c.owner = r.owner AND c.deleted_at IS NULL LEFT JOIN mira_automations a ON a.id = r.automation_id AND a.owner = r.owner AND a.deleted_at IS NULL WHERE r.owner = ${context.owner} AND (${before ?? null}::uuid IS NULL OR r.id < ${before ?? null}::uuid) ORDER BY r.id DESC LIMIT 30`;
     return { rows, nextCursor: rows.length === 30 ? rows.at(-1)!.id : null };
+}
+
+/**
+ * Persist a coarse runtime activity without storing private reasoning or tool payloads.
+ * @param client - Executor-owned database pool.
+ * @param run - Current fenced lease.
+ * @param activity - Observed provider stage or host-tool execution.
+ * @returns Whether the current run accepted the update.
+ */
+export async function saveMiraActivity(
+    client: SQL,
+    run: MiraClaim,
+    activity: MiraActivity
+): Promise<boolean> {
+    const rows = await client<
+        { id: string }[]
+    >`UPDATE mira_runs SET activity = ${JSON.stringify(activity)}::text::jsonb WHERE id = ${run.id} AND state = 'running' AND NOT cancel_requested AND lease_token = ${run.leaseToken} AND lease_expires_at > now() RETURNING id`;
+    return rows.length === 1;
 }

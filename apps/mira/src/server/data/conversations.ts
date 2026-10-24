@@ -1,5 +1,6 @@
 import type {
     MiraConversation,
+    MiraChatSettings,
     MiraMessage,
     MiraRun,
     miraMessageInputSchema,
@@ -54,17 +55,30 @@ export async function readConversation(
     before?: string
 ) {
     const [conversation] = await context.client<
-        MiraConversation[]
-    >`SELECT id, title, version, archived_at::text AS "archivedAt", created_at::text AS "createdAt", updated_at::text AS "updatedAt" FROM mira_conversations WHERE id = ${id} AND owner = ${context.owner} AND deleted_at IS NULL`;
+        (MiraConversation & { settings: MiraChatSettings })[]
+    >`SELECT id, title, version, settings, archived_at::text AS "archivedAt", created_at::text AS "createdAt", updated_at::text AS "updatedAt" FROM mira_conversations WHERE id = ${id} AND owner = ${context.owner} AND deleted_at IS NULL`;
     if (!conversation) throw new MiraFailure("NOT_FOUND", "Conversation not found.");
     const rows = await context.client<
         MiraMessage[]
     >`SELECT id, role, content, state, attachment_ids AS "attachmentIds", created_at::text AS "createdAt" FROM mira_messages WHERE conversation_id = ${id} AND (${before ?? null}::uuid IS NULL OR id < ${before ?? null}::uuid) ORDER BY id DESC LIMIT 50`;
     const [run] = await context.client<
         MiraRun[]
-    >`SELECT id, conversation_id AS "conversationId", automation_id AS "automationId", task_id AS "taskId", state, cancel_requested AS "cancelRequested", message, created_at::text AS "createdAt", started_at::text AS "startedAt", finished_at::text AS "finishedAt" FROM mira_runs WHERE conversation_id = ${id} ORDER BY id DESC LIMIT 1`;
+    >`SELECT id, conversation_id AS "conversationId", automation_id AS "automationId", task_id AS "taskId", activity, state, cancel_requested AS "cancelRequested", message, created_at::text AS "createdAt", started_at::text AS "startedAt", finished_at::text AS "finishedAt" FROM mira_runs WHERE conversation_id = ${id} ORDER BY id DESC LIMIT 1`;
+    const tools = run
+        ? await context.client<
+              {
+                  id: string;
+                  tool: string;
+                  state: string;
+                  message: string | null;
+                  createdAt: string;
+                  finishedAt: string | null;
+              }[]
+          >`SELECT id, tool, state, message, created_at::text AS "createdAt", finished_at::text AS "finishedAt" FROM mira_tool_receipts WHERE run_id = ${run.id} ORDER BY created_at, id LIMIT 32`
+        : [];
     return {
         conversation,
+        tools,
         messages: rows.toReversed(),
         run: run ?? null,
         nextCursor: rows.length === 50 ? rows.at(-1)!.id : null,
@@ -91,8 +105,8 @@ export async function enqueueTurn(
     } = {}
 ) {
     const [conversation] = await query<
-        { id: string }[]
-    >`SELECT id FROM mira_conversations WHERE id = ${input.conversationId} AND owner = ${context.owner} AND deleted_at IS NULL AND archived_at IS NULL FOR UPDATE`;
+        { id: string; settings: MiraChatSettings }[]
+    >`SELECT id, settings FROM mira_conversations WHERE id = ${input.conversationId} AND owner = ${context.owner} AND deleted_at IS NULL AND archived_at IS NULL FOR UPDATE`;
     if (!conversation)
         throw new MiraFailure("NOT_FOUND", "Open an active conversation before sending.");
     const requestKey = `${context.owner}:${input.requestId}`;
@@ -135,7 +149,7 @@ export async function enqueueTurn(
         userMessage = Bun.randomUUIDv7(),
         assistantMessage = Bun.randomUUIDv7();
     await query`INSERT INTO mira_messages (id, conversation_id, role, content, state, attachment_ids) VALUES (${userMessage}, ${input.conversationId}, 'user', ${input.text}, 'completed', ${JSON.stringify(input.attachmentIds)}::text::jsonb), (${assistantMessage}, ${input.conversationId}, 'assistant', '', 'queued', '[]'::jsonb)`;
-    await query`INSERT INTO mira_runs (id, owner, request_key, request_hash, conversation_id, user_message_id, assistant_message_id, automation_id, task_id, state, priority, budget_seconds, manual) VALUES (${id}, ${context.owner}, ${requestKey}, ${hash}, ${input.conversationId}, ${userMessage}, ${assistantMessage}, ${source.automationId ?? null}, ${source.taskId ?? null}, 'queued', ${manual ? 100 : 0}, ${source.budgetSeconds ?? 300}, ${manual})`;
+    await query`INSERT INTO mira_runs (id, owner, request_key, request_hash, conversation_id, user_message_id, assistant_message_id, automation_id, task_id, state, priority, budget_seconds, manual, settings) VALUES (${id}, ${context.owner}, ${requestKey}, ${hash}, ${input.conversationId}, ${userMessage}, ${assistantMessage}, ${source.automationId ?? null}, ${source.taskId ?? null}, 'queued', ${manual ? 100 : 0}, ${source.budgetSeconds ?? 300}, ${manual}, ${JSON.stringify(conversation.settings)}::text::jsonb)`;
     await query`UPDATE mira_conversations SET version = version + 1, updated_at = now() WHERE id = ${input.conversationId}`;
     await auditMira(query, context, "run.queued", id);
     return { id };

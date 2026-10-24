@@ -1,5 +1,6 @@
 import { setTimeout as delay } from "node:timers/promises";
 
+import type { MiraModel } from "@homelab/contracts/mira";
 import type { SQL } from "bun";
 
 import { runtimeEnvironment } from "../config/environment";
@@ -37,6 +38,7 @@ export async function runMiraExecutor(options: {
     const workerId = crypto.randomUUID();
     let inspectedAt = 0;
     let model: string | null = null;
+    let models: MiraModel[] = [];
     let message: string | null = null;
     const wait = async (ms: number) => {
         try {
@@ -59,7 +61,7 @@ export async function runMiraExecutor(options: {
                     });
                     const account = await runtime.account();
                     health.ready = account.authenticated;
-                    const models = account.authenticated ? await runtime.models() : [];
+                    models = account.authenticated ? await runtime.models() : [];
                     model =
                         config.model ??
                         models.find((entry) => entry.isDefault)?.model ??
@@ -87,7 +89,7 @@ export async function runMiraExecutor(options: {
                 }
                 inspectedAt = Date.now();
             }
-            await client`INSERT INTO mira_runtime_status (id, worker_id, version, model, ready, message, heartbeat_at) VALUES (1, ${workerId}, ${options.version}, ${model}, ${health.ready}, ${message}, now()) ON CONFLICT (id) DO UPDATE SET worker_id = EXCLUDED.worker_id, version = EXCLUDED.version, model = EXCLUDED.model, ready = EXCLUDED.ready, message = EXCLUDED.message, heartbeat_at = EXCLUDED.heartbeat_at`;
+            await client`INSERT INTO mira_runtime_status (id, worker_id, version, model, ready, message, heartbeat_at, models) VALUES (1, ${workerId}, ${options.version}, ${model}, ${health.ready}, ${message}, now(), ${JSON.stringify(models)}::text::jsonb) ON CONFLICT (id) DO UPDATE SET worker_id = EXCLUDED.worker_id, version = EXCLUDED.version, model = EXCLUDED.model, ready = EXCLUDED.ready, message = EXCLUDED.message, heartbeat_at = EXCLUDED.heartbeat_at, models = EXCLUDED.models`;
             if (health.ready) await scheduleMiraRuns(client);
             health.heartbeatAt = Date.now();
             await wait(5000);

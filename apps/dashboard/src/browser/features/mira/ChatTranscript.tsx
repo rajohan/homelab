@@ -1,6 +1,6 @@
 import type { MiraMessage } from "@homelab/contracts/mira";
 import { Button } from "@homelab/ui";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 
 import { ChatMessage } from "./ChatMessage";
 
@@ -13,7 +13,9 @@ export function ChatTranscript({
     before,
     nextCursor,
     onPage,
+    activity,
 }: {
+    readonly activity?: ReactNode;
     readonly messages: MiraMessage[];
     readonly before: string | undefined;
     readonly nextCursor: string | null;
@@ -70,6 +72,7 @@ export function ChatTranscript({
             {messages.map((message) => (
                 <ChatMessage key={message.id} message={message} />
             ))}
+            {activity}
         </div>
     );
 }

@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { rejects } from "node:assert/strict";
 
+import { miraModelSchema } from "@homelab/contracts/mira";
 import type { MiraTaskInput } from "@homelab/contracts/mira";
 import { capabilities } from "@homelab/contracts/operations";
 import { saveMemory } from "@homelab/mira/data/documents";
@@ -9,11 +10,13 @@ import {
     finishMiraRun,
     renewMiraRun,
     saveMiraDelta,
+    saveMiraActivity,
     scheduleMiraRuns,
 } from "@homelab/mira/data/queue";
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import superjson from "superjson";
+import * as v from "valibot";
 
 import { appRouter } from "../api/router";
 import { operationFixture } from "../testing/operations";
@@ -87,6 +90,14 @@ test("Mira HTTP API isolates operators, rejects machine access and retains durab
             reconnected.messages.find((message) => message.role === "user")?.content
         ).toBe(input.text);
         expect(reconnected.run?.state).toBe("queued");
+        const history = await api().mira.runs.list.query(page);
+        expect(history.rows[0]).toMatchObject({
+            title: "Synthetic conversation",
+            conversationAvailable: true,
+            automationName: null,
+        });
+        const otherRuns = await database.caller("other").mira.runs.list(page);
+        expect(otherRuns.rows).toHaveLength(0);
         const otherChats = await database.caller("other").mira.conversations.list(page);
         expect(otherChats.rows).toHaveLength(0);
         await rejects(
@@ -344,6 +355,110 @@ test("Mira refuses foreign attachments atomically and requires stopped runs befo
             { content: string }[]
         >`SELECT content FROM mira_messages WHERE conversation_id = ${chat.id}`;
         expect(content.every((row) => row.content === "")).toBe(true);
+    } finally {
+        await database.close();
+    }
+});
+
+test("conversation settings validate model capabilities, isolate owners and remain fixed for queued turns", async () => {
+    const database = await fixture();
+    try {
+        const api = database.caller().mira;
+        const chat = await api.conversations.create({ title: "Model settings" });
+        const models = [
+            v.parse(miraModelSchema, {
+                model: "synthetic-a",
+                isDefault: true,
+                defaultReasoningEffort: "low",
+                supportedReasoningEfforts: [
+                    { reasoningEffort: "low", description: "Fast" },
+                    { reasoningEffort: "high", description: "Deeper" },
+                ],
+                serviceTiers: [
+                    { id: "priority", name: "Fast", description: "Higher usage" },
+                ],
+            }),
+        ];
+        await database.client`INSERT INTO mira_runtime_status (id, worker_id, version, model, models, ready, heartbeat_at) VALUES (1, ${crypto.randomUUID()}, 'synthetic', 'synthetic-a', ${JSON.stringify(models)}::text::jsonb, true, now())`;
+        const settings = {
+            model: "synthetic-a",
+            effort: "high",
+            serviceTier: "priority",
+        };
+        await rejects(
+            database
+                .caller("other")
+                .mira.conversations.settings({ id: chat.id, version: 1, settings }),
+            /changed/
+        );
+        await rejects(
+            api.conversations.settings({
+                id: chat.id,
+                version: 1,
+                settings: { ...settings, effort: "unsupported" },
+            }),
+            /thinking level/
+        );
+        await rejects(
+            api.conversations.settings({
+                id: chat.id,
+                version: 1,
+                settings: { ...settings, model: "missing" },
+            }),
+            /unavailable/
+        );
+        await api.conversations.settings({ id: chat.id, version: 1, settings });
+        const read = await api.conversations.read({ id: chat.id });
+        expect(read.conversation.settings).toEqual(settings);
+        expect(read.conversation.version).toBe(2);
+        await rejects(
+            api.conversations.settings({ id: chat.id, version: 1, settings }),
+            /changed/
+        );
+        const queued = await api.conversations.send({
+            conversationId: chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Synthetic settings check",
+        });
+        await rejects(
+            api.conversations.settings({ id: chat.id, version: 3, settings }),
+            /Wait for the reply/
+        );
+        const [stored] = await database.client<
+            { settings: unknown }[]
+        >`SELECT settings FROM mira_runs WHERE id = ${queued.id}`;
+        expect(stored?.settings).toEqual(settings);
+        const claimed = await claimMiraRun(
+            database.client,
+            crypto.randomUUID(),
+            "foreground"
+        );
+        expect(claimed?.id).toBe(queued.id);
+        expect(
+            await saveMiraActivity(database.client, claimed!, {
+                phase: "thinking",
+                tool: null,
+            })
+        ).toBe(true);
+        const thinking = await api.conversations.read({ id: chat.id });
+        expect(thinking.run?.activity).toEqual({ phase: "thinking", tool: null });
+        await api.runs.cancel({ id: queued.id });
+        expect(
+            await saveMiraActivity(database.client, claimed!, {
+                phase: "replying",
+                tool: null,
+            })
+        ).toBe(false);
+        await finishMiraRun(database.client, claimed!, {
+            state: "interrupted",
+            text: "",
+            message: null,
+        });
+        await database.client`UPDATE mira_runtime_status SET heartbeat_at = now() - interval '1 minute'`;
+        await rejects(
+            api.conversations.settings({ id: chat.id, version: 3, settings }),
+            /Reconnect/
+        );
     } finally {
         await database.close();
     }

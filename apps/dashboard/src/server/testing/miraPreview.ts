@@ -136,48 +136,7 @@ export async function main(): Promise<void> {
                     pumping = false;
                 });
         }, 1500);
-        const api = (request: Request) => {
-            if (!isSameOriginApiRequest(request, origin))
-                return Response.json(
-                    { message: "Invalid preview origin" },
-                    { status: 403 }
-                );
-            return dashboardApiRequest(request, { operations, principal });
-        };
-        server = Bun.serve({
-            hostname: "127.0.0.1",
-            port: 3330,
-            development: true,
-            maxRequestBodySize: 26_214_400,
-            routes: {
-                "/preview": miraViewport,
-                "/api/session": () =>
-                    Response.json({
-                        authenticated: true,
-                        mfaRequired: false,
-                        methods: [],
-                        username: "Preview",
-                        userId: context.owner,
-                        sessionId: "disposable-preview",
-                    }),
-                "/api/trpc": api,
-                "/api/trpc/*": api,
-                "/api/mira/files": (request) =>
-                    isSameOriginApiRequest(request, origin)
-                        ? miraFileRequest(request, { operations, principal })
-                        : new Response(null, { status: 403 }),
-                "/api/mira/files/*": (request) =>
-                    isSameOriginApiRequest(request, origin)
-                        ? miraFileRequest(request, { operations, principal })
-                        : new Response(null, { status: 403 }),
-                "/api/*": () =>
-                    Response.json(
-                        { message: "Unavailable in the synthetic preview" },
-                        { status: 404 }
-                    ),
-                "/*": index,
-            },
-        });
+        server = serveMiraPreview({ operations, principal, origin, port: 3330 });
         process.stdout.write(`Mira synthetic preview: ${origin}/mira/${chat.id}\n`);
         await stopped.promise;
     } finally {
@@ -190,6 +149,63 @@ export async function main(): Promise<void> {
         await allocation.close();
         await rm(directory, { recursive: true, force: true });
     }
+}
+
+/**
+ * Serve the actual dashboard against an explicitly owned disposable preview allocation.
+ * @param options - Synthetic operations and identity, expected browser origin and loopback port.
+ * @returns The owned server handle, so source revisions can reuse preview data during review.
+ */
+export function serveMiraPreview({
+    operations,
+    principal,
+    origin,
+    port,
+}: {
+    operations: NonNullable<Parameters<typeof dashboardApiRequest>[1]>["operations"];
+    principal: NonNullable<Parameters<typeof dashboardApiRequest>[1]>["principal"];
+    origin: string;
+    port: number;
+}) {
+    const api = (request: Request) => {
+        if (!isSameOriginApiRequest(request, origin))
+            return Response.json({ message: "Invalid preview origin" }, { status: 403 });
+        return dashboardApiRequest(request, { operations, principal });
+    };
+    return Bun.serve({
+        hostname: "127.0.0.1",
+        port,
+        development: true,
+        maxRequestBodySize: 26_214_400,
+        routes: {
+            "/preview": miraViewport,
+            "/api/session": () =>
+                Response.json({
+                    authenticated: true,
+                    mfaRequired: false,
+                    methods: [],
+                    username: "Preview",
+                    userId: principal?.id ?? "preview-operator",
+                    sessionId: "disposable-preview",
+                }),
+            "/api/trpc": api,
+            "/api/trpc/*": api,
+            "/api/mira/files": (request) =>
+                isSameOriginApiRequest(request, origin)
+                    ? miraFileRequest(request, { operations, principal })
+                    : new Response(null, { status: 403 }),
+            "/api/mira/files/*": (request) =>
+                isSameOriginApiRequest(request, origin)
+                    ? miraFileRequest(request, { operations, principal })
+                    : new Response(null, { status: 403 }),
+            "/api/*": () =>
+                Response.json(
+                    { message: "Unavailable in the synthetic preview" },
+                    { status: 404 }
+                ),
+            "/*": index,
+        },
+    });
 }
 
 if (import.meta.main) await main();

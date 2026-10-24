@@ -1,3 +1,4 @@
+import type { MiraModel, MiraActivity } from "@homelab/contracts/mira";
 import * as v from "valibot";
 
 import { assertRuntimeIsolation } from "./configuration";
@@ -26,6 +27,7 @@ interface ActiveTurn {
     controller: AbortController;
     calls: Set<string>;
     acknowledged: PromiseWithResolvers<string>;
+    onActivity?: ((activity: MiraActivity) => void) | undefined;
 }
 
 /** A single-turn Codex adapter with explicit tools and no implicit approval grants. */
@@ -115,8 +117,8 @@ export class CodexRuntime {
      * List advertised model choices; actual inference must still prove access.
      * @returns The paginated model catalog.
      */
-    async models(): Promise<{ model: string; isDefault: boolean }[]> {
-        const models: { model: string; isDefault: boolean }[] = [];
+    async models(): Promise<MiraModel[]> {
+        const models: MiraModel[] = [];
         const cursors = new Set<string>();
         let cursor: string | null = null;
         do {
@@ -153,6 +155,7 @@ export class CodexRuntime {
             threadSchema,
             await this.connection.request("thread/start", {
                 model,
+                allowProviderModelFallback: false,
                 cwd: workspace,
                 sandbox: "read-only",
                 approvalPolicy: "untrusted",
@@ -210,6 +213,12 @@ export class CodexRuntime {
             timeoutMs?: number;
             onDelta?: (delta: string) => void;
             attachments?: RuntimeInput[];
+            onActivity?: (activity: MiraActivity) => void;
+            settings?: {
+                model: string;
+                effort: string | null;
+                serviceTier: string | null;
+            };
         } = {}
     ): Promise<TurnResult> {
         if (this.active) throw new Error("Mira already has an active turn.");
@@ -223,6 +232,7 @@ export class CodexRuntime {
             controller,
             calls: new Set(),
             acknowledged: Promise.withResolvers<string>(),
+            onActivity: options.onActivity,
         };
         void active.acknowledged.promise.catch(() => {});
         this.active = active;
@@ -230,7 +240,23 @@ export class CodexRuntime {
         const completion = Promise.withResolvers<TurnResult>();
         // The notification can arrive before the turn/start response.
         const unsubscribe = this.connection.subscribe((event) => {
-            if (event.method === "item/agentMessage/delta") {
+            if (event.method === "item/started") {
+                const item = v.safeParse(
+                    v.object({
+                        threadId: v.string(),
+                        turnId: v.string(),
+                        item: v.object({ type: v.string() }),
+                    }),
+                    event.params
+                );
+                if (
+                    item.success &&
+                    item.output.threadId === threadId &&
+                    (!active.id || item.output.turnId === active.id) &&
+                    item.output.item.type === "reasoning"
+                )
+                    options.onActivity?.({ phase: "thinking", tool: null });
+            } else if (event.method === "item/agentMessage/delta") {
                 const delta = v.parse(deltaSchema, event.params);
                 if (
                     delta.threadId !== threadId ||
@@ -239,6 +265,7 @@ export class CodexRuntime {
                     return;
                 if (output.length + delta.delta.length > 256_000)
                     throw new Error("Mira output limit reached.");
+                options.onActivity?.({ phase: "replying", tool: null });
                 output += delta.delta;
                 options.onDelta?.(delta.delta);
             } else if (event.method === "turn/completed") {
@@ -286,6 +313,7 @@ export class CodexRuntime {
                 turnSchema,
                 await this.connection.request("turn/start", {
                     threadId,
+                    ...options.settings,
                     input: [
                         { type: "text", text, text_elements: [] },
                         ...(options.attachments ?? []),
@@ -379,6 +407,7 @@ export class CodexRuntime {
         const turnSignal = AbortSignal.any([signal, active.controller.signal]);
         turnSignal.throwIfAborted();
         try {
+            active.onActivity?.({ phase: "tool", tool: tool.name });
             const text = await tool.execute(call.arguments, turnSignal, {
                 callId: call.callId,
                 threadId: call.threadId,
@@ -393,6 +422,8 @@ export class CodexRuntime {
                     { type: "inputText", text: "Mira tool did not complete." },
                 ],
             };
+        } finally {
+            active.onActivity?.({ phase: "working", tool: null });
         }
     }
 }

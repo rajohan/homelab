@@ -1,5 +1,6 @@
 import {
     miraAutomationInputSchema,
+    miraChatSettingsUpdateSchema,
     miraAutomationUpdateSchema,
     miraConversationInputSchema,
     miraConversationReadSchema,
@@ -28,6 +29,7 @@ import {
     saveMiraAutomation,
     setMiraEnabled,
 } from "@homelab/mira/data/automations";
+import { listMiraModels, saveMiraChatSettings } from "@homelab/mira/data/chatSettings";
 import { MiraFailure, type MiraContext } from "@homelab/mira/data/context";
 import {
     cancelRun,
@@ -123,7 +125,13 @@ export const miraRouter = trpc.router({
             };
         })
     ),
+    models: trpc.procedure.query(({ ctx }) => execute(ctx, listMiraModels)),
     conversations: trpc.router({
+        settings: trpc.procedure
+            .input(miraChatSettingsUpdateSchema)
+            .mutation(({ ctx, input }) =>
+                execute(ctx, (mira) => saveMiraChatSettings(mira, input))
+            ),
         list: trpc.procedure
             .input(miraPageSchema)
             .query(({ ctx, input }) =>

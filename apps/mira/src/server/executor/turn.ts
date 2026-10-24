@@ -1,10 +1,14 @@
+import type { MiraChatSettings, MiraActivity } from "@homelab/contracts/mira";
 import type { SQL } from "bun";
 
 import { runtimeEnvironment } from "../config/environment";
+import { resolveMiraChatSettings } from "../data/chatSettings";
+import { MiraFailure } from "../data/context";
 import {
     finishMiraRun,
     renewMiraRun,
     saveMiraDelta,
+    saveMiraActivity,
     type MiraClaim,
 } from "../data/queue";
 import { CodexRuntime } from "../runtime/codexRuntime";
@@ -36,6 +40,8 @@ export async function executeMiraTurn(
     const signal = AbortSignal.any([stopping, controller.signal]);
     let runtime: CodexRuntime | undefined;
     let attachments: Awaited<ReturnType<typeof prepareMiraAttachments>> | undefined;
+    let activity: MiraActivity = { phase: "starting", tool: null };
+    let savedActivity = "";
     let text = "";
     let persisted = "";
     let updating = false;
@@ -56,13 +62,23 @@ export async function executeMiraTurn(
             });
     }, 5000);
     const flush = setInterval(() => {
-        if (updating || persisted === text) return;
+        if (
+            updating ||
+            (persisted === text && savedActivity === JSON.stringify(activity))
+        )
+            return;
         updating = true;
         const snapshot = text;
-        update = saveMiraDelta(client, run, snapshot)
-            .then((accepted) => {
-                if (accepted) persisted = snapshot;
-                else controller.abort();
+        const currentActivity = activity;
+        update = Promise.all([
+            saveMiraDelta(client, run, snapshot),
+            saveMiraActivity(client, run, currentActivity),
+        ])
+            .then(([textAccepted, activityAccepted]) => {
+                if (textAccepted && activityAccepted) {
+                    persisted = snapshot;
+                    savedActivity = JSON.stringify(currentActivity);
+                } else controller.abort();
                 return;
             })
             .catch(() => controller.abort())
@@ -73,8 +89,13 @@ export async function executeMiraTurn(
     try {
         signal.throwIfAborted();
         const [record] = await client<
-            { providerThread: string | null; content: string; attachmentIds: string[] }[]
-        >`SELECT c.provider_thread AS "providerThread", m.content, m.attachment_ids AS "attachmentIds" FROM mira_conversations c JOIN mira_messages m ON m.id = ${run.userMessageId} AND m.conversation_id = c.id WHERE c.id = ${run.conversationId} AND c.owner = ${run.owner} AND c.deleted_at IS NULL`;
+            {
+                providerThread: string | null;
+                content: string;
+                attachmentIds: string[];
+                settings: MiraChatSettings;
+            }[]
+        >`SELECT c.provider_thread AS "providerThread", m.content, m.attachment_ids AS "attachmentIds", r.settings FROM mira_conversations c JOIN mira_messages m ON m.id = ${run.userMessageId} AND m.conversation_id = c.id JOIN mira_runs r ON r.id = ${run.id} AND r.conversation_id = c.id WHERE c.id = ${run.conversationId} AND c.owner = ${run.owner} AND c.deleted_at IS NULL`;
         if (!record) throw new Error("Conversation unavailable.");
         runtime = await CodexRuntime.connect({
             command: config.command,
@@ -85,6 +106,9 @@ export async function executeMiraTurn(
         const account = await runtime.account();
         if (!account.authenticated)
             throw new Error("Runtime authentication unavailable.");
+        const models = await runtime.models();
+        const settings = resolveMiraChatSettings(models, record.settings, config.model);
+        const selectedModel = models.find((entry) => entry.model === settings.model)!;
         const tools = createMiraTools(client, run, filesDirectory);
         attachments = await prepareMiraAttachments(
             { client, owner: run.owner, actor: `mira:${run.id}` },
@@ -95,12 +119,18 @@ export async function executeMiraTurn(
                 signal,
             }
         );
+        if (
+            attachments.inputs.some((input) => input.type === "localImage") &&
+            !selectedModel.inputModalities.includes("image")
+        )
+            throw new MiraFailure(
+                "BAD_REQUEST",
+                "The selected model does not support images. Choose another model in Chat settings."
+            );
         let threadId = record.providerThread;
         if (threadId) await runtime.resumeThread(threadId, tools);
         else {
-            const models = await runtime.models();
-            const model = config.model ?? models.find((entry) => entry.isDefault)?.model;
-            if (!model) throw new Error("Runtime model unavailable.");
+            const model = settings.model;
             threadId = await runtime.startThread(
                 model,
                 config.workspace,
@@ -112,10 +142,18 @@ export async function executeMiraTurn(
             >`UPDATE mira_conversations SET provider_thread = ${threadId}, model = ${model} WHERE id = ${run.conversationId} AND EXISTS (SELECT 1 FROM mira_runs WHERE id = ${run.id} AND state = 'running' AND lease_token = ${run.leaseToken} AND lease_expires_at > now()) RETURNING id`;
             if (!stored[0]) throw new Error("Run lease lost.");
         }
+        const recorded = await client<
+            { id: string }[]
+        >`UPDATE mira_runs SET effective_settings = ${JSON.stringify(settings)}::text::jsonb WHERE id = ${run.id} AND state = 'running' AND NOT cancel_requested AND lease_token = ${run.leaseToken} AND lease_expires_at > now() RETURNING id`;
+        if (!recorded[0]) throw new Error("Run lease lost.");
         const result = await runtime.turn(threadId, record.content, {
             signal,
+            settings,
             attachments: attachments.inputs,
             timeoutMs: run.budgetSeconds * 1000,
+            onActivity: (next) => {
+                activity = next;
+            },
             onDelta: (delta) => {
                 text += delta;
             },
@@ -131,14 +169,16 @@ export async function executeMiraTurn(
                     : null,
             providerTurn: result.id,
         });
-    } catch {
+    } catch (error) {
         clearInterval(flush);
         await update;
         await finishMiraRun(client, run, {
             state: "needs_attention",
             text,
             message:
-                "The reply could not be verified. Review this run before continuing; actions were not replayed.",
+                error instanceof MiraFailure
+                    ? error.message
+                    : "The reply could not be verified. Review this run before continuing; actions were not replayed.",
         });
     } finally {
         clearInterval(flush);

@@ -232,7 +232,27 @@ for await (const line of reader) {
             });
             continue;
         }
-        const text = mode === "failed" ? "" : "Synthetic response";
+        if (mode === "settings-activity") {
+            write({
+                method: "item/started",
+                params: {
+                    threadId: "unrelated-thread",
+                    turnId,
+                    item: { type: "reasoning" },
+                },
+            });
+            write({
+                method: "item/started",
+                params: { threadId: "thread-test", turnId, item: { type: "reasoning" } },
+            });
+        }
+        let text = mode === "failed" ? "" : "Synthetic response";
+        if (mode === "settings-activity")
+            text = JSON.stringify({
+                model: message.params.model,
+                effort: message.params.effort,
+                serviceTier: message.params.serviceTier,
+            });
         if (mode !== "wait") {
             write({
                 method: "item/agentMessage/delta",

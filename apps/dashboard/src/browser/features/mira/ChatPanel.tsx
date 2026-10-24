@@ -1,3 +1,4 @@
+import { miraDefaultChatSettings } from "@homelab/contracts/mira";
 import type { MiraAttachment } from "@homelab/contracts/mira";
 import {
     Badge,
@@ -17,7 +18,10 @@ import { useRef, useState } from "react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
+import { ChatActivity } from "./ChatActivity";
 import { ChatComposer } from "./ChatComposer";
+import { readChatDisplay, saveChatDisplay } from "./chatDisplay";
+import { ChatSettings } from "./ChatSettings";
 import { ChatTranscript } from "./ChatTranscript";
 import { FileLibrary } from "./FileLibrary";
 
@@ -35,10 +39,11 @@ export function ChatPanel({
     readonly onChooseConversation: () => void;
 }) {
     const [text, setText] = useState("");
+    const [display, setDisplay] = useState(readChatDisplay);
     const [attachments, setAttachments] = useState<MiraAttachment[]>([]);
     const [uploading, setUploading] = useState(false);
     const [selectingFile, setSelectingFile] = useState(false);
-    const [dialog, setDialog] = useState<"rename" | "delete">();
+    const [dialog, setDialog] = useState<"rename" | "delete" | "settings">();
     const [before, setBefore] = useState<string>();
     const request = useRef<{ text: string; id: string } | null>(null);
     const navigate = useNavigate();
@@ -59,6 +64,11 @@ export function ChatPanel({
         queryKey: ["operations", "mira", "status"],
         queryFn: () => api.mira.status.query(),
         refetchInterval: 15_000,
+    });
+    const catalog = useQuery({
+        queryKey: ["operations", "mira", "models"],
+        queryFn: () => api.mira.models.query(),
+        refetchInterval: 30_000,
     });
     const send = useOperation(async () => {
         const contentKey = JSON.stringify({
@@ -191,6 +201,16 @@ export function ChatPanel({
                 before={before}
                 nextCursor={query.data.nextCursor}
                 onPage={setBefore}
+                activity={
+                    !before && (
+                        <ChatActivity
+                            key={String(display.expandTools)}
+                            run={run}
+                            tools={query.data.tools ?? []}
+                            display={display}
+                        />
+                    )
+                }
             />
             {run?.message && (
                 <p className="shrink-0 px-4 py-2 text-xs text-primary-300">
@@ -214,6 +234,7 @@ export function ChatPanel({
                     }}
                     onSend={() => send.mutate(undefined)}
                     onBrowse={() => setSelectingFile(true)}
+                    onSettings={() => setDialog("settings")}
                 />
             )}
             {selectingFile && (
@@ -228,6 +249,22 @@ export function ChatPanel({
                         );
                         setSelectingFile(false);
                     }}
+                />
+            )}
+            {dialog === "settings" && (
+                <ChatSettings
+                    id={id}
+                    version={conversation.version}
+                    settings={conversation.settings ?? miraDefaultChatSettings}
+                    models={catalog.data?.models ?? []}
+                    defaultModel={catalog.data?.defaultModel ?? null}
+                    fresh={catalog.data?.fresh ?? false}
+                    display={display}
+                    onDisplayChange={(next) => {
+                        setDisplay(next);
+                        saveChatDisplay(next);
+                    }}
+                    onClose={() => setDialog(undefined)}
                 />
             )}
             {dialog === "rename" && (
