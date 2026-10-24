@@ -27,7 +27,7 @@ export async function cleanupMiraConversations(
             await client.begin(async (query) => {
                 const updated = await query<
                     { id: string }[]
-                >`UPDATE mira_conversations SET provider_thread = NULL WHERE id = ${row.id} AND deleted_at IS NOT NULL AND provider_thread = ${row.providerThread} RETURNING id`;
+                >`UPDATE mira_conversations SET provider_thread = NULL, provider_policy_hash = NULL WHERE id = ${row.id} AND deleted_at IS NOT NULL AND provider_thread = ${row.providerThread} RETURNING id`;
                 if (updated.length > 0)
                     await auditMira(
                         query,

@@ -18,7 +18,10 @@ import { pollAgentMail } from "@homelab/mira/integrations/agentmail/poll";
 import { AgentMailReader } from "@homelab/mira/integrations/agentmail/reader";
 import type { AgentMailMessage } from "@homelab/mira/integrations/agentmail/schema";
 import { createAgentMailTools } from "@homelab/mira/integrations/agentmail/tools";
-import { acceptAgentMailMessage } from "@homelab/mira/integrations/agentmail/webhook";
+import {
+    acceptAgentMailMessage,
+    recordAgentMailMessage,
+} from "@homelab/mira/integrations/agentmail/webhook";
 import { migrate } from "drizzle-orm/bun-sql/migrator";
 
 import { createTestDatabase } from "../../../../../tests/database";
@@ -1398,6 +1401,44 @@ test("continually arriving pending scans do not starve clear mail or retained sc
         >`SELECT pending_scans AS pending,event_anchor AS anchor FROM mira_integration_state`;
         expect(state?.pending.map((entry) => entry.messageId)).toEqual(["scan-2"]);
         expect(state?.anchor).toBe("event-scan-2");
+    } finally {
+        await fixture.close();
+    }
+});
+
+test("quota-rejected mail stays skipped after the hourly allowance resets while newer mail remains eligible", async () => {
+    const fixture = await operationFixture();
+    const binding = await provisionTestAgentMail(fixture.client);
+    const created = new Date(Date.now() - 30_000);
+    try {
+        await fixture.client`INSERT INTO mira_events(id,owner,kind,source_key,reference) SELECT md5('burst-'||i)::uuid,'operator','agentmail','burst-'||i,'{}' FROM generate_series(1,60) i`;
+        const accept = (id: string, received: Date, released = received) =>
+            fixture.client.begin((query) =>
+                recordAgentMailMessage(query, binding, id, received, released)
+            );
+        expect(await accept("overflow-during-pause", created)).toBe(false);
+        await fixture.client`UPDATE mira_events SET received_at=now()-interval '2 hours'`;
+        // A later security release or recovery receipt must not re-admit rejected mail.
+        expect(await accept("overflow-during-pause", created, new Date())).toBe(false);
+        expect(
+            await accept("older-unseen-overflow", new Date(created.getTime() - 1000))
+        ).toBe(false);
+        const [state] = await fixture.client<
+            { cutoff: Date }[]
+        >`SELECT skipped_through AS cutoff FROM mira_mail_intake WHERE owner='operator'`;
+        expect(
+            await accept("new-after-quota", new Date(state!.cutoff.getTime() + 1))
+        ).toBe(true);
+        const [count] = await fixture.client<
+            { total: number }[]
+        >`SELECT count(*)::int AS total FROM mira_mail_intake`;
+        expect(count?.total).toBe(1);
+        const other = { ...binding, owner: "other", inboxId: "other@agentmail.to" };
+        expect(
+            await fixture.client.begin((query) =>
+                recordAgentMailMessage(query, other, "independent", created)
+            )
+        ).toBe(true);
     } finally {
         await fixture.close();
     }

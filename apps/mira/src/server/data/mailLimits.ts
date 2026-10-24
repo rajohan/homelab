@@ -42,12 +42,18 @@ async function warn(query: TransactionSQL, owner: string, kind: "events" | "runs
  * Bound new mail references using server receipt time under the owner's admission lock.
  * @param query - Producer transaction already holding the owner's controls lock.
  * @param owner - Provisioned recipient account.
- * @returns Whether another distinct message may be retained; retries do not call this gate.
+ * @param eligibilityAt - Immutable provider receipt time; quota overflow suppresses this and earlier unseen mail.
+ * @returns Whether another distinct message may be retained; existing references bypass this gate.
  */
 export async function admitMiraMailEvent(
     query: TransactionSQL,
-    owner: string
+    owner: string,
+    eligibilityAt: Date
 ): Promise<boolean> {
+    const [suppression] = await query<
+        { skipped: boolean }[]
+    >`SELECT skipped_through >= ${eligibilityAt} AS skipped FROM mira_mail_intake WHERE owner=${owner}`;
+    if (suppression?.skipped) return false;
     const [usage] = await query<
         { hourly: number; daily: number; retained: number }[]
     >`SELECT count(*) FILTER (WHERE received_at > now()-interval '1 hour')::int AS hourly,count(*) FILTER (WHERE received_at > now()-interval '24 hours')::int AS daily,count(*)::int AS retained FROM mira_events WHERE owner=${owner} AND kind='agentmail'`;
@@ -57,7 +63,10 @@ export async function admitMiraMailEvent(
         usage.daily < miraMailLimits.dailyEvents &&
         usage.retained < miraMailLimits.retainedEvents
     );
-    if (!allowed) await warn(query, owner, "events");
+    if (!allowed) {
+        await query`INSERT INTO mira_mail_intake(owner,skipped_through) VALUES (${owner},GREATEST(clock_timestamp(),${eligibilityAt})) ON CONFLICT(owner) DO UPDATE SET skipped_through=GREATEST(mira_mail_intake.skipped_through,EXCLUDED.skipped_through)`;
+        await warn(query, owner, "events");
+    }
     return allowed;
 }
 
