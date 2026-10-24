@@ -19,7 +19,11 @@ export const modelsSchema = v.object({
     data: v.array(v.object({ model: v.string(), isDefault: v.boolean() })),
     nextCursor: v.nullable(v.string()),
 });
-export const threadSchema = v.object({ thread: v.object({ id: v.string() }) });
+export const initializeSchema = v.object({ codexHome: v.string() });
+export const threadSchema = v.object({
+    thread: v.object({ id: v.string() }),
+    modelProvider: v.literal("openai"),
+});
 export const turnSchema = v.object({ turn: v.object({ id: v.string() }) });
 export const completedSchema = v.object({
     threadId: v.string(),

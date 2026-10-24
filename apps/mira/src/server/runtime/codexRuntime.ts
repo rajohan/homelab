@@ -5,6 +5,7 @@ import {
     accountSchema,
     completedSchema,
     deltaSchema,
+    initializeSchema,
     modelsSchema,
     threadSchema,
     toolCallSchema,
@@ -14,6 +15,7 @@ import {
     type TurnResult,
 } from "./protocol";
 import { RpcProcess, type RpcProcessOptions } from "./rpcProcess";
+import { assertSystemSkills } from "./systemSkills";
 
 interface ActiveTurn {
     threadId: string;
@@ -44,16 +46,28 @@ export class CodexRuntime {
     static async connect(
         options: Omit<RpcProcessOptions, "onRequest">
     ): Promise<CodexRuntime> {
+        if (!options.env.CODEX_HOME)
+            throw new Error("Mira requires an explicit Codex home.");
+        await assertSystemSkills(options.env.CODEX_HOME);
         const runtime = new CodexRuntime(options);
         try {
-            await runtime.connection.request("initialize", {
-                clientInfo: {
-                    name: "homelab_mira",
-                    title: "Homelab Mira",
-                    version: "0.1.0",
-                },
-                capabilities: { experimentalApi: true },
-            });
+            const initialized = v.parse(
+                initializeSchema,
+                await runtime.connection.request("initialize", {
+                    clientInfo: {
+                        name: "homelab_mira",
+                        title: "Homelab Mira",
+                        version: "0.1.0",
+                    },
+                    capabilities: { experimentalApi: true },
+                })
+            );
+            if (
+                !options.env.CODEX_HOME ||
+                initialized.codexHome !== options.env.CODEX_HOME
+            )
+                throw new Error("Mira runtime did not accept its isolated Codex home.");
+            await assertSystemSkills(options.env.CODEX_HOME);
             runtime.connection.notify("initialized", {});
             assertRuntimeIsolation(
                 await runtime.connection.request("config/read", {

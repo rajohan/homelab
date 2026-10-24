@@ -3,7 +3,12 @@ import { rejects } from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 
 import { CodexRuntime } from "./codexRuntime";
-import { parsePilotConfig, pilotArguments, pilotEnvironment } from "./configuration";
+import {
+    disabledRuntimeFeatures,
+    parsePilotConfig,
+    pilotArguments,
+    pilotEnvironment,
+} from "./configuration";
 import { RpcProcess } from "./rpcProcess";
 
 const fixture = fileURLToPath(new URL("../testing/runtimeChild.ts", import.meta.url));
@@ -11,15 +16,45 @@ const options = (mode = "ok") => ({
     command: process.execPath,
     args: [fixture, mode],
     cwd: process.cwd(),
-    env: { PATH: process.env.PATH ?? "", SystemRoot: process.env.SystemRoot ?? "" },
+    env: {
+        CODEX_HOME: process.cwd(),
+        PATH: process.env.PATH ?? "",
+        SystemRoot: process.env.SystemRoot ?? "",
+    },
     requestTimeoutMs: 1000,
 });
 
 describe("Mira runtime transport", () => {
-    test.each(["configured-mcp", "project-docs"])(
-        "rejects effective %s configuration before any thread starts",
+    test.each([
+        "configured-mcp",
+        "project-docs",
+        "wrong-home",
+        "web-search",
+        "keyring",
+        "configured-provider",
+        "custom-endpoint",
+        ...disabledRuntimeFeatures.map((feature) => `feature:${feature}`),
+    ])("rejects effective %s configuration before any thread starts", async (mode) => {
+        await rejects(CodexRuntime.connect(options(mode)));
+    });
+    test.each(["thread-provider", "resume-provider"])(
+        "rejects the actual provider for %s before inference",
         async (mode) => {
-            await rejects(CodexRuntime.connect(options(mode)));
+            const runtime = await CodexRuntime.connect(options(mode));
+            try {
+                if (mode === "thread-provider")
+                    await rejects(runtime.startThread("synthetic", process.cwd(), []));
+                else {
+                    const thread = await runtime.startThread(
+                        "synthetic",
+                        process.cwd(),
+                        []
+                    );
+                    await rejects(runtime.resumeThread(thread, []));
+                }
+            } finally {
+                await runtime.close();
+            }
         }
     );
     test.each(["tool-ok", "tool-unknown", "tool-other-thread", "approval"])(

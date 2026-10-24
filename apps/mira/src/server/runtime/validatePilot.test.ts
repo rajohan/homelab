@@ -12,6 +12,8 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import miraPackage from "../../../package.json";
+import manifest from "./systemSkills.json";
 import { validatePilot } from "./validatePilot";
 
 async function fixture(run: (root: string) => Promise<void>) {
@@ -67,6 +69,33 @@ test("rejects an existing MCP profile before launching any process", async () =>
     });
 });
 
+test.each(["modified", "extra", "symlink"])(
+    "rejects a %s system-skill cache despite its marker",
+    async (mode) => {
+        await fixture(async (root) => {
+            const directory = path.join(root, "home", "skills", ".system");
+            await mkdir(directory, { recursive: true });
+            await writeFile(
+                path.join(directory, ".codex-system-skills.marker"),
+                "matching-marker\n"
+            );
+            if (mode === "extra")
+                await writeFile(
+                    path.join(directory, "unexpected.md"),
+                    "untrusted instructions"
+                );
+            else {
+                await mkdir(path.join(directory, "skill-creator"));
+                const file = path.join(directory, "skill-creator", "SKILL.md");
+                await (mode === "symlink"
+                    ? symlink(path.join(root, "home"), file, "junction")
+                    : writeFile(file, "altered built-in skill instructions"));
+            }
+            await rejects(validatePilot(config(root)), /system skills/);
+        });
+    }
+);
+
 test("retains canonical directories when an ancestor alias is retargeted", async () => {
     await fixture(async (root) => {
         const actual = path.join(root, "actual");
@@ -89,4 +118,8 @@ test("retains canonical directories when an ancestor alias is retargeted", async
             /separate directories/
         );
     });
+});
+
+test("system skill manifest tracks the pinned Codex dependency", () => {
+    expect(manifest.version).toBe(miraPackage.dependencies["@openai/codex"]);
 });

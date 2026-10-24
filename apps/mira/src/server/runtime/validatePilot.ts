@@ -2,6 +2,7 @@ import { lstat, open, readFile, readdir, realpath } from "node:fs/promises";
 import path from "node:path";
 
 import { parsePilotConfig, type PilotConfig } from "./configuration";
+import { assertSystemSkills } from "./systemSkills";
 
 async function exists(file: string): Promise<boolean> {
     try {
@@ -68,13 +69,7 @@ export async function validatePilot(input: unknown): Promise<PilotConfig> {
     for (const name of ["AGENTS.md", "AGENTS.override.md", ".agents"])
         if (await exists(path.join(config.codexHome, name)))
             throw new Error("Mira runtime home contains inherited instructions.");
-    const skills = path.join(config.codexHome, "skills");
-    if (await exists(skills)) {
-        const entries = await readdir(skills);
-        // Codex installs its versioned built-ins on first launch. Other skills are ambient authority.
-        if (entries.some((entry) => entry !== ".system"))
-            throw new Error("Mira runtime home contains custom skills.");
-    }
+    await assertSystemSkills(config.codexHome);
     const configFile = path.join(config.codexHome, "config.toml");
     if (await exists(configFile)) {
         const content = await readFile(configFile, "utf8");

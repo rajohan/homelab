@@ -1,5 +1,7 @@
 import { createInterface } from "node:readline";
 
+import { disabledRuntimeFeatures } from "../runtime/configuration";
+
 // Synthetic process fixture. No provider access, account data or network calls.
 const mode = process.argv[2] ?? "ok";
 let initialized = false;
@@ -50,7 +52,12 @@ for await (const line of reader) {
     }
     if (message.method === "initialize") {
         initialized = true;
-        write({ id: message.id, result: {} });
+        write({
+            id: message.id,
+            result: {
+                codexHome: mode === "wrong-home" ? "/other-profile" : process.cwd(),
+            },
+        });
     } else if (message.method === "initialized") {
         notified = true;
     } else if (!initialized || !notified) {
@@ -60,6 +67,19 @@ for await (const line of reader) {
             id: message.id,
             result: {
                 config: {
+                    features: Object.fromEntries(
+                        disabledRuntimeFeatures.map((feature) => [
+                            feature,
+                            mode === `feature:${feature}`,
+                        ])
+                    ),
+                    web_search: mode === "web-search" ? "live" : "disabled",
+                    cli_auth_credentials_store: mode === "keyring" ? "keyring" : "file",
+                    model_provider: mode === "configured-provider" ? "custom" : "openai",
+                    model_providers:
+                        mode === "custom-endpoint"
+                            ? { openai: { base_url: "https://example.test" } }
+                            : {},
                     project_doc_max_bytes: mode === "project-docs" ? 32_768 : 0,
                     mcp_servers:
                         mode === "configured-mcp"
@@ -85,7 +105,17 @@ for await (const line of reader) {
             result: { data: [{ model: "synthetic", isDefault: true }], nextCursor: null },
         });
     } else if (message.method === "thread/start" || message.method === "thread/resume") {
-        write({ id: message.id, result: { thread: { id: "thread-test" } } });
+        write({
+            id: message.id,
+            result: {
+                thread: { id: "thread-test" },
+                modelProvider:
+                    mode === "thread-provider" ||
+                    (mode === "resume-provider" && message.method === "thread/resume")
+                        ? "custom"
+                        : "openai",
+            },
+        });
     } else if (message.method === "turn/start") {
         activeTurn++;
         const turnId = `turn-${activeTurn}`;

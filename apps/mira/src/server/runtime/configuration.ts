@@ -77,27 +77,37 @@ export function pilotEnvironment(
  * Build the qualification command with implicit host tools and integrations disabled.
  * @returns Arguments for the supported stdio app-server transport.
  */
+export const disabledRuntimeFeatures = [
+    "shell_tool",
+    "unified_exec",
+    "apps",
+    "plugins",
+    "hooks",
+    "computer_use",
+    "browser_use",
+    "browser_use_external",
+    "multi_agent",
+    "image_generation",
+    "view_image",
+    "workspace_dependencies",
+    "remote_plugin",
+    "remote_control",
+    "tool_suggest",
+    "memories",
+] as const;
+
+/**
+ * Build launch settings that are also checked against effective managed configuration.
+ * @returns Arguments for the supported stdio app-server transport.
+ */
 export function pilotArguments(): string[] {
-    const disabled = [
-        "shell_tool",
-        "unified_exec",
-        "apps",
-        "plugins",
-        "hooks",
-        "computer_use",
-        "browser_use",
-        "browser_use_external",
-        "multi_agent",
-        "image_generation",
-        "view_image",
-        "workspace_dependencies",
-        "remote_plugin",
-        "remote_control",
-        "tool_suggest",
-        "memories",
-    ];
     return [
-        ...disabled.flatMap((feature) => ["-c", `features.${feature}=false`]),
+        ...disabledRuntimeFeatures.flatMap((feature) => [
+            "-c",
+            `features.${feature}=false`,
+        ]),
+        "-c",
+        'model_provider="openai"',
         "-c",
         'web_search="disabled"',
         "-c",
@@ -113,7 +123,7 @@ export function pilotArguments(): string[] {
 /**
  * Reject implicit MCP authority before creating or resuming any model thread.
  * @param input - Effective config returned by the runtime, including system layers.
- * @throws {Error} The runtime permits project documents or configured MCP servers.
+ * @throws {Error} A managed layer changes the required provider, capabilities or tool isolation.
  */
 export function assertRuntimeIsolation(input: unknown): void {
     const { config } = v.parse(
@@ -121,10 +131,19 @@ export function assertRuntimeIsolation(input: unknown): void {
             config: v.object({
                 project_doc_max_bytes: v.literal(0),
                 mcp_servers: v.record(v.string(), v.unknown()),
+                features: v.record(v.string(), v.unknown()),
+                web_search: v.literal("disabled"),
+                cli_auth_credentials_store: v.literal("file"),
+                model_provider: v.literal("openai"),
+                model_providers: v.optional(v.record(v.string(), v.unknown())),
             }),
         }),
         input
     );
     if (Object.keys(config.mcp_servers).length > 0)
         throw new Error("Mira cannot use a runtime with configured MCP servers.");
+    if (disabledRuntimeFeatures.some((feature) => config.features[feature] !== false))
+        throw new Error("Mira cannot use a runtime with overridden capability settings.");
+    if (Object.keys(config.model_providers ?? {}).length > 0)
+        throw new Error("Mira cannot use custom model provider definitions.");
 }
