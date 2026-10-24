@@ -51,16 +51,17 @@ export function pilotEnvironment(
     config: PilotConfig,
     source: NodeJS.ProcessEnv
 ): Record<string, string> {
-    const env: Record<string, string> = { CODEX_HOME: config.codexHome };
+    const env: Record<string, string> = {
+        CODEX_HOME: config.codexHome,
+        HOME: config.codexHome,
+        USERPROFILE: config.codexHome,
+    };
     for (const key of [
         "PATH",
         "Path",
         "SystemRoot",
         "SYSTEMROOT",
         "WINDIR",
-        "HOME",
-        "USERPROFILE",
-        "LOCALAPPDATA",
         "TEMP",
         "TMP",
         "TMPDIR",
@@ -90,6 +91,10 @@ export function pilotArguments(): string[] {
         "image_generation",
         "view_image",
         "workspace_dependencies",
+        "remote_plugin",
+        "remote_control",
+        "tool_suggest",
+        "memories",
     ];
     return [
         ...disabled.flatMap((feature) => ["-c", `features.${feature}=false`]),
@@ -97,8 +102,29 @@ export function pilotArguments(): string[] {
         'web_search="disabled"',
         "-c",
         'cli_auth_credentials_store="file"',
+        "-c",
+        "project_doc_max_bytes=0",
         "app-server",
         "--listen",
         "stdio://",
     ];
+}
+
+/**
+ * Reject implicit MCP authority before creating or resuming any model thread.
+ * @param input - Effective config returned by the runtime, including system layers.
+ * @throws {Error} The runtime permits project documents or configured MCP servers.
+ */
+export function assertRuntimeIsolation(input: unknown): void {
+    const { config } = v.parse(
+        v.object({
+            config: v.object({
+                project_doc_max_bytes: v.literal(0),
+                mcp_servers: v.record(v.string(), v.unknown()),
+            }),
+        }),
+        input
+    );
+    if (Object.keys(config.mcp_servers).length > 0)
+        throw new Error("Mira cannot use a runtime with configured MCP servers.");
 }

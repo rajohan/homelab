@@ -53,6 +53,7 @@
     "packages/ui/src/lib/queryRefresh.test.ts": 0,
     "apps/dashboard/src/browser/features/maintenance/restartNavigation.test.ts": 1,
     "apps/dashboard/src/server/integrations/maintenance/hosts.test.ts": 1,
-    "apps/mira/src/server/runtime/codexRuntime.test.ts": 339
+    "apps/mira/src/server/runtime/codexRuntime.test.ts": 339,
+    "apps/mira/src/server/runtime/validatePilot.test.ts": 7
   }
 }

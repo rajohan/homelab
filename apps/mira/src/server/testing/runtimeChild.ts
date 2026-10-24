@@ -55,6 +55,19 @@ for await (const line of reader) {
         notified = true;
     } else if (!initialized || !notified) {
         write({ id: message.id, error: { code: -32_000, message: "not initialized" } });
+    } else if (message.method === "config/read") {
+        write({
+            id: message.id,
+            result: {
+                config: {
+                    project_doc_max_bytes: mode === "project-docs" ? 32_768 : 0,
+                    mcp_servers:
+                        mode === "configured-mcp"
+                            ? { external: { command: "/bin/false", enabled: false } }
+                            : {},
+                },
+            },
+        });
     } else if (message.method === "account/read") {
         write({
             id: message.id,

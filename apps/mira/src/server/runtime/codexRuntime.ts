@@ -1,5 +1,6 @@
 import * as v from "valibot";
 
+import { assertRuntimeIsolation } from "./configuration";
 import {
     accountSchema,
     completedSchema,
@@ -54,6 +55,12 @@ export class CodexRuntime {
                 capabilities: { experimentalApi: true },
             });
             runtime.connection.notify("initialized", {});
+            assertRuntimeIsolation(
+                await runtime.connection.request("config/read", {
+                    includeLayers: false,
+                    cwd: options.cwd,
+                })
+            );
             return runtime;
         } catch (error) {
             await runtime.close();

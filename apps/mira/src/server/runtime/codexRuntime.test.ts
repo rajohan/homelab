@@ -16,6 +16,12 @@ const options = (mode = "ok") => ({
 });
 
 describe("Mira runtime transport", () => {
+    test.each(["configured-mcp", "project-docs"])(
+        "rejects effective %s configuration before any thread starts",
+        async (mode) => {
+            await rejects(CodexRuntime.connect(options(mode)));
+        }
+    );
     test.each(["tool-ok", "tool-unknown", "tool-other-thread", "approval"])(
         "enforces host authority for %s",
         async (mode) => {
@@ -167,11 +173,17 @@ test("pilot configuration separates secrets, validates absolute paths and omits 
         GH_TOKEN: "secret",
         CODEX_HOME: "other",
     });
-    expect(environment).toEqual({ CODEX_HOME: `${root}/private`, PATH: "runtime" });
+    expect(environment).toEqual({
+        CODEX_HOME: `${root}/private`,
+        HOME: `${root}/private`,
+        USERPROFILE: `${root}/private`,
+        PATH: "runtime",
+    });
     expect(() =>
         parsePilotConfig({ ...config, workspace: `${root}/private/work` })
     ).toThrow("separate directories");
     expect(() => parsePilotConfig({ ...config, workspace: "relative" })).toThrow();
     expect(pilotArguments()).toContain("features.shell_tool=false");
+    expect(pilotArguments()).toContain("project_doc_max_bytes=0");
     expect(pilotArguments()).toContain("stdio://");
 });
