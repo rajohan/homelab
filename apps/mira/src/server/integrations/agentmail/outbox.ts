@@ -5,6 +5,7 @@ import * as v from "valibot";
 
 import { agentMailReceiverCurrent } from "../../data/integrations";
 import { miraMailHash } from "../../data/mail";
+import { miraMailRequestBody, verifyMailAttachments } from "../../data/mailAttachments";
 import { integrationJson } from "../http";
 import { agentMailBindingHash, type AgentMailReadConfiguration } from "./configuration";
 import { agentMailIdSchema } from "./schema";
@@ -86,13 +87,15 @@ export async function reconcileMiraMail(
  * @param configuration - Fixed executor credential and inbox; never taken from draft content.
  * @param signal - Service shutdown; uncertain transport outcomes are never replayed.
  * @param request - Fixed-origin HTTP transport, injectable only for synthetic qualification.
+ * @param filesDirectory - Shared private file volume used only for explicitly approved attachments.
  * @returns Whether an approved delivery was claimed; provider acceptance is recorded separately.
  */
 export async function dispatchMiraMail(
     client: SQL,
     configuration: AgentMailReadConfiguration,
     signal: AbortSignal,
-    request: typeof fetch = fetch
+    request: typeof fetch = fetch,
+    filesDirectory?: string
 ): Promise<boolean> {
     signal.throwIfAborted();
     if (!configuration.sendApiKey) return false;
@@ -129,10 +132,24 @@ export async function dispatchMiraMail(
         const content = v.parse(miraMailContentSchema, row.content);
         if (miraMailHash(content) !== row.hash)
             throw new Error("The approved email content no longer matches.");
+        let body: string;
+        try {
+            const context = {
+                client,
+                transaction: query,
+                owner: configuration.owner,
+                actor: "mira:mail",
+            };
+            await verifyMailAttachments(query, context, content.attachments ?? []);
+            body = await miraMailRequestBody(context, filesDirectory, content);
+        } catch {
+            await query`UPDATE mira_mail_drafts SET state='draft',approved_version=NULL,approved_by=NULL,approved_at=NULL,control_version=NULL,message='The email attachments could not be verified. Check the selected files, save and review the draft again.',version=version+1,updated_at=now() WHERE id=${row.id}`;
+            return null;
+        }
         signal.throwIfAborted();
         const token = crypto.randomUUID();
         await query`UPDATE mira_mail_drafts SET state='sending',attempt_token=${token},started_at=now(),message=NULL,version=version+1,updated_at=now() WHERE id=${row.id}`;
-        return { id: row.id, token, content };
+        return { id: row.id, token, body };
     });
     if (!claimed) return false;
     let accepted: { message_id: string; thread_id: string } | null = null;
@@ -150,7 +167,7 @@ export async function dispatchMiraMail(
                     "Idempotency-Key": `mira-mail-${claimed.id}`,
                     Accept: "application/json",
                 },
-                body: JSON.stringify({ ...claimed.content, track_opens: false }),
+                body: claimed.body,
             }
         );
         accepted = v.parse(

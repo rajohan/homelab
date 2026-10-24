@@ -2,13 +2,14 @@ import type { MiraMailDraft } from "@homelab/contracts/miraMail";
 import {
     ActionGroup,
     Badge,
+    buttonStyles,
     Button,
     Card,
     ErrorNotice,
     Modal,
     SectionHeader,
 } from "@homelab/ui";
-import { Mail, Send } from "lucide-react";
+import { Mail, Send, Paperclip, Download } from "lucide-react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
@@ -48,19 +49,45 @@ export function MailReview({
                         badge={<Badge>{draft.state.replaceAll("_", " ")}</Badge>}
                     />
                     <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
-                        <dt className="text-primary-400">From</dt>
+                        <dt className="whitespace-nowrap text-primary-400">From</dt>
                         <dd className="wrap-break-word">{draft.inboxId}</dd>
-                        <dt className="text-primary-400">To</dt>
+                        <dt className="whitespace-nowrap text-primary-400">To</dt>
                         <dd className="wrap-break-word">{draft.content.to.join(", ")}</dd>
-                        <dt className="text-primary-400">Cc</dt>
+                        <dt className="whitespace-nowrap text-primary-400">Cc</dt>
                         <dd className="wrap-break-word">
                             {draft.content.cc.join(", ") || "None"}
                         </dd>
-                        <dt className="text-primary-400">Bcc</dt>
+                        <dt className="whitespace-nowrap text-primary-400">Bcc</dt>
                         <dd className="wrap-break-word">
                             {draft.content.bcc.join(", ") || "None"}
                         </dd>
                     </dl>
+                    {(draft.content.attachments?.length ?? 0) > 0 && (
+                        <div className="space-y-2 border-t border-primary-700 pt-4">
+                            <SectionHeader title="Attachments" icon={Paperclip} />
+                            {draft.content.attachments!.map((file) => (
+                                <div
+                                    key={file.id}
+                                    className="flex flex-col gap-2 text-sm sm:flex-row sm:items-center"
+                                >
+                                    <span className="min-w-0 flex-1 wrap-anywhere">
+                                        {file.name}{" "}
+                                        <span className="whitespace-nowrap text-primary-400">
+                                            ({(file.bytes / 1024).toFixed(1)} KiB)
+                                        </span>
+                                    </span>
+                                    <a
+                                        href={`/api/mira/files/${file.id}`}
+                                        className={buttonStyles({ variant: "secondary" })}
+                                        download={file.name}
+                                    >
+                                        <Download size={16} aria-hidden="true" />
+                                        Download
+                                    </a>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                     <div className="border-t border-primary-700 pt-4 text-sm wrap-anywhere whitespace-pre-wrap">
                         {draft.content.text}
                     </div>
