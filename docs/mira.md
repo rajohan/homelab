@@ -198,3 +198,9 @@ The feature is not complete until Windows acceptance, external adapters, updates
 disable preservation and server-side independent execution pass their checks.
 
 AgentMail delivery and provisioning are documented in [Mira AgentMail](mira-agentmail.md). The signed receiver, read tools, recovery and pause controls are implemented; real activation and outgoing drafts remain pending.
+
+### Proposed product changes
+
+Task creation, updates, progress and persistent memory proposed by a model require explicit human approval of the exact validated fields. A manual conversation is not blanket write authorization: uploads, previous reports and mail remain untrusted inputs. The chat shows **Proposed changes**, and the review dialog offers **Approve change** or **Reject**. Applying a proposal rechecks ownership and task version, and commits the product change and approval receipt in one transaction. Identical approval retries return the previous decision. Models and automation principals cannot approve proposals.
+
+Proposals expire after 24 hours; cleanup removes their argument contents, and deleting the conversation removes pending proposal contents immediately. Each run can propose at most twenty changes. Factual report snapshots remain explicitly attributed model output; automatic runs still cannot modify tasks or memory.

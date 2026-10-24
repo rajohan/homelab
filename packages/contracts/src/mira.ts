@@ -268,3 +268,16 @@ export const miraModelSchema = v.object({
     ]),
 });
 export type MiraModel = v.InferOutput<typeof miraModelSchema>;
+
+export const miraProposalDecisionSchema = v.strictObject({
+    id: idSchema,
+    inputHash: v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/)),
+    approve: v.boolean(),
+});
+export interface MiraProposal {
+    readonly id: string;
+    readonly tool: string;
+    readonly inputHash: string;
+    readonly input: Record<string, unknown>;
+    readonly createdAt: string;
+}

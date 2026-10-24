@@ -11,6 +11,7 @@ import { claimMiraRun, finishMiraRun } from "@homelab/mira/data/queue";
 import { saveTask } from "@homelab/mira/data/tasks";
 
 import { createTestDatabase } from "../../../../../tests/database";
+import { createMiraTools } from "../../../../mira/src/server/executor/tools";
 import { syntheticPdf } from "../../../../mira/src/server/testing/document";
 import index from "../../index.html";
 import { connectDashboardDatabase } from "../database/connection";
@@ -23,9 +24,10 @@ import { miraViewport } from "./miraViewport";
 
 /**
  * Preview actual Mira components and APIs using disposable records and synthetic replies.
+ * @param port - Loopback port for an isolated preview instance.
  * @returns Completion after the loopback-only preview and its owned test data are removed.
  */
-export async function main(): Promise<void> {
+export async function main(port = 3330): Promise<void> {
     const allocation = await createTestDatabase();
     const database = connectDashboardDatabase(allocation.url, 6);
     const directory = await mkdtemp(path.join(tmpdir(), "mira-ui-preview-"));
@@ -41,7 +43,7 @@ export async function main(): Promise<void> {
     };
     const principal = { kind: "human" as const, id: context.owner, capabilities };
     const worker = crypto.randomUUID();
-    const origin = "http://localhost:3330";
+    const origin = `http://localhost:${port}`;
     let server: ReturnType<typeof Bun.serve> | undefined;
     let interval: ReturnType<typeof setInterval> | undefined;
     let pending: Promise<void> = Promise.resolve();
@@ -76,6 +78,17 @@ export async function main(): Promise<void> {
         );
         const initial = await claimMiraRun(database.client, worker, "foreground");
         if (!initial) throw new Error("Preview seed could not claim its own run.");
+        await createMiraTools(database.client, initial)
+            .find((tool) => tool.name === "mira_memory_create")!
+            .execute(
+                {
+                    title: "Preferred maintenance window",
+                    content:
+                        "Schedule routine maintenance on Sunday mornings. This is a synthetic suggestion awaiting your review.",
+                },
+                new AbortController().signal,
+                { callId: "preview-proposal", threadId: "synthetic", turnId: "synthetic" }
+            );
         await finishMiraRun(database.client, initial, {
             state: "completed",
             message: null,
@@ -136,7 +149,7 @@ export async function main(): Promise<void> {
                     pumping = false;
                 });
         }, 1500);
-        server = serveMiraPreview({ operations, principal, origin, port: 3330 });
+        server = serveMiraPreview({ operations, principal, origin, port });
         process.stdout.write(`Mira synthetic preview: ${origin}/mira/${chat.id}\n`);
         await stopped.promise;
     } finally {

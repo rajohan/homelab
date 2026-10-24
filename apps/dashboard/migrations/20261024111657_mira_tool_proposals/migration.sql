@@ -1,0 +1,2 @@
+ALTER TABLE "mira_tool_receipts" ADD COLUMN "proposal" jsonb;--> statement-breakpoint
+CREATE INDEX "mira_tool_receipts_proposals" ON "mira_tool_receipts" ("state","created_at") WHERE "proposal" is not null;

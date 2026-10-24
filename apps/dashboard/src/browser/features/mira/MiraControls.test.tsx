@@ -17,6 +17,7 @@ import { ChatActivity } from "./ChatActivity";
 import { ChatComposer } from "./ChatComposer";
 import { ChatMessage } from "./ChatMessage";
 import { ChatSettings } from "./ChatSettings";
+import { ProposalReview } from "./ProposalReview";
 import { RunAutomationButton } from "./RunAutomationButton";
 import { TaskRunDialog } from "./TaskRunDialog";
 
@@ -420,6 +421,67 @@ test("task continuation requires explicit uncertainty review and retries the sam
             reviewedRunId: reviewRunId,
             instructions: "Reconcile the recorded outcome first.",
         });
+    } finally {
+        cleanup();
+        request.mockRestore();
+    }
+});
+
+test("proposed changes display exact passive fields and retain their approval identity after response loss", async () => {
+    const requested: unknown[] = [];
+    let closed = 0;
+    const proposal = {
+        id: crypto.randomUUID(),
+        tool: "mira_memory_create",
+        inputHash: "a".repeat(64),
+        input: {
+            title: "Suggested preference",
+            content: "<script>untrusted instruction</script>",
+        },
+        createdAt: new Date().toISOString(),
+    };
+    const request = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+            (_input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+                if (typeof init?.body !== "string")
+                    throw new Error("Expected JSON request");
+                const body = JSON.parse(init.body) as { "0": { json: unknown } };
+                requested.push(body["0"].json);
+                if (requested.length === 1)
+                    return Promise.reject(new Error("Synthetic lost response"));
+                return Promise.resolve(
+                    Response.json([
+                        { result: { data: serialize({ state: "approved" }) } },
+                    ])
+                );
+            },
+            { preconnect: fetch.preconnect }
+        )
+    );
+    const cleanup = fixture(
+        <ProposalReview
+            proposal={proposal}
+            onClose={() => {
+                closed++;
+            }}
+        />
+    );
+    try {
+        const user = userEvent.setup();
+        expect(screen.getByText(proposal.input.content)).toBeInTheDocument();
+        expect(document.querySelector("script")).toBeNull();
+        await user.click(screen.getByRole("button", { name: "Approve change" }));
+        await waitFor(() => expect(requested).toHaveLength(1));
+        await waitFor(() =>
+            expect(screen.getByRole("button", { name: "Approve change" })).toBeEnabled()
+        );
+        expect(closed).toBe(0);
+        await user.click(screen.getByRole("button", { name: "Approve change" }));
+        await waitFor(() => expect(closed).toBe(1));
+        expect(requested).toEqual([
+            { id: proposal.id, inputHash: proposal.inputHash, approve: true },
+            { id: proposal.id, inputHash: proposal.inputHash, approve: true },
+        ]);
     } finally {
         cleanup();
         request.mockRestore();

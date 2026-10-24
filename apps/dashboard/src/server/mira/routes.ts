@@ -1,4 +1,5 @@
 import {
+    miraProposalDecisionSchema,
     miraAutomationInputSchema,
     miraChatSettingsUpdateSchema,
     miraAutomationUpdateSchema,
@@ -52,6 +53,7 @@ import {
 } from "@homelab/mira/data/documents";
 import { listMiraFiles, miraFileMetadata } from "@homelab/mira/data/files";
 import { listMiraIntegrations } from "@homelab/mira/data/integrations";
+import { listMiraProposals, decideMiraProposal } from "@homelab/mira/data/proposals";
 import { listMiraRuns } from "@homelab/mira/data/queue";
 import { readTaskExecution, runMiraTask } from "@homelab/mira/data/taskExecution";
 import {
@@ -96,6 +98,18 @@ function execute<T>(
 
 const record = v.strictObject({ id: idSchema });
 export const miraRouter = trpc.router({
+    proposals: trpc.router({
+        list: trpc.procedure
+            .input(record)
+            .query(({ ctx, input }) =>
+                execute(ctx, (mira) => listMiraProposals(mira, input.id))
+            ),
+        decide: trpc.procedure
+            .input(miraProposalDecisionSchema)
+            .mutation(({ ctx, input }) =>
+                execute(ctx, (mira) => decideMiraProposal(mira, input))
+            ),
+    }),
     files: trpc.router({
         list: trpc.procedure
             .input(miraPageSchema)
