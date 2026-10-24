@@ -9,7 +9,13 @@ import type {
 import type * as v from "valibot";
 
 import { miraQueueAvailable } from "./capacity";
-import { auditMira, MiraFailure, type MiraContext, type MiraQuery } from "./context";
+import {
+    auditMira,
+    requireTask,
+    MiraFailure,
+    type MiraContext,
+    type MiraQuery,
+} from "./context";
 
 /**
  * Search owned conversations and message content without leaking other accounts.
@@ -102,17 +108,20 @@ export async function enqueueTurn(
         taskId?: string;
         budgetSeconds?: number;
         manual?: boolean;
+        requestHash?: string;
     } = {}
 ) {
+    if (source.taskId)
+        await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:task:${context.owner}:${source.taskId}`}, 0))`;
     const [conversation] = await query<
         { id: string; settings: MiraChatSettings }[]
     >`SELECT id, settings FROM mira_conversations WHERE id = ${input.conversationId} AND owner = ${context.owner} AND deleted_at IS NULL AND archived_at IS NULL FOR UPDATE`;
     if (!conversation)
         throw new MiraFailure("NOT_FOUND", "Open an active conversation before sending.");
     const requestKey = `${context.owner}:${input.requestId}`;
-    const hash = new Bun.CryptoHasher("sha256")
-        .update(JSON.stringify(input))
-        .digest("hex");
+    const hash =
+        source.requestHash ??
+        new Bun.CryptoHasher("sha256").update(JSON.stringify(input)).digest("hex");
     const [existing] = await query<
         { id: string; requestHash: string }[]
     >`SELECT id, request_hash AS "requestHash" FROM mira_runs WHERE request_key = ${requestKey}`;
@@ -132,6 +141,17 @@ export async function enqueueTurn(
             "CONFLICT",
             "Wait for the current reply or stop it before sending another message."
         );
+    if (source.taskId) {
+        await requireTask(query, context.owner, source.taskId);
+        const busyTask = await query<
+            { id: string }[]
+        >`SELECT id FROM mira_runs WHERE task_id = ${source.taskId} AND owner = ${context.owner} AND state IN ('queued','running') LIMIT 1`;
+        if (busyTask.length > 0)
+            throw new MiraFailure(
+                "CONFLICT",
+                "Stop or finish the current task run before continuing."
+            );
+    }
     for (const id of input.attachmentIds) {
         const files = await query<
             { id: string }[]

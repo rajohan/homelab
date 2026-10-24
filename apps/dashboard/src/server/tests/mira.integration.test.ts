@@ -594,3 +594,192 @@ test("verified events reach every enabled subscriber across pagination boundarie
         await database.close();
     }
 });
+
+test("explicit task starts are owner-scoped, idempotent and independent of board status", async () => {
+    const database = await fixture();
+    try {
+        const api = database.caller().mira;
+        const created = await api.tasks.create(task);
+        const input = {
+            id: created.id,
+            version: 1,
+            requestId: crypto.randomUUID(),
+            instructions: "Check the recorded state only.",
+        };
+        await rejects(database.caller("other").mira.tasks.run(input), /not found/);
+        const [first, retried] = await Promise.all([
+            api.tasks.run(input),
+            api.tasks.run(input),
+        ]);
+        expect(retried).toEqual(first);
+        await rejects(
+            api.tasks.run({ ...input, instructions: "Different work" }),
+            /different task action/
+        );
+        const listed = await api.tasks.list(page);
+        expect(listed.rows[0]).toMatchObject({
+            id: created.id,
+            status: "todo",
+            version: 2,
+            conversationId: first.conversationId,
+        });
+        const execution = await api.tasks.execution({ id: created.id });
+        expect(execution.rows).toHaveLength(1);
+        expect(execution.rows[0]).toMatchObject({
+            id: first.id,
+            taskId: created.id,
+            state: "queued",
+        });
+        await rejects(
+            database.caller("other").mira.tasks.execution({ id: created.id }),
+            /not found/
+        );
+        await rejects(api.tasks.delete({ id: created.id, version: 2 }), /Stop or finish/);
+        await rejects(
+            api.tasks.run({ ...input, version: 2, requestId: crypto.randomUUID() }),
+            /current task run/
+        );
+        await api.runs.cancel({ id: first.id });
+        const continued = await api.tasks.run({
+            ...input,
+            version: 2,
+            requestId: crypto.randomUUID(),
+        });
+        expect(continued.conversationId).toBe(first.conversationId);
+        expect(continued.id).not.toBe(first.id);
+        const history = await api.tasks.execution({ id: created.id });
+        expect(history.rows).toHaveLength(2);
+        await api.runs.cancel({ id: continued.id });
+        await api.tasks.delete({ id: created.id, version: 3 });
+        await rejects(
+            api.tasks.run({ ...input, version: 3, requestId: crypto.randomUUID() }),
+            /not found/
+        );
+    } finally {
+        await database.close();
+    }
+});
+
+test("task continuation requires review of uncertain actions and never rewrites their receipts", async () => {
+    const database = await fixture();
+    try {
+        const api = database.caller().mira;
+        const created = await api.tasks.create(task);
+        const first = await api.tasks.run({
+            id: created.id,
+            version: 1,
+            requestId: crypto.randomUUID(),
+        });
+        const claim = await claimMiraRun(
+            database.client,
+            crypto.randomUUID(),
+            "foreground"
+        );
+        expect(claim?.id).toBe(first.id);
+        await database.client`INSERT INTO mira_tool_receipts (id, run_id, call_id, tool, input_hash, state) VALUES (${Bun.randomUUIDv7()}, ${first.id}, 'uncertain', 'synthetic_action', 'synthetic', 'running')`;
+        await database.client`UPDATE mira_runs SET lease_expires_at = now() - interval '1 second' WHERE id = ${first.id}`;
+        await reconcileMiraRuns(database.client);
+        const execution = await api.tasks.execution({ id: created.id });
+        expect(execution.reviewRunId).toBe(first.id);
+        const resume = { id: created.id, version: 2, requestId: crypto.randomUUID() };
+        await rejects(api.tasks.run(resume), /Review the uncertain run/);
+        await rejects(
+            api.tasks.run({ ...resume, reviewedRunId: crypto.randomUUID() }),
+            /Review the uncertain run/
+        );
+        const continued = await api.tasks.run({ ...resume, reviewedRunId: first.id });
+        expect(continued.conversationId).toBe(first.conversationId);
+        const receipts = await database.client<
+            { state: string }[]
+        >`SELECT state FROM mira_tool_receipts WHERE run_id = ${first.id}`;
+        expect(receipts).toEqual([{ state: "unknown" }]);
+        const conversation = await api.conversations.read({ id: first.conversationId });
+        expect(conversation.messages.at(-2)?.content).toContain(first.id);
+        const acknowledged = await api.tasks.execution({ id: created.id });
+        expect(acknowledged.reviewRunId).toBeNull();
+        await api.runs.cancel({ id: continued.id });
+        const next = await api.tasks.run({
+            id: created.id,
+            version: 3,
+            requestId: crypto.randomUUID(),
+        });
+        expect(next.conversationId).toBe(first.conversationId);
+    } finally {
+        await database.close();
+    }
+});
+
+test("automatic task events and a manual start share one execution slot per task", async () => {
+    const database = await fixture();
+    try {
+        const api = database.caller().mira;
+        const created = await api.tasks.create({
+            ...task,
+            dueAt: new Date(Date.now() - 1000).toISOString(),
+        });
+        const automation = await api.automations.create({
+            title: "Due-task review",
+            prompt: "Review due tasks",
+            kind: "custom",
+            schedule: { kind: "event", event: "task_due" },
+            budgetSeconds: 60,
+        });
+        await api.controls.setEnabled({
+            key: `automation:${automation.id}`,
+            enabled: true,
+            version: 1,
+            reason: null,
+            until: null,
+        });
+        const [scheduled] = await Promise.allSettled([
+            scheduleMiraRuns(database.client),
+            api.tasks.run({ id: created.id, version: 1, requestId: crypto.randomUUID() }),
+        ]);
+        expect(scheduled.status).toBe("fulfilled");
+        const runs = await api.tasks.execution({ id: created.id });
+        expect(runs.rows).toHaveLength(1);
+        expect(runs.rows[0]).toMatchObject({ taskId: created.id, state: "queued" });
+        const unrelated = await api.tasks.create({ ...task, title: "Different task" });
+        const separate = await api.tasks.execution({ id: unrelated.id });
+        expect(separate.rows).toHaveLength(0);
+    } finally {
+        await database.close();
+    }
+});
+
+test("completed or operator-owned tasks cannot start and archived task context is preserved", async () => {
+    const database = await fixture();
+    try {
+        const api = database.caller().mira;
+        for (const fields of [
+            { status: "done" as const },
+            { assignee: "operator" as const },
+        ]) {
+            const saved = await api.tasks.create({ ...task, ...fields });
+            await rejects(
+                api.tasks.run({
+                    id: saved.id,
+                    version: 1,
+                    requestId: crypto.randomUUID(),
+                }),
+                /unfinished task to Mira/
+            );
+        }
+        const chat = await api.conversations.create({ title: "Archived task context" });
+        const saved = await api.tasks.create({ ...task, conversationId: chat.id });
+        await api.conversations.change({ id: chat.id, version: 1, action: "archive" });
+        await rejects(
+            api.tasks.run({ id: saved.id, version: 1, requestId: crypto.randomUUID() }),
+            /Restore the task/
+        );
+        await api.conversations.change({ id: chat.id, version: 2, action: "restore" });
+        const started = await api.tasks.run({
+            id: saved.id,
+            version: 1,
+            requestId: crypto.randomUUID(),
+        });
+        expect(started.conversationId).toBe(chat.id);
+    } finally {
+        await database.close();
+    }
+});

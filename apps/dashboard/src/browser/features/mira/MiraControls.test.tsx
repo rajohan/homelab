@@ -18,6 +18,7 @@ import { ChatComposer } from "./ChatComposer";
 import { ChatMessage } from "./ChatMessage";
 import { ChatSettings } from "./ChatSettings";
 import { RunAutomationButton } from "./RunAutomationButton";
+import { TaskRunDialog } from "./TaskRunDialog";
 
 function UploadHarness({ onBusy }: { readonly onBusy: (busy: boolean) => void }) {
     const [files, setFiles] = useState<MiraAttachment[]>([]);
@@ -340,6 +341,85 @@ test("Run now retries an uncertain response with its original request identity",
         await user.click(screen.getByRole("button", { name: "Run now" }));
         await waitFor(() => expect(started).toHaveLength(2));
         expect(requested[2]).not.toBe(requested[1]);
+    } finally {
+        cleanup();
+        request.mockRestore();
+    }
+});
+
+test("task continuation requires explicit uncertainty review and retries the same frozen request", async () => {
+    const requested: {
+        requestId: string;
+        instructions: string;
+        reviewedRunId: string;
+    }[] = [];
+    const started: string[] = [];
+    const conversationId = crypto.randomUUID();
+    const reviewRunId = crypto.randomUUID();
+    const request = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+            (_input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+                if (typeof init?.body !== "string")
+                    throw new Error("Expected a synthetic JSON request");
+                const body = JSON.parse(init.body) as {
+                    "0": { json: (typeof requested)[number] };
+                };
+                requested.push(body["0"].json);
+                if (requested.length === 1)
+                    return Promise.reject(new Error("Synthetic response lost"));
+                return Promise.resolve(
+                    Response.json([
+                        {
+                            result: {
+                                data: serialize({
+                                    id: crypto.randomUUID(),
+                                    conversationId,
+                                }),
+                            },
+                        },
+                    ])
+                );
+            },
+            { preconnect: fetch.preconnect }
+        )
+    );
+    const cleanup = fixture(
+        <TaskRunDialog
+            id={crypto.randomUUID()}
+            title="Synthetic task"
+            version={2}
+            reviewRunId={reviewRunId}
+            onClose={() => {}}
+            onStarted={(id) => started.push(id)}
+        />
+    );
+    try {
+        const user = userEvent.setup();
+        expect(screen.getByRole("button", { name: "Start work" })).toBeDisabled();
+        await user.type(
+            screen.getByRole("textbox", { name: "Additional instructions" }),
+            "Reconcile the recorded outcome first."
+        );
+        await user.click(
+            screen.getByRole("switch", {
+                name: "I have reviewed the previous uncertain outcome",
+            })
+        );
+        await user.click(screen.getByRole("button", { name: "Start work" }));
+        await waitFor(() => expect(requested).toHaveLength(1));
+        await waitFor(() =>
+            expect(screen.getByRole("button", { name: "Start work" })).toBeEnabled()
+        );
+        expect(
+            screen.getByRole("textbox", { name: "Additional instructions" })
+        ).toBeDisabled();
+        await user.click(screen.getByRole("button", { name: "Start work" }));
+        await waitFor(() => expect(started).toEqual([conversationId]));
+        expect(requested[1]).toEqual(requested[0]);
+        expect(requested[1]).toMatchObject({
+            reviewedRunId: reviewRunId,
+            instructions: "Reconcile the recorded outcome first.",
+        });
     } finally {
         cleanup();
         request.mockRestore();

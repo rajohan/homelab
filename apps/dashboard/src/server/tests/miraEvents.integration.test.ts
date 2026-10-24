@@ -484,3 +484,43 @@ test.each(["complete", "postpone", "delete"] as const)(
         }
     }
 );
+
+test("due-task discovery yields to a human task start before acquiring task row locks", async () => {
+    const fixture = await operationFixture();
+    const api = appRouter.createCaller({
+        operations: fixture,
+        principal: { kind: "human", id: "operator", capabilities },
+    }).mira;
+    const held = Promise.withResolvers<void>(),
+        release = Promise.withResolvers<void>();
+    let transaction: Promise<void> | undefined;
+    try {
+        const task = await api.tasks.create({
+            title: "Task admission race",
+            description: "Synthetic",
+            status: "todo",
+            assignee: "mira",
+            priority: "normal",
+            labels: [],
+            dueAt: new Date(Date.now() - 1000).toISOString(),
+            completionCriteria: "Review",
+            conversationId: null,
+        });
+        transaction = fixture.client.begin(async (query) => {
+            await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:task:operator:${task.id}`},0))`;
+            held.resolve();
+            await release.promise;
+            await query`UPDATE mira_tasks SET title=title WHERE id=${task.id}`;
+        });
+        await held.promise;
+        expect(await scheduleMiraRuns(fixture.client)).toBe(0);
+        const [events] = await fixture.client<
+            { count: number }[]
+        >`SELECT count(*)::int AS count FROM mira_events WHERE task_id=${task.id}`;
+        expect(events?.count).toBe(0);
+    } finally {
+        release.resolve();
+        await transaction;
+        await fixture.close();
+    }
+});

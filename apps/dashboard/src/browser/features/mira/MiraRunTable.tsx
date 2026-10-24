@@ -19,6 +19,12 @@ const tones = {
     needs_attention: "warning",
 } as const;
 
+function runSource(run: MiraRunSummary) {
+    if (run.automationName) return run.automationName;
+    if (run.automationId) return "Automation";
+    return run.taskId ? "Task" : "Chat";
+}
+
 /**
  * Present agent runs with the same responsive table and scroll behavior as infrastructure jobs.
  * @returns Named conversations, actual outcomes and accessible actions in bounded history.
@@ -49,10 +55,7 @@ export function MiraRunTable({
                     render: (run) => (
                         <div className="space-y-1">
                             <p className="font-medium text-primary-100">{run.title}</p>
-                            <p className="text-xs text-primary-400">
-                                {run.automationName ??
-                                    (run.automationId ? "Automation" : "Chat")}
-                            </p>
+                            <p className="text-xs text-primary-400">{runSource(run)}</p>
                             {run.message && (
                                 <p className="text-xs text-primary-300">{run.message}</p>
                             )}

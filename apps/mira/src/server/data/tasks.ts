@@ -116,6 +116,22 @@ export async function deleteTask(
     version: number
 ): Promise<void> {
     await context.client.begin(async (query) => {
+        const [task] = await query<
+            { id: string }[]
+        >`SELECT id FROM mira_tasks WHERE id = ${id} AND owner = ${context.owner} AND version = ${version} AND deleted_at IS NULL FOR UPDATE`;
+        if (!task)
+            throw new MiraFailure(
+                "CONFLICT",
+                "The task changed. Refresh before deleting."
+            );
+        const active = await query<
+            { id: string }[]
+        >`SELECT id FROM mira_runs WHERE task_id = ${id} AND owner = ${context.owner} AND state IN ('queued','running') LIMIT 1`;
+        if (active.length > 0)
+            throw new MiraFailure(
+                "CONFLICT",
+                "Stop or finish task work before deleting the task."
+            );
         const rows = await query<
             { id: string }[]
         >`UPDATE mira_tasks SET deleted_at = now(), title = 'Deleted task', description = '', completion_criteria = '', labels = '[]'::jsonb, version = version + 1 WHERE id = ${id} AND owner = ${context.owner} AND version = ${version} AND deleted_at IS NULL RETURNING id`;

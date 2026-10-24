@@ -7,6 +7,7 @@ import {
 } from "@homelab/contracts/mira";
 import { sql } from "drizzle-orm";
 import {
+    type AnyPgColumn,
     boolean,
     check,
     index,
@@ -170,6 +171,7 @@ export const miraRuns = pgTable(
         owner: text().notNull(),
         requestKey: text("request_key").notNull().unique(),
         requestHash: text("request_hash").notNull(),
+        reviewedRunId: uuid("reviewed_run_id").references((): AnyPgColumn => miraRuns.id),
         activity: jsonb().$type<MiraActivity>(),
         effectiveSettings: jsonb("effective_settings").$type<MiraChatSettings>(),
         settings: jsonb()
@@ -206,6 +208,7 @@ export const miraRuns = pgTable(
     (t) => [
         index("mira_runs_queue").on(t.state, t.priority, t.id),
         index("mira_runs_owner").on(t.owner, t.id),
+        index("mira_runs_reviewed_run").on(t.reviewedRunId),
         uniqueIndex("mira_runs_one_active_conversation")
             .on(t.conversationId)
             .where(sql`${t.state} in ('queued','running')`),
