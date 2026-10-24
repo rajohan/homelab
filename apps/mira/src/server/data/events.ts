@@ -45,7 +45,15 @@ export async function recordMiraEvent(
         const existing = await query<
             { id: string }[]
         >`SELECT id FROM mira_events WHERE owner=${input.owner} AND kind='agentmail' AND source_key=${input.key}`;
-        if (!existing[0] && !(await admitMiraMailEvent(query, input.owner))) return false;
+        if (
+            !existing[0] &&
+            !(await admitMiraMailEvent(
+                query,
+                input.owner,
+                input.eligibilityAt ?? available
+            ))
+        )
+            return false;
     }
     let id = Bun.randomUUIDv7();
     const observedAt = input.observedAt ?? new Date();

@@ -2,7 +2,7 @@
     "type": "diff",
     "version": "9",
     "dialect": "postgres",
-    "id": "38e35ac2-b31e-4856-a09c-c69e707aa7fc",
+    "id": "c3ff70e6-65ff-463d-82e8-4c48f50355dd",
     "prevIds": ["fdaf0a49-4d30-4597-8b58-374257952c45"],
     "footprints": [
         {
@@ -43,6 +43,34 @@
                 "n|rel|public.mira_integration_state_pkey"
             ],
             "reads": ["n|sch|public"]
+        },
+        {
+            "statementType": "create_table",
+            "statementTarget": ["table", "public", "mira_mail_intake"],
+            "writes": [
+                "s|tbl|public.mira_mail_intake",
+                "n|tbl|public.mira_mail_intake",
+                "e|tbl|public.mira_mail_intake",
+                "n|rel|public.mira_mail_intake",
+                "n|type|public.mira_mail_intake",
+                "n|rel|public.mira_mail_intake_pkey"
+            ],
+            "reads": ["n|sch|public"]
+        },
+        {
+            "statementType": "add_column",
+            "statementTarget": [
+                "column",
+                "public",
+                "mira_conversations",
+                "provider_policy_hash"
+            ],
+            "writes": [
+                "s|col|public.mira_conversations.provider_policy_hash",
+                "n|col|public.mira_conversations.provider_policy_hash",
+                "e|col|public.mira_conversations.provider_policy_hash"
+            ],
+            "reads": ["n|tbl|public.mira_conversations", "n|sch|public"]
         },
         {
             "statementType": "add_column",
@@ -232,6 +260,15 @@
             "op": "create",
             "row": {
                 "schema": "public",
+                "name": "mira_mail_intake",
+                "isRlsEnabled": false,
+                "entityType": "tables"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
                 "table": "mira_control_windows",
                 "name": "owner",
                 "type": "text",
@@ -299,6 +336,22 @@
                 "table": "mira_control_windows",
                 "name": "ended_at",
                 "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_conversations",
+                "name": "provider_policy_hash",
+                "type": "text",
                 "typeSchema": null,
                 "notNull": false,
                 "dimensions": 0,
@@ -664,6 +717,38 @@
             "op": "create",
             "row": {
                 "schema": "public",
+                "table": "mira_mail_intake",
+                "name": "owner",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_mail_intake",
+                "name": "skipped_through",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
                 "table": "mira_runtime_status",
                 "name": "integrations",
                 "type": "jsonb",
@@ -884,6 +969,17 @@
                 "table": "mira_integration_receivers",
                 "name": "mira_integration_receivers_pkey",
                 "columns": ["key"],
+                "nameExplicit": false,
+                "entityType": "pks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_mail_intake",
+                "name": "mira_mail_intake_pkey",
+                "columns": ["owner"],
                 "nameExplicit": false,
                 "entityType": "pks"
             }

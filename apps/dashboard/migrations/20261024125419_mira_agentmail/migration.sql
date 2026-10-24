@@ -34,6 +34,12 @@ CREATE TABLE "mira_integration_state" (
 	CONSTRAINT "mira_integration_state_pkey" PRIMARY KEY("owner","key")
 );
 --> statement-breakpoint
+CREATE TABLE "mira_mail_intake" (
+	"owner" text PRIMARY KEY,
+	"skipped_through" timestamp with time zone NOT NULL
+);
+--> statement-breakpoint
+ALTER TABLE "mira_conversations" ADD COLUMN "provider_policy_hash" text;--> statement-breakpoint
 ALTER TABLE "mira_events" ADD COLUMN "received_at" timestamp with time zone DEFAULT now() NOT NULL;--> statement-breakpoint
 ALTER TABLE "mira_events" ADD COLUMN "eligibility_at" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "mira_runtime_status" ADD COLUMN "integrations" jsonb DEFAULT '[]' NOT NULL;--> statement-breakpoint
