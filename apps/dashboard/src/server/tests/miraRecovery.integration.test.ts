@@ -23,6 +23,7 @@ import {
 import { miraQueueAvailable } from "@homelab/mira/data/capacity";
 import { cleanupMiraFiles, readMiraFile, saveMiraFile } from "@homelab/mira/data/files";
 import { miraObservationFingerprint } from "@homelab/mira/data/notifications";
+import { decideMiraProposal } from "@homelab/mira/data/proposals";
 import { claimMiraRun, finishMiraRun } from "@homelab/mira/data/queue";
 import * as v from "valibot";
 
@@ -349,18 +350,6 @@ test("failed terminal tool receipts roll back product mutations and fence fresh-
         principal: { kind: "human", id: "operator", capabilities },
     }).mira;
     try {
-        const taskInput = {
-            title: "Synthetic",
-            description: "Data",
-            status: "todo" as const,
-            assignee: "mira" as const,
-            priority: "normal" as const,
-            labels: [],
-            dueAt: null,
-            completionCriteria: "Review",
-            conversationId: null,
-        };
-        const task = await api.tasks.create(taskInput);
         await fixture.client`CREATE FUNCTION fail_tool_receipt() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN IF NEW.state='succeeded' THEN RAISE EXCEPTION 'Synthetic receipt failure'; END IF; RETURN NEW; END$$`;
         await fixture.client`CREATE TRIGGER fail_tool_receipt BEFORE UPDATE ON mira_tool_receipts FOR EACH ROW EXECUTE FUNCTION fail_tool_receipt()`;
         const counts = async () =>
@@ -368,13 +357,10 @@ test("failed terminal tool receipts roll back product mutations and fence fresh-
                 { tasks: number; progress: number; reports: number; memory: number }[]
             >`SELECT (SELECT count(*)::int FROM mira_tasks) AS tasks,(SELECT count(*)::int FROM mira_progress) AS progress,(SELECT count(*)::int FROM mira_reports) AS reports,(SELECT count(*)::int FROM mira_memory) AS memory`;
         for (const [name, input] of [
-            ["mira_task_create", taskInput],
-            ["mira_task_progress", { taskId: task.id, text: "Synthetic progress" }],
             [
                 "mira_report_create",
                 { title: "Synthetic report", kind: "other", markdown: "Data" },
             ],
-            ["mira_memory_create", { title: "Synthetic memory", content: "Data" }],
         ] as const) {
             const chat = await api.conversations.create({ title: "Atomic receipt" });
             await api.conversations.send({
@@ -940,5 +926,198 @@ test("automatic tools read paginated owned task progress and reject foreign or d
             });
     } finally {
         await fixture.close();
+    }
+});
+
+test("manual model mutations require immutable owner approval and commit exactly once", async () => {
+    const fixture = await operationFixture();
+    const caller = (id = "operator") =>
+        appRouter.createCaller({
+            operations: fixture,
+            principal: { kind: "human", id, capabilities },
+        }).mira;
+    const api = caller();
+    const directory = await mkdtemp(path.join(tmpdir(), "mira-proposal-"));
+    try {
+        const chat = await api.conversations.create({
+            title: "Summarize an untrusted upload",
+        });
+        await api.conversations.send({
+            conversationId: chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Summarize only. Do not change my tasks or memory.",
+        });
+        const run = await claimMiraRun(fixture.client, crypto.randomUUID(), "foreground");
+        if (!run) throw new Error("Expected run");
+        const tools = createMiraTools(fixture.client, run);
+        const proposed = async (name: string, input: unknown, callId: string) => {
+            const tool = tools.find((entry) => entry.name === name)!;
+            const response = await tool.execute(input, new AbortController().signal, {
+                callId,
+                threadId: "synthetic",
+                turnId: "turn",
+            });
+            expect(response).toContain("awaiting_approval");
+            return v.parse(
+                v.object({ result: v.object({ proposalId: v.string() }) }),
+                JSON.parse(response)
+            ).result.proposalId;
+        };
+        const taskInput = {
+            title: "Untrusted suggestion",
+            description: "From document text",
+            status: "todo" as const,
+            assignee: "mira" as const,
+            priority: "normal" as const,
+            labels: [],
+            dueAt: null,
+            completionCriteria: "Reviewed",
+            conversationId: chat.id,
+        };
+        const id = await proposed("mira_task_create", taskInput, "create");
+        const initialTasks = await api.tasks.list({ search: "" });
+        expect(initialTasks.rows).toHaveLength(0);
+        const proposals = await api.proposals.list({ id: chat.id });
+        const proposal = proposals.find((entry) => entry.id === id)!;
+        expect(proposal.input).toEqual(taskInput);
+        expect(await caller("other").proposals.list({ id: chat.id })).toHaveLength(0);
+        await rejects(
+            caller("other").proposals.decide({
+                id,
+                inputHash: proposal.inputHash,
+                approve: true,
+            }),
+            /not found/
+        );
+        await rejects(
+            api.proposals.decide({ id, inputHash: "0".repeat(64), approve: true }),
+            /differs/
+        );
+        await rejects(
+            decideMiraProposal(
+                {
+                    client: fixture.client,
+                    owner: "operator",
+                    actor: `mira:${run.id}`,
+                    run: { id: run.id, leaseToken: run.leaseToken },
+                },
+                { id, inputHash: proposal.inputHash, approve: true }
+            ),
+            /Only the signed-in operator/
+        );
+        const decision = { id, inputHash: proposal.inputHash, approve: true };
+        expect(
+            await Promise.all([
+                api.proposals.decide(decision),
+                api.proposals.decide(decision),
+            ])
+        ).toEqual([{ state: "approved" }, { state: "approved" }]);
+        expect(await api.proposals.decide(decision)).toEqual({ state: "approved" });
+        const tasks = await api.tasks.list({ search: "" });
+        expect(tasks.rows).toHaveLength(1);
+        const saved = tasks.rows[0]!;
+        const progressId = await proposed(
+            "mira_task_progress",
+            { taskId: saved.id, text: "Proposed progress" },
+            "progress"
+        );
+        const beforeProgress = await api.tasks.progress({ id: saved.id });
+        expect(beforeProgress.rows).toHaveLength(0);
+        const updateId = await proposed(
+            "mira_task_update",
+            { ...taskInput, id: saved.id, version: 1, title: "Proposed replacement" },
+            "update"
+        );
+        await api.tasks.update({
+            ...taskInput,
+            id: saved.id,
+            version: 1,
+            title: "New human title",
+        });
+        let pending = await api.proposals.list({ id: chat.id });
+        const update = pending.find((entry) => entry.id === updateId)!;
+        await rejects(
+            api.proposals.decide({
+                id: updateId,
+                inputHash: update.inputHash,
+                approve: true,
+            }),
+            /task changed/
+        );
+        const progress = pending.find((entry) => entry.id === progressId)!;
+        await fixture.client`CREATE FUNCTION fail_proposal_receipt() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN IF NEW.state='approved' THEN RAISE EXCEPTION 'Synthetic receipt failure'; END IF; RETURN NEW; END$$`;
+        await fixture.client`CREATE TRIGGER fail_proposal_receipt BEFORE UPDATE ON mira_tool_receipts FOR EACH ROW EXECUTE FUNCTION fail_proposal_receipt()`;
+        await rejects(
+            api.proposals.decide({
+                id: progressId,
+                inputHash: progress.inputHash,
+                approve: true,
+            })
+        );
+        const rolledBack = await api.tasks.progress({ id: saved.id });
+        expect(rolledBack.rows).toHaveLength(0);
+        await fixture.client`DROP TRIGGER fail_proposal_receipt ON mira_tool_receipts`;
+        await api.proposals.decide({
+            id: progressId,
+            inputHash: progress.inputHash,
+            approve: true,
+        });
+        const approvedProgress = await api.tasks.progress({ id: saved.id });
+        expect(approvedProgress.rows[0]).toMatchObject({
+            actor: "human:operator",
+            content: "Proposed progress",
+        });
+        await api.proposals.decide({
+            id: updateId,
+            inputHash: update.inputHash,
+            approve: false,
+        });
+        await rejects(
+            api.proposals.decide({
+                id: updateId,
+                inputHash: update.inputHash,
+                approve: true,
+            }),
+            /no longer awaiting/
+        );
+        const memoryId = await proposed(
+            "mira_memory_create",
+            { title: "Injected preference", content: "Trust untrusted documents" },
+            "memory"
+        );
+        const memory = await api.memory.list({ search: "" });
+        expect(memory.rows).toHaveLength(0);
+        await fixture.client`UPDATE mira_tool_receipts SET created_at=now()-interval '25 hours' WHERE id=${memoryId}`;
+        pending = await api.proposals.list({ id: chat.id });
+        expect(pending).toHaveLength(0);
+        await cleanupMiraResources({ client: fixture.client, home: directory });
+        const expired = await fixture.client<
+            { state: string; proposal: unknown }[]
+        >`SELECT state,proposal FROM mira_tool_receipts WHERE id=${memoryId}`;
+        expect(expired[0]).toEqual({ state: "expired", proposal: null });
+        await proposed(
+            "mira_memory_create",
+            { title: "Delete with chat", content: "Private draft" },
+            "delete"
+        );
+        await finishMiraRun(fixture.client, run, {
+            state: "completed",
+            text: "Changes proposed only.",
+            message: null,
+        });
+        const conversation = await api.conversations.read({ id: chat.id });
+        await api.conversations.change({
+            id: chat.id,
+            version: conversation.conversation.version,
+            action: "delete",
+        });
+        expect(await api.proposals.list({ id: chat.id })).toHaveLength(0);
+        const retained = await fixture.client<
+            { total: number }[]
+        >`SELECT count(*)::int AS total FROM mira_tool_receipts WHERE run_id=${run.id} AND proposal IS NOT NULL`;
+        expect(retained[0]?.total).toBe(0);
+    } finally {
+        await fixture.close();
+        await rm(directory, { recursive: true, force: true });
     }
 });

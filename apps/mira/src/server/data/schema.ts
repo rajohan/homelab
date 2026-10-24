@@ -272,12 +272,18 @@ export const miraToolReceipts = pgTable(
         callId: text("call_id").notNull(),
         tool: text().notNull(),
         inputHash: text("input_hash").notNull(),
+        proposal: jsonb().$type<Record<string, unknown>>(),
         state: text().notNull(),
         message: text(),
         createdAt: time("created_at").notNull().defaultNow(),
         finishedAt: time("finished_at"),
     },
-    (t) => [uniqueIndex("mira_tool_receipts_call").on(t.runId, t.callId)]
+    (t) => [
+        uniqueIndex("mira_tool_receipts_call").on(t.runId, t.callId),
+        index("mira_tool_receipts_proposals")
+            .on(t.state, t.createdAt)
+            .where(sql`${t.proposal} is not null`),
+    ]
 );
 export const miraAudit = pgTable(
     "mira_audit",

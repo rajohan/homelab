@@ -59,6 +59,7 @@ export async function cleanupMiraResources(options: {
     home: string;
 }): Promise<boolean> {
     const outcomes = await Promise.allSettled([
+        options.client`UPDATE mira_tool_receipts SET proposal=NULL,state='expired',message='The proposed change expired without approval.',finished_at=now() WHERE state='awaiting_approval' AND created_at <= now()-interval '24 hours'`,
         options.runtime
             ? cleanupMiraConversations(options.client, options.runtime)
             : Promise.resolve(0),

@@ -1,0 +1,89 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "fdaf0a49-4d30-4597-8b58-374257952c45",
+    "prevIds": ["85eebae2-f389-41ab-b7e8-46159ba97cfd"],
+    "footprints": [
+        {
+            "statementType": "add_column",
+            "statementTarget": ["column", "public", "mira_tool_receipts", "proposal"],
+            "writes": [
+                "s|col|public.mira_tool_receipts.proposal",
+                "n|col|public.mira_tool_receipts.proposal",
+                "e|col|public.mira_tool_receipts.proposal"
+            ],
+            "reads": ["n|tbl|public.mira_tool_receipts", "n|sch|public"]
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": [
+                "index",
+                "public",
+                "mira_tool_receipts",
+                "mira_tool_receipts_proposals"
+            ],
+            "writes": [
+                "s|idx|public.mira_tool_receipts_proposals",
+                "n|idx|public.mira_tool_receipts_proposals",
+                "e|idx|public.mira_tool_receipts_proposals",
+                "n|rel|public.mira_tool_receipts_proposals"
+            ],
+            "reads": [
+                "n|tbl|public.mira_tool_receipts",
+                "n|sch|public",
+                "n|col|public.mira_tool_receipts.state",
+                "n|col|public.mira_tool_receipts.created_at"
+            ]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_tool_receipts",
+                "name": "proposal",
+                "type": "jsonb",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_tool_receipts",
+                "name": "mira_tool_receipts_proposals",
+                "nameExplicit": true,
+                "columns": [
+                    {
+                        "value": "state",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    },
+                    {
+                        "value": "created_at",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    }
+                ],
+                "isUnique": false,
+                "where": "\"proposal\" is not null",
+                "with": "",
+                "method": "btree",
+                "concurrently": false,
+                "entityType": "indexes"
+            }
+        }
+    ]
+}
