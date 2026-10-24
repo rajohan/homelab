@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { rejects } from "node:assert/strict";
+import { setTimeout as delay } from "node:timers/promises";
 
 import { capabilities } from "@homelab/contracts/operations";
 import { reconcileMiraControls } from "@homelab/mira/data/automations";
@@ -291,6 +292,137 @@ test("due task capture does not reverse the control-to-automation lock order", a
         clearTimeout(deadline);
         release.resolve();
         await Promise.allSettled([control, scheduled]);
+        await fixture.close();
+    }
+});
+
+test.each(["complete", "postpone", "delete"] as const)(
+    "pending due-task delivery waits for a concurrent %s edit",
+    async (action) => {
+        const fixture = await operationFixture();
+        const api = appRouter.createCaller({
+            operations: fixture,
+            principal: { kind: "human", id: "operator", capabilities },
+        }).mira;
+        const updated = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        let editing: Promise<void> | undefined;
+        let scheduled: Promise<number> | undefined;
+        try {
+            const automation = await api.automations.create({
+                title: "Concurrent due-task edit",
+                prompt: "Review",
+                kind: "custom",
+                schedule: { kind: "event", event: "task_due" },
+                budgetSeconds: 60,
+            });
+            await api.controls.setEnabled({
+                key: `automation:${automation.id}`,
+                enabled: true,
+                version: 1,
+                reason: null,
+                until: null,
+            });
+            const task = await api.tasks.create({
+                title: "Previously due",
+                description: "Synthetic",
+                status: "todo",
+                assignee: "mira",
+                priority: "normal",
+                labels: [],
+                dueAt: new Date(Date.now() - 1000).toISOString(),
+                completionCriteria: "Review",
+                conversationId: null,
+            });
+            const [record] = await fixture.client<
+                { due: string }[]
+            >`SELECT due_at::text AS due FROM mira_tasks WHERE id = ${task.id}`;
+            await fixture.client.begin((query) =>
+                recordMiraEvent(query, {
+                    owner: "operator",
+                    kind: "task_due",
+                    key: `${task.id}:${record!.due}`,
+                    reference: task.id,
+                    taskId: task.id,
+                })
+            );
+            editing = fixture.client.begin(async (query) => {
+                await query`UPDATE mira_tasks SET status = ${action === "complete" ? "done" : "todo"}, due_at = CASE WHEN ${action} = 'postpone' THEN now() + interval '1 day' ELSE due_at END, deleted_at = CASE WHEN ${action} = 'delete' THEN now() ELSE NULL END WHERE id = ${task.id}`;
+                updated.resolve();
+                await release.promise;
+            });
+            await updated.promise;
+            scheduled = scheduleMiraRuns(fixture.client);
+            let blocked = false;
+            for (let attempt = 0; attempt < 100 && !blocked; attempt++) {
+                const rows = await fixture.client<
+                    { count: number }[]
+                >`SELECT count(*)::int AS count FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%FROM mira_tasks%'`;
+                blocked = (rows[0]?.count ?? 0) > 0;
+                if (!blocked) await delay(10);
+            }
+            expect(blocked).toBe(true);
+            release.resolve();
+            await editing;
+            expect(await scheduled).toBe(0);
+            const runs = await api.runs.list({ search: "", archived: false });
+            expect(runs.rows).toHaveLength(0);
+        } finally {
+            release.resolve();
+            await Promise.allSettled([editing, scheduled]);
+            await fixture.close();
+        }
+    }
+);
+
+test("due-task discovery skips an uncommitted completion instead of capturing its old state", async () => {
+    const fixture = await operationFixture();
+    const api = appRouter.createCaller({
+        operations: fixture,
+        principal: { kind: "human", id: "operator", capabilities },
+    }).mira;
+    const updated = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    let editing: Promise<void> | undefined;
+    try {
+        const automation = await api.automations.create({
+            title: "Due-task discovery",
+            prompt: "Review",
+            kind: "custom",
+            schedule: { kind: "event", event: "task_due" },
+            budgetSeconds: 60,
+        });
+        await api.controls.setEnabled({
+            key: `automation:${automation.id}`,
+            enabled: true,
+            version: 1,
+            reason: null,
+            until: null,
+        });
+        const task = await api.tasks.create({
+            title: "Completing",
+            description: "Synthetic",
+            status: "todo",
+            assignee: "mira",
+            priority: "normal",
+            labels: [],
+            dueAt: new Date(Date.now() - 1000).toISOString(),
+            completionCriteria: "Review",
+            conversationId: null,
+        });
+        editing = fixture.client.begin(async (query) => {
+            await query`UPDATE mira_tasks SET status = 'done' WHERE id = ${task.id}`;
+            updated.resolve();
+            await release.promise;
+        });
+        await updated.promise;
+        expect(await scheduleMiraRuns(fixture.client)).toBe(0);
+        release.resolve();
+        await editing;
+        expect(await scheduleMiraRuns(fixture.client)).toBe(0);
+    } finally {
+        release.resolve();
+        await editing;
         await fixture.close();
     }
 });

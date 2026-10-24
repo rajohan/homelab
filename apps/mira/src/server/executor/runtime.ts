@@ -5,12 +5,10 @@ import type { SQL } from "bun";
 
 import { runtimeEnvironment } from "../config/environment";
 import { reconcileMiraControls } from "../data/automations";
-import { cleanupMiraFiles } from "../data/files";
 import { claimMiraRun, reconcileMiraRuns, scheduleMiraRuns } from "../data/queue";
 import { CodexRuntime } from "../runtime/codexRuntime";
 import { pilotArguments, type PilotConfig } from "../runtime/configuration";
-import { cleanupMiraConversations } from "./cleanup";
-import { cleanupMiraScratch } from "./scratch";
+import { cleanupMiraResources } from "./cleanup";
 import { executeMiraTurn } from "./turn";
 
 export interface MiraHealth {
@@ -74,21 +72,24 @@ export async function runMiraExecutor(options: {
                     message = health.ready
                         ? null
                         : "Mira needs its own ChatGPT sign-in and an available model.";
-                    try {
-                        await cleanupMiraConversations(client, runtime);
-                        await cleanupMiraFiles(client, options.filesDirectory);
-                        await cleanupMiraScratch(config.codexHome);
-                    } catch {
-                        if (health.ready)
-                            message =
-                                "Mira is connected, but deleted-data cleanup needs attention.";
-                    }
                 } catch {
                     health.ready = false;
                     message =
                         "The Mira runtime is unavailable. Queued work has not been started.";
                 } finally {
-                    await runtime?.close();
+                    try {
+                        const cleaned = await cleanupMiraResources({
+                            client,
+                            runtime,
+                            filesDirectory: options.filesDirectory,
+                            home: config.codexHome,
+                        });
+                        if (!cleaned && health.ready)
+                            message =
+                                "Mira is connected, but deleted-data cleanup needs attention.";
+                    } finally {
+                        await runtime?.close();
+                    }
                 }
                 inspectedAt = Date.now();
             }

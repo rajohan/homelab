@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { rejects } from "node:assert/strict";
-import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -9,7 +9,10 @@ import { miraQueueAvailable } from "@homelab/mira/data/capacity";
 import { cleanupMiraFiles, readMiraFile, saveMiraFile } from "@homelab/mira/data/files";
 import { claimMiraRun } from "@homelab/mira/data/queue";
 
-import { cleanupMiraConversations } from "../../../../mira/src/server/executor/cleanup";
+import {
+    cleanupMiraConversations,
+    cleanupMiraResources,
+} from "../../../../mira/src/server/executor/cleanup";
 import { appRouter } from "../api/router";
 import { operationFixture } from "../testing/operations";
 
@@ -134,5 +137,59 @@ test("Mira reserves queue space for user work and rejects overflow without orpha
         ).not.toBeNull();
     } finally {
         await fixture.close();
+    }
+});
+
+test("provider deletion failure does not retain unrelated deleted uploads or abandoned image copies", async () => {
+    const fixture = await operationFixture();
+    const directory = await mkdtemp(path.join(tmpdir(), "mira-independent-cleanup-"));
+    const uploads = path.join(directory, "uploads");
+    const abandoned = path.join(directory, "message-files", "turn-old123");
+    const context = {
+        client: fixture.client,
+        owner: "operator",
+        actor: "human:operator",
+    };
+    try {
+        await mkdir(uploads);
+        await mkdir(abandoned, { recursive: true });
+        await writeFile(path.join(abandoned, "image.png"), "Synthetic stale bytes");
+        const old = new Date(Date.now() - 2 * 86_400_000);
+        await utimes(abandoned, old, old);
+        const file = await saveMiraFile(context, uploads, {
+            id: crypto.randomUUID(),
+            name: "deleted.txt",
+            bytes: new TextEncoder().encode("Deleted synthetic bytes"),
+        });
+        await fixture.client`UPDATE mira_attachments SET deleted_at = now() WHERE id = ${file.id}`;
+        const conversation = Bun.randomUUIDv7();
+        await fixture.client`INSERT INTO mira_conversations (id, owner, title, provider_thread, deleted_at) VALUES (${conversation}, 'operator', 'Deleted conversation', 'failing-provider-thread', now())`;
+        expect(
+            await cleanupMiraResources({
+                client: fixture.client,
+                runtime: {
+                    deleteThread: () =>
+                        Promise.reject(new Error("Synthetic provider failure")),
+                },
+                filesDirectory: uploads,
+                home: directory,
+            })
+        ).toBe(false);
+        expect(await readdir(uploads)).toEqual([]);
+        expect(await readdir(path.join(directory, "message-files"))).toEqual([]);
+        const pending = await fixture.client<
+            { provider: string | null }[]
+        >`SELECT provider_thread AS provider FROM mira_conversations WHERE id = ${conversation}`;
+        expect(pending[0]?.provider).toBe("failing-provider-thread");
+        expect(
+            await cleanupMiraResources({
+                client: fixture.client,
+                filesDirectory: uploads,
+                home: directory,
+            })
+        ).toBe(true);
+    } finally {
+        await fixture.close();
+        await rm(directory, { recursive: true, force: true });
     }
 });

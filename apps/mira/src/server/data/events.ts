@@ -72,7 +72,7 @@ export async function scheduleMiraEvents(
 ): Promise<number> {
     const tasks = await query<
         { id: string; owner: string; due: string }[]
-    >`SELECT t.id, t.owner, t.due_at::text AS due FROM mira_tasks t WHERE t.deleted_at IS NULL AND t.status <> 'done' AND t.due_at <= ${now} AND t.due_at > ${new Date(now.getTime() - 86_400_000)} AND NOT EXISTS (SELECT 1 FROM mira_events e WHERE e.owner = t.owner AND e.kind = 'task_due' AND e.source_key = t.id::text || ':' || t.due_at::text) ORDER BY t.due_at LIMIT 20`;
+    >`SELECT t.id, t.owner, t.due_at::text AS due FROM mira_tasks t WHERE t.deleted_at IS NULL AND t.status <> 'done' AND t.due_at <= ${now} AND t.due_at > ${new Date(now.getTime() - 86_400_000)} AND NOT EXISTS (SELECT 1 FROM mira_events e WHERE e.owner = t.owner AND e.kind = 'task_due' AND e.source_key = t.id::text || ':' || t.due_at::text) ORDER BY t.due_at LIMIT 20 FOR SHARE OF t SKIP LOCKED`;
     for (const task of tasks)
         await recordMiraEvent(query, {
             owner: task.owner,
@@ -98,6 +98,8 @@ export async function scheduleMiraEvents(
     >`SELECT d.event_id AS "eventId", d.automation_id AS "automationId", e.owner, e.kind, e.reference, e.task_id AS "taskId", e.created_at AS "createdAt", a.title, a.prompt, a.budget_seconds AS budget FROM mira_event_deliveries d JOIN mira_events e ON e.id = d.event_id JOIN mira_automations a ON a.id = d.automation_id WHERE d.state = 'pending' AND d.next_attempt_at <= ${now} ORDER BY d.next_attempt_at, e.id LIMIT 20 FOR UPDATE OF d SKIP LOCKED`;
     let queued = 0;
     for (const event of pending) {
+        if (event.taskId)
+            await query`SELECT id FROM mira_tasks WHERE id = ${event.taskId} AND owner = ${event.owner} FOR SHARE`;
         const [current] = await query<
             { valid: boolean }[]
         >`SELECT (a.schedule->>'kind' = 'event' AND a.schedule->>'event' = ${event.kind} AND (e.task_id IS NULL OR EXISTS (SELECT 1 FROM mira_tasks t WHERE t.id = e.task_id AND t.owner = e.owner AND t.deleted_at IS NULL AND t.status <> 'done' AND t.due_at <= ${now} AND e.source_key = t.id::text || ':' || t.due_at::text))) AS valid FROM mira_automations a JOIN mira_events e ON e.id = ${event.eventId} WHERE a.id = ${event.automationId}`;
