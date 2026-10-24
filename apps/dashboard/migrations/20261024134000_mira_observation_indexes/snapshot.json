@@ -1,0 +1,118 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "2fa3ea98-cc9a-4126-bfd2-34a334d2e2ca",
+    "prevIds": ["560074ab-2d30-40bf-b918-89123544e06b"],
+    "footprints": [
+        {
+            "statementType": "create_index",
+            "statementTarget": [
+                "index",
+                "public",
+                "mira_conversations",
+                "mira_conversations_activity"
+            ],
+            "writes": [
+                "s|idx|public.mira_conversations_activity",
+                "n|idx|public.mira_conversations_activity",
+                "e|idx|public.mira_conversations_activity",
+                "n|rel|public.mira_conversations_activity"
+            ],
+            "reads": [
+                "n|tbl|public.mira_conversations",
+                "n|sch|public",
+                "n|col|public.mira_conversations.owner",
+                "n|col|public.mira_conversations.updated_at",
+                "n|col|public.mira_conversations.id"
+            ]
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": ["index", "public", "mira_tasks", "mira_tasks_due"],
+            "writes": [
+                "s|idx|public.mira_tasks_due",
+                "n|idx|public.mira_tasks_due",
+                "e|idx|public.mira_tasks_due",
+                "n|rel|public.mira_tasks_due"
+            ],
+            "reads": [
+                "n|tbl|public.mira_tasks",
+                "n|sch|public",
+                "n|col|public.mira_tasks.due_at",
+                "n|col|public.mira_tasks.id"
+            ]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_conversations",
+                "name": "mira_conversations_activity",
+                "nameExplicit": true,
+                "columns": [
+                    {
+                        "value": "owner",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    },
+                    {
+                        "value": "updated_at",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    },
+                    {
+                        "value": "id",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    }
+                ],
+                "isUnique": false,
+                "where": "\"deleted_at\" is null",
+                "with": "",
+                "method": "btree",
+                "concurrently": false,
+                "entityType": "indexes"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_tasks",
+                "name": "mira_tasks_due",
+                "nameExplicit": true,
+                "columns": [
+                    {
+                        "value": "due_at",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    },
+                    {
+                        "value": "id",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    }
+                ],
+                "isUnique": false,
+                "where": "\"deleted_at\" is null and \"status\" <> 'done' and \"due_at\" is not null",
+                "with": "",
+                "method": "btree",
+                "concurrently": false,
+                "entityType": "indexes"
+            }
+        }
+    ]
+}

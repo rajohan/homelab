@@ -352,3 +352,62 @@ test("distinct trigger events notify independently while retries and unrelated e
         await fixture.close();
     }
 });
+
+test("automatic failure notices distinguish new causes and tool outcomes while repeated failures stay quiet", async () => {
+    const fixture = await operationFixture();
+    const api = appRouter.createCaller({
+        operations: fixture,
+        principal: { kind: "human", id: "operator", capabilities },
+    }).mira;
+    try {
+        const automation = await api.automations.create({
+            title: "Failure changes",
+            prompt: "Observe",
+            kind: "custom",
+            delivery: "changes",
+            budgetSeconds: 60,
+            schedule: { kind: "interval", intervalSeconds: 60 },
+        });
+        await api.controls.setEnabled({
+            key: `automation:${automation.id}`,
+            version: 1,
+            enabled: true,
+            reason: null,
+            until: null,
+        });
+        const fail = async (message: string, inputHash?: string) => {
+            await fixture.client`UPDATE mira_automations SET next_run_at=now()-interval '1 minute' WHERE id=${automation.id}`;
+            expect(await scheduleMiraRuns(fixture.client)).toBe(1);
+            const run = await claimMiraRun(
+                fixture.client,
+                crypto.randomUUID(),
+                "general"
+            );
+            if (!run) throw new Error("Expected run");
+            if (inputHash)
+                await fixture.client`INSERT INTO mira_tool_receipts(id,run_id,call_id,tool,input_hash,state,message) VALUES (${Bun.randomUUIDv7()},${run.id},'call','synthetic',${inputHash},'unknown','Unknown external result')`;
+            await finishMiraRun(fixture.client, run, {
+                state: "failed",
+                text: "",
+                message,
+            });
+            return await listNotifications(fixture.client, "human:operator", page);
+        };
+        expect(await fail("Provider unavailable")).toMatchObject({ unreadCount: 1 });
+        expect(await fail("Provider unavailable")).toMatchObject({ unreadCount: 1 });
+        expect(await fail("Runtime authentication expired")).toMatchObject({
+            unreadCount: 2,
+        });
+        expect(await fail("Action uncertain", "first-target")).toMatchObject({
+            unreadCount: 3,
+        });
+        expect(await fail("Action uncertain", "first-target")).toMatchObject({
+            unreadCount: 3,
+        });
+        expect(await fail("Action uncertain", "second-target")).toMatchObject({
+            unreadCount: 4,
+        });
+    } finally {
+        await fixture.close();
+    }
+});

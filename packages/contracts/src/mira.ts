@@ -11,6 +11,15 @@ export const miraPageSchema = v.strictObject({
     search: v.optional(text(160), ""),
     archived: v.optional(v.boolean(), false),
 });
+export const miraConversationCursorSchema = v.strictObject({
+    id: idSchema,
+    updatedAt: v.pipe(v.string(), v.isoTimestamp()),
+});
+export type MiraConversationCursor = v.InferOutput<typeof miraConversationCursorSchema>;
+export const miraConversationPageSchema = v.strictObject({
+    ...miraPageSchema.entries,
+    before: v.optional(miraConversationCursorSchema),
+});
 export const miraTaskStates = ["todo", "in_progress", "blocked", "done"] as const;
 export const miraTaskInputSchema = v.strictObject({
     title,
@@ -29,6 +38,7 @@ export const miraTaskUpdateSchema = v.strictObject({
 });
 export const miraTaskFilterSchema = v.strictObject({
     ...miraPageSchema.entries,
+    due: v.optional(v.boolean()),
     status: v.optional(v.picklist(miraTaskStates)),
     assignee: v.optional(v.picklist(["mira", "operator"])),
 });

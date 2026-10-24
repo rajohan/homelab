@@ -4,7 +4,7 @@ import type {
     MiraMessage,
     MiraRun,
     miraMessageInputSchema,
-    miraPageSchema,
+    miraConversationPageSchema,
 } from "@homelab/contracts/mira";
 import type * as v from "valibot";
 
@@ -19,12 +19,19 @@ import { auditMira, MiraFailure, type MiraContext, type MiraQuery } from "./cont
  */
 export async function listConversations(
     context: MiraContext,
-    input: v.InferOutput<typeof miraPageSchema>
+    input: v.InferOutput<typeof miraConversationPageSchema>
 ) {
     const rows = await context.client<
         MiraConversation[]
-    >`SELECT c.id, c.title, c.version, c.archived_at::text AS "archivedAt", c.created_at::text AS "createdAt", c.updated_at::text AS "updatedAt" FROM mira_conversations c WHERE c.owner = ${context.owner} AND c.deleted_at IS NULL AND (c.archived_at IS NOT NULL) = ${input.archived} AND (${input.before ?? null}::uuid IS NULL OR c.id < ${input.before ?? null}::uuid) AND (strpos(lower(c.title), lower(${input.search})) > 0 OR EXISTS (SELECT 1 FROM mira_messages m WHERE m.conversation_id = c.id AND strpos(lower(m.content), lower(${input.search})) > 0)) ORDER BY c.id DESC LIMIT 30`;
-    return { rows, nextCursor: rows.length === 30 ? rows.at(-1)!.id : null };
+    >`SELECT c.id, c.title, c.version, c.archived_at::text AS "archivedAt", c.created_at::text AS "createdAt", to_char(c.updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "updatedAt" FROM mira_conversations c WHERE c.owner = ${context.owner} AND c.deleted_at IS NULL AND (c.archived_at IS NOT NULL) = ${input.archived} AND (${input.before?.id ?? null}::uuid IS NULL OR (c.updated_at,c.id)<(${input.before?.updatedAt ?? null}::timestamptz,${input.before?.id ?? null}::uuid)) AND (strpos(lower(c.title), lower(${input.search})) > 0 OR EXISTS (SELECT 1 FROM mira_messages m WHERE m.conversation_id = c.id AND strpos(lower(m.content), lower(${input.search})) > 0)) ORDER BY c.updated_at DESC,c.id DESC LIMIT 30`;
+    const last = rows.at(-1);
+    return {
+        rows,
+        nextCursor:
+            rows.length === 30 && last
+                ? { id: last.id, updatedAt: last.updatedAt }
+                : null,
+    };
 }
 
 /**

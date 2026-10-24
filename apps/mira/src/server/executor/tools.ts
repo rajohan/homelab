@@ -115,7 +115,8 @@ export function createMiraTools(
                 const file = await readMiraFile(context, filesDirectory, parsed.id);
                 if (file.metadata.mediaType.startsWith("image/"))
                     return {
-                        message: "This image is supplied directly with its message.",
+                        message:
+                            "Images are supplied with the current message or bounded recovered history. If this image is not in the current model input, ask the operator to attach it to a new message.",
                     };
                 const document =
                     file.metadata.mediaType === "application/pdf"
@@ -137,10 +138,11 @@ export function createMiraTools(
         {
             name: "mira_tasks_list",
             description:
-                "Search the operator's task board; task state is separate from execution status.",
+                "Search the operator's task board; task state is separate from execution status. Use due=true to find due unfinished tasks without paging through newer unrelated work.",
             inputSchema: object({
                 search: string,
                 before: uuid,
+                due: { type: "boolean" },
                 status: taskProperties.status,
                 assignee: taskProperties.assignee,
             }),

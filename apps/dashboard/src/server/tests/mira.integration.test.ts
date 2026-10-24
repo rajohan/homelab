@@ -754,3 +754,33 @@ test.each(["pause", "delete"])(
         }
     }
 );
+
+test("conversation paging follows recent activity with stable microsecond cursors", async () => {
+    const db = await fixture();
+    try {
+        const api = db.caller().mira;
+        const ids = Array.from({ length: 35 }, () => Bun.randomUUIDv7());
+        for (let i = 0; i < ids.length; i++)
+            await db.client`INSERT INTO mira_conversations(id,owner,title,updated_at) VALUES (${ids[i]!},'operator',${`Chat ${i}`},'2026-01-01'::timestamptz+${i}*interval '1 microsecond')`;
+        await db.client`UPDATE mira_conversations SET updated_at='2026-01-02' WHERE id=${ids[0]!}`;
+        const first = await api.conversations.list(page);
+        expect(first.rows).toHaveLength(30);
+        expect(first.rows[0]?.id).toBe(ids[0]);
+        expect(first.nextCursor).not.toBeNull();
+        await db.client`UPDATE mira_conversations SET updated_at='2026-01-03' WHERE id=${first.nextCursor!.id}`;
+        const second = await api.conversations.list({
+            ...page,
+            before: first.nextCursor!,
+        });
+        expect(second.rows).toHaveLength(5);
+        expect(new Set([...first.rows, ...second.rows].map((chat) => chat.id)).size).toBe(
+            35
+        );
+        const other = await db
+            .caller("other")
+            .mira.conversations.list({ ...page, before: first.nextCursor! });
+        expect(other.rows).toHaveLength(0);
+    } finally {
+        await db.close();
+    }
+});

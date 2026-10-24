@@ -855,10 +855,21 @@ test.each(["resume-missing", "resume-missing-other"])(
             const chat = await api.conversations.create({
                 title: "Missing provider context",
             });
+            const files = path.join(directory, "files");
+            const image = await saveMiraFile(
+                { client: fixture.client, owner: "operator", actor: "human:operator" },
+                files,
+                {
+                    id: crypto.randomUUID(),
+                    name: "earlier.png",
+                    bytes: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+                }
+            );
             const first = await api.conversations.send({
                 conversationId: chat.id,
                 requestId: crypto.randomUUID(),
                 text: "Original durable task ZK-427",
+                attachmentIds: [image.id],
             });
             await api.runs.cancel(first);
             await fixture.client`UPDATE mira_conversations SET provider_thread='stored-thread',provider_context_ready=true WHERE id=${chat.id}`;
@@ -877,7 +888,8 @@ test.each(["resume-missing", "resume-missing-other"])(
                 fixture.client,
                 { command, codexHome: home, workspace, model: "synthetic" },
                 run,
-                new AbortController().signal
+                new AbortController().signal,
+                files
             );
             const history = await api.conversations.read({ id: chat.id });
             const [stored] = await fixture.client<
@@ -885,6 +897,8 @@ test.each(["resume-missing", "resume-missing-other"])(
             >`SELECT provider_thread AS thread,provider_context_ready AS ready FROM mira_conversations WHERE id=${chat.id}`;
             if (mode === "resume-missing") {
                 expect(history.run?.state).toBe("completed");
+                expect(history.messages.at(-1)?.content).toContain("localImage");
+                expect(history.messages.at(-1)?.content).toContain(image.id);
                 expect(history.messages.at(-1)?.content).toContain("ZK-427");
                 expect(history.messages.at(-1)?.content).toContain(
                     "Continue investigating"
@@ -1470,6 +1484,47 @@ test("heartbeat fingerprints observe manual chat transitions and exclude their o
         expect(await fingerprint()).toBe(before);
         await fixture.client`UPDATE mira_runs SET state='failed' WHERE id=${run.id}`;
         expect(await fingerprint()).not.toBe(before);
+    } finally {
+        await fixture.close();
+    }
+});
+
+test("large task history uses bounded observation digests and due discovery reaches older unfinished work", async () => {
+    const fixture = await operationFixture();
+    const api = appRouter.createCaller({
+        operations: fixture,
+        principal: { kind: "human", id: "operator", capabilities },
+    }).mira;
+    try {
+        const old = "00000000-0000-4000-8000-000000000001";
+        await fixture.client`INSERT INTO mira_tasks(id,owner,title,description,completion_criteria,status,assignee,priority) SELECT gen_random_uuid(),'operator','Newer task '||n,'','','todo','mira','normal' FROM generate_series(1,1500) n`;
+        await fixture.client`INSERT INTO mira_tasks(id,owner,title,description,completion_criteria,status,assignee,priority,due_at) VALUES (${old},'operator','Older due task','','','todo','mira','normal',now()-interval '1 hour')`;
+        const fingerprint = () =>
+            fixture.client.begin((query) =>
+                miraObservationFingerprint(
+                    query,
+                    "operator",
+                    "00000000-0000-4000-8000-000000000000"
+                )
+            );
+        const before = await fingerprint();
+        await fixture.client`UPDATE mira_tasks SET version=version+1 WHERE id=${old}`;
+        const edited = await fingerprint();
+        expect(edited).not.toBe(before);
+        await api.tasks.addProgress({ taskId: old, text: "Progress on older work" });
+        const progress = await fingerprint();
+        expect(progress).not.toBe(edited);
+        expect(await fingerprint()).toBe(progress);
+        const due = await api.tasks.list({ search: "", archived: false, due: true });
+        expect(due.rows.map((task) => task.id)).toEqual([old]);
+        await fixture.client`UPDATE mira_tasks SET status='done',version=version+1 WHERE id=${old}`;
+        const done = await api.tasks.list({ search: "", archived: false, due: true });
+        expect(done.rows).toHaveLength(0);
+        const [index] = await fixture.client<
+            { definition: string }[]
+        >`SELECT indexdef AS definition FROM pg_indexes WHERE indexname='mira_tasks_due'`;
+        expect(index?.definition).toContain("due_at, id");
+        expect(index?.definition).toContain("deleted_at IS NULL");
     } finally {
         await fixture.close();
     }

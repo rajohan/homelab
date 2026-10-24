@@ -45,6 +45,7 @@ export async function listTasks(
             due_at::text AS "dueAt", completion_criteria AS "completionCriteria",
             conversation_id AS "conversationId", version, created_at::text AS "createdAt", updated_at::text AS "updatedAt"
         FROM mira_tasks WHERE owner = ${context.owner} AND deleted_at IS NULL
+            AND (NOT ${input.due ?? false} OR (status<>'done' AND due_at<=now()))
             AND (${input.before ?? null}::uuid IS NULL OR id < ${input.before ?? null}::uuid)
             AND (${input.status ?? null}::text IS NULL OR status = ${input.status ?? null})
             AND (${input.assignee ?? null}::text IS NULL OR assignee = ${input.assignee ?? null})

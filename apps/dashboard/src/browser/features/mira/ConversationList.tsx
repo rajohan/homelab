@@ -1,3 +1,4 @@
+import type { MiraConversationCursor } from "@homelab/contracts/mira";
 import {
     Button,
     Card,
@@ -32,7 +33,7 @@ export function ConversationList({
     const [archived, setArchived] = useState(false);
     const query = useInfiniteQuery({
         queryKey: ["operations", "mira", "conversations", search, archived],
-        initialPageParam: undefined as string | undefined,
+        initialPageParam: undefined as MiraConversationCursor | undefined,
         queryFn: ({ pageParam, signal }) =>
             api.mira.conversations.list.query(
                 { search, archived, ...(pageParam ? { before: pageParam } : {}) },

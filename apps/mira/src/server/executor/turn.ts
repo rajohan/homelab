@@ -111,23 +111,6 @@ export async function executeMiraTurn(
         const settings = resolveMiraChatSettings(models, record.settings, config.model);
         const selectedModel = models.find((entry) => entry.model === settings.model)!;
         const tools = createMiraTools(client, run, filesDirectory);
-        attachments = await prepareMiraAttachments(
-            { client, owner: run.owner, actor: `mira:${run.id}` },
-            {
-                directory: filesDirectory,
-                home: config.codexHome,
-                ids: record.attachmentIds,
-                signal,
-            }
-        );
-        if (
-            attachments.inputs.some((input) => input.type === "localImage") &&
-            !selectedModel.inputModalities.includes("image")
-        )
-            throw new MiraFailure(
-                "BAD_REQUEST",
-                "The selected model does not support images. Choose another model in Chat settings."
-            );
         let threadId = record.providerThread;
         if (threadId) {
             try {
@@ -146,6 +129,23 @@ export async function executeMiraTurn(
                 threadId = null;
             }
         }
+        attachments = await prepareMiraAttachments(
+            { client, owner: run.owner, actor: `mira:${run.id}` },
+            {
+                directory: filesDirectory,
+                home: config.codexHome,
+                ids: record.attachmentIds,
+                signal,
+            }
+        );
+        if (
+            attachments.inputs.some((input) => input.type === "localImage") &&
+            !selectedModel.inputModalities.includes("image")
+        )
+            throw new MiraFailure(
+                "BAD_REQUEST",
+                "The selected model does not support images. Choose another model in Chat settings."
+            );
         if (!threadId) {
             const model = settings.model;
             threadId = await runtime.startThread(

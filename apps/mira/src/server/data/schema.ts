@@ -41,7 +41,12 @@ export const miraConversations = pgTable(
         createdAt: time("created_at").notNull().defaultNow(),
         updatedAt: time("updated_at").notNull().defaultNow(),
     },
-    (t) => [index("mira_conversations_owner").on(t.owner, t.id)]
+    (t) => [
+        index("mira_conversations_owner").on(t.owner, t.id),
+        index("mira_conversations_activity")
+            .on(t.owner, t.updatedAt, t.id)
+            .where(sql`${t.deletedAt} is null`),
+    ]
 );
 export const miraMessages = pgTable(
     "mira_messages",
@@ -87,6 +92,11 @@ export const miraTasks = pgTable(
     },
     (t) => [
         index("mira_tasks_owner").on(t.owner, t.id),
+        index("mira_tasks_due")
+            .on(t.dueAt, t.id)
+            .where(
+                sql`${t.deletedAt} is null and ${t.status} <> 'done' and ${t.dueAt} is not null`
+            ),
         check(
             "mira_tasks_state",
             sql`${t.status} in ('todo','in_progress','blocked','done')`

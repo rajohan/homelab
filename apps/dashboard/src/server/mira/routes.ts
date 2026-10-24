@@ -11,6 +11,7 @@ import {
     miraMemoryUpdateSchema,
     miraMessageInputSchema,
     miraPageSchema,
+    miraConversationPageSchema,
     miraProgressInputSchema,
     miraReportInputSchema,
     miraReportFilterSchema,
@@ -149,7 +150,7 @@ export const miraRouter = trpc.router({
                 execute(ctx, (mira) => saveMiraChatSettings(mira, input))
             ),
         list: trpc.procedure
-            .input(miraPageSchema)
+            .input(miraConversationPageSchema)
             .query(({ ctx, input }) =>
                 execute(ctx, (mira) => listConversations(mira, input))
             ),

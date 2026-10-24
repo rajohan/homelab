@@ -15,12 +15,13 @@ export async function miraObservationFingerprint(
     owner: string,
     runId: string
 ): Promise<string> {
+    // Aggregate in PostgreSQL: completion never materializes the account's full task history.
     const tasks = await query<
         Record<string, unknown>[]
-    >`SELECT id, version, status <> 'done' AND due_at <= now() AS due FROM mira_tasks WHERE owner = ${owner} AND deleted_at IS NULL ORDER BY id`;
+    >`SELECT count(*)::text AS count,coalesce(bit_xor(hashtextextended(concat_ws(':',id,version,status<>'done' AND due_at<=now()),0)),0)::text AS digest,coalesce(bit_xor(hashtextextended(concat_ws(':',id,version,status<>'done' AND due_at<=now()),1)),0)::text AS verification FROM mira_tasks WHERE owner=${owner} AND deleted_at IS NULL`;
     const progress = await query<
         Record<string, unknown>[]
-    >`SELECT t.id,(SELECT p.id FROM mira_progress p WHERE p.task_id=t.id ORDER BY p.id DESC LIMIT 1) AS progress FROM mira_tasks t WHERE t.owner=${owner} AND t.deleted_at IS NULL ORDER BY t.id`;
+    >`SELECT count(*)::text AS count,coalesce(bit_xor(hashtextextended(concat_ws(':',p.task_id,p.id),0)),0)::text AS digest,coalesce(bit_xor(hashtextextended(concat_ws(':',p.task_id,p.id),1)),0)::text AS verification FROM mira_progress p JOIN mira_tasks t ON t.id=p.task_id WHERE t.owner=${owner} AND t.deleted_at IS NULL`;
     const memory = await query<
         Record<string, unknown>[]
     >`SELECT id, version FROM mira_memory WHERE owner = ${owner} ORDER BY id`;
@@ -76,12 +77,13 @@ export async function notifyMiraRun(query: TransactionSQL, runId: string): Promi
             automationId: string | null;
             manual: boolean;
             state: string;
+            message: string | null;
             observationHash: string | null;
             title: string | null;
             delivery: string | null;
             reportCount: number;
         }[]
-    >`SELECT r.owner, r.automation_id AS "automationId", r.manual, r.state, r.observation_hash AS "observationHash", a.title, a.delivery, (SELECT count(*)::int FROM mira_reports p WHERE p.run_id = r.id AND p.deleted_at IS NULL) AS "reportCount" FROM mira_runs r LEFT JOIN mira_automations a ON a.id = r.automation_id WHERE r.id = ${runId}`;
+    >`SELECT r.owner, r.automation_id AS "automationId", r.manual, r.state, r.message, r.observation_hash AS "observationHash", a.title, a.delivery, (SELECT count(*)::int FROM mira_reports p WHERE p.run_id = r.id AND p.deleted_at IS NULL) AS "reportCount" FROM mira_runs r LEFT JOIN mira_automations a ON a.id = r.automation_id WHERE r.id = ${runId}`;
     if (!run || !["completed", "failed", "needs_attention"].includes(run.state)) return;
     if (
         run.automationId &&
@@ -92,8 +94,13 @@ export async function notifyMiraRun(query: TransactionSQL, runId: string): Promi
     const failed = run.state !== "completed";
     if (run.delivery === "silent") return;
     const key = run.automationId ?? runId;
+    const failureReceipts = failed
+        ? await query<
+              Record<string, unknown>[]
+          >`SELECT tool,input_hash,state,message FROM mira_tool_receipts WHERE run_id=${runId} ORDER BY tool,input_hash,state,message LIMIT 32`
+        : [];
     const fingerprint = failed
-        ? `failure:${run.state}`
+        ? `failure:${new Bun.CryptoHasher("sha256").update(JSON.stringify({ state: run.state, message: run.message, receipts: failureReceipts })).digest("hex")}`
         : `completed:${run.observationHash ?? runId}`;
     // Serialize the baseline and publication in the same transaction, not in the model.
     await query<
