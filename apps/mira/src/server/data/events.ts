@@ -4,6 +4,7 @@ import { miraRunAllowed, resumeMiraControls } from "./automations";
 import { miraQueueAvailable } from "./capacity";
 import { auditMira } from "./context";
 import { enqueueTurn } from "./conversations";
+import { admitMiraMailEvent, admitMiraMailRun, miraMailLimits } from "./mailLimits";
 
 /**
  * Persist a verified event once and capture only currently enabled subscribers.
@@ -20,6 +21,7 @@ export async function recordMiraEvent(
         reference: string;
         taskId?: string;
         observedAt?: Date;
+        eligibilityAt?: Date;
     }
 ): Promise<boolean> {
     if (
@@ -33,31 +35,83 @@ export async function recordMiraEvent(
         await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${input.owner}`}, 0))`;
         await resumeMiraControls(query, new Date(), input.owner);
     }
-    const id = Bun.randomUUIDv7();
+    if (input.kind === "agentmail") {
+        const available = input.observedAt ?? new Date();
+        if (
+            available.getTime() < Date.now() - 86_400_000 ||
+            available.getTime() > Date.now() + 300_000
+        )
+            return false;
+        const existing = await query<
+            { id: string }[]
+        >`SELECT id FROM mira_events WHERE owner=${input.owner} AND kind='agentmail' AND source_key=${input.key}`;
+        if (
+            !existing[0] &&
+            !(await admitMiraMailEvent(
+                query,
+                input.owner,
+                input.eligibilityAt ?? available
+            ))
+        )
+            return false;
+    }
+    let id = Bun.randomUUIDv7();
     const observedAt = input.observedAt ?? new Date();
+    let eligibilityAt = input.eligibilityAt ?? observedAt;
     const inserted = await query<
         { id: string }[]
-    >`INSERT INTO mira_events (id, owner, kind, source_key, reference, task_id, created_at) VALUES (${id}, ${input.owner}, ${input.kind}, ${input.key}, ${input.reference}, ${input.taskId ?? null}, ${observedAt}) ON CONFLICT (owner, kind, source_key) DO NOTHING RETURNING id`;
-    if (!inserted[0]) return false;
+    >`INSERT INTO mira_events (id, owner, kind, source_key, reference, task_id, created_at, eligibility_at) VALUES (${id}, ${input.owner}, ${input.kind}, ${input.key}, ${input.reference}, ${input.taskId ?? null}, ${observedAt}, ${eligibilityAt}) ON CONFLICT (owner, kind, source_key) DO NOTHING RETURNING id`;
+    if (!inserted[0]) {
+        if (input.kind !== "agentmail") return false;
+        const [existing] = await query<
+            { id: string; at: Date }[]
+        >`SELECT id,COALESCE(eligibility_at,created_at) AS at FROM mira_events WHERE owner=${input.owner} AND kind=${input.kind} AND source_key=${input.key}`;
+        if (!existing) return false;
+        id = existing.id;
+        eligibilityAt = new Date(existing.at);
+    }
     let cursor: string | null = null;
+    const [existingDeliveries] = await query<
+        { total: number }[]
+    >`SELECT count(*)::int AS total FROM mira_event_deliveries WHERE event_id=${id}`;
+    let subscribers = existingDeliveries?.total ?? 0;
     for (;;) {
         const automations: { id: string }[] = await query<
             { id: string }[]
         >`SELECT id FROM mira_automations WHERE owner = ${input.owner} AND deleted_at IS NULL AND schedule->>'kind' = 'event' AND schedule->>'event' = ${input.kind} AND (${cursor}::uuid IS NULL OR id > ${cursor}::uuid) ORDER BY id LIMIT 100`;
         for (const automation of automations) {
+            if (input.kind === "agentmail" && subscribers >= miraMailLimits.subscribers)
+                break;
             if (!(await miraRunAllowed(query, input.owner, automation.id))) continue;
-            await query`INSERT INTO mira_event_deliveries (event_id, automation_id, next_attempt_at) VALUES (${id}, ${automation.id}, ${observedAt})`;
+            const [eligible] = await query<
+                { allowed: boolean }[]
+            >`SELECT NOT EXISTS (SELECT 1 FROM mira_switches s WHERE s.owner = ${input.owner} AND s.key IN ('autonomy', ${`automation:${automation.id}`}, ${input.kind === "agentmail" ? "integration:agentmail" : "autonomy"}) AND ((s.key='integration:agentmail' AND s.binding_activated_at > ${eligibilityAt}) OR (NOT EXISTS (SELECT 1 FROM mira_control_windows w WHERE w.owner = s.owner AND w.key = s.key AND w.started_at <= ${eligibilityAt} AND (w.ended_at IS NULL OR w.ended_at > ${eligibilityAt})) AND (EXISTS (SELECT 1 FROM mira_control_windows w WHERE w.owner = s.owner AND w.key = s.key) OR s.changed_at > ${eligibilityAt})))) AS allowed`;
+            if (!eligible?.allowed) continue;
+
+            if (input.kind === "agentmail") {
+                const duplicate = await query<
+                    { present: boolean }[]
+                >`SELECT EXISTS(SELECT 1 FROM mira_event_deliveries WHERE event_id=${id} AND automation_id=${automation.id}) AS present`;
+                if (duplicate[0]?.present) continue;
+            }
+            subscribers++;
+            await query`INSERT INTO mira_event_deliveries (event_id, automation_id, next_attempt_at) VALUES (${id}, ${automation.id}, ${observedAt}) ON CONFLICT DO NOTHING`;
         }
-        if (automations.length < 100) break;
+        if (
+            automations.length < 100 ||
+            (input.kind === "agentmail" && subscribers >= miraMailLimits.subscribers)
+        )
+            break;
         cursor = automations.at(-1)!.id;
     }
-    await auditMira(
-        query,
-        { owner: input.owner, actor: `mira:event:${input.kind}` },
-        "event.received",
-        id
-    );
-    return true;
+    if (inserted[0] && input.kind !== "agentmail")
+        await auditMira(
+            query,
+            { owner: input.owner, actor: `mira:event:${input.kind}` },
+            "event.received",
+            id
+        );
+    return inserted.length > 0;
 }
 
 /**
@@ -118,6 +172,14 @@ export async function scheduleMiraEvents(
             await query`UPDATE mira_event_deliveries SET next_attempt_at = ${new Date(now.getTime() + 30_000)} WHERE event_id = ${event.eventId} AND automation_id = ${event.automationId}`;
             continue;
         }
+        const budget =
+            event.kind === "agentmail"
+                ? await admitMiraMailRun(query, event.owner, event.budget)
+                : event.budget;
+        if (budget === null) {
+            await query`UPDATE mira_event_deliveries SET state='skipped' WHERE event_id=${event.eventId} AND automation_id=${event.automationId}`;
+            continue;
+        }
         const conversationId = Bun.randomUUIDv7();
         await query`INSERT INTO mira_conversations (id, owner, title) VALUES (${conversationId}, ${event.owner}, ${event.title})`;
         const run = await enqueueTurn(
@@ -131,7 +193,7 @@ export async function scheduleMiraEvents(
             },
             {
                 automationId: event.automationId,
-                budgetSeconds: event.budget,
+                budgetSeconds: budget,
                 ...(event.taskId ? { taskId: event.taskId } : {}),
             }
         );

@@ -52,6 +52,7 @@ import {
     saveMemory,
 } from "@homelab/mira/data/documents";
 import { listMiraFiles, miraFileMetadata } from "@homelab/mira/data/files";
+import { listMiraIntegrations } from "@homelab/mira/data/integrations";
 import { listMiraProposals, decideMiraProposal } from "@homelab/mira/data/proposals";
 import { listMiraRuns } from "@homelab/mira/data/queue";
 import { readMiraRun } from "@homelab/mira/data/runHistory";
@@ -62,6 +63,7 @@ import {
     saveTask,
     taskProgress,
 } from "@homelab/mira/data/tasks";
+import { agentMailBindingHash } from "@homelab/mira/integrations/agentmail/configuration";
 import * as v from "valibot";
 
 import { runOperation, trpc } from "../api/trpc";
@@ -301,12 +303,31 @@ export const miraRouter = trpc.router({
                 execute(ctx, (mira) => saveMiraAutomation(mira, input))
             ),
     }),
+    integrations: trpc.procedure.query(({ ctx }) =>
+        execute(ctx, (mira) => listMiraIntegrations(mira, ctx.operations?.agentMailHook))
+    ),
     controls: trpc.router({
         list: trpc.procedure.query(({ ctx }) => execute(ctx, listMiraSwitches)),
-        setEnabled: trpc.procedure
-            .input(miraEnableSchema)
-            .mutation(({ ctx, input }) =>
-                execute(ctx, (mira) => setMiraEnabled(mira, input))
-            ),
+        setEnabled: trpc.procedure.input(miraEnableSchema).mutation(({ ctx, input }) =>
+            execute(ctx, async (mira) => {
+                const binding = ctx.operations?.agentMailHook;
+                if (input.key === "integration:agentmail" && input.enabled) {
+                    const [status] = await listMiraIntegrations(mira, binding);
+                    if (!status?.ready)
+                        throw new MiraFailure(
+                            "PRECONDITION_FAILED",
+                            status?.message ??
+                                "AgentMail must be configured and connected before enabling it."
+                        );
+                }
+                return setMiraEnabled(
+                    mira,
+                    input,
+                    binding?.owner === mira.owner
+                        ? agentMailBindingHash(binding)
+                        : undefined
+                );
+            })
+        ),
     }),
 });

@@ -13,6 +13,7 @@ import {
 } from "./configuration";
 import { RuntimeResponseError } from "./responseError";
 import { RpcProcess } from "./rpcProcess";
+import { createMiraToolRouter } from "./toolRouter";
 
 const fixture = fileURLToPath(new URL("../testing/runtimeChild.ts", import.meta.url));
 const options = (mode = "ok") => ({
@@ -329,6 +330,139 @@ test("each resumed turn receives explicit model settings and only its own activi
         const defaults = { model: "model-b", effort: "low", serviceTier: null };
         const next = await runtime.turn(thread, "next", { settings: defaults });
         expect(JSON.parse(next.text)).toEqual(defaults);
+    } finally {
+        await runtime.close();
+    }
+});
+
+test("stable tool declarations discover the current registry and preserve underlying call fencing", async () => {
+    const seen: unknown[] = [];
+    const first = createMiraToolRouter([
+        {
+            name: "mira_old",
+            description: "Old registry",
+            inputSchema: { type: "object" },
+            execute: () => Promise.resolve("old"),
+        },
+    ]);
+    const current = createMiraToolRouter([
+        {
+            name: "mira_new",
+            description: "New registry",
+            inputSchema: { type: "object", properties: { value: { type: "string" } } },
+            execute: (input, _signal, call) => {
+                seen.push({ input, call });
+                return Promise.resolve("verified");
+            },
+        },
+    ]);
+    expect(
+        current.map(({ name, description, inputSchema }) => ({
+            name,
+            description,
+            inputSchema,
+        }))
+    ).toEqual(
+        first.map(({ name, description, inputSchema }) => ({
+            name,
+            description,
+            inputSchema,
+        }))
+    );
+    const signal = new AbortController().signal;
+    const call = {
+        callId: "current-provider-call",
+        threadId: "retained-thread",
+        turnId: "new-turn",
+    };
+    const catalog = await current[0]!.execute({}, signal, call);
+    expect(catalog).toContain("mira_new");
+    expect(catalog).not.toContain("mira_old");
+    expect(() =>
+        current[1]!.execute({ name: "mira_old", arguments: {} }, signal, call)
+    ).toThrow(/not available/);
+    expect(
+        await current[1]!.execute(
+            { name: "mira_new", arguments: { value: "synthetic" } },
+            signal,
+            call
+        )
+    ).toBe("verified");
+    expect(seen).toEqual([{ input: { value: "synthetic" }, call }]);
+    const cancelled = AbortSignal.abort();
+    expect(() => current[0]!.execute({}, cancelled, call)).toThrow();
+});
+
+test("resuming an existing conversation applies the current trusted server instructions", async () => {
+    const runtime = await CodexRuntime.connect(options());
+    const requests = spyOn(RpcProcess.prototype, "request");
+    try {
+        const thread = await runtime.startThread(
+            "synthetic",
+            process.cwd(),
+            [],
+            "Original server policy."
+        );
+        await runtime.resumeThread(
+            thread,
+            [],
+            "Current server policy and tool discovery."
+        );
+        expect(
+            requests.mock.calls.find(([method]) => method === "thread/resume")?.[1]
+        ).toMatchObject({
+            threadId: thread,
+            developerInstructions: "Current server policy and tool discovery.",
+            sandbox: "read-only",
+            approvalPolicy: "untrusted",
+        });
+        const result = await runtime.turn(thread, "Continue");
+        expect(result.status).toBe("completed");
+    } finally {
+        requests.mockRestore();
+        await runtime.close();
+    }
+});
+
+test("pre-router conversations retain current direct handlers when their provider catalog cannot change", async () => {
+    const runtime = await CodexRuntime.connect(options("tool-ok"));
+    let oldCalls = 0;
+    let currentCalls = 0;
+    try {
+        const legacy = {
+            name: "echo",
+            description: "Legacy direct tool",
+            inputSchema: {},
+            execute: () => {
+                oldCalls++;
+                return Promise.resolve("old handler");
+            },
+        };
+        const thread = await runtime.startThread("synthetic", process.cwd(), [legacy]);
+        await runtime.resumeThread(
+            thread,
+            createMiraToolRouter(
+                [
+                    {
+                        ...legacy,
+                        execute: () => {
+                            currentCalls++;
+                            return Promise.resolve("current fenced handler");
+                        },
+                    },
+                ],
+                true
+            ),
+            "Use the supplied direct tools if discovery is not offered."
+        );
+        const result = await runtime.turn(thread, "Use the original direct echo tool");
+        expect(result.text).toContain("current fenced handler");
+        expect(currentCalls).toBe(1);
+        expect(oldCalls).toBe(0);
+        expect(createMiraToolRouter([legacy]).map((tool) => tool.name)).toEqual([
+            "mira_tools_list",
+            "mira_tool_call",
+        ]);
     } finally {
         await runtime.close();
     }

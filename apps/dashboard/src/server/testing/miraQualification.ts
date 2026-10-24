@@ -15,8 +15,13 @@ import {
     readConversation,
 } from "../../../../mira/src/server/data/conversations";
 import { saveMiraFile } from "../../../../mira/src/server/data/files";
-import { claimMiraRun } from "../../../../mira/src/server/data/queue";
+import {
+    claimMiraRun,
+    finishMiraRun,
+    renewMiraRun,
+} from "../../../../mira/src/server/data/queue";
 import { cleanupMiraConversations } from "../../../../mira/src/server/executor/cleanup";
+import { createMiraTools } from "../../../../mira/src/server/executor/tools";
 import { executeMiraTurn } from "../../../../mira/src/server/executor/turn";
 import { CodexRuntime } from "../../../../mira/src/server/runtime/codexRuntime";
 import { pilotArguments } from "../../../../mira/src/server/runtime/configuration";
@@ -74,7 +79,7 @@ export async function main(): Promise<void> {
         owner: "synthetic-qualification",
         actor: "human:synthetic-qualification",
     };
-    let conversationId: string | undefined;
+    const conversationIds: string[] = [];
     try {
         await migrateDashboard(database);
         const marker = crypto.randomUUID();
@@ -95,7 +100,7 @@ export async function main(): Promise<void> {
             context,
             "Synthetic product qualification"
         );
-        conversationId = conversation.id;
+        conversationIds.push(conversation.id);
         const turn = async (text: string, attachmentIds: string[] = []) => {
             await database.client.begin((query) =>
                 enqueueTurn(query, context, {
@@ -200,11 +205,102 @@ export async function main(): Promise<void> {
             await runtime.close();
         }
         process.stdout.write("Passed product and provider conversation deletion.\n");
+        const legacy = await createConversation(
+            context,
+            "Synthetic pre-router conversation"
+        );
+        conversationIds.push(legacy.id);
+        const legacyMarker = crypto.randomUUID();
+        const firstLegacyText = `Call mira_tasks_list once with an empty search. Remember this synthetic marker: ${legacyMarker}. Reply with the marker.`;
+        await database.client.begin((query) =>
+            enqueueTurn(query, context, {
+                conversationId: legacy.id,
+                requestId: crypto.randomUUID(),
+                text: firstLegacyText,
+                attachmentIds: [],
+            })
+        );
+        const legacyRun = await claimMiraRun(
+            database.client,
+            crypto.randomUUID(),
+            "foreground"
+        );
+        assert.ok(legacyRun);
+        const legacyRuntime = await CodexRuntime.connect({
+            command: config.command,
+            args: pilotArguments(),
+            cwd: config.workspace,
+            env: runtimeEnvironment(config),
+        });
+        const renewing = setInterval(() => {
+            void renewMiraRun(database.client, legacyRun).catch(() => {});
+        }, 5000);
+        try {
+            const catalog = await legacyRuntime.models();
+            const model = config.model ?? catalog.find((entry) => entry.isDefault)!.model;
+            const thread = await legacyRuntime.startThread(
+                model,
+                config.workspace,
+                createMiraTools(database.client, legacyRun, directory),
+                "This is a synthetic legacy qualification. Use only the supplied named product tools and preserve the test marker. Do not use external services."
+            );
+            await database.client`UPDATE mira_conversations SET provider_thread = ${thread}, model = ${model} WHERE id = ${legacy.id}`;
+            const result = await legacyRuntime.turn(thread, firstLegacyText);
+            assert.equal(result.status, "completed");
+            assert.ok(result.text.includes(legacyMarker));
+            await finishMiraRun(database.client, legacyRun, {
+                state: result.status,
+                text: result.text,
+                message: null,
+                providerTurn: result.id,
+            });
+        } finally {
+            clearInterval(renewing);
+            await legacyRuntime.close();
+        }
+        await database.client.begin((query) =>
+            enqueueTurn(query, context, {
+                conversationId: legacy.id,
+                requestId: crypto.randomUUID(),
+                text: "Call mira_tasks_list again with an empty search using the tool offered in this conversation, then repeat the marker from the earlier message exactly.",
+                attachmentIds: [],
+            })
+        );
+        const resumedLegacy = await claimMiraRun(
+            database.client,
+            crypto.randomUUID(),
+            "foreground"
+        );
+        assert.ok(resumedLegacy);
+        await executeMiraTurn(
+            database.client,
+            config,
+            resumedLegacy,
+            new AbortController().signal,
+            directory
+        );
+        const legacyResult = await readConversation(context, legacy.id);
+        assert.equal(legacyResult.run?.state, "completed");
+        assert.ok(
+            legacyResult.messages.at(-1)?.content.includes(legacyMarker),
+            "Legacy resume lost the original conversation marker."
+        );
+        const legacyReceipts = await database.client<
+            { tool: string }[]
+        >`SELECT tool FROM mira_tool_receipts WHERE run_id = ${resumedLegacy.id} AND state = 'succeeded'`;
+        assert.ok(
+            legacyReceipts.some((receipt) => receipt.tool === "mira_tasks_list"),
+            "Resumed legacy thread lost direct product tool access."
+        );
+        process.stdout.write(
+            "Passed pre-router conversation continuation with its persisted direct tool catalog and current fenced handlers.\n"
+        );
     } finally {
         try {
-            if (conversationId) {
+            if (conversationIds.length > 0) {
                 // Keep provider cleanup retryable even if a qualification assertion fails.
-                await database.client`UPDATE mira_conversations SET deleted_at = coalesce(deleted_at,now()) WHERE id = ${conversationId}`;
+                for (const conversationId of conversationIds)
+                    await database.client`UPDATE mira_conversations SET deleted_at = coalesce(deleted_at,now()) WHERE id = ${conversationId}`;
                 const runtime = await CodexRuntime.connect({
                     command: config.command,
                     args: pilotArguments(),
