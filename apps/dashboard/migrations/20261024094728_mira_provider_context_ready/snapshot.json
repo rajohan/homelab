@@ -1,0 +1,42 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "85eebae2-f389-41ab-b7e8-46159ba97cfd",
+    "prevIds": ["720257f3-29a6-4257-b147-63426b6eb1de"],
+    "footprints": [
+        {
+            "statementType": "add_column",
+            "statementTarget": [
+                "column",
+                "public",
+                "mira_conversations",
+                "provider_context_ready"
+            ],
+            "writes": [
+                "s|col|public.mira_conversations.provider_context_ready",
+                "n|col|public.mira_conversations.provider_context_ready",
+                "e|col|public.mira_conversations.provider_context_ready"
+            ],
+            "reads": ["n|tbl|public.mira_conversations", "n|sch|public"]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_conversations",
+                "name": "provider_context_ready",
+                "type": "boolean",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "false",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        }
+    ]
+}

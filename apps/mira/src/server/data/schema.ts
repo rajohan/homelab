@@ -29,6 +29,7 @@ export const miraConversations = pgTable(
         title: text().notNull(),
         version: integer().notNull().default(1),
         providerThread: text("provider_thread"),
+        providerContextReady: boolean("provider_context_ready").notNull().default(false),
         model: text(),
         settings: jsonb()
             .$type<MiraChatSettings>()

@@ -160,6 +160,15 @@ test("heartbeat reports stay quiet for unchanged observations and intentional pa
         expect(
             await listNotifications(fixture.client, "human:operator", page)
         ).toMatchObject({ unreadCount: 2 });
+        await fixture.client`INSERT INTO operation_snapshots (key,value,captured_at) VALUES ('synthetic.observation','{}'::jsonb,now())`;
+        await complete(await next());
+        expect(
+            await listNotifications(fixture.client, "human:operator", page)
+        ).toMatchObject({ unreadCount: 3 });
+        await complete(await next());
+        expect(
+            await listNotifications(fixture.client, "human:operator", page)
+        ).toMatchObject({ unreadCount: 3 });
         const running = await next();
         await api.controls.setEnabled({
             key: `automation:${automation.id}`,
@@ -175,7 +184,7 @@ test("heartbeat reports stay quiet for unchanged observations and intentional pa
         });
         expect(
             await listNotifications(fixture.client, "human:operator", page)
-        ).toMatchObject({ unreadCount: 2 });
+        ).toMatchObject({ unreadCount: 3 });
         expect(
             await listNotifications(fixture.client, "human:other", page)
         ).toMatchObject({ unreadCount: 0 });
