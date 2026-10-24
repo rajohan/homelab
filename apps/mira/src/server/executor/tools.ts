@@ -55,7 +55,7 @@ const object = (properties: Record<string, unknown>, required: string[] = []) =>
  * @param client - Dedicated executor database pool.
  * @param run - Currently leased invocation; models cannot replace its owner or grants.
  * @param filesDirectory - Explicit shared file volume, scoped by selected message attachments.
- * @param agentMail - Optional provisioned inbox, rechecked by each read-only mail tool.
+ * @param agentMail - Optional provisioned inbox for checked mail reads and local drafts; sending requires separate human approval.
  * @returns The fixed tool declarations for this conversation and their checked handlers.
  */
 export function createMiraTools(
