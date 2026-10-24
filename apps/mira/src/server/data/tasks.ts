@@ -9,7 +9,6 @@ import {
     miraTransaction,
     auditMira,
     MiraFailure,
-    requireConversation,
     requireTask,
     type MiraContext,
 } from "./context";
@@ -64,8 +63,23 @@ export async function saveTask(
     input: MiraTaskInput & { id?: string; version?: number }
 ) {
     return miraTransaction(context, async (query) => {
-        await requireConversation(query, context.owner, input.conversationId);
         const id = input.id ?? Bun.randomUUIDv7();
+        if (input.conversationId) {
+            // Serialize linking with chat admission before changing the task or adopting runs.
+            const [conversation] = await query<
+                { id: string }[]
+            >`SELECT id FROM mira_conversations WHERE id=${input.conversationId} AND owner=${context.owner} AND deleted_at IS NULL FOR UPDATE`;
+            if (!conversation)
+                throw new MiraFailure("NOT_FOUND", "Conversation not found.");
+            const [conflict] = await query<
+                { id: string }[]
+            >`SELECT t.id FROM mira_tasks t WHERE t.owner=${context.owner} AND t.id<>${id} AND ((t.deleted_at IS NULL AND t.conversation_id=${input.conversationId}) OR EXISTS (SELECT 1 FROM mira_runs r WHERE r.owner=${context.owner} AND r.conversation_id=${input.conversationId} AND r.task_id=t.id)) LIMIT 1`;
+            if (conflict)
+                throw new MiraFailure(
+                    "CONFLICT",
+                    "This conversation already belongs to another task. Choose a separate conversation."
+                );
+        }
         const due = input.dueAt ? new Date(input.dueAt) : null;
         if (input.id) {
             const rows = await query<
@@ -79,6 +93,8 @@ export async function saveTask(
         } else {
             await query`INSERT INTO mira_tasks (id, owner, title, description, status, assignee, priority, labels, due_at, completion_criteria, conversation_id) VALUES (${id}, ${context.owner}, ${input.title}, ${input.description}, ${input.status}, ${input.assignee}, ${input.priority}, ${JSON.stringify(input.labels)}::text::jsonb, ${due}, ${input.completionCriteria}, ${input.conversationId})`;
         }
+        if (input.conversationId)
+            await query`UPDATE mira_runs SET task_id=${id} WHERE owner=${context.owner} AND conversation_id=${input.conversationId} AND task_id IS NULL`;
         await auditMira(query, context, input.id ? "task.updated" : "task.created", id);
         return { id };
     });

@@ -72,7 +72,7 @@ export async function decideMiraProposal(
         if (!link) throw new MiraFailure("NOT_FOUND", "Proposed change not found.");
         const [conversation] = await query<
             { id: string }[]
-        >`SELECT id FROM mira_conversations WHERE id=${link.conversationId} AND owner=${context.owner} AND deleted_at IS NULL FOR SHARE`;
+        >`SELECT id FROM mira_conversations WHERE id=${link.conversationId} AND owner=${context.owner} AND deleted_at IS NULL FOR UPDATE`;
         if (!conversation) throw new MiraFailure("NOT_FOUND", "Conversation not found.");
         const [proposal] = await query<
             {

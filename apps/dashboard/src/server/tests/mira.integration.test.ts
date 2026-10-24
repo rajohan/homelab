@@ -958,7 +958,13 @@ test("linked chat cannot race task admission or overlap work in another conversa
             version: 2,
             conversationId: chat.id,
         });
-        const second = await api.tasks.create({ ...task, conversationId: chat.id });
+        await rejects(
+            api.tasks.create({ ...task, conversationId: chat.id }),
+            /already belongs/
+        );
+        const second = await api.tasks.create(task);
+        // Legacy ambiguous links still fail closed, although the editor no longer creates them.
+        await database.client`UPDATE mira_tasks SET conversation_id=${chat.id} WHERE id=${second.id}`;
         await rejects(api.conversations.send(input), /multiple tasks/);
         await rejects(
             api.tasks.run({ id: saved.id, version: 3, requestId: Bun.randomUUIDv7() }),
@@ -1020,10 +1026,12 @@ test("automatic task conversations retain admission after uncertainty, relinking
         history = await api.tasks.execution({ id: saved.id });
         expect(history.rows.map((run) => run.id)).toContain(continued.id);
         await api.runs.cancel({ id: continued.id });
-        const unrelated = await api.tasks.create({
-            ...task,
-            conversationId: initial.conversationId,
-        });
+        await rejects(
+            api.tasks.create({ ...task, conversationId: initial.conversationId }),
+            /already belongs/
+        );
+        const unrelated = await api.tasks.create(task);
+        await database.client`UPDATE mira_tasks SET conversation_id=${initial.conversationId} WHERE id=${unrelated.id}`;
         await rejects(
             api.conversations.send({ ...input, requestId: crypto.randomUUID() }),
             /multiple tasks/
@@ -1039,6 +1047,116 @@ test("automatic task conversations retain admission after uncertainty, relinking
             api.conversations.send({ ...input, requestId: crypto.randomUUID() }),
             /deleted task/
         );
+    } finally {
+        await database.close();
+    }
+});
+
+test.each(["queued", "running", "needs_attention", "unknown receipt"])(
+    "linking a task adopts pre-link %s runs before admission",
+    async (state) => {
+        const database = await fixture();
+        try {
+            const api = database.caller().mira;
+            const chat = await api.conversations.create({
+                title: "Existing ordinary work",
+            });
+            const first = await api.conversations.send({
+                conversationId: chat.id,
+                requestId: crypto.randomUUID(),
+                text: "Inspect before linking",
+            });
+            if (state === "running")
+                await claimMiraRun(database.client, crypto.randomUUID(), "foreground");
+            if (state === "needs_attention" || state === "unknown receipt") {
+                await api.runs.cancel({ id: first.id });
+                await (state === "needs_attention"
+                    ? database.client`UPDATE mira_runs SET state='needs_attention' WHERE id=${first.id}`
+                    : database.client`INSERT INTO mira_tool_receipts (id,run_id,call_id,tool,input_hash,state) VALUES (${Bun.randomUUIDv7()},${first.id},'uncertain','synthetic','synthetic','unknown')`);
+            }
+            const saved = await api.tasks.create({
+                ...task,
+                conversationId: chat.id,
+                dueAt: new Date(Date.now() - 1000).toISOString(),
+            });
+            const automation = await api.automations.create({
+                title: "Due task",
+                prompt: "Review",
+                kind: "custom",
+                schedule: { kind: "event", event: "task_due" },
+                budgetSeconds: 60,
+            });
+            await api.controls.setEnabled({
+                key: `automation:${automation.id}`,
+                version: 1,
+                enabled: true,
+                reason: null,
+                until: null,
+            });
+            const history = await api.tasks.execution({ id: saved.id });
+            expect(history.rows.map((run) => run.id)).toEqual([first.id]);
+            expect(history.rows[0]?.taskId).toBe(saved.id);
+            expect(await scheduleMiraRuns(database.client)).toBe(0);
+            const start = { id: saved.id, version: 1, requestId: crypto.randomUUID() };
+            await rejects(
+                api.tasks.run(start),
+                /current task run|Review the uncertain run/
+            );
+            if (["needs_attention", "unknown receipt"].includes(state)) {
+                expect(history.reviewRunId).toBe(first.id);
+                const resumed = await api.tasks.run({
+                    ...start,
+                    reviewedRunId: first.id,
+                });
+                expect(resumed.conversationId).toBe(chat.id);
+            }
+            await rejects(
+                database
+                    .caller("other")
+                    .mira.tasks.create({ ...task, conversationId: chat.id }),
+                /not found/
+            );
+        } finally {
+            await database.close();
+        }
+    }
+);
+
+test("linking and ordinary send serialize without losing task history", async () => {
+    const database = await fixture();
+    try {
+        const api = database.caller().mira;
+        const chat = await api.conversations.create({ title: "Concurrent link" });
+        const saved = await api.tasks.create(task);
+        const [linked, sent] = await Promise.all([
+            api.tasks.update({
+                ...task,
+                id: saved.id,
+                version: 1,
+                conversationId: chat.id,
+            }),
+            api.conversations.send({
+                conversationId: chat.id,
+                requestId: crypto.randomUUID(),
+                text: "Inspect",
+            }),
+        ]);
+        expect(linked.id).toBe(saved.id);
+        const history = await api.tasks.execution({ id: saved.id });
+        expect(history.rows.map((run) => run.id)).toEqual([sent.id]);
+        const empty = await api.tasks.create(task);
+        await rejects(
+            api.tasks.update({
+                ...task,
+                id: empty.id,
+                version: 1,
+                conversationId: chat.id,
+            }),
+            /already belongs/
+        );
+        const unchanged = await api.tasks.execution({ id: empty.id });
+        expect(unchanged.rows).toHaveLength(0);
+        expect(unchanged.conversationId).toBeNull();
     } finally {
         await database.close();
     }
