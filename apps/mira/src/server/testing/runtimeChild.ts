@@ -167,6 +167,16 @@ for await (const line of reader) {
             result: { data: [{ model: "synthetic", isDefault: true }], nextCursor: null },
         });
     } else if (message.method === "thread/start" || message.method === "thread/resume") {
+        if (message.method === "thread/resume" && mode.startsWith("resume-missing")) {
+            write({
+                id: message.id,
+                error: {
+                    code: -32_600,
+                    message: `no rollout found for thread id ${mode === "resume-missing-other" ? "another-thread" : String(message.params.threadId)}`,
+                },
+            });
+            continue;
+        }
         write({
             id: message.id,
             result: {
@@ -255,6 +265,7 @@ for await (const line of reader) {
             });
         }
         let text = mode === "failed" ? "" : "Synthetic response";
+        if (mode === "resume-missing") text = JSON.stringify(message.params.input);
         if (mode === "settings-activity")
             text = JSON.stringify({
                 model: message.params.model,

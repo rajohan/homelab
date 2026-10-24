@@ -11,6 +11,7 @@ import {
     pilotArguments,
     pilotEnvironment,
 } from "./configuration";
+import { RuntimeResponseError } from "./responseError";
 import { RpcProcess } from "./rpcProcess";
 import { createMiraToolRouter } from "./toolRouter";
 
@@ -28,6 +29,22 @@ const options = (mode = "ok") => ({
 });
 
 describe("Mira runtime transport", () => {
+    test.each(["resume-missing", "resume-missing-other"])(
+        "classifies only the exact missing resume reference for %s",
+        async (mode) => {
+            const runtime = await CodexRuntime.connect(options(mode));
+            try {
+                await rejects(
+                    runtime.resumeThread("stored-thread", []),
+                    (error: unknown) =>
+                        error instanceof RuntimeResponseError &&
+                        error.threadMissing === (mode === "resume-missing")
+                );
+            } finally {
+                await runtime.close();
+            }
+        }
+    );
     test.each(["ok", "delete-missing", "delete-other-error"])(
         "handles %s deletion receipts without concealing unrelated failures",
         async (mode) => {

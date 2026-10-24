@@ -14,6 +14,7 @@ import {
 import type { AgentMailReadConfiguration } from "../integrations/agentmail/configuration";
 import { CodexRuntime } from "../runtime/codexRuntime";
 import { pilotArguments, type PilotConfig } from "../runtime/configuration";
+import { RuntimeResponseError } from "../runtime/responseError";
 import { createMiraToolRouter } from "../runtime/toolRouter";
 import { prepareMiraAttachments } from "./attachments";
 import { readMiraTurnInput } from "./context";
@@ -99,7 +100,7 @@ export async function executeMiraTurn(
     }, 250);
     try {
         signal.throwIfAborted();
-        const record = await readMiraTurnInput(client, run);
+        let record = await readMiraTurnInput(client, run);
         runtime = await CodexRuntime.connect({
             command: config.command,
             args: pilotArguments(),
@@ -135,8 +136,24 @@ export async function executeMiraTurn(
                 "The selected model does not support images. Choose another model in Chat settings."
             );
         let threadId = record.providerThread;
-        if (threadId) await runtime.resumeThread(threadId, tools, instructions);
-        else {
+        if (threadId) {
+            try {
+                await runtime.resumeThread(threadId, tools, instructions);
+            } catch (error) {
+                if (!(error instanceof RuntimeResponseError) || !error.threadMissing)
+                    throw error;
+                const cleared = await client<
+                    { id: string }[]
+                >`UPDATE mira_conversations SET provider_thread=NULL,provider_context_ready=false WHERE id=${run.conversationId} AND owner=${run.owner} AND provider_thread=${threadId} AND EXISTS (SELECT 1 FROM mira_runs WHERE id=${run.id} AND state='running' AND NOT cancel_requested AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp()) RETURNING id`;
+                if (!cleared[0])
+                    throw new Error("Run lease lost during conversation recovery.", {
+                        cause: error,
+                    });
+                record = await readMiraTurnInput(client, run);
+                threadId = null;
+            }
+        }
+        if (!threadId) {
             const model = settings.model;
             threadId = await runtime.startThread(
                 model,

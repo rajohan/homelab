@@ -192,3 +192,59 @@ test("heartbeat reports stay quiet for unchanged observations and intentional pa
         await fixture.close();
     }
 });
+
+test.each([false, true])(
+    "interrupted automatic work is attention-worthy unless explicitly cancelled (%s)",
+    async (cancelled) => {
+        const fixture = await operationFixture();
+        const api = appRouter.createCaller({
+            operations: fixture,
+            principal: { kind: "human", id: "operator", capabilities },
+        }).mira;
+        try {
+            const automation = await api.automations.create({
+                title: "Interrupted automation",
+                prompt: "Synthetic",
+                kind: "custom",
+                delivery: "changes",
+                budgetSeconds: 60,
+                schedule: { kind: "interval", intervalSeconds: 60 },
+            });
+            await api.controls.setEnabled({
+                key: `automation:${automation.id}`,
+                version: 1,
+                enabled: true,
+                reason: null,
+                until: null,
+            });
+            await fixture.client`UPDATE mira_automations SET next_run_at=now()-interval '1 minute' WHERE id=${automation.id}`;
+            expect(await scheduleMiraRuns(fixture.client)).toBe(1);
+            const run = await claimMiraRun(
+                fixture.client,
+                crypto.randomUUID(),
+                "general"
+            );
+            if (!run) throw new Error("Expected run");
+            if (cancelled) await api.runs.cancel({ id: run.id });
+            await finishMiraRun(fixture.client, run, {
+                state: "interrupted",
+                text: "Partial work",
+                message: null,
+            });
+            const runs = await api.runs.list({ search: "", archived: false });
+            expect(runs.rows[0]?.state).toBe(
+                cancelled ? "interrupted" : "needs_attention"
+            );
+            if (!cancelled)
+                expect(runs.rows[0]?.message).toContain("interrupted before completing");
+            const notices = await listNotifications(
+                fixture.client,
+                "human:operator",
+                page
+            );
+            expect(notices.notifications).toHaveLength(cancelled ? 0 : 1);
+        } finally {
+            await fixture.close();
+        }
+    }
+);

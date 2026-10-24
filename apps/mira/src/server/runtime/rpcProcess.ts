@@ -101,16 +101,20 @@ export class RpcProcess {
                     new Error("Mira runtime request timed out; its outcome is unknown.")
                 );
             }, this.options.requestTimeoutMs ?? 30_000);
-            const deletion =
-                method === "thread/delete"
+            const threadLookup =
+                method === "thread/delete" || method === "thread/resume"
                     ? v.safeParse(v.object({ threadId: v.string() }), params)
                     : null;
+            const missingPrefix =
+                method === "thread/resume"
+                    ? "no rollout found for thread id "
+                    : "thread not found: ";
             this.pending.set(id, {
                 resolve,
                 reject,
                 timer,
-                missingThreadMessage: deletion?.success
-                    ? `thread not found: ${deletion.output.threadId}`
+                missingThreadMessage: threadLookup?.success
+                    ? `${missingPrefix}${threadLookup.output.threadId}`
                     : null,
             });
             try {
