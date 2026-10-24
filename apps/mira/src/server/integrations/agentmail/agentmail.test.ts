@@ -189,8 +189,10 @@ test("AgentMail reader rejects mismatched/blocked messages and keeps HTML as pas
     );
     const signal = new AbortController().signal;
     await rejects(reader.read(message.message_id, signal), /different message/);
-    result = { ...message, labels: ["received", "blocked"] };
-    await rejects(reader.read(message.message_id, signal), /not eligible/);
+    for (const label of ["blocked", "agent-armor-held"]) {
+        result = { ...message, labels: ["received", label] };
+        await rejects(reader.read(message.message_id, signal), /not eligible/);
+    }
     result = { ...message, html: '<img src="https://tracker.invalid">untrusted data' };
     expect(await reader.read(message.message_id, signal)).toMatchObject({
         format: "untrusted_html_text",
@@ -236,36 +238,52 @@ test("integration JSON bounds chunked and declared bodies and does not expose pr
     expect(await integrationJson(Response.json({ ok: true }), 20)).toEqual({ ok: true });
 });
 
-test("AgentMail recovery uses creation time across pages without sender-date query filters", async () => {
+test("AgentMail recovery follows receipt events, stops before old history and excludes held or deleted mail", async () => {
     const requests: URL[] = [];
     const received = "2026-10-24T09:05:00Z";
+    const event = (id: string, at: string) => ({
+        inbox_id: binding.inboxId,
+        message_id: id,
+        created_at: at,
+    });
     const request = Object.assign(
         (input: Parameters<typeof fetch>[0]) => {
             const url = new URL(input instanceof Request ? input.url : String(input));
             requests.push(url);
+            if (url.pathname.endsWith("/events"))
+                return Promise.resolve(
+                    Response.json(
+                        url.searchParams.has("page_token")
+                            ? {
+                                  events: [
+                                      event("normal", received),
+                                      event("normal", received),
+                                      event("held", received),
+                                      event("deleted", received),
+                                      event("old", "2026-10-20T00:00:00Z"),
+                                  ],
+                                  next_page_token: "ancient-history-never-requested",
+                              }
+                            : {
+                                  events: [event("future", "2026-10-24T11:00:00Z")],
+                                  next_page_token: "next",
+                              }
+                    )
+                );
+            const id = url.pathname.split("/").at(-1)!;
             return Promise.resolve(
-                Response.json(
-                    url.searchParams.has("page_token")
-                        ? {
-                              messages: [
-                                  {
-                                      ...message,
-                                      timestamp: "1999-01-01T00:00:00Z",
-                                      created_at: received,
-                                  },
-                              ],
-                          }
-                        : {
-                              messages: [
-                                  {
-                                      ...message,
-                                      timestamp: received,
-                                      created_at: "2026-10-20T00:00:00Z",
-                                  },
-                              ],
-                              next_page_token: "next",
-                          }
-                )
+                id === "deleted"
+                    ? new Response(null, { status: 404 })
+                    : Response.json({
+                          ...message,
+                          message_id: id,
+                          timestamp: "1999-01-01T00:00:00Z",
+                          created_at: received,
+                          labels:
+                              id === "held"
+                                  ? ["received", "agent-armor-held"]
+                                  : ["received"],
+                      })
             );
         },
         { preconnect: fetch.preconnect }
@@ -283,11 +301,56 @@ test("AgentMail recovery uses creation time across pages without sender-date que
         { ...window, cursor: first.next_page_token! },
         signal
     );
-    expect(next.messages).toHaveLength(1);
+    expect(next.messages.map((item) => item.message_id)).toEqual(["normal"]);
     expect(next.messages[0]?.created_at).toBe(received);
+    expect(next.next_page_token).toBeNull();
+    expect(requests).toHaveLength(5);
     expect(
-        requests.every(
-            (url) => !url.searchParams.has("after") && !url.searchParams.has("before")
-        )
+        requests
+            .filter((url) => url.pathname.endsWith("/events"))
+            .every(
+                (url) =>
+                    url.searchParams.get("ascending") === "false" &&
+                    url.searchParams.get("limit") === "25"
+            )
     ).toBe(true);
+    expect(
+        requests.some(
+            (url) => url.pathname.endsWith("/old") || url.pathname.endsWith("/future")
+        )
+    ).toBe(false);
+});
+
+test("AgentMail recovery rejects unordered and cross-inbox events before fetching mail", async () => {
+    let result: unknown = {
+        events: [
+            {
+                inbox_id: binding.inboxId,
+                message_id: "one",
+                created_at: "2026-10-24T09:00:00Z",
+            },
+            {
+                inbox_id: binding.inboxId,
+                message_id: "two",
+                created_at: "2026-10-24T09:01:00Z",
+            },
+        ],
+    };
+    const request = Object.assign(() => Promise.resolve(Response.json(result)), {
+        preconnect: fetch.preconnect,
+    });
+    const reader = new AgentMailReader({ ...binding, apiKey: "synthetic" }, request);
+    const window = { after: "2026-10-24T09:00:00Z", before: "2026-10-24T10:00:00Z" };
+    const signal = new AbortController().signal;
+    await rejects(reader.recover(window, signal), /unordered/);
+    result = {
+        events: [
+            {
+                inbox_id: "other@agentmail.to",
+                message_id: "one",
+                created_at: window.after,
+            },
+        ],
+    };
+    await rejects(reader.recover(window, signal), /different inbox/);
 });

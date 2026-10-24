@@ -5,6 +5,9 @@ import type { AgentMailReadConfiguration } from "./configuration";
 import {
     agentMailContentSchema,
     agentMailIdSchema,
+    agentMailEventPageSchema,
+    agentMailMessageSchema,
+    type AgentMailMessage,
     agentMailMessagePageSchema,
     ordinaryReceivedMail,
 } from "./schema";
@@ -29,12 +32,11 @@ export class AgentMailReader {
     private async get(
         suffix: string,
         query: URLSearchParams,
-        signal: AbortSignal
+        signal: AbortSignal,
+        missingAllowed = false
     ): Promise<unknown> {
         const inbox = encodeURIComponent(this.configuration.inboxId);
-        const url = new URL(
-            `https://api.agentmail.to/v0/inboxes/${inbox}/messages${suffix}`
-        );
+        const url = new URL(`https://api.agentmail.to/v0/inboxes/${inbox}${suffix}`);
         url.search = query.toString();
         const response = await this.request(url, {
             method: "GET",
@@ -45,6 +47,10 @@ export class AgentMailReader {
             redirect: "error",
             signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
         });
+        if (missingAllowed && response.status === 404) {
+            await response.body?.cancel();
+            return null;
+        }
         return integrationJson(response, 2_097_152);
     }
 
@@ -76,7 +82,7 @@ export class AgentMailReader {
         if (parsed.cursor) query.set("page_token", parsed.cursor);
         const result = v.parse(
             agentMailMessagePageSchema,
-            await this.get("", query, signal)
+            await this.get("/messages", query, signal)
         );
         if (
             result.messages.some(
@@ -88,37 +94,86 @@ export class AgentMailReader {
     }
 
     /**
-     * Scan a bounded inbox page and select receipt times without relying on sender-date filters.
-     * @param input - Durable receipt window and optional pagination cursor.
-     * @param signal - Service cancellation.
-     * @returns Eligible receipt-window metadata and the next cursor, including across empty pages.
+     * Recover from receipt-ordered inbox events, stopping at the saved receipt boundary.
+     * @param input - Durable receipt window and optional events pagination cursor.
+     * @param signal - Service cancellation; the complete page also has a 30-second budget.
+     * @returns Current eligible message metadata and a cursor only while recent events remain.
      */
     async recover(
         input: { after: string; before: string; cursor?: string | undefined },
         signal: AbortSignal
-    ) {
-        const query = new URLSearchParams({ limit: "100", labels: "received" });
-        if (input.cursor) query.set("page_token", input.cursor);
-        const page = v.parse(
-            agentMailMessagePageSchema,
-            await this.get("", query, signal)
-        );
-        if (
-            page.messages.some(
-                (message) => message.inbox_id !== this.configuration.inboxId
-            )
-        )
-            throw new Error("AgentMail returned a different inbox.");
+    ): Promise<{
+        messages: AgentMailMessage[];
+        next_page_token?: string | null | undefined;
+    }> {
         const after = Date.parse(input.after),
             before = Date.parse(input.before);
         if (!Number.isFinite(after) || !Number.isFinite(before) || after > before)
             throw new Error("Invalid recovery window.");
+        const bounded = AbortSignal.any([signal, AbortSignal.timeout(30_000)]);
+        const query = new URLSearchParams({ limit: "25", ascending: "false" });
+        if (input.cursor) query.set("page_token", input.cursor);
+        const page = v.parse(
+            agentMailEventPageSchema,
+            await this.get("/events", query, bounded)
+        );
+        let previous = Infinity;
+        for (const event of page.events) {
+            const at = Date.parse(event.created_at);
+            if (event.inbox_id !== this.configuration.inboxId)
+                throw new Error("AgentMail returned a different inbox.");
+            if (at > previous)
+                throw new Error("AgentMail returned unordered inbox events.");
+            previous = at;
+        }
+        const ids = [
+            ...new Set(
+                page.events
+                    .filter((event) => {
+                        const at = Date.parse(event.created_at);
+                        return at >= after && at <= before;
+                    })
+                    .map((event) => event.message_id)
+            ),
+        ];
+        const messages: AgentMailMessage[] = [];
+        // Five requests at a time bound API concurrency and keep the page inside its lease.
+        for (let offset = 0; offset < ids.length; offset += 5) {
+            bounded.throwIfAborted();
+            const batch = await Promise.all(
+                ids.slice(offset, offset + 5).map(async (id) => {
+                    const raw = await this.get(
+                        `/messages/${encodeURIComponent(id)}`,
+                        new URLSearchParams(),
+                        bounded,
+                        true
+                    );
+                    if (raw === null) return null;
+                    const message = v.parse(agentMailMessageSchema, raw);
+                    if (
+                        message.inbox_id !== this.configuration.inboxId ||
+                        message.message_id !== id
+                    )
+                        throw new Error("AgentMail returned a different message.");
+                    return message;
+                })
+            );
+            messages.push(
+                ...batch.filter((message): message is AgentMailMessage => {
+                    if (message === null) return false;
+                    const at = Date.parse(message.created_at);
+                    return at >= after && at <= before && ordinaryReceivedMail(message);
+                })
+            );
+        }
+        bounded.throwIfAborted();
         return {
-            ...page,
-            messages: page.messages.filter((message) => {
-                const at = Date.parse(message.created_at);
-                return at >= after && at <= before;
-            }),
+            messages,
+            next_page_token: page.events.some(
+                (event) => Date.parse(event.created_at) < after
+            )
+                ? null
+                : page.next_page_token,
         };
     }
 
@@ -132,7 +187,11 @@ export class AgentMailReader {
         const id = v.parse(agentMailIdSchema, messageId);
         const message = v.parse(
             agentMailContentSchema,
-            await this.get(`/${encodeURIComponent(id)}`, new URLSearchParams(), signal)
+            await this.get(
+                `/messages/${encodeURIComponent(id)}`,
+                new URLSearchParams(),
+                signal
+            )
         );
         if (message.inbox_id !== this.configuration.inboxId || message.message_id !== id)
             throw new Error("AgentMail returned a different message.");
