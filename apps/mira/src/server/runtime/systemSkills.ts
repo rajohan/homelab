@@ -1,7 +1,40 @@
-import { lstat, readFile, readdir } from "node:fs/promises";
+import { constants } from "node:fs";
+import { lstat, open, readdir } from "node:fs/promises";
 import path from "node:path";
 
 import manifest from "./systemSkills.json";
+
+async function skillDigest(file: string, maximum: number): Promise<string> {
+    // Inspect and read the same opened object. Never reopen a pathname after checking it.
+    const handle = await open(
+        file,
+        constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK
+    );
+    try {
+        const stat = await handle.stat();
+        if (!stat.isFile() || stat.size > maximum)
+            throw new Error("Invalid Mira system skills file.");
+        const contents = Buffer.alloc(maximum + 1);
+        let length = 0;
+        while (length < contents.length) {
+            const { bytesRead } = await handle.read(
+                contents,
+                length,
+                contents.length - length,
+                length
+            );
+            if (bytesRead === 0) break;
+            length += bytesRead;
+        }
+        if (length !== stat.size || length > maximum)
+            throw new Error("Mira system skills changed while being verified.");
+        return new Bun.CryptoHasher("sha256")
+            .update(contents.subarray(0, length))
+            .digest("hex");
+    } finally {
+        await handle.close();
+    }
+}
 
 /**
  * Reject custom or modified cached skills using the pinned upstream bundle manifest.
@@ -33,10 +66,10 @@ export async function assertSystemSkills(codexHome: string): Promise<void> {
         for (const entry of await readdir(directory, { withFileTypes: true })) {
             const name = prefix + entry.name;
             const file = path.join(directory, entry.name);
-            const entryStat = await lstat(file);
             if (!prefix && entry.name === ".codex-system-skills.marker") {
-                if (!entry.isFile() || entryStat.size > 128)
+                if (!entry.isFile())
                     throw new Error("Invalid Mira system skills marker.");
+                await skillDigest(file, 128);
                 continue;
             }
             const key = name + (entry.isDirectory() ? "/" : "");
@@ -44,10 +77,8 @@ export async function assertSystemSkills(codexHome: string): Promise<void> {
                 throw new Error("Mira runtime contains unrecognized system skills.");
             seen.add(key);
             if (entry.isDirectory() && expected[key] === null) await visit(file, key);
-            else if (entry.isFile() && entryStat.size <= 1_000_000) {
-                const digest = new Bun.CryptoHasher("sha256")
-                    .update(await readFile(file))
-                    .digest("hex");
+            else if (entry.isFile()) {
+                const digest = await skillDigest(file, 1_000_000);
                 if (digest !== expected[key])
                     throw new Error("Mira runtime contains modified system skills.");
             } else throw new Error("Mira system skills contain an unsupported entry.");
