@@ -15,7 +15,7 @@ import { MiraFailure, type MiraContext } from "../data/context";
 import { createReport, listMemory, listReports, saveMemory } from "../data/documents";
 import { readMiraFile } from "../data/files";
 import type { MiraClaim } from "../data/queue";
-import { addTaskProgress, listTasks, saveTask } from "../data/tasks";
+import { addTaskProgress, listTasks, readTask, saveTask } from "../data/tasks";
 import { readMiraPdf } from "../files/content";
 import type { RuntimeTool } from "../runtime/protocol";
 
@@ -137,6 +137,15 @@ export function createMiraTools(
             }),
             automatic: true,
             action: (input) => listTasks(context, v.parse(miraTaskFilterSchema, input)),
+        },
+        {
+            name: "mira_task_read",
+            description:
+                "Read one owned task by its exact ID, including the task referenced by a due event.",
+            inputSchema: object({ id: uuid }, ["id"]),
+            automatic: true,
+            action: (input) =>
+                readTask(context, v.parse(v.strictObject({ id: idSchema }), input).id),
         },
         {
             name: "mira_task_create",

@@ -57,7 +57,10 @@ for await (const line of reader) {
         write({
             id: message.id,
             result: {
-                codexHome: mode === "wrong-home" ? "/other-profile" : process.cwd(),
+                codexHome:
+                    mode === "wrong-home"
+                        ? "/other-profile"
+                        : (process.argv[3] ?? process.cwd()),
             },
         });
     } else if (message.method === "initialized") {
@@ -105,7 +108,12 @@ for await (const line of reader) {
             .filter((file) => file.endsWith("/SKILL.md"))
             .map((file) => ({
                 name: file.split("/")[0],
-                path: path.join(process.cwd(), "skills", ".system", file),
+                path: path.join(
+                    process.argv[3] ?? process.cwd(),
+                    "skills",
+                    ".system",
+                    file
+                ),
                 scope: "system",
                 enabled: true,
                 pluginId: null,

@@ -15,6 +15,22 @@ import {
 } from "./context";
 
 /**
+ * Read one exact owned task without scanning or depending on board pagination.
+ * @param context - Authenticated operator or run-scoped actor.
+ * @param id - Validated task identity, including a due-event reference.
+ * @returns The live task's bounded saved fields, or a not-found error.
+ */
+export async function readTask(context: MiraContext, id: string): Promise<MiraTask> {
+    const [task] = await context.client<MiraTask[]>`
+        SELECT id, title, description, status, assignee, priority, labels,
+            due_at::text AS "dueAt", completion_criteria AS "completionCriteria",
+            conversation_id AS "conversationId", version, created_at::text AS "createdAt", updated_at::text AS "updatedAt"
+        FROM mira_tasks WHERE id = ${id} AND owner = ${context.owner} AND deleted_at IS NULL`;
+    if (!task) throw new MiraFailure("NOT_FOUND", "Task not found.");
+    return task;
+}
+
+/**
  * Read one bounded task-board page, applying account and filter predicates first.
  * @param context - Authenticated product context.
  * @param input - Validated search, state, assignee and cursor.

@@ -42,9 +42,9 @@ const presets: {
 ];
 
 /**
- * Install recovered schedule definitions once, leaving activation to reviewed cutover.
+ * Install recovered schedule definitions into an empty collection, leaving activation paused.
  * @param context - Authenticated human owner of the restored automation collection.
- * @returns Number of definitions created; subsequent calls preserve edits and disable intent.
+ * @returns Number created; existing live automations preserve edits and disable intent.
  */
 export async function installMiraPresets(
     context: MiraContext
@@ -53,7 +53,7 @@ export async function installMiraPresets(
         await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:presets:${context.owner}`}, 0))`;
         const previous = await query<
             { id: string }[]
-        >`SELECT id FROM mira_audit WHERE owner = ${context.owner} AND action = 'presets.installed' LIMIT 1`;
+        >`SELECT id FROM mira_automations WHERE owner = ${context.owner} AND deleted_at IS NULL LIMIT 1`;
         if (previous[0]) return { created: 0 };
         for (const preset of presets) {
             const id = Bun.randomUUIDv7();
