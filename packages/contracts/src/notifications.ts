@@ -7,6 +7,8 @@ export const notificationDestinationSchema = v.picklist([
     "jobs",
     "applications",
     "infrastructure",
+    "mira",
+    "reports",
 ]);
 const boundedText = (maximum: number) =>
     v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(maximum));

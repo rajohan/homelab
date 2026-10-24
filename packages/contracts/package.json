@@ -13,7 +13,8 @@
         "./updates": "./src/updates.ts",
         "./tableSort": "./src/tableSort.ts",
         "./infrastructure": "./src/infrastructure.ts",
-        "./maintenance": "./src/maintenance.ts"
+        "./maintenance": "./src/maintenance.ts",
+        "./mira": "./src/mira.ts"
     },
     "dependencies": {
         "valibot": "1.5.0"

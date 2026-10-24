@@ -12,11 +12,13 @@ import { updatesRouter } from "../integrations/updates/routes";
 import { jobsRouter } from "../jobs/routes";
 import { schedulesRouter } from "../jobs/scheduleRoutes";
 import { workerRouter } from "../jobs/workerRoutes";
+import { miraRouter } from "../mira/routes";
 import { notificationsRouter } from "../notifications/routes";
 import { createSystemStatusLayer, readSystemStatus } from "./system";
 import { trpc } from "./trpc";
 
 export const appRouter = trpc.router({
+    mira: miraRouter,
     maintenance: maintenanceRouter,
     releases: releasesRouter,
     updates: updatesRouter,

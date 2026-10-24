@@ -27,9 +27,13 @@ const manifestSchema = v.object({
     platform: v.literal("linux/amd64"),
     images: v.pipe(
         v.array(
-            v.object({ app: v.picklist(["auth", "dashboard"]), reference: v.string() })
+            v.object({
+                app: v.picklist(["auth", "dashboard", "mira"]),
+                reference: v.string(),
+            })
         ),
-        v.length(2)
+        v.minLength(2),
+        v.maxLength(3)
     ),
 });
 const runsSchema = v.object({
@@ -132,7 +136,10 @@ export async function readHomelabRelease(
     );
     if (
         `v${manifest.version}` !== release.tag_name ||
-        new Set(manifest.images.map((image) => image.app)).size !== 2 ||
+        new Set(manifest.images.map((image) => image.app)).size !==
+            manifest.images.length ||
+        !manifest.images.some((image) => image.app === "auth") ||
+        !manifest.images.some((image) => image.app === "dashboard") ||
         !manifest.images.every(
             (image) =>
                 image.reference.startsWith(

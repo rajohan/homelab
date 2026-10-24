@@ -7,8 +7,12 @@
         "start": "NODE_ENV=production bun --cwd dist --no-env-file index.js"
     },
     "dependencies": {
+        "@dnd-kit/react": "0.5.1",
         "@headlessui/react": "2.2.10",
         "@homelab/contracts": "workspace:*",
+        "@homelab/mira": "workspace:*",
+        "@homelab/notifications": "workspace:*",
+        "@homelab/scheduling": "workspace:*",
         "@homelab/ui": "workspace:*",
         "@simplewebauthn/browser": "14.0.0",
         "@tanstack/react-form": "1.33.5",

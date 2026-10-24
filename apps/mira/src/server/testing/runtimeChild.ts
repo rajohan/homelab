@@ -57,7 +57,10 @@ for await (const line of reader) {
         write({
             id: message.id,
             result: {
-                codexHome: mode === "wrong-home" ? "/other-profile" : process.cwd(),
+                codexHome:
+                    mode === "wrong-home"
+                        ? "/other-profile"
+                        : (process.argv[3] ?? process.cwd()),
             },
         });
     } else if (message.method === "initialized") {
@@ -105,7 +108,12 @@ for await (const line of reader) {
             .filter((file) => file.endsWith("/SKILL.md"))
             .map((file) => ({
                 name: file.split("/")[0],
-                path: path.join(process.cwd(), "skills", ".system", file),
+                path: path.join(
+                    process.argv[3] ?? process.cwd(),
+                    "skills",
+                    ".system",
+                    file
+                ),
                 scope: "system",
                 enabled: true,
                 pluginId: null,
@@ -159,6 +167,16 @@ for await (const line of reader) {
             result: { data: [{ model: "synthetic", isDefault: true }], nextCursor: null },
         });
     } else if (message.method === "thread/start" || message.method === "thread/resume") {
+        if (message.method === "thread/resume" && mode.startsWith("resume-missing")) {
+            write({
+                id: message.id,
+                error: {
+                    code: -32_600,
+                    message: `no rollout found for thread id ${mode === "resume-missing-other" ? "another-thread" : String(message.params.threadId)}`,
+                },
+            });
+            continue;
+        }
         write({
             id: message.id,
             result: {
@@ -195,6 +213,21 @@ for await (const line of reader) {
                         : "openai",
             },
         });
+    } else if (message.method === "thread/delete") {
+        if (mode === "delete-missing")
+            write({
+                id: message.id,
+                error: {
+                    code: -32_600,
+                    message: `thread not found: ${String(message.params.threadId)}`,
+                },
+            });
+        else if (mode === "delete-other-error")
+            write({
+                id: message.id,
+                error: { code: -32_600, message: "thread not found: another-thread" },
+            });
+        else write({ id: message.id, result: {} });
     } else if (message.method === "turn/start") {
         activeTurn++;
         const turnId = `turn-${activeTurn}`;
@@ -217,7 +250,28 @@ for await (const line of reader) {
             });
             continue;
         }
-        const text = mode === "failed" ? "" : "Synthetic response";
+        if (mode === "settings-activity") {
+            write({
+                method: "item/started",
+                params: {
+                    threadId: "unrelated-thread",
+                    turnId,
+                    item: { type: "reasoning" },
+                },
+            });
+            write({
+                method: "item/started",
+                params: { threadId: "thread-test", turnId, item: { type: "reasoning" } },
+            });
+        }
+        let text = mode === "failed" ? "" : "Synthetic response";
+        if (mode === "resume-missing") text = JSON.stringify(message.params.input);
+        if (mode === "settings-activity")
+            text = JSON.stringify({
+                model: message.params.model,
+                effort: message.params.effort,
+                serviceTier: message.params.serviceTier,
+            });
         if (mode !== "wait") {
             write({
                 method: "item/agentMessage/delta",

@@ -7,6 +7,8 @@
 **/coverage
 **/.secrets
 **/data
+!apps/mira/src/server/data
+!apps/mira/src/server/data/**
 **/appdata
 **/backups
 !apps/dashboard/src/server/integrations/backups

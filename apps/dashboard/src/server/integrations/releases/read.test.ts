@@ -115,6 +115,18 @@ test("release reporting refuses changed tags, partial images and off-origin redi
         { tag: "c".repeat(40) },
         { manifest: { ...manifest, images: manifest.images.slice(0, 1) } },
         { manifest: { ...manifest, images: [manifest.images[0], manifest.images[0]] } },
+        {
+            manifest: {
+                ...manifest,
+                images: [
+                    manifest.images[0],
+                    {
+                        app: "mira",
+                        reference: `ghcr.io/demo/homelab/mira:0.8.0@sha256:${"b".repeat(64)}`,
+                    },
+                ],
+            },
+        },
         { manifest: { ...manifest, version: "0.9.0" } },
         { redirect: "https://untrusted.example/asset" },
     ]) {
@@ -133,6 +145,40 @@ test("release reporting refuses changed tags, partial images and off-origin redi
             client.requests.some((request) => request.url.includes("untrusted.example"))
         ).toBe(false);
     }
+});
+
+test("release evidence accepts the separately tested Mira image while retaining legacy releases", async () => {
+    const upgraded = {
+        ...manifest,
+        images: [
+            ...manifest.images,
+            {
+                app: "mira",
+                reference: `ghcr.io/demo/homelab/mira:0.8.0@sha256:${"c".repeat(64)}`,
+            },
+        ],
+    };
+    const client = fixture({
+        manifest: upgraded,
+        artifacts: [
+            {
+                ...evidence,
+                digest: `sha256:${new Bun.CryptoHasher("sha256").update(JSON.stringify(upgraded)).digest("hex")}`,
+            },
+        ],
+    });
+    const result = await readHomelabRelease(
+        "demo/homelab",
+        undefined,
+        AbortSignal.timeout(1000),
+        client.request
+    );
+    expect(result.verified).toBe(true);
+    expect(result.images.map((image) => image.app)).toEqual([
+        "auth",
+        "dashboard",
+        "mira",
+    ]);
 });
 
 test("a failed release build is reported without claiming the publication is verified", async () => {

@@ -147,6 +147,7 @@ export function createOperationsRuntime(
           )
         : undefined;
     return {
+        miraFilesDirectory: configuration.miraFilesDirectory,
         maintenanceTargets: configuration.maintenanceTargets ?? [],
         releaseRepository: configuration.releaseRepository,
         updateTargets: configuration.updateTargets ?? [],
@@ -163,6 +164,7 @@ export function createOperationsRuntime(
     };
 }
 export type OperationsRuntime = ReturnType<typeof connectDashboardDatabase> & {
+    readonly miraFilesDirectory?: string | undefined;
     readonly maintenanceTargets?: readonly MaintenanceTarget[];
     readonly releaseRepository?: string | undefined;
     readonly updateTargets?: readonly UpdateTarget[];

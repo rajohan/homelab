@@ -1,0 +1,89 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "02ba4ad0-eee1-45af-abbe-0a1ff084fe2d",
+    "prevIds": ["e108e083-38c9-4a55-86e1-2b8239d14b6a"],
+    "footprints": [
+        {
+            "statementType": "add_column",
+            "statementTarget": ["column", "public", "mira_conversations", "settings"],
+            "writes": [
+                "s|col|public.mira_conversations.settings",
+                "n|col|public.mira_conversations.settings",
+                "e|col|public.mira_conversations.settings"
+            ],
+            "reads": ["n|tbl|public.mira_conversations", "n|sch|public"]
+        },
+        {
+            "statementType": "add_column",
+            "statementTarget": ["column", "public", "mira_runs", "settings"],
+            "writes": [
+                "s|col|public.mira_runs.settings",
+                "n|col|public.mira_runs.settings",
+                "e|col|public.mira_runs.settings"
+            ],
+            "reads": ["n|tbl|public.mira_runs", "n|sch|public"]
+        },
+        {
+            "statementType": "add_column",
+            "statementTarget": ["column", "public", "mira_runtime_status", "models"],
+            "writes": [
+                "s|col|public.mira_runtime_status.models",
+                "n|col|public.mira_runtime_status.models",
+                "e|col|public.mira_runtime_status.models"
+            ],
+            "reads": ["n|tbl|public.mira_runtime_status", "n|sch|public"]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_conversations",
+                "name": "settings",
+                "type": "jsonb",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "'{\"model\":null,\"effort\":null,\"serviceTier\":null}'",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_runs",
+                "name": "settings",
+                "type": "jsonb",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "'{\"model\":null,\"effort\":null,\"serviceTier\":null}'",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_runtime_status",
+                "name": "models",
+                "type": "jsonb",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "'[]'",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        }
+    ]
+}

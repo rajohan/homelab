@@ -10,6 +10,10 @@ import {
     BellRing,
     Archive,
     PackageCheck,
+    MessageSquare,
+    ListTodo,
+    FileText,
+    Clock,
 } from "lucide-react";
 
 import { NavigationLink } from "./NavigationLink";
@@ -50,6 +54,30 @@ export function Sidebar({
                     to="/"
                     label="Overview"
                     icon={LayoutDashboard}
+                    onNavigate={onNavigate}
+                />
+                <NavigationLink
+                    to="/mira"
+                    label="Chat"
+                    icon={MessageSquare}
+                    onNavigate={onNavigate}
+                />
+                <NavigationLink
+                    to="/tasks"
+                    label="Tasks"
+                    icon={ListTodo}
+                    onNavigate={onNavigate}
+                />
+                <NavigationLink
+                    to="/reports"
+                    label="Reports"
+                    icon={FileText}
+                    onNavigate={onNavigate}
+                />
+                <NavigationLink
+                    to="/mira-automations"
+                    label="Automations"
+                    icon={Clock}
                     onNavigate={onNavigate}
                 />
                 <NavigationLink
