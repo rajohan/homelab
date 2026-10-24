@@ -35,6 +35,9 @@ export const agentMailEventPageSchema = v.object({
         v.array(
             v.object({
                 event_id: agentMailIdSchema,
+                event_type: v.pipe(v.string(), v.maxLength(100)),
+                label: v.pipe(v.string(), v.maxLength(100)),
+                event_at: v.pipe(v.string(), v.isoTimestamp()),
                 inbox_id: agentMailIdSchema,
                 message_id: agentMailIdSchema,
                 created_at: v.pipe(v.string(), v.isoTimestamp()),

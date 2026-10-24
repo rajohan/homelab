@@ -109,3 +109,7 @@ Release/event freshness is stored separately from original receipt-time pause
 eligibility, so a newly released older message can be reviewed without reviving mail
 received during a deliberate pause. Read-only provider failures remain retryable and
 do not fence unrelated product tools as uncertain external mutations.
+
+Recovery only admits received-label additions and held-label removals backed by a
+release override. Unrelated label changes never refresh a message's availability;
+ordinary received mail retains its original receipt age.

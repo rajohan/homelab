@@ -263,6 +263,9 @@ test("AgentMail recovery checkpoints event IDs despite nonmonotonic dates and re
     const received = "2026-10-24T09:05:00Z";
     const event = (id: string, at: string) => ({
         event_id: `event-${id}`,
+        event_type: id === "released" ? "label.removed" : "label.added",
+        label: id === "released" ? "agent-armor-held" : "received",
+        event_at: at,
         inbox_id: binding.inboxId,
         message_id: id,
         created_at: at,
@@ -300,6 +303,15 @@ test("AgentMail recovery checkpoints event IDs despite nonmonotonic dates and re
                     : Response.json({
                           ...message,
                           message_id: id,
+                          ...(id === "released"
+                              ? {
+                                    agent_armor: {
+                                        status: "complete",
+                                        verdict: "review",
+                                        manual_override: { released_at: received },
+                                    },
+                                }
+                              : {}),
                           timestamp: "1999-01-01T00:00:00Z",
                           created_at:
                               id === "released" ? "2026-10-22T09:00:00Z" : received,
@@ -350,6 +362,9 @@ test("AgentMail recovery rejects cross-inbox events before fetching mail", async
                     events: [
                         {
                             event_id: "event-one",
+                            event_type: "label.added",
+                            label: "received",
+                            event_at: "2026-10-24T09:00:00Z",
                             inbox_id: "other@agentmail.to",
                             message_id: "one",
                             created_at: "2026-10-24T09:00:00Z",
@@ -401,4 +416,54 @@ test("webhooks defer pending and rejected scans and preserve a fresh release sep
         observedAt: new Date("2026-10-20T00:00:00Z"),
         availableAt: new Date(releasedAt),
     });
+});
+
+test("recovery ignores unrelated label changes and does not refresh original receipt age", async () => {
+    const fetched: string[] = [];
+    const fresh = "2026-10-24T10:00:00Z",
+        old = "2026-10-20T10:00:00Z";
+    const request = Object.assign(
+        (input: Parameters<typeof fetch>[0]) => {
+            const url = new URL(input instanceof Request ? input.url : String(input));
+            if (url.pathname.endsWith("/events"))
+                return Promise.resolve(
+                    Response.json({
+                        events: [
+                            {
+                                event_id: "unrelated-newest",
+                                event_type: "label.added",
+                                label: "important",
+                                event_at: fresh,
+                                created_at: fresh,
+                                inbox_id: binding.inboxId,
+                                message_id: "unrelated",
+                            },
+                            {
+                                event_id: "receipt-relabel",
+                                event_type: "label.added",
+                                label: "received",
+                                event_at: fresh,
+                                created_at: fresh,
+                                inbox_id: binding.inboxId,
+                                message_id: "old",
+                            },
+                        ],
+                    })
+                );
+            const id = url.pathname.split("/").at(-1)!;
+            fetched.push(id);
+            return Promise.resolve(
+                Response.json({ ...message, message_id: id, created_at: old })
+            );
+        },
+        { preconnect: fetch.preconnect }
+    );
+    const reader = new AgentMailReader({ ...binding, apiKey: "synthetic" }, request);
+    const result = await reader.recover(
+        { after: "2026-10-24T09:00:00Z", before: fresh },
+        new AbortController().signal
+    );
+    expect(fetched).toEqual(["old"]);
+    expect(result.head).toBe("unrelated-newest");
+    expect(result.messages[0]?.event_created_at).toBe(old);
 });

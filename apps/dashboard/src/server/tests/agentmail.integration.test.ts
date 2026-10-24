@@ -824,6 +824,9 @@ test.each([false, true])(
                                       events: [
                                           {
                                               event_id: "release-event",
+                                              event_type: "label.removed",
+                                              label: "agent-armor-held",
+                                              event_at: release,
                                               inbox_id: binding.inboxId,
                                               message_id: "released",
                                               created_at: release,
@@ -909,6 +912,9 @@ test("pending Monitor scans retain recovery position until metadata is clear", a
                                   events: [
                                       {
                                           event_id: "received-event",
+                                          event_type: "label.added",
+                                          label: "received",
+                                          event_at: received,
                                           inbox_id: binding.inboxId,
                                           message_id: "pending",
                                           created_at: received,
