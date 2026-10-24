@@ -59,7 +59,10 @@ remaining deliveries; this adapter cannot send mail.
 
 Provider declarations use stable discovery and invocation tools. Each resumed
 conversation receives the current trusted server instructions and resolves the
-current tool registry; adding an integration does not require a new conversation.
+current tool registry. Conversations created with the stable router can discover
+new integrations without a new conversation. Pre-router provider threads retain
+their original catalog and use compatible current direct handlers; their stored
+history and tool access remain intact, but newly added tools require a new chat.
 Underlying tools still enforce their own input schemas, owner, grants and durable
 call receipts.
 

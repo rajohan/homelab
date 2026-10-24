@@ -406,3 +406,47 @@ test("resuming an existing conversation applies the current trusted server instr
         await runtime.close();
     }
 });
+
+test("pre-router conversations retain current direct handlers when their provider catalog cannot change", async () => {
+    const runtime = await CodexRuntime.connect(options("tool-ok"));
+    let oldCalls = 0;
+    let currentCalls = 0;
+    try {
+        const legacy = {
+            name: "echo",
+            description: "Legacy direct tool",
+            inputSchema: {},
+            execute: () => {
+                oldCalls++;
+                return Promise.resolve("old handler");
+            },
+        };
+        const thread = await runtime.startThread("synthetic", process.cwd(), [legacy]);
+        await runtime.resumeThread(
+            thread,
+            createMiraToolRouter(
+                [
+                    {
+                        ...legacy,
+                        execute: () => {
+                            currentCalls++;
+                            return Promise.resolve("current fenced handler");
+                        },
+                    },
+                ],
+                true
+            ),
+            "Use the supplied direct tools if discovery is not offered."
+        );
+        const result = await runtime.turn(thread, "Use the original direct echo tool");
+        expect(result.text).toContain("current fenced handler");
+        expect(currentCalls).toBe(1);
+        expect(oldCalls).toBe(0);
+        expect(createMiraToolRouter([legacy]).map((tool) => tool.name)).toEqual([
+            "mira_tools_list",
+            "mira_tool_call",
+        ]);
+    } finally {
+        await runtime.close();
+    }
+});

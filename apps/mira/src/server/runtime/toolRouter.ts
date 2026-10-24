@@ -5,11 +5,20 @@ import type { RuntimeTool } from "./protocol";
 /**
  * Keep provider declarations stable while resolving the current server-side tool registry on every run.
  * @param tools - Scoped, audited handlers registered for this product run.
+ * @param includeLegacyHandlers - Accept persisted direct declarations when resuming pre-router threads.
  * @returns Discovery and invocation tools whose schemas remain valid through provider thread resume.
  */
-export function createMiraToolRouter(tools: RuntimeTool[]): RuntimeTool[] {
+export function createMiraToolRouter(
+    tools: RuntimeTool[],
+    includeLegacyHandlers = false
+): RuntimeTool[] {
     const registry = new Map(tools.map((tool) => [tool.name, tool]));
-    if (registry.size !== tools.length || tools.length > 100)
+    if (
+        registry.size !== tools.length ||
+        tools.length > 100 ||
+        registry.has("mira_tools_list") ||
+        registry.has("mira_tool_call")
+    )
         throw new Error("Mira tool registry is invalid.");
     return [
         {
@@ -59,5 +68,6 @@ export function createMiraToolRouter(tools: RuntimeTool[]): RuntimeTool[] {
                 return tool.execute(parsed.arguments, signal, call);
             },
         },
+        ...(includeLegacyHandlers ? tools : []),
     ];
 }
