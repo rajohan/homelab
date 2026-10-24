@@ -285,3 +285,50 @@ test("racing submission with file deletion cannot queue a missing attachment", a
         await rm(directory, { recursive: true, force: true });
     }
 });
+
+test("duplicate attachment IDs are rejected before a chat enters the queue", async () => {
+    const fixture = await operationFixture();
+    const directory = await mkdtemp(path.join(tmpdir(), "homelab-mira-duplicate-files-"));
+    const context = {
+        client: fixture.client,
+        owner: "operator",
+        actor: "human:operator",
+    };
+    const api = appRouter.createCaller({
+        operations: fixture,
+        principal: { kind: "human", id: "operator", capabilities },
+    }).mira;
+    try {
+        const file = await saveMiraFile(context, directory, {
+            id: crypto.randomUUID(),
+            name: "image.png",
+            bytes: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+        });
+        const chat = await api.conversations.create({ title: "Unique files" });
+        await rejects(
+            api.conversations.send({
+                conversationId: chat.id,
+                requestId: crypto.randomUUID(),
+                text: "Read the image",
+                attachmentIds: [file.id, file.id],
+            }),
+            /each file only once/
+        );
+        const rejected = await api.conversations.read({ id: chat.id });
+        expect(rejected.messages).toHaveLength(0);
+        expect(
+            await claimMiraRun(fixture.client, "duplicate-file-test", "foreground")
+        ).toBeNull();
+        await api.conversations.send({
+            conversationId: chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Read the image",
+            attachmentIds: [file.id],
+        });
+        const accepted = await api.conversations.read({ id: chat.id });
+        expect(accepted.messages[0]?.attachmentIds).toEqual([file.id]);
+    } finally {
+        await fixture.close();
+        await rm(directory, { recursive: true, force: true });
+    }
+});

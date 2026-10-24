@@ -797,8 +797,9 @@ test("heartbeat run history exposes owned failures without reports or paging thr
         const changed = await fingerprint();
         expect(changed).not.toBe(before);
         await fixture.client`INSERT INTO mira_runs ${fixture.client(row(Bun.randomUUIDv7(), "other", "failed"))}`;
-        await fixture.client`INSERT INTO mira_runs ${fixture.client(Array.from({ length: 40 }, () => row(Bun.randomUUIDv7(), "operator", "completed")))}`;
         expect(await fingerprint()).toBe(changed);
+        await fixture.client`INSERT INTO mira_runs ${fixture.client(Array.from({ length: 40 }, () => row(Bun.randomUUIDv7(), "operator", "completed")))}`;
+        expect(await fingerprint()).not.toBe(changed);
         const tool = createMiraTools(fixture.client, {
             ...run,
             automationId: crypto.randomUUID(),
@@ -1422,6 +1423,53 @@ test("heartbeat observations retain completed-task edits and control resume dead
         expect(await fingerprint()).not.toBe(beforeRename);
         await fixture.client`UPDATE mira_automations SET deleted_at=now() WHERE id=${automation}`;
         expect(await fingerprint()).toBe(extended);
+    } finally {
+        await fixture.close();
+    }
+});
+
+test("heartbeat fingerprints observe manual chat transitions and exclude their own successful runs", async () => {
+    const fixture = await operationFixture();
+    const api = appRouter.createCaller({
+        operations: fixture,
+        principal: { kind: "human", id: "operator", capabilities },
+    }).mira;
+    try {
+        const observationChat = await api.conversations.create({ title: "Observation" });
+        const observation = await api.conversations.send({
+            conversationId: observationChat.id,
+            requestId: crypto.randomUUID(),
+            text: "Observe",
+        });
+        const automation = crypto.randomUUID();
+        await fixture.client`INSERT INTO mira_automations(id,owner,title,prompt,kind,delivery,budget_seconds,schedule) VALUES (${automation},'operator','Synthetic','Observe','heartbeat','changes',60,'{}'::jsonb)`;
+        await fixture.client`UPDATE mira_runs SET automation_id=${automation} WHERE id=${observation.id}`;
+        const fingerprint = () =>
+            fixture.client.begin((query) =>
+                miraObservationFingerprint(query, "operator", observation.id)
+            );
+        const before = await fingerprint();
+        await fixture.client`UPDATE mira_runs SET state='running' WHERE id=${observation.id}`;
+        expect(await fingerprint()).toBe(before);
+        const chat = await api.conversations.create({ title: "Manual work" });
+        const run = await api.conversations.send({
+            conversationId: chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Work",
+        });
+        const queued = await fingerprint();
+        expect(queued).not.toBe(before);
+        await fixture.client`UPDATE mira_runs SET state='running' WHERE id=${run.id}`;
+        const running = await fingerprint();
+        expect(running).not.toBe(queued);
+        await fixture.client`UPDATE mira_runs SET state='completed' WHERE id=${run.id}`;
+        const completed = await fingerprint();
+        expect(completed).not.toBe(running);
+        expect(await fingerprint()).toBe(completed);
+        await fixture.client`UPDATE mira_runs SET automation_id=${automation} WHERE id=${run.id}`;
+        expect(await fingerprint()).toBe(before);
+        await fixture.client`UPDATE mira_runs SET state='failed' WHERE id=${run.id}`;
+        expect(await fingerprint()).not.toBe(before);
     } finally {
         await fixture.close();
     }

@@ -41,7 +41,7 @@ export async function miraObservationFingerprint(
     >`SELECT key,captured_at FROM operation_snapshots ORDER BY key LIMIT 50`;
     const runs = await query<
         Record<string, unknown>[]
-    >`SELECT id,state FROM mira_runs WHERE owner=${owner} AND state IN ('failed','needs_attention','interrupted') ORDER BY id DESC LIMIT 30`;
+    >`SELECT id,state FROM mira_runs WHERE owner=${owner} AND id<>${runId}::uuid AND (automation_id IS NULL OR automation_id IS DISTINCT FROM (SELECT automation_id FROM mira_runs WHERE id=${runId} AND owner=${owner}) OR state IN ('failed','needs_attention','interrupted')) ORDER BY id DESC LIMIT 30`;
     const events = await query<
         { id: string }[]
     >`SELECT e.id FROM mira_event_deliveries d JOIN mira_events e ON e.id=d.event_id JOIN mira_runs r ON r.id=d.run_id WHERE r.id=${runId} AND r.owner=${owner} AND e.owner=${owner} AND d.automation_id=r.automation_id ORDER BY e.id`;

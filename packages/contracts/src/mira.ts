@@ -41,7 +41,17 @@ export const miraMessageInputSchema = v.strictObject({
     conversationId: idSchema,
     requestId: idSchema,
     text: v.pipe(body, v.minLength(1)),
-    attachmentIds: v.optional(v.pipe(v.array(idSchema), v.maxLength(8)), []),
+    attachmentIds: v.optional(
+        v.pipe(
+            v.array(idSchema),
+            v.maxLength(8),
+            v.check(
+                (ids) => new Set(ids).size === ids.length,
+                "Attach each file only once."
+            )
+        ),
+        []
+    ),
 });
 export const miraConversationReadSchema = v.strictObject({
     id: idSchema,

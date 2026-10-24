@@ -128,6 +128,11 @@ test("automation editor preserves delivery policy and exposes event and one-time
         await user.click(screen.getByRole("button", { name: "Schedule type" }));
         await user.click(screen.getByRole("option", { name: "Event" }));
         expect(screen.getByRole("button", { name: "Trigger event" })).toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "Trigger event" }));
+        expect(
+            screen.queryByRole("option", { name: "AgentMail message" })
+        ).not.toBeInTheDocument();
+        await user.click(screen.getByRole("option", { name: "Task due" }));
         await user.click(screen.getByRole("button", { name: "Report notifications" }));
         await user.click(screen.getByRole("option", { name: "Silent" }));
         expect(

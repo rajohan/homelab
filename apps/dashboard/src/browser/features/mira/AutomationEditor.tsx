@@ -25,9 +25,11 @@ import { useOperation } from "../operations/useOperation";
  */
 export function AutomationEditor({
     automation,
+    agentMailAvailable = false,
     onClose,
 }: {
     readonly automation?: MiraAutomation | undefined;
+    readonly agentMailAvailable?: boolean;
     readonly onClose: () => void;
 }) {
     const [title, setTitle] = useState(automation?.title ?? "");
@@ -175,7 +177,14 @@ export function AutomationEditor({
                             label="Trigger event"
                             value={schedule.event}
                             options={[
-                                { value: "agentmail", label: "AgentMail message" },
+                                ...(agentMailAvailable || schedule.event === "agentmail"
+                                    ? [
+                                          {
+                                              value: "agentmail" as const,
+                                              label: "AgentMail message",
+                                          },
+                                      ]
+                                    : []),
                                 { value: "task_due", label: "Task due" },
                             ]}
                             onChange={(event) => setSchedule({ kind: "event", event })}
