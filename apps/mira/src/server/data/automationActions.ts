@@ -78,6 +78,18 @@ export async function runMiraAutomationNow(
     requestId: string
 ) {
     return context.client.begin(async (query) => {
+        await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:automation-request:${context.owner}:${requestId}`}, 0))`;
+        const [existing] = await query<
+            { id: string; conversationId: string; automationId: string | null }[]
+        >`SELECT id, conversation_id AS "conversationId", automation_id AS "automationId" FROM mira_runs WHERE owner = ${context.owner} AND request_key = ${`${context.owner}:${requestId}`}`;
+        if (existing) {
+            if (existing.automationId !== id)
+                throw new MiraFailure(
+                    "CONFLICT",
+                    "This request belongs to another operation."
+                );
+            return { id: existing.id, conversationId: existing.conversationId };
+        }
         const [automation] = await query<
             { id: string; title: string; prompt: string; budget: number }[]
         >`SELECT id, title, prompt, budget_seconds AS budget FROM mira_automations WHERE id = ${id} AND owner = ${context.owner} AND deleted_at IS NULL FOR UPDATE`;
@@ -87,17 +99,6 @@ export async function runMiraAutomationNow(
                 "PRECONDITION_FAILED",
                 "A required integration is disabled. Review its control before running this automation."
             );
-        const [existing] = await query<
-            { id: string; conversationId: string; automationId: string | null }[]
-        >`SELECT id, conversation_id AS "conversationId", automation_id AS "automationId" FROM mira_runs WHERE request_key = ${`${context.owner}:${requestId}`}`;
-        if (existing) {
-            if (existing.automationId !== id)
-                throw new MiraFailure(
-                    "CONFLICT",
-                    "This request belongs to another operation."
-                );
-            return { id: existing.id, conversationId: existing.conversationId };
-        }
         const conversationId = Bun.randomUUIDv7();
         await query`INSERT INTO mira_conversations (id, owner, title) VALUES (${conversationId}, ${context.owner}, ${automation.title})`;
         const run = await enqueueTurn(

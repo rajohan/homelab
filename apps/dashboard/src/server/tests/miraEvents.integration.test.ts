@@ -129,6 +129,12 @@ test("verified AgentMail events deduplicate and cannot bypass integration disabl
             recordMiraEvent(query, { ...event, key: "message-2" })
         );
         expect(await scheduleMiraRuns(fixture.client)).toBe(1);
+        const request = { id: automation.id, requestId: crypto.randomUUID() };
+        const [manual, concurrentRetry] = await Promise.all([
+            api.automations.run(request),
+            api.automations.run(request),
+        ]);
+        expect(concurrentRetry).toEqual(manual);
         await api.controls.setEnabled({
             key: "integration:agentmail",
             enabled: false,
@@ -137,7 +143,30 @@ test("verified AgentMail events deduplicate and cannot bypass integration disabl
             until: null,
         });
         const runs = await api.runs.list({ search: "", archived: false });
-        expect(runs.rows[0]?.state).toBe("interrupted");
+        expect(runs.rows.find((run) => run.id !== manual.id)?.state).toBe("interrupted");
+        expect(await api.automations.run(request)).toEqual(manual);
+        await rejects(
+            api.automations.run({ ...request, requestId: crypto.randomUUID() }),
+            /integration is disabled/
+        );
+        await api.automations.delete({ id: automation.id, version: 1 });
+        expect(await api.automations.run(request)).toEqual(manual);
+        await rejects(
+            api.automations.run({ ...request, requestId: crypto.randomUUID() }),
+            /Automation not found/
+        );
+        await rejects(
+            api.automations.run({ ...request, id: crypto.randomUUID() }),
+            /another operation/
+        );
+        const other = appRouter.createCaller({
+            operations: fixture,
+            principal: { kind: "human", id: "other-operator", capabilities },
+        }).mira;
+        await rejects(other.automations.run(request), /Automation not found/);
+        const stored = await fixture.client<{ id: string }[]>`
+            SELECT id FROM mira_runs WHERE request_key = ${`operator:${request.requestId}`}`;
+        expect(stored).toEqual([{ id: manual.id }]);
     } finally {
         await fixture.close();
     }
