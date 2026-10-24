@@ -1562,3 +1562,36 @@ test("large task history uses bounded observation digests and due discovery reac
         await fixture.close();
     }
 });
+
+test("memory observation digests include older records without exposing the full collection", async () => {
+    const fixture = await operationFixture();
+    try {
+        const fingerprint = () =>
+            fixture.client.begin((query) =>
+                miraObservationFingerprint(
+                    query,
+                    "operator",
+                    "00000000-0000-4000-8000-000000000000"
+                )
+            );
+        const empty = await fingerprint();
+        await fixture.client`INSERT INTO mira_memory(id,owner,title,content) SELECT gen_random_uuid(),'operator','Memory '||n,'Synthetic' FROM generate_series(1,2000) n`;
+        const oldest = "00000000-0000-4000-8000-000000000001";
+        await fixture.client`INSERT INTO mira_memory(id,owner,title,content) VALUES (${oldest},'operator','Older memory','Synthetic')`;
+        const before = await fingerprint();
+        expect(before).not.toBe(empty);
+        await fixture.client`UPDATE mira_memory SET content='Changed preference',version=version+1 WHERE id=${oldest}`;
+        const edited = await fingerprint();
+        expect(edited).not.toBe(before);
+        await fixture.client`INSERT INTO mira_memory(id,owner,title,content) VALUES (${crypto.randomUUID()},'other','Private memory','Another owner')`;
+        expect(await fingerprint()).toBe(edited);
+        await fixture.client`DELETE FROM mira_memory WHERE id=${oldest}`;
+        const removed = await fingerprint();
+        expect(removed).not.toBe(edited);
+        expect(await fingerprint()).toBe(removed);
+        await fixture.client`DELETE FROM mira_memory WHERE owner='operator'`;
+        expect(await fingerprint()).toBe(empty);
+    } finally {
+        await fixture.close();
+    }
+});

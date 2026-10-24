@@ -5,7 +5,7 @@ import { miraRunAllowed } from "./automations";
 
 /**
  * Hash meaningful recorded inputs without volatile polling timestamps or Mira's own replies.
- * @param query - Completion transaction, immediately before notification evaluation.
+ * @param query - Claim transaction, before the model starts observing mutable state.
  * @param owner - Server-verified owner of personal tasks, memory and controls.
  * @param runId - Current run; only its owned trigger events contribute to the observation.
  * @returns An opaque digest used to suppress repeated unchanged heartbeat notices.
@@ -15,7 +15,7 @@ export async function miraObservationFingerprint(
     owner: string,
     runId: string
 ): Promise<string> {
-    // Aggregate in PostgreSQL: completion never materializes the account's full task history.
+    // Aggregate in PostgreSQL: observations never materialize the account's full history.
     const tasks = await query<
         Record<string, unknown>[]
     >`SELECT count(*)::text AS count,coalesce(bit_xor(hashtextextended(concat_ws(':',id,version,status<>'done' AND due_at<=now()),0)),0)::text AS digest,coalesce(bit_xor(hashtextextended(concat_ws(':',id,version,status<>'done' AND due_at<=now()),1)),0)::text AS verification FROM mira_tasks WHERE owner=${owner} AND deleted_at IS NULL`;
@@ -24,7 +24,7 @@ export async function miraObservationFingerprint(
     >`SELECT count(*)::text AS count,coalesce(bit_xor(hashtextextended(concat_ws(':',p.task_id,p.id),0)),0)::text AS digest,coalesce(bit_xor(hashtextextended(concat_ws(':',p.task_id,p.id),1)),0)::text AS verification FROM mira_progress p JOIN mira_tasks t ON t.id=p.task_id WHERE t.owner=${owner} AND t.deleted_at IS NULL`;
     const memory = await query<
         Record<string, unknown>[]
-    >`SELECT id, version FROM mira_memory WHERE owner = ${owner} ORDER BY id`;
+    >`SELECT count(*)::text AS count,coalesce(bit_xor(hashtextextended(concat_ws(':',id,version),0)),0)::text AS digest,coalesce(bit_xor(hashtextextended(concat_ws(':',id,version),1)),0)::text AS verification FROM mira_memory WHERE owner=${owner}`;
     const controls = await query<
         Record<string, unknown>[]
     >`SELECT s.key,s.enabled,s.reason,s.until,a.title AS automation FROM mira_switches s LEFT JOIN mira_automations a ON s.key='automation:'||a.id::text AND a.owner=s.owner WHERE s.owner=${owner} AND (s.key NOT LIKE 'automation:%' OR (a.id IS NOT NULL AND a.deleted_at IS NULL)) ORDER BY s.key`;

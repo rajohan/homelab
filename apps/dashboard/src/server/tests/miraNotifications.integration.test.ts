@@ -141,6 +141,10 @@ test("heartbeat reports stay quiet for unchanged observations and intentional pa
             await listNotifications(fixture.client, "human:operator", page)
         ).toMatchObject({ unreadCount: 1 });
         const changedDuringRun = await next();
+        const [baseline] = await fixture.client<
+            { hash: string | null }[]
+        >`SELECT observation_hash AS hash FROM mira_runs WHERE id=${changedDuringRun.id}`;
+        expect(baseline?.hash).toMatch(/^[a-f0-9]{64}$/);
         const task = await api.tasks.create({
             title: "New blocker",
             description: "Synthetic change",
@@ -153,9 +157,14 @@ test("heartbeat reports stay quiet for unchanged observations and intentional pa
             conversationId: null,
         });
         await complete(changedDuringRun);
+        const [retained] = await fixture.client<
+            { hash: string | null }[]
+        >`SELECT observation_hash AS hash FROM mira_runs WHERE id=${changedDuringRun.id}`;
+        expect(retained?.hash).toBe(baseline?.hash);
         expect(
             await listNotifications(fixture.client, "human:operator", page)
-        ).toMatchObject({ unreadCount: 2 });
+        ).toMatchObject({ unreadCount: 1 });
+        // The next run observes the new task and must still announce its report.
         await complete(await next());
         expect(
             await listNotifications(fixture.client, "human:operator", page)
