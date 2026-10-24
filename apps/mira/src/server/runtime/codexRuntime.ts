@@ -220,6 +220,7 @@ export class CodexRuntime {
             signal?: AbortSignal;
             timeoutMs?: number;
             onDelta?: (delta: string) => void;
+            onStarted?: (turnId: string) => Promise<void>;
             attachments?: RuntimeInput[];
             onActivity?: (activity: MiraActivity) => void;
             settings?: {
@@ -329,6 +330,7 @@ export class CodexRuntime {
                 })
             );
             active.id = started.turn.id;
+            await options.onStarted?.(started.turn.id);
             active.acknowledged.resolve(started.turn.id);
             if (controller.signal.aborted) await this.interrupt();
             const result = await completion.promise;

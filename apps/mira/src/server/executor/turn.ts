@@ -146,7 +146,7 @@ export async function executeMiraTurn(
             );
             const stored = await client<
                 { id: string }[]
-            >`UPDATE mira_conversations SET provider_thread = ${threadId}, model = ${model} WHERE id = ${run.conversationId} AND EXISTS (SELECT 1 FROM mira_runs WHERE id = ${run.id} AND state = 'running' AND lease_token = ${run.leaseToken} AND lease_expires_at > now()) RETURNING id`;
+            >`UPDATE mira_conversations SET provider_thread = ${threadId}, provider_context_ready = false, model = ${model} WHERE id = ${run.conversationId} AND EXISTS (SELECT 1 FROM mira_runs WHERE id = ${run.id} AND state = 'running' AND lease_token = ${run.leaseToken} AND lease_expires_at > now()) RETURNING id`;
             if (!stored[0]) throw new Error("Run lease lost.");
         }
         const recorded = await client<
@@ -158,6 +158,16 @@ export async function executeMiraTurn(
             settings,
             attachments: attachments.inputs,
             timeoutMs: Math.max(1, deadlineAt - Date.now()),
+            onStarted: async (turnId) => {
+                await client.begin(async (query) => {
+                    const accepted = await query<
+                        { id: string }[]
+                    >`UPDATE mira_runs SET provider_turn=${turnId} WHERE id=${run.id} AND state='running' AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp() RETURNING id`;
+                    if (!accepted[0])
+                        throw new Error("Run lease lost before turn acknowledgement.");
+                    await query`UPDATE mira_conversations SET provider_context_ready=true WHERE id=${run.conversationId} AND provider_thread=${threadId}`;
+                });
+            },
             onActivity: (next) => {
                 activity = next;
             },
