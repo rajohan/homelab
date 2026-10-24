@@ -9,10 +9,17 @@ import type {
 import type * as v from "valibot";
 
 import { miraQueueAvailable } from "./capacity";
-import { auditMira, MiraFailure, type MiraContext, type MiraQuery } from "./context";
+import {
+    auditMira,
+    lockMiraProposals,
+    MiraFailure,
+    type MiraContext,
+    type MiraQuery,
+} from "./context";
 
 /**
- * Search owned conversations and message content without leaking other accounts.
+ * Search owned chats, keeping automatic-only conversations in run history.
+ * A human follow-up promotes an automatic conversation into the chat list.
  * @param context - Authenticated product context.
  * @param input - Search, archive state and cursor.
  * @returns A bounded conversation page.
@@ -23,7 +30,9 @@ export async function listConversations(
 ) {
     const rows = await context.client<
         MiraConversation[]
-    >`SELECT c.id, c.title, c.version, c.archived_at::text AS "archivedAt", c.created_at::text AS "createdAt", to_char(c.updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "updatedAt" FROM mira_conversations c WHERE c.owner = ${context.owner} AND c.deleted_at IS NULL AND (c.archived_at IS NOT NULL) = ${input.archived} AND (${input.before?.id ?? null}::uuid IS NULL OR (c.updated_at,c.id)<(${input.before?.updatedAt ?? null}::timestamptz,${input.before?.id ?? null}::uuid)) AND (strpos(lower(c.title), lower(${input.search})) > 0 OR EXISTS (SELECT 1 FROM mira_messages m WHERE m.conversation_id = c.id AND strpos(lower(m.content), lower(${input.search})) > 0)) ORDER BY c.updated_at DESC,c.id DESC LIMIT 30`;
+    >`SELECT c.id, c.title, c.version, c.archived_at::text AS "archivedAt", c.created_at::text AS "createdAt", to_char(c.updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "updatedAt" FROM mira_conversations c WHERE c.owner = ${context.owner} AND c.deleted_at IS NULL AND (c.archived_at IS NOT NULL) = ${input.archived}
+    AND (NOT EXISTS (SELECT 1 FROM mira_runs r WHERE r.conversation_id=c.id AND NOT r.manual)
+        OR EXISTS (SELECT 1 FROM mira_runs r WHERE r.conversation_id=c.id AND r.manual)) AND (${input.before?.id ?? null}::uuid IS NULL OR (c.updated_at,c.id)<(${input.before?.updatedAt ?? null}::timestamptz,${input.before?.id ?? null}::uuid)) AND (strpos(lower(c.title), lower(${input.search})) > 0 OR EXISTS (SELECT 1 FROM mira_messages m WHERE m.conversation_id = c.id AND strpos(lower(m.content), lower(${input.search})) > 0)) ORDER BY c.updated_at DESC,c.id DESC LIMIT 30`;
     const last = rows.at(-1);
     return {
         rows,
@@ -217,6 +226,7 @@ export async function changeConversation(
     input: { id: string; version: number; action: "archive" | "restore" | "delete" }
 ): Promise<void> {
     await context.client.begin(async (query) => {
+        if (input.action === "delete") await lockMiraProposals(query, context.owner);
         const rows = await query<
             { id: string }[]
         >`SELECT id FROM mira_conversations WHERE id = ${input.id} AND owner = ${context.owner} AND version = ${input.version} AND deleted_at IS NULL FOR UPDATE`;

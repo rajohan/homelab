@@ -215,6 +215,7 @@ export const miraRuns = pgTable(
     },
     (t) => [
         index("mira_runs_queue").on(t.state, t.priority, t.id),
+        index("mira_runs_conversation").on(t.conversationId, t.manual),
         index("mira_runs_owner").on(t.owner, t.id),
         uniqueIndex("mira_runs_one_active_conversation")
             .on(t.conversationId)

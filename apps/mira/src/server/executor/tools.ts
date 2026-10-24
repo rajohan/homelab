@@ -12,7 +12,12 @@ import type { SQL, TransactionSQL } from "bun";
 import * as v from "valibot";
 
 import { readMiraControlPage } from "../data/automations";
-import { MiraFailure, type MiraContext } from "../data/context";
+import {
+    lockMiraProposals,
+    requireTask,
+    MiraFailure,
+    type MiraContext,
+} from "../data/context";
 import { createReport, listMemory, listReports, saveMemory } from "../data/documents";
 import { readMiraFile } from "../data/files";
 import { parseMiraProposal } from "../data/proposals";
@@ -386,6 +391,7 @@ export function createMiraTools(
                         signal.throwIfAborted();
                         if (confirmation) {
                             const connection = query ?? client;
+                            await lockMiraProposals(connection, run.owner);
                             await connection`SELECT id FROM mira_runs WHERE id=${run.id} FOR UPDATE`;
                             const [count] = await connection<
                                 { total: number }[]
@@ -396,6 +402,13 @@ export function createMiraTools(
                                     "This run has reached its proposal limit. Summarize the remaining changes without creating more proposals."
                                 );
                             const proposal = parseMiraProposal(definition.name, input);
+                            let taskId: unknown;
+                            if (definition.name === "mira_task_update")
+                                taskId = proposal.id;
+                            if (definition.name === "mira_task_progress")
+                                taskId = proposal.taskId;
+                            if (typeof taskId === "string")
+                                await requireTask(connection, run.owner, taskId);
                             const fingerprint = new Bun.CryptoHasher("sha256")
                                 .update(JSON.stringify(proposal))
                                 .digest("hex");

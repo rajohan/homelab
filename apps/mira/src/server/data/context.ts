@@ -24,6 +24,18 @@ export async function miraTransaction<T>(
         : context.client.begin(operation);
 }
 
+/**
+ * Serialize proposal creation, decisions and content deletion for one account.
+ * Acquire this before conversation, run, task or receipt locks so deletion cannot
+ * race a new proposal or invert the approval lock order.
+ * @param query - The transaction that will create, decide or scrub proposals.
+ * @param owner - Verified account whose proposal content is changing.
+ * @returns Completion once competing proposal mutations have finished.
+ */
+export async function lockMiraProposals(query: MiraQuery, owner: string): Promise<void> {
+    await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:proposals:${owner}`}, 0))`;
+}
+
 /** A deliberately public domain error without provider, database or file details. */
 export class MiraFailure extends Error {
     readonly code:

@@ -784,3 +784,93 @@ test("conversation paging follows recent activity with stable microsecond cursor
         await db.close();
     }
 });
+
+test("scheduled conversations stay in run history until the operator continues them", async () => {
+    const database = await fixture();
+    try {
+        const api = database.caller().mira;
+        const chat = await api.conversations.create({ title: "My ongoing chat" });
+        const automation = await api.automations.create({
+            title: "Quiet heartbeat",
+            prompt: "Read synthetic state only.",
+            kind: "custom",
+            schedule: { kind: "interval", intervalSeconds: 1800 },
+            budgetSeconds: 60,
+        });
+        await api.controls.setEnabled({
+            key: `automation:${automation.id}`,
+            version: 1,
+            enabled: true,
+            reason: null,
+            until: null,
+        });
+        for (let index = 0; index < 31; index++) {
+            await database.client`UPDATE mira_automations SET next_run_at=now()-interval '1 hour' WHERE id=${automation.id}`;
+            expect(await scheduleMiraRuns(database.client)).toBe(1);
+            const run = await claimMiraRun(
+                database.client,
+                crypto.randomUUID(),
+                "general"
+            );
+            if (!run) throw new Error("Expected heartbeat run");
+            await finishMiraRun(database.client, run, {
+                state: "completed",
+                text: "No changes.",
+                message: null,
+            });
+        }
+        const conversations = await api.conversations.list(page);
+        expect(conversations.rows.map((row) => row.id)).toEqual([chat.id]);
+        expect(conversations.nextCursor).toBeNull();
+        const searched = await api.conversations.list({
+            ...page,
+            search: "Quiet heartbeat",
+        });
+        expect(searched.rows).toHaveLength(0);
+        const history = await api.runs.list(page);
+        expect(history.rows).toHaveLength(30);
+        const scheduled = history.rows[0]!;
+        expect(scheduled.conversationAvailable).toBe(true);
+        const automaticChat = await api.conversations.read({
+            id: scheduled.conversationId,
+        });
+        expect(automaticChat.messages).toHaveLength(2);
+        await rejects(
+            database
+                .caller("other")
+                .mira.conversations.read({ id: scheduled.conversationId }),
+            /not found/
+        );
+        await api.conversations.send({
+            conversationId: scheduled.conversationId,
+            requestId: crypto.randomUUID(),
+            text: "Explain this heartbeat result.",
+        });
+        const promoted = await api.conversations.list(page);
+        expect(promoted.rows.map((row) => row.id)).toEqual([
+            scheduled.conversationId,
+            chat.id,
+        ]);
+        const run = await claimMiraRun(
+            database.client,
+            crypto.randomUUID(),
+            "foreground"
+        );
+        if (!run) throw new Error("Expected follow-up run");
+        await finishMiraRun(database.client, run, {
+            state: "completed",
+            text: "Explanation.",
+            message: null,
+        });
+        const read = await api.conversations.read({ id: scheduled.conversationId });
+        await api.conversations.change({
+            id: scheduled.conversationId,
+            version: read.conversation.version,
+            action: "archive",
+        });
+        const archived = await api.conversations.list({ ...page, archived: true });
+        expect(archived.rows.map((row) => row.id)).toEqual([scheduled.conversationId]);
+    } finally {
+        await database.close();
+    }
+});

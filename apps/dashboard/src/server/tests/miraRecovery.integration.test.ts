@@ -26,6 +26,7 @@ import { cleanupMiraFiles, readMiraFile, saveMiraFile } from "@homelab/mira/data
 import { miraObservationFingerprint } from "@homelab/mira/data/notifications";
 import { decideMiraProposal } from "@homelab/mira/data/proposals";
 import { claimMiraRun, finishMiraRun } from "@homelab/mira/data/queue";
+import { deleteTask } from "@homelab/mira/data/tasks";
 import * as v from "valibot";
 
 import {
@@ -1592,6 +1593,129 @@ test("memory observation digests include older records without exposing the full
         await fixture.client`DELETE FROM mira_memory WHERE owner='operator'`;
         expect(await fingerprint()).toBe(empty);
     } finally {
+        await fixture.close();
+    }
+});
+
+test("task deletion scrubs pending proposals atomically and fences late proposal creation", async () => {
+    const fixture = await operationFixture();
+    const context = {
+        client: fixture.client,
+        owner: "operator",
+        actor: "human:operator",
+    };
+    const api = appRouter.createCaller({
+        operations: fixture,
+        principal: { kind: "human", id: "operator", capabilities },
+    }).mira;
+    let deletion: Promise<void> | undefined;
+    const release = Promise.withResolvers<void>();
+    try {
+        const chat = await api.conversations.create({ title: "Task proposal cleanup" });
+        const fields = {
+            title: "Private task",
+            description: "Private description",
+            status: "todo" as const,
+            assignee: "operator" as const,
+            priority: "normal" as const,
+            labels: [],
+            dueAt: null,
+            completionCriteria: "Private criteria",
+            conversationId: chat.id,
+        };
+        const task = await api.tasks.create(fields);
+        const other = await api.tasks.create({ ...fields, title: "Keep this task" });
+        await api.conversations.send({
+            conversationId: chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Suggest changes.",
+        });
+        const run = await claimMiraRun(fixture.client, crypto.randomUUID(), "foreground");
+        if (!run) throw new Error("Expected run");
+        const tools = createMiraTools(fixture.client, run);
+        const propose = (name: string, input: unknown, callId: string) =>
+            tools
+                .find((tool) => tool.name === name)!
+                .execute(input, new AbortController().signal, {
+                    callId,
+                    threadId: "synthetic",
+                    turnId: "turn",
+                });
+        await propose(
+            "mira_task_update",
+            { ...fields, id: task.id, version: 1 },
+            "update"
+        );
+        await propose(
+            "mira_task_progress",
+            { taskId: task.id, text: "Private progress" },
+            "progress"
+        );
+        await propose(
+            "mira_task_progress",
+            { taskId: other.id, text: "Keep this proposal" },
+            "other"
+        );
+        const pending = await api.proposals.list({ id: chat.id });
+        expect(pending).toHaveLength(3);
+        await rejects(
+            deleteTask({ ...context, owner: "other", actor: "human:other" }, task.id, 1),
+            /task changed/
+        );
+        await fixture.client`CREATE FUNCTION fail_task_proposal_scrub() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN IF NEW.state='rejected' THEN RAISE EXCEPTION 'Synthetic scrub failure'; END IF; RETURN NEW; END$$`;
+        await fixture.client`CREATE TRIGGER fail_task_proposal_scrub BEFORE UPDATE ON mira_tool_receipts FOR EACH ROW EXECUTE FUNCTION fail_task_proposal_scrub()`;
+        await rejects(api.tasks.delete({ id: task.id, version: 1 }));
+        const retainedTasks = await api.tasks.list({ search: "" });
+        expect(retainedTasks.rows).toHaveLength(2);
+        expect(await api.proposals.list({ id: chat.id })).toHaveLength(3);
+        await fixture.client`DROP TRIGGER fail_task_proposal_scrub ON mira_tool_receipts`;
+        const deleted = Promise.withResolvers<void>();
+
+        deletion = fixture.client.begin(async (query) => {
+            await deleteTask({ ...context, transaction: query }, task.id, 1);
+            deleted.resolve();
+            await release.promise;
+        });
+        await deleted.promise;
+        const late = propose(
+            "mira_task_progress",
+            { taskId: task.id, text: "Do not retain this" },
+            "late"
+        );
+        const progress = pending.find(
+            (entry) =>
+                entry.tool === "mira_task_progress" && entry.input.taskId === task.id
+        )!;
+        const approval = api.proposals
+            .decide({ id: progress.id, inputHash: progress.inputHash, approve: true })
+            .then(
+                () => "approved",
+                (error: unknown) => (error instanceof Error ? error.message : "failed")
+            );
+        release.resolve();
+        await deletion;
+        expect(await late).toContain("Task not found");
+        expect(await approval).toContain("no longer awaiting");
+        const remaining = await api.proposals.list({ id: chat.id });
+        expect(remaining).toHaveLength(1);
+        expect(remaining[0]?.input.taskId).toBe(other.id);
+        const scrubbed = await fixture.client<
+            { tool: string; state: string; proposal: unknown }[]
+        >`
+            SELECT tool,state,proposal FROM mira_tool_receipts WHERE run_id=${run.id} AND call_id IN ('update','progress','late') ORDER BY call_id`;
+        expect(scrubbed.map((row) => row.proposal)).toEqual([null, null, null]);
+        expect(scrubbed.filter((row) => row.state === "rejected")).toHaveLength(2);
+        expect(scrubbed.filter((row) => row.state === "failed")).toHaveLength(1);
+        expect(
+            await api.proposals.decide({
+                id: progress.id,
+                inputHash: progress.inputHash,
+                approve: false,
+            })
+        ).toEqual({ state: "rejected" });
+    } finally {
+        release.resolve();
+        await deletion;
         await fixture.close();
     }
 });

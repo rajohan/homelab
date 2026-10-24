@@ -7,6 +7,7 @@ import type * as v from "valibot";
 
 import {
     miraTransaction,
+    lockMiraProposals,
     auditMira,
     MiraFailure,
     requireConversation,
@@ -134,6 +135,7 @@ export async function deleteTask(
     version: number
 ): Promise<void> {
     await miraTransaction(context, async (query) => {
+        await lockMiraProposals(query, context.owner);
         const rows = await query<
             { id: string }[]
         >`UPDATE mira_tasks SET deleted_at = now(), title = 'Deleted task', description = '', completion_criteria = '', labels = '[]'::jsonb, version = version + 1 WHERE id = ${id} AND owner = ${context.owner} AND version = ${version} AND deleted_at IS NULL RETURNING id`;
@@ -142,6 +144,13 @@ export async function deleteTask(
                 "CONFLICT",
                 "The task changed. Refresh before deleting."
             );
+        await query`UPDATE mira_tool_receipts t SET proposal=NULL,
+            state=CASE WHEN t.state='awaiting_approval' THEN 'rejected' ELSE t.state END,
+            message='The referenced task was deleted.',finished_at=now()
+            FROM mira_runs r WHERE r.id=t.run_id AND r.owner=${context.owner}
+            AND t.proposal IS NOT NULL
+            AND ((t.tool='mira_task_update' AND t.proposal->>'id'=${id})
+                OR (t.tool='mira_task_progress' AND t.proposal->>'taskId'=${id}))`;
         await query`DELETE FROM mira_progress WHERE task_id = ${id}`;
         await auditMira(query, context, "task.deleted", id);
     });

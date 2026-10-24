@@ -8,7 +8,7 @@ import {
 } from "@homelab/contracts/mira";
 import * as v from "valibot";
 
-import { auditMira, MiraFailure, type MiraContext } from "./context";
+import { auditMira, lockMiraProposals, MiraFailure, type MiraContext } from "./context";
 import { saveMemory } from "./documents";
 import { addTaskProgress, saveTask } from "./tasks";
 
@@ -66,6 +66,7 @@ export async function decideMiraProposal(
             "Only the signed-in operator can approve proposed changes."
         );
     return context.client.begin(async (query) => {
+        await lockMiraProposals(query, context.owner);
         const decision = input.approve ? "approved" : "rejected";
         const readDecision = async () => {
             const [receipt] = await query<
