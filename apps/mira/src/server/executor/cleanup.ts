@@ -1,7 +1,9 @@
 import type { SQL } from "bun";
 
 import { auditMira } from "../data/context";
+import { cleanupMiraFiles } from "../data/files";
 import type { CodexRuntime } from "../runtime/codexRuntime";
+import { cleanupMiraScratch } from "./scratch";
 
 /**
  * Retry provider-history cleanup after product content is deleted, without raw database edits.
@@ -32,4 +34,25 @@ export async function cleanupMiraConversations(
         });
     }
     return rows.length;
+}
+
+/**
+ * Reconcile provider history and local deleted content independently.
+ * @param options - Product pool, optional connected provider, shared uploads and isolated Mira home.
+ * @returns Whether all available cleanup steps succeeded; one failure never suppresses the others.
+ */
+export async function cleanupMiraResources(options: {
+    client: SQL;
+    runtime?: Pick<CodexRuntime, "deleteThread"> | undefined;
+    filesDirectory?: string | undefined;
+    home: string;
+}): Promise<boolean> {
+    const outcomes = await Promise.allSettled([
+        options.runtime
+            ? cleanupMiraConversations(options.client, options.runtime)
+            : Promise.resolve(0),
+        cleanupMiraFiles(options.client, options.filesDirectory),
+        cleanupMiraScratch(options.home),
+    ]);
+    return outcomes.every((outcome) => outcome.status === "fulfilled");
 }
