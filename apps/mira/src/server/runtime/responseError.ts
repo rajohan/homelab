@@ -2,7 +2,7 @@
 export class RuntimeResponseError extends Error {
     readonly threadMissing: boolean;
     /**
-     * Preserve a safe code and an exactly matched missing-thread outcome for deletion recovery.
+     * Preserve a safe code and an exactly matched missing-thread outcome for deletion or conversation recovery.
      * @param code - Numeric JSON-RPC error code.
      * @param threadMissing - True only for the exact requested thread's not-found response.
      */
