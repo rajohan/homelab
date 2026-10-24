@@ -1,11 +1,17 @@
 import { expect, test, spyOn } from "bun:test";
 import { rejects } from "node:assert/strict";
 import { createHmac } from "node:crypto";
+import { cp, mkdtemp, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { capabilities } from "@homelab/contracts/operations";
 import { reconcileMiraControls } from "@homelab/mira/data/automations";
-import { publishAgentMailReceiver } from "@homelab/mira/data/integrations";
+import {
+    publishAgentMailReceiver,
+    agentMailReceiverCurrent,
+} from "@homelab/mira/data/integrations";
 import { cleanupMiraMailEvents } from "@homelab/mira/data/mailLimits";
 import { claimMiraRun, scheduleMiraRuns } from "@homelab/mira/data/queue";
 import { pollAgentMail } from "@homelab/mira/integrations/agentmail/poll";
@@ -13,9 +19,17 @@ import { AgentMailReader } from "@homelab/mira/integrations/agentmail/reader";
 import type { AgentMailMessage } from "@homelab/mira/integrations/agentmail/schema";
 import { createAgentMailTools } from "@homelab/mira/integrations/agentmail/tools";
 import { acceptAgentMailMessage } from "@homelab/mira/integrations/agentmail/webhook";
+import { migrate } from "drizzle-orm/bun-sql/migrator";
 
+import { createTestDatabase } from "../../../../../tests/database";
 import { createMiraTools } from "../../../../mira/src/server/executor/tools";
 import { appRouter } from "../api/router";
+import { connectDashboardDatabase } from "../database/connection";
+import {
+    dashboardMigrationsFolder,
+    migrateDashboard,
+    assertDashboardSchema,
+} from "../database/migrations";
 import { startDashboardServer } from "../index";
 import { provisionTestAgentMail } from "../testing/agentmail";
 import { operationFixture } from "../testing/operations";
@@ -877,7 +891,7 @@ test.each([false, true])(
     }
 );
 
-test("pending Monitor scans retain recovery position until metadata is clear", async () => {
+test("pending Monitor scans persist separately while clear feed messages advance", async () => {
     const fixture = await operationFixture();
     const binding = await provisionTestAgentMail(fixture.client);
     const api = appRouter.createCaller({
@@ -946,11 +960,15 @@ test("pending Monitor scans retain recovery position until metadata is clear", a
                 reader,
                 new AbortController().signal
             )
-        ).toBe(false);
+        ).toBe(true);
         const [waiting] = await fixture.client<
             { anchor: string | null; events: number }[]
         >`SELECT event_anchor AS anchor,(SELECT count(*)::int FROM mira_events) AS events FROM mira_integration_state`;
-        expect(waiting).toEqual({ anchor: null, events: 0 });
+        expect(waiting).toEqual({ anchor: "received-event", events: 0 });
+        const [scan] = await fixture.client<
+            { pending: unknown[] }[]
+        >`SELECT pending_scans AS pending FROM mira_integration_state`;
+        expect(scan?.pending).toHaveLength(1);
         expect(await scheduleMiraRuns(fixture.client)).toBe(0);
         pending = false;
         await fixture.client`UPDATE mira_integration_state SET next_attempt_at=now()`;
@@ -1241,6 +1259,145 @@ test("one mail reference has bounded subscriber fan-out even after duplicate del
             { total: number }[]
         >`SELECT count(*)::int AS total FROM mira_event_deliveries`;
         expect(remaining[0]?.total).toBe(0);
+    } finally {
+        await fixture.close();
+    }
+});
+
+test("AgentMail migration upgrades an already migrated dashboard parent", async () => {
+    const allocation = await createTestDatabase();
+    const connection = connectDashboardDatabase(allocation.url);
+    const prior = await mkdtemp(path.join(tmpdir(), "mira-agentmail-parent-"));
+    try {
+        const source = dashboardMigrationsFolder();
+        const entries = await readdir(source, { withFileTypes: true });
+        const feature = entries.find((entry) => entry.name.endsWith("_mira_agentmail"));
+        if (!feature) throw new Error("Expected AgentMail migration");
+        for (const entry of entries.filter(
+            (entry) => entry.isDirectory() && entry.name < feature.name
+        ))
+            await cp(path.join(source, entry.name), path.join(prior, entry.name), {
+                recursive: true,
+            });
+        await migrate(connection.database, { migrationsFolder: prior });
+        const [before] = await connection.client<
+            { name: string | null }[]
+        >`SELECT to_regclass('public.mira_integration_state')::text AS name`;
+        expect(before?.name).toBeNull();
+        await migrateDashboard(connection);
+        await assertDashboardSchema(connection);
+        await migrateDashboard(connection);
+        await assertDashboardSchema(connection);
+        const [after] = await connection.client<
+            { pending: unknown[] }[]
+        >`INSERT INTO mira_integration_state (owner,key,binding,control_version,started_at,completed_through,next_attempt_at) VALUES ('upgrade','agentmail','synthetic',1,now(),now(),now()) RETURNING pending_scans AS pending`;
+        expect(after?.pending).toEqual([]);
+    } finally {
+        await connection.client.close();
+        await allocation.close();
+        await rm(prior, { recursive: true, force: true });
+    }
+});
+
+test("receiver publication waits for a transaction using the previously confirmed binding", async () => {
+    const fixture = await operationFixture();
+    try {
+        const binding = await provisionTestAgentMail(fixture.client);
+        const locked = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const observer = fixture.client.begin(async (query) => {
+            expect(await agentMailReceiverCurrent(query, binding)).toBe(true);
+            locked.resolve();
+            await release.promise;
+        });
+        await locked.promise;
+        let published = false;
+        const replacement = publishAgentMailReceiver(fixture.client, {
+            ...binding,
+            inboxId: "replacement@example.test",
+        }).then(() => {
+            published = true;
+            return true;
+        });
+        await delay(20);
+        expect(published).toBe(false);
+        release.resolve();
+        await observer;
+        await replacement;
+        expect(await agentMailReceiverCurrent(fixture.client, binding)).toBe(false);
+    } finally {
+        await fixture.close();
+    }
+});
+
+test("continually arriving pending scans do not starve clear mail or retained scan retries", async () => {
+    const fixture = await operationFixture();
+    const binding = await provisionTestAgentMail(fixture.client);
+    const api = appRouter.createCaller({
+        operations: { ...fixture, agentMailHook: binding },
+        principal: { kind: "human", id: binding.owner, capabilities },
+    }).mira;
+    try {
+        await api.controls.list();
+        await api.controls.setEnabled({
+            key: "integration:agentmail",
+            version: 1,
+            enabled: true,
+            reason: null,
+            until: null,
+        });
+        const at = new Date().toISOString();
+        let round = 0;
+        const request = Object.assign(
+            (input: Parameters<typeof fetch>[0]) => {
+                const url = new URL(input instanceof Request ? input.url : String(input));
+                if (url.pathname.endsWith("/events")) {
+                    round++;
+                    return Promise.resolve(
+                        Response.json({
+                            events: [`scan-${round}`, "clear"].map((id) => ({
+                                event_id: `event-${id}`,
+                                event_type: "label.added",
+                                label: "received",
+                                event_at: at,
+                                inbox_id: binding.inboxId,
+                                message_id: id,
+                                created_at: at,
+                            })),
+                        })
+                    );
+                }
+                const id = decodeURIComponent(url.pathname.split("/").at(-1)!);
+                return Promise.resolve(
+                    Response.json({
+                        inbox_id: binding.inboxId,
+                        message_id: id,
+                        thread_id: "thread",
+                        created_at: at,
+                        timestamp: at,
+                        from: "synthetic@example.test",
+                        labels: ["received"],
+                        agent_armor:
+                            id === "clear" || (round > 1 && id === "scan-1")
+                                ? { status: "complete", verdict: "clear" }
+                                : { status: "pending" },
+                    })
+                );
+            },
+            { preconnect: fetch.preconnect }
+        );
+        const reader = new AgentMailReader({ ...binding, apiKey: "synthetic" }, request);
+        const signal = new AbortController().signal;
+        expect(await pollAgentMail(fixture.client, binding, reader, signal)).toBe(true);
+        expect(await fixture.client`SELECT id FROM mira_events`).toHaveLength(1);
+        await fixture.client`UPDATE mira_integration_state SET next_attempt_at=now()`;
+        expect(await pollAgentMail(fixture.client, binding, reader, signal)).toBe(true);
+        expect(await fixture.client`SELECT id FROM mira_events`).toHaveLength(2);
+        const [state] = await fixture.client<
+            { pending: { messageId: string }[]; anchor: string }[]
+        >`SELECT pending_scans AS pending,event_anchor AS anchor FROM mira_integration_state`;
+        expect(state?.pending.map((entry) => entry.messageId)).toEqual(["scan-2"]);
+        expect(state?.anchor).toBe("event-scan-2");
     } finally {
         await fixture.close();
     }

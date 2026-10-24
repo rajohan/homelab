@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
 import { rejects } from "node:assert/strict";
+import { cp, mkdtemp, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 import { miraModelSchema } from "@homelab/contracts/mira";
 import type { MiraTaskInput } from "@homelab/contracts/mira";
@@ -17,10 +20,18 @@ import {
 } from "@homelab/mira/data/queue";
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
+import { migrate } from "drizzle-orm/bun-sql/migrator";
 import superjson from "superjson";
 import * as v from "valibot";
 
+import { createTestDatabase } from "../../../../../tests/database";
 import { appRouter } from "../api/router";
+import { connectDashboardDatabase } from "../database/connection";
+import {
+    dashboardMigrationsFolder,
+    migrateDashboard,
+    assertDashboardSchema,
+} from "../database/migrations";
 import { operationFixture } from "../testing/operations";
 
 const page = { search: "", archived: false };
@@ -1226,5 +1237,42 @@ test("historical run details retain uncertain receipts across later turns and ch
         expect(retained.rows.at(-1)?.state).toBe("unknown");
     } finally {
         await database.close();
+    }
+});
+
+test("task execution upgrades the migrated AgentMail parent without skipping earlier feature changes", async () => {
+    const allocation = await createTestDatabase();
+    const connection = connectDashboardDatabase(allocation.url);
+    const prior = await mkdtemp(path.join(tmpdir(), "mira-task-parent-"));
+    try {
+        const source = dashboardMigrationsFolder();
+        const entries = await readdir(source, { withFileTypes: true });
+        const feature = entries.find((entry) =>
+            entry.name.endsWith("_mira_task_execution")
+        );
+        if (!feature) throw new Error("Expected task execution migration");
+        for (const entry of entries.filter(
+            (entry) => entry.isDirectory() && entry.name < feature.name
+        ))
+            await cp(path.join(source, entry.name), path.join(prior, entry.name), {
+                recursive: true,
+            });
+        await migrate(connection.database, { migrationsFolder: prior });
+        expect(
+            await connection.client`SELECT column_name FROM information_schema.columns WHERE table_name='mira_runs' AND column_name='reviewed_run_id'`
+        ).toHaveLength(0);
+        await migrateDashboard(connection);
+        await assertDashboardSchema(connection);
+        await migrateDashboard(connection);
+        expect(
+            await connection.client`SELECT column_name FROM information_schema.columns WHERE table_name='mira_runs' AND column_name='reviewed_run_id'`
+        ).toHaveLength(1);
+        expect(
+            await connection.client`SELECT indexname FROM pg_indexes WHERE tablename='mira_runs' AND indexname IN ('mira_runs_task','mira_runs_conversation','mira_runs_reviewed_run')`
+        ).toHaveLength(3);
+    } finally {
+        await connection.client.close();
+        await allocation.close();
+        await rm(prior, { recursive: true, force: true });
     }
 });

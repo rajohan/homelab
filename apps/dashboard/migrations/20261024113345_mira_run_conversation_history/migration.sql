@@ -1,1 +1,0 @@
-CREATE INDEX "mira_runs_conversation" ON "mira_runs" ("conversation_id","id");

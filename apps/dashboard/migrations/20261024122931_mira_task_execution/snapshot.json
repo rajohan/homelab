@@ -2,8 +2,8 @@
     "type": "diff",
     "version": "9",
     "dialect": "postgres",
-    "id": "8ff3c3d4-217e-482e-8b23-49cac321df99",
-    "prevIds": ["a59b2dfc-059e-4d85-a6a0-5402757a15c5"],
+    "id": "20724302-663f-4665-90a0-655f6989a6c3",
+    "prevIds": ["38e35ac2-b31e-4856-a09c-c69e707aa7fc"],
     "footprints": [
         {
             "statementType": "add_column",
@@ -14,6 +14,39 @@
                 "e|col|public.mira_runs.reviewed_run_id"
             ],
             "reads": ["n|tbl|public.mira_runs", "n|sch|public"]
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": ["index", "public", "mira_runs", "mira_runs_conversation"],
+            "writes": [
+                "s|idx|public.mira_runs_conversation",
+                "n|idx|public.mira_runs_conversation",
+                "e|idx|public.mira_runs_conversation",
+                "n|rel|public.mira_runs_conversation"
+            ],
+            "reads": [
+                "n|tbl|public.mira_runs",
+                "n|sch|public",
+                "n|col|public.mira_runs.conversation_id",
+                "n|col|public.mira_runs.id"
+            ]
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": ["index", "public", "mira_runs", "mira_runs_task"],
+            "writes": [
+                "s|idx|public.mira_runs_task",
+                "n|idx|public.mira_runs_task",
+                "e|idx|public.mira_runs_task",
+                "n|rel|public.mira_runs_task"
+            ],
+            "reads": [
+                "n|tbl|public.mira_runs",
+                "n|sch|public",
+                "n|col|public.mira_runs.owner",
+                "n|col|public.mira_runs.task_id",
+                "n|col|public.mira_runs.id"
+            ]
         },
         {
             "statementType": "create_index",
@@ -65,6 +98,75 @@
                 "generated": null,
                 "identity": null,
                 "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_runs",
+                "name": "mira_runs_conversation",
+                "nameExplicit": true,
+                "columns": [
+                    {
+                        "value": "conversation_id",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    },
+                    {
+                        "value": "id",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    }
+                ],
+                "isUnique": false,
+                "where": null,
+                "with": "",
+                "method": "btree",
+                "concurrently": false,
+                "entityType": "indexes"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_runs",
+                "name": "mira_runs_task",
+                "nameExplicit": true,
+                "columns": [
+                    {
+                        "value": "owner",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    },
+                    {
+                        "value": "task_id",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    },
+                    {
+                        "value": "id",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    }
+                ],
+                "isUnique": false,
+                "where": null,
+                "with": "",
+                "method": "btree",
+                "concurrently": false,
+                "entityType": "indexes"
             }
         },
         {
