@@ -7,12 +7,13 @@ import path from "node:path";
 import { capabilities } from "@homelab/contracts/operations";
 import { miraQueueAvailable } from "@homelab/mira/data/capacity";
 import { cleanupMiraFiles, readMiraFile, saveMiraFile } from "@homelab/mira/data/files";
-import { claimMiraRun } from "@homelab/mira/data/queue";
+import { claimMiraRun, finishMiraRun } from "@homelab/mira/data/queue";
 
 import {
     cleanupMiraConversations,
     cleanupMiraResources,
 } from "../../../../mira/src/server/executor/cleanup";
+import { readMiraTurnInput } from "../../../../mira/src/server/executor/context";
 import { appRouter } from "../api/router";
 import { operationFixture } from "../testing/operations";
 
@@ -62,12 +63,26 @@ test("provider deletion retains retry intent on failure and clears it only after
         const chat = await api.conversations.create({ title: "Delete me" });
         await fixture.client`UPDATE mira_conversations SET provider_thread = 'synthetic-thread' WHERE id = ${chat.id}`;
         await api.conversations.change({ id: chat.id, version: 1, action: "delete" });
+        const later = await api.conversations.create({ title: "Delete later" });
+        await fixture.client`UPDATE mira_conversations SET provider_thread='later-thread' WHERE id=${later.id}`;
+        await api.conversations.change({ id: later.id, version: 1, action: "delete" });
+        const attempted: string[] = [];
         await rejects(
             cleanupMiraConversations(fixture.client, {
-                deleteThread: () => Promise.reject(new Error("Synthetic disconnect")),
+                deleteThread: (id) => {
+                    attempted.push(id);
+                    return id === "synthetic-thread"
+                        ? Promise.reject(new Error("Synthetic disconnect"))
+                        : Promise.resolve();
+                },
             }),
-            /disconnect/
+            /references remain pending/
         );
+        expect(attempted).toEqual(["synthetic-thread", "later-thread"]);
+        const [remaining] = await fixture.client<
+            { count: number }[]
+        >`SELECT count(*)::int AS count FROM mira_conversations WHERE deleted_at IS NOT NULL AND provider_thread IS NOT NULL`;
+        expect(remaining?.count).toBe(1);
         const references: string[] = [];
         expect(
             await cleanupMiraConversations(fixture.client, {
@@ -191,5 +206,65 @@ test("provider deletion failure does not retain unrelated deleted uploads or aba
     } finally {
         await fixture.close();
         await rm(directory, { recursive: true, force: true });
+    }
+});
+
+test("replacement provider threads recover failed-turn context without mixing owners or duplicating resumed history", async () => {
+    const fixture = await operationFixture();
+    const api = appRouter.createCaller({
+        operations: fixture,
+        principal: { kind: "human", id: "operator", capabilities },
+    }).mira;
+    try {
+        const chat = await api.conversations.create({ title: "Recovery context" });
+        await api.conversations.send({
+            conversationId: chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Please investigate the synthetic solar inverter error ZK-427.",
+        });
+        const first = await claimMiraRun(
+            fixture.client,
+            crypto.randomUUID(),
+            "foreground"
+        );
+        if (!first) throw new Error("Expected first run");
+        const firstInput = await readMiraTurnInput(fixture.client, first);
+        expect(firstInput.content).toBe(
+            "Please investigate the synthetic solar inverter error ZK-427."
+        );
+        await finishMiraRun(fixture.client, first, {
+            state: "needs_attention",
+            text: "Unverified partial answer",
+            message: "Authentication expired before provider thread creation.",
+        });
+        await api.conversations.send({
+            conversationId: chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Try again",
+        });
+        const retry = await claimMiraRun(
+            fixture.client,
+            crypto.randomUUID(),
+            "foreground"
+        );
+        if (!retry) throw new Error("Expected retry");
+        const restored = await readMiraTurnInput(fixture.client, retry);
+        expect(restored.content).toContain("ZK-427");
+        expect(restored.content).toContain("Unverified partial answer");
+        expect(restored.content).toContain('"state":"failed"');
+        expect(restored.content).toEndWith("Current user message:\nTry again");
+        await rejects(
+            readMiraTurnInput(fixture.client, { ...retry, owner: "other" }),
+            /unavailable/
+        );
+        await fixture.client`UPDATE mira_messages SET content=repeat('Long historical input ',10000) WHERE id=${first.userMessageId}`;
+        const bounded = await readMiraTurnInput(fixture.client, retry);
+        expect(bounded.content.length).toBeLessThan(50_000);
+        expect(bounded.content).toContain('"truncated":true');
+        await fixture.client`UPDATE mira_conversations SET provider_thread='already-resumed' WHERE id=${chat.id}`;
+        const resumed = await readMiraTurnInput(fixture.client, retry);
+        expect(resumed.content).toBe("Try again");
+    } finally {
+        await fixture.close();
     }
 });

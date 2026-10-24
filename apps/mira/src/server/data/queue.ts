@@ -90,13 +90,20 @@ export async function claimMiraRun(
                 await query`UPDATE mira_messages SET state = 'interrupted' WHERE id = ${run.assistantMessageId}`;
                 continue;
             }
+            if (run.taskId && !run.manual) {
+                await query`SELECT id FROM mira_tasks WHERE id=${run.taskId} AND owner=${run.owner} FOR SHARE`;
+                const [due] = await query<
+                    { valid: boolean }[]
+                >`SELECT EXISTS (SELECT 1 FROM mira_event_deliveries d JOIN mira_events e ON e.id=d.event_id JOIN mira_tasks t ON t.id=e.task_id AND t.owner=e.owner WHERE d.run_id=${run.id} AND e.kind='task_due' AND t.id=${run.taskId} AND t.owner=${run.owner} AND t.deleted_at IS NULL AND t.status<>'done' AND t.due_at<=now() AND e.source_key=t.id::text || ':' || t.due_at::text) AS valid`;
+                if (!due?.valid) {
+                    await query`UPDATE mira_runs SET state='interrupted', message='Task deadline changed before execution.', finished_at=now() WHERE id=${run.id}`;
+                    await query`UPDATE mira_messages SET state='interrupted' WHERE id=${run.assistantMessageId}`;
+                    continue;
+                }
+            }
             const leaseToken = crypto.randomUUID();
-            const observationHash = run.automationId
-                ? await miraObservationFingerprint(query, run.owner)
-                : null;
             await query`UPDATE mira_runs SET state = 'running', worker_id = ${workerId}, lease_token = ${leaseToken}, lease_expires_at = now() + interval '30 seconds', lane = ${lane}, started_at = now() WHERE id = ${run.id}`;
             await query`UPDATE mira_messages SET state = 'streaming' WHERE id = ${run.assistantMessageId}`;
-            await query`UPDATE mira_runs SET observation_hash = ${observationHash} WHERE id = ${run.id}`;
             await auditMira(
                 query,
                 { owner: run.owner, actor: `mira:${run.id}` },
@@ -164,6 +171,10 @@ export async function finishMiraRun(
         if (!rows[0]) return false;
         await query`UPDATE mira_messages SET content = ${outcome.text}, state = ${outcome.state === "needs_attention" ? "failed" : outcome.state} WHERE id = ${run.assistantMessageId}`;
         await query`UPDATE mira_conversations SET updated_at = now() WHERE id = ${run.conversationId}`;
+        if (run.automationId && outcome.state === "completed") {
+            const fingerprint = await miraObservationFingerprint(query, run.owner);
+            await query`UPDATE mira_runs SET observation_hash=${fingerprint} WHERE id=${run.id}`;
+        }
         await notifyMiraRun(query, run.id);
         await auditMira(
             query,
