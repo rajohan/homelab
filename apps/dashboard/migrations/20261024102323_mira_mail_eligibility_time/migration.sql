@@ -1,1 +1,0 @@
-ALTER TABLE "mira_events" ADD COLUMN "eligibility_at" timestamp with time zone;
