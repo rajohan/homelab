@@ -92,7 +92,7 @@ export function AttachmentPicker({
             <div
                 className={
                     compact
-                        ? "order-last flex min-w-0 items-center gap-1 border-t border-primary-700 pt-2"
+                        ? "order-last -mx-2 flex min-w-0 items-center gap-1 border-t border-primary-700 px-2 pt-2"
                         : "flex flex-col gap-2 min-[30rem]:flex-row"
                 }
             >
