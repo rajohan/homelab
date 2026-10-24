@@ -9,7 +9,7 @@ import {
     Modal,
     SectionHeader,
 } from "@homelab/ui";
-import { Mail, Send, Paperclip } from "lucide-react";
+import { Mail, Send, Paperclip, Download } from "lucide-react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
@@ -49,15 +49,15 @@ export function MailReview({
                         badge={<Badge>{draft.state.replaceAll("_", " ")}</Badge>}
                     />
                     <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
-                        <dt className="text-primary-400">From</dt>
+                        <dt className="whitespace-nowrap text-primary-400">From</dt>
                         <dd className="wrap-break-word">{draft.inboxId}</dd>
-                        <dt className="text-primary-400">To</dt>
+                        <dt className="whitespace-nowrap text-primary-400">To</dt>
                         <dd className="wrap-break-word">{draft.content.to.join(", ")}</dd>
-                        <dt className="text-primary-400">Cc</dt>
+                        <dt className="whitespace-nowrap text-primary-400">Cc</dt>
                         <dd className="wrap-break-word">
                             {draft.content.cc.join(", ") || "None"}
                         </dd>
-                        <dt className="text-primary-400">Bcc</dt>
+                        <dt className="whitespace-nowrap text-primary-400">Bcc</dt>
                         <dd className="wrap-break-word">
                             {draft.content.bcc.join(", ") || "None"}
                         </dd>
@@ -68,11 +68,11 @@ export function MailReview({
                             {draft.content.attachments!.map((file) => (
                                 <div
                                     key={file.id}
-                                    className="flex flex-wrap items-center gap-2 text-sm"
+                                    className="flex flex-col gap-2 text-sm sm:flex-row sm:items-center"
                                 >
                                     <span className="min-w-0 flex-1 wrap-anywhere">
                                         {file.name}{" "}
-                                        <span className="text-primary-400">
+                                        <span className="whitespace-nowrap text-primary-400">
                                             ({(file.bytes / 1024).toFixed(1)} KiB)
                                         </span>
                                     </span>
@@ -81,6 +81,7 @@ export function MailReview({
                                         className={buttonStyles({ variant: "secondary" })}
                                         download={file.name}
                                     >
+                                        <Download size={16} aria-hidden="true" />
                                         Download
                                     </a>
                                 </div>
