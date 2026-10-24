@@ -152,6 +152,7 @@ export const miraSwitches = pgTable(
         reason: text(),
         until: time("until"),
         version: integer().notNull().default(1),
+        changedAt: time("changed_at").notNull().defaultNow(),
     },
     (t) => [
         primaryKey({ columns: [t.owner, t.key] }),
@@ -301,6 +302,10 @@ export const miraRuntimeStatus = pgTable(
         message: text(),
         heartbeatAt: time("heartbeat_at").notNull(),
         models: jsonb().$type<MiraModel[]>().notNull().default([]),
+        integrations: jsonb()
+            .$type<{ owner: string; key: string }[]>()
+            .notNull()
+            .default([]),
     },
     (t) => [check("mira_runtime_status_singleton", sql`${t.id} = 1`)]
 );
@@ -338,4 +343,25 @@ export const miraEventDeliveries = pgTable(
             sql`${t.state} in ('pending','dispatched','skipped')`
         ),
     ]
+);
+
+export const miraIntegrationState = pgTable(
+    "mira_integration_state",
+    {
+        owner: text().notNull(),
+        key: text().notNull(),
+        binding: text().notNull(),
+        controlVersion: integer("control_version").notNull(),
+        startedAt: time("started_at").notNull(),
+        completedThrough: time("completed_through").notNull(),
+        windowEnd: time("window_end"),
+        cursor: text(),
+        leaseToken: uuid("lease_token"),
+        leaseExpiresAt: time("lease_expires_at"),
+        nextAttemptAt: time("next_attempt_at").notNull(),
+        lastSuccessAt: time("last_success_at"),
+        message: text(),
+        heartbeatAt: time("heartbeat_at").notNull().defaultNow(),
+    },
+    (t) => [primaryKey({ columns: [t.owner, t.key] })]
 );

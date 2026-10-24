@@ -17,6 +17,8 @@ import { readMiraFile } from "../data/files";
 import type { MiraClaim } from "../data/queue";
 import { addTaskProgress, listTasks, saveTask } from "../data/tasks";
 import { readMiraPdf } from "../files/content";
+import type { AgentMailReadConfiguration } from "../integrations/agentmail/configuration";
+import { createAgentMailTools } from "../integrations/agentmail/tools";
 import type { RuntimeTool } from "../runtime/protocol";
 
 const string = { type: "string" };
@@ -44,12 +46,14 @@ const object = (properties: Record<string, unknown>, required: string[] = []) =>
  * @param client - Dedicated executor database pool.
  * @param run - Currently leased invocation; models cannot replace its owner or grants.
  * @param filesDirectory - Explicit shared file volume, scoped by selected message attachments.
+ * @param agentMail - Optional provisioned inbox, rechecked by each read-only mail tool.
  * @returns The fixed tool declarations for this conversation and their checked handlers.
  */
 export function createMiraTools(
     client: SQL,
     run: MiraClaim,
-    filesDirectory?: string
+    filesDirectory?: string,
+    agentMail?: AgentMailReadConfiguration
 ): RuntimeTool[] {
     const context: MiraContext = {
         client,
@@ -230,6 +234,7 @@ export function createMiraTools(
                 };
             },
         },
+        ...createAgentMailTools(client, run, agentMail),
     ];
     return definitions.map(({ action, automatic, ...definition }) => ({
         ...definition,

@@ -16,6 +16,7 @@ import {
     type DashboardServerOptions,
 } from "./http/responses";
 import { createDashboardAuthentication } from "./identity/authentication";
+import { agentMailWebhookReceiver } from "./mira/agentmail";
 import { miraFileRequest } from "./mira/files";
 import { OperationFailure } from "./operations/errors";
 import { createOperationsRuntime } from "./operations/runtime";
@@ -42,9 +43,13 @@ export function startDashboardServer(options: DashboardServerOptions = {}) {
         ? createOperationsRuntime(operationalConfiguration)
         : undefined;
 
+    const receiveAgentMail = agentMailWebhookReceiver(operations);
+
     async function api(incoming: Request): Promise<Response> {
         try {
             const incomingPath = new URL(incoming.url).pathname;
+            if (incomingPath === "/api/mira/hooks/agentmail")
+                return await receiveAgentMail(incoming);
             if (
                 incomingPath === "/api/mira/files" ||
                 incomingPath.startsWith("/api/mira/files/")

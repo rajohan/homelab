@@ -196,3 +196,5 @@ records, check ownership and links, and prevent duplicate old/new scheduled exec
 Test DST, missed schedules, concurrent edits, notification races and process crashes.
 The feature is not complete until Windows acceptance, external adapters, updates,
 disable preservation and server-side independent execution pass their checks.
+
+AgentMail delivery and provisioning are documented in [Mira AgentMail](mira-agentmail.md). The signed receiver, read tools, recovery and pause controls are implemented; real activation and outgoing drafts remain pending.

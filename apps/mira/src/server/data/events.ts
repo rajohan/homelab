@@ -29,6 +29,7 @@ export async function recordMiraEvent(
         input.reference.length > 1000
     )
         throw new Error("Invalid Mira event reference.");
+    await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${input.owner}`}, 0))`;
     const id = Bun.randomUUIDv7();
     const observedAt = input.observedAt ?? new Date();
     const inserted = await query<
@@ -42,6 +43,11 @@ export async function recordMiraEvent(
         >`SELECT id FROM mira_automations WHERE owner = ${input.owner} AND deleted_at IS NULL AND schedule->>'kind' = 'event' AND schedule->>'event' = ${input.kind} AND (${cursor}::uuid IS NULL OR id > ${cursor}::uuid) ORDER BY id LIMIT 100`;
         for (const automation of automations) {
             if (!(await miraRunAllowed(query, input.owner, automation.id))) continue;
+            const [eligible] = await query<
+                { allowed: boolean }[]
+            >`SELECT NOT EXISTS (SELECT 1 FROM mira_switches WHERE owner = ${input.owner} AND key IN ('autonomy', ${`automation:${automation.id}`}, ${input.kind === "agentmail" ? "integration:agentmail" : "autonomy"}) AND changed_at > ${observedAt}) AS allowed`;
+            if (!eligible?.allowed) continue;
+
             await query`INSERT INTO mira_event_deliveries (event_id, automation_id, next_attempt_at) VALUES (${id}, ${automation.id}, ${observedAt})`;
         }
         if (automations.length < 100) break;

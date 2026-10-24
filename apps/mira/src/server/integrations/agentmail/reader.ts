@@ -1,0 +1,117 @@
+import * as v from "valibot";
+
+import { integrationJson } from "../http";
+import type { AgentMailReadConfiguration } from "./configuration";
+import {
+    agentMailContentSchema,
+    agentMailIdSchema,
+    agentMailMessagePageSchema,
+    ordinaryReceivedMail,
+} from "./schema";
+
+/** Fixed-origin, bounded AgentMail reads for one server-provisioned inbox. */
+export class AgentMailReader {
+    private readonly configuration: AgentMailReadConfiguration;
+    private readonly request: typeof fetch;
+    /**
+     * Bind requests to the provisioned inbox and credential.
+     * @param configuration - Private executor settings, never chosen by model input.
+     * @param request - HTTP transport; replace only in synthetic tests.
+     */
+    constructor(
+        configuration: AgentMailReadConfiguration,
+        request: typeof fetch = fetch
+    ) {
+        this.configuration = configuration;
+        this.request = request;
+    }
+
+    private async get(
+        suffix: string,
+        query: URLSearchParams,
+        signal: AbortSignal
+    ): Promise<unknown> {
+        const inbox = encodeURIComponent(this.configuration.inboxId);
+        const url = new URL(
+            `https://api.agentmail.to/v0/inboxes/${inbox}/messages${suffix}`
+        );
+        url.search = query.toString();
+        const response = await this.request(url, {
+            method: "GET",
+            headers: {
+                Authorization: `Bearer ${this.configuration.apiKey}`,
+                Accept: "application/json",
+            },
+            redirect: "error",
+            signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
+        });
+        return integrationJson(response, 2_097_152);
+    }
+
+    /**
+     * Read one bounded page for catch-up; the caller persists its cursor only after acceptance.
+     * @param input - Fixed time window and optional provider page cursor.
+     * @param signal - Cancellation for the owning service operation.
+     * @returns Validated metadata from the configured inbox only.
+     */
+    async list(
+        input: { after: string; before: string; cursor?: string | undefined },
+        signal: AbortSignal
+    ) {
+        const parsed = v.parse(
+            v.strictObject({
+                after: v.pipe(v.string(), v.isoTimestamp()),
+                before: v.pipe(v.string(), v.isoTimestamp()),
+                cursor: v.optional(v.pipe(v.string(), v.minLength(1), v.maxLength(4096))),
+            }),
+            input
+        );
+        const query = new URLSearchParams({
+            limit: "100",
+            after: parsed.after,
+            before: parsed.before,
+            ascending: "true",
+            labels: "received",
+        });
+        if (parsed.cursor) query.set("page_token", parsed.cursor);
+        const result = v.parse(
+            agentMailMessagePageSchema,
+            await this.get("", query, signal)
+        );
+        if (
+            result.messages.some(
+                (message) => message.inbox_id !== this.configuration.inboxId
+            )
+        )
+            throw new Error("AgentMail returned a different inbox.");
+        return result;
+    }
+
+    /**
+     * Fetch passive mail content; messages cannot grant tools, send authority or credentials.
+     * @param messageId - Validated provider identifier within the configured inbox.
+     * @param signal - Cancellation for the current product run.
+     * @returns A bounded text/HTML-as-text excerpt and explicit truncation metadata.
+     */
+    async read(messageId: string, signal: AbortSignal) {
+        const id = v.parse(agentMailIdSchema, messageId);
+        const message = v.parse(
+            agentMailContentSchema,
+            await this.get(`/${encodeURIComponent(id)}`, new URLSearchParams(), signal)
+        );
+        if (message.inbox_id !== this.configuration.inboxId || message.message_id !== id)
+            throw new Error("AgentMail returned a different message.");
+        if (!ordinaryReceivedMail(message))
+            throw new Error("This message is not eligible for automatic reading.");
+        const plain = message.extracted_text ?? message.text;
+        const content = plain ?? message.extracted_html ?? message.html ?? "";
+        return {
+            messageId: id,
+            from: message.from,
+            subject: message.subject,
+            format: plain === undefined ? "untrusted_html_text" : "untrusted_text",
+            content: content.slice(0, 48_000),
+            truncated: content.length > 48_000,
+        };
+    }
+}

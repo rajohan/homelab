@@ -168,7 +168,7 @@ export async function setMiraEnabled(
         await query`INSERT INTO mira_switches (owner, key, enabled, reason) VALUES (${context.owner}, ${input.key}, ${input.key === "autonomy"}, ${input.key === "autonomy" ? null : "Not enabled yet."}) ON CONFLICT DO NOTHING`;
         const rows = await query<
             { key: string }[]
-        >`UPDATE mira_switches SET enabled = ${input.enabled}, reason = ${input.reason}, until = ${input.until ? new Date(input.until) : null}, version = version + 1 WHERE owner = ${context.owner} AND key = ${input.key} AND version = ${input.version} RETURNING key`;
+        >`UPDATE mira_switches SET enabled = ${input.enabled}, reason = ${input.reason}, until = ${input.until ? new Date(input.until) : null}, version = version + 1, changed_at = now() WHERE owner = ${context.owner} AND key = ${input.key} AND version = ${input.version} RETURNING key`;
         if (!rows[0])
             throw new MiraFailure(
                 "CONFLICT",
@@ -214,7 +214,7 @@ export async function resumeMiraControls(query: MiraQuery, now: Date): Promise<v
         { owner: string; key: string }[]
     >`SELECT owner, key FROM mira_switches WHERE NOT enabled AND until <= ${now} FOR UPDATE SKIP LOCKED`;
     for (const row of rows) {
-        await query`UPDATE mira_switches SET enabled = true, reason = NULL, until = NULL, version = version + 1 WHERE owner = ${row.owner} AND key = ${row.key}`;
+        await query`UPDATE mira_switches SET enabled = true, reason = NULL, until = NULL, version = version + 1, changed_at = now() WHERE owner = ${row.owner} AND key = ${row.key}`;
         await resetOccurrences(query, row.owner, row.key, now.getTime());
         await auditMira(
             query,

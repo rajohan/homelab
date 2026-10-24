@@ -1,3 +1,4 @@
+import { agentMailReadConfiguration } from "../integrations/agentmail/configuration";
 import { pilotEnvironment, type PilotConfig } from "../runtime/configuration";
 
 /**
@@ -29,5 +30,6 @@ export function miraEnvironment() {
         file,
         port,
         filesDirectory: process.env.HOMELAB_MIRA_FILES_DIR,
+        agentMail: agentMailReadConfiguration(process.env),
     };
 }

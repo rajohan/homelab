@@ -50,6 +50,7 @@ import {
     saveMemory,
 } from "@homelab/mira/data/documents";
 import { listMiraFiles, miraFileMetadata } from "@homelab/mira/data/files";
+import { listMiraIntegrations } from "@homelab/mira/data/integrations";
 import { listMiraRuns } from "@homelab/mira/data/queue";
 import {
     addTaskProgress,
@@ -280,6 +281,7 @@ export const miraRouter = trpc.router({
                 execute(ctx, (mira) => saveMiraAutomation(mira, input))
             ),
     }),
+    integrations: trpc.procedure.query(({ ctx }) => execute(ctx, listMiraIntegrations)),
     controls: trpc.router({
         list: trpc.procedure.query(({ ctx }) => execute(ctx, listMiraSwitches)),
         setEnabled: trpc.procedure
