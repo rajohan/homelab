@@ -7,6 +7,7 @@ import {
 } from "@homelab/contracts/mira";
 import { sql } from "drizzle-orm";
 import {
+    type AnyPgColumn,
     boolean,
     check,
     index,
@@ -173,6 +174,7 @@ export const miraRuns = pgTable(
         owner: text().notNull(),
         requestKey: text("request_key").notNull().unique(),
         requestHash: text("request_hash").notNull(),
+        reviewedRunId: uuid("reviewed_run_id").references((): AnyPgColumn => miraRuns.id),
         activity: jsonb().$type<MiraActivity>(),
         effectiveSettings: jsonb("effective_settings").$type<MiraChatSettings>(),
         settings: jsonb()
@@ -209,6 +211,9 @@ export const miraRuns = pgTable(
     (t) => [
         index("mira_runs_queue").on(t.state, t.priority, t.id),
         index("mira_runs_owner").on(t.owner, t.id),
+        index("mira_runs_conversation").on(t.conversationId, t.id),
+        index("mira_runs_task").on(t.owner, t.taskId, t.id),
+        index("mira_runs_reviewed_run").on(t.reviewedRunId),
         uniqueIndex("mira_runs_one_active_conversation")
             .on(t.conversationId)
             .where(sql`${t.state} in ('queued','running')`),
@@ -413,4 +418,16 @@ export const miraIntegrationReceivers = pgTable("mira_integration_receivers", {
 export const miraMailIntake = pgTable("mira_mail_intake", {
     owner: text().primaryKey(),
     skippedThrough: time("skipped_through").notNull(),
+});
+
+export const miraTaskRunReviews = pgTable("mira_task_run_reviews", {
+    runId: uuid("run_id")
+        .primaryKey()
+        .references(() => miraRuns.id),
+    taskId: uuid("task_id")
+        .notNull()
+        .references(() => miraTasks.id),
+    owner: text().notNull(),
+    actor: text().notNull(),
+    reviewedAt: time("reviewed_at").notNull().defaultNow(),
 });

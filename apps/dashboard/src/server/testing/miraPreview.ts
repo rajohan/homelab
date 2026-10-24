@@ -115,7 +115,7 @@ export async function main(port = 3330): Promise<void> {
                         : null,
                 completionCriteria:
                     "The requested change has been verified and recorded.",
-                conversationId: chat.id,
+                conversationId: null,
             });
         }
         await createReport(

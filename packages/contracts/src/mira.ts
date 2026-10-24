@@ -27,6 +27,16 @@ export const miraTaskUpdateSchema = v.strictObject({
     ...versionedIdSchema.entries,
     ...miraTaskInputSchema.entries,
 });
+export const miraTaskReviewInputSchema = v.strictObject({
+    ...versionedIdSchema.entries,
+    runId: idSchema,
+});
+export const miraTaskRunInputSchema = v.strictObject({
+    ...versionedIdSchema.entries,
+    requestId: idSchema,
+    instructions: v.optional(text(4000), ""),
+    reviewedRunId: v.optional(v.nullable(idSchema), null),
+});
 export const miraTaskFilterSchema = v.strictObject({
     ...miraPageSchema.entries,
     status: v.optional(v.picklist(miraTaskStates)),
