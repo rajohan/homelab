@@ -13,12 +13,13 @@ export async function readMiraTurnInput(client: SQL, run: MiraClaim) {
     const [record] = await client<
         {
             providerThread: string | null;
+            providerPolicyHash: string | null;
             providerContextReady: boolean;
             content: string;
             attachmentIds: string[];
             settings: MiraChatSettings;
         }[]
-    >`SELECT c.provider_thread AS "providerThread", c.provider_context_ready AS "providerContextReady", m.content, m.attachment_ids AS "attachmentIds", r.settings FROM mira_conversations c JOIN mira_messages m ON m.id=${run.userMessageId} AND m.conversation_id=c.id JOIN mira_runs r ON r.id=${run.id} AND r.conversation_id=c.id WHERE c.id=${run.conversationId} AND c.owner=${run.owner} AND c.deleted_at IS NULL`;
+    >`SELECT c.provider_thread AS "providerThread", c.provider_policy_hash AS "providerPolicyHash", c.provider_context_ready AS "providerContextReady", m.content, m.attachment_ids AS "attachmentIds", r.settings FROM mira_conversations c JOIN mira_messages m ON m.id=${run.userMessageId} AND m.conversation_id=c.id JOIN mira_runs r ON r.id=${run.id} AND r.conversation_id=c.id WHERE c.id=${run.conversationId} AND c.owner=${run.owner} AND c.deleted_at IS NULL`;
     if (!record) throw new Error("Conversation unavailable.");
     if (record.providerThread && record.providerContextReady) return record;
     const rows = await client<

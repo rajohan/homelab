@@ -9,6 +9,7 @@ const mode = process.argv[2] ?? "ok";
 let initialized = false;
 let notified = false;
 let activeTurn = 0;
+let policyThreadDeleted = false;
 const write = (value: unknown) => process.stdout.write(JSON.stringify(value) + "\n");
 const reader = createInterface({ input: process.stdin });
 for await (const line of reader) {
@@ -167,6 +168,19 @@ for await (const line of reader) {
             result: { data: [{ model: "synthetic", isDefault: true }], nextCursor: null },
         });
     } else if (message.method === "thread/start" || message.method === "thread/resume") {
+        if (
+            mode === "policy-rotation" &&
+            (message.method === "thread/resume" || !policyThreadDeleted)
+        ) {
+            write({
+                id: message.id,
+                error: {
+                    code: -32_600,
+                    message: "Stale policy must be retired before creating a new thread.",
+                },
+            });
+            continue;
+        }
         if (message.method === "thread/resume" && mode.startsWith("resume-missing")) {
             write({
                 id: message.id,
@@ -214,6 +228,7 @@ for await (const line of reader) {
             },
         });
     } else if (message.method === "thread/delete") {
+        policyThreadDeleted = true;
         if (mode === "delete-missing")
             write({
                 id: message.id,
@@ -265,7 +280,8 @@ for await (const line of reader) {
             });
         }
         let text = mode === "failed" ? "" : "Synthetic response";
-        if (mode === "resume-missing") text = JSON.stringify(message.params.input);
+        if (mode === "resume-missing" || mode === "policy-rotation")
+            text = JSON.stringify(message.params.input);
         if (mode === "settings-activity")
             text = JSON.stringify({
                 model: message.params.model,

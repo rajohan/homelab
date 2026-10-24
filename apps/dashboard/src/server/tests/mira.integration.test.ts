@@ -1276,3 +1276,111 @@ test("task execution upgrades the migrated AgentMail parent without skipping ear
         await rm(prior, { recursive: true, force: true });
     }
 });
+
+test("relinking cannot adopt a second active task run and shares the task admission lock", async () => {
+    const database = await fixture();
+    try {
+        const api = database.caller().mira;
+        const saved = await api.tasks.create(task);
+        const first = await api.tasks.run({
+            id: saved.id,
+            version: 1,
+            requestId: crypto.randomUUID(),
+        });
+        const chat = await api.conversations.create({ title: "Separate active work" });
+        const second = await api.conversations.send({
+            conversationId: chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Existing work",
+        });
+        const update = { ...task, id: saved.id, version: 2, conversationId: chat.id };
+        await rejects(api.tasks.update(update), /Stop or finish active work/);
+        const [unadopted] = await database.client<
+            { taskId: string | null }[]
+        >`SELECT task_id AS "taskId" FROM mira_runs WHERE id=${second.id}`;
+        expect(unadopted?.taskId).toBeNull();
+        await database.client.begin(async (query) => {
+            await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:task:operator:${saved.id}`},0))`;
+            await rejects(api.tasks.update(update), /Task admission is busy/);
+        });
+        await api.runs.cancel({ id: first.id });
+        await api.tasks.update(update);
+        const history = await api.tasks.execution({ id: saved.id });
+        expect(
+            history.rows
+                .filter((run) => ["queued", "running"].includes(run.state))
+                .map((run) => run.id)
+        ).toEqual([second.id]);
+    } finally {
+        await database.close();
+    }
+});
+
+test("every adopted uncertain outcome must be reviewed without scheduling intermediate work", async () => {
+    const database = await fixture();
+    try {
+        const api = database.caller().mira;
+        const chat = await api.conversations.create({
+            title: "Multiple uncertain outcomes",
+        });
+        const runs: string[] = [];
+        for (const state of ["needs_attention", "unknown receipt"]) {
+            const run = await api.conversations.send({
+                conversationId: chat.id,
+                requestId: crypto.randomUUID(),
+                text: state,
+            });
+            await api.runs.cancel(run);
+            await (state === "needs_attention"
+                ? database.client`UPDATE mira_runs SET state='needs_attention' WHERE id=${run.id}`
+                : database.client`INSERT INTO mira_tool_receipts(id,run_id,call_id,tool,input_hash,state) VALUES (${Bun.randomUUIDv7()},${run.id},'unknown','synthetic','synthetic','unknown')`);
+            runs.push(run.id);
+        }
+        const saved = await api.tasks.create({ ...task, conversationId: chat.id });
+        const newest = runs[1]!,
+            older = runs[0]!;
+        await rejects(
+            api.tasks.run({
+                id: saved.id,
+                version: 1,
+                requestId: crypto.randomUUID(),
+                reviewedRunId: newest,
+            }),
+            /Review every uncertain/
+        );
+        await rejects(
+            database
+                .caller("other")
+                .mira.tasks.reviewRun({ id: saved.id, version: 1, runId: newest }),
+            /not found/
+        );
+        await api.tasks.reviewRun({ id: saved.id, version: 1, runId: newest });
+        await api.tasks.reviewRun({ id: saved.id, version: 1, runId: newest });
+        const middle = await api.tasks.execution({ id: saved.id });
+        expect(middle.version).toBe(2);
+        expect(middle.reviewRunId).toBe(older);
+        expect(middle.rows).toHaveLength(2);
+        expect(
+            middle.rows.every((run) => !["queued", "running"].includes(run.state))
+        ).toBe(true);
+        await rejects(
+            api.tasks.run({ id: saved.id, version: 2, requestId: crypto.randomUUID() }),
+            /Review the uncertain/
+        );
+        await rejects(
+            api.tasks.reviewRun({ id: saved.id, version: 1, runId: older }),
+            /task changed/
+        );
+        await api.tasks.reviewRun({ id: saved.id, version: 2, runId: older });
+        const reviewed = await api.tasks.execution({ id: saved.id });
+        expect(reviewed.reviewRunId).toBeNull();
+        const next = await api.tasks.run({
+            id: saved.id,
+            version: 3,
+            requestId: crypto.randomUUID(),
+        });
+        expect(next.conversationId).toBe(chat.id);
+    } finally {
+        await database.close();
+    }
+});

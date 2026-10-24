@@ -17,6 +17,7 @@ import {
     miraStateChangeSchema,
     miraTaskFilterSchema,
     miraTaskRunInputSchema,
+    miraTaskReviewInputSchema,
     miraTaskInputSchema,
     miraTaskUpdateSchema,
 } from "@homelab/contracts/mira";
@@ -69,6 +70,7 @@ import { listMiraProposals, decideMiraProposal } from "@homelab/mira/data/propos
 import { listMiraRuns } from "@homelab/mira/data/queue";
 import { readMiraRun } from "@homelab/mira/data/runHistory";
 import { readTaskExecution, runMiraTask } from "@homelab/mira/data/taskExecution";
+import { reviewTaskRun } from "@homelab/mira/data/taskRecovery";
 import {
     addTaskProgress,
     deleteTask,
@@ -247,6 +249,11 @@ export const miraRouter = trpc.router({
             .input(miraConversationReadSchema)
             .query(({ ctx, input }) =>
                 execute(ctx, (mira) => readTaskExecution(mira, input.id, input.before))
+            ),
+        reviewRun: trpc.procedure
+            .input(miraTaskReviewInputSchema)
+            .mutation(({ ctx, input }) =>
+                execute(ctx, (mira) => reviewTaskRun(mira, input))
             ),
         run: trpc.procedure
             .input(miraTaskRunInputSchema)

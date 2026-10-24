@@ -178,7 +178,7 @@ export class CodexRuntime {
      * Reopen a stored provider thread while re-establishing host-side tool authority.
      * @param threadId - Previously recorded provider reference.
      * @param tools - Current trusted registry; stored tool declarations cannot authorize calls.
-     * @param instructions - Current server policy; omitted only for synthetic qualification.
+     * @param instructions - Policy already bound to this thread; callers must rotate threads when policy changes.
      * @returns Completion after the runtime has restored the thread.
      */
     async resumeThread(

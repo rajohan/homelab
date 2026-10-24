@@ -31,6 +31,7 @@ export const miraConversations = pgTable(
         title: text().notNull(),
         version: integer().notNull().default(1),
         providerThread: text("provider_thread"),
+        providerPolicyHash: text("provider_policy_hash"),
         providerContextReady: boolean("provider_context_ready").notNull().default(false),
         model: text(),
         settings: jsonb()
@@ -452,3 +453,21 @@ export const miraMailDrafts = pgTable(
         ),
     ]
 );
+
+// One account-wide watermark bounds durable quota suppression independently of traffic.
+export const miraMailIntake = pgTable("mira_mail_intake", {
+    owner: text().primaryKey(),
+    skippedThrough: time("skipped_through").notNull(),
+});
+
+export const miraTaskRunReviews = pgTable("mira_task_run_reviews", {
+    runId: uuid("run_id")
+        .primaryKey()
+        .references(() => miraRuns.id),
+    taskId: uuid("task_id")
+        .notNull()
+        .references(() => miraTasks.id),
+    owner: text().notNull(),
+    actor: text().notNull(),
+    reviewedAt: time("reviewed_at").notNull().defaultNow(),
+});
