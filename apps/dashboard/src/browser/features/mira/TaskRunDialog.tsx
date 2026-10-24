@@ -53,6 +53,15 @@ export function TaskRunDialog({
             <MiraRunDetails
                 id={reviewRunId}
                 onClose={onClose}
+                actions={
+                    <Button
+                        disabled={!reviewed}
+                        busy={review.isPending}
+                        onClick={() => review.mutate(undefined)}
+                    >
+                        Mark reviewed
+                    </Button>
+                }
                 footer={
                     <div className="space-y-3 border-t border-primary-700 pt-4">
                         <Switch
@@ -63,14 +72,6 @@ export function TaskRunDialog({
                             disabled={review.isPending}
                         />
                         {review.error && <ErrorNotice error={review.error} />}
-                        <Button
-                            fullWidth
-                            disabled={!reviewed}
-                            busy={review.isPending}
-                            onClick={() => review.mutate(undefined)}
-                        >
-                            Mark reviewed
-                        </Button>
                     </div>
                 }
             />
