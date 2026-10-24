@@ -91,7 +91,8 @@ export function agentMailWebhookReceiver(
                     operations.client,
                     operations.agentMailHook,
                     message.messageId,
-                    message.observedAt
+                    message.observedAt,
+                    message.availableAt
                 );
             } catch {
                 return response(503);

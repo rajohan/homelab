@@ -91,11 +91,27 @@ export async function pollAgentMail(
             if (!owned || !(await agentMailReceiverCurrent(query, binding))) return false;
             for (const message of page.messages) {
                 const at = new Date(message.created_at);
+                const availableAt = new Date(
+                    message.event_created_at ??
+                        message.agent_armor?.manual_override?.released_at ??
+                        message.created_at
+                );
                 if (message.inbox_id !== binding.inboxId) throw new Error("Wrong inbox.");
-                if (!Number.isFinite(at.getTime()) || at.getTime() > Date.now() + 300_000)
+                if (
+                    !Number.isFinite(at.getTime()) ||
+                    at.getTime() > Date.now() + 300_000 ||
+                    !Number.isFinite(availableAt.getTime()) ||
+                    availableAt.getTime() > Date.now() + 300_000
+                )
                     throw new Error("Invalid message receipt time.");
                 if (ordinaryReceivedMail(message))
-                    await recordAgentMailMessage(query, binding, message.message_id, at);
+                    await recordAgentMailMessage(
+                        query,
+                        binding,
+                        message.message_id,
+                        at,
+                        availableAt
+                    );
             }
             const cursor = page.next_page_token ?? null;
             const head = claimed.cursor ? claimed.windowHead : (page.head ?? null);
