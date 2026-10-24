@@ -1,1 +1,0 @@
-CREATE INDEX "mira_runs_task" ON "mira_runs" ("owner","task_id","id");
