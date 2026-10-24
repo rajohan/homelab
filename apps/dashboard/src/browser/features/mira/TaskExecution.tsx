@@ -1,6 +1,6 @@
 import { Button, ErrorNotice, LoadingState, SectionHeader } from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { Play, Activity } from "lucide-react";
+import { Play, Activity, ClipboardCheck } from "lucide-react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
@@ -35,6 +35,7 @@ export function TaskExecution({
     );
     const rows = query.data?.pages.flatMap((page) => page.rows) ?? [];
     const first = query.data?.pages[0];
+    const startLabel = rows.length > 0 ? "Continue work" : "Start work";
     const active = rows.some((run) => ["queued", "running"].includes(run.state));
     return (
         <section className="space-y-3 border-t border-primary-700 pt-4">
@@ -44,8 +45,12 @@ export function TaskExecution({
                 actions={
                     canStart && first && !query.isError && !active ? (
                         <Button onClick={() => onStart(first.version, first.reviewRunId)}>
-                            <Play size={16} aria-hidden="true" />
-                            {rows.length > 0 ? "Continue work" : "Start work"}
+                            {first.reviewRunId ? (
+                                <ClipboardCheck size={16} aria-hidden="true" />
+                            ) : (
+                                <Play size={16} aria-hidden="true" />
+                            )}
+                            {first.reviewRunId ? "Review uncertain run" : startLabel}
                         </Button>
                     ) : undefined
                 }

@@ -349,7 +349,7 @@ test("Run now retries an uncertain response with its original request identity",
     }
 });
 
-test("task continuation requires explicit uncertainty review and retries the same frozen request", async () => {
+test("task continuation retries the same frozen request", async () => {
     const requested: {
         requestId: string;
         instructions: string;
@@ -357,7 +357,6 @@ test("task continuation requires explicit uncertainty review and retries the sam
     }[] = [];
     const started: string[] = [];
     const conversationId = crypto.randomUUID();
-    const reviewRunId = crypto.randomUUID();
     const request = spyOn(globalThis, "fetch").mockImplementation(
         Object.assign(
             (_input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
@@ -390,23 +389,18 @@ test("task continuation requires explicit uncertainty review and retries the sam
             id={crypto.randomUUID()}
             title="Synthetic task"
             version={2}
-            reviewRunId={reviewRunId}
+            reviewRunId={null}
             onClose={() => {}}
             onStarted={(id) => started.push(id)}
         />
     );
     try {
         const user = userEvent.setup();
-        expect(screen.getByRole("button", { name: "Start work" })).toBeDisabled();
         await user.type(
             screen.getByRole("textbox", { name: "Additional instructions" }),
             "Reconcile the recorded outcome first."
         );
-        await user.click(
-            screen.getByRole("switch", {
-                name: "I have reviewed the previous uncertain outcome",
-            })
-        );
+
         await user.click(screen.getByRole("button", { name: "Start work" }));
         await waitFor(() => expect(requested).toHaveLength(1));
         await waitFor(() =>
@@ -419,7 +413,7 @@ test("task continuation requires explicit uncertainty review and retries the sam
         await waitFor(() => expect(started).toEqual([conversationId]));
         expect(requested[1]).toEqual(requested[0]);
         expect(requested[1]).toMatchObject({
-            reviewedRunId: reviewRunId,
+            reviewedRunId: null,
             instructions: "Reconcile the recorded outcome first.",
         });
     } finally {
@@ -580,5 +574,90 @@ test("run history opens the selected old result and shows its uncertain tool rec
                 Object.defineProperty(HTMLElement.prototype, name, descriptor);
             else Reflect.deleteProperty(HTMLElement.prototype, name);
         }
+    }
+});
+
+test("task recovery inspects the exact run and acknowledges it without starting work", async () => {
+    const runId = crypto.randomUUID(),
+        taskId = crypto.randomUUID();
+    const requested: unknown[] = [];
+    let closed = 0;
+    const request = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+            (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+                if (
+                    (input instanceof Request ? input.url : input.toString()).includes(
+                        "mira.runs.read"
+                    )
+                )
+                    return Promise.resolve(
+                        Response.json([
+                            {
+                                result: {
+                                    data: serialize({
+                                        run: {
+                                            id: runId,
+                                            title: "Uncertain task action",
+                                            createdAt: new Date().toISOString(),
+                                            state: "needs_attention",
+                                            message: "Provider result unknown",
+                                        },
+                                        rows: [],
+                                        nextCursor: null,
+                                    }),
+                                },
+                            },
+                        ])
+                    );
+                if (
+                    !(input instanceof Request ? input.url : input.toString()).includes(
+                        "mira.tasks.reviewRun"
+                    ) ||
+                    typeof init?.body !== "string"
+                )
+                    throw new Error("Unexpected request; review must not start work");
+                requested.push(JSON.parse(init.body));
+                if (requested.length === 1)
+                    return Promise.reject(new Error("Synthetic response lost"));
+                return Promise.resolve(
+                    Response.json([{ result: { data: serialize(undefined) } }])
+                );
+            },
+            { preconnect: fetch.preconnect }
+        )
+    );
+    const cleanup = fixture(
+        <TaskRunDialog
+            id={taskId}
+            title="Task"
+            version={3}
+            reviewRunId={runId}
+            onClose={() => closed++}
+            onStarted={() => {
+                throw new Error("Review started work");
+            }}
+        />,
+        true
+    );
+    try {
+        const user = userEvent.setup();
+        const confirm = await screen.findByRole("button", { name: "Mark reviewed" });
+        expect(confirm).toBeDisabled();
+        expect(screen.getByText("Provider result unknown")).toBeInTheDocument();
+        await user.click(
+            screen.getByRole("switch", { name: "I have reviewed this uncertain outcome" })
+        );
+        await user.click(confirm);
+        await waitFor(() => expect(requested).toHaveLength(1));
+        await waitFor(() => expect(confirm).toBeEnabled());
+        await user.click(confirm);
+        await waitFor(() => expect(closed).toBe(1));
+        expect(requested[1]).toEqual(requested[0]);
+        expect(requested[0]).toEqual({
+            "0": { json: { id: taskId, version: 3, runId } },
+        });
+    } finally {
+        cleanup();
+        request.mockRestore();
     }
 });

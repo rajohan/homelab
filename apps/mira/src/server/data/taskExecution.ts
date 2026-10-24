@@ -112,6 +112,14 @@ export async function runMiraTask(
                 "PRECONDITION_FAILED",
                 "Review the uncertain run before continuing. Previous actions will not be replayed automatically."
             );
+        if (
+            uncertain &&
+            (await unreviewedTaskRun(query, context.owner, input.id, uncertain))
+        )
+            throw new MiraFailure(
+                "PRECONDITION_FAILED",
+                "Review every uncertain task run before continuing. Reviewing an outcome does not start another run."
+            );
         if (!uncertain && input.reviewedRunId)
             throw new MiraFailure(
                 "CONFLICT",

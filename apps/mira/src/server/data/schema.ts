@@ -419,3 +419,15 @@ export const miraMailIntake = pgTable("mira_mail_intake", {
     owner: text().primaryKey(),
     skippedThrough: time("skipped_through").notNull(),
 });
+
+export const miraTaskRunReviews = pgTable("mira_task_run_reviews", {
+    runId: uuid("run_id")
+        .primaryKey()
+        .references(() => miraRuns.id),
+    taskId: uuid("task_id")
+        .notNull()
+        .references(() => miraTasks.id),
+    owner: text().notNull(),
+    actor: text().notNull(),
+    reviewedAt: time("reviewed_at").notNull().defaultNow(),
+});

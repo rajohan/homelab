@@ -1,12 +1,20 @@
-import { ConfirmDialog, FormField, Switch, Textarea } from "@homelab/ui";
+import {
+    Button,
+    ErrorNotice,
+    ConfirmDialog,
+    FormField,
+    Switch,
+    Textarea,
+} from "@homelab/ui";
 import { useRef, useState } from "react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
+import { MiraRunDetails } from "./MiraRunDetails";
 
 /**
  * Capture explicit task execution intent and preserve its identity through a lost response.
- * @returns A shared confirmation dialog with optional instructions and uncertain-outcome review.
+ * @returns Shared run inspection for recovery, or an explicit new-work confirmation.
  */
 export function TaskRunDialog({
     id,
@@ -33,9 +41,40 @@ export function TaskRunDialog({
             version,
             requestId: requestId.current,
             instructions,
-            reviewedRunId: reviewed ? reviewRunId : null,
+            reviewedRunId: null,
         })
     );
+    const review = useOperation(
+        () => api.mira.tasks.reviewRun.mutate({ id, version, runId: reviewRunId! }),
+        onClose
+    );
+    if (reviewRunId)
+        return (
+            <MiraRunDetails
+                id={reviewRunId}
+                onClose={onClose}
+                footer={
+                    <div className="space-y-3 border-t border-primary-700 pt-4">
+                        <Switch
+                            label="I have reviewed this uncertain outcome"
+                            description="Check its attempted actions. Each uncertain run must be reviewed before any further task work can start."
+                            checked={reviewed}
+                            onChange={setReviewed}
+                            disabled={review.isPending}
+                        />
+                        {review.error && <ErrorNotice error={review.error} />}
+                        <Button
+                            fullWidth
+                            disabled={!reviewed}
+                            busy={review.isPending}
+                            onClick={() => review.mutate(undefined)}
+                        >
+                            Mark reviewed
+                        </Button>
+                    </div>
+                }
+            />
+        );
     return (
         <ConfirmDialog
             title={`Work on ${title}`}
@@ -43,7 +82,6 @@ export function TaskRunDialog({
             confirmLabel="Start work"
             variant="primary"
             onClose={onClose}
-            confirmDisabled={reviewRunId !== null && !reviewed}
             onConfirm={async () => {
                 setSubmitted(true);
                 const result = await run.mutateAsync(undefined);
@@ -61,15 +99,6 @@ export function TaskRunDialog({
                     disabled={submitted}
                 />
             </FormField>
-            {reviewRunId && (
-                <Switch
-                    label="I have reviewed the previous uncertain outcome"
-                    description="Check the run and any actions it attempted before continuing. They will not be replayed automatically."
-                    checked={reviewed}
-                    onChange={setReviewed}
-                    disabled={submitted}
-                />
-            )}
         </ConfirmDialog>
     );
 }

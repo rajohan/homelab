@@ -11,6 +11,7 @@ import {
 } from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { History } from "lucide-react";
+import type { ReactNode } from "react";
 
 import { api } from "../../api/client";
 
@@ -27,8 +28,10 @@ function outcomeTone(state: string) {
 export function MiraRunDetails({
     id,
     onClose,
+    footer,
 }: {
     readonly id: string;
+    readonly footer?: ReactNode;
     readonly onClose: () => void;
 }) {
     const query = useInfiniteQuery({
@@ -126,6 +129,11 @@ export function MiraRunDetails({
                         )}
                     </>
                 )}
+                {run &&
+                    !query.isError &&
+                    !query.isFetching &&
+                    !query.hasNextPage &&
+                    footer}
                 <ActionGroup>
                     <Button variant="secondary" onClick={onClose}>
                         Close

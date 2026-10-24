@@ -2,9 +2,22 @@
     "type": "diff",
     "version": "9",
     "dialect": "postgres",
-    "id": "20724302-663f-4665-90a0-655f6989a6c3",
-    "prevIds": ["38e35ac2-b31e-4856-a09c-c69e707aa7fc"],
+    "id": "0bdae9fd-91d0-4980-8b43-d791e85b0b30",
+    "prevIds": ["c3ff70e6-65ff-463d-82e8-4c48f50355dd"],
     "footprints": [
+        {
+            "statementType": "create_table",
+            "statementTarget": ["table", "public", "mira_task_run_reviews"],
+            "writes": [
+                "s|tbl|public.mira_task_run_reviews",
+                "n|tbl|public.mira_task_run_reviews",
+                "e|tbl|public.mira_task_run_reviews",
+                "n|rel|public.mira_task_run_reviews",
+                "n|type|public.mira_task_run_reviews",
+                "n|rel|public.mira_task_run_reviews_pkey"
+            ],
+            "reads": ["n|sch|public"]
+        },
         {
             "statementType": "add_column",
             "statementTarget": ["column", "public", "mira_runs", "reviewed_run_id"],
@@ -81,9 +94,56 @@
                 "n|col|public.mira_runs.id",
                 "e|uniqueness|public.mira_runs.id"
             ]
+        },
+        {
+            "statementType": "create_fk",
+            "statementTarget": ["table", "public", "mira_task_run_reviews"],
+            "writes": [
+                "s|fk|public.mira_task_run_reviews.mira_task_run_reviews_run_id_mira_runs_id_fkey",
+                "n|fk|public.mira_task_run_reviews.mira_task_run_reviews_run_id_mira_runs_id_fkey",
+                "e|fk|public.mira_task_run_reviews.mira_task_run_reviews_run_id_mira_runs_id_fkey",
+                "n|con|public.mira_task_run_reviews.mira_task_run_reviews_run_id_mira_runs_id_fkey"
+            ],
+            "reads": [
+                "n|tbl|public.mira_task_run_reviews",
+                "n|sch|public",
+                "n|tbl|public.mira_runs",
+                "n|sch|public",
+                "n|col|public.mira_task_run_reviews.run_id",
+                "n|col|public.mira_runs.id",
+                "e|uniqueness|public.mira_runs.id"
+            ]
+        },
+        {
+            "statementType": "create_fk",
+            "statementTarget": ["table", "public", "mira_task_run_reviews"],
+            "writes": [
+                "s|fk|public.mira_task_run_reviews.mira_task_run_reviews_task_id_mira_tasks_id_fkey",
+                "n|fk|public.mira_task_run_reviews.mira_task_run_reviews_task_id_mira_tasks_id_fkey",
+                "e|fk|public.mira_task_run_reviews.mira_task_run_reviews_task_id_mira_tasks_id_fkey",
+                "n|con|public.mira_task_run_reviews.mira_task_run_reviews_task_id_mira_tasks_id_fkey"
+            ],
+            "reads": [
+                "n|tbl|public.mira_task_run_reviews",
+                "n|sch|public",
+                "n|tbl|public.mira_tasks",
+                "n|sch|public",
+                "n|col|public.mira_task_run_reviews.task_id",
+                "n|col|public.mira_tasks.id",
+                "e|uniqueness|public.mira_tasks.id"
+            ]
         }
     ],
     "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "name": "mira_task_run_reviews",
+                "isRlsEnabled": false,
+                "entityType": "tables"
+            }
+        },
         {
             "op": "create",
             "row": {
@@ -95,6 +155,86 @@
                 "notNull": false,
                 "dimensions": 0,
                 "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_task_run_reviews",
+                "name": "run_id",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_task_run_reviews",
+                "name": "task_id",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_task_run_reviews",
+                "name": "owner",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_task_run_reviews",
+                "name": "actor",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_task_run_reviews",
+                "name": "reviewed_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "now()",
                 "generated": null,
                 "identity": null,
                 "entityType": "columns"
@@ -207,6 +347,49 @@
                 "onUpdate": "NO ACTION",
                 "onDelete": "NO ACTION",
                 "entityType": "fks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_task_run_reviews",
+                "name": "mira_task_run_reviews_run_id_mira_runs_id_fkey",
+                "nameExplicit": false,
+                "columns": ["run_id"],
+                "schemaTo": "public",
+                "tableTo": "mira_runs",
+                "columnsTo": ["id"],
+                "onUpdate": "NO ACTION",
+                "onDelete": "NO ACTION",
+                "entityType": "fks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_task_run_reviews",
+                "name": "mira_task_run_reviews_task_id_mira_tasks_id_fkey",
+                "nameExplicit": false,
+                "columns": ["task_id"],
+                "schemaTo": "public",
+                "tableTo": "mira_tasks",
+                "columnsTo": ["id"],
+                "onUpdate": "NO ACTION",
+                "onDelete": "NO ACTION",
+                "entityType": "fks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_task_run_reviews",
+                "name": "mira_task_run_reviews_pkey",
+                "columns": ["run_id"],
+                "nameExplicit": false,
+                "entityType": "pks"
             }
         }
     ]

@@ -64,6 +64,15 @@ export async function saveTask(
 ) {
     return miraTransaction(context, async (query) => {
         const id = input.id ?? Bun.randomUUIDv7();
+        // Proposal approval may already hold the conversation row: never wait in the opposite order.
+        const [lock] = await query<
+            { acquired: boolean }[]
+        >`SELECT pg_try_advisory_xact_lock(hashtextextended(${`mira:task:${context.owner}:${id}`},0)) AS acquired`;
+        if (!lock?.acquired)
+            throw new MiraFailure(
+                "CONFLICT",
+                "Task admission is busy. Retry after the current task action finishes."
+            );
         if (input.conversationId) {
             // Serialize linking with chat admission before changing the task or adopting runs.
             const [conversation] = await query<
@@ -78,6 +87,16 @@ export async function saveTask(
                 throw new MiraFailure(
                     "CONFLICT",
                     "This conversation already belongs to another task. Choose a separate conversation."
+                );
+        }
+        if (input.conversationId) {
+            const active = await query<
+                { id: string }[]
+            >`SELECT id FROM mira_runs WHERE owner=${context.owner} AND state IN ('queued','running') AND (task_id=${id} OR (conversation_id=${input.conversationId} AND task_id IS NULL)) LIMIT 2`;
+            if (active.length > 1)
+                throw new MiraFailure(
+                    "CONFLICT",
+                    "Stop or finish active work before linking these conversations to the same task."
                 );
         }
         const due = input.dueAt ? new Date(input.dueAt) : null;
