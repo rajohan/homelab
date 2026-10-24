@@ -39,6 +39,7 @@ export async function runMiraExecutor(options: {
     let model: string | null = null;
     let models: MiraModel[] = [];
     let message: string | null = null;
+    let cleanupPending = false;
     const wait = async (ms: number) => {
         try {
             await delay(ms, undefined, { signal });
@@ -59,6 +60,7 @@ export async function runMiraExecutor(options: {
                         cwd: config.workspace,
                         env: runtimeEnvironment(config),
                         requestTimeoutMs: 5000,
+                        signal,
                     });
                     const account = await runtime.account();
                     health.ready = account.authenticated;
@@ -78,26 +80,47 @@ export async function runMiraExecutor(options: {
                     message =
                         "The Mira runtime is unavailable. Queued work has not been started.";
                 } finally {
-                    try {
-                        const cleaned = await cleanupMiraResources({
-                            client,
-                            runtime,
-                            filesDirectory: options.filesDirectory,
-                            home: config.codexHome,
-                        });
-                        if (!cleaned && health.ready)
-                            message =
-                                "Mira is connected, but deleted-data cleanup needs attention.";
-                    } finally {
-                        await runtime?.close();
-                    }
+                    await runtime?.close();
                 }
                 inspectedAt = Date.now();
             }
-            await client`INSERT INTO mira_runtime_status (id, worker_id, version, model, ready, message, heartbeat_at, models) VALUES (1, ${workerId}, ${options.version}, ${model}, ${health.ready}, ${message}, now(), ${JSON.stringify(models)}::text::jsonb) ON CONFLICT (id) DO UPDATE SET worker_id = EXCLUDED.worker_id, version = EXCLUDED.version, model = EXCLUDED.model, ready = EXCLUDED.ready, message = EXCLUDED.message, heartbeat_at = EXCLUDED.heartbeat_at, models = EXCLUDED.models`;
+            const currentMessage =
+                health.ready && cleanupPending
+                    ? "Mira is connected, but deleted-data cleanup needs attention."
+                    : message;
+            await client`INSERT INTO mira_runtime_status (id, worker_id, version, model, ready, message, heartbeat_at, models) VALUES (1, ${workerId}, ${options.version}, ${model}, ${health.ready}, ${currentMessage}, now(), ${JSON.stringify(models)}::text::jsonb) ON CONFLICT (id) DO UPDATE SET worker_id = EXCLUDED.worker_id, version = EXCLUDED.version, model = EXCLUDED.model, ready = EXCLUDED.ready, message = EXCLUDED.message, heartbeat_at = EXCLUDED.heartbeat_at, models = EXCLUDED.models`;
             if (health.ready) await scheduleMiraRuns(client);
             health.heartbeatAt = Date.now();
             await wait(5000);
+        }
+    };
+    const cleaner = async () => {
+        while (!signal.aborted) {
+            let runtime: CodexRuntime | undefined;
+            try {
+                try {
+                    runtime = await CodexRuntime.connect({
+                        command: config.command,
+                        args: pilotArguments(),
+                        cwd: config.workspace,
+                        env: runtimeEnvironment(config),
+                        requestTimeoutMs: 5000,
+                        signal,
+                    });
+                } catch {
+                    // Local deleted content is still cleaned while the provider is unavailable.
+                }
+                const cleaned = await cleanupMiraResources({
+                    client,
+                    runtime,
+                    filesDirectory: options.filesDirectory,
+                    home: config.codexHome,
+                });
+                cleanupPending = !runtime || !cleaned;
+            } finally {
+                await runtime?.close();
+            }
+            await wait(30_000);
         }
     };
     const lane = async (name: "foreground" | "general") => {
@@ -133,6 +156,7 @@ export async function runMiraExecutor(options: {
     };
     const outcomes = await Promise.allSettled([
         stopOnFailure(coordinator()),
+        stopOnFailure(cleaner()),
         stopOnFailure(lane("foreground")),
         stopOnFailure(lane("general")),
     ]);

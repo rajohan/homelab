@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test, spyOn } from "bun:test";
 import { rejects } from "node:assert/strict";
 import {
     chmod,
@@ -37,6 +37,7 @@ import {
 } from "../../../../mira/src/server/executor/runtime";
 import { createMiraTools } from "../../../../mira/src/server/executor/tools";
 import { executeMiraTurn } from "../../../../mira/src/server/executor/turn";
+import { CodexRuntime } from "../../../../mira/src/server/runtime/codexRuntime";
 import { appRouter } from "../api/router";
 import { operationFixture } from "../testing/operations";
 
@@ -457,86 +458,102 @@ test("concurrent read-only tools do not reserve transactions while waiting for p
     }
 });
 
-test("an unavailable deployment default leaves explicit models selectable and executable", async () => {
-    const fixture = await operationFixture();
-    const directory = await mkdtemp(path.join(tmpdir(), "mira-default-model-"));
-    const abort = new AbortController();
-    let executor: Promise<void> | undefined;
-    try {
-        const command = path.join(directory, "synthetic-codex");
-        const runtimeChild = fileURLToPath(
-            new URL(
-                "../../../../mira/src/server/testing/runtimeChild.ts",
-                import.meta.url
-            )
-        );
-        await writeFile(
-            command,
-            `#!/usr/bin/env bun\nprocess.argv=[process.argv[0],${JSON.stringify(runtimeChild)},'ok',${JSON.stringify(path.join(directory, "home"))}];\nawait import(${JSON.stringify(runtimeChild)});\n`
-        );
-        await chmod(command, 0o700);
-        const home = path.join(directory, "home"),
-            workspace = path.join(directory, "workspace");
-        await mkdir(home);
-        await mkdir(workspace);
-        const health: MiraHealth = {
-            ready: false,
-            heartbeatAt: 0,
-            draining: false,
-            active: 0,
-        };
-        executor = runMiraExecutor({
-            client: fixture.client,
-            config: { command, codexHome: home, workspace, model: "removed-model" },
-            version: "synthetic",
-            health,
-            signal: abort.signal,
-        });
-        const api = appRouter.createCaller({
-            operations: fixture,
-            principal: { kind: "human", id: "operator", capabilities },
-        }).mira;
-        const deadline = Date.now() + 5000;
-        while (Date.now() < deadline) {
+test.each([false, true])(
+    "explicit models run with a missing default even during blocked cleanup (%s)",
+    async (blockedCleanup) => {
+        const fixture = await operationFixture();
+        const directory = await mkdtemp(path.join(tmpdir(), "mira-default-model-"));
+        const abort = new AbortController();
+        let executor: Promise<void> | undefined;
+        const released = Promise.withResolvers<void>(),
+            cleanupStarted = Promise.withResolvers<void>();
+        const cleanup = blockedCleanup
+            ? spyOn(CodexRuntime.prototype, "deleteThread").mockImplementation(() => {
+                  cleanupStarted.resolve();
+                  return released.promise;
+              })
+            : undefined;
+        try {
+            const command = path.join(directory, "synthetic-codex");
+            const runtimeChild = fileURLToPath(
+                new URL(
+                    "../../../../mira/src/server/testing/runtimeChild.ts",
+                    import.meta.url
+                )
+            );
+            await writeFile(
+                command,
+                `#!/usr/bin/env bun\nprocess.argv=[process.argv[0],${JSON.stringify(runtimeChild)},'ok',${JSON.stringify(path.join(directory, "home"))}];\nawait import(${JSON.stringify(runtimeChild)});\n`
+            );
+            await chmod(command, 0o700);
+            const home = path.join(directory, "home"),
+                workspace = path.join(directory, "workspace");
+            await mkdir(home);
+            await mkdir(workspace);
+            const health: MiraHealth = {
+                ready: false,
+                heartbeatAt: 0,
+                draining: false,
+                active: 0,
+            };
+            if (blockedCleanup)
+                await fixture.client`INSERT INTO mira_conversations (id,owner,title,deleted_at,provider_thread) VALUES (${Bun.randomUUIDv7()},'operator','Deleted',now(),'slow-delete')`;
+            executor = runMiraExecutor({
+                client: fixture.client,
+                config: { command, codexHome: home, workspace, model: "removed-model" },
+                version: "synthetic",
+                health,
+                signal: abort.signal,
+            });
+            const api = appRouter.createCaller({
+                operations: fixture,
+                principal: { kind: "human", id: "operator", capabilities },
+            }).mira;
+            if (blockedCleanup) await cleanupStarted.promise;
+            const deadline = Date.now() + 5000;
+            while (Date.now() < deadline) {
+                const catalog = await api.models();
+                if (catalog.fresh) break;
+                await delay(20);
+            }
+            expect(health.ready).toBe(true);
             const catalog = await api.models();
-            if (catalog.fresh) break;
-            await delay(20);
+            expect(catalog.fresh).toBe(true);
+            expect(catalog.defaultModel).toBe("removed-model");
+            expect(catalog.models.map((model) => model.model)).toContain("synthetic");
+            const chat = await api.conversations.create({
+                title: "Explicit surviving model",
+            });
+            await api.conversations.settings({
+                id: chat.id,
+                version: 1,
+                settings: { model: "synthetic", effort: null, serviceTier: null },
+            });
+            const run = await api.conversations.send({
+                conversationId: chat.id,
+                requestId: crypto.randomUUID(),
+                text: "Synthetic",
+            });
+            let state = "queued";
+            while (Date.now() < deadline) {
+                const [row] = await fixture.client<
+                    { state: string }[]
+                >`SELECT state FROM mira_runs WHERE id=${run.id}`;
+                state = row!.state;
+                if (!["queued", "running"].includes(state)) break;
+                await delay(20);
+            }
+            expect(state).toBe("completed");
+        } finally {
+            abort.abort();
+            released.resolve();
+            await executor;
+            cleanup?.mockRestore();
+            await fixture.close();
+            await rm(directory, { recursive: true, force: true });
         }
-        expect(health.ready).toBe(true);
-        const catalog = await api.models();
-        expect(catalog.fresh).toBe(true);
-        expect(catalog.defaultModel).toBe("removed-model");
-        expect(catalog.models.map((model) => model.model)).toContain("synthetic");
-        const chat = await api.conversations.create({
-            title: "Explicit surviving model",
-        });
-        await api.conversations.settings({
-            id: chat.id,
-            version: 1,
-            settings: { model: "synthetic", effort: null, serviceTier: null },
-        });
-        const run = await api.conversations.send({
-            conversationId: chat.id,
-            requestId: crypto.randomUUID(),
-            text: "Synthetic",
-        });
-        let state = "queued";
-        while (Date.now() < deadline) {
-            const [row] = await fixture.client<
-                { state: string }[]
-            >`SELECT state FROM mira_runs WHERE id=${run.id}`;
-            state = row!.state;
-            if (!["queued", "running"].includes(state)) break;
-            await delay(20);
-        }
-        expect(state).toBe("completed");
-    } finally {
-        abort.abort();
-        await executor;
-        await fixture.close();
-        await rm(directory, { recursive: true, force: true });
     }
-});
+);
 
 test("preset restore preserves live edits and can reinstall an explicitly emptied collection", async () => {
     const fixture = await operationFixture();
