@@ -10,19 +10,25 @@ const address = v.pipe(
     v.regex(/^[^\r\n]+$/)
 );
 const recipients = v.pipe(v.array(address), v.maxLength(20));
-export const miraMailContentSchema = v.strictObject({
-    to: v.pipe(recipients, v.minLength(1)),
-    cc: v.optional(recipients, []),
-    bcc: v.optional(recipients, []),
-    subject: v.pipe(
-        v.string(),
-        v.trim(),
-        v.minLength(1),
-        v.maxLength(200),
-        v.regex(/^[^\r\n]+$/)
-    ),
-    text: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(48_000)),
-});
+export const miraMailContentSchema = v.pipe(
+    v.strictObject({
+        to: v.pipe(recipients, v.minLength(1)),
+        cc: v.optional(recipients, []),
+        bcc: v.optional(recipients, []),
+        subject: v.pipe(
+            v.string(),
+            v.trim(),
+            v.minLength(1),
+            v.maxLength(200),
+            v.regex(/^[^\r\n]+$/)
+        ),
+        text: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(48_000)),
+    }),
+    v.check(
+        (content) => content.to.length + content.cc.length + content.bcc.length <= 50,
+        "An email can have at most 50 recipients across To, Cc and Bcc."
+    )
+);
 export const miraMailSaveSchema = v.strictObject({
     id: idSchema,
     version: v.pipe(v.number(), v.integer(), v.minValue(0)),

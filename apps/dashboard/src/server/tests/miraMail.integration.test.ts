@@ -72,6 +72,27 @@ test("local drafts preserve ownership, exact version approval and idempotent ret
             conversationId: f.chat.id,
             content,
         };
+        await rejects(
+            f.api.mail.save({
+                ...input,
+                content: {
+                    ...content,
+                    to: Array.from(
+                        { length: 20 },
+                        (_, index) => `to-${index}@example.com`
+                    ),
+                    cc: Array.from(
+                        { length: 20 },
+                        (_, index) => `cc-${index}@example.com`
+                    ),
+                    bcc: Array.from(
+                        { length: 11 },
+                        (_, index) => `bcc-${index}@example.com`
+                    ),
+                },
+            }),
+            /at most 50 recipients/
+        );
         const first = await f.api.mail.save(input);
         expect(await f.api.mail.save(input)).toEqual(first);
         expect(first).toMatchObject({ state: "draft", inboxId: f.binding.inboxId });
@@ -161,6 +182,9 @@ test("one reviewed send survives concurrent dispatch and lost approval responses
                     ...content,
                     track_opens: false,
                 });
+                expect(new Headers(init?.headers).get("idempotency-key")).toBe(
+                    `mira-mail-${draft.id}`
+                );
                 expect(new Headers(init?.headers).get("authorization")).toBe(
                     `Bearer ${f.configuration.apiKey}`
                 );

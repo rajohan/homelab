@@ -145,6 +145,7 @@ export async function dispatchMiraMail(
                 headers: {
                     Authorization: `Bearer ${configuration.apiKey}`,
                     "Content-Type": "application/json",
+                    "Idempotency-Key": `mira-mail-${claimed.id}`,
                     Accept: "application/json",
                 },
                 body: JSON.stringify({ ...claimed.content, track_opens: false }),
@@ -155,7 +156,7 @@ export async function dispatchMiraMail(
             await integrationJson(response, 65_536)
         );
     } catch {
-        // No documented replay guarantee is assumed for the provider's send endpoint.
+        // Provider idempotency expires after 24 hours; keep ambiguous outcomes for review.
     }
     await client.begin(async (query) => {
         const rows = await query<
