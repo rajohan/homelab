@@ -783,3 +783,145 @@ test("heartbeat run history exposes owned failures without reports or paging thr
         await fixture.close();
     }
 });
+
+test.each(["resume-missing", "resume-missing-other"])(
+    "provider %s preserves or rebuilds the stored conversation appropriately",
+    async (mode) => {
+        const fixture = await operationFixture();
+        const directory = await mkdtemp(path.join(tmpdir(), "mira-thread-recovery-"));
+        const api = appRouter.createCaller({
+            operations: fixture,
+            principal: { kind: "human", id: "operator", capabilities },
+        }).mira;
+        try {
+            const command = path.join(directory, "synthetic-codex");
+            const home = path.join(directory, "home"),
+                workspace = path.join(directory, "workspace");
+            await mkdir(home);
+            await mkdir(workspace);
+            const child = fileURLToPath(
+                new URL(
+                    "../../../../mira/src/server/testing/runtimeChild.ts",
+                    import.meta.url
+                )
+            );
+            await writeFile(
+                command,
+                `#!/usr/bin/env bun\nprocess.argv=[process.argv[0],${JSON.stringify(child)},${JSON.stringify(mode)},${JSON.stringify(home)}];\nawait import(${JSON.stringify(child)});\n`
+            );
+            await chmod(command, 0o700);
+            const chat = await api.conversations.create({
+                title: "Missing provider context",
+            });
+            const first = await api.conversations.send({
+                conversationId: chat.id,
+                requestId: crypto.randomUUID(),
+                text: "Original durable task ZK-427",
+            });
+            await api.runs.cancel(first);
+            await fixture.client`UPDATE mira_conversations SET provider_thread='stored-thread',provider_context_ready=true WHERE id=${chat.id}`;
+            await api.conversations.send({
+                conversationId: chat.id,
+                requestId: crypto.randomUUID(),
+                text: "Continue investigating",
+            });
+            const run = await claimMiraRun(
+                fixture.client,
+                crypto.randomUUID(),
+                "foreground"
+            );
+            if (!run) throw new Error("Expected run");
+            await executeMiraTurn(
+                fixture.client,
+                { command, codexHome: home, workspace, model: "synthetic" },
+                run,
+                new AbortController().signal
+            );
+            const history = await api.conversations.read({ id: chat.id });
+            const [stored] = await fixture.client<
+                { thread: string; ready: boolean }[]
+            >`SELECT provider_thread AS thread,provider_context_ready AS ready FROM mira_conversations WHERE id=${chat.id}`;
+            if (mode === "resume-missing") {
+                expect(history.run?.state).toBe("completed");
+                expect(history.messages.at(-1)?.content).toContain("ZK-427");
+                expect(history.messages.at(-1)?.content).toContain(
+                    "Continue investigating"
+                );
+                expect(stored).toEqual({ thread: "thread-test", ready: true });
+            } else {
+                expect(history.run?.state).toBe("needs_attention");
+                expect(stored).toEqual({ thread: "stored-thread", ready: true });
+            }
+        } finally {
+            await fixture.close();
+            await rm(directory, { recursive: true, force: true });
+        }
+    }
+);
+
+test("automatic tools read paginated owned task progress and reject foreign or deleted task content", async () => {
+    const fixture = await operationFixture();
+    const api = appRouter.createCaller({
+        operations: fixture,
+        principal: { kind: "human", id: "operator", capabilities },
+    }).mira;
+    try {
+        const task = Bun.randomUUIDv7(),
+            foreign = Bun.randomUUIDv7(),
+            deleted = Bun.randomUUIDv7();
+        await fixture.client`INSERT INTO mira_tasks (id,owner,title,description,completion_criteria,status,assignee,priority) VALUES (${task},'operator','Task','','','todo','mira','normal'),(${foreign},'other','Private','','','todo','mira','normal'),(${deleted},'operator','Deleted','','','todo','mira','normal')`;
+        await fixture.client`UPDATE mira_tasks SET deleted_at=now() WHERE id=${deleted}`;
+        for (let index = 0; index < 31; index++)
+            await api.tasks.addProgress({
+                taskId: task,
+                text: `Verified progress ${index}`,
+            });
+        await fixture.client`INSERT INTO mira_progress(id,task_id,actor,content) VALUES (${Bun.randomUUIDv7()},${foreign},'other','Private progress'),(${Bun.randomUUIDv7()},${deleted},'operator','Deleted progress')`;
+        const chat = await api.conversations.create({ title: "Read progress" });
+        await api.conversations.send({
+            conversationId: chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Summarize saved progress",
+        });
+        const run = await claimMiraRun(fixture.client, crypto.randomUUID(), "foreground");
+        if (!run) throw new Error("Expected run");
+        const tool = createMiraTools(fixture.client, {
+            ...run,
+            automationId: crypto.randomUUID(),
+        }).find((entry) => entry.name === "mira_task_progress_list")!;
+        const read = async (id: string, before?: string): Promise<unknown> =>
+            JSON.parse(
+                await tool.execute(
+                    { id, ...(before ? { before } : {}) },
+                    new AbortController().signal,
+                    { callId: crypto.randomUUID(), threadId: "synthetic", turnId: "turn" }
+                )
+            );
+        const first = v.parse(
+            v.object({
+                ok: v.literal(true),
+                result: v.object({
+                    rows: v.array(v.object({ content: v.string(), actor: v.string() })),
+                    nextCursor: v.string(),
+                }),
+            }),
+            await read(task)
+        );
+        expect(first.result.rows).toHaveLength(30);
+        expect(first.result.rows[0]).toEqual({
+            content: "Verified progress 30",
+            actor: "human:operator",
+        });
+        expect(await read(task, first.result.nextCursor)).toMatchObject({
+            ok: true,
+            result: { rows: [{ content: "Verified progress 0" }], nextCursor: null },
+        });
+        for (const id of [foreign, deleted])
+            expect(await read(id)).toMatchObject({
+                ok: false,
+                message: "Task not found.",
+            });
+    } finally {
+        await fixture.close();
+    }
+});

@@ -168,20 +168,29 @@ export async function finishMiraRun(
 ): Promise<boolean> {
     return client.begin(async (query) => {
         const [owned] = await query<
-            { id: string }[]
-        >`SELECT id FROM mira_runs WHERE id=${run.id} AND state='running' AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp() FOR UPDATE`;
+            { id: string; cancelRequested: boolean }[]
+        >`SELECT id,cancel_requested AS "cancelRequested" FROM mira_runs WHERE id=${run.id} AND state='running' AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp() FOR UPDATE`;
         if (!owned) return false;
         await query`UPDATE mira_tool_receipts SET state='unknown', message='The tool receipt was not completed. Review before continuing.', finished_at=now() WHERE run_id=${run.id} AND state='running'`;
         const [receipts] = await query<
             { uncertain: boolean }[]
         >`SELECT EXISTS(SELECT 1 FROM mira_tool_receipts WHERE run_id=${run.id} AND state='unknown') AS uncertain`;
+        const observed =
+            outcome.state === "interrupted" && !owned.cancelRequested
+                ? {
+                      ...outcome,
+                      state: "needs_attention" as const,
+                      message:
+                          "Mira was interrupted before completing this run. Review its progress before continuing; actions were not replayed.",
+                  }
+                : outcome;
         const terminal = receipts?.uncertain
             ? {
-                  ...outcome,
+                  ...observed,
                   state: "needs_attention" as const,
                   message: "An action outcome needs review before continuing.",
               }
-            : outcome;
+            : observed;
 
         const rows = await query<
             { id: string }[]

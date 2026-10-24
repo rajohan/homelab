@@ -15,7 +15,13 @@ import { MiraFailure, type MiraContext } from "../data/context";
 import { createReport, listMemory, listReports, saveMemory } from "../data/documents";
 import { readMiraFile } from "../data/files";
 import type { MiraClaim } from "../data/queue";
-import { addTaskProgress, listTasks, readTask, saveTask } from "../data/tasks";
+import {
+    addTaskProgress,
+    listTasks,
+    readTask,
+    saveTask,
+    taskProgress,
+} from "../data/tasks";
 import { readMiraPdf } from "../files/content";
 import type { RuntimeTool } from "../runtime/protocol";
 
@@ -146,6 +152,20 @@ export function createMiraTools(
             automatic: true,
             action: (input) =>
                 readTask(context, v.parse(v.strictObject({ id: idSchema }), input).id),
+        },
+        {
+            name: "mira_task_progress_list",
+            description:
+                "Read bounded, attributed progress recorded by the operator or Mira on an owned task. Use before to continue older entries.",
+            inputSchema: object({ id: uuid, before: uuid }, ["id"]),
+            automatic: true,
+            action: (input) => {
+                const parsed = v.parse(
+                    v.strictObject({ id: idSchema, before: v.optional(idSchema) }),
+                    input
+                );
+                return taskProgress(context, parsed.id, parsed.before);
+            },
         },
         {
             name: "mira_task_create",
