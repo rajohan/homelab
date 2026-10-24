@@ -55,10 +55,17 @@ export interface RuntimeTool {
     name: string;
     description: string;
     inputSchema: Record<string, unknown>;
-    execute: (input: unknown, signal: AbortSignal) => Promise<string>;
+    execute: (
+        input: unknown,
+        signal: AbortSignal,
+        call: { callId: string; threadId: string; turnId: string }
+    ) => Promise<string>;
 }
 export interface TurnResult {
     id: string;
     status: "completed" | "interrupted" | "failed";
     text: string;
 }
+export type RuntimeInput =
+    | { type: "text"; text: string; text_elements: [] }
+    | { type: "localImage"; path: string };

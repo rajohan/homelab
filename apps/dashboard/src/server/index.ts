@@ -16,6 +16,7 @@ import {
     type DashboardServerOptions,
 } from "./http/responses";
 import { createDashboardAuthentication } from "./identity/authentication";
+import { miraFileRequest } from "./mira/files";
 import { OperationFailure } from "./operations/errors";
 import { createOperationsRuntime } from "./operations/runtime";
 
@@ -43,6 +44,24 @@ export function startDashboardServer(options: DashboardServerOptions = {}) {
 
     async function api(incoming: Request): Promise<Response> {
         try {
+            const incomingPath = new URL(incoming.url).pathname;
+            if (
+                incomingPath === "/api/mira/files" ||
+                incomingPath.startsWith("/api/mira/files/")
+            ) {
+                if (!authentication || !configuration)
+                    return json("UNCONFIGURED", "Identity is not configured.", 503);
+                if (!isSameOriginApiRequest(incoming, configuration.origin))
+                    return json("INVALID_ORIGIN", "Request origin is not allowed.", 403);
+                if (incoming.headers.has("authorization"))
+                    return json(
+                        "INVALID_CREDENTIALS",
+                        "Mira files require a browser session.",
+                        403
+                    );
+                const principal = await authentication.operationPrincipal(incoming);
+                return await miraFileRequest(incoming, { operations, principal });
+            }
             const request = await boundedDashboardRequest(incoming);
             if (!request)
                 return json(

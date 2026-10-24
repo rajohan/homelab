@@ -26,12 +26,12 @@ test.each([false, true])(
             const container = approve.parentElement;
             expect(container).toHaveClass(
                 "flex-col",
-                "[&>button]:w-full",
-                "[&>button]:min-w-min",
+                "[&>:is(button,a)]:w-full",
+                "[&>:is(button,a)]:min-w-min",
                 "min-[30rem]:flex-wrap",
                 "min-[30rem]:flex-row",
-                "min-[30rem]:[&>button]:flex-1",
-                "min-[30rem]:[&>button:last-child]:flex-2"
+                "min-[30rem]:[&>:is(button,a)]:flex-1",
+                "min-[30rem]:[&>:is(button,a):last-child]:flex-2"
             );
             expect(container?.firstElementChild).toBe(wide ? deny : approve);
             expect(container?.lastElementChild).toBe(wide ? approve : deny);

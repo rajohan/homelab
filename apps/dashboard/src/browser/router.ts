@@ -12,10 +12,14 @@ import { Backups } from "./pages/Backups";
 import { Identity } from "./pages/Identity";
 import { Infrastructure } from "./pages/Infrastructure";
 import { Jobs } from "./pages/Jobs";
+import { Mira } from "./pages/Mira";
+import { MiraAutomations } from "./pages/MiraAutomations";
 import { NotFound } from "./pages/NotFound";
 import { Overview } from "./pages/Overview";
+import { Reports } from "./pages/Reports";
 import { RouteError } from "./pages/RouteError";
 import { Settings } from "./pages/Settings";
+import { Tasks } from "./pages/Tasks";
 import { Updates } from "./pages/Updates";
 
 /**
@@ -46,6 +50,28 @@ export function createDashboardRouter(history?: RouterHistory) {
     return createRouter({
         defaultErrorComponent: RouteError,
         routeTree: root.addChildren([
+            createRoute({ getParentRoute: () => root, path: "/mira", component: Mira }),
+            createRoute({ getParentRoute: () => root, path: "/tasks", component: Tasks }),
+            createRoute({
+                getParentRoute: () => root,
+                path: "/reports",
+                component: Reports,
+            }),
+            createRoute({
+                getParentRoute: () => root,
+                path: "/reports/$reportId",
+                component: Reports,
+            }),
+            createRoute({
+                getParentRoute: () => root,
+                path: "/mira-automations",
+                component: MiraAutomations,
+            }),
+            createRoute({
+                getParentRoute: () => root,
+                path: "/mira/$conversationId",
+                component: Mira,
+            }),
             createRoute({
                 getParentRoute: () => root,
                 path: "/alerts",

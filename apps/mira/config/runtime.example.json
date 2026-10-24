@@ -1,0 +1,5 @@
+{
+    "command": "/app/runtime/codex",
+    "codexHome": "/var/lib/mira/codex",
+    "workspace": "/var/empty/mira"
+}

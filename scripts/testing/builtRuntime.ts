@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 
-type Application = "auth" | "dashboard";
+type Application = "auth" | "dashboard" | "mira";
 
 /**
  * Select the local artifact or hardened Docker invocation for a built smoke process.

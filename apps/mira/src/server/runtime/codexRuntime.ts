@@ -11,9 +11,11 @@ import {
     toolCallSchema,
     turnSchema,
     type RuntimeEvent,
+    type RuntimeInput,
     type RuntimeTool,
     type TurnResult,
 } from "./protocol";
+import { RuntimeResponseError } from "./responseError";
 import { RpcProcess, type RpcProcessOptions } from "./rpcProcess";
 import { assertSkillCatalog } from "./skillCatalog";
 import { assertSystemSkills } from "./systemSkills";
@@ -136,12 +138,14 @@ export class CodexRuntime {
      * @param model - Explicit model identifier selected from the runtime catalog.
      * @param workspace - Empty pilot directory, separate from runtime credentials.
      * @param tools - Trusted host tools; their handlers validate arguments and authority.
+     * @param instructions - Trusted server instructions for the selected product workflow.
      * @returns The provider thread reference, not the product conversation identifier.
      */
     async startThread(
         model: string,
         workspace: string,
-        tools: RuntimeTool[]
+        tools: RuntimeTool[],
+        instructions = "You are Mira in a synthetic runtime qualification. Use only the supplied qualification tools. Do not inspect files, access websites or use other tools. Do not delegate. Follow the user's synthetic test instructions."
     ): Promise<string> {
         if (workspace !== this.workspace)
             throw new Error("Mira thread workspace differs from its isolated workspace.");
@@ -152,8 +156,7 @@ export class CodexRuntime {
                 cwd: workspace,
                 sandbox: "read-only",
                 approvalPolicy: "untrusted",
-                developerInstructions:
-                    "You are Mira in a synthetic runtime qualification. Use only the supplied qualification tools. Do not inspect files, access websites or use other tools. Do not delegate. Follow the user's synthetic test instructions.",
+                developerInstructions: instructions,
                 dynamicTools: tools.map(({ name, description, inputSchema }) => ({
                     type: "function",
                     name,
@@ -206,6 +209,7 @@ export class CodexRuntime {
             signal?: AbortSignal;
             timeoutMs?: number;
             onDelta?: (delta: string) => void;
+            attachments?: RuntimeInput[];
         } = {}
     ): Promise<TurnResult> {
         if (this.active) throw new Error("Mira already has an active turn.");
@@ -282,7 +286,10 @@ export class CodexRuntime {
                 turnSchema,
                 await this.connection.request("turn/start", {
                     threadId,
-                    input: [{ type: "text", text, text_elements: [] }],
+                    input: [
+                        { type: "text", text, text_elements: [] },
+                        ...(options.attachments ?? []),
+                    ],
                 })
             );
             active.id = started.turn.id;
@@ -300,6 +307,25 @@ export class CodexRuntime {
             options.signal?.removeEventListener("abort", abort);
             this.connection.signal.removeEventListener("abort", disconnect);
             this.active = null;
+        }
+    }
+
+    /**
+     * Remove one persisted runtime conversation after its product deletion is committed.
+     * @param threadId - Stored provider identity from an owned, deleted product conversation.
+     * @returns Completion when removed or already absent; other failures remain retryable.
+     */
+    async deleteThread(threadId: string): Promise<void> {
+        if (this.active || this.threads.has(threadId))
+            throw new Error("Use a fresh runtime connection for conversation cleanup.");
+        try {
+            v.parse(
+                v.object({}),
+                await this.connection.request("thread/delete", { threadId })
+            );
+        } catch (error) {
+            if (!(error instanceof RuntimeResponseError && error.threadMissing))
+                throw error;
         }
     }
 
@@ -353,7 +379,11 @@ export class CodexRuntime {
         const turnSignal = AbortSignal.any([signal, active.controller.signal]);
         turnSignal.throwIfAborted();
         try {
-            const text = await tool.execute(call.arguments, turnSignal);
+            const text = await tool.execute(call.arguments, turnSignal, {
+                callId: call.callId,
+                threadId: call.threadId,
+                turnId: call.turnId,
+            });
             turnSignal.throwIfAborted();
             return { success: true, contentItems: [{ type: "inputText", text }] };
         } catch {

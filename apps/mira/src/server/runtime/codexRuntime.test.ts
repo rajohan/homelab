@@ -25,6 +25,21 @@ const options = (mode = "ok") => ({
 });
 
 describe("Mira runtime transport", () => {
+    test.each(["ok", "delete-missing", "delete-other-error"])(
+        "handles %s deletion receipts without concealing unrelated failures",
+        async (mode) => {
+            const runtime = await CodexRuntime.connect(options(mode));
+            try {
+                await (mode === "delete-other-error"
+                    ? rejects(runtime.deleteThread("stored-thread"))
+                    : runtime.deleteThread("stored-thread"));
+                const thread = await runtime.startThread("synthetic", process.cwd(), []);
+                await rejects(runtime.deleteThread(thread), /fresh runtime/);
+            } finally {
+                await runtime.close();
+            }
+        }
+    );
     test("accepts the supported official built-in endpoint defaults", async () => {
         const runtime = await CodexRuntime.connect(options("official-endpoints"));
         await runtime.close();

@@ -38,7 +38,12 @@ test.each(["ok", "nonce", "resume-tool", "recovery-refusal"])(
                     receipt = String(
                         await tools[0]!.execute(
                             { marker: mode === "nonce" ? "corrupted" : nonce },
-                            new AbortController().signal
+                            new AbortController().signal,
+                            {
+                                callId: `echo-${turn}`,
+                                threadId: "synthetic-thread",
+                                turnId: String(turn),
+                            }
                         )
                     );
                     options?.onDelta?.(receipt);
@@ -47,11 +52,22 @@ test.each(["ok", "nonce", "resume-tool", "recovery-refusal"])(
                 if (turn === 2 && mode === "resume-tool")
                     await tools[0]!.execute(
                         { marker: nonce },
-                        new AbortController().signal
+                        new AbortController().signal,
+                        {
+                            callId: `echo-${turn}`,
+                            threadId: "synthetic-thread",
+                            turnId: String(turn),
+                        }
                     );
                 if (turn === 2) return { id: "two", status: "completed", text: receipt };
                 if (turn === 3) {
-                    await tools[1]!.execute({}, options!.signal!).catch(() => {});
+                    await tools[1]!
+                        .execute({}, options!.signal!, {
+                            callId: "wait",
+                            threadId: "synthetic-thread",
+                            turnId: "three",
+                        })
+                        .catch(() => {});
                     return { id: "three", status: "interrupted", text: "" };
                 }
                 return {

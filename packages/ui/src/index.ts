@@ -27,6 +27,8 @@ export { ErrorState } from "./components/Error/ErrorState";
 export { AppErrorBoundary } from "./components/Error/AppErrorBoundary";
 
 export { Input } from "./components/Input/Input";
+export { Textarea } from "./components/Input/Textarea";
+export { Markdown } from "./components/Markdown/Markdown";
 export { SearchInput } from "./components/SearchInput/SearchInput";
 
 export { Form } from "./components/Form/Form";

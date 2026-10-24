@@ -187,7 +187,7 @@ test.each([
             expect(cancel.parentElement).toHaveClass(
                 "flex-col",
                 "min-[30rem]:flex-row",
-                "[&>button]:w-full"
+                "[&>:is(button,a)]:w-full"
             );
             expect(cancel.parentElement?.lastElementChild).toBe(
                 globalThis.matchMedia("(min-width: 30rem)").matches ? submit : cancel

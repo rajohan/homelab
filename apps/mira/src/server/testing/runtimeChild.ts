@@ -195,6 +195,21 @@ for await (const line of reader) {
                         : "openai",
             },
         });
+    } else if (message.method === "thread/delete") {
+        if (mode === "delete-missing")
+            write({
+                id: message.id,
+                error: {
+                    code: -32_600,
+                    message: `thread not found: ${String(message.params.threadId)}`,
+                },
+            });
+        else if (mode === "delete-other-error")
+            write({
+                id: message.id,
+                error: { code: -32_600, message: "thread not found: another-thread" },
+            });
+        else write({ id: message.id, result: {} });
     } else if (message.method === "turn/start") {
         activeTurn++;
         const turnId = `turn-${activeTurn}`;

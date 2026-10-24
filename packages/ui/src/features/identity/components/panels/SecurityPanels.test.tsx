@@ -178,7 +178,7 @@ test("session-wide actions share the responsive full-width action group", () => 
     expect(all.parentElement).toBe(others.parentElement);
     expect(all.parentElement).toHaveClass(
         "flex-col",
-        "[&>button]:w-full",
+        "[&>:is(button,a)]:w-full",
         "min-[30rem]:flex-row"
     );
     expect(all.parentElement?.lastElementChild).toBe(

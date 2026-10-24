@@ -25,6 +25,17 @@ test("clipboard writes happen only on click and reset feedback for different tex
         );
         expect(write).toHaveBeenCalledWith("synthetic text");
         expect(screen.getByRole("status")).toHaveTextContent("copied");
+        fireEvent.click(screen.getByRole("button", { name: "Copy fixture (copied)" }));
+        await waitFor(() => expect(write).toHaveBeenCalledTimes(2));
+        await waitFor(
+            () =>
+                expect(
+                    screen.getByRole("button", { name: "Copy fixture" })
+                ).toBeVisible(),
+            { timeout: 2500 }
+        );
+        fireEvent.click(screen.getByRole("button", { name: "Copy fixture" }));
+        await waitFor(() => expect(write).toHaveBeenCalledTimes(3));
         view.rerender(<CopyTextButton label="Copy fixture" text="another fixture" />);
         expect(screen.getByRole("button", { name: "Copy fixture" })).toHaveTextContent(
             "Copy"

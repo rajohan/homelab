@@ -13,6 +13,8 @@ const destinations = {
     jobs: "/jobs",
     applications: "/applications",
     infrastructure: "/infrastructure",
+    mira: "/mira",
+    reports: "/reports",
 } as const;
 
 /**

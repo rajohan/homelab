@@ -3,8 +3,10 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import * as v from "valibot";
 
 import { envelopeSchema, type RpcId, type RuntimeEvent } from "./protocol";
+import { RuntimeResponseError } from "./responseError";
 
 interface PendingRequest {
+    missingThreadMessage: string | null;
     resolve: (value: unknown) => void;
     reject: (error: Error) => void;
     timer: ReturnType<typeof setTimeout>;
@@ -92,7 +94,18 @@ export class RpcProcess {
                     new Error("Mira runtime request timed out; its outcome is unknown.")
                 );
             }, this.options.requestTimeoutMs ?? 30_000);
-            this.pending.set(id, { resolve, reject, timer });
+            const deletion =
+                method === "thread/delete"
+                    ? v.safeParse(v.object({ threadId: v.string() }), params)
+                    : null;
+            this.pending.set(id, {
+                resolve,
+                reject,
+                timer,
+                missingThreadMessage: deletion?.success
+                    ? `thread not found: ${deletion.output.threadId}`
+                    : null,
+            });
             try {
                 this.send({ id, method, params });
             } catch {
@@ -161,8 +174,11 @@ export class RpcProcess {
                     this.pending.delete(message.id);
                     if ("error" in message)
                         pending.reject(
-                            new Error(
-                                `Mira runtime rejected the request (${message.error.code}).`
+                            new RuntimeResponseError(
+                                message.error.code,
+                                message.error.code === -32_600 &&
+                                    pending.missingThreadMessage !== null &&
+                                    message.error.message === pending.missingThreadMessage
                             )
                         );
                     else pending.resolve(message.result);

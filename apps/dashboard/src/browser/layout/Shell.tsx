@@ -15,6 +15,8 @@ import { Sidebar } from "./Sidebar";
  */
 export function Shell() {
     const location = useLocation();
+    const chatWorkspace =
+        location.pathname === "/mira" || location.pathname.startsWith("/mira/");
     const [navigationPath, setNavigationPath] = useState<string>();
     const activityControl = useRef<PopoverControl>(null);
     const revealActivity = () => {
@@ -22,6 +24,10 @@ export function Shell() {
         requestAnimationFrame(() => activityControl.current?.open());
     };
     const titles: Readonly<Record<string, string>> = {
+        "/mira": "Chat",
+        "/tasks": "Tasks",
+        "/reports": "Reports",
+        "/mira-automations": "Automations",
         "/settings": "Settings",
         "/infrastructure": "Infrastructure",
         "/jobs": "Jobs",
@@ -31,10 +37,12 @@ export function Shell() {
         "/updates": "Updates",
         "/identity": "Identity",
     };
-    const title = titles[location.pathname] ?? "Overview";
+    const title = titles[`/${location.pathname.split("/")[1] ?? ""}`] ?? "Overview";
     return (
         <JobActivityContext value={revealActivity}>
-            <div className="min-h-dvh bg-primary-900 text-primary-50">
+            <div
+                className={`${chatWorkspace ? "h-dvh overflow-hidden" : "min-h-dvh"} bg-primary-900 text-primary-50`}
+            >
                 <a
                     className="fixed top-3 left-3 z-50 -translate-y-24 rounded-lg bg-accent-700 px-4 py-3 text-sm font-semibold text-white focus:translate-y-0"
                     href="#main-content"
@@ -48,7 +56,9 @@ export function Shell() {
                     open={navigationPath === location.pathname}
                     onClose={() => setNavigationPath(undefined)}
                 />
-                <div className="flex min-h-dvh min-w-0 flex-col md:pl-60 xl:pl-64">
+                <div
+                    className={`flex min-w-0 flex-col md:pl-60 xl:pl-64 ${chatWorkspace ? "h-full min-h-0" : "min-h-dvh"}`}
+                >
                     <header className="sticky top-0 z-20 flex h-20 shrink-0 items-center justify-between gap-3 border-b border-primary-700 bg-primary-950/95 px-4 backdrop-blur-sm sm:px-5">
                         <div className="flex min-w-0 items-center gap-3">
                             <IconButton
@@ -71,15 +81,17 @@ export function Shell() {
                         </div>
                     </header>
                     <main
-                        className="mx-auto w-full max-w-400 min-w-0 flex-1 p-4 sm:p-5"
+                        className={`mx-auto w-full max-w-400 min-w-0 flex-1 p-4 sm:p-5 ${chatWorkspace ? "flex min-h-0 flex-col overflow-hidden" : ""}`}
                         id="main-content"
                         tabIndex={-1}
                     >
                         <Outlet />
                     </main>
-                    <footer className="mx-auto w-full max-w-400 px-4 pt-2 pb-5 text-center text-xs text-primary-500 sm:px-5">
-                        Homelab Dashboard · Rajohan
-                    </footer>
+                    {!chatWorkspace && (
+                        <footer className="mx-auto w-full max-w-400 px-4 pt-2 pb-5 text-center text-xs text-primary-500 sm:px-5">
+                            Homelab Dashboard · Rajohan
+                        </footer>
+                    )}
                 </div>
             </div>
         </JobActivityContext>
