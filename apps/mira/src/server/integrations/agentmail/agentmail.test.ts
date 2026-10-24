@@ -193,6 +193,25 @@ test("AgentMail reader rejects mismatched/blocked messages and keeps HTML as pas
         result = { ...message, labels: ["received", label] };
         await rejects(reader.read(message.message_id, signal), /not eligible/);
     }
+    for (const armor of [
+        { status: "pending" },
+        { status: "unavailable" },
+        { status: "complete", verdict: "review" },
+    ]) {
+        result = { ...message, text: "Unreviewed body", agent_armor: armor };
+        await rejects(reader.read(message.message_id, signal), /not eligible/);
+    }
+    result = {
+        ...message,
+        text: "Released body",
+        agent_armor: {
+            status: "complete",
+            verdict: "review",
+            manual_override: { released_at: new Date().toISOString() },
+        },
+    };
+    const released = await reader.read(message.message_id, signal);
+    expect(released.content).toBe("Released body");
     result = { ...message, html: '<img src="https://tracker.invalid">untrusted data' };
     expect(await reader.read(message.message_id, signal)).toMatchObject({
         format: "untrusted_html_text",
@@ -238,10 +257,11 @@ test("integration JSON bounds chunked and declared bodies and does not expose pr
     expect(await integrationJson(Response.json({ ok: true }), 20)).toEqual({ ok: true });
 });
 
-test("AgentMail recovery follows receipt events, stops before old history and excludes held or deleted mail", async () => {
+test("AgentMail recovery checkpoints event IDs despite nonmonotonic dates and recovers released old mail", async () => {
     const requests: URL[] = [];
     const received = "2026-10-24T09:05:00Z";
     const event = (id: string, at: string) => ({
+        event_id: `event-${id}`,
         inbox_id: binding.inboxId,
         message_id: id,
         created_at: at,
@@ -256,16 +276,18 @@ test("AgentMail recovery follows receipt events, stops before old history and ex
                         url.searchParams.has("page_token")
                             ? {
                                   events: [
-                                      event("normal", received),
-                                      event("normal", received),
+                                      event("released", received),
                                       event("held", received),
                                       event("deleted", received),
-                                      event("old", "2026-10-20T00:00:00Z"),
+                                      event("anchor", received),
                                   ],
-                                  next_page_token: "ancient-history-never-requested",
+                                  next_page_token: "old-history-never-requested",
                               }
                             : {
-                                  events: [event("future", "2026-10-24T11:00:00Z")],
+                                  events: [
+                                      event("old-date", "2026-10-20T00:00:00Z"),
+                                      event("normal", received),
+                                  ],
                                   next_page_token: "next",
                               }
                     )
@@ -278,7 +300,8 @@ test("AgentMail recovery follows receipt events, stops before old history and ex
                           ...message,
                           message_id: id,
                           timestamp: "1999-01-01T00:00:00Z",
-                          created_at: received,
+                          created_at:
+                              id === "released" ? "2026-10-22T09:00:00Z" : received,
                           labels:
                               id === "held"
                                   ? ["received", "agent-armor-held"]
@@ -292,65 +315,55 @@ test("AgentMail recovery follows receipt events, stops before old history and ex
         { ...binding, apiKey: "synthetic-api-key-not-a-secret" },
         request
     );
-    const window = { after: "2026-10-24T09:00:00Z", before: "2026-10-24T10:00:00Z" };
+    const window = {
+        after: "2026-10-24T09:00:00Z",
+        before: "2026-10-24T10:00:00Z",
+        anchor: "event-anchor",
+    };
     const signal = new AbortController().signal;
     const first = await reader.recover(window, signal);
-    expect(first.messages).toHaveLength(0);
+    expect(first.messages.map((item) => item.message_id)).toEqual(["normal"]);
+    expect(first.head).toBe("event-old-date");
     expect(first.next_page_token).toBe("next");
     const next = await reader.recover(
         { ...window, cursor: first.next_page_token! },
         signal
     );
-    expect(next.messages.map((item) => item.message_id)).toEqual(["normal"]);
-    expect(next.messages[0]?.created_at).toBe(received);
+    expect(next.messages.map((item) => item.message_id)).toEqual(["released"]);
+    expect(next.messages[0]?.created_at).toBe("2026-10-22T09:00:00Z");
     expect(next.next_page_token).toBeNull();
-    expect(requests).toHaveLength(5);
-    expect(
-        requests
-            .filter((url) => url.pathname.endsWith("/events"))
-            .every(
-                (url) =>
-                    url.searchParams.get("ascending") === "false" &&
-                    url.searchParams.get("limit") === "25"
-            )
-    ).toBe(true);
+    expect(requests).toHaveLength(6);
     expect(
         requests.some(
-            (url) => url.pathname.endsWith("/old") || url.pathname.endsWith("/future")
+            (url) =>
+                url.pathname.endsWith("/old-date") || url.pathname.endsWith("/anchor")
         )
     ).toBe(false);
 });
 
-test("AgentMail recovery rejects unordered and cross-inbox events before fetching mail", async () => {
-    let result: unknown = {
-        events: [
-            {
-                inbox_id: binding.inboxId,
-                message_id: "one",
-                created_at: "2026-10-24T09:00:00Z",
-            },
-            {
-                inbox_id: binding.inboxId,
-                message_id: "two",
-                created_at: "2026-10-24T09:01:00Z",
-            },
-        ],
-    };
-    const request = Object.assign(() => Promise.resolve(Response.json(result)), {
-        preconnect: fetch.preconnect,
-    });
+test("AgentMail recovery rejects cross-inbox events before fetching mail", async () => {
+    const request = Object.assign(
+        () =>
+            Promise.resolve(
+                Response.json({
+                    events: [
+                        {
+                            event_id: "event-one",
+                            inbox_id: "other@agentmail.to",
+                            message_id: "one",
+                            created_at: "2026-10-24T09:00:00Z",
+                        },
+                    ],
+                })
+            ),
+        { preconnect: fetch.preconnect }
+    );
     const reader = new AgentMailReader({ ...binding, apiKey: "synthetic" }, request);
-    const window = { after: "2026-10-24T09:00:00Z", before: "2026-10-24T10:00:00Z" };
-    const signal = new AbortController().signal;
-    await rejects(reader.recover(window, signal), /unordered/);
-    result = {
-        events: [
-            {
-                inbox_id: "other@agentmail.to",
-                message_id: "one",
-                created_at: window.after,
-            },
-        ],
-    };
-    await rejects(reader.recover(window, signal), /different inbox/);
+    await rejects(
+        reader.recover(
+            { after: "2026-10-24T09:00:00Z", before: "2026-10-24T10:00:00Z" },
+            new AbortController().signal
+        ),
+        /different inbox/
+    );
 });

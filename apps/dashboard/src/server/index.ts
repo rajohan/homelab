@@ -16,7 +16,7 @@ import {
     type DashboardServerOptions,
 } from "./http/responses";
 import { createDashboardAuthentication } from "./identity/authentication";
-import { agentMailWebhookReceiver } from "./mira/agentmail";
+import { agentMailReceiverHeartbeat, agentMailWebhookReceiver } from "./mira/agentmail";
 import { miraFileRequest } from "./mira/files";
 import { OperationFailure } from "./operations/errors";
 import { createOperationsRuntime } from "./operations/runtime";
@@ -44,6 +44,7 @@ export function startDashboardServer(options: DashboardServerOptions = {}) {
         : undefined;
 
     const receiveAgentMail = agentMailWebhookReceiver(operations);
+    const stopAgentMailHeartbeat = agentMailReceiverHeartbeat(operations);
 
     async function api(incoming: Request): Promise<Response> {
         try {
@@ -210,6 +211,7 @@ export function startDashboardServer(options: DashboardServerOptions = {}) {
     const stop = server.stop.bind(server);
     server.stop = async (closeActiveConnections?: boolean) => {
         await stop(closeActiveConnections);
+        await stopAgentMailHeartbeat();
         await operations?.client.close();
     };
     return server;

@@ -358,6 +358,8 @@ export const miraIntegrationState = pgTable(
         completedThrough: time("completed_through").notNull(),
         windowEnd: time("window_end"),
         cursor: text(),
+        eventAnchor: text("event_anchor"),
+        windowHead: text("window_head"),
         leaseToken: uuid("lease_token"),
         leaseExpiresAt: time("lease_expires_at"),
         nextAttemptAt: time("next_attempt_at").notNull(),
@@ -382,3 +384,9 @@ export const miraControlWindows = pgTable(
         index("mira_control_windows_eligibility").on(t.owner, t.key, t.startedAt),
     ]
 );
+
+export const miraIntegrationReceivers = pgTable("mira_integration_receivers", {
+    key: text().primaryKey(),
+    bindingHash: text("binding_hash"),
+    heartbeatAt: time("heartbeat_at").notNull().defaultNow(),
+});

@@ -1,3 +1,4 @@
+import { publishAgentMailReceiver } from "@homelab/mira/data/integrations";
 import {
     acceptAgentMailMessage,
     verifyAgentMailWebhook,
@@ -99,5 +100,33 @@ export function agentMailWebhookReceiver(
         } finally {
             active--;
         }
+    };
+}
+
+/**
+ * Keep receiver configuration evidence fresh for timed integration resume.
+ * @param operations - This dashboard's explicit database and optional inbox binding.
+ * @returns Shutdown hook that stops publication before the owning pool closes.
+ */
+export function agentMailReceiverHeartbeat(
+    operations?: Pick<OperationsRuntime, "client" | "agentMailHook">
+): () => Promise<void> {
+    let pending: Promise<void> | undefined;
+    const publish = () => {
+        if (!operations || pending) return;
+        pending = publishAgentMailReceiver(operations.client, operations.agentMailHook)
+            .catch(() => {
+                /* Expired evidence keeps timed resumption paused until the database recovers. */
+            })
+            .finally(() => {
+                pending = undefined;
+            });
+    };
+    publish();
+    const timer = setInterval(publish, 15_000);
+    timer.unref();
+    return async () => {
+        clearInterval(timer);
+        await pending;
     };
 }

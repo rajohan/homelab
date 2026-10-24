@@ -2,6 +2,7 @@ import type { SQL } from "bun";
 import * as v from "valibot";
 
 import { MiraFailure } from "../../data/context";
+import { agentMailReceiverCurrent } from "../../data/integrations";
 import type { MiraClaim } from "../../data/queue";
 import type { RuntimeTool } from "../../runtime/protocol";
 import { agentMailBindingHash, type AgentMailReadConfiguration } from "./configuration";
@@ -40,6 +41,7 @@ export function createAgentMailTools(
         >`SELECT c.version FROM mira_switches c WHERE c.owner = ${run.owner} AND c.key = 'integration:agentmail' AND c.enabled AND c.binding_hash = ${agentMailBindingHash(configuration)} AND EXISTS (SELECT 1 FROM mira_runs WHERE id = ${run.id} AND owner = ${run.owner} AND state = 'running' AND NOT cancel_requested AND lease_token = ${run.leaseToken} AND lease_expires_at > now())`;
         if (
             !access ||
+            !(await agentMailReceiverCurrent(client, configuration)) ||
             (expectedVersion !== undefined && access.version !== expectedVersion)
         )
             throw new MiraFailure(
