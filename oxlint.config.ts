@@ -30,7 +30,11 @@ const browserFiles = [
     "apps/auth/src/browser/**/*.{ts,tsx}",
     "packages/ui/src/**/*.{ts,tsx}",
 ];
-const serverFiles = ["apps/auth/src/**/*.{ts,tsx}", "apps/dashboard/src/**/*.{ts,tsx}"];
+const serverFiles = [
+    "apps/auth/src/**/*.{ts,tsx}",
+    "apps/dashboard/src/**/*.{ts,tsx}",
+    "apps/mira/src/**/*.{ts,tsx}",
+];
 const compilerManagedImports = [
     {
         name: "react",
@@ -41,6 +45,8 @@ const compilerManagedImports = [
 ];
 const appImports = ["**/apps/**", "@homelab/auth", "@homelab/dashboard"];
 const serverImports = [
+    "@homelab/mira",
+    "@homelab/mira/*",
     "bun",
     "bun:*",
     "node:*",
@@ -421,6 +427,8 @@ export default defineConfig({
                                     "**/dashboard/**",
                                     "**/scripts/**",
                                     "**/openclaw/**",
+                                    "@homelab/mira",
+                                    "**/mira/**",
                                 ],
                                 message:
                                     "Identity must remain independent of dashboard and administrative integrations.",

@@ -77,6 +77,13 @@
         "valibot": "1.5.0",
       },
     },
+    "apps/mira": {
+      "name": "@homelab/mira",
+      "dependencies": {
+        "effect": "4.0.5",
+        "valibot": "1.5.0",
+      },
+    },
     "packages/contracts": {
       "name": "@homelab/contracts",
       "dependencies": {
@@ -172,6 +179,8 @@
     "@homelab/contracts": ["@homelab/contracts@workspace:packages/contracts"],
 
     "@homelab/dashboard": ["@homelab/dashboard@workspace:apps/dashboard"],
+
+    "@homelab/mira": ["@homelab/mira@workspace:apps/mira"],
 
     "@homelab/ui": ["@homelab/ui@workspace:packages/ui"],
 

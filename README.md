@@ -63,6 +63,7 @@ iPhone/NFC acceptance needs private HTTPS origins reachable by the actual device
 - [Application controls](docs/applications.md): existing-container and project lifecycle operations,
   bounded safe metadata and allowlisted Loki history. Production control is opt-in.
 - [Maintenance](docs/maintenance.md): reserved control-job capacity, verified update receipts, reviewed restart targets and independent Homelab release reporting.
+- [Mira](docs/mira.md): server-side assistant delivery plan and isolated Codex runtime qualification; not yet deployed.
 - [Notifications](docs/notifications.md): durable producer events, personal acknowledgements,
   filters and virtualized history. Existing Alertmanager/Pushover delivery is unchanged.
 
@@ -95,6 +96,7 @@ Re-run the protocol and device gates after runtime/library upgrades.
 apps/
   auth/             Identity API, OIDC, persistence, migrations and sign-in UI
   dashboard/        Dashboard shell, Settings, OIDC BFF and private tRPC API
+  mira/             Isolated agent runtime pilot (no production service yet)
 packages/
   ui/               Reusable components and shared identity features
   contracts/        Browser-safe shared schemas and types
