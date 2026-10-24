@@ -4,6 +4,8 @@ import { createHmac } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { capabilities } from "@homelab/contracts/operations";
+import { reconcileMiraControls } from "@homelab/mira/data/automations";
+import { publishAgentMailReceiver } from "@homelab/mira/data/integrations";
 import { claimMiraRun } from "@homelab/mira/data/queue";
 import { pollAgentMail } from "@homelab/mira/integrations/agentmail/poll";
 import type { AgentMailMessage } from "@homelab/mira/integrations/agentmail/schema";
@@ -647,6 +649,131 @@ test("replacement inbox recovery begins at its activation even when the first po
             { count: number }[]
         >`SELECT count(*)::int AS count FROM mira_event_deliveries`;
         expect(delivery?.count).toBe(1);
+    } finally {
+        await fixture.close();
+    }
+});
+
+test("timed AgentMail resume requires fresh receiver and executor agreement with the original grant", async () => {
+    const fixture = await operationFixture();
+    const binding = await provisionTestAgentMail(fixture.client);
+    const api = appRouter.createCaller({
+        operations: { ...fixture, agentMailHook: binding },
+        principal: { kind: "human", id: binding.owner, capabilities },
+    }).mira;
+    try {
+        await api.controls.setEnabled({
+            key: "integration:agentmail",
+            version: 1,
+            enabled: true,
+            reason: null,
+            until: null,
+        });
+        await api.controls.setEnabled({
+            key: "integration:agentmail",
+            version: 2,
+            enabled: false,
+            reason: "Temporary maintenance",
+            until: new Date(Date.now() + 60_000).toISOString(),
+        });
+        await fixture.client`UPDATE mira_switches SET until=now()-interval '1 second' WHERE owner=${binding.owner} AND key='integration:agentmail'`;
+        const enabled = async () => {
+            const [row] = await fixture.client<
+                { enabled: boolean }[]
+            >`SELECT enabled FROM mira_switches WHERE owner=${binding.owner} AND key='integration:agentmail'`;
+            return row!.enabled;
+        };
+        await publishAgentMailReceiver(fixture.client, {
+            ...binding,
+            inboxId: "rebound@agentmail.to",
+        });
+        await reconcileMiraControls(fixture.client);
+        expect(await enabled()).toBe(false);
+        await publishAgentMailReceiver(fixture.client, binding);
+        await fixture.client`UPDATE mira_runtime_status SET integrations='[]'::jsonb`;
+        await reconcileMiraControls(fixture.client);
+        expect(await enabled()).toBe(false);
+        await provisionTestAgentMail(fixture.client, binding);
+        await fixture.client`UPDATE mira_integration_receivers SET heartbeat_at=now()-interval '1 minute'`;
+        await reconcileMiraControls(fixture.client);
+        expect(await enabled()).toBe(false);
+        await publishAgentMailReceiver(fixture.client, binding);
+        await reconcileMiraControls(fixture.client);
+        expect(await enabled()).toBe(true);
+        await publishAgentMailReceiver(fixture.client, {
+            ...binding,
+            inboxId: "changed-after-resume@agentmail.to",
+        });
+        let reads = 0;
+        expect(
+            await pollAgentMail(
+                fixture.client,
+                binding,
+                {
+                    recover: () => {
+                        reads++;
+                        return Promise.resolve({ messages: [] });
+                    },
+                },
+                new AbortController().signal
+            )
+        ).toBe(false);
+        expect(reads).toBe(0);
+    } finally {
+        await fixture.close();
+    }
+});
+
+test("recovery persists the first page event checkpoint and retains original receipt eligibility", async () => {
+    const fixture = await operationFixture();
+    const binding = await provisionTestAgentMail(fixture.client);
+    const api = appRouter.createCaller({
+        operations: { ...fixture, agentMailHook: binding },
+        principal: { kind: "human", id: binding.owner, capabilities },
+    }).mira;
+    const signal = new AbortController().signal;
+    try {
+        await api.controls.setEnabled({
+            key: "integration:agentmail",
+            version: 1,
+            enabled: true,
+            reason: null,
+            until: null,
+        });
+        const recover = (head: string, cursor?: string) =>
+            pollAgentMail(
+                fixture.client,
+                binding,
+                {
+                    recover: () =>
+                        Promise.resolve({ messages: [], head, next_page_token: cursor }),
+                },
+                signal
+            );
+        expect(await recover("newest-event", "page-two")).toBe(true);
+        const [pending] = await fixture.client<
+            { anchor: string | null; head: string }[]
+        >`SELECT event_anchor AS anchor,window_head AS head FROM mira_integration_state WHERE owner=${binding.owner}`;
+        expect(pending).toEqual({ anchor: null, head: "newest-event" });
+        expect(await recover("older-page-head")).toBe(true);
+        await fixture.client`UPDATE mira_integration_state SET next_attempt_at=now() WHERE owner=${binding.owner}`;
+        expect(
+            await pollAgentMail(
+                fixture.client,
+                binding,
+                {
+                    recover: (input) => {
+                        expect(input.anchor).toBe("newest-event");
+                        return Promise.resolve({ messages: [], head: "newer-event" });
+                    },
+                },
+                signal
+            )
+        ).toBe(true);
+        const [saved] = await fixture.client<
+            { anchor: string; head: string | null }[]
+        >`SELECT event_anchor AS anchor,window_head AS head FROM mira_integration_state WHERE owner=${binding.owner}`;
+        expect(saved).toEqual({ anchor: "newer-event", head: null });
     } finally {
         await fixture.close();
     }

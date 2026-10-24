@@ -1,3 +1,4 @@
+import { publishAgentMailReceiver } from "@homelab/mira/data/integrations";
 import {
     agentMailBindingHash,
     type AgentMailBinding,
@@ -17,6 +18,7 @@ export async function provisionTestAgentMail(
     binding: AgentMailBinding = defaultBinding
 ) {
     await client`INSERT INTO mira_runtime_status (id, worker_id, version, ready, heartbeat_at, integrations) VALUES (1, ${crypto.randomUUID()}, 'synthetic', true, now(), ${JSON.stringify([{ owner: binding.owner, key: "agentmail", bindingHash: agentMailBindingHash(binding) }])}::text::jsonb) ON CONFLICT (id) DO UPDATE SET integrations=EXCLUDED.integrations, heartbeat_at=now()`;
+    await publishAgentMailReceiver(client, binding);
     return {
         ...binding,
         signingSecret: `whsec_${Buffer.from("synthetic-webhook-key-32-bytes-000").toString("base64")}`,

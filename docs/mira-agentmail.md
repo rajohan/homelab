@@ -38,16 +38,18 @@ by installing this code.
 
 A signed delivery stores only the inbox/message reference, not an untrusted body.
 A stable inbox/message key deduplicates webhook retries and periodic recovery.
-The executor reads at most one 25-event page per recovery cycle, normally checks
-once per minute, and retains a fixed window and fenced cursor through restarts.
-Recovery uses the provider's reverse-chronological inbox events feed and stops when
-it crosses the saved receipt boundary. It fetches current metadata for up to 25
-unique messages with at most five requests in flight and a 30-second page budget.
-Provider `created_at` receipt times must fall within the latest 24-hour window,
-with a one-minute overlap. Sender `timestamp` values do not control pause eligibility
-or recovery ordering, so backdated Date headers cannot hide newly received mail.
-Failed or expired page tokens restart the same window; accepted deliveries remain
-deduplicated. Recovery does not scan the inbox's all-time message history.
+The executor reads at most one 25-event page per recovery cycle and normally checks
+once per minute. A durable page cursor and the first page's head event ID survive
+restarts. Recovery follows the provider's event-ID ordering and stops at its last
+completed event identity, never inferring order from sender or creation timestamps.
+Initial activation, or loss of the saved event from provider retention, requires
+one bounded pass to establish a checkpoint; subsequent windows scan only new events.
+It fetches current metadata for up to 25 unique messages with at most five requests
+in flight and a 30-second page budget. Event creation time limits catch-up to the
+latest 24 hours. A fresh release event can recover an older held message: the original
+message receipt time is retained separately for activation and pause eligibility.
+Failed or expired page tokens restart the pending pass; accepted deliveries remain
+deduplicated. Held messages remain excluded until their current label is removed.
 Downtime beyond that window requires a deliberate manual inbox review.
 
 Disabling AgentMail stops new provider reads. A request already in flight cannot
@@ -57,7 +59,9 @@ are recorded separately, so mail received before a pause remains recoverable whi
 mail received during the pause or before activation is excluded. Delayed webhooks
 received during a pause retain their event; recovery can add historically eligible
 missing deliveries after resumption without replaying dispatched or deliberately
-cancelled deliveries. A replacement inbox starts at its explicit activation, even
+cancelled deliveries. Timed resume requires fresh dashboard receiver and executor evidence matching the
+previously confirmed binding; a configuration mismatch keeps the integration paused.
+A replacement inbox starts at its explicit activation, even
 when the first recovery poll happens later.
 Pausing one mail automation stops only that automation; global automatic-work pause
 prevents automatic dispatch. Receipts and pause reasons remain available.
@@ -67,7 +71,9 @@ account binding, the integration control and the current run lease before and
 after provider access. Metadata listing is bounded to 100 messages and a 31-day
 window per request; message text is limited to 48,000 characters. HTML is passive
 text; remote images and attachments are not fetched. Spam, blocked, unauthenticated
-trashed and `agent-armor-held` messages are excluded. Mail content cannot authorize actions.
+trashed and `agent-armor-held` messages are excluded. When Agent Armor metadata is
+present, pending/unavailable scans and review verdicts without a recorded human
+release are also excluded, including before the held label has appeared. Mail content cannot authorize actions.
 
 Sending/replying, attachment ingestion and reviewed outgoing drafts are separate
 remaining deliveries; this adapter cannot send mail.

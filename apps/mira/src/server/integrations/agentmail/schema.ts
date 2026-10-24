@@ -6,6 +6,13 @@ export const agentMailIdSchema = v.pipe(
     v.maxLength(320),
     v.regex(/^[\u0021-\u007E]+$/)
 );
+const agentArmorSchema = v.object({
+    status: v.picklist(["pending", "complete", "unavailable"]),
+    verdict: v.optional(v.picklist(["clear", "review"])),
+    manual_override: v.nullish(
+        v.object({ released_at: v.pipe(v.string(), v.isoTimestamp()) })
+    ),
+});
 export const agentMailMessageSchema = v.object({
     inbox_id: agentMailIdSchema,
     message_id: agentMailIdSchema,
@@ -13,6 +20,7 @@ export const agentMailMessageSchema = v.object({
     timestamp: v.pipe(v.string(), v.isoTimestamp()),
     created_at: v.pipe(v.string(), v.isoTimestamp()),
     labels: v.pipe(v.array(v.pipe(v.string(), v.maxLength(100))), v.maxLength(100)),
+    agent_armor: v.optional(agentArmorSchema),
     from: v.pipe(v.string(), v.maxLength(1000)),
     subject: v.optional(v.pipe(v.string(), v.maxLength(5000)), ""),
     preview: v.optional(v.pipe(v.string(), v.maxLength(5000)), ""),
@@ -26,6 +34,7 @@ export const agentMailEventPageSchema = v.object({
     events: v.pipe(
         v.array(
             v.object({
+                event_id: agentMailIdSchema,
                 inbox_id: agentMailIdSchema,
                 message_id: agentMailIdSchema,
                 created_at: v.pipe(v.string(), v.isoTimestamp()),
@@ -48,9 +57,15 @@ export const agentMailContentSchema = v.object({
  * @param message - Validated provider metadata.
  * @returns Whether this is an ordinary received message eligible for review.
  */
-export function ordinaryReceivedMail(message: Pick<AgentMailMessage, "labels">): boolean {
+export function ordinaryReceivedMail(
+    message: Pick<AgentMailMessage, "labels" | "agent_armor">
+): boolean {
     return (
         message.labels.includes("received") &&
+        (!message.agent_armor ||
+            (message.agent_armor.status === "complete" &&
+                (message.agent_armor.verdict === "clear" ||
+                    Boolean(message.agent_armor.manual_override)))) &&
         !message.labels.some((label) =>
             ["spam", "blocked", "unauthenticated", "trash", "agent-armor-held"].includes(
                 label

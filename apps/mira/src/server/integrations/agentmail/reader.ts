@@ -94,17 +94,23 @@ export class AgentMailReader {
     }
 
     /**
-     * Recover from receipt-ordered inbox events, stopping at the saved receipt boundary.
-     * @param input - Durable receipt window and optional events pagination cursor.
+     * Recover from provider-ordered inbox events, stopping at the saved event identity.
+     * @param input - Retention window, last completed event identity and optional page cursor.
      * @param signal - Service cancellation; the complete page also has a 30-second budget.
-     * @returns Current eligible message metadata and a cursor only while recent events remain.
+     * @returns Current eligible metadata with original receipt times, head identity and continuation.
      */
     async recover(
-        input: { after: string; before: string; cursor?: string | undefined },
+        input: {
+            after: string;
+            before: string;
+            cursor?: string | undefined;
+            anchor?: string | null;
+        },
         signal: AbortSignal
     ): Promise<{
         messages: AgentMailMessage[];
         next_page_token?: string | null | undefined;
+        head?: string | null;
     }> {
         const after = Date.parse(input.after),
             before = Date.parse(input.before);
@@ -117,27 +123,21 @@ export class AgentMailReader {
             agentMailEventPageSchema,
             await this.get("/events", query, bounded)
         );
-        let previous = Infinity;
-        for (const event of page.events) {
-            const at = Date.parse(event.created_at);
-            if (event.inbox_id !== this.configuration.inboxId)
-                throw new Error("AgentMail returned a different inbox.");
-            if (at > previous)
-                throw new Error("AgentMail returned unordered inbox events.");
-            previous = at;
-        }
+        if (page.events.some((event) => event.inbox_id !== this.configuration.inboxId))
+            throw new Error("AgentMail returned a different inbox.");
+        const boundary = input.anchor
+            ? page.events.findIndex((event) => event.event_id === input.anchor)
+            : -1;
+        const unseen = boundary < 0 ? page.events : page.events.slice(0, boundary);
+        // Only event IDs define feed order. Timestamps bound retention, never pagination.
         const ids = [
             ...new Set(
-                page.events
-                    .filter((event) => {
-                        const at = Date.parse(event.created_at);
-                        return at >= after && at <= before;
-                    })
+                unseen
+                    .filter((event) => Date.parse(event.created_at) >= after)
                     .map((event) => event.message_id)
             ),
         ];
         const messages: AgentMailMessage[] = [];
-        // Five requests at a time bound API concurrency and keep the page inside its lease.
         for (let offset = 0; offset < ids.length; offset += 5) {
             bounded.throwIfAborted();
             const batch = await Promise.all(
@@ -159,21 +159,17 @@ export class AgentMailReader {
                 })
             );
             messages.push(
-                ...batch.filter((message): message is AgentMailMessage => {
-                    if (message === null) return false;
-                    const at = Date.parse(message.created_at);
-                    return at >= after && at <= before && ordinaryReceivedMail(message);
-                })
+                ...batch.filter(
+                    (message): message is AgentMailMessage =>
+                        message !== null && ordinaryReceivedMail(message)
+                )
             );
         }
         bounded.throwIfAborted();
         return {
             messages,
-            next_page_token: page.events.some(
-                (event) => Date.parse(event.created_at) < after
-            )
-                ? null
-                : page.next_page_token,
+            head: page.events[0]?.event_id ?? null,
+            next_page_token: boundary >= 0 ? null : page.next_page_token,
         };
     }
 

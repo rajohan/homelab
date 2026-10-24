@@ -65,3 +65,33 @@ export async function listMiraIntegrations(
         },
     ];
 }
+
+/**
+ * Publish the running receiver's nonsecret inbox binding independently of browser requests.
+ * @param query - Dashboard-owned database connection.
+ * @param binding - Current configured receiver, or absent to revoke a previous configuration.
+ * @returns Completion after the receiver's binding and liveness have committed.
+ */
+export async function publishAgentMailReceiver(
+    query: MiraQuery,
+    binding?: AgentMailBinding
+): Promise<void> {
+    const hash = binding ? agentMailBindingHash(binding) : null;
+    await query`INSERT INTO mira_integration_receivers (key,binding_hash,heartbeat_at) VALUES ('agentmail',${hash},now()) ON CONFLICT (key) DO UPDATE SET binding_hash=EXCLUDED.binding_hash,heartbeat_at=EXCLUDED.heartbeat_at`;
+}
+
+/**
+ * Fence executor reads when the running dashboard no longer confirms this inbox.
+ * @param query - Current connection or owning transaction.
+ * @param binding - The executor's fixed account/inbox mapping.
+ * @returns Whether the receiver recently published the same binding.
+ */
+export async function agentMailReceiverCurrent(
+    query: MiraQuery,
+    binding: AgentMailBinding
+): Promise<boolean> {
+    const [receiver] = await query<
+        { current: boolean }[]
+    >`SELECT binding_hash=${agentMailBindingHash(binding)} AND heartbeat_at>now()-interval '45 seconds' AS current FROM mira_integration_receivers WHERE key='agentmail'`;
+    return receiver?.current === true;
+}

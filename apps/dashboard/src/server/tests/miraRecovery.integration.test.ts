@@ -12,17 +12,28 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 
 import { capabilities } from "@homelab/contracts/operations";
+import {
+    installMiraPresets,
+    deleteMiraAutomation,
+} from "@homelab/mira/data/automationActions";
 import { miraQueueAvailable } from "@homelab/mira/data/capacity";
 import { cleanupMiraFiles, readMiraFile, saveMiraFile } from "@homelab/mira/data/files";
 import { claimMiraRun, finishMiraRun } from "@homelab/mira/data/queue";
+import * as v from "valibot";
 
 import {
     cleanupMiraConversations,
     cleanupMiraResources,
 } from "../../../../mira/src/server/executor/cleanup";
 import { readMiraTurnInput } from "../../../../mira/src/server/executor/context";
+import {
+    runMiraExecutor,
+    type MiraHealth,
+} from "../../../../mira/src/server/executor/runtime";
 import { createMiraTools } from "../../../../mira/src/server/executor/tools";
 import { executeMiraTurn } from "../../../../mira/src/server/executor/turn";
 import { appRouter } from "../api/router";
@@ -440,6 +451,182 @@ test("concurrent read-only tools do not reserve transactions while waiting for p
             { count: number }[]
         >`SELECT count(*)::int AS count FROM mira_tool_receipts WHERE run_id=${run.id} AND state='succeeded'`;
         expect(receipts?.count).toBe(8);
+    } finally {
+        await fixture.close();
+    }
+});
+
+test("an unavailable deployment default leaves explicit models selectable and executable", async () => {
+    const fixture = await operationFixture();
+    const directory = await mkdtemp(path.join(tmpdir(), "mira-default-model-"));
+    const abort = new AbortController();
+    let executor: Promise<void> | undefined;
+    try {
+        const command = path.join(directory, "synthetic-codex");
+        const runtimeChild = fileURLToPath(
+            new URL(
+                "../../../../mira/src/server/testing/runtimeChild.ts",
+                import.meta.url
+            )
+        );
+        await writeFile(
+            command,
+            `#!/usr/bin/env bun\nprocess.argv=[process.argv[0],${JSON.stringify(runtimeChild)},'ok',${JSON.stringify(path.join(directory, "home"))}];\nawait import(${JSON.stringify(runtimeChild)});\n`
+        );
+        await chmod(command, 0o700);
+        const home = path.join(directory, "home"),
+            workspace = path.join(directory, "workspace");
+        await mkdir(home);
+        await mkdir(workspace);
+        const health: MiraHealth = {
+            ready: false,
+            heartbeatAt: 0,
+            draining: false,
+            active: 0,
+        };
+        executor = runMiraExecutor({
+            client: fixture.client,
+            config: { command, codexHome: home, workspace, model: "removed-model" },
+            version: "synthetic",
+            health,
+            signal: abort.signal,
+        });
+        const api = appRouter.createCaller({
+            operations: fixture,
+            principal: { kind: "human", id: "operator", capabilities },
+        }).mira;
+        const deadline = Date.now() + 5000;
+        while (Date.now() < deadline) {
+            const catalog = await api.models();
+            if (catalog.fresh) break;
+            await delay(20);
+        }
+        expect(health.ready).toBe(true);
+        const catalog = await api.models();
+        expect(catalog.fresh).toBe(true);
+        expect(catalog.defaultModel).toBe("removed-model");
+        expect(catalog.models.map((model) => model.model)).toContain("synthetic");
+        const chat = await api.conversations.create({
+            title: "Explicit surviving model",
+        });
+        await api.conversations.settings({
+            id: chat.id,
+            version: 1,
+            settings: { model: "synthetic", effort: null, serviceTier: null },
+        });
+        const run = await api.conversations.send({
+            conversationId: chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Synthetic",
+        });
+        let state = "queued";
+        while (Date.now() < deadline) {
+            const [row] = await fixture.client<
+                { state: string }[]
+            >`SELECT state FROM mira_runs WHERE id=${run.id}`;
+            state = row!.state;
+            if (!["queued", "running"].includes(state)) break;
+            await delay(20);
+        }
+        expect(state).toBe("completed");
+    } finally {
+        abort.abort();
+        await executor;
+        await fixture.close();
+        await rm(directory, { recursive: true, force: true });
+    }
+});
+
+test("preset restore preserves live edits and can reinstall an explicitly emptied collection", async () => {
+    const fixture = await operationFixture();
+    const context = {
+        client: fixture.client,
+        owner: "operator",
+        actor: "human:operator",
+    };
+    try {
+        expect(await installMiraPresets(context)).toEqual({ created: 4 });
+        await fixture.client`UPDATE mira_automations SET title='Edited preset' WHERE owner='operator'`;
+        expect(await installMiraPresets(context)).toEqual({ created: 0 });
+        const rows = await fixture.client<
+            { id: string; version: number }[]
+        >`SELECT id,version FROM mira_automations WHERE owner='operator' AND deleted_at IS NULL`;
+        for (const row of rows) await deleteMiraAutomation(context, row.id, row.version);
+        const result = await Promise.all([
+            installMiraPresets(context),
+            installMiraPresets(context),
+        ]);
+        expect(result.map((value) => value.created).toSorted((a, b) => a - b)).toEqual([
+            0, 4,
+        ]);
+        const [restored] = await fixture.client<
+            { total: number; enabled: number }[]
+        >`SELECT count(*)::int AS total, count(*) FILTER (WHERE c.enabled)::int AS enabled FROM mira_automations a JOIN mira_switches c ON c.owner=a.owner AND c.key='automation:'||a.id::text WHERE a.owner='operator' AND a.deleted_at IS NULL`;
+        expect(restored).toEqual({ total: 4, enabled: 0 });
+    } finally {
+        await fixture.close();
+    }
+});
+
+test("automatic tools read an exact old task without paging and reject foreign or deleted tasks", async () => {
+    const fixture = await operationFixture();
+    const api = appRouter.createCaller({
+        operations: fixture,
+        principal: { kind: "human", id: "operator", capabilities },
+    }).mira;
+    try {
+        const old = Bun.randomUUIDv7(),
+            foreign = Bun.randomUUIDv7(),
+            deleted = Bun.randomUUIDv7();
+        await fixture.client`INSERT INTO mira_tasks (id,owner,title,description,completion_criteria,status,assignee,priority) VALUES (${old},'operator','Old due task','Original requirements','Specific evidence','todo','mira','normal'),(${foreign},'other','Private task','Private','Private','todo','mira','normal')`;
+        await fixture.client`INSERT INTO mira_tasks (id,owner,title,deleted_at,status,assignee,priority,description,completion_criteria) VALUES (${deleted},'operator','Deleted task',now(),'todo','mira','normal','','')`;
+        const newer = Array.from({ length: 1000 }, () => ({
+            id: Bun.randomUUIDv7(),
+            owner: "operator",
+            title: "Newer task",
+            description: "",
+            completion_criteria: "",
+            status: "todo",
+            assignee: "mira",
+            priority: "normal",
+        }));
+        await fixture.client`INSERT INTO mira_tasks ${fixture.client(newer)}`;
+        const chat = await api.conversations.create({ title: "Due task lookup" });
+        await api.conversations.send({
+            conversationId: chat.id,
+            requestId: crypto.randomUUID(),
+            text: old,
+        });
+        const run = await claimMiraRun(fixture.client, crypto.randomUUID(), "foreground");
+        if (!run) throw new Error("Expected run");
+        const tool = createMiraTools(fixture.client, {
+            ...run,
+            automationId: crypto.randomUUID(),
+        }).find((item) => item.name === "mira_task_read")!;
+        for (const id of [old, foreign, deleted]) {
+            const result = v.parse(
+                v.object({
+                    ok: v.boolean(),
+                    result: v.optional(v.unknown()),
+                    message: v.optional(v.string()),
+                }),
+                JSON.parse(
+                    await tool.execute({ id }, new AbortController().signal, {
+                        callId: id,
+                        threadId: "synthetic",
+                        turnId: "turn",
+                    })
+                )
+            );
+            expect(result.ok).toBe(id === old);
+            if (id === old)
+                expect(result.result).toMatchObject({
+                    id: old,
+                    description: "Original requirements",
+                    completionCriteria: "Specific evidence",
+                });
+            else expect(result.message).toBe("Task not found.");
+        }
     } finally {
         await fixture.close();
     }

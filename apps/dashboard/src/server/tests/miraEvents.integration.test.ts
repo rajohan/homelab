@@ -145,8 +145,9 @@ test("verified AgentMail events deduplicate and cannot bypass integration disabl
 
 test("expired pauses resume while the provider is offline and incoming events do not miss the timer boundary", async () => {
     const fixture = await operationFixture();
+    const binding = await provisionTestAgentMail(fixture.client);
     const api = appRouter.createCaller({
-        operations: fixture,
+        operations: { ...fixture, agentMailHook: binding },
         principal: { kind: "human", id: "operator", capabilities },
     }).mira;
     try {
@@ -158,6 +159,13 @@ test("expired pauses resume while the provider is offline and incoming events do
             budgetSeconds: 60,
         });
         const until = new Date(Date.now() + 60_000);
+        await api.controls.setEnabled({
+            key: "integration:agentmail",
+            enabled: true,
+            version: 1,
+            reason: null,
+            until: null,
+        });
         for (const key of [
             "autonomy",
             "integration:agentmail",
@@ -166,11 +174,11 @@ test("expired pauses resume while the provider is offline and incoming events do
             await api.controls.setEnabled({
                 key,
                 enabled: false,
-                version: 1,
+                version: key === "integration:agentmail" ? 2 : 1,
                 reason: "Timed maintenance",
                 until: until.toISOString(),
             });
-        await fixture.client`INSERT INTO mira_runtime_status (id, worker_id, version, ready, heartbeat_at) VALUES (1, ${crypto.randomUUID()}, 'test', false, now())`;
+        await fixture.client`UPDATE mira_runtime_status SET ready=false`;
         await fixture.client`UPDATE mira_switches SET until = now() - interval '1 second' WHERE owner = 'operator' AND NOT enabled AND until IS NOT NULL`;
         await reconcileMiraControls(fixture.client);
         const controls = await api.controls.list();
@@ -183,7 +191,7 @@ test("expired pauses resume while the provider is offline and incoming events do
                 enabled: true,
                 reason: null,
                 until: null,
-                version: 3,
+                version: key === "integration:agentmail" ? 4 : 3,
             });
         const event = {
             owner: "operator",
@@ -202,7 +210,7 @@ test("expired pauses resume while the provider is offline and incoming events do
         await api.controls.setEnabled({
             key: "integration:agentmail",
             enabled: false,
-            version: 3,
+            version: 4,
             reason: "Another timed pause",
             until: until.toISOString(),
         });
@@ -217,7 +225,7 @@ test("expired pauses resume while the provider is offline and incoming events do
         const resumed = await api.controls.list();
         expect(
             resumed.find((control) => control.key === "integration:agentmail")
-        ).toMatchObject({ enabled: true, until: null, version: 5 });
+        ).toMatchObject({ enabled: true, until: null, version: 6 });
     } finally {
         await fixture.close();
     }

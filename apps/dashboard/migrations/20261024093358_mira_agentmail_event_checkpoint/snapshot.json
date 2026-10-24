@@ -1,0 +1,154 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "78643ff0-b250-4d55-bfcc-d627ff571e25",
+    "prevIds": ["203c2593-747d-423e-af30-3ae010d2dc0b"],
+    "footprints": [
+        {
+            "statementType": "create_table",
+            "statementTarget": ["table", "public", "mira_integration_receivers"],
+            "writes": [
+                "s|tbl|public.mira_integration_receivers",
+                "n|tbl|public.mira_integration_receivers",
+                "e|tbl|public.mira_integration_receivers",
+                "n|rel|public.mira_integration_receivers",
+                "n|type|public.mira_integration_receivers",
+                "n|rel|public.mira_integration_receivers_pkey"
+            ],
+            "reads": ["n|sch|public"]
+        },
+        {
+            "statementType": "add_column",
+            "statementTarget": [
+                "column",
+                "public",
+                "mira_integration_state",
+                "event_anchor"
+            ],
+            "writes": [
+                "s|col|public.mira_integration_state.event_anchor",
+                "n|col|public.mira_integration_state.event_anchor",
+                "e|col|public.mira_integration_state.event_anchor"
+            ],
+            "reads": ["n|tbl|public.mira_integration_state", "n|sch|public"]
+        },
+        {
+            "statementType": "add_column",
+            "statementTarget": [
+                "column",
+                "public",
+                "mira_integration_state",
+                "window_head"
+            ],
+            "writes": [
+                "s|col|public.mira_integration_state.window_head",
+                "n|col|public.mira_integration_state.window_head",
+                "e|col|public.mira_integration_state.window_head"
+            ],
+            "reads": ["n|tbl|public.mira_integration_state", "n|sch|public"]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "name": "mira_integration_receivers",
+                "isRlsEnabled": false,
+                "entityType": "tables"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_integration_receivers",
+                "name": "key",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_integration_receivers",
+                "name": "binding_hash",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_integration_receivers",
+                "name": "heartbeat_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "now()",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_integration_state",
+                "name": "event_anchor",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_integration_state",
+                "name": "window_head",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_integration_receivers",
+                "name": "mira_integration_receivers_pkey",
+                "columns": ["key"],
+                "nameExplicit": false,
+                "entityType": "pks"
+            }
+        }
+    ]
+}

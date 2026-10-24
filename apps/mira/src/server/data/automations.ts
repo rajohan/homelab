@@ -234,6 +234,17 @@ export async function resumeMiraControls(
             { owner: string; key: string }[]
         >`SELECT owner, key FROM mira_switches WHERE owner = ${account.owner} AND NOT enabled AND until <= ${now} FOR UPDATE`;
         for (const row of rows) {
+            if (row.key === "integration:agentmail") {
+                const [binding] = await query<{ current: boolean }[]>`
+                    SELECT EXISTS (SELECT 1 FROM mira_switches c
+                        JOIN mira_integration_receivers receiver ON receiver.key='agentmail' AND receiver.binding_hash=c.binding_hash
+                        JOIN mira_runtime_status runtime ON runtime.id=1
+                        WHERE c.owner=${row.owner} AND c.key=${row.key}
+                        AND receiver.heartbeat_at > now()-interval '45 seconds'
+                        AND runtime.heartbeat_at > now()-interval '45 seconds'
+                        AND runtime.integrations @> jsonb_build_array(jsonb_build_object('owner',c.owner,'key','agentmail','bindingHash',c.binding_hash))) AS current`;
+                if (!binding?.current) continue;
+            }
             const [resumed] = await query<
                 { version: number; at: Date }[]
             >`UPDATE mira_switches SET enabled = true, reason = NULL, changed_at = until, until = NULL, version = version + 1 WHERE owner = ${row.owner} AND key = ${row.key} RETURNING version, changed_at AS at`;
