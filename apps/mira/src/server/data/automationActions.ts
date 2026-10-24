@@ -123,6 +123,7 @@ export async function deleteMiraAutomation(
     version: number
 ): Promise<void> {
     await context.client.begin(async (query) => {
+        await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${context.owner}`}, 0))`;
         const rows = await query<
             { id: string }[]
         >`UPDATE mira_automations SET deleted_at = now(), prompt = '', title = 'Deleted automation', version = version + 1, next_run_at = NULL WHERE id = ${id} AND owner = ${context.owner} AND version = ${version} AND deleted_at IS NULL RETURNING id`;

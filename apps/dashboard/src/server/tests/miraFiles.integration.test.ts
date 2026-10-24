@@ -11,7 +11,7 @@ import {
     readMiraFile,
     saveMiraFile,
 } from "@homelab/mira/data/files";
-import { claimMiraRun } from "@homelab/mira/data/queue";
+import { claimMiraRun, finishMiraRun } from "@homelab/mira/data/queue";
 
 import { createMiraTools } from "../../../../mira/src/server/executor/tools";
 import { syntheticPdf } from "../../../../mira/src/server/testing/document";
@@ -169,6 +169,117 @@ test("attachment tools require the file to belong to the current conversation, e
         });
         expect(denied).toContain("not attached");
         expect(denied).not.toContain("Unselected private context");
+    } finally {
+        await database.close();
+        await rm(directory, { recursive: true, force: true });
+    }
+});
+
+test("queued and running conversations retain current and historical attachments until work stops", async () => {
+    const database = await operationFixture();
+    const directory = await mkdtemp(path.join(tmpdir(), "mira-file-lifecycle-"));
+    const context = {
+        client: database.client,
+        owner: "operator",
+        actor: "human:operator",
+    };
+    const api = appRouter.createCaller({
+        operations: database,
+        principal: { kind: "human", id: "operator", capabilities },
+    }).mira;
+    try {
+        const file = await saveMiraFile(context, directory, {
+            id: crypto.randomUUID(),
+            name: "keep.txt",
+            bytes: new TextEncoder().encode("Keep this context"),
+        });
+        const chat = await api.conversations.create({ title: "Offline attachment" });
+        await api.conversations.send({
+            conversationId: chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Read my file",
+            attachmentIds: [file.id],
+        });
+        await rejects(deleteMiraFile(context, directory, file.id), /Stop or finish/);
+        const queuedRead = await readMiraFile(context, directory, file.id);
+        expect(new TextDecoder().decode(queuedRead.bytes)).toBe("Keep this context");
+        const claim = await claimMiraRun(
+            database.client,
+            crypto.randomUUID(),
+            "foreground"
+        );
+        expect(claim).not.toBeNull();
+        await rejects(deleteMiraFile(context, directory, file.id), /Stop or finish/);
+        await finishMiraRun(database.client, claim!, {
+            state: "completed",
+            text: "Read",
+            message: null,
+            providerTurn: "synthetic",
+        });
+        const continued = await api.conversations.send({
+            conversationId: chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Continue using the earlier file",
+        });
+        await rejects(deleteMiraFile(context, directory, file.id), /Stop or finish/);
+        await api.runs.cancel({ id: continued.id });
+        await deleteMiraFile(context, directory, file.id);
+        await rejects(readMiraFile(context, directory, file.id), /not found/);
+        await rejects(
+            api.conversations.send({
+                conversationId: chat.id,
+                requestId: crypto.randomUUID(),
+                text: "Deleted attachment",
+                attachmentIds: [file.id],
+            }),
+            /no longer available/
+        );
+    } finally {
+        await database.close();
+        await rm(directory, { recursive: true, force: true });
+    }
+});
+
+test("racing submission with file deletion cannot queue a missing attachment", async () => {
+    const database = await operationFixture();
+    const directory = await mkdtemp(path.join(tmpdir(), "mira-file-race-"));
+    const context = {
+        client: database.client,
+        owner: "operator",
+        actor: "human:operator",
+    };
+    const api = appRouter.createCaller({
+        operations: database,
+        principal: { kind: "human", id: "operator", capabilities },
+    }).mira;
+    try {
+        for (let attempt = 0; attempt < 4; attempt++) {
+            const file = await saveMiraFile(context, directory, {
+                id: crypto.randomUUID(),
+                name: "race.txt",
+                bytes: new TextEncoder().encode("Race context"),
+            });
+            const chat = await api.conversations.create({ title: "Concurrent request" });
+            const [send, remove] = await Promise.allSettled([
+                api.conversations.send({
+                    conversationId: chat.id,
+                    requestId: crypto.randomUUID(),
+                    text: "Read",
+                    attachmentIds: [file.id],
+                }),
+                deleteMiraFile(context, directory, file.id),
+            ]);
+            expect([send.status, remove.status].toSorted()).toEqual([
+                "fulfilled",
+                "rejected",
+            ]);
+            if (send.status === "fulfilled") {
+                const read = await readMiraFile(context, directory, file.id);
+                expect(new TextDecoder().decode(read.bytes)).toBe("Race context");
+                await api.runs.cancel({ id: send.value.id });
+                await deleteMiraFile(context, directory, file.id);
+            } else await rejects(readMiraFile(context, directory, file.id), /not found/);
+        }
     } finally {
         await database.close();
         await rm(directory, { recursive: true, force: true });

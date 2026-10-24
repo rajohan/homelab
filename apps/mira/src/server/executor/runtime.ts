@@ -4,6 +4,7 @@ import type { MiraModel } from "@homelab/contracts/mira";
 import type { SQL } from "bun";
 
 import { runtimeEnvironment } from "../config/environment";
+import { reconcileMiraControls } from "../data/automations";
 import { cleanupMiraFiles } from "../data/files";
 import { claimMiraRun, reconcileMiraRuns, scheduleMiraRuns } from "../data/queue";
 import { CodexRuntime } from "../runtime/codexRuntime";
@@ -50,6 +51,7 @@ export async function runMiraExecutor(options: {
     const coordinator = async () => {
         while (!signal.aborted) {
             await reconcileMiraRuns(client);
+            await reconcileMiraControls(client);
             if (Date.now() - inspectedAt >= 30_000) {
                 let runtime: CodexRuntime | undefined;
                 try {
