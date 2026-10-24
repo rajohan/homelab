@@ -17,6 +17,7 @@ import { ChatActivity } from "./ChatActivity";
 import { ChatComposer } from "./ChatComposer";
 import { ChatMessage } from "./ChatMessage";
 import { ChatSettings } from "./ChatSettings";
+import { MiraRunTable } from "./MiraRunTable";
 import { ProposalReview } from "./ProposalReview";
 import { RunAutomationButton } from "./RunAutomationButton";
 
@@ -25,9 +26,9 @@ function UploadHarness({ onBusy }: { readonly onBusy: (busy: boolean) => void })
     return <AttachmentPicker value={files} onChange={setFiles} onBusyChange={onBusy} />;
 }
 
-function fixture(content: ReactNode) {
+function fixture(content: ReactNode, enabled = false) {
     const query = new QueryClient({
-        defaultOptions: { queries: { enabled: false, retry: false } },
+        defaultOptions: { queries: { enabled, retry: false } },
     });
     const identity = new IdentityClient();
     const view = render(
@@ -402,6 +403,83 @@ test("proposed changes display exact passive fields and retain their approval id
             { id: proposal.id, inputHash: proposal.inputHash, approve: true },
             { id: proposal.id, inputHash: proposal.inputHash, approve: true },
         ]);
+    } finally {
+        cleanup();
+        request.mockRestore();
+    }
+});
+
+test("run history opens the selected old result and shows its uncertain tool receipt", async () => {
+    const run = {
+        id: crypto.randomUUID(),
+        conversationId: crypto.randomUUID(),
+        automationId: null,
+        taskId: null,
+        state: "needs_attention" as const,
+        cancelRequested: false,
+        message: "An earlier tool needs review",
+        title: "Earlier run",
+        automationName: null,
+        conversationAvailable: false,
+        createdAt: new Date().toISOString(),
+        startedAt: null,
+        finishedAt: null,
+    };
+    const requested: string[] = [];
+    const request = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+            (input: Parameters<typeof fetch>[0]) => {
+                requested.push(input instanceof Request ? input.url : input.toString());
+                return Promise.resolve(
+                    Response.json([
+                        {
+                            result: {
+                                data: serialize({
+                                    run,
+                                    rows: [
+                                        {
+                                            id: crypto.randomUUID(),
+                                            tool: "mira_report_create",
+                                            state: "unknown",
+                                            message:
+                                                "Verify the original outcome before repeating.",
+                                            createdAt: run.createdAt,
+                                            finishedAt: null,
+                                        },
+                                    ],
+                                    nextCursor: null,
+                                }),
+                            },
+                        },
+                    ])
+                );
+            },
+            { preconnect: fetch.preconnect }
+        )
+    );
+    const cleanup = fixture(
+        <MiraRunTable
+            rows={[run]}
+            onStop={() => {}}
+            stoppingId={undefined}
+            continuation={{ hasMore: false, loading: false, onLoadMore: () => {} }}
+        />,
+        true
+    );
+    try {
+        await userEvent.setup().click(screen.getByRole("button", { name: "Details" }));
+        expect(
+            await screen.findByRole("dialog", { name: "Run details" })
+        ).toBeInTheDocument();
+        expect(
+            await screen.findByText("Verify the original outcome before repeating.")
+        ).toBeInTheDocument();
+        expect(screen.getByText("Needs review")).toBeInTheDocument();
+        expect(requested.some((url) => decodeURIComponent(url).includes(run.id))).toBe(
+            true
+        );
+        await userEvent.setup().click(screen.getByRole("button", { name: "Close" }));
+        await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     } finally {
         cleanup();
         request.mockRestore();

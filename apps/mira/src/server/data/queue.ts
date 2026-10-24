@@ -199,7 +199,11 @@ export async function finishMiraRun(
         await query`UPDATE mira_messages SET content = ${terminal.text}, state = ${terminal.state === "needs_attention" ? "failed" : terminal.state} WHERE id = ${run.assistantMessageId}`;
         await query`UPDATE mira_conversations SET updated_at = now() WHERE id = ${run.conversationId}`;
         if (run.automationId && terminal.state === "completed") {
-            const fingerprint = await miraObservationFingerprint(query, run.owner);
+            const fingerprint = await miraObservationFingerprint(
+                query,
+                run.owner,
+                run.id
+            );
             await query`UPDATE mira_runs SET observation_hash=${fingerprint} WHERE id=${run.id}`;
         }
         await notifyMiraRun(query, run.id);
