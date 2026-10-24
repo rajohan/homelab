@@ -147,11 +147,13 @@ async function resetOccurrences(
  * Change one control with a durable reason, optional resume time and no catch-up burst.
  * @param context - Verified human operator; tools cannot modify these grants.
  * @param input - Validated key, expected version and new state.
+ * @param bindingHash - Verified service binding when explicitly enabling an integration.
  * @returns Completion after configuration and audit commit together.
  */
 export async function setMiraEnabled(
     context: MiraContext,
-    input: v.InferOutput<typeof miraEnableSchema>
+    input: v.InferOutput<typeof miraEnableSchema>,
+    bindingHash?: string
 ): Promise<void> {
     if (input.until && new Date(input.until).getTime() <= Date.now())
         throw new MiraFailure("BAD_REQUEST", "Choose a future resume time.");
@@ -166,15 +168,22 @@ export async function setMiraEnabled(
             if (!rows[0]) throw new MiraFailure("NOT_FOUND", "Automation not found.");
         } else if (!miraControlKeys.some((key) => key === input.key))
             throw new MiraFailure("BAD_REQUEST", "Unknown control.");
-        await query`INSERT INTO mira_switches (owner, key, enabled, reason) VALUES (${context.owner}, ${input.key}, ${input.key === "autonomy"}, ${input.key === "autonomy" ? null : "Not enabled yet."}) ON CONFLICT DO NOTHING`;
+        const inserted = await query<
+            { enabled: boolean }[]
+        >`INSERT INTO mira_switches (owner, key, enabled, reason) VALUES (${context.owner}, ${input.key}, ${input.key === "autonomy"}, ${input.key === "autonomy" ? null : "Not enabled yet."}) ON CONFLICT DO NOTHING RETURNING enabled`;
+        if (inserted[0]?.enabled)
+            await query`INSERT INTO mira_control_windows (owner, key, version, started_at) VALUES (${context.owner}, ${input.key}, 1, '1970-01-01'::timestamptz)`;
         const rows = await query<
-            { key: string }[]
-        >`UPDATE mira_switches SET enabled = ${input.enabled}, reason = ${input.reason}, until = ${input.until ? new Date(input.until) : null}, version = version + 1, changed_at = now() WHERE owner = ${context.owner} AND key = ${input.key} AND version = ${input.version} RETURNING key`;
+            { key: string; version: number; at: Date }[]
+        >`UPDATE mira_switches SET enabled = ${input.enabled}, reason = ${input.reason}, until = ${input.until ? new Date(input.until) : null}, version = version + 1, changed_at = clock_timestamp(), binding_hash = CASE WHEN ${input.key} = 'integration:agentmail' AND ${input.enabled} THEN ${bindingHash ?? null} ELSE binding_hash END WHERE owner = ${context.owner} AND key = ${input.key} AND version = ${input.version} RETURNING key, version, changed_at AS at`;
         if (!rows[0])
             throw new MiraFailure(
                 "CONFLICT",
                 "This control changed. Refresh before continuing."
             );
+        await query`UPDATE mira_control_windows SET ended_at = ${rows[0].at} WHERE owner = ${context.owner} AND key = ${input.key} AND ended_at IS NULL`;
+        if (input.enabled)
+            await query`INSERT INTO mira_control_windows (owner, key, version, started_at) VALUES (${context.owner}, ${input.key}, ${rows[0].version}, ${rows[0].at})`;
         await resetOccurrences(query, context.owner, input.key, Date.now());
         if (
             !input.enabled &&
@@ -225,7 +234,10 @@ export async function resumeMiraControls(
             { owner: string; key: string }[]
         >`SELECT owner, key FROM mira_switches WHERE owner = ${account.owner} AND NOT enabled AND until <= ${now} FOR UPDATE`;
         for (const row of rows) {
-            await query`UPDATE mira_switches SET enabled = true, reason = NULL, changed_at = until, until = NULL, version = version + 1 WHERE owner = ${row.owner} AND key = ${row.key}`;
+            const [resumed] = await query<
+                { version: number; at: Date }[]
+            >`UPDATE mira_switches SET enabled = true, reason = NULL, changed_at = until, until = NULL, version = version + 1 WHERE owner = ${row.owner} AND key = ${row.key} RETURNING version, changed_at AS at`;
+            await query`INSERT INTO mira_control_windows (owner, key, version, started_at) VALUES (${row.owner}, ${row.key}, ${resumed!.version}, ${resumed!.at})`;
             await resetOccurrences(query, row.owner, row.key, now.getTime());
             await auditMira(
                 query,

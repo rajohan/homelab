@@ -103,8 +103,13 @@ export class AgentMailReader {
             throw new Error("AgentMail returned a different message.");
         if (!ordinaryReceivedMail(message))
             throw new Error("This message is not eligible for automatic reading.");
-        const plain = message.extracted_text ?? message.text;
-        const content = plain ?? message.extracted_html ?? message.html ?? "";
+        const plain = [message.extracted_text, message.text].find((value) =>
+            value?.trim()
+        );
+        const content =
+            plain ??
+            [message.extracted_html, message.html].find((value) => value?.trim()) ??
+            "";
         return {
             messageId: id,
             from: message.from,

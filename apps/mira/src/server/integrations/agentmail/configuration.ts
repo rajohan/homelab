@@ -64,3 +64,14 @@ export function agentMailReadConfiguration(
         throw new Error("AgentMail read configuration is incomplete or invalid.");
     return { ...binding, apiKey };
 }
+
+/**
+ * Identify an inbox/account agreement without exposing its address in runtime status.
+ * @param binding - Explicit operator-owned inbox mapping.
+ * @returns Stable SHA-256 fingerprint, excluding all credentials.
+ */
+export function agentMailBindingHash(binding: AgentMailBinding): string {
+    return new Bun.CryptoHasher("sha256")
+        .update(JSON.stringify([binding.owner, binding.inboxId]))
+        .digest("hex");
+}

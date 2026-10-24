@@ -4,7 +4,7 @@ import * as v from "valibot";
 import { MiraFailure } from "../../data/context";
 import type { MiraClaim } from "../../data/queue";
 import type { RuntimeTool } from "../../runtime/protocol";
-import type { AgentMailReadConfiguration } from "./configuration";
+import { agentMailBindingHash, type AgentMailReadConfiguration } from "./configuration";
 import { AgentMailReader } from "./reader";
 import { agentMailIdSchema, ordinaryReceivedMail } from "./schema";
 
@@ -28,7 +28,7 @@ export function createAgentMailTools(
     const reader = configuration
         ? new AgentMailReader(configuration, request)
         : undefined;
-    const requireAccess = async (signal: AbortSignal) => {
+    const requireAccess = async (signal: AbortSignal, expectedVersion?: number) => {
         signal.throwIfAborted();
         if (!configuration || !reader || configuration.owner !== run.owner)
             throw new MiraFailure(
@@ -36,14 +36,17 @@ export function createAgentMailTools(
                 "AgentMail is not configured for this account."
             );
         const [access] = await client<
-            { allowed: boolean }[]
-        >`SELECT EXISTS (SELECT 1 FROM mira_switches WHERE owner = ${run.owner} AND key = 'integration:agentmail' AND enabled) AND EXISTS (SELECT 1 FROM mira_runs WHERE id = ${run.id} AND owner = ${run.owner} AND state = 'running' AND NOT cancel_requested AND lease_token = ${run.leaseToken} AND lease_expires_at > now()) AS allowed`;
-        if (!access?.allowed)
+            { version: number }[]
+        >`SELECT c.version FROM mira_switches c WHERE c.owner = ${run.owner} AND c.key = 'integration:agentmail' AND c.enabled AND c.binding_hash = ${agentMailBindingHash(configuration)} AND EXISTS (SELECT 1 FROM mira_runs WHERE id = ${run.id} AND owner = ${run.owner} AND state = 'running' AND NOT cancel_requested AND lease_token = ${run.leaseToken} AND lease_expires_at > now())`;
+        if (
+            !access ||
+            (expectedVersion !== undefined && access.version !== expectedVersion)
+        )
             throw new MiraFailure(
                 "FORBIDDEN",
                 "AgentMail is paused or this run no longer has access."
             );
-        return reader;
+        return { reader, version: access.version };
     };
     return [
         {
@@ -84,8 +87,8 @@ export function createAgentMailTools(
                         "Choose a mail window of at most 31 days ending no later than now."
                     );
                 const current = await requireAccess(signal);
-                const page = await current.list(parsed, signal);
-                await requireAccess(signal);
+                const page = await current.reader.list(parsed, signal);
+                await requireAccess(signal, current.version);
                 return {
                     messages: page.messages
                         .filter(ordinaryReceivedMail)
@@ -117,8 +120,8 @@ export function createAgentMailTools(
                     input
                 );
                 const current = await requireAccess(signal);
-                const result = await current.read(parsed.messageId, signal);
-                await requireAccess(signal);
+                const result = await current.reader.read(parsed.messageId, signal);
+                await requireAccess(signal, current.version);
                 return result;
             },
         },

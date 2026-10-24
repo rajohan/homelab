@@ -104,7 +104,7 @@ export function MiraIntegrations() {
                         {control && !control.enabled && (
                             <p className="text-sm text-primary-400">{control.reason}</p>
                         )}
-                        {control?.enabled && integration.ready && integration.message && (
+                        {integration.message && (
                             <p className="text-sm text-primary-300">
                                 {integration.message}
                             </p>

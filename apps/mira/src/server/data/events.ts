@@ -48,7 +48,7 @@ export async function recordMiraEvent(
             if (!(await miraRunAllowed(query, input.owner, automation.id))) continue;
             const [eligible] = await query<
                 { allowed: boolean }[]
-            >`SELECT NOT EXISTS (SELECT 1 FROM mira_switches WHERE owner = ${input.owner} AND key IN ('autonomy', ${`automation:${automation.id}`}, ${input.kind === "agentmail" ? "integration:agentmail" : "autonomy"}) AND changed_at > ${observedAt}) AS allowed`;
+            >`SELECT NOT EXISTS (SELECT 1 FROM mira_switches s WHERE s.owner = ${input.owner} AND s.key IN ('autonomy', ${`automation:${automation.id}`}, ${input.kind === "agentmail" ? "integration:agentmail" : "autonomy"}) AND NOT EXISTS (SELECT 1 FROM mira_control_windows w WHERE w.owner = s.owner AND w.key = s.key AND w.started_at <= ${observedAt} AND (w.ended_at IS NULL OR w.ended_at > ${observedAt})) AND (EXISTS (SELECT 1 FROM mira_control_windows w WHERE w.owner = s.owner AND w.key = s.key) OR s.changed_at > ${observedAt})) AS allowed`;
             if (!eligible?.allowed) continue;
 
             await query`INSERT INTO mira_event_deliveries (event_id, automation_id, next_attempt_at) VALUES (${id}, ${automation.id}, ${observedAt})`;

@@ -1,6 +1,6 @@
 import type { SQL } from "bun";
 
-import type { AgentMailBinding } from "./configuration";
+import { agentMailBindingHash, type AgentMailBinding } from "./configuration";
 import type { AgentMailReader } from "./reader";
 import { ordinaryReceivedMail } from "./schema";
 import { recordAgentMailMessage } from "./webhook";
@@ -18,22 +18,20 @@ async function claim(client: SQL, binding: AgentMailBinding): Promise<PollClaim 
         await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${binding.owner}`}, 0))`;
         const [control] = await query<
             { enabled: boolean; version: number; changedAt: Date }[]
-        >`SELECT enabled, version, changed_at AS "changedAt" FROM mira_switches WHERE owner = ${binding.owner} AND key = 'integration:agentmail'`;
+        >`SELECT enabled, version, changed_at AS "changedAt" FROM mira_switches WHERE owner = ${binding.owner} AND key = 'integration:agentmail' AND binding_hash = ${agentMailBindingHash(binding)}`;
         if (!control?.enabled) return null;
         const now = new Date();
         const [previous] = await query<
             { binding: string; version: number }[]
         >`SELECT binding, control_version AS version FROM mira_integration_state WHERE owner = ${binding.owner} AND key = 'agentmail' FOR UPDATE`;
-        const start =
-            previous && previous.binding !== binding.inboxId
-                ? now
-                : new Date(control.changedAt);
-        if (
-            !previous ||
-            previous.binding !== binding.inboxId ||
-            previous.version !== control.version
-        ) {
+        if (!previous || previous.binding !== binding.inboxId) {
+            const [history] = await query<
+                { start: Date | null }[]
+            >`SELECT min(started_at) AS start FROM mira_control_windows WHERE owner = ${binding.owner} AND key = 'integration:agentmail'`;
+            const start = previous ? now : new Date(history?.start ?? control.changedAt);
             await query`INSERT INTO mira_integration_state (owner, key, binding, control_version, started_at, completed_through, next_attempt_at) VALUES (${binding.owner}, 'agentmail', ${binding.inboxId}, ${control.version}, ${start}, ${start}, now()) ON CONFLICT (owner, key) DO UPDATE SET binding = EXCLUDED.binding, control_version = EXCLUDED.control_version, started_at = EXCLUDED.started_at, completed_through = EXCLUDED.completed_through, window_end = NULL, cursor = NULL, lease_token = NULL, lease_expires_at = NULL, next_attempt_at = EXCLUDED.next_attempt_at, last_success_at = NULL, message = NULL, heartbeat_at = now()`;
+        } else if (previous.version !== control.version) {
+            await query`UPDATE mira_integration_state SET control_version = ${control.version}, cursor = NULL, lease_token = NULL, lease_expires_at = NULL, next_attempt_at = now(), message = NULL WHERE owner = ${binding.owner} AND key = 'agentmail'`;
         }
         const token = crypto.randomUUID();
         const [row] = await query<
@@ -76,7 +74,7 @@ export async function pollAgentMail(
             await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${binding.owner}`}, 0))`;
             const [owned] = await query<
                 { owner: string }[]
-            >`SELECT s.owner FROM mira_integration_state s JOIN mira_switches c ON c.owner = s.owner AND c.key = 'integration:agentmail' WHERE s.owner = ${binding.owner} AND s.key = 'agentmail' AND s.binding = ${binding.inboxId} AND s.lease_token = ${claimed.token} AND s.lease_expires_at > now() AND c.enabled AND c.version = ${claimed.version} FOR UPDATE OF s`;
+            >`SELECT s.owner FROM mira_integration_state s JOIN mira_switches c ON c.owner = s.owner AND c.key = 'integration:agentmail' WHERE s.owner = ${binding.owner} AND s.key = 'agentmail' AND s.binding = ${binding.inboxId} AND s.lease_token = ${claimed.token} AND s.lease_expires_at > now() AND c.enabled AND c.version = ${claimed.version} AND c.binding_hash = ${agentMailBindingHash(binding)} FOR UPDATE OF s`;
             if (!owned) return false;
             for (const message of page.messages) {
                 const at = new Date(message.timestamp);

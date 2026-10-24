@@ -9,7 +9,10 @@ updates are provider-owned. No third-party patch or OpenClaw hook is required.
 
 Supply the same `HOMELAB_MIRA_AGENTMAIL_OWNER` (Homelab account ID) and
 `HOMELAB_MIRA_AGENTMAIL_INBOX` to dashboard and Mira. The binding is operator-owned;
-model arguments cannot replace it. Inject credentials privately:
+model arguments cannot replace it. The executor publishes a non-secret binding fingerprint,
+and the dashboard requires an exact match before activation. An inbox change
+requires pausing and enabling the integration again; mismatches block reads and
+return a retryable webhook failure. Inject credentials privately:
 
 - Dashboard receives only `HOMELAB_MIRA_AGENTMAIL_WEBHOOK_SECRET`, the webhook's
   own Svix signing secret.
@@ -43,7 +46,9 @@ Downtime beyond that window requires a deliberate manual inbox review.
 
 Disabling AgentMail stops new provider reads. A request already in flight cannot
 be undone, but its result is discarded if the control changed before acceptance.
-Recovery does not enqueue messages from deliberate pauses or before activation.
+Recovery preserves its last successful boundary across pauses. Enabled intervals
+are recorded separately, so mail received before a pause remains recoverable while
+mail received during the pause or before activation is excluded.
 Pausing one mail automation stops only that automation; global automatic-work pause
 prevents automatic dispatch. Receipts and pause reasons remain available.
 
@@ -70,7 +75,8 @@ call receipts.
 
 Synthetic tests cover raw-body signatures, time tolerance, wrong-inbox rejection,
 bounded HTTP responses, owner isolation, durable deduplication, interrupted paging,
-retrying an existing window and pause races before returning mail content. A real
+retrying an existing window, repeated-pause recovery, empty extracted-body fallback,
+cross-service binding mismatches and pause/resume races before returning mail content. A real
 provider activation still needs scoped credentials and a verified inbox binding.
 
 References: [webhook contract](https://docs.agentmail.to/webhooks-overview),

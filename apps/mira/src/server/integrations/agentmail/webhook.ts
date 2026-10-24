@@ -3,6 +3,7 @@ import { Webhook } from "svix";
 import * as v from "valibot";
 
 import { recordMiraEvent } from "../../data/events";
+import { agentMailBindingStatus } from "../../data/integrations";
 import type { AgentMailBinding, AgentMailHookConfiguration } from "./configuration";
 import { agentMailIdSchema } from "./schema";
 
@@ -30,9 +31,13 @@ export async function acceptAgentMailMessage(
     messageId: string,
     observedAt?: Date
 ): Promise<boolean> {
-    return client.begin((query) =>
-        recordAgentMailMessage(query, binding, messageId, observedAt)
-    );
+    return client.begin(async (query) => {
+        await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${binding.owner}`}, 0))`;
+        const status = await agentMailBindingStatus(query, binding);
+        if (!status.matched || (status.enabled && !status.granted))
+            throw new Error("AgentMail inbox binding has not been confirmed.");
+        return recordAgentMailMessage(query, binding, messageId, observedAt);
+    });
 }
 
 /**

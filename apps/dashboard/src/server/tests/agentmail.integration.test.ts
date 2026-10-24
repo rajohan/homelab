@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { rejects } from "node:assert/strict";
 import { createHmac } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 
 import { capabilities } from "@homelab/contracts/operations";
 import { claimMiraRun } from "@homelab/mira/data/queue";
@@ -11,18 +12,15 @@ import { acceptAgentMailMessage } from "@homelab/mira/integrations/agentmail/web
 
 import { appRouter } from "../api/router";
 import { startDashboardServer } from "../index";
+import { provisionTestAgentMail } from "../testing/agentmail";
 import { operationFixture } from "../testing/operations";
 
 test("public AgentMail hook requires Svix, commits once, preserves owner and respects independent pause", async () => {
     const fixture = await operationFixture();
-    const signingSecret = `whsec_${Buffer.from("synthetic-webhook-key-32-bytes-000").toString("base64")}`;
-    const configuration = {
-        owner: "operator",
-        inboxId: "synthetic@agentmail.to",
-        signingSecret,
-    };
+    const configuration = await provisionTestAgentMail(fixture.client);
+    const { signingSecret } = configuration;
     const api = appRouter.createCaller({
-        operations: fixture,
+        operations: { ...fixture, agentMailHook: configuration },
         principal: { kind: "human", id: "operator", capabilities },
     }).mira;
     const server = startDashboardServer({
@@ -77,11 +75,10 @@ test("public AgentMail hook requires Svix, commits once, preserves owner and res
         });
     };
     try {
-        await fixture.client`INSERT INTO mira_runtime_status (id,worker_id,version,ready,heartbeat_at,integrations) VALUES (1,${crypto.randomUUID()},'synthetic',true,now(),${JSON.stringify([{ owner: configuration.owner, key: "agentmail" }])}::text::jsonb)`;
         const integrations = await api.integrations();
         expect(integrations[0]).toMatchObject({ configured: true, ready: true });
         const other = appRouter.createCaller({
-            operations: fixture,
+            operations: { ...fixture, agentMailHook: configuration },
             principal: { kind: "human", id: "other", capabilities },
         }).mira;
         const hidden = await other.integrations();
@@ -136,6 +133,45 @@ test("public AgentMail hook requires Svix, commits once, preserves owner and res
             { count: number }[]
         >`SELECT count(*)::integer AS count FROM mira_event_deliveries`;
         expect(deliveries[0]?.count).toBe(1);
+        const mismatch = { ...configuration, inboxId: "wrong@agentmail.to" };
+        await provisionTestAgentMail(fixture.client, mismatch);
+        const mismatchStatus = await api.integrations();
+        expect(mismatchStatus[0]).toMatchObject({
+            configured: false,
+            ready: false,
+        });
+        await rejects(
+            api.controls.setEnabled({
+                key: "integration:agentmail",
+                version: 2,
+                enabled: true,
+                reason: null,
+                until: null,
+            }),
+            /same AgentMail inbox/
+        );
+        const mismatchResponse = await send("mismatch");
+        expect(mismatchResponse.status).toBe(503);
+        const [mismatched] = await fixture.client<
+            { count: number }[]
+        >`SELECT count(*)::int AS count FROM mira_events WHERE reference LIKE '%mismatch%'`;
+        expect(mismatched?.count).toBe(0);
+        expect(
+            await pollAgentMail(
+                fixture.client,
+                mismatch,
+                {
+                    list: () => {
+                        throw new Error("Mismatched reader must not run");
+                    },
+                },
+                new AbortController().signal
+            )
+        ).toBe(false);
+        await provisionTestAgentMail(fixture.client, configuration);
+        await fixture.client`UPDATE mira_runtime_status SET ready=false,heartbeat_at=now()-interval '5 minutes' WHERE id=1`;
+        const offlineResponse = await send("provider-offline");
+        expect(offlineResponse.status).toBe(204);
         const privateApi = await fetch(
             `http://127.0.0.1:${server.port}/api/trpc/mira.status`
         );
@@ -148,9 +184,9 @@ test("public AgentMail hook requires Svix, commits once, preserves owner and res
 
 test("AgentMail recovery persists its window, deduplicates replay, and fences pauses during a request", async () => {
     const fixture = await operationFixture();
-    const binding = { owner: "operator", inboxId: "synthetic@agentmail.to" };
+    const binding = await provisionTestAgentMail(fixture.client);
     const api = appRouter.createCaller({
-        operations: fixture,
+        operations: { ...fixture, agentMailHook: binding },
         principal: { kind: "human", id: binding.owner, capabilities },
     }).mira;
     const signal = new AbortController().signal;
@@ -181,6 +217,7 @@ test("AgentMail recovery persists its window, deduplicates replay, and fences pa
                 until: null,
             });
         await fixture.client`UPDATE mira_switches SET changed_at=now()-interval '10 minutes' WHERE owner=${binding.owner}`;
+        await fixture.client`UPDATE mira_control_windows SET started_at=now()-interval '10 minutes' WHERE owner=${binding.owner}`;
         let failed = false;
         let timestamp = "";
         const calls: (string | undefined)[] = [];
@@ -247,8 +284,9 @@ test("AgentMail recovery persists its window, deduplicates replay, and fences pa
             reason: "Intentional pause",
             until: null,
         });
+        const pausedAt = new Date();
         complete.resolve({
-            messages: [message("paused-during-request", new Date().toISOString())],
+            messages: [message("paused-during-request", pausedAt.toISOString())],
         });
         expect(await pending).toBe(false);
         expect(
@@ -278,7 +316,7 @@ test("AgentMail recovery persists its window, deduplicates replay, and fences pa
             fixture.client,
             binding,
             "delayed-from-pause",
-            new Date(timestamp)
+            pausedAt
         );
         const [delayed] = await fixture.client<
             { count: number }[]
@@ -289,15 +327,14 @@ test("AgentMail recovery persists its window, deduplicates replay, and fences pa
     }
 });
 
-test("mail tools reject other owners, disabled access and a pause before the response is released", async () => {
+test("mail tools reject other owners, disabled access and pause/resume before the response is released", async () => {
     const fixture = await operationFixture();
     const configuration = {
-        owner: "operator",
-        inboxId: "synthetic@agentmail.to",
+        ...(await provisionTestAgentMail(fixture.client)),
         apiKey: "synthetic-api-key-not-a-secret",
     };
     const api = appRouter.createCaller({
-        operations: fixture,
+        operations: { ...fixture, agentMailHook: configuration },
         principal: { kind: "human", id: configuration.owner, capabilities },
     }).mira;
     try {
@@ -355,6 +392,13 @@ test("mail tools reject other owners, disabled access and a pause before the res
             reason: "Intentional pause",
             until: null,
         });
+        await api.controls.setEnabled({
+            key: "integration:agentmail",
+            version: 3,
+            enabled: true,
+            reason: null,
+            until: null,
+        });
         complete.resolve(
             Response.json({
                 inbox_id: configuration.inboxId,
@@ -368,6 +412,112 @@ test("mail tools reject other owners, disabled access and a pause before the res
         );
         await rejects(pending, /paused/);
         expect(calls).toBe(1);
+    } finally {
+        await fixture.close();
+    }
+});
+
+test("recovery preserves pre-pause mail across repeated pauses and excludes only disabled intervals", async () => {
+    const fixture = await operationFixture();
+    const binding = await provisionTestAgentMail(fixture.client);
+    const api = appRouter.createCaller({
+        operations: { ...fixture, agentMailHook: binding },
+        principal: { kind: "human", id: binding.owner, capabilities },
+    }).mira;
+    const signal = new AbortController().signal;
+    const message = (id: string, at: Date): AgentMailMessage => ({
+        inbox_id: binding.inboxId,
+        message_id: id,
+        thread_id: "thread",
+        timestamp: at.toISOString(),
+        labels: ["received"],
+        from: "sender@example.test",
+        subject: "Synthetic",
+        preview: "Data only",
+    });
+    try {
+        const automation = await api.automations.create({
+            title: "Pause recovery",
+            prompt: "Read verified mail",
+            kind: "custom",
+            schedule: { kind: "event", event: "agentmail" },
+            budgetSeconds: 60,
+        });
+        for (const key of [`automation:${automation.id}`, "integration:agentmail"])
+            await api.controls.setEnabled({
+                key,
+                version: 1,
+                enabled: true,
+                reason: null,
+                until: null,
+            });
+        expect(
+            await pollAgentMail(
+                fixture.client,
+                binding,
+                { list: () => Promise.resolve({ messages: [] }) },
+                signal
+            )
+        ).toBe(true);
+        for (let cycle = 0; cycle < 2; cycle++) {
+            await delay(3);
+            const beforePause = new Date();
+            await delay(3);
+            await api.controls.setEnabled({
+                key: "integration:agentmail",
+                version: 2 + cycle * 2,
+                enabled: false,
+                reason: "Maintenance",
+                until: null,
+            });
+            await delay(3);
+            const duringPause = new Date();
+            await delay(3);
+            await api.controls.setEnabled({
+                key: "integration:agentmail",
+                version: 3 + cycle * 2,
+                enabled: true,
+                reason: null,
+                until: null,
+            });
+            await delay(3);
+            const afterPause = new Date();
+            await delay(3);
+            expect(
+                await pollAgentMail(
+                    fixture.client,
+                    binding,
+                    {
+                        list: (input) => {
+                            expect(Date.parse(input.after)).toBeLessThanOrEqual(
+                                beforePause.getTime()
+                            );
+                            return Promise.resolve({
+                                messages: [
+                                    message(`before-${cycle}`, beforePause),
+                                    message(`during-${cycle}`, duringPause),
+                                    message(`after-${cycle}`, afterPause),
+                                ],
+                            });
+                        },
+                    },
+                    signal
+                )
+            ).toBe(true);
+        }
+        const deliveries = await fixture.client<
+            { reference: string }[]
+        >`SELECT e.reference FROM mira_event_deliveries d JOIN mira_events e ON e.id=d.event_id ORDER BY e.id`;
+        expect(deliveries).toHaveLength(4);
+        expect(deliveries.every((entry) => !entry.reference.includes("during-"))).toBe(
+            true
+        );
+        expect(
+            deliveries.filter((entry) => entry.reference.includes("before-"))
+        ).toHaveLength(2);
+        expect(
+            deliveries.filter((entry) => entry.reference.includes("after-"))
+        ).toHaveLength(2);
     } finally {
         await fixture.close();
     }

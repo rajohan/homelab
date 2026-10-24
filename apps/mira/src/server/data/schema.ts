@@ -153,6 +153,7 @@ export const miraSwitches = pgTable(
         until: time("until"),
         version: integer().notNull().default(1),
         changedAt: time("changed_at").notNull().defaultNow(),
+        bindingHash: text("binding_hash"),
     },
     (t) => [
         primaryKey({ columns: [t.owner, t.key] }),
@@ -364,4 +365,19 @@ export const miraIntegrationState = pgTable(
         heartbeatAt: time("heartbeat_at").notNull().defaultNow(),
     },
     (t) => [primaryKey({ columns: [t.owner, t.key] })]
+);
+
+export const miraControlWindows = pgTable(
+    "mira_control_windows",
+    {
+        owner: text().notNull(),
+        key: text().notNull(),
+        version: integer().notNull(),
+        startedAt: time("started_at").notNull(),
+        endedAt: time("ended_at"),
+    },
+    (t) => [
+        primaryKey({ columns: [t.owner, t.key, t.version] }),
+        index("mira_control_windows_eligibility").on(t.owner, t.key, t.startedAt),
+    ]
 );

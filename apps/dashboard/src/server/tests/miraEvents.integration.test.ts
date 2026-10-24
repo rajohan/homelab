@@ -8,6 +8,7 @@ import { recordMiraEvent } from "@homelab/mira/data/events";
 import { scheduleMiraRuns } from "@homelab/mira/data/queue";
 
 import { appRouter } from "../api/router";
+import { provisionTestAgentMail } from "../testing/agentmail";
 import { operationFixture } from "../testing/operations";
 
 test("due-task events dispatch once, retain busy deliveries and do not replay after a pause", async () => {
@@ -80,8 +81,9 @@ test("due-task events dispatch once, retain busy deliveries and do not replay af
 
 test("verified AgentMail events deduplicate and cannot bypass integration disable with Run now", async () => {
     const fixture = await operationFixture();
+    const binding = await provisionTestAgentMail(fixture.client);
     const api = appRouter.createCaller({
-        operations: fixture,
+        operations: { ...fixture, agentMailHook: binding },
         principal: { kind: "human", id: "operator", capabilities },
     }).mira;
     try {

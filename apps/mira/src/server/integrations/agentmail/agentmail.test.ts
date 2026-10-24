@@ -195,6 +195,22 @@ test("AgentMail reader rejects mismatched/blocked messages and keeps HTML as pas
         format: "untrusted_html_text",
         content: '<img src="https://tracker.invalid">untrusted data',
     });
+    result = { ...message, extracted_text: "", text: "Full forwarded message" };
+    expect(await reader.read(message.message_id, signal)).toMatchObject({
+        format: "untrusted_text",
+        content: "Full forwarded message",
+    });
+    result = {
+        ...message,
+        extracted_text: "  ",
+        text: "",
+        extracted_html: "",
+        html: "Full HTML body",
+    };
+    expect(await reader.read(message.message_id, signal)).toMatchObject({
+        format: "untrusted_html_text",
+        content: "Full HTML body",
+    });
     result = { messages: [{ ...message, inbox_id: "other@agentmail.to" }] };
     await rejects(
         reader.list(

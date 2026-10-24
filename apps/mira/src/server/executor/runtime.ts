@@ -6,7 +6,10 @@ import type { SQL } from "bun";
 import { runtimeEnvironment } from "../config/environment";
 import { reconcileMiraControls } from "../data/automations";
 import { claimMiraRun, reconcileMiraRuns, scheduleMiraRuns } from "../data/queue";
-import type { AgentMailReadConfiguration } from "../integrations/agentmail/configuration";
+import {
+    agentMailBindingHash,
+    type AgentMailReadConfiguration,
+} from "../integrations/agentmail/configuration";
 import { pollAgentMail } from "../integrations/agentmail/poll";
 import { AgentMailReader } from "../integrations/agentmail/reader";
 import { CodexRuntime } from "../runtime/codexRuntime";
@@ -41,7 +44,13 @@ export async function runMiraExecutor(options: {
     const workerId = crypto.randomUUID();
     const reader = options.agentMail ? new AgentMailReader(options.agentMail) : undefined;
     const integrationsCatalog = options.agentMail
-        ? [{ owner: options.agentMail.owner, key: "agentmail" }]
+        ? [
+              {
+                  owner: options.agentMail.owner,
+                  key: "agentmail",
+                  bindingHash: agentMailBindingHash(options.agentMail),
+              },
+          ]
         : [];
     let inspectedAt = 0;
     let model: string | null = null;
