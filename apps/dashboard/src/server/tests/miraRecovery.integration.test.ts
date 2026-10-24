@@ -738,7 +738,11 @@ test("heartbeat run history exposes owned failures without reports or paging thr
         if (!run) throw new Error("Expected run");
         const fingerprint = () =>
             fixture.client.begin((query) =>
-                miraObservationFingerprint(query, "operator")
+                miraObservationFingerprint(
+                    query,
+                    "operator",
+                    "00000000-0000-4000-8000-000000000000"
+                )
             );
         const before = await fingerprint();
         const failure = Bun.randomUUIDv7();
@@ -1116,6 +1120,22 @@ test("manual model mutations require immutable owner approval and commit exactly
             { total: number }[]
         >`SELECT count(*)::int AS total FROM mira_tool_receipts WHERE run_id=${run.id} AND proposal IS NOT NULL`;
         expect(retained[0]?.total).toBe(0);
+        expect(await api.proposals.decide(decision)).toEqual({ state: "approved" });
+        expect(
+            await api.proposals.decide({
+                id: updateId,
+                inputHash: update.inputHash,
+                approve: false,
+            })
+        ).toEqual({ state: "rejected" });
+        await rejects(caller("other").proposals.decide(decision), /not found/);
+        await rejects(
+            api.proposals.decide({ ...decision, inputHash: "0".repeat(64) }),
+            /differs/
+        );
+        await rejects(api.proposals.decide({ ...decision, approve: false }), /not found/);
+        const afterRetry = await api.tasks.list({ search: "" });
+        expect(afterRetry.rows).toHaveLength(1);
     } finally {
         await fixture.close();
         await rm(directory, { recursive: true, force: true });

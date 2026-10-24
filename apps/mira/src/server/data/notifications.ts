@@ -7,11 +7,13 @@ import { miraRunAllowed } from "./automations";
  * Hash meaningful recorded inputs without volatile polling timestamps or Mira's own replies.
  * @param query - Completion transaction, immediately before notification evaluation.
  * @param owner - Server-verified owner of personal tasks, memory and controls.
+ * @param runId - Current run; only its owned trigger events contribute to the observation.
  * @returns An opaque digest used to suppress repeated unchanged heartbeat notices.
  */
 export async function miraObservationFingerprint(
     query: TransactionSQL,
-    owner: string
+    owner: string,
+    runId: string
 ): Promise<string> {
     const tasks = await query<
         Record<string, unknown>[]
@@ -37,6 +39,9 @@ export async function miraObservationFingerprint(
     const runs = await query<
         Record<string, unknown>[]
     >`SELECT id,state FROM mira_runs WHERE owner=${owner} AND state IN ('failed','needs_attention','interrupted') ORDER BY id DESC LIMIT 30`;
+    const events = await query<
+        { id: string }[]
+    >`SELECT e.id FROM mira_event_deliveries d JOIN mira_events e ON e.id=d.event_id JOIN mira_runs r ON r.id=d.run_id WHERE r.id=${runId} AND r.owner=${owner} AND e.owner=${owner} AND d.automation_id=r.automation_id ORDER BY e.id`;
     return new Bun.CryptoHasher("sha256")
         .update(
             JSON.stringify({
@@ -48,6 +53,7 @@ export async function miraObservationFingerprint(
                 jobs,
                 snapshots,
                 runs,
+                events,
             })
         )
         .digest("hex");
