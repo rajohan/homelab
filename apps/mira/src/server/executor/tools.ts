@@ -7,6 +7,7 @@ import {
     miraTaskInputSchema,
     miraTaskUpdateSchema,
 } from "@homelab/contracts/mira";
+import { miraMailContentSchema } from "@homelab/contracts/miraMail";
 import { idSchema } from "@homelab/contracts/operations";
 import type { SQL, TransactionSQL } from "bun";
 import * as v from "valibot";
@@ -14,6 +15,7 @@ import * as v from "valibot";
 import { MiraFailure, type MiraContext } from "../data/context";
 import { createReport, listMemory, listReports, saveMemory } from "../data/documents";
 import { readMiraFile } from "../data/files";
+import { listMiraMail, saveMiraMail } from "../data/mail";
 import type { MiraClaim } from "../data/queue";
 import {
     addTaskProgress,
@@ -323,6 +325,46 @@ export function createMiraTools(
                     snapshots,
                 };
             },
+        },
+        {
+            name: "mira_mail_drafts_list",
+            description:
+                "Read local email drafts and delivery outcomes for this conversation. These are separate from received mail. There is no send tool.",
+            inputSchema: object({ before: uuid }),
+            automatic: true,
+            action: (input) =>
+                listMiraMail(context, {
+                    ...v.parse(v.strictObject({ before: v.optional(idSchema) }), input),
+                    conversationId: run.conversationId,
+                }),
+        },
+        {
+            name: "mira_mail_draft_create",
+            transactional: true,
+            automatic: false,
+            description:
+                "Prepare a local plain-text email draft when the operator requests it. Specify every recipient explicitly. The operator must review and confirm it in the dashboard before anything is sent. Attachments and threaded replies are not supported by this draft tool.",
+            inputSchema: object(
+                {
+                    to: { type: "array", items: string },
+                    cc: { type: "array", items: string },
+                    bcc: { type: "array", items: string },
+                    subject: string,
+                    text: string,
+                },
+                ["to", "subject", "text"]
+            ),
+            action: (input, _signal, scoped) =>
+                saveMiraMail(
+                    scoped,
+                    {
+                        id: Bun.randomUUIDv7(),
+                        version: 0,
+                        content: v.parse(miraMailContentSchema, input),
+                        conversationId: run.conversationId,
+                    },
+                    agentMail
+                ),
         },
         ...createAgentMailTools(client, run, agentMail),
     ];

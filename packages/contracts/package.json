@@ -14,7 +14,8 @@
         "./tableSort": "./src/tableSort.ts",
         "./infrastructure": "./src/infrastructure.ts",
         "./maintenance": "./src/maintenance.ts",
-        "./mira": "./src/mira.ts"
+        "./mira": "./src/mira.ts",
+        "./miraMail": "./src/miraMail.ts"
     },
     "dependencies": {
         "valibot": "1.5.0"

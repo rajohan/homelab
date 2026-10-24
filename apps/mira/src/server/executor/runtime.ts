@@ -10,6 +10,7 @@ import {
     agentMailBindingHash,
     type AgentMailReadConfiguration,
 } from "../integrations/agentmail/configuration";
+import { dispatchMiraMail, reconcileMiraMail } from "../integrations/agentmail/outbox";
 import { pollAgentMail } from "../integrations/agentmail/poll";
 import { AgentMailReader } from "../integrations/agentmail/reader";
 import { CodexRuntime } from "../runtime/codexRuntime";
@@ -118,6 +119,14 @@ export async function runMiraExecutor(options: {
             await wait(5000);
         }
     };
+    const mailDelivery = async () => {
+        while (!signal.aborted) {
+            await reconcileMiraMail(client);
+            if (options.agentMail)
+                await dispatchMiraMail(client, options.agentMail, signal);
+            await wait(5000);
+        }
+    };
     const cleaner = async () => {
         while (!signal.aborted) {
             let runtime: CodexRuntime | undefined;
@@ -182,6 +191,7 @@ export async function runMiraExecutor(options: {
     const outcomes = await Promise.allSettled([
         stopOnFailure(coordinator()),
         stopOnFailure(integrations()),
+        stopOnFailure(mailDelivery()),
         stopOnFailure(cleaner()),
         stopOnFailure(lane("foreground")),
         stopOnFailure(lane("general")),
