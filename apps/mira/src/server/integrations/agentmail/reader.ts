@@ -130,13 +130,14 @@ export class AgentMailReader {
             : -1;
         const unseen = boundary < 0 ? page.events : page.events.slice(0, boundary);
         // Only event IDs define feed order. Timestamps bound retention, never pagination.
-        const ids = [
-            ...new Set(
-                unseen
-                    .filter((event) => Date.parse(event.created_at) >= after)
-                    .map((event) => event.message_id)
-            ),
-        ];
+        const eligibleEvents = unseen.filter(
+            (event) =>
+                Date.parse(event.event_at) >= after &&
+                ((event.event_type === "label.added" && event.label === "received") ||
+                    (event.event_type === "label.removed" &&
+                        event.label === "agent-armor-held"))
+        );
+        const ids = [...new Set(eligibleEvents.map((event) => event.message_id))];
         const messages: (AgentMailMessage & { event_created_at?: string })[] = [];
         for (let offset = 0; offset < ids.length; offset += 5) {
             bounded.throwIfAborted();
@@ -159,14 +160,16 @@ export class AgentMailReader {
                         throw new Error(
                             "AgentMail security scan is pending; retry this page before advancing its checkpoint."
                         );
-                    let eventAt = 0;
-                    for (const event of unseen) {
-                        if (event.message_id === id)
-                            eventAt = Math.max(eventAt, Date.parse(event.created_at));
-                    }
+                    const released = eligibleEvents.some(
+                        (event) =>
+                            event.message_id === id &&
+                            event.event_type === "label.removed"
+                    );
+                    const releaseAt = message.agent_armor?.manual_override?.released_at;
+                    if (released && !releaseAt) return null;
                     return {
                         ...message,
-                        event_created_at: new Date(eventAt).toISOString(),
+                        event_created_at: released ? releaseAt! : message.created_at,
                     };
                 })
             );
