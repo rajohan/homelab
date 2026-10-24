@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/rajohan/homelab/compare/v0.9.0...v0.10.0) (2026-10-24)
+
+
+### Features
+
+* **mira:** add isolated Codex runtime qualification ([#60](https://github.com/rajohan/homelab/issues/60)) ([3201c09](https://github.com/rajohan/homelab/commit/3201c09a26aec6194a52d5564367308cf3cd7f40))
+
 ## [0.9.0](https://github.com/rajohan/homelab/compare/v0.8.1...v0.9.0) (2026-10-23)
 
 
