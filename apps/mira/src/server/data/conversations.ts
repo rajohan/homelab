@@ -26,15 +26,20 @@ async function linkedTaskForSend(
     conversationId: string
 ) {
     const tasks = await query<
-        { id: string; assignee: string; status: string }[]
-    >`SELECT id, assignee, status FROM mira_tasks WHERE owner = ${owner} AND conversation_id = ${conversationId} AND deleted_at IS NULL ORDER BY id LIMIT 2 FOR SHARE`;
+        { id: string; assignee: string; status: string; deleted: boolean }[]
+    >`SELECT t.id, t.assignee, t.status, t.deleted_at IS NOT NULL AS deleted FROM mira_tasks t WHERE t.owner = ${owner} AND ((t.deleted_at IS NULL AND t.conversation_id = ${conversationId}) OR EXISTS(SELECT 1 FROM mira_runs r WHERE r.conversation_id=${conversationId} AND r.owner=${owner} AND r.task_id=t.id)) ORDER BY t.id LIMIT 2 FOR SHARE OF t`;
     if (tasks.length > 1)
         throw new MiraFailure(
             "CONFLICT",
-            "This conversation is linked to multiple tasks. Link each task to a separate conversation before continuing."
+            "This conversation is linked to multiple tasks. Start a separate conversation for the intended task."
         );
     const task = tasks[0];
     if (!task) return;
+    if (task.deleted)
+        throw new MiraFailure(
+            "PRECONDITION_FAILED",
+            "This conversation belongs to a deleted task. Start a separate conversation before continuing."
+        );
     const [lock] = await query<
         { acquired: boolean }[]
     >`SELECT pg_try_advisory_xact_lock(hashtextextended(${`mira:task:${owner}:${task.id}`}, 0)) AS acquired`;
@@ -175,11 +180,11 @@ export async function enqueueTurn(
     if (source.taskId) {
         const otherLinks = await query<
             { id: string }[]
-        >`SELECT id FROM mira_tasks WHERE owner = ${context.owner} AND conversation_id = ${input.conversationId} AND deleted_at IS NULL AND id <> ${source.taskId} LIMIT 1`;
+        >`SELECT t.id FROM mira_tasks t WHERE t.owner = ${context.owner} AND t.id <> ${source.taskId} AND ((t.deleted_at IS NULL AND t.conversation_id = ${input.conversationId}) OR EXISTS(SELECT 1 FROM mira_runs r WHERE r.conversation_id=${input.conversationId} AND r.owner=${context.owner} AND r.task_id=t.id)) LIMIT 1`;
         if (otherLinks.length > 0)
             throw new MiraFailure(
                 "CONFLICT",
-                "This conversation is linked to multiple tasks. Link each task to a separate conversation before continuing."
+                "This conversation is linked to multiple tasks. Start a separate conversation for the intended task."
             );
     }
     const taskId =

@@ -972,3 +972,74 @@ test("linked chat cannot race task admission or overlap work in another conversa
         await database.close();
     }
 });
+
+test("automatic task conversations retain admission after uncertainty, relinking and deletion", async () => {
+    const database = await fixture();
+    try {
+        const api = database.caller().mira;
+        const saved = await api.tasks.create({
+            ...task,
+            dueAt: new Date(Date.now() - 1000).toISOString(),
+        });
+        const automation = await api.automations.create({
+            title: "Automatic task",
+            prompt: "Review task",
+            kind: "custom",
+            schedule: { kind: "event", event: "task_due" },
+            budgetSeconds: 60,
+        });
+        await api.controls.setEnabled({
+            key: `automation:${automation.id}`,
+            version: 1,
+            enabled: true,
+            reason: null,
+            until: null,
+        });
+        expect(await scheduleMiraRuns(database.client)).toBe(1);
+        let history = await api.tasks.execution({ id: saved.id });
+        const initial = history.rows[0]!;
+        expect(history.conversationId).toBeNull();
+        await api.runs.cancel({ id: initial.id });
+        await database.client`UPDATE mira_runs SET state='needs_attention' WHERE id=${initial.id}`;
+        const input = {
+            conversationId: initial.conversationId,
+            requestId: crypto.randomUUID(),
+            text: "Follow up on this automatic task",
+        };
+        await rejects(api.conversations.send(input), /Review the uncertain run/);
+        const reviewed = await api.tasks.run({
+            id: saved.id,
+            version: 1,
+            requestId: crypto.randomUUID(),
+            reviewedRunId: initial.id,
+        });
+        expect(reviewed.conversationId).not.toBe(initial.conversationId);
+        await rejects(api.conversations.send(input), /current task run/);
+        await api.runs.cancel({ id: reviewed.id });
+        const continued = await api.conversations.send(input);
+        history = await api.tasks.execution({ id: saved.id });
+        expect(history.rows.map((run) => run.id)).toContain(continued.id);
+        await api.runs.cancel({ id: continued.id });
+        const unrelated = await api.tasks.create({
+            ...task,
+            conversationId: initial.conversationId,
+        });
+        await rejects(
+            api.conversations.send({ ...input, requestId: crypto.randomUUID() }),
+            /multiple tasks/
+        );
+        await api.tasks.update({
+            ...task,
+            id: unrelated.id,
+            version: 1,
+            conversationId: null,
+        });
+        await api.tasks.delete({ id: saved.id, version: history.version });
+        await rejects(
+            api.conversations.send({ ...input, requestId: crypto.randomUUID() }),
+            /deleted task/
+        );
+    } finally {
+        await database.close();
+    }
+});
