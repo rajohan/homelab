@@ -40,15 +40,23 @@ A signed delivery stores only the inbox/message reference, not an untrusted body
 A stable inbox/message key deduplicates webhook retries and periodic recovery.
 The executor reads at most one 100-message page per recovery cycle, normally checks
 once per minute, and retains a fixed window and fenced cursor through restarts.
-Recovery is bounded to the latest 24 hours, with a one-minute overlap. Failed or
-expired page tokens restart that same window; accepted events remain deduplicated.
+Recovery accepts provider `created_at` receipt times within the latest 24-hour
+window, with a one-minute overlap. Sender `timestamp` values do not control pause
+eligibility. Recovery scans inbox pages without sender-date query filters, so a
+backdated Date header cannot hide newly received mail. Each cycle is bounded to
+100 messages; the cursor continues through empty eligible pages. Failed or expired
+page tokens restart the same window; accepted deliveries remain deduplicated.
 Downtime beyond that window requires a deliberate manual inbox review.
 
 Disabling AgentMail stops new provider reads. A request already in flight cannot
 be undone, but its result is discarded if the control changed before acceptance.
 Recovery preserves its last successful boundary across pauses. Enabled intervals
 are recorded separately, so mail received before a pause remains recoverable while
-mail received during the pause or before activation is excluded.
+mail received during the pause or before activation is excluded. Delayed webhooks
+received during a pause retain their event; recovery can add historically eligible
+missing deliveries after resumption without replaying dispatched or deliberately
+cancelled deliveries. A replacement inbox starts at its explicit activation, even
+when the first recovery poll happens later.
 Pausing one mail automation stops only that automation; global automatic-work pause
 prevents automatic dispatch. Receipts and pause reasons remain available.
 

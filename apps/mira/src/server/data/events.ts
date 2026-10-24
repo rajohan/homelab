@@ -33,12 +33,20 @@ export async function recordMiraEvent(
         await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${input.owner}`}, 0))`;
         await resumeMiraControls(query, new Date(), input.owner);
     }
-    const id = Bun.randomUUIDv7();
-    const observedAt = input.observedAt ?? new Date();
+    let id = Bun.randomUUIDv7();
+    let observedAt = input.observedAt ?? new Date();
     const inserted = await query<
         { id: string }[]
     >`INSERT INTO mira_events (id, owner, kind, source_key, reference, task_id, created_at) VALUES (${id}, ${input.owner}, ${input.kind}, ${input.key}, ${input.reference}, ${input.taskId ?? null}, ${observedAt}) ON CONFLICT (owner, kind, source_key) DO NOTHING RETURNING id`;
-    if (!inserted[0]) return false;
+    if (!inserted[0]) {
+        if (input.kind !== "agentmail") return false;
+        const [existing] = await query<
+            { id: string; at: Date }[]
+        >`SELECT id,created_at AS at FROM mira_events WHERE owner=${input.owner} AND kind=${input.kind} AND source_key=${input.key}`;
+        if (!existing) return false;
+        id = existing.id;
+        observedAt = new Date(existing.at);
+    }
     let cursor: string | null = null;
     for (;;) {
         const automations: { id: string }[] = await query<
@@ -48,21 +56,22 @@ export async function recordMiraEvent(
             if (!(await miraRunAllowed(query, input.owner, automation.id))) continue;
             const [eligible] = await query<
                 { allowed: boolean }[]
-            >`SELECT NOT EXISTS (SELECT 1 FROM mira_switches s WHERE s.owner = ${input.owner} AND s.key IN ('autonomy', ${`automation:${automation.id}`}, ${input.kind === "agentmail" ? "integration:agentmail" : "autonomy"}) AND NOT EXISTS (SELECT 1 FROM mira_control_windows w WHERE w.owner = s.owner AND w.key = s.key AND w.started_at <= ${observedAt} AND (w.ended_at IS NULL OR w.ended_at > ${observedAt})) AND (EXISTS (SELECT 1 FROM mira_control_windows w WHERE w.owner = s.owner AND w.key = s.key) OR s.changed_at > ${observedAt})) AS allowed`;
+            >`SELECT NOT EXISTS (SELECT 1 FROM mira_switches s WHERE s.owner = ${input.owner} AND s.key IN ('autonomy', ${`automation:${automation.id}`}, ${input.kind === "agentmail" ? "integration:agentmail" : "autonomy"}) AND ((s.key='integration:agentmail' AND s.binding_activated_at > ${observedAt}) OR (NOT EXISTS (SELECT 1 FROM mira_control_windows w WHERE w.owner = s.owner AND w.key = s.key AND w.started_at <= ${observedAt} AND (w.ended_at IS NULL OR w.ended_at > ${observedAt})) AND (EXISTS (SELECT 1 FROM mira_control_windows w WHERE w.owner = s.owner AND w.key = s.key) OR s.changed_at > ${observedAt})))) AS allowed`;
             if (!eligible?.allowed) continue;
 
-            await query`INSERT INTO mira_event_deliveries (event_id, automation_id, next_attempt_at) VALUES (${id}, ${automation.id}, ${observedAt})`;
+            await query`INSERT INTO mira_event_deliveries (event_id, automation_id, next_attempt_at) VALUES (${id}, ${automation.id}, ${observedAt}) ON CONFLICT DO NOTHING`;
         }
         if (automations.length < 100) break;
         cursor = automations.at(-1)!.id;
     }
-    await auditMira(
-        query,
-        { owner: input.owner, actor: `mira:event:${input.kind}` },
-        "event.received",
-        id
-    );
-    return true;
+    if (inserted[0])
+        await auditMira(
+            query,
+            { owner: input.owner, actor: `mira:event:${input.kind}` },
+            "event.received",
+            id
+        );
+    return inserted.length > 0;
 }
 
 /**

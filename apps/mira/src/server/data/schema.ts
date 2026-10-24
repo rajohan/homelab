@@ -154,6 +154,7 @@ export const miraSwitches = pgTable(
         version: integer().notNull().default(1),
         changedAt: time("changed_at").notNull().defaultNow(),
         bindingHash: text("binding_hash"),
+        bindingActivatedAt: time("binding_activated_at"),
     },
     (t) => [
         primaryKey({ columns: [t.owner, t.key] }),

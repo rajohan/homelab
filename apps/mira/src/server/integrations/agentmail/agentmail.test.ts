@@ -15,7 +15,8 @@ const message = {
     inbox_id: binding.inboxId,
     message_id: "<synthetic+1@example.test>",
     thread_id: "thread-1",
-    timestamp: new Date().toISOString(),
+    timestamp: "2000-01-01T00:00:00Z",
+    created_at: new Date().toISOString(),
     from: "sender@example.test",
     labels: ["received"],
     subject: "Synthetic",
@@ -38,7 +39,7 @@ test("AgentMail verifies original signed bytes and rejects altered, unsigned and
     );
     expect(verifyAgentMailWebhook(raw, signed(raw), configuration)).toEqual({
         messageId: message.message_id,
-        observedAt: new Date(message.timestamp),
+        observedAt: new Date(message.created_at),
     });
     expect(() =>
         verifyAgentMailWebhook(
@@ -233,4 +234,60 @@ test("integration JSON bounds chunked and declared bodies and does not expose pr
     await rejects(integrationJson(new Response("012345678901"), 10), /response exceeded/);
     await rejects(integrationJson(new Response("not json"), 20), /invalid JSON/);
     expect(await integrationJson(Response.json({ ok: true }), 20)).toEqual({ ok: true });
+});
+
+test("AgentMail recovery uses creation time across pages without sender-date query filters", async () => {
+    const requests: URL[] = [];
+    const received = "2026-10-24T09:05:00Z";
+    const request = Object.assign(
+        (input: Parameters<typeof fetch>[0]) => {
+            const url = new URL(input instanceof Request ? input.url : String(input));
+            requests.push(url);
+            return Promise.resolve(
+                Response.json(
+                    url.searchParams.has("page_token")
+                        ? {
+                              messages: [
+                                  {
+                                      ...message,
+                                      timestamp: "1999-01-01T00:00:00Z",
+                                      created_at: received,
+                                  },
+                              ],
+                          }
+                        : {
+                              messages: [
+                                  {
+                                      ...message,
+                                      timestamp: received,
+                                      created_at: "2026-10-20T00:00:00Z",
+                                  },
+                              ],
+                              next_page_token: "next",
+                          }
+                )
+            );
+        },
+        { preconnect: fetch.preconnect }
+    );
+    const reader = new AgentMailReader(
+        { ...binding, apiKey: "synthetic-api-key-not-a-secret" },
+        request
+    );
+    const window = { after: "2026-10-24T09:00:00Z", before: "2026-10-24T10:00:00Z" };
+    const signal = new AbortController().signal;
+    const first = await reader.recover(window, signal);
+    expect(first.messages).toHaveLength(0);
+    expect(first.next_page_token).toBe("next");
+    const next = await reader.recover(
+        { ...window, cursor: first.next_page_token! },
+        signal
+    );
+    expect(next.messages).toHaveLength(1);
+    expect(next.messages[0]?.created_at).toBe(received);
+    expect(
+        requests.every(
+            (url) => !url.searchParams.has("after") && !url.searchParams.has("before")
+        )
+    ).toBe(true);
 });
