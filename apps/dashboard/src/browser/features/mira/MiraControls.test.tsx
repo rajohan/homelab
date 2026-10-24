@@ -467,7 +467,9 @@ test("run history opens the selected old result and shows its uncertain tool rec
         true
     );
     try {
-        await userEvent.setup().click(screen.getByRole("button", { name: "Details" }));
+        await userEvent
+            .setup()
+            .click(await screen.findByRole("button", { name: "Details" }));
         expect(
             await screen.findByRole("dialog", { name: "Run details" })
         ).toBeInTheDocument();
