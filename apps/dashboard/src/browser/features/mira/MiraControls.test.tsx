@@ -410,6 +410,16 @@ test("proposed changes display exact passive fields and retain their approval id
 });
 
 test("run history opens the selected old result and shows its uncertain tool receipt", async () => {
+    // Happy DOM has no layout; virtualized rows need a non-zero synthetic viewport.
+    const dimensions = ["clientHeight", "clientWidth"].map((name) => ({
+        name,
+        descriptor: Object.getOwnPropertyDescriptor(HTMLElement.prototype, name),
+    }));
+    Object.defineProperties(HTMLElement.prototype, {
+        clientHeight: { value: 520, configurable: true },
+        clientWidth: { value: 960, configurable: true },
+    });
+
     const run = {
         id: crypto.randomUUID(),
         conversationId: crypto.randomUUID(),
@@ -485,5 +495,10 @@ test("run history opens the selected old result and shows its uncertain tool rec
     } finally {
         cleanup();
         request.mockRestore();
+        for (const { name, descriptor } of dimensions) {
+            if (descriptor)
+                Object.defineProperty(HTMLElement.prototype, name, descriptor);
+            else Reflect.deleteProperty(HTMLElement.prototype, name);
+        }
     }
 });
