@@ -16,13 +16,14 @@ export async function agentMailBindingStatus(
 ) {
     const hash = agentMailBindingHash(binding);
     const [runtime] = await query<
-        { matched: boolean; fresh: boolean }[]
-    >`SELECT integrations @> ${JSON.stringify([{ owner: binding.owner, key: "agentmail", bindingHash: hash }])}::text::jsonb AS matched, heartbeat_at > now()-interval '45 seconds' AS fresh FROM mira_runtime_status WHERE id=1`;
+        { matched: boolean; fresh: boolean; sendConfigured: boolean }[]
+    >`SELECT integrations @> ${JSON.stringify([{ owner: binding.owner, key: "agentmail", bindingHash: hash }])}::text::jsonb AS matched, integrations @> ${JSON.stringify([{ owner: binding.owner, key: "agentmail", bindingHash: hash, sendConfigured: true }])}::text::jsonb AS "sendConfigured", heartbeat_at > now()-interval '45 seconds' AS fresh FROM mira_runtime_status WHERE id=1`;
     const [control] = await query<
         { enabled: boolean; granted: boolean }[]
     >`SELECT enabled, binding_hash = ${hash} AS granted FROM mira_switches WHERE owner=${binding.owner} AND key='integration:agentmail'`;
     return {
         matched: runtime?.matched === true,
+        sendConfigured: runtime?.sendConfigured === true,
         fresh: runtime?.fresh === true,
         enabled: control?.enabled === true,
         granted: control?.granted === true,

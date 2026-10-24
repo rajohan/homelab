@@ -16,8 +16,14 @@ return a retryable webhook failure. Inject credentials privately:
 
 - Dashboard receives only `HOMELAB_MIRA_AGENTMAIL_WEBHOOK_SECRET`, the webhook's
   own Svix signing secret.
-- Mira receives only `HOMELAB_MIRA_AGENTMAIL_API_KEY`, scoped to reading the selected
-  inbox. The native model child does not inherit this credential.
+- Mira receives `HOMELAB_MIRA_AGENTMAIL_API_KEY`, scoped to reading the selected inbox.
+- Outgoing delivery additionally requires `HOMELAB_MIRA_AGENTMAIL_SEND_API_KEY`,
+  scoped to `message_send` for that same inbox under the provider's
+  [permission model](https://docs.agentmail.to/permissions). Keep the read key read-only.
+  Missing send credentials disable approval and dispatch while incoming mail continues.
+  Neither credential is sent to the dashboard or inherited by the native model child.
+  Before activation, verify the send key's inbox and permission restrictions in AgentMail;
+  a synthetic development credential does not establish live send permission.
 
 `deploy/compose.mira.yaml` declares the separated environment delivery. Register
 only `message.received` for the selected inbox at
@@ -75,8 +81,9 @@ trashed and `agent-armor-held` messages are excluded. When Agent Armor metadata 
 present, pending/unavailable scans and review verdicts without a recorded human
 release are also excluded, including before the held label has appeared. Mail content cannot authorize actions.
 
-Sending/replying, attachment ingestion and reviewed outgoing drafts are separate
-remaining deliveries; this adapter cannot send mail.
+Received-mail tools remain read-only. The separate reviewed outbox below can send new
+plain-text messages with its dedicated credential; threaded replies and attachment
+ingestion remain separate deliveries.
 
 Provider declarations use stable discovery and invocation tools. Each resumed
 conversation receives the current trusted server instructions and resolves the

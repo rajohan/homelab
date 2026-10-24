@@ -43,7 +43,7 @@ export async function reconcileMiraMail(
     const binding = configuration ? agentMailBindingHash(configuration) : null;
     const candidates = await client<
         { id: string; owner: string }[]
-    >`SELECT id,owner FROM mira_mail_drafts WHERE state='queued' OR (state='draft' AND owner=${configuration?.owner ?? null} AND binding_hash<>${binding}) ORDER BY approved_at NULLS LAST,id LIMIT 50`;
+    >`SELECT id,owner FROM mira_mail_drafts WHERE state='queued' OR (state='draft' AND (${configuration?.owner ?? null}::text IS NULL OR owner<>${configuration?.owner ?? null} OR binding_hash<>${binding})) ORDER BY approved_at NULLS LAST,id LIMIT 50`;
     for (const candidate of candidates) {
         await client.begin(async (query) => {
             await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${candidate.owner}`},0))`;
@@ -69,6 +69,7 @@ export async function reconcileMiraMail(
                 { enabled: boolean; version: number; binding: string | null }[]
             >`SELECT enabled,version,binding_hash AS binding FROM mira_switches WHERE owner=${candidate.owner} AND key='integration:agentmail'`;
             if (
+                !configuration.sendApiKey ||
                 !row.fresh ||
                 !control?.enabled ||
                 control.version !== row.controlVersion ||
@@ -94,6 +95,7 @@ export async function dispatchMiraMail(
     request: typeof fetch = fetch
 ): Promise<boolean> {
     signal.throwIfAborted();
+    if (!configuration.sendApiKey) return false;
     const claimed = await client.begin(async (query) => {
         await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${configuration.owner}`},0))`;
         const [control] = await query<
@@ -143,7 +145,7 @@ export async function dispatchMiraMail(
                 redirect: "error",
                 signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
                 headers: {
-                    Authorization: `Bearer ${configuration.apiKey}`,
+                    Authorization: `Bearer ${configuration.sendApiKey}`,
                     "Content-Type": "application/json",
                     "Idempotency-Key": `mira-mail-${claimed.id}`,
                     Accept: "application/json",
