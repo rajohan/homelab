@@ -627,6 +627,11 @@ export const miraDaytonaJobs = pgTable(
         commandId: text("command_id"),
         uploadIndex: integer("upload_index").notNull().default(0),
         deleteAttempted: boolean("delete_attempted").notNull().default(false),
+        cleanupResolution: jsonb("cleanup_resolution").$type<{
+            actor: string;
+            reason: string;
+            at: string;
+        }>(),
         exitCode: integer("exit_code"),
         stdout: text().notNull().default(""),
         stderr: text().notNull().default(""),
@@ -649,11 +654,15 @@ export const miraDaytonaJobs = pgTable(
         ),
         check(
             "mira_daytona_cleanup",
-            sql`${t.cleanup} IN ('not_needed','pending','confirmed')`
+            sql`${t.cleanup} IN ('not_needed','pending','confirmed','operator_confirmed')`
         ),
         check(
             "mira_daytona_outcome",
             sql`${t.outcome} IS NULL OR ${t.outcome} IN ('completed','failed','cancelled','needs_attention')`
+        ),
+        check(
+            "mira_daytona_resolution",
+            sql`(${t.cleanup}='operator_confirmed')=(${t.cleanupResolution} IS NOT NULL) AND (${t.cleanup}<>'operator_confirmed' OR (${t.phase}='closed' AND ${t.state} IN ('cancelled','needs_attention')))`
         ),
         check("mira_daytona_version", sql`${t.version}>0`),
         check("mira_daytona_upload", sql`${t.uploadIndex} BETWEEN 0 AND 4`),

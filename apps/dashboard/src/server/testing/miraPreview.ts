@@ -103,7 +103,7 @@ export async function main(port = 3330): Promise<void> {
                 '{"bun":"1.4.4","checks":"passed","synthetic":true}'
             ),
         });
-        for (const state of ["completed", "running", "draft"] as const) {
+        for (const state of ["completed", "needs_attention", "draft"] as const) {
             const id = Bun.randomUUIDv7();
             await saveMiraDaytona(
                 context,
@@ -115,7 +115,7 @@ export async function main(port = 3330): Promise<void> {
                     content: {
                         title: {
                             draft: "Check the Bun runtime",
-                            running: "Collect dashboard build results",
+                            needs_attention: "Resolve interrupted sandbox cleanup",
                             completed: "Generate a qualification report",
                         }[state],
                         command: `bun --version\nmkdir -p /tmp/homelab-mira/${id}/outputs\nprintf '{"synthetic":true}\\n' > /tmp/homelab-mira/${id}/outputs/result.json`,
@@ -126,8 +126,9 @@ export async function main(port = 3330): Promise<void> {
                 previewDaytona
             );
             if (state !== "draft")
-                await database.client`UPDATE mira_daytona_jobs SET state=${state},phase=${state === "completed" ? "closed" : "cleaning"},cleanup=${state === "completed" ? "confirmed" : "pending"},exit_code=0,stdout='Bun 1.4.4\nBuild completed\nAll checks passed\n',files=${JSON.stringify([{ name: "result.json", id: cloudFile.id }])}::text::jsonb WHERE id=${id}`;
+                await database.client`UPDATE mira_daytona_jobs SET deadline=clock_timestamp()-interval '15 minutes',state=${state},phase=${state === "completed" ? "closed" : "cleaning"},cleanup=${state === "completed" ? "confirmed" : "pending"},exit_code=0,stdout='Bun 1.4.4\nBuild completed\nAll checks passed\n',files=${JSON.stringify([{ name: "result.json", id: cloudFile.id }])}::text::jsonb WHERE id=${id}`;
         }
+        await database.client`INSERT INTO mira_switches(owner,key,enabled,reason) VALUES(${context.owner},'integration:daytona',false,'Synthetic recovery preview; no provider connected.')`;
         await saveMiraSocial(
             context,
             {

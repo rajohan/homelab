@@ -1,0 +1,3 @@
+ALTER TABLE "mira_daytona_jobs" ADD COLUMN "cleanup_resolution" jsonb;--> statement-breakpoint
+ALTER TABLE "mira_daytona_jobs" ADD CONSTRAINT "mira_daytona_resolution" CHECK (("cleanup"='operator_confirmed')=("cleanup_resolution" IS NOT NULL) AND ("cleanup"<>'operator_confirmed' OR ("phase"='closed' AND "state" IN ('cancelled','needs_attention'))));--> statement-breakpoint
+ALTER TABLE "mira_daytona_jobs" DROP CONSTRAINT "mira_daytona_cleanup", ADD CONSTRAINT "mira_daytona_cleanup" CHECK ("cleanup" IN ('not_needed','pending','confirmed','operator_confirmed'));

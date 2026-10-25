@@ -13,11 +13,13 @@ export const daytonaTones: Record<
 };
 export const daytonaCleanupLabels = {
     confirmed: "Confirmed",
+    operator_confirmed: "Confirmed by operator",
     pending: "Pending",
     not_needed: "No sandbox requested",
 } as const;
 export const daytonaCleanupDescriptions = {
     confirmed: "Sandbox cleanup confirmed",
+    operator_confirmed: "Cleanup confirmed by operator",
     pending: "Sandbox cleanup pending",
     not_needed: "No sandbox requested",
 } as const;

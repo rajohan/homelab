@@ -28,6 +28,7 @@ import { ChatSettings } from "./ChatSettings";
 import { DaytonaDetails } from "./DaytonaDetails";
 import { DaytonaEditor } from "./DaytonaEditor";
 import { DaytonaJobs } from "./DaytonaJobs";
+import { DaytonaRecovery } from "./DaytonaRecovery";
 import { MailEditor } from "./MailEditor";
 import { MailReview } from "./MailReview";
 import { MiraRunTable } from "./MiraRunTable";
@@ -1660,6 +1661,121 @@ test("finished cloud jobs needing attention do not offer cancellation", () => {
         expect(screen.getByText("Confirmed")).toBeInTheDocument();
         expect(
             screen.queryByRole("button", { name: "Cancel job" })
+        ).not.toBeInTheDocument();
+    } finally {
+        cleanup();
+    }
+});
+
+test("cleanup recovery requires explicit typed identity and evidence, and freezes that identity", async () => {
+    const id = cloudJob().id;
+    const query = new QueryClient({
+        defaultOptions: { queries: { enabled: false, retry: false } },
+    });
+    const key = ["operations", "mira", "daytona", "recovery", id];
+    const recovery = {
+        id,
+        identityHash: "a".repeat(64),
+        organizationId: "original-org",
+        snapshotId: "original-snapshot",
+        target: "eu",
+        sandboxId: null,
+        sandboxName: "mira-original",
+        eligibleAt: null,
+        blockedReason: null,
+        resolution: null,
+    };
+    query.setQueryData(key, recovery);
+    const identity = new IdentityClient();
+    const content = () => (
+        <QueryClientProvider client={query}>
+            <IdentityClientContext value={identity}>
+                <DaytonaRecovery id={id} onClose={() => {}} />
+            </IdentityClientContext>
+        </QueryClientProvider>
+    );
+    const view = render(content());
+    try {
+        const user = userEvent.setup();
+        const confirm = screen.getByRole("button", { name: "Confirm external cleanup" });
+        expect(confirm).toBeDisabled();
+        fireEvent.change(screen.getByLabelText("Sandbox name confirmation"), {
+            target: { value: "mira-original" },
+        });
+        fireEvent.change(screen.getByLabelText("Verification note"), {
+            target: { value: "Verified removal in the original organization." },
+        });
+        await user.click(screen.getByRole("checkbox"));
+        expect(confirm).toBeEnabled();
+        act(() => {
+            query.setQueryData(key, {
+                ...recovery,
+                identityHash: "b".repeat(64),
+                sandboxId: "new-id",
+            });
+        });
+        // Re-render the same component instance with the changed cache; do not depend
+        // on React Query's deferred notification timer under the parallel DOM runner.
+        view.rerender(content());
+        expect(
+            screen.getByRole("button", { name: "Confirm external cleanup" })
+        ).toBeDisabled();
+        expect(
+            screen.getByText("The sandbox identity changed. Close and review it again.")
+        ).toBeInTheDocument();
+    } finally {
+        view.unmount();
+        identity.cancelActions();
+        query.clear();
+    }
+});
+
+test("operator cleanup is shown as a distinct record without cancel or approval actions", async () => {
+    const id = cloudJob().id;
+    const query = new QueryClient({
+        defaultOptions: { queries: { enabled: false, retry: false } },
+    });
+    query.setQueryData(["operations", "mira", "daytona", "recovery", id], {
+        id,
+        identityHash: "a".repeat(64),
+        organizationId: "original-org",
+        snapshotId: "original-snapshot",
+        target: "eu",
+        sandboxId: null,
+        sandboxName: "mira-original",
+        eligibleAt: null,
+        blockedReason: "Already resolved",
+        resolution: {
+            actor: "human:operator",
+            reason: "Checked provider cleanup",
+            at: "2026-10-25T13:00:00Z",
+        },
+    });
+    const cleanup = fixture(
+        <DaytonaDetails
+            job={{
+                ...cloudJob(),
+                state: "needs_attention",
+                phase: "closed",
+                cleanup: "operator_confirmed",
+            }}
+            onClose={() => {}}
+        />,
+        false,
+        query
+    );
+    try {
+        expect(screen.getByText("Confirmed by operator")).toBeInTheDocument();
+        expect(
+            screen.queryByRole("button", { name: "Cancel job" })
+        ).not.toBeInTheDocument();
+        await userEvent
+            .setup()
+            .click(screen.getByRole("button", { name: "View cleanup record" }));
+        expect(screen.getAllByRole("dialog")).toHaveLength(1);
+        expect(screen.getByText("Checked provider cleanup")).toBeInTheDocument();
+        expect(
+            screen.queryByRole("button", { name: "Confirm external cleanup" })
         ).not.toBeInTheDocument();
     } finally {
         cleanup();

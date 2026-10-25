@@ -11,6 +11,7 @@ import {
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 import { Cloud, File, ScrollText } from "lucide-react";
+import { useState } from "react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
@@ -19,6 +20,7 @@ import {
     daytonaCleanupLabels,
     daytonaPhaseLabels,
 } from "./daytonaPresentation";
+import { DaytonaRecovery } from "./DaytonaRecovery";
 import { MessageAttachments } from "./MessageAttachments";
 
 /**
@@ -32,6 +34,7 @@ export function DaytonaDetails({
     readonly job: MiraDaytonaJob;
     readonly onClose: () => void;
 }) {
+    const [recovering, setRecovering] = useState(false);
     const query = useQuery({
         queryKey: ["operations", "mira", "daytona", initial.id],
         queryFn: () => api.mira.daytona.read.query({ id: initial.id }),
@@ -58,8 +61,10 @@ export function DaytonaDetails({
     };
     const busy = approve.isPending || cancel.isPending;
     const active =
-        job.cleanup !== "confirmed" &&
+        ["not_needed", "pending"].includes(job.cleanup) &&
         ["draft", "queued", "running", "needs_attention"].includes(job.state);
+    if (recovering)
+        return <DaytonaRecovery id={job.id} onClose={() => setRecovering(false)} />;
     return (
         <Modal
             title={job.state === "draft" ? "Review cloud job" : "Cloud job details"}
@@ -173,6 +178,20 @@ export function DaytonaDetails({
                     <ErrorNotice error={query.error ?? approve.error ?? cancel.error} />
                 )}
                 <ActionGroup>
+                    {((job.cleanup === "pending" &&
+                        job.state === "needs_attention" &&
+                        job.phase === "cleaning") ||
+                        job.cleanup === "operator_confirmed") && (
+                        <Button
+                            variant="secondary"
+                            disabled={busy}
+                            onClick={() => setRecovering(true)}
+                        >
+                            {job.cleanup === "operator_confirmed"
+                                ? "View cleanup record"
+                                : "Resolve cleanup"}
+                        </Button>
+                    )}
                     {job.state === "draft" && (
                         <Button
                             busy={approve.isPending}

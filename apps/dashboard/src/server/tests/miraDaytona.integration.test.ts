@@ -12,6 +12,7 @@ import {
     publishDaytonaBinding,
     saveMiraDaytona,
 } from "@homelab/mira/data/daytona";
+import { resolveMiraDaytonaCleanup } from "@homelab/mira/data/daytonaRecovery";
 import { deleteMiraFile, saveMiraFile, readMiraFile } from "@homelab/mira/data/files";
 import { claimMiraRun } from "@homelab/mira/data/queue";
 import {
@@ -1182,6 +1183,210 @@ test("Mira reads bounded cloud artifacts only from its owned conversation", asyn
         await deleteMiraFile(f.context, f.directory, job.files[0]!.id);
         expect(await read(job.files[0]!.id)).toMatchObject({ ok: false });
     } finally {
+        await f.close();
+    }
+});
+
+async function unresolved(f: Awaited<ReturnType<typeof fixture>>) {
+    const job = await f.approve(await f.save());
+    await f.client`UPDATE mira_daytona_jobs SET state='needs_attention',phase='cleaning',cleanup='pending',started_at=clock_timestamp()-interval '30 minutes',deadline=clock_timestamp()-interval '15 minutes',outcome='needs_attention' WHERE id=${job.id}`;
+    return job;
+}
+async function recoveryInput(f: Awaited<ReturnType<typeof fixture>>, id: string) {
+    const recovery = await f.api.daytona.recovery({ id });
+    return {
+        id,
+        identityHash: recovery.identityHash,
+        sandboxName: recovery.sandboxName,
+        reason: "Checked the original organization and verified no sandbox or pending creation remains.",
+        accountInspected: true as const,
+    };
+}
+
+test("operator recovery preserves original identity, evidence and failed result while freeing only local capacity", async () => {
+    const f = await fixture();
+    try {
+        const job = await unresolved(f);
+        await f.pause();
+        const input = await recoveryInput(f, job.id);
+        const result = await f.api.daytona.resolveCleanup(input);
+        expect(result).toMatchObject({
+            state: "needs_attention",
+            phase: "closed",
+            cleanup: "operator_confirmed",
+        });
+        const record = await f.api.daytona.recovery({ id: job.id });
+        expect(record).toMatchObject({
+            organizationId: configuration.organizationId,
+            sandboxId: null,
+            sandboxName: daytonaSandboxName(configuration, job.id),
+            resolution: { actor: "human:operator", reason: input.reason },
+        });
+        expect(
+            await f.client`SELECT action FROM mira_audit WHERE action='daytona.cleanup_resolved' AND target=${job.id}`
+        ).toHaveLength(1);
+        expect(
+            await f.client`SELECT key FROM mira_switches WHERE key='integration:daytona' AND enabled`
+        ).toHaveLength(0);
+        await rejects(f.api.daytona.resolveCleanup(input), /Only unresolved/);
+        await rejects(
+            f.api.daytona.cancel({ id: job.id, version: result.version }),
+            /changed/
+        );
+        expect(
+            await dispatchMiraDaytona(f.client, configuration, signal, f.directory)
+        ).toBe(false);
+        const [count] = await f.client<
+            { count: number }[]
+        >`SELECT count(*)::int AS count FROM mira_daytona_jobs WHERE started_at>clock_timestamp()-interval '24 hours'`;
+        expect(count?.count).toBe(1);
+    } finally {
+        await f.close();
+    }
+});
+
+test("cleanup recovery requires an indefinite pause, expired deadline and no live phase lease", async () => {
+    const f = await fixture();
+    try {
+        const job = await unresolved(f);
+        let input = await recoveryInput(f, job.id);
+        await rejects(f.api.daytona.resolveCleanup(input), /Pause Daytona/);
+        await f.pause();
+        await f.client`UPDATE mira_switches SET until=clock_timestamp()+interval '1 hour' WHERE key='integration:daytona'`;
+        await rejects(f.api.daytona.resolveCleanup(input), /Pause Daytona/);
+        await f.client`UPDATE mira_switches SET until=NULL WHERE key='integration:daytona'`;
+        await f.client`UPDATE mira_daytona_jobs SET deadline=clock_timestamp() WHERE id=${job.id}`;
+        input = await recoveryInput(f, job.id);
+        await rejects(f.api.daytona.resolveCleanup(input), /five-minute/);
+        await f.client`UPDATE mira_daytona_jobs SET deadline=clock_timestamp()-interval '10 minutes',lease_expires_at=clock_timestamp()+interval '1 minute' WHERE id=${job.id}`;
+        input = await recoveryInput(f, job.id);
+        await rejects(f.api.daytona.resolveCleanup(input), /cleanup check is running/);
+        await f.client`UPDATE mira_daytona_jobs SET lease_expires_at=NULL,state='running',phase='executing' WHERE id=${job.id}`;
+        await rejects(f.api.daytona.resolveCleanup(input), /Only unresolved/);
+    } finally {
+        await f.close();
+    }
+});
+
+test("cleanup recovery rejects changed resource identities, missing attestation and nonhuman or foreign owners", async () => {
+    const f = await fixture();
+    try {
+        const job = await unresolved(f);
+        await f.pause();
+        const input = await recoveryInput(f, job.id);
+        await rejects(
+            f.api.daytona.resolveCleanup({ ...input, sandboxName: "unreviewed-sandbox" }),
+            /identity changed/
+        );
+        await rejects(
+            f.api.daytona.resolveCleanup({ ...input, accountInspected: false as true })
+        );
+        await rejects(f.api.daytona.resolveCleanup({ ...input, reason: "short" }));
+        await rejects(
+            resolveMiraDaytonaCleanup({ ...f.context, actor: "model:synthetic" }, input),
+            /Only the operator/
+        );
+        await rejects(
+            resolveMiraDaytonaCleanup(
+                {
+                    ...f.context,
+                    run: { id: crypto.randomUUID(), leaseToken: crypto.randomUUID() },
+                },
+                input
+            ),
+            /Only the operator/
+        );
+        await rejects(
+            resolveMiraDaytonaCleanup(
+                { ...f.context, owner: "other", actor: "human:other" },
+                input
+            ),
+            /not found/
+        );
+        const other = appRouter.createCaller({
+            operations: f.operations,
+            principal: { kind: "human", id: "other", capabilities },
+        }).mira;
+        await rejects(other.daytona.recovery({ id: job.id }), /not found/);
+        await f.client`UPDATE mira_daytona_jobs SET sandbox_id=${sandboxId} WHERE id=${job.id}`;
+        await rejects(f.api.daytona.resolveCleanup(input), /identity changed/);
+        const pending = await f.read(job.id);
+        expect(pending.cleanup).toBe("pending");
+        expect(
+            await f.client`SELECT action FROM mira_audit WHERE action='daytona.cleanup_resolved'`
+        ).toHaveLength(0);
+    } finally {
+        await f.close();
+    }
+});
+
+test("operator recovery works after credential removal and preserves requested cancellation", async () => {
+    const f = await fixture();
+    try {
+        const job = await unresolved(f);
+        await f.pause();
+        const current = await f.read(job.id);
+        await f.api.daytona.cancel({ id: job.id, version: current.version });
+        const api = appRouter.createCaller({
+            operations: { ...f.operations, daytonaBinding: undefined },
+            principal: { kind: "human", id: configuration.owner, capabilities },
+        }).mira;
+        const result = await api.daytona.resolveCleanup(await recoveryInput(f, job.id));
+        expect(result).toMatchObject({
+            state: "cancelled",
+            cleanup: "operator_confirmed",
+            cancelRequested: true,
+        });
+        const record = await api.daytona.recovery({ id: job.id });
+        expect(record.resolution).not.toBeNull();
+    } finally {
+        await f.close();
+    }
+});
+
+test("late cleanup worker cannot overwrite operator resolution or delete after its lease was revoked", async () => {
+    const f = await fixture();
+    const { promise: waiting, resolve: release } = Promise.withResolvers<void>();
+    try {
+        const job = await unresolved(f);
+        await f.pause();
+        const p = provider(job.id);
+        // Create only in the synthetic transport so cleanup finds the same owned sandbox.
+        await p.request("https://app.daytona.io/api/sandbox", { method: "POST" });
+        const { promise: inspecting, resolve: reached } = Promise.withResolvers<void>();
+        let held = false;
+        const request = Object.assign(
+            async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+                if (
+                    !held &&
+                    typeof input === "string" &&
+                    input.includes("/api/sandbox/")
+                ) {
+                    held = true;
+                    reached();
+                    await waiting;
+                }
+                return p.request(input, init);
+            },
+            { preconnect: fetch.preconnect }
+        );
+        const running = dispatchMiraDaytona(
+            f.client,
+            configuration,
+            signal,
+            f.directory,
+            request
+        );
+        await inspecting;
+        await f.client`UPDATE mira_daytona_jobs SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE id=${job.id}`;
+        await f.api.daytona.resolveCleanup(await recoveryInput(f, job.id));
+        release();
+        await running;
+        const resolved = await f.read(job.id);
+        expect(resolved.cleanup).toBe("operator_confirmed");
+        expect(p.calls.filter((call) => call.init.method === "DELETE")).toHaveLength(0);
+    } finally {
+        release();
         await f.close();
     }
 });

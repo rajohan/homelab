@@ -1,0 +1,89 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "6be296d1-40fd-4e08-8bba-adb649b33291",
+    "prevIds": ["67d80ff6-9a28-4e61-8dff-f821831a4b03"],
+    "footprints": [
+        {
+            "statementType": "add_column",
+            "statementTarget": [
+                "column",
+                "public",
+                "mira_daytona_jobs",
+                "cleanup_resolution"
+            ],
+            "writes": [
+                "s|col|public.mira_daytona_jobs.cleanup_resolution",
+                "n|col|public.mira_daytona_jobs.cleanup_resolution",
+                "e|col|public.mira_daytona_jobs.cleanup_resolution"
+            ],
+            "reads": ["n|tbl|public.mira_daytona_jobs", "n|sch|public"]
+        },
+        {
+            "statementType": "add_check",
+            "statementTarget": ["table", "public", "mira_daytona_jobs"],
+            "writes": [
+                "s|ck|public.mira_daytona_jobs.mira_daytona_resolution",
+                "n|ck|public.mira_daytona_jobs.mira_daytona_resolution",
+                "e|ck|public.mira_daytona_jobs.mira_daytona_resolution",
+                "n|con|public.mira_daytona_jobs.mira_daytona_resolution"
+            ],
+            "reads": [
+                "n|tbl|public.mira_daytona_jobs",
+                "n|sch|public",
+                "n|col|public.mira_daytona_jobs.cleanup",
+                "n|col|public.mira_daytona_jobs.cleanup_resolution",
+                "n|col|public.mira_daytona_jobs.phase",
+                "n|col|public.mira_daytona_jobs.state"
+            ]
+        },
+        {
+            "statementType": "alter_check",
+            "statementTarget": ["table", "public", "mira_daytona_jobs"],
+            "writes": ["s|ck|public.mira_daytona_jobs.mira_daytona_cleanup"],
+            "reads": [
+                "n|tbl|public.mira_daytona_jobs",
+                "n|sch|public",
+                "n|col|public.mira_daytona_jobs.cleanup",
+                "e|col|public.mira_daytona_jobs.cleanup"
+            ],
+            "sqlHash": "285863f0a446936f"
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_daytona_jobs",
+                "name": "cleanup_resolution",
+                "type": "jsonb",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_daytona_jobs",
+                "name": "mira_daytona_resolution",
+                "value": "(\"cleanup\"='operator_confirmed')=(\"cleanup_resolution\" IS NOT NULL) AND (\"cleanup\"<>'operator_confirmed' OR (\"phase\"='closed' AND \"state\" IN ('cancelled','needs_attention')))",
+                "entityType": "checks"
+            }
+        },
+        {
+            "op": "alter",
+            "key": "checks\u0000[\"public\",\"mira_daytona_jobs\",\"mira_daytona_cleanup\"]",
+            "set": {
+                "value": "\"cleanup\" IN ('not_needed','pending','confirmed','operator_confirmed')"
+            }
+        }
+    ]
+}
