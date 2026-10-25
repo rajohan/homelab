@@ -1686,7 +1686,15 @@ test("cleanup recovery requires explicit typed identity and evidence, and freeze
         resolution: null,
     };
     query.setQueryData(key, recovery);
-    const cleanup = fixture(<DaytonaRecovery id={id} onClose={() => {}} />, false, query);
+    const identity = new IdentityClient();
+    const content = () => (
+        <QueryClientProvider client={query}>
+            <IdentityClientContext value={identity}>
+                <DaytonaRecovery id={id} onClose={() => {}} />
+            </IdentityClientContext>
+        </QueryClientProvider>
+    );
+    const view = render(content());
     try {
         const user = userEvent.setup();
         const confirm = screen.getByRole("button", { name: "Confirm external cleanup" });
@@ -1706,12 +1714,19 @@ test("cleanup recovery requires explicit typed identity and evidence, and freeze
                 sandboxId: "new-id",
             });
         });
-        await waitFor(() => expect(confirm).toBeDisabled());
+        // Re-render the same component instance with the changed cache; do not depend
+        // on React Query's deferred notification timer under the parallel DOM runner.
+        view.rerender(content());
+        expect(
+            screen.getByRole("button", { name: "Confirm external cleanup" })
+        ).toBeDisabled();
         expect(
             screen.getByText("The sandbox identity changed. Close and review it again.")
         ).toBeInTheDocument();
     } finally {
-        cleanup();
+        view.unmount();
+        identity.cancelActions();
+        query.clear();
     }
 });
 
