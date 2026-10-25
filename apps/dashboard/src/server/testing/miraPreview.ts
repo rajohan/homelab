@@ -7,6 +7,7 @@ import { installMiraPresets } from "@homelab/mira/data/automationActions";
 import { createConversation, enqueueTurn } from "@homelab/mira/data/conversations";
 import { createReport, saveMemory } from "@homelab/mira/data/documents";
 import { saveMiraFile } from "@homelab/mira/data/files";
+import { saveMiraMail } from "@homelab/mira/data/mail";
 import { claimMiraRun, finishMiraRun } from "@homelab/mira/data/queue";
 import { saveTask } from "@homelab/mira/data/tasks";
 
@@ -20,11 +21,12 @@ import { isSameOriginApiRequest } from "../http/requestOrigin";
 import { dashboardApiRequest } from "../http/responses";
 import { createJobRegistry } from "../jobs/registry";
 import { miraFileRequest } from "../mira/files";
+import { provisionTestAgentMail } from "./agentmail";
 import { miraViewport } from "./miraViewport";
 
 /**
  * Preview actual Mira components and APIs using disposable records and synthetic replies.
- * @param port - Loopback port for an isolated preview instance.
+ * @param port - Dedicated loopback preview port; defaults to the established local preview.
  * @returns Completion after the loopback-only preview and its owned test data are removed.
  */
 export async function main(port = 3330): Promise<void> {
@@ -36,10 +38,16 @@ export async function main(port = 3330): Promise<void> {
         owner: "preview-operator",
         actor: "human:preview-operator",
     };
+    const previewMail = {
+        owner: context.owner,
+        inboxId: "synthetic@agentmail.to",
+        signingSecret: `whsec_${Buffer.from("synthetic-webhook-key-32-bytes-000").toString("base64")}`,
+    };
     const operations = {
         ...database,
         registry: createJobRegistry([]),
         miraFilesDirectory: directory,
+        agentMailHook: previewMail,
     };
     const principal = { kind: "human" as const, id: context.owner, capabilities };
     const worker = crypto.randomUUID();
@@ -55,6 +63,7 @@ export async function main(port = 3330): Promise<void> {
     try {
         await migrateDashboard(database);
         await installMiraPresets(context);
+        await provisionTestAgentMail(database.client, previewMail);
         await saveMemory(context, {
             title: "Design preference",
             content:
@@ -68,6 +77,23 @@ export async function main(port = 3330): Promise<void> {
         for (let index = 1; index <= 18; index++)
             await createConversation(context, `Preview · Earlier conversation ${index}`);
         const chat = await createConversation(context, "Preview · Plan the week");
+        await saveMiraMail(
+            context,
+            {
+                id: Bun.randomUUIDv7(),
+                version: 0,
+                conversationId: chat.id,
+                content: {
+                    to: ["recipient@example.com"],
+                    cc: ["copy@example.com"],
+                    bcc: ["reviewer@example.com"],
+                    subject: "Proposed dashboard improvement",
+                    text: "Hello,\n\nHere is the reviewed plan for the dashboard improvement. This preview contains only synthetic recipients and content.\n\nNo provider or outgoing mail worker is connected.\n\nRegards,\nMira",
+                },
+            },
+            previewMail
+        );
+
         await database.client.begin((query) =>
             enqueueTurn(query, context, {
                 conversationId: chat.id,
