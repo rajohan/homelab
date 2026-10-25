@@ -49,6 +49,18 @@ export const agentMailEventPageSchema = v.object({
 });
 export const agentMailContentSchema = v.object({
     ...agentMailMessageSchema.entries,
+    reply_to: v.optional(
+        v.pipe(v.array(v.pipe(v.string(), v.maxLength(1000))), v.maxLength(100)),
+        []
+    ),
+    to: v.optional(
+        v.pipe(v.array(v.pipe(v.string(), v.maxLength(1000))), v.maxLength(100)),
+        []
+    ),
+    cc: v.optional(
+        v.pipe(v.array(v.pipe(v.string(), v.maxLength(1000))), v.maxLength(100)),
+        []
+    ),
     text: v.optional(v.pipe(v.string(), v.maxLength(1_000_000))),
     html: v.optional(v.pipe(v.string(), v.maxLength(1_000_000))),
     extracted_text: v.optional(v.pipe(v.string(), v.maxLength(1_000_000))),

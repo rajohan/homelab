@@ -8,6 +8,7 @@ import { miraMailHash } from "../../data/mail";
 import { miraMailRequestBody, verifyMailAttachments } from "../../data/mailAttachments";
 import { integrationJson } from "../http";
 import { agentMailBindingHash, type AgentMailReadConfiguration } from "./configuration";
+import { AgentMailReader } from "./reader";
 import { agentMailIdSchema } from "./schema";
 
 const unknownMessage =
@@ -140,6 +141,23 @@ export async function dispatchMiraMail(
         const content = v.parse(miraMailContentSchema, row.content);
         if (miraMailHash(content) !== row.hash)
             throw new Error("The approved email content no longer matches.");
+        if (content.reply) {
+            let latest: string;
+            try {
+                latest = await new AgentMailReader(
+                    configuration,
+                    request
+                ).latestMessageId(content.reply.threadId, signal);
+            } catch {
+                // No send was claimed. Retry the read while approval remains valid.
+                signal.throwIfAborted();
+                return null;
+            }
+            if (latest !== content.reply.messageId) {
+                await query`UPDATE mira_mail_drafts SET state='cancelled',approved_version=NULL,approved_by=NULL,approved_at=NULL,control_version=NULL,message='The email thread received a newer message. Create and review a new reply before sending.',version=version+1,updated_at=now() WHERE id=${row.id}`;
+                return null;
+            }
+        }
         let body: string;
         try {
             const context = {
@@ -157,7 +175,7 @@ export async function dispatchMiraMail(
         signal.throwIfAborted();
         const token = crypto.randomUUID();
         await query`UPDATE mira_mail_drafts SET state='sending',attempt_token=${token},started_at=now(),message=NULL,version=version+1,updated_at=now() WHERE id=${row.id}`;
-        return { id: row.id, token, body };
+        return { id: row.id, token, body, reply: content.reply };
     });
     if (!claimed) return false;
     if (signal.aborted) {
@@ -165,11 +183,11 @@ export async function dispatchMiraMail(
         await client`UPDATE mira_mail_drafts SET state='queued',attempt_token=NULL,started_at=NULL,version=version+1,updated_at=now() WHERE id=${claimed.id} AND owner=${configuration.owner} AND attempt_token=${claimed.token} AND state='sending'`;
         return true;
     }
-    let accepted: { message_id: string; thread_id: string } | null = null;
+    let acknowledgement: { message_id: string; thread_id: string } | null = null;
     try {
         signal.throwIfAborted();
         const response = await request(
-            `https://api.agentmail.to/v0/inboxes/${encodeURIComponent(configuration.inboxId)}/messages/send`,
+            `https://api.agentmail.to/v0/inboxes/${encodeURIComponent(configuration.inboxId)}/messages/${claimed.reply ? `${encodeURIComponent(claimed.reply.messageId)}/reply` : "send"}`,
             {
                 method: "POST",
                 redirect: "error",
@@ -183,17 +201,20 @@ export async function dispatchMiraMail(
                 body: claimed.body,
             }
         );
-        accepted = v.parse(
+        acknowledgement = v.parse(
             v.object({ message_id: agentMailIdSchema, thread_id: agentMailIdSchema }),
             await integrationJson(response, 65_536)
         );
     } catch {
         // Provider idempotency expires after 24 hours; keep ambiguous outcomes for review.
     }
+    const accepted =
+        acknowledgement !== null &&
+        (!claimed.reply || acknowledgement.thread_id === claimed.reply.threadId);
     await client.begin(async (query) => {
         const rows = await query<
             { id: string }[]
-        >`UPDATE mira_mail_drafts SET state=${accepted ? "sent" : "needs_attention"},provider_message_id=${accepted?.message_id ?? null},provider_thread_id=${accepted?.thread_id ?? null},message=${accepted ? "Accepted by AgentMail. Recipient delivery is not yet confirmed." : unknownMessage},version=version+1,updated_at=now() WHERE id=${claimed.id} AND owner=${configuration.owner} AND attempt_token=${claimed.token} AND state IN ('sending','needs_attention') RETURNING id`;
+        >`UPDATE mira_mail_drafts SET state=${accepted ? "sent" : "needs_attention"},provider_message_id=${acknowledgement?.message_id ?? null},provider_thread_id=${acknowledgement?.thread_id ?? null},message=${accepted ? "Accepted by AgentMail. Recipient delivery is not yet confirmed." : unknownMessage},version=version+1,updated_at=now() WHERE id=${claimed.id} AND owner=${configuration.owner} AND attempt_token=${claimed.token} AND state IN ('sending','needs_attention') RETURNING id`;
         if (rows[0] && !accepted)
             await publishNotification(
                 query,

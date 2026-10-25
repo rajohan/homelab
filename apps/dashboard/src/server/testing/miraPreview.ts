@@ -94,6 +94,30 @@ export async function main(port = 3330): Promise<void> {
             previewMail
         );
 
+        await saveMiraMail(
+            context,
+            {
+                id: Bun.randomUUIDv7(),
+                version: 0,
+                conversationId: chat.id,
+                content: {
+                    to: ["requester@example.com"],
+                    cc: [],
+                    bcc: [],
+                    subject: "Maintenance plan",
+                    text: "Hello,\n\nThe maintenance plan is ready for review. This is a synthetic reply and cannot send real email.\n\nRegards,\nMira",
+                    attachmentIds: [file.id],
+                },
+            },
+            previewMail,
+            {
+                messageId: "<preview-original@example.com>",
+                threadId: "preview-thread",
+                from: "Example requester <requester@example.com>",
+                subject: "Maintenance plan",
+            }
+        );
+
         await database.client.begin((query) =>
             enqueueTurn(query, context, {
                 conversationId: chat.id,

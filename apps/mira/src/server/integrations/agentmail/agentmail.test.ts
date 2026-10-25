@@ -156,7 +156,13 @@ test("AgentMail reader pins the origin and inbox, encodes message IDs, bounds co
                 Response.json(
                     new URL(sent.url).search
                         ? { messages: [message], next_page_token: "next token" }
-                        : { ...message, extracted_text: "x".repeat(48_001) }
+                        : {
+                              ...message,
+                              extracted_text: "x".repeat(48_001),
+                              reply_to: ["Support <replies@example.test>"],
+                              to: ["mira@example.test"],
+                              cc: ["copy@example.test"],
+                          }
                 )
             );
         },
@@ -185,6 +191,9 @@ test("AgentMail reader pins the origin and inbox, encodes message IDs, bounds co
     const content = await reader.read(message.message_id, signal);
     expect(content.content).toHaveLength(48_000);
     expect(content.truncated).toBe(true);
+    expect(content.replyTo).toEqual(["Support <replies@example.test>"]);
+    expect(content.to).toEqual(["mira@example.test"]);
+    expect(content.cc).toEqual(["copy@example.test"]);
     expect(content.format).toBe("untrusted_text");
     expect(seen[1]!.url).toBe(
         `https://api.agentmail.to/v0/inboxes/${encodeURIComponent(binding.inboxId)}/messages/${encodeURIComponent(message.message_id)}`
@@ -504,4 +513,33 @@ test("outgoing AgentMail requires a separate valid send credential without chang
             HOMELAB_MIRA_AGENTMAIL_API_KEY: undefined,
         })
     ).toThrow(/configuration/);
+});
+
+test("reply target reads only the configured inbox thread with a one-message page", async () => {
+    let result = {
+        inbox_id: binding.inboxId,
+        thread_id: "thread/test",
+        last_message_id: "newest-sent",
+    };
+    const urls: string[] = [];
+    const request = Object.assign(
+        (input: Parameters<typeof fetch>[0]) => {
+            urls.push(input instanceof Request ? input.url : String(input));
+            return Promise.resolve(Response.json(result));
+        },
+        { preconnect: fetch.preconnect }
+    );
+    const reader = new AgentMailReader(
+        { ...binding, apiKey: "synthetic-api-key-not-a-secret" },
+        request
+    );
+    const signal = new AbortController().signal;
+    expect(await reader.latestMessageId("thread/test", signal)).toBe("newest-sent");
+    expect(urls[0]).toBe(
+        `https://api.agentmail.to/v0/inboxes/${encodeURIComponent(binding.inboxId)}/threads/thread%2Ftest?limit=1`
+    );
+    result = { ...result, inbox_id: "other@example.test" };
+    await rejects(reader.latestMessageId("thread/test", signal), /different thread/);
+    result = { ...result, inbox_id: binding.inboxId, thread_id: "wrong-thread" };
+    await rejects(reader.latestMessageId("thread/test", signal), /different thread/);
 });

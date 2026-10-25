@@ -221,6 +221,31 @@ export class AgentMailReader {
     }
 
     /**
+     * Resolve the latest provider message without trusting a selected message's timestamp.
+     * @param threadId - Thread identity within the configured inbox.
+     * @param signal - Run or dispatch cancellation; one bounded provider read is performed.
+     * @returns The current reply target, including sent messages in the same thread.
+     */
+    async latestMessageId(threadId: string, signal: AbortSignal): Promise<string> {
+        const id = v.parse(agentMailIdSchema, threadId);
+        const thread = v.parse(
+            v.object({
+                inbox_id: agentMailIdSchema,
+                thread_id: agentMailIdSchema,
+                last_message_id: agentMailIdSchema,
+            }),
+            await this.get(
+                `/threads/${encodeURIComponent(id)}`,
+                new URLSearchParams({ limit: "1" }),
+                signal
+            )
+        );
+        if (thread.inbox_id !== this.configuration.inboxId || thread.thread_id !== id)
+            throw new Error("AgentMail returned a different thread.");
+        return thread.last_message_id;
+    }
+
+    /**
      * Fetch passive mail content; messages cannot grant tools, send authority or credentials.
      * @param messageId - Validated provider identifier within the configured inbox.
      * @param signal - Cancellation for the current product run.
@@ -249,7 +274,11 @@ export class AgentMailReader {
             "";
         return {
             messageId: id,
+            threadId: message.thread_id,
             from: message.from,
+            replyTo: message.reply_to,
+            to: message.to,
+            cc: message.cc,
             subject: message.subject,
             format: plain === undefined ? "untrusted_html_text" : "untrusted_text",
             content: content.slice(0, 48_000),

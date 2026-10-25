@@ -30,6 +30,7 @@ export function MailReview({
             id: draft.id,
             version: draft.version,
             contentHash: draft.contentHash,
+            reviewedReply: draft.content.reply ?? null,
             reviewedAttachments: draft.content.attachments ?? [],
         })
     );
@@ -62,6 +63,32 @@ export function MailReview({
                         <dd className="wrap-break-word">
                             {draft.content.bcc.join(", ") || "None"}
                         </dd>
+                        {draft.content.reply && (
+                            <>
+                                <dt className="whitespace-nowrap text-primary-400">
+                                    Thread
+                                </dt>
+                                <dd className="wrap-break-word">
+                                    {draft.content.reply.subject || "(no subject)"}
+                                </dd>
+                                <dt className="whitespace-nowrap text-primary-400">
+                                    Original sender
+                                </dt>
+                                <dd className="wrap-break-word">
+                                    {draft.content.reply.from}
+                                </dd>
+                                {(draft.content.reply.replyTo?.length ?? 0) > 0 && (
+                                    <>
+                                        <dt className="whitespace-nowrap text-primary-400">
+                                            Original Reply-To
+                                        </dt>
+                                        <dd className="wrap-break-word">
+                                            {draft.content.reply.replyTo!.join(", ")}
+                                        </dd>
+                                    </>
+                                )}
+                            </>
+                        )}
                     </dl>
                     {(draft.content.attachments?.length ?? 0) > 0 && (
                         <div className="space-y-2 border-t border-primary-700 pt-4">
@@ -104,6 +131,11 @@ export function MailReview({
                 {draft.providerMessageId && (
                     <p className="text-xs break-all text-primary-400">
                         Message ID: {draft.providerMessageId}
+                    </p>
+                )}
+                {draft.providerThreadId && (
+                    <p className="text-xs break-all text-primary-400">
+                        Thread ID: {draft.providerThreadId}
                     </p>
                 )}
                 {approve.error && <ErrorNotice error={approve.error} />}
