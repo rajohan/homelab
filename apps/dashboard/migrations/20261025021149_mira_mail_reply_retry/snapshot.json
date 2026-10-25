@@ -1,0 +1,37 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "e511cfd5-b8b3-4105-8a15-a13a68dea731",
+    "prevIds": ["566ad24d-b214-4810-839a-65964066ee63"],
+    "footprints": [
+        {
+            "statementType": "add_column",
+            "statementTarget": ["column", "public", "mira_mail_drafts", "retry_after"],
+            "writes": [
+                "s|col|public.mira_mail_drafts.retry_after",
+                "n|col|public.mira_mail_drafts.retry_after",
+                "e|col|public.mira_mail_drafts.retry_after"
+            ],
+            "reads": ["n|tbl|public.mira_mail_drafts", "n|sch|public"]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_mail_drafts",
+                "name": "retry_after",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        }
+    ]
+}

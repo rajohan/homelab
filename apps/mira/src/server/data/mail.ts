@@ -292,7 +292,7 @@ export async function approveMiraMail(
         const [control] = await query<
             { version: number }[]
         >`SELECT version FROM mira_switches WHERE owner=${context.owner} AND key='integration:agentmail'`;
-        await query`UPDATE mira_mail_drafts SET state='queued',message=NULL,approved_version=version,approved_by=${context.actor},approved_at=now(),control_version=${control!.version},version=version+1,updated_at=now() WHERE id=${input.id}`;
+        await query`UPDATE mira_mail_drafts SET state='queued',message=NULL,retry_after=NULL,approved_version=version,approved_by=${context.actor},approved_at=now(),control_version=${control!.version},version=version+1,updated_at=now() WHERE id=${input.id}`;
         await auditMira(query, context, "mail.send_approved", input.id);
         return readDraft(query, context.owner, input.id);
     });

@@ -122,7 +122,7 @@ export async function dispatchMiraMail(
                 content: MiraMailContent;
                 hash: string;
             }[]
-        >`SELECT id,binding_hash AS binding,control_version AS "controlVersion",approved_at>now()-interval '15 minutes' AS fresh,content,content_hash AS hash FROM mira_mail_drafts WHERE owner=${configuration.owner} AND state='queued' ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED`;
+        >`SELECT id,binding_hash AS binding,control_version AS "controlVersion",approved_at>now()-interval '15 minutes' AS fresh,content,content_hash AS hash FROM mira_mail_drafts WHERE owner=${configuration.owner} AND state='queued' AND (retry_after IS NULL OR retry_after<=clock_timestamp()) ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED`;
         if (!row) return null;
         if (row.binding !== agentMailBindingHash(configuration)) {
             await query`UPDATE mira_mail_drafts SET state='cancelled',approved_version=NULL,approved_by=NULL,approved_at=NULL,control_version=NULL,message='The AgentMail inbox changed. This email was cancelled before sending. Create a new draft for the current inbox if needed.',version=version+1,updated_at=now() WHERE id=${row.id}`;
@@ -149,8 +149,9 @@ export async function dispatchMiraMail(
                     request
                 ).latestMessageId(content.reply.threadId, signal);
             } catch {
-                // No send was claimed. Retry the read while approval remains valid.
+                // Defer only this reply so a failed read cannot monopolize the outbox.
                 signal.throwIfAborted();
+                await query`UPDATE mira_mail_drafts SET retry_after=clock_timestamp()+interval '30 seconds' WHERE id=${row.id}`;
                 return null;
             }
             if (latest !== content.reply.messageId) {
@@ -174,7 +175,13 @@ export async function dispatchMiraMail(
         }
         signal.throwIfAborted();
         const token = crypto.randomUUID();
-        await query`UPDATE mira_mail_drafts SET state='sending',attempt_token=${token},started_at=now(),message=NULL,version=version+1,updated_at=now() WHERE id=${row.id}`;
+        const admitted = await query<
+            { id: string }[]
+        >`UPDATE mira_mail_drafts SET state='sending',attempt_token=${token},retry_after=NULL,started_at=clock_timestamp(),message=NULL,version=version+1,updated_at=clock_timestamp() WHERE id=${row.id} AND approved_at>clock_timestamp()-interval '15 minutes' RETURNING id`;
+        if (!admitted[0]) {
+            await query`UPDATE mira_mail_drafts SET state='draft',approved_version=NULL,approved_by=NULL,approved_at=NULL,control_version=NULL,retry_after=NULL,message='Delivery approval expired. Review this draft again before sending.',version=version+1,updated_at=clock_timestamp() WHERE id=${row.id}`;
+            return null;
+        }
         return { id: row.id, token, body, reply: content.reply };
     });
     if (!claimed) return false;

@@ -513,42 +513,69 @@ test("reconciliation expires offline approvals and cancels obsolete inbox drafts
     }
 });
 
-test("outbox migration upgrades an already migrated parent database", async () => {
-    const allocation = await createTestDatabase();
-    const connection = connectDashboardDatabase(allocation.url);
-    const prior = await mkdtemp(path.join(tmpdir(), "mira-parent-migrations-"));
-    try {
-        const source = dashboardMigrationsFolder();
-        const entries = await readdir(source, { withFileTypes: true });
-        const outbox = entries.find((entry) => entry.name.endsWith("_mira_mail_outbox"));
-        if (!outbox) throw new Error("Expected outbox migration");
-        const parents = entries.filter(
-            (entry) => entry.isDirectory() && entry.name < outbox.name
-        );
-        expect(parents.every((entry) => entry.name < outbox.name)).toBe(true);
-        for (const entry of parents)
-            await cp(path.join(source, entry.name), path.join(prior, entry.name), {
-                recursive: true,
-            });
-        await migrate(connection.database, { migrationsFolder: prior });
-        const [before] = await connection.client<
-            { name: string | null }[]
-        >`SELECT to_regclass('public.mira_mail_drafts')::text AS name`;
-        expect(before?.name).toBeNull();
-        await migrateDashboard(connection);
-        await assertDashboardSchema(connection);
-        await migrateDashboard(connection);
-        await assertDashboardSchema(connection);
-        const [after] = await connection.client<
-            { name: string | null }[]
-        >`SELECT to_regclass('public.mira_mail_drafts')::text AS name`;
-        expect(after?.name).toBe("mira_mail_drafts");
-    } finally {
-        await connection.client.close();
-        await allocation.close();
-        await rm(prior, { recursive: true, force: true });
+test.each(["mira_mail_outbox", "mira_mail_reply_retry"] as const)(
+    "%s migration upgrades its already migrated parent database",
+    async (migration) => {
+        const allocation = await createTestDatabase();
+        const connection = connectDashboardDatabase(allocation.url);
+        const prior = await mkdtemp(path.join(tmpdir(), "mira-parent-migrations-"));
+        try {
+            const source = dashboardMigrationsFolder();
+            const entries = await readdir(source, { withFileTypes: true });
+            const target = entries.find((entry) => entry.name.endsWith(`_${migration}`));
+            if (!target) throw new Error("Expected mail migration");
+            const parents = entries.filter(
+                (entry) => entry.isDirectory() && entry.name < target.name
+            );
+            for (const entry of parents)
+                await cp(path.join(source, entry.name), path.join(prior, entry.name), {
+                    recursive: true,
+                });
+            await migrate(connection.database, { migrationsFolder: prior });
+            const [before] = await connection.client<
+                { name: string | null }[]
+            >`SELECT to_regclass('public.mira_mail_drafts')::text AS name`;
+            const retained = crypto.randomUUID();
+            if (migration === "mira_mail_outbox") expect(before?.name).toBeNull();
+            else {
+                expect(before?.name).toBe("mira_mail_drafts");
+                await connection.client`INSERT INTO mira_mail_drafts (id,owner,inbox_id,binding_hash,version,state,content,content_hash,approved_version,approved_by,approved_at,control_version) VALUES (${retained},'operator','synthetic@example.test','binding',2,'queued',${JSON.stringify(content)}::text::jsonb,'fingerprint',1,'human:operator',now(),1)`;
+            }
+            await migrateDashboard(connection);
+            await assertDashboardSchema(connection);
+            await migrateDashboard(connection);
+            await assertDashboardSchema(connection);
+            const [after] = await connection.client<
+                { name: string | null }[]
+            >`SELECT to_regclass('public.mira_mail_drafts')::text AS name`;
+            expect(after?.name).toBe("mira_mail_drafts");
+            if (migration === "mira_mail_reply_retry") {
+                const [pending] = await connection.client<
+                    {
+                        state: string;
+                        version: number;
+                        approved: number;
+                        retry: Date | null;
+                        hash: string;
+                        content: typeof content;
+                    }[]
+                >`SELECT state,version,approved_version AS approved,retry_after AS retry,content_hash AS hash,content FROM mira_mail_drafts WHERE id=${retained}`;
+                expect(pending).toEqual({
+                    state: "queued",
+                    version: 2,
+                    approved: 1,
+                    retry: null,
+                    hash: "fingerprint",
+                    content,
+                });
+            }
+        } finally {
+            await connection.client.close();
+            await allocation.close();
+            await rm(prior, { recursive: true, force: true });
+        }
     }
-});
+);
 
 test("reviewed attachments send the exact owned bytes and retain durable fingerprints", async () => {
     const f = await mailFixture();
@@ -1487,6 +1514,12 @@ test.each([
             expect(attempt).toEqual({ token: null, started: null });
             expect(posts).toBe(0);
             if (condition !== "newer") {
+                if (condition !== "shutdown") {
+                    expect(
+                        await dispatchMiraMail(f.client, f.configuration, signal, request)
+                    ).toBe(false);
+                    await f.client`UPDATE mira_mail_drafts SET retry_after=clock_timestamp()-interval '1 second' WHERE id=${draft.id}`;
+                }
                 recovered = true;
                 expect(
                     await dispatchMiraMail(f.client, f.configuration, signal, request)
@@ -1506,3 +1539,178 @@ test.each([
         }
     }
 );
+
+test("a deferred reply does not block unrelated approved mail", async () => {
+    const f = await mailFixture();
+    try {
+        const context = { client: f.client, owner: "operator", actor: "human:operator" };
+        const blocked = await saveMiraMail(
+            context,
+            {
+                id: "00000000-0000-4000-8000-000000000001",
+                version: 0,
+                conversationId: f.chat.id,
+                content,
+            },
+            f.binding,
+            {
+                messageId: "selected",
+                threadId: "thread",
+                from: "sender@example.test",
+                subject: "Original",
+            }
+        );
+        const ordinary = await saveMiraMail(
+            context,
+            {
+                id: "ffffffff-ffff-4fff-8fff-fffffffffff2",
+                version: 0,
+                conversationId: f.chat.id,
+                content,
+            },
+            f.binding
+        );
+        for (const draft of [blocked, ordinary])
+            await f.api.mail.approve({
+                id: draft.id,
+                version: draft.version,
+                contentHash: draft.contentHash,
+                reviewedReply: draft.content.reply,
+            });
+        let reads = 0,
+            posts = 0;
+        const request = Object.assign(
+            (url: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+                if (init?.method === "GET") {
+                    reads++;
+                    return Promise.resolve(new Response(null, { status: 404 }));
+                }
+                posts++;
+                expect(typeof url === "string" && url.endsWith("/messages/send")).toBe(
+                    true
+                );
+                return Promise.resolve(
+                    Response.json({
+                        message_id: "ordinary-sent",
+                        thread_id: "ordinary-thread",
+                    })
+                );
+            },
+            { preconnect: fetch.preconnect }
+        );
+        expect(await dispatchMiraMail(f.client, f.configuration, signal, request)).toBe(
+            false
+        );
+        expect(await dispatchMiraMail(f.client, f.configuration, signal, request)).toBe(
+            true
+        );
+        expect(await dispatchMiraMail(f.client, f.configuration, signal, request)).toBe(
+            false
+        );
+        const page = await f.api.mail.list({});
+        expect(page.rows.find((row) => row.id === blocked.id)?.state).toBe("queued");
+        expect(page.rows.find((row) => row.id === ordinary.id)?.state).toBe("sent");
+        expect(reads).toBe(1);
+        expect(posts).toBe(1);
+        await f.client`UPDATE mira_mail_drafts SET approved_at=clock_timestamp()-interval '16 minutes' WHERE id=${blocked.id}`;
+        await reconcileMiraMail(f.client, f.configuration);
+        const expired = await f.api.mail.list({});
+        const draft = expired.rows.find((row) => row.id === blocked.id)!;
+        expect(draft.state).toBe("draft");
+        await f.api.mail.approve({
+            id: draft.id,
+            version: draft.version,
+            contentHash: draft.contentHash,
+            reviewedReply: draft.content.reply,
+        });
+        expect(await dispatchMiraMail(f.client, f.configuration, signal, request)).toBe(
+            false
+        );
+        expect(reads).toBe(2);
+        expect(posts).toBe(1);
+    } finally {
+        await f.close();
+    }
+});
+
+test("reply approval is checked against wall time after provider reads before claiming a send", async () => {
+    const f = await mailFixture();
+    try {
+        const draft = await saveMiraMail(
+            { client: f.client, owner: "operator", actor: "human:operator" },
+            {
+                id: crypto.randomUUID(),
+                version: 0,
+                conversationId: f.chat.id,
+                content,
+            },
+            f.binding,
+            {
+                messageId: "selected",
+                threadId: "thread",
+                from: "sender@example.test",
+                subject: "Original",
+            }
+        );
+        await f.api.mail.approve({
+            id: draft.id,
+            version: draft.version,
+            contentHash: draft.contentHash,
+            reviewedReply: draft.content.reply,
+        });
+        let activeQuery: TransactionSQL | undefined;
+        const observed = new Proxy(f.client, {
+            get(target, property, receiver) {
+                if (property !== "begin")
+                    return Reflect.get(target, property, receiver) as unknown;
+                return (callback: (query: TransactionSQL) => Promise<unknown>) =>
+                    target.begin(async (query) => {
+                        activeQuery = query;
+                        return callback(query);
+                    });
+            },
+        });
+        let reads = 0,
+            posts = 0;
+        const request = Object.assign(
+            async (
+                _url: Parameters<typeof fetch>[0],
+                init?: Parameters<typeof fetch>[1]
+            ) => {
+                if (init?.method !== "GET") {
+                    posts++;
+                    return Response.json({
+                        message_id: "must-not-send",
+                        thread_id: "thread",
+                    });
+                }
+                reads++;
+                const query = activeQuery!;
+                // Expire inside the existing transaction; now() would still consider it fresh.
+                await query`UPDATE mira_mail_drafts SET approved_at=clock_timestamp()-interval '15 minutes'+interval '50 milliseconds' WHERE id=${draft.id}`;
+                await query`SELECT pg_sleep(0.1)`;
+                const [clock] = await query<
+                    { transactionFresh: boolean; realFresh: boolean }[]
+                >`SELECT approved_at>now()-interval '15 minutes' AS "transactionFresh",approved_at>clock_timestamp()-interval '15 minutes' AS "realFresh" FROM mira_mail_drafts WHERE id=${draft.id}`;
+                expect(clock).toEqual({ transactionFresh: true, realFresh: false });
+                return Response.json({
+                    inbox_id: f.binding.inboxId,
+                    thread_id: "thread",
+                    last_message_id: "selected",
+                });
+            },
+            { preconnect: fetch.preconnect }
+        );
+        expect(await dispatchMiraMail(observed, f.configuration, signal, request)).toBe(
+            false
+        );
+        const [result] = await f.client<
+            { state: string; token: string | null; approved: number | null }[]
+        >`SELECT state,attempt_token AS token,approved_version AS approved FROM mira_mail_drafts WHERE id=${draft.id}`;
+        expect(result).toEqual({ state: "draft", token: null, approved: null });
+        expect(reads).toBe(1);
+        expect(posts).toBe(0);
+    } finally {
+        await f.close();
+    }
+});
