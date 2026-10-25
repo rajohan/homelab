@@ -296,12 +296,17 @@ export async function scheduleMiraRuns(client: SQL, now = new Date()): Promise<n
  * Read paginated agent executions independently of infrastructure worker capacity.
  * @param context - Authenticated product context.
  * @param before - Optional UUID cursor.
+ * @param taskId - Optional owned task filter.
  * @returns Public execution outcomes and pagination metadata.
  */
-export async function listMiraRuns(context: MiraContext, before?: string) {
+export async function listMiraRuns(
+    context: MiraContext,
+    before?: string,
+    taskId?: string
+) {
     const rows = await context.client<
         MiraRunSummary[]
-    >`SELECT r.id, r.conversation_id AS "conversationId", r.automation_id AS "automationId", r.task_id AS "taskId", r.state, r.cancel_requested AS "cancelRequested", r.message, r.created_at::text AS "createdAt", r.started_at::text AS "startedAt", r.finished_at::text AS "finishedAt", COALESCE(c.title, 'Deleted conversation') AS title, a.title AS "automationName", c.id IS NOT NULL AS "conversationAvailable" FROM mira_runs r LEFT JOIN mira_conversations c ON c.id = r.conversation_id AND c.owner = r.owner AND c.deleted_at IS NULL LEFT JOIN mira_automations a ON a.id = r.automation_id AND a.owner = r.owner AND a.deleted_at IS NULL WHERE r.owner = ${context.owner} AND (${before ?? null}::uuid IS NULL OR r.id < ${before ?? null}::uuid) ORDER BY r.id DESC LIMIT 30`;
+    >`SELECT r.id, r.conversation_id AS "conversationId", r.automation_id AS "automationId", r.task_id AS "taskId", r.state, r.cancel_requested AS "cancelRequested", r.message, r.created_at::text AS "createdAt", r.started_at::text AS "startedAt", r.finished_at::text AS "finishedAt", COALESCE(c.title, 'Deleted conversation') AS title, a.title AS "automationName", c.id IS NOT NULL AS "conversationAvailable" FROM mira_runs r LEFT JOIN mira_conversations c ON c.id = r.conversation_id AND c.owner = r.owner AND c.deleted_at IS NULL LEFT JOIN mira_automations a ON a.id = r.automation_id AND a.owner = r.owner AND a.deleted_at IS NULL WHERE r.owner = ${context.owner} AND (${taskId ?? null}::uuid IS NULL OR r.task_id = ${taskId ?? null}::uuid) AND (${before ?? null}::uuid IS NULL OR r.id < ${before ?? null}::uuid) ORDER BY r.id DESC LIMIT 30`;
     return { rows, nextCursor: rows.length === 30 ? rows.at(-1)!.id : null };
 }
 
