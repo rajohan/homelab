@@ -19,6 +19,10 @@ export interface DaytonaConfiguration extends DaytonaBinding {
     apiKey: string;
 }
 
+export interface DaytonaExecutionConfiguration extends DaytonaConfiguration {
+    executionQualified: boolean;
+}
+
 export const daytonaPolicy = Object.freeze({
     version: 1,
     cpu: 2,
@@ -110,4 +114,22 @@ export function daytonaBindingHash(binding: DaytonaBinding): string {
  */
 export function daytonaSandboxName(binding: DaytonaBinding, runId: string): string {
     return `mira-${daytonaBindingHash(binding).slice(0, 16)}-${v.parse(id, runId)}`;
+}
+
+/**
+ * Load credentials for cleanup and separately qualify execution for this exact binding.
+ * @param environment - Explicit service environment.
+ * @returns Configuration with execution disabled until the operator records qualification.
+ */
+export function daytonaExecutionConfiguration(
+    environment: Readonly<Record<string, string | undefined>>
+): DaytonaExecutionConfiguration | undefined {
+    const configuration = daytonaConfiguration(environment);
+    if (!configuration) return;
+    return {
+        ...configuration,
+        executionQualified:
+            environment.HOMELAB_MIRA_DAYTONA_QUALIFIED_BINDING_HASH ===
+            daytonaBindingHash(configuration),
+    };
 }

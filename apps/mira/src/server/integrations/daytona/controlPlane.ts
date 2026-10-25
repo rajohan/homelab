@@ -371,15 +371,18 @@ export class DaytonaClient {
      * Request destruction of only this attempt's verified sandbox, including resources with a drifted policy.
      * @param reference - Persisted attempt and optional known provider ID; original binding remains required.
      * @param signal - Cleanup cancellation; callers must reconcile an uncertain DELETE before reporting completion.
+     * @param authorize - Optional durable cleanup claim, committed after identity inspection and before DELETE.
      * @returns Absent, confirmed destroyed, or deletion requested; accepting DELETE is not proof of destruction.
      */
     async destroy(
         reference: DaytonaReference,
-        signal: AbortSignal
+        signal: AbortSignal,
+        authorize: () => Promise<void> = () => Promise.resolve()
     ): Promise<"absent" | "destroyed" | "requested"> {
         const existing = await this.inspect(reference, signal);
         if (!existing) return "absent";
         if (existing.state === "destroyed") return "destroyed";
+        await authorize();
         signal.throwIfAborted();
         try {
             const value = await this.json(await api.deleteSandbox(existing.id), signal);

@@ -2,9 +2,11 @@ import {
     agentMailBindingHash,
     type AgentMailBinding,
 } from "../integrations/agentmail/configuration";
+import type { DaytonaBinding } from "../integrations/daytona/configuration";
 import type { HereNowBinding } from "../integrations/herenow/configuration";
 import type { MoltbookBinding } from "../integrations/moltbook/configuration";
 import type { MiraContext, MiraQuery } from "./context";
+import { daytonaIntegrationStatus } from "./daytona";
 import { hereNowIntegrationStatus } from "./herenow";
 import { moltbookIntegrationStatus } from "./moltbook";
 
@@ -40,13 +42,15 @@ export async function agentMailBindingStatus(
  * @param binding - Dashboard's configured receiver, checked against the executor's inbox.
  * @param hereNow - Dashboard account mapping for website metadata.
  * @param moltbook - Dashboard account mapping for passive social reads.
+ * @param daytona - Dashboard cloud execution mapping.
  * @returns Configured availability and redacted recovery status; intentional pause stays separate.
  */
 export async function listMiraIntegrations(
     context: MiraContext,
     binding?: AgentMailBinding,
     moltbook?: MoltbookBinding,
-    hereNow?: HereNowBinding
+    hereNow?: HereNowBinding,
+    daytona?: DaytonaBinding
 ) {
     const status =
         binding?.owner === context.owner
@@ -76,6 +80,7 @@ export async function listMiraIntegrations(
         await moltbookIntegrationStatus(context, moltbook),
         await moltbookIntegrationStatus(context, moltbook, true),
         await hereNowIntegrationStatus(context, hereNow),
+        await daytonaIntegrationStatus(context, daytona),
     ];
 }
 

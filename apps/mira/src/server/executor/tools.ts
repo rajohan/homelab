@@ -34,6 +34,8 @@ import {
 import { readMiraPdf } from "../files/content";
 import type { AgentMailReadConfiguration } from "../integrations/agentmail/configuration";
 import { createAgentMailTools } from "../integrations/agentmail/tools";
+import type { DaytonaBinding } from "../integrations/daytona/configuration";
+import { createDaytonaTools } from "../integrations/daytona/tools";
 import type { HereNowReadConfiguration } from "../integrations/herenow/configuration";
 import { createHereNowTools } from "../integrations/herenow/tools";
 import type { MoltbookReadConfiguration } from "../integrations/moltbook/configuration";
@@ -69,6 +71,7 @@ const object = (properties: Record<string, unknown>, required: string[] = []) =>
  * @param agentMail - Optional provisioned inbox for checked mail reads and local drafts; sending requires separate human approval.
  * @param hereNow - Optional scoped website metadata settings; credentials stay in the executor.
  * @param moltbook - Optional social read settings, retained only by the service.
+ * @param daytona - Nonsecret cloud job mapping; model tools cannot execute or approve.
  * @returns The fixed tool declarations for this conversation and their checked handlers.
  */
 export function createMiraTools(
@@ -77,7 +80,8 @@ export function createMiraTools(
     filesDirectory?: string,
     agentMail?: AgentMailReadConfiguration,
     moltbook?: MoltbookReadConfiguration,
-    hereNow?: HereNowReadConfiguration
+    hereNow?: HereNowReadConfiguration,
+    daytona?: DaytonaBinding
 ): RuntimeTool[] {
     const context: MiraContext = {
         client,
@@ -426,6 +430,7 @@ export function createMiraTools(
         },
         ...createAgentMailTools(client, run, agentMail, fetch, filesDirectory),
         ...createMoltbookTools(client, run, moltbook),
+        ...createDaytonaTools(client, run, daytona),
         ...createHereNowTools(client, run, hereNow),
     ];
     return definitions.map(

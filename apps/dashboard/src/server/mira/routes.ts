@@ -23,6 +23,11 @@ import {
     miraTaskUpdateSchema,
 } from "@homelab/contracts/mira";
 import {
+    miraDaytonaSaveSchema,
+    miraDaytonaApproveSchema,
+    miraDaytonaFilterSchema,
+} from "@homelab/contracts/miraDaytona";
+import {
     miraMailApproveSchema,
     miraMailFilterSchema,
     miraMailSaveSchema,
@@ -61,6 +66,14 @@ import {
     readConversation,
     renameConversation,
 } from "@homelab/mira/data/conversations";
+import {
+    listMiraDaytona,
+    readMiraDaytona,
+    saveMiraDaytona,
+    approveMiraDaytona,
+    cancelMiraDaytona,
+    daytonaInputDescriptor,
+} from "@homelab/mira/data/daytona";
 import {
     changeReport,
     createReport,
@@ -104,6 +117,7 @@ import {
     taskProgress,
 } from "@homelab/mira/data/tasks";
 import { agentMailBindingHash } from "@homelab/mira/integrations/agentmail/configuration";
+import { daytonaBindingHash } from "@homelab/mira/integrations/daytona/configuration";
 import { hereNowBindingHash } from "@homelab/mira/integrations/herenow/configuration";
 import { moltbookBindingHash } from "@homelab/mira/integrations/moltbook/configuration";
 import * as v from "valibot";
@@ -140,6 +154,42 @@ function execute<T>(
 
 const record = v.strictObject({ id: idSchema });
 export const miraRouter = trpc.router({
+    daytona: trpc.router({
+        list: trpc.procedure
+            .input(miraDaytonaFilterSchema)
+            .query(({ ctx, input }) =>
+                execute(ctx, (mira) => listMiraDaytona(mira, input))
+            ),
+        read: trpc.procedure
+            .input(record)
+            .query(({ ctx, input }) =>
+                execute(ctx, (mira) => readMiraDaytona(mira.client, mira.owner, input.id))
+            ),
+        input: trpc.procedure
+            .input(record)
+            .query(({ ctx, input }) =>
+                execute(ctx, (mira) => daytonaInputDescriptor(mira, input.id))
+            ),
+        save: trpc.procedure
+            .input(miraDaytonaSaveSchema)
+            .mutation(({ ctx, input }) =>
+                execute(ctx, (mira) =>
+                    saveMiraDaytona(mira, input, ctx.operations?.daytonaBinding)
+                )
+            ),
+        approve: trpc.procedure
+            .input(miraDaytonaApproveSchema)
+            .mutation(({ ctx, input }) =>
+                execute(ctx, (mira) =>
+                    approveMiraDaytona(mira, input, ctx.operations?.daytonaBinding)
+                )
+            ),
+        cancel: trpc.procedure
+            .input(versionedIdSchema)
+            .mutation(({ ctx, input }) =>
+                execute(ctx, (mira) => cancelMiraDaytona(mira, input))
+            ),
+    }),
     social: trpc.router({
         list: trpc.procedure
             .input(miraSocialFilterSchema)
@@ -459,7 +509,8 @@ export const miraRouter = trpc.router({
                 mira,
                 ctx.operations?.agentMailHook,
                 ctx.operations?.moltbookBinding,
-                ctx.operations?.hereNowBinding
+                ctx.operations?.hereNowBinding,
+                ctx.operations?.daytonaBinding
             )
         )
     ),
@@ -470,12 +521,14 @@ export const miraRouter = trpc.router({
                 const binding = ctx.operations?.agentMailHook;
                 const moltbook = ctx.operations?.moltbookBinding;
                 const hereNow = ctx.operations?.hereNowBinding;
+                const daytona = ctx.operations?.daytonaBinding;
                 if (
                     [
                         "integration:agentmail",
                         "integration:moltbook",
                         "integration:moltbook-publish",
                         "integration:here-now",
+                        "integration:daytona",
                     ].includes(input.key) &&
                     input.enabled
                 ) {
@@ -483,7 +536,8 @@ export const miraRouter = trpc.router({
                         mira,
                         binding,
                         moltbook,
-                        hereNow
+                        hereNow,
+                        daytona
                     );
                     const status = statuses.find((item) => item.key === input.key);
                     if (!status?.ready)
@@ -511,6 +565,8 @@ export const miraRouter = trpc.router({
                     hereNow?.owner === mira.owner
                 )
                     hash = hereNowBindingHash(hereNow);
+                if (input.key === "integration:daytona" && daytona?.owner === mira.owner)
+                    hash = daytonaBindingHash(daytona);
                 return setMiraEnabled(mira, input, hash);
             })
         ),

@@ -170,6 +170,7 @@ export async function deleteTask(
     version: number
 ): Promise<void> {
     await miraTransaction(context, async (query) => {
+        await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${context.owner}`},0))`;
         await lockMiraProposals(query, context.owner);
         const [task] = await query<
             { id: string }[]
@@ -182,6 +183,14 @@ export async function deleteTask(
         const active = await query<
             { id: string }[]
         >`SELECT id FROM mira_runs WHERE task_id = ${id} AND owner = ${context.owner} AND state IN ('queued','running') LIMIT 1`;
+        const cloud = await query<
+            { id: string }[]
+        >`SELECT id FROM mira_daytona_jobs WHERE task_id=${id} AND owner=${context.owner} AND (state='queued' OR cleanup='pending') LIMIT 1`;
+        if (cloud[0])
+            throw new MiraFailure(
+                "CONFLICT",
+                "Cancel or finish the cloud jobs before deleting this task."
+            );
         if (active.length > 0)
             throw new MiraFailure(
                 "CONFLICT",
@@ -202,6 +211,7 @@ export async function deleteTask(
             AND t.proposal IS NOT NULL
             AND ((t.tool='mira_task_update' AND t.proposal->>'id'=${id})
                 OR (t.tool='mira_task_progress' AND t.proposal->>'taskId'=${id}))`;
+        await query`UPDATE mira_daytona_jobs SET content='{"title":"Deleted job","command":"true","inputs":[],"outputs":[]}'::jsonb,content_hash='',stdout='',stderr='',output='',files='[]'::jsonb,message=NULL,state=CASE WHEN state='draft' THEN 'cancelled' ELSE state END,version=version+1 WHERE owner=${context.owner} AND task_id=${id}`;
         await query`DELETE FROM mira_progress WHERE task_id = ${id}`;
         await auditMira(query, context, "task.deleted", id);
     });

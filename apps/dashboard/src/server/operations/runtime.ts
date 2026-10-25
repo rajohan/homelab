@@ -1,5 +1,6 @@
 import type { UpdateSource } from "@homelab/contracts/updates";
 import type { AgentMailHookConfiguration } from "@homelab/mira/integrations/agentmail/configuration";
+import { type DaytonaBinding } from "@homelab/mira/integrations/daytona/configuration";
 import type { HereNowBinding } from "@homelab/mira/integrations/herenow/configuration";
 import type { MoltbookBinding } from "@homelab/mira/integrations/moltbook/configuration";
 
@@ -154,6 +155,7 @@ export function createOperationsRuntime(
         agentMailHook: configuration.agentMailHook,
         moltbookBinding: configuration.moltbookBinding,
         hereNowBinding: configuration.hereNowBinding,
+        daytonaBinding: configuration.daytonaBinding,
         maintenanceTargets: configuration.maintenanceTargets ?? [],
         releaseRepository: configuration.releaseRepository,
         updateTargets: configuration.updateTargets ?? [],
@@ -174,6 +176,7 @@ export type OperationsRuntime = ReturnType<typeof connectDashboardDatabase> & {
     readonly agentMailHook?: AgentMailHookConfiguration | undefined;
     readonly moltbookBinding?: MoltbookBinding | undefined;
     readonly hereNowBinding?: HereNowBinding | undefined;
+    readonly daytonaBinding?: DaytonaBinding | undefined;
     readonly maintenanceTargets?: readonly MaintenanceTarget[];
     readonly releaseRepository?: string | undefined;
     readonly updateTargets?: readonly UpdateTarget[];

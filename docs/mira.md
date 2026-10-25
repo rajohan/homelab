@@ -223,3 +223,7 @@ Proposals expire after 24 hours; cleanup removes their argument contents, and de
 ## Daytona delivery
 
 The control-plane foundation and bounded command/file toolbox are implemented but not activated. See [Daytona adapter qualification](mira-daytona.md) for the pinned official client, isolation limits, recovery contract and remaining execution/dashboard work.
+
+### Reviewed Daytona cloud jobs
+
+Cloud jobs are available from Chat and Jobs with local drafts, exact operator review, durable execution phases, bounded logs, selected file transfers and independently confirmed cleanup. The model can propose a command and read recorded results, but cannot approve cloud spending. Daytona has its own pause control; cleanup remains active while paused. See [Daytona qualification](mira-daytona.md) for admission limits, explicit environment settings and the required live qualification before activation.

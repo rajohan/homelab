@@ -15,6 +15,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
     Globe,
+    Cloud,
     Archive,
     Brain,
     Files,
@@ -46,7 +47,7 @@ export function ChatPanel({
 }: {
     readonly id: string;
     readonly onLibrary: (
-        library: "files" | "memory" | "mail" | "publications" | "social"
+        library: "files" | "memory" | "mail" | "publications" | "social" | "daytona"
     ) => void;
     readonly onChooseConversation: () => void;
 }) {
@@ -146,6 +147,12 @@ export function ChatPanel({
                             label="Conversation actions"
                             disabled={change.isPending || rename.isPending}
                             actions={[
+                                {
+                                    id: "daytona",
+                                    label: "Cloud jobs",
+                                    icon: Cloud,
+                                    onSelect: () => onLibrary("daytona"),
+                                },
                                 {
                                     id: "social",
                                     label: "Moltbook drafts",

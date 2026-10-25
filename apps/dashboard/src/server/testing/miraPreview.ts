@@ -5,6 +5,7 @@ import path from "node:path";
 import { capabilities } from "@homelab/contracts/operations";
 import { installMiraPresets } from "@homelab/mira/data/automationActions";
 import { createConversation, enqueueTurn } from "@homelab/mira/data/conversations";
+import { saveMiraDaytona } from "@homelab/mira/data/daytona";
 import { createReport, saveMemory } from "@homelab/mira/data/documents";
 import { saveMiraFile } from "@homelab/mira/data/files";
 import { saveMiraMail } from "@homelab/mira/data/mail";
@@ -50,6 +51,14 @@ export async function main(port = 3330): Promise<void> {
         accountId: "11111111-1111-4111-8111-111111111111",
     };
     const previewMoltbook = { owner: context.owner, agentName: "SyntheticMira" };
+    const previewDaytona = {
+        owner: context.owner,
+        trustBoundary: "dedicated-organization" as const,
+        networkAccess: "provider-default" as const,
+        organizationId: "11111111-1111-4111-8111-111111111111",
+        snapshotId: "22222222-2222-4222-8222-222222222222",
+        target: "eu",
+    };
     const operations = {
         ...database,
         registry: createJobRegistry([]),
@@ -57,6 +66,7 @@ export async function main(port = 3330): Promise<void> {
         agentMailHook: previewMail,
         hereNowBinding: previewHereNow,
         moltbookBinding: previewMoltbook,
+        daytonaBinding: previewDaytona,
     };
     const principal = { kind: "human" as const, id: context.owner, capabilities };
     const worker = crypto.randomUUID();
@@ -86,6 +96,38 @@ export async function main(port = 3330): Promise<void> {
         for (let index = 1; index <= 18; index++)
             await createConversation(context, `Preview · Earlier conversation ${index}`);
         const chat = await createConversation(context, "Preview · Plan the week");
+        const cloudFile = await saveMiraFile(context, directory, {
+            id: crypto.randomUUID(),
+            name: "Cloud result.json",
+            bytes: new TextEncoder().encode(
+                '{"bun":"1.4.4","checks":"passed","synthetic":true}'
+            ),
+        });
+        for (const state of ["completed", "running", "draft"] as const) {
+            const id = Bun.randomUUIDv7();
+            await saveMiraDaytona(
+                context,
+                {
+                    id,
+                    version: 0,
+                    conversationId: chat.id,
+                    taskId: null,
+                    content: {
+                        title: {
+                            draft: "Check the Bun runtime",
+                            running: "Collect dashboard build results",
+                            completed: "Generate a qualification report",
+                        }[state],
+                        command: `bun --version\nmkdir -p /tmp/homelab-mira/${id}/outputs\nprintf '{"synthetic":true}\\n' > /tmp/homelab-mira/${id}/outputs/result.json`,
+                        inputs: [],
+                        outputs: ["result.json"],
+                    },
+                },
+                previewDaytona
+            );
+            if (state !== "draft")
+                await database.client`UPDATE mira_daytona_jobs SET state=${state},phase=${state === "completed" ? "closed" : "cleaning"},cleanup=${state === "completed" ? "confirmed" : "pending"},exit_code=0,stdout='Bun 1.4.4\nBuild completed\nAll checks passed\n',files=${JSON.stringify([{ name: "result.json", id: cloudFile.id }])}::text::jsonb WHERE id=${id}`;
+        }
         await saveMiraSocial(
             context,
             {

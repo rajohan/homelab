@@ -6,12 +6,13 @@ import {
     miraTaskUpdateSchema,
 } from "@homelab/contracts/mira";
 import type { MiraAttachment } from "@homelab/contracts/mira";
+import type { MiraDaytonaJob } from "@homelab/contracts/miraDaytona";
 import type { MiraMailDraft } from "@homelab/contracts/miraMail";
 import type { MiraPublication } from "@homelab/contracts/miraPublication";
 import type { MiraSocialDraft } from "@homelab/contracts/miraSocial";
 import { IdentityClient } from "@homelab/ui/identity/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState, type ReactNode } from "react";
 import { serialize } from "superjson";
@@ -24,6 +25,9 @@ import { ChatActivity } from "./ChatActivity";
 import { ChatComposer } from "./ChatComposer";
 import { ChatMessage } from "./ChatMessage";
 import { ChatSettings } from "./ChatSettings";
+import { DaytonaDetails } from "./DaytonaDetails";
+import { DaytonaEditor } from "./DaytonaEditor";
+import { DaytonaJobs } from "./DaytonaJobs";
 import { MailEditor } from "./MailEditor";
 import { MailReview } from "./MailReview";
 import { MiraRunTable } from "./MiraRunTable";
@@ -43,10 +47,12 @@ function UploadHarness({ onBusy }: { readonly onBusy: (busy: boolean) => void })
     return <AttachmentPicker value={files} onChange={setFiles} onBusyChange={onBusy} />;
 }
 
-function fixture(content: ReactNode, enabled = false) {
-    const query = new QueryClient({
-        defaultOptions: { queries: { enabled, retry: false } },
-    });
+function fixture(content: ReactNode, enabled = false, supplied?: QueryClient) {
+    const query =
+        supplied ??
+        new QueryClient({
+            defaultOptions: { queries: { enabled, retry: false } },
+        });
     const identity = new IdentityClient();
     const view = render(
         <QueryClientProvider client={query}>
@@ -1389,5 +1395,207 @@ test("Moltbook library opens the selected review and returns to its owned drafts
     } finally {
         cleanup();
         request.mockRestore();
+    }
+});
+
+function cloudJob(): MiraDaytonaJob {
+    return {
+        id: "11111111-1111-4111-8111-111111111111",
+        version: 1,
+        content: {
+            title: "Reviewed command",
+            command: "echo '<script>passive</script>'",
+            inputs: [],
+            outputs: [],
+        },
+        contentHash: "a".repeat(64),
+        conversationId: null,
+        taskId: null,
+        state: "draft",
+        phase: "idle",
+        cleanup: "not_needed",
+        cancelRequested: false,
+        exitCode: null,
+        stdout: "",
+        stderr: "",
+        output: "",
+        files: [],
+        message: null,
+        createdAt: "2026-10-25T12:00:00Z",
+        updatedAt: "2026-10-25T12:00:00Z",
+    };
+}
+test("cloud review submits the exact displayed command and closes after approval", async () => {
+    const job = cloudJob();
+    const requested: unknown[] = [];
+    let closed = false;
+    const request = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+            (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+                if (typeof init?.body !== "string") throw new Error("Expected body");
+                requested.push(
+                    (JSON.parse(init.body) as { "0": { json: unknown } })["0"].json
+                );
+                return Promise.resolve(
+                    Response.json([
+                        { result: { data: serialize({ ...job, state: "queued" }) } },
+                    ])
+                );
+            },
+            { preconnect: fetch.preconnect }
+        )
+    );
+    const cleanup = fixture(
+        <DaytonaDetails
+            job={job}
+            onClose={() => {
+                closed = true;
+            }}
+        />
+    );
+    try {
+        expect(screen.getByText(job.content.command)).toBeInTheDocument();
+        await userEvent
+            .setup()
+            .click(screen.getByRole("button", { name: "Start cloud job" }));
+        await waitFor(() => expect(closed).toBe(true));
+        expect(requested).toEqual([
+            {
+                id: job.id,
+                version: 1,
+                contentHash: job.contentHash,
+                reviewedContent: job.content,
+            },
+        ]);
+    } finally {
+        cleanup();
+        request.mockRestore();
+    }
+});
+test("cloud details keep command completion separate from pending cleanup and render logs passively", () => {
+    const job = {
+        ...cloudJob(),
+        state: "running" as const,
+        phase: "cleaning",
+        cleanup: "pending" as const,
+        exitCode: 0,
+        stdout: "<img src=x onerror=alert(1)>",
+        cancelRequested: true,
+    };
+    const cleanup = fixture(<DaytonaDetails job={job} onClose={() => {}} />);
+    try {
+        expect(screen.getByText("Pending")).toBeInTheDocument();
+        expect(screen.getByText(job.stdout)).toBeInTheDocument();
+        expect(screen.queryByRole("img")).not.toBeInTheDocument();
+        expect(
+            screen.queryByRole("button", { name: "Start cloud job" })
+        ).not.toBeInTheDocument();
+        expect(
+            screen.queryByRole("button", { name: "Cancel job" })
+        ).not.toBeInTheDocument();
+    } finally {
+        cleanup();
+    }
+});
+test("cloud review does not silently replace the command when a newer draft arrives", async () => {
+    const job = cloudJob();
+    const query = new QueryClient({
+        defaultOptions: { queries: { enabled: false, retry: false } },
+    });
+    const cleanup = fixture(
+        <DaytonaDetails job={job} onClose={() => {}} />,
+        false,
+        query
+    );
+    try {
+        act(() => {
+            query.setQueryData(["operations", "mira", "daytona", job.id], {
+                ...job,
+                version: 2,
+                content: { ...job.content, command: "new unseen command" },
+            });
+        });
+        await waitFor(() =>
+            expect(screen.getByRole("button", { name: "Start cloud job" })).toBeDisabled()
+        );
+        expect(screen.getByText(job.content.command)).toBeInTheDocument();
+        expect(screen.queryByText("new unseen command")).not.toBeInTheDocument();
+    } finally {
+        cleanup();
+    }
+});
+test("cloud draft editor saves locally without approving or executing", async () => {
+    const requested: unknown[] = [];
+    let closed = false;
+    const request = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+            (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+                if (typeof init?.body !== "string") throw new Error("Expected body");
+                requested.push(
+                    (JSON.parse(init.body) as { "0": { json: unknown } })["0"].json
+                );
+                return Promise.resolve(
+                    Response.json([{ result: { data: serialize(cloudJob()) } }])
+                );
+            },
+            { preconnect: fetch.preconnect }
+        )
+    );
+    const cleanup = fixture(
+        <DaytonaEditor
+            onClose={() => {
+                closed = true;
+            }}
+        />
+    );
+    try {
+        const user = userEvent.setup();
+        await user.type(screen.getByLabelText("Title"), "Build a report");
+        await user.type(screen.getByLabelText("Command"), "bun --version");
+        await user.type(screen.getByLabelText("Result filenames"), "report.json");
+        await user.click(screen.getByRole("button", { name: "Save draft" }));
+        await waitFor(() => expect(closed).toBe(true));
+        expect(requested).toHaveLength(1);
+        expect(requested[0]).toMatchObject({
+            version: 0,
+            content: {
+                title: "Build a report",
+                command: "bun --version",
+                inputs: [],
+                outputs: ["report.json"],
+            },
+        });
+    } finally {
+        cleanup();
+        request.mockRestore();
+    }
+});
+
+test("cloud history opens the selected draft and returns to its list without stacked dialogs", async () => {
+    const job = cloudJob();
+    const query = new QueryClient({
+        defaultOptions: { queries: { enabled: false, retry: false } },
+    });
+    query.setQueryData(["operations", "mira", "daytona", undefined], {
+        pages: [{ rows: [job], nextCursor: null }],
+        pageParams: [undefined],
+    });
+    const cleanup = fixture(<DaytonaJobs onClose={() => {}} />, false, query);
+    try {
+        const user = userEvent.setup();
+        expect(
+            screen.getByRole("heading", { name: job.content.title })
+        ).toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "Review" }));
+        expect(screen.getAllByRole("dialog")).toHaveLength(1);
+        expect(
+            screen.getByRole("button", { name: "Start cloud job" })
+        ).toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "Close" }));
+        await user.click(screen.getByRole("button", { name: "Edit" }));
+        expect(screen.getAllByRole("dialog")).toHaveLength(1);
+        expect(screen.getByLabelText("Command")).toHaveValue(job.content.command);
+    } finally {
+        cleanup();
     }
 });
