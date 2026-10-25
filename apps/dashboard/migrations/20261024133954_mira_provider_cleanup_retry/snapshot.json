@@ -1,0 +1,42 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "560074ab-2d30-40bf-b918-89123544e06b",
+    "prevIds": ["a9576a2d-40fb-4b08-8536-1761fb230b8d"],
+    "footprints": [
+        {
+            "statementType": "add_column",
+            "statementTarget": [
+                "column",
+                "public",
+                "mira_conversations",
+                "provider_purge_retry_at"
+            ],
+            "writes": [
+                "s|col|public.mira_conversations.provider_purge_retry_at",
+                "n|col|public.mira_conversations.provider_purge_retry_at",
+                "e|col|public.mira_conversations.provider_purge_retry_at"
+            ],
+            "reads": ["n|tbl|public.mira_conversations", "n|sch|public"]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_conversations",
+                "name": "provider_purge_retry_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        }
+    ]
+}

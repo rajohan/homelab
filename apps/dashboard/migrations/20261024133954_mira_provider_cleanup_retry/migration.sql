@@ -1,0 +1,1 @@
+ALTER TABLE "mira_conversations" ADD COLUMN "provider_purge_retry_at" timestamp with time zone;

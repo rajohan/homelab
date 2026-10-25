@@ -1,5 +1,5 @@
 import { Check, Copy } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "./Button";
 import { IconButton } from "./IconButton";
@@ -19,6 +19,11 @@ export function CopyTextButton({
     readonly iconOnly?: boolean;
 }) {
     const [outcome, setOutcome] = useState<{ text: string; copied: boolean }>();
+    useEffect(() => {
+        if (!outcome?.copied) return;
+        const timer = setTimeout(() => setOutcome(undefined), 1500);
+        return () => clearTimeout(timer);
+    }, [outcome]);
     const state =
         outcome?.text === text ? (outcome.copied ? "copied" : "unavailable") : "idle";
     async function copy(): Promise<void> {

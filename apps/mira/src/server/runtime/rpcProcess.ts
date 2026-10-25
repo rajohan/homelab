@@ -3,8 +3,10 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import * as v from "valibot";
 
 import { envelopeSchema, type RpcId, type RuntimeEvent } from "./protocol";
+import { RuntimeResponseError } from "./responseError";
 
 interface PendingRequest {
+    missingThreadMessage: string | null;
     resolve: (value: unknown) => void;
     reject: (error: Error) => void;
     timer: ReturnType<typeof setTimeout>;
@@ -15,6 +17,7 @@ export interface RpcProcessOptions {
     cwd: string;
     env: Record<string, string>;
     requestTimeoutMs?: number;
+    signal?: AbortSignal;
     maxFrameBytes?: number;
     onRequest: (request: RuntimeEvent, signal: AbortSignal) => Promise<unknown>;
 }
@@ -32,6 +35,8 @@ export class RpcProcess {
     private nextId = 1;
     private failure: Error | null = null;
     private forceStop: ReturnType<typeof setTimeout> | null = null;
+    private readonly abort = () =>
+        this.fail(new Error("Mira runtime operation was cancelled."));
 
     /**
      * Start a child using explicit arguments and a caller-owned environment.
@@ -39,6 +44,7 @@ export class RpcProcess {
      */
     constructor(options: RpcProcessOptions) {
         this.options = options;
+        options.signal?.throwIfAborted();
         this.child = spawn(options.command, options.args, {
             cwd: options.cwd,
             env: options.env,
@@ -47,6 +53,7 @@ export class RpcProcess {
         });
         this.exited = new Promise((resolve) => {
             this.child.once("close", () => {
+                options.signal?.removeEventListener("abort", this.abort);
                 this.fail(
                     new Error(
                         "Mira runtime disconnected; reconcile the active turn before retrying."
@@ -65,6 +72,8 @@ export class RpcProcess {
         this.child.stdout.on("data", (chunk: Buffer) => this.receive(chunk));
         // Drain stderr without retaining prompts, credentials or provider diagnostics.
         this.child.stderr.resume();
+        options.signal?.addEventListener("abort", this.abort, { once: true });
+        if (options.signal?.aborted) this.abort();
     }
 
     /**
@@ -92,7 +101,22 @@ export class RpcProcess {
                     new Error("Mira runtime request timed out; its outcome is unknown.")
                 );
             }, this.options.requestTimeoutMs ?? 30_000);
-            this.pending.set(id, { resolve, reject, timer });
+            const threadLookup =
+                method === "thread/delete" || method === "thread/resume"
+                    ? v.safeParse(v.object({ threadId: v.string() }), params)
+                    : null;
+            const missingPrefix =
+                method === "thread/resume"
+                    ? "no rollout found for thread id "
+                    : "thread not found: ";
+            this.pending.set(id, {
+                resolve,
+                reject,
+                timer,
+                missingThreadMessage: threadLookup?.success
+                    ? `${missingPrefix}${threadLookup.output.threadId}`
+                    : null,
+            });
             try {
                 this.send({ id, method, params });
             } catch {
@@ -161,8 +185,11 @@ export class RpcProcess {
                     this.pending.delete(message.id);
                     if ("error" in message)
                         pending.reject(
-                            new Error(
-                                `Mira runtime rejected the request (${message.error.code}).`
+                            new RuntimeResponseError(
+                                message.error.code,
+                                message.error.code === -32_600 &&
+                                    pending.missingThreadMessage !== null &&
+                                    message.error.message === pending.missingThreadMessage
                             )
                         );
                     else pending.resolve(message.result);

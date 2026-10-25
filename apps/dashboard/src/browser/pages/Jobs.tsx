@@ -3,6 +3,7 @@ import { PageHeader } from "@homelab/ui";
 import { JobHistory } from "../features/jobs/JobHistory";
 import { SchedulesPanel } from "../features/jobs/SchedulesPanel";
 import { WorkerPanel } from "../features/jobs/WorkerPanel";
+import { MiraRunHistory } from "../features/mira/MiraRunHistory";
 
 /**
  * Compose operational views without coupling their state or implementation.
@@ -19,6 +20,7 @@ export function Jobs() {
             <JobHistory view="active" title="Queued and running" />
             <SchedulesPanel />
             <JobHistory />
+            <MiraRunHistory />
         </div>
     );
 }

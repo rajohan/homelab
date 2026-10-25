@@ -1,0 +1,63 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "720257f3-29a6-4257-b147-63426b6eb1de",
+    "prevIds": ["02ba4ad0-eee1-45af-abbe-0a1ff084fe2d"],
+    "footprints": [
+        {
+            "statementType": "add_column",
+            "statementTarget": ["column", "public", "mira_runs", "activity"],
+            "writes": [
+                "s|col|public.mira_runs.activity",
+                "n|col|public.mira_runs.activity",
+                "e|col|public.mira_runs.activity"
+            ],
+            "reads": ["n|tbl|public.mira_runs", "n|sch|public"]
+        },
+        {
+            "statementType": "add_column",
+            "statementTarget": ["column", "public", "mira_runs", "effective_settings"],
+            "writes": [
+                "s|col|public.mira_runs.effective_settings",
+                "n|col|public.mira_runs.effective_settings",
+                "e|col|public.mira_runs.effective_settings"
+            ],
+            "reads": ["n|tbl|public.mira_runs", "n|sch|public"]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_runs",
+                "name": "activity",
+                "type": "jsonb",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_runs",
+                "name": "effective_settings",
+                "type": "jsonb",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        }
+    ]
+}

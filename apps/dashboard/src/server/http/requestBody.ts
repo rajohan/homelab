@@ -1,4 +1,4 @@
-export const dashboardTransportBodyLimit = 1_048_576;
+export const dashboardTransportBodyLimit = 26_214_400;
 
 /**
  * Buffer API bodies within a route-specific byte budget, including chunked requests.
@@ -11,6 +11,19 @@ export async function boundedDashboardRequest(request: Request): Promise<Request
         new URL(request.url).pathname === "/api/automation/updates.publish"
             ? 950_000
             : 65_536;
+    return boundedRequestBody(request, maximum);
+}
+
+/**
+ * Buffer a request within an explicit byte budget, including chunked uploads.
+ * @param request - Transport body; large-file callers must authenticate first.
+ * @param maximum - Route-specific maximum, never supplied by the browser.
+ * @returns A replayable request, or null after cancelling an oversized body.
+ */
+export async function boundedRequestBody(
+    request: Request,
+    maximum: number
+): Promise<Request | null> {
     if (Number(request.headers.get("content-length")) > maximum) {
         await request.body?.cancel();
         return null;

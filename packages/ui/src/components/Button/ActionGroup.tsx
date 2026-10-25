@@ -25,10 +25,10 @@ export function ActionGroup({
         <div className={cn("@container/actions", className)}>
             <div
                 className={cn(
-                    "flex flex-col justify-end gap-2 [&>button]:w-full [&>button]:max-w-full [&>button]:min-w-min",
+                    "flex flex-col justify-end gap-2 [&>:is(button,a)]:w-full [&>:is(button,a)]:max-w-full [&>:is(button,a)]:min-w-min",
                     stretch
-                        ? "min-[30rem]:flex-row min-[30rem]:flex-wrap min-[30rem]:[&>button]:w-auto min-[30rem]:[&>button]:flex-1 min-[30rem]:[&>button:last-child]:flex-2"
-                        : "@min-[40rem]/actions:flex-row @min-[40rem]/actions:[&>button]:w-auto"
+                        ? "min-[30rem]:flex-row min-[30rem]:flex-wrap min-[30rem]:[&>:is(button,a)]:w-auto min-[30rem]:[&>:is(button,a)]:flex-1 min-[30rem]:[&>:is(button,a):last-child]:flex-2"
+                        : "@min-[40rem]/actions:flex-row @min-[40rem]/actions:[&>:is(button,a)]:w-auto"
                 )}
             >
                 {ordered}

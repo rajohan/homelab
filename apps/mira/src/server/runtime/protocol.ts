@@ -1,3 +1,4 @@
+import { miraModelSchema } from "@homelab/contracts/mira";
 import * as v from "valibot";
 
 const id = v.union([v.string(), v.pipe(v.number(), v.integer())]);
@@ -16,7 +17,7 @@ export const accountSchema = v.object({
     account: v.nullable(v.object({ type: v.string(), planType: v.optional(v.string()) })),
 });
 export const modelsSchema = v.object({
-    data: v.array(v.object({ model: v.string(), isDefault: v.boolean() })),
+    data: v.pipe(v.array(miraModelSchema), v.maxLength(100)),
     nextCursor: v.nullable(v.string()),
 });
 export const initializeSchema = v.object({ codexHome: v.string() });
@@ -55,10 +56,17 @@ export interface RuntimeTool {
     name: string;
     description: string;
     inputSchema: Record<string, unknown>;
-    execute: (input: unknown, signal: AbortSignal) => Promise<string>;
+    execute: (
+        input: unknown,
+        signal: AbortSignal,
+        call: { callId: string; threadId: string; turnId: string }
+    ) => Promise<string>;
 }
 export interface TurnResult {
     id: string;
     status: "completed" | "interrupted" | "failed";
     text: string;
 }
+export type RuntimeInput =
+    | { type: "text"; text: string; text_elements: [] }
+    | { type: "localImage"; path: string };

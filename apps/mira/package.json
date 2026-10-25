@@ -2,9 +2,19 @@
     "name": "@homelab/mira",
     "private": true,
     "type": "module",
+    "exports": {
+        "./data/*": "./src/server/data/*.ts",
+        "./files/*": "./src/server/files/*.ts",
+        "./runtime/*": "./src/server/runtime/*.ts"
+    },
     "dependencies": {
+        "@homelab/contracts": "workspace:*",
+        "@homelab/notifications": "workspace:*",
+        "@homelab/scheduling": "workspace:*",
         "@openai/codex": "0.164.0",
+        "drizzle-orm": "1.0.0-rc.5",
         "effect": "4.0.5",
+        "unpdf": "1.9.1",
         "valibot": "1.5.0"
     }
 }

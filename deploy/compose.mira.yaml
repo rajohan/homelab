@@ -1,0 +1,65 @@
+# Optional Mira executor and shared file storage; activation is separate from publication.
+services:
+  dashboard:
+    environment:
+      HOMELAB_DASHBOARD_DATABASE_URL:
+      HOMELAB_MIRA_FILES_DIR: /var/lib/mira/files
+    volumes:
+      - type: bind
+        source: ${HOMELAB_MIRA_FILES_DIR:?Set the private shared attachment directory}
+        target: /var/lib/mira/files
+        bind:
+          create_host_path: false
+  mira:
+    image: ${HOMELAB_MIRA_IMAGE:?Set the tested Mira digest reference from container-images.json}
+    pull_policy: always
+    environment:
+      NODE_ENV: production
+      HOMELAB_DASHBOARD_DATABASE_URL:
+      HOMELAB_MIRA_CONFIG: /etc/homelab-mira/runtime.json
+      HOMELAB_MIRA_FILES_DIR: /var/lib/mira/files
+      HOMELAB_MIRA_HEALTH_PORT: "3440"
+    volumes:
+      - type: bind
+        source: ${HOMELAB_MIRA_CONFIG:?Set the nonsecret Mira runtime JSON path}
+        target: /etc/homelab-mira/runtime.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${HOMELAB_MIRA_CODEX_HOME:?Set Mira's dedicated Codex profile directory}
+        target: /var/lib/mira/codex
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${HOMELAB_MIRA_FILES_DIR:?Set the private shared attachment directory}
+        target: /var/lib/mira/files
+        bind:
+          create_host_path: false
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 35s
+    cpus: 2
+    mem_limit: 2g
+    pids_limit: 128
+    tmpfs: ["/tmp:rw,nosuid,nodev,size=128m,mode=1777"]
+    healthcheck:
+      test:
+        [
+          CMD,
+          bun,
+          -e,
+          "const r = await fetch('http://127.0.0.1:3440/health/ready'); process.exit(r.ok ? 0 : 1)",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    logging:
+      driver: local
+      options:
+        max-size: 5m
+        max-file: "2"

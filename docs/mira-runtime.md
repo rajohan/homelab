@@ -1,8 +1,10 @@
 # Mira runtime qualification
 
-`apps/mira` introduces a server-only Codex app-server pilot. It is not yet a deployed
-assistant service. There is no public port, dashboard API, production scheduler or
-automatic tool access in this change. Auth and dashboard builds remain independent.
+`apps/mira` contains the isolated Codex app-server adapter and qualification CLI used
+by the separate Mira executor. The product core adds authenticated dashboard APIs,
+durable state, scheduling and explicit product tools; see [Mira](mira.md). Production
+cutover has not occurred. The runtime's stdio connection is private, and auth and
+dashboard builds remain independent.
 
 The [official app-server protocol](https://learn.chatgpt.com/docs/app-server) provides
 authentication, streaming, thread restoration, host tools and interruption over a
@@ -99,10 +101,10 @@ sessions or network calls.
 
 ## Before production integration
 
-- Persist product conversations, turns and outcomes separately from provider IDs;
-  reconcile uncertain outcomes rather than replaying actions after a timeout.
-- Add authenticated dashboard transport, typed operations and durable tool receipts.
-  Replace the pilot-only instructions and synthetic registry with scoped services.
+- The product core now persists conversations, turns, outcomes and tool receipts
+  separately from provider IDs. Authenticated dashboard operations and scoped product
+  tools are implemented. Retain the reconciliation rules when adding external effects;
+  an uncertain receipt must not become an automatic retry.
 - Enforce service-owned directories and process/resource restrictions. A configured
   executable/path is operator authority, not user chat input.
 - Add runtime replacement/drain coordination and update verification to the Mira
@@ -130,11 +132,13 @@ pinned system skill paths; administrator skills and discovery errors fail closed
 The echo qualification validates its input nonce and returns a different random
 receipt, proving both argument delivery and tool-output propagation.
 
-The selected native executable must report exactly the pinned Codex version before
-it can be qualified. Launch arguments and effective configuration disable the
-built-in sleep tool as well as shell, browser and other implicit capabilities.
-Thread start and resume must retain the canonical workspace, an empty list of
-instruction sources, untrusted approvals and a read-only sandbox without network
-access. Resume qualification rejects a second echo-tool call, and the final
-recovery response must equal the requested marker. Cancellation is rechecked after
-listener registration so an abort cannot be lost in that interval.
+The native executable must report the exact pinned Codex version under the scrubbed
+child environment. The version probe has a time and output limit. Thread start and
+resume also validate the effective canonical workspace, empty instruction sources,
+untrusted approval policy and read-only sandbox without network access. The default
+sleep tool is explicitly disabled with the other ambient capabilities.
+
+Resume qualification requires the exact earlier receipt without another echo-tool
+call. Recovery requires exactly `MIRA_READY`; a refusal that merely contains the
+marker fails. Cancellation is rechecked after listener registration to close the
+abort race. The strengthened isolated live qualification passed on 2026-10-24.

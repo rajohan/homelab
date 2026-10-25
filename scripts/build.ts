@@ -1,4 +1,4 @@
-import { cp, realpath, rm } from "node:fs/promises";
+import { cp, mkdir, realpath, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -13,10 +13,10 @@ export async function main(): Promise<void> {
     const applicationsRoot = path.resolve(repositoryRoot, "apps");
 
     const requested = process.argv.slice(2);
-    const apps = requested.length === 0 ? ["auth", "dashboard"] : requested;
+    const apps = requested.length === 0 ? ["auth", "dashboard", "mira"] : requested;
 
-    if (apps.some((app) => app !== "auth" && app !== "dashboard")) {
-        throw new Error("Usage: bun run build [auth|dashboard]");
+    if (apps.some((app) => !["auth", "dashboard", "mira"].includes(app))) {
+        throw new Error("Usage: bun run build [auth|dashboard|mira]");
     }
 
     for (const app of apps) {
@@ -31,15 +31,32 @@ export async function main(): Promise<void> {
         }
         await rm(outputDirectory, { recursive: true, force: true });
 
+        const additionalEntries =
+            app === "dashboard"
+                ? [
+                      path.resolve(applicationRoot, "src/worker/worker.ts"),
+                      path.resolve(applicationRoot, "src/worker/migrate.ts"),
+                  ]
+                : [
+                      path.resolve(
+                          applicationRoot,
+                          app === "auth"
+                              ? "src/server/cli/admin.ts"
+                              : "src/server/testing/smoke.ts"
+                      ),
+                  ];
         const result = await Bun.build({
             entrypoints: [
                 path.resolve(applicationRoot, "src/server/index.ts"),
                 ...(app === "auth"
-                    ? [path.resolve(applicationRoot, "src/server/cli/admin.ts")]
+                    ? []
                     : [
-                          path.resolve(applicationRoot, "src/worker/worker.ts"),
-                          path.resolve(applicationRoot, "src/worker/migrate.ts"),
+                          path.resolve(
+                              applicationsRoot,
+                              "mira/src/server/files/miraPdf.ts"
+                          ),
                       ]),
+                ...additionalEntries,
             ],
             outdir: outputDirectory,
             // SPA deep links must load the same assets as the site root.
@@ -67,7 +84,12 @@ export async function main(): Promise<void> {
             throw new Error(`The ${app} build failed.`);
         }
         await cp(
-            path.resolve(applicationRoot, "migrations"),
+            path.resolve(
+                app === "mira"
+                    ? path.join(applicationsRoot, "dashboard")
+                    : applicationRoot,
+                "migrations"
+            ),
             path.resolve(outputDirectory, "migrations"),
             { recursive: true }
         );
@@ -77,6 +99,32 @@ export async function main(): Promise<void> {
                 path.resolve(outputDirectory, "config"),
                 { recursive: true }
             );
+        if (app === "mira") {
+            const triples: Record<string, string> = {
+                "linux-x64": "x86_64-unknown-linux-musl",
+                "linux-arm64": "aarch64-unknown-linux-musl",
+                "darwin-x64": "x86_64-apple-darwin",
+                "darwin-arm64": "aarch64-apple-darwin",
+                "win32-x64": "x86_64-pc-windows-msvc",
+                "win32-arm64": "aarch64-pc-windows-msvc",
+            };
+            const platform = `${process.platform}-${process.arch}`;
+            const triple = triples[platform];
+            if (!triple) throw new Error("Unsupported Mira runtime platform.");
+            const codexRoot = path.dirname(
+                Bun.resolveSync("@openai/codex/package.json", applicationRoot)
+            );
+            const nativeRoot = path.dirname(
+                Bun.resolveSync(`@openai/codex-${platform}/package.json`, codexRoot)
+            );
+            const executable = process.platform === "win32" ? "codex.exe" : "codex";
+            const destination = path.join(outputDirectory, "runtime");
+            await mkdir(destination);
+            await cp(
+                path.join(nativeRoot, "vendor", triple, "bin", executable),
+                path.join(destination, executable)
+            );
+        }
         console.info(
             `Built ${app}: ${result.outputs.length} artifacts in apps/${app}/dist.`
         );

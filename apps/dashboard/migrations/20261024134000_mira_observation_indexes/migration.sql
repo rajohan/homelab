@@ -1,0 +1,2 @@
+CREATE INDEX "mira_conversations_activity" ON "mira_conversations" ("owner","updated_at","id") WHERE "deleted_at" is null;--> statement-breakpoint
+CREATE INDEX "mira_tasks_due" ON "mira_tasks" ("due_at","id") WHERE "deleted_at" is null and "status" <> 'done' and "due_at" is not null;
