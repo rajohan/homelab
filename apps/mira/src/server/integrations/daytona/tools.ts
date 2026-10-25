@@ -1,5 +1,6 @@
 import {
     miraDaytonaContentSchema,
+    miraDaytonaFilterSchema,
     miraDaytonaSaveSchema,
 } from "@homelab/contracts/miraDaytona";
 import { idSchema } from "@homelab/contracts/operations";
@@ -42,12 +43,20 @@ export function createDaytonaTools(
             name: "mira_daytona_jobs",
             automatic: true,
             description:
-                "List local cloud jobs for this conversation. No provider call or execution. A completed command and confirmed sandbox cleanup are separate; never claim both unless recorded.",
-            inputSchema: { type: "object", additionalProperties: false, properties: {} },
+                "List local cloud jobs for this conversation. Pass nextCursor as before to read older jobs. No provider call or execution. A completed command and confirmed sandbox cleanup are separate; never claim both unless recorded.",
+            inputSchema: {
+                type: "object",
+                additionalProperties: false,
+                properties: { before: { type: "string" } },
+            },
             action: async (input, signal) => {
                 signal.throwIfAborted();
-                v.parse(v.strictObject({}), input);
+                const { before } = v.parse(
+                    v.strictObject({ before: miraDaytonaFilterSchema.entries.before }),
+                    input
+                );
                 const page = await listMiraDaytona(context, {
+                    before,
                     conversationId: run.conversationId,
                 });
                 return {

@@ -1599,3 +1599,49 @@ test("cloud history opens the selected draft and returns to its list without sta
         cleanup();
     }
 });
+
+test("cancelling a reviewed cloud draft closes its stale review dialog", async () => {
+    const job = cloudJob();
+    const requested: unknown[] = [];
+    const request = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+            (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+                if (typeof init?.body === "string")
+                    requested.push(
+                        (JSON.parse(init.body) as { "0": { json: unknown } })["0"].json
+                    );
+                return Promise.resolve(
+                    Response.json([
+                        {
+                            result: {
+                                data: serialize({
+                                    ...job,
+                                    version: 2,
+                                    state: "cancelled",
+                                }),
+                            },
+                        },
+                    ])
+                );
+            },
+            { preconnect: fetch.preconnect }
+        )
+    );
+    let closed = false;
+    const cleanup = fixture(
+        <DaytonaDetails
+            job={job}
+            onClose={() => {
+                closed = true;
+            }}
+        />
+    );
+    try {
+        await userEvent.setup().click(screen.getByRole("button", { name: "Cancel job" }));
+        await waitFor(() => expect(closed).toBe(true));
+        expect(requested).toEqual([{ id: job.id, version: job.version }]);
+    } finally {
+        cleanup();
+        request.mockRestore();
+    }
+});

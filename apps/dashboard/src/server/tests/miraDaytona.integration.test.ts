@@ -6,6 +6,7 @@ import path from "node:path";
 
 import type { MiraDaytonaContent, MiraDaytonaJob } from "@homelab/contracts/miraDaytona";
 import { capabilities } from "@homelab/contracts/operations";
+import { resumeMiraControls } from "@homelab/mira/data/automations";
 import {
     approveMiraDaytona,
     publishDaytonaBinding,
@@ -845,6 +846,127 @@ test("Daytona cannot confirm deletion when the second ownership inspection loses
         expect(p.writes().filter((call) => call.init.method === "DELETE")).toHaveLength(
             0
         );
+    } finally {
+        await f.close();
+    }
+});
+
+for (const qualification of [false, undefined])
+    test(`Daytona timed resume preserves its pause when qualification is ${String(qualification)}`, async () => {
+        const f = await fixture();
+        try {
+            const controls = await f.api.controls.list();
+            const control = controls.find((row) => row.key === "integration:daytona")!;
+            await f.api.controls.setEnabled({
+                key: control.key,
+                version: control.version,
+                enabled: false,
+                reason: "Wait for qualified snapshot",
+                until: new Date(Date.now() + 60_000).toISOString(),
+            });
+            await f.client`UPDATE mira_switches SET until=now()-interval '1 second' WHERE owner=${configuration.owner} AND key='integration:daytona'`;
+            const entry = {
+                owner: configuration.owner,
+                key: "daytona",
+                bindingHash: daytonaBindingHash(configuration),
+                sendConfigured: qualification,
+            };
+            await f.client`UPDATE mira_runtime_status SET integrations=${JSON.stringify([entry])}::text::jsonb,heartbeat_at=now() WHERE id=1`;
+            await f.client.begin((query) =>
+                resumeMiraControls(query, new Date(), configuration.owner)
+            );
+            const pausedControls = await f.api.controls.list();
+            const paused = pausedControls.find((row) => row.key === control.key)!;
+            expect(paused).toMatchObject({
+                enabled: false,
+                reason: "Wait for qualified snapshot",
+                version: control.version + 1,
+            });
+            expect(paused.until).not.toBeNull();
+            await f.client`UPDATE mira_runtime_status SET integrations=${JSON.stringify([{ ...entry, sendConfigured: true }])}::text::jsonb,heartbeat_at=now() WHERE id=1`;
+            await f.client.begin((query) =>
+                resumeMiraControls(query, new Date(), configuration.owner)
+            );
+            const resumedControls = await f.api.controls.list();
+            expect(resumedControls.find((row) => row.key === control.key)).toMatchObject({
+                enabled: true,
+                reason: null,
+                until: null,
+                version: control.version + 2,
+            });
+        } finally {
+            await f.close();
+        }
+    });
+
+test("Daytona model listing paginates older jobs within the current conversation", async () => {
+    const f = await fixture();
+    try {
+        const chat = await f.api.conversations.create({ title: "Cloud history" });
+        const expected = [];
+        for (let index = 0; index < 21; index++) {
+            const id = crypto.randomUUID();
+            await f.api.daytona.save({
+                id,
+                version: 0,
+                conversationId: chat.id,
+                taskId: null,
+                content: { ...defaultContent, title: `Job ${index}` },
+            });
+            expected.push(id);
+        }
+        await f.save();
+        await f.api.conversations.send({
+            conversationId: chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Find older jobs",
+            attachmentIds: [],
+        });
+        const run = await claimMiraRun(f.client, crypto.randomUUID(), "foreground");
+        expect(run).not.toBeNull();
+        const tools = createMiraTools(
+            f.client,
+            run!,
+            f.directory,
+            undefined,
+            undefined,
+            undefined,
+            configuration
+        );
+        const list = tools.find((tool) => tool.name === "mira_daytona_jobs")!;
+        const call = { threadId: "synthetic", turnId: "synthetic" };
+        type Page = {
+            ok: boolean;
+            result: { rows: { id: string }[]; nextCursor: string | null };
+        };
+        const first = JSON.parse(
+            await list.execute({}, signal, { ...call, callId: "page-one" })
+        ) as Page;
+        expect(first.ok).toBe(true);
+        expect(first.result.rows).toHaveLength(20);
+        expect(typeof first.result.nextCursor).toBe("string");
+        const second = JSON.parse(
+            await list.execute({ before: first.result.nextCursor }, signal, {
+                ...call,
+                callId: "page-two",
+            })
+        ) as Page;
+        expect(second.ok).toBe(true);
+        expect(second.result.rows).toHaveLength(1);
+        expect(second.result.nextCursor).toBeNull();
+        const ids = [...first.result.rows, ...second.result.rows].map(
+            (job: { id: string }) => job.id
+        );
+        expect(new Set(ids).size).toBe(21);
+        expect(ids.toSorted()).toEqual(expected.toSorted());
+        expect(
+            JSON.parse(
+                await list.execute({ before: "invalid-cursor" }, signal, {
+                    ...call,
+                    callId: "invalid-page",
+                })
+            )
+        ).toMatchObject({ ok: false });
     } finally {
         await f.close();
     }

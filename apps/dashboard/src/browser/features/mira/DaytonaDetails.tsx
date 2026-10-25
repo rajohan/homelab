@@ -51,6 +51,11 @@ export function DaytonaDetails({
     const cancel = useOperation(() =>
         api.mira.daytona.cancel.mutate({ id: job.id, version: job.version })
     );
+    const cancelJob = async () => {
+        await cancel.mutateAsync(undefined);
+        if (initial.state === "draft") onClose();
+        else await query.refetch();
+    };
     const busy = approve.isPending || cancel.isPending;
     const active = ["draft", "queued", "running", "needs_attention"].includes(job.state);
     return (
@@ -185,12 +190,7 @@ export function DaytonaDetails({
                             variant="secondary"
                             busy={cancel.isPending}
                             disabled={busy}
-                            onClick={() =>
-                                void cancel
-                                    .mutateAsync(undefined)
-                                    .then(() => query.refetch())
-                                    .catch(() => {})
-                            }
+                            onClick={() => void cancelJob().catch(() => {})}
                         >
                             Cancel job
                         </Button>

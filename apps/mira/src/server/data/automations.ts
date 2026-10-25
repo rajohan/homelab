@@ -276,7 +276,7 @@ export async function resumeMiraControls(
                         WHERE c.owner=${row.owner} AND c.key=${row.key}
                         AND receiver.heartbeat_at > now()-interval '45 seconds'
                         AND runtime.heartbeat_at > now()-interval '45 seconds'
-                        AND runtime.integrations @> jsonb_build_array(jsonb_build_object('owner',c.owner,'key',${integration}::text,'bindingHash',c.binding_hash))) AS current`;
+                        AND runtime.integrations @> jsonb_build_array(jsonb_build_object('owner',c.owner,'key',${integration}::text,'bindingHash',c.binding_hash) || CASE WHEN ${integration}::text='daytona' THEN '{"sendConfigured":true}'::jsonb ELSE '{}'::jsonb END)) AS current`;
                 if (!binding?.current) continue;
             }
             const [resumed] = await query<
