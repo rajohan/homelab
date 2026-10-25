@@ -396,6 +396,8 @@ for (const change of [
     { networkAllowList: "0.0.0.0/0" },
     { domainAllowList: "*" },
     { outboundProxyUrl: "https://untrusted.example/" },
+    { otelEndpointOverride: "https://private.example/collector" },
+    { otelEndpointOverride: false },
     { kvm: true },
     { linkedSandboxId: otherId },
     { volumes: [{ id: otherId }] },
@@ -430,6 +432,18 @@ for (const change of [
         expect(await client.destroy({ runId, sandboxId }, signal)).toBe("requested");
         expect(calls.filter((call) => call.init.method === "DELETE")).toHaveLength(1);
         expect(calls.at(-1)?.path).toBe(`/api/sandbox/${sandboxId}`);
+    });
+
+for (const otelEndpointOverride of [undefined, null, ""])
+    test("Daytona accepts only an unset telemetry collector override", async () => {
+        const { client } = transport((path, init) =>
+            path.includes("sandbox/")
+                ? Response.json({ ...sandbox(), otelEndpointOverride })
+                : fixture(path, init)
+        );
+        const observed = await client.inspect({ runId, sandboxId }, signal);
+        expect(observed?.settingsMatch).toBe(true);
+        expect(observed).not.toHaveProperty("otelEndpointOverride");
     });
 
 test("Daytona accepts a name-only snapshot receipt only after resolving the configured immutable snapshot", async () => {

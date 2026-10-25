@@ -32,6 +32,7 @@ const policySchema = v.object({
     networkAllowList: v.nullish(v.literal("")),
     domainAllowList: v.nullish(v.literal("")),
     outboundProxyUrl: v.nullish(v.literal("")),
+    otelEndpointOverride: v.nullish(v.literal("")),
     kvm: v.literal(false),
     linkedSandboxId: v.nullish(v.literal("")),
     volumes: v.optional(v.pipe(v.array(v.unknown()), v.length(0)), []),
