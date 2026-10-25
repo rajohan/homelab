@@ -142,6 +142,21 @@ test("sandbox subprocess uses literal argv, an explicit environment and bounded 
             secret: null,
         });
         expect(JSON.parse(result.stdout)).toMatchObject({ keys: ["ONLY"] });
+        const largePatch = await runSandboxProcess(
+            [
+                process.execPath,
+                "--no-env-file",
+                "-e",
+                'process.stdout.write("x".repeat(800000));process.stderr.write("diagnostic")',
+            ],
+            { cwd, env: {}, signal, timeoutMs: 5000, maxBytes: 1_048_576 }
+        );
+        expect(largePatch).toMatchObject({
+            exitCode: 0,
+            truncated: false,
+            stderr: "diagnostic",
+        });
+        expect(Buffer.byteLength(largePatch.stdout)).toBe(800_000);
         const noisy = await runSandboxProcess(
             [
                 process.execPath,

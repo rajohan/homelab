@@ -132,6 +132,7 @@ function provider(
         command: string | null = null,
         completed = false;
     const calls: { url: URL; init: RequestInit }[] = [];
+    const createdAt = Date.now() - 1000;
     const sandbox = () => ({
         id: sandboxId,
         name: daytonaSandboxName(configuration, jobId),
@@ -155,8 +156,8 @@ function provider(
         autoDeleteInterval: 0,
         autoStopInterval: 5,
         autoPauseInterval: 0,
-        createdAt: new Date(Date.now() - 1000).toISOString(),
-        autoDestroyAt: new Date(Date.now() + 899_000).toISOString(),
+        createdAt: new Date(createdAt).toISOString(),
+        autoDestroyAt: new Date(createdAt + 900_000).toISOString(),
     });
     const request = Object.assign(
         async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {

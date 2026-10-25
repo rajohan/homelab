@@ -52,10 +52,21 @@ export async function runSandboxProcess(
         return Buffer.from(combined.subarray(Math.max(0, combined.length - limit)));
     };
     child.stdout.on("data", (chunk: Buffer) => {
-        stdout = take(stdout, chunk, Math.ceil(maxBytes / 2));
+        // Borrow unused space while retaining both tails when both streams are noisy.
+        stdout = take(
+            stdout,
+            chunk,
+            maxBytes - Math.min(stderr.length, Math.floor(maxBytes / 2))
+        );
+        stderr = take(stderr, Buffer.alloc(0), maxBytes - stdout.length);
     });
     child.stderr.on("data", (chunk: Buffer) => {
-        stderr = take(stderr, chunk, Math.floor(maxBytes / 2));
+        stderr = take(
+            stderr,
+            chunk,
+            maxBytes - Math.min(stdout.length, Math.ceil(maxBytes / 2))
+        );
+        stdout = take(stdout, Buffer.alloc(0), maxBytes - stderr.length);
     });
     const kill = () => {
         if (child.pid && process.platform !== "win32") {
