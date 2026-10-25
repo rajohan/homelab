@@ -8,6 +8,7 @@ import { createConversation, enqueueTurn } from "@homelab/mira/data/conversation
 import { createReport, saveMemory } from "@homelab/mira/data/documents";
 import { saveMiraFile } from "@homelab/mira/data/files";
 import { saveMiraMail } from "@homelab/mira/data/mail";
+import { saveMiraPublication } from "@homelab/mira/data/publications";
 import { claimMiraRun, finishMiraRun } from "@homelab/mira/data/queue";
 import { saveTask } from "@homelab/mira/data/tasks";
 
@@ -43,11 +44,16 @@ export async function main(port = 3330): Promise<void> {
         inboxId: "synthetic@agentmail.to",
         signingSecret: `whsec_${Buffer.from("synthetic-webhook-key-32-bytes-000").toString("base64")}`,
     };
+    const previewHereNow = {
+        owner: context.owner,
+        accountId: "11111111-1111-4111-8111-111111111111",
+    };
     const operations = {
         ...database,
         registry: createJobRegistry([]),
         miraFilesDirectory: directory,
         agentMailHook: previewMail,
+        hereNowBinding: previewHereNow,
     };
     const principal = { kind: "human" as const, id: context.owner, capabilities };
     const worker = crypto.randomUUID();
@@ -77,6 +83,40 @@ export async function main(port = 3330): Promise<void> {
         for (let index = 1; index <= 18; index++)
             await createConversation(context, `Preview · Earlier conversation ${index}`);
         const chat = await createConversation(context, "Preview · Plan the week");
+        const publicationFiles: { id: string; path: string }[] = [];
+        for (const name of [
+            "index.html",
+            "about.html",
+            "tasks.html",
+            "reports.html",
+            "maintenance.html",
+            "contact.html",
+            "privacy.html",
+            "status.html",
+        ]) {
+            const page = await saveMiraFile(context, directory, {
+                id: crypto.randomUUID(),
+                name,
+                bytes: new TextEncoder().encode("<h1>Synthetic publication preview</h1>"),
+            });
+            publicationFiles.push({ id: page.id, path: name });
+        }
+        await saveMiraPublication(
+            context,
+            {
+                id: Bun.randomUUIDv7(),
+                version: 0,
+                conversationId: chat.id,
+                content: {
+                    title: "Dashboard improvement preview",
+                    target: null,
+                    visibility: "anyone_with_link",
+                    files: publicationFiles,
+                },
+            },
+            previewHereNow
+        );
+
         await saveMiraMail(
             context,
             {

@@ -1,8 +1,10 @@
+import { miraPublicationSaveSchema } from "@homelab/contracts/miraPublication";
 import type { SQL } from "bun";
 import * as v from "valibot";
 
-import { MiraFailure } from "../../data/context";
+import { MiraFailure, type MiraContext } from "../../data/context";
 import { hereNowBindingCurrent } from "../../data/herenow";
+import { listMiraPublications, saveMiraPublication } from "../../data/publications";
 import type { MiraClaim } from "../../data/queue";
 import type { RuntimeTool } from "../../runtime/protocol";
 import {
@@ -13,12 +15,12 @@ import {
 import { HereNowReader } from "./reader";
 
 /**
- * Expose passive HereNow reads through the current run's durable tool boundary.
+ * Expose HereNow reads and local drafts through the current run's durable tool boundary.
  * @param client - Product connection used to recheck account, pause and run lease.
  * @param run - Leased owned run; arguments cannot select a different account.
  * @param configuration - Service-owned credential and identity, absent before provisioning.
  * @param request - HTTP transport, replace only for synthetic qualification.
- * @returns Stable read declarations for manual and automatic runs; no publishing or notification acknowledgement.
+ * @returns Scoped read and draft declarations; external publication requires a separate human approval.
  */
 export function createHereNowTools(
     client: SQL,
@@ -27,7 +29,12 @@ export function createHereNowTools(
     request: typeof fetch = fetch
 ): (Omit<RuntimeTool, "execute"> & {
     automatic: boolean;
-    action: (input: unknown, signal: AbortSignal) => Promise<unknown>;
+    transactional?: boolean;
+    action: (
+        input: unknown,
+        signal: AbortSignal,
+        context?: MiraContext
+    ) => Promise<unknown>;
 })[] {
     const reader = configuration ? new HereNowReader(configuration, request) : undefined;
     const access = async (signal: AbortSignal, version?: number) => {
@@ -69,6 +76,90 @@ export function createHereNowTools(
         return { data: result, trust: "untrusted_site_metadata" };
     };
     return [
+        {
+            name: "mira_herenow_publications",
+            automatic: true,
+            description:
+                "Read local publication drafts and outcomes in this conversation. This does not contact here.now or publish anything.",
+            inputSchema: { type: "object", properties: {}, additionalProperties: false },
+            action: (input) => {
+                v.parse(v.strictObject({}), input);
+                return listMiraPublications(
+                    { client, owner: run.owner, actor: "mira" },
+                    { conversationId: run.conversationId }
+                );
+            },
+        },
+        {
+            name: "mira_herenow_publication_draft",
+            automatic: false,
+            transactional: true,
+            description:
+                "Prepare a local public publication draft from files shared in this conversation. Supply a stable UUID and version 0 for a new draft, or the current version to edit. target=null creates a site; updating an existing public site requires its slug and current baseVersionId from a fresh read and replaces every file. No content is uploaded by this tool. Tell the operator to review Publications in the conversation before any publication can happen.",
+            inputSchema: {
+                type: "object",
+                additionalProperties: false,
+                required: ["id", "version", "content"],
+                properties: {
+                    id: { type: "string" },
+                    version: { type: "integer", minimum: 0 },
+                    content: {
+                        type: "object",
+                        additionalProperties: false,
+                        required: ["title", "target", "visibility", "files"],
+                        properties: {
+                            title: { type: "string" },
+                            visibility: { const: "anyone_with_link" },
+                            target: {
+                                anyOf: [
+                                    { type: "null" },
+                                    {
+                                        type: "object",
+                                        additionalProperties: false,
+                                        required: ["slug", "baseVersionId"],
+                                        properties: {
+                                            slug: { type: "string" },
+                                            baseVersionId: { type: "string" },
+                                        },
+                                    },
+                                ],
+                            },
+                            files: {
+                                type: "array",
+                                minItems: 1,
+                                maxItems: 8,
+                                items: {
+                                    type: "object",
+                                    additionalProperties: false,
+                                    required: ["id", "path"],
+                                    properties: {
+                                        id: { type: "string" },
+                                        path: { type: "string" },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            action: (input, signal, context) => {
+                signal.throwIfAborted();
+                if (!context?.transaction)
+                    throw new MiraFailure(
+                        "FORBIDDEN",
+                        "Publication drafts require the owned tool transaction."
+                    );
+                const parsed = v.parse(
+                    v.omit(miraPublicationSaveSchema, ["conversationId"]),
+                    input
+                );
+                return saveMiraPublication(
+                    context,
+                    { ...parsed, conversationId: run.conversationId },
+                    configuration
+                );
+            },
+        },
         {
             name: "mira_herenow_account",
             automatic: true,

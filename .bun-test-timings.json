@@ -61,6 +61,7 @@
     "packages/ui/src/lib/queryRefresh.test.ts": 0,
     "scripts/testing/coverageInventory.test.ts": 0,
     "apps/mira/src/server/integrations/moltbook/moltbook.test.ts": 3,
-    "apps/mira/src/server/integrations/herenow/herenow.test.ts": 3
+    "apps/mira/src/server/integrations/herenow/herenow.test.ts": 3,
+    "apps/mira/src/server/integrations/herenow/publisher.test.ts": 6
   }
 }

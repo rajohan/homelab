@@ -13,7 +13,16 @@ import {
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Archive, Brain, Files, Mail, MessageSquare, Pencil, Trash2 } from "lucide-react";
+import {
+    Globe,
+    Archive,
+    Brain,
+    Files,
+    Mail,
+    MessageSquare,
+    Pencil,
+    Trash2,
+} from "lucide-react";
 import { useRef, useState } from "react";
 
 import { api } from "../../api/client";
@@ -36,7 +45,7 @@ export function ChatPanel({
     onLibrary,
 }: {
     readonly id: string;
-    readonly onLibrary: (library: "files" | "memory" | "mail") => void;
+    readonly onLibrary: (library: "files" | "memory" | "mail" | "publications") => void;
     readonly onChooseConversation: () => void;
 }) {
     const [text, setText] = useState("");
@@ -135,6 +144,12 @@ export function ChatPanel({
                             label="Conversation actions"
                             disabled={change.isPending || rename.isPending}
                             actions={[
+                                {
+                                    id: "publications",
+                                    label: "Publications",
+                                    icon: Globe,
+                                    onSelect: () => onLibrary("publications"),
+                                },
                                 {
                                     id: "mail",
                                     label: "Email drafts",
