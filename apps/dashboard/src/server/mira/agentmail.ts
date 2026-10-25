@@ -1,3 +1,4 @@
+import { publishHereNowBinding } from "@homelab/mira/data/herenow";
 import { publishAgentMailReceiver } from "@homelab/mira/data/integrations";
 import { publishMoltbookBinding } from "@homelab/mira/data/moltbook";
 import {
@@ -111,7 +112,10 @@ export function agentMailWebhookReceiver(
  * @returns Shutdown hook that stops publication before the owning pool closes.
  */
 export function agentMailReceiverHeartbeat(
-    operations?: Pick<OperationsRuntime, "client" | "agentMailHook" | "moltbookBinding">
+    operations?: Pick<
+        OperationsRuntime,
+        "client" | "agentMailHook" | "moltbookBinding" | "hereNowBinding"
+    >
 ): () => Promise<void> {
     let pending: Promise<unknown> | undefined;
     const publish = () => {
@@ -119,6 +123,7 @@ export function agentMailReceiverHeartbeat(
         pending = Promise.allSettled([
             publishAgentMailReceiver(operations.client, operations.agentMailHook),
             publishMoltbookBinding(operations.client, operations.moltbookBinding),
+            publishHereNowBinding(operations.client, operations.hereNowBinding),
         ])
             .catch(() => {
                 /* Expired evidence keeps timed resumption paused until the database recovers. */

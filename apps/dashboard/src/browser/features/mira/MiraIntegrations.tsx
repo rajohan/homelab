@@ -78,11 +78,7 @@ export function MiraIntegrations() {
                                 integration.key === "integration:agentmail" ? Mail : Globe
                             }
                             badge={<Badge>{label}</Badge>}
-                            description={
-                                integration.key === "integration:agentmail"
-                                    ? "Read incoming email and trigger enabled mail automations."
-                                    : "Read your Moltbook profile, feed and selected posts."
-                            }
+                            description={integration.description}
                             actions={
                                 control && (
                                     <Button

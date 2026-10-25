@@ -6,6 +6,10 @@ import {
     type AgentMailHookConfiguration,
 } from "@homelab/mira/integrations/agentmail/configuration";
 import {
+    hereNowBinding,
+    type HereNowBinding,
+} from "@homelab/mira/integrations/herenow/configuration";
+import {
     moltbookBinding,
     type MoltbookBinding,
 } from "@homelab/mira/integrations/moltbook/configuration";
@@ -49,6 +53,7 @@ export interface OperationsConfiguration {
     readonly miraFilesDirectory?: string | undefined;
     readonly agentMailHook?: AgentMailHookConfiguration | undefined;
     readonly moltbookBinding?: MoltbookBinding | undefined;
+    readonly hereNowBinding?: HereNowBinding | undefined;
     readonly maintenanceTargets?: readonly MaintenanceTarget[];
     readonly releaseRepository?: string | undefined;
     readonly dockerHub?: DockerHubCredential | undefined;
@@ -249,6 +254,7 @@ export function parseOperationsConfiguration(
         miraFilesDirectory: environment.HOMELAB_MIRA_FILES_DIR,
         agentMailHook: agentMailHookConfiguration(environment),
         moltbookBinding: moltbookBinding(environment),
+        hereNowBinding: hereNowBinding(environment),
         maintenanceTargets: parseMaintenanceTargets(
             environment.HOMELAB_DASHBOARD_MAINTENANCE_TARGETS,
             updateTargets

@@ -2,8 +2,10 @@ import {
     agentMailBindingHash,
     type AgentMailBinding,
 } from "../integrations/agentmail/configuration";
+import type { HereNowBinding } from "../integrations/herenow/configuration";
 import type { MoltbookBinding } from "../integrations/moltbook/configuration";
 import type { MiraContext, MiraQuery } from "./context";
+import { hereNowIntegrationStatus } from "./herenow";
 import { moltbookIntegrationStatus } from "./moltbook";
 
 /**
@@ -36,13 +38,15 @@ export async function agentMailBindingStatus(
  * Read the current operator's provisioned integrations without exposing credentials or other bindings.
  * @param context - Authenticated product owner.
  * @param binding - Dashboard's configured receiver, checked against the executor's inbox.
+ * @param hereNow - Dashboard account mapping for website metadata.
  * @param moltbook - Dashboard account mapping for passive social reads.
  * @returns Configured availability and redacted recovery status; intentional pause stays separate.
  */
 export async function listMiraIntegrations(
     context: MiraContext,
     binding?: AgentMailBinding,
-    moltbook?: MoltbookBinding
+    moltbook?: MoltbookBinding,
+    hereNow?: HereNowBinding
 ) {
     const status =
         binding?.owner === context.owner
@@ -63,12 +67,14 @@ export async function listMiraIntegrations(
         {
             key: "integration:agentmail",
             title: "AgentMail",
+            description: "Read incoming email and trigger enabled mail automations.",
             configured,
             ready: configured && status.fresh && confirmed,
             message,
             lastSuccessAt: configured ? (state?.lastSuccessAt ?? null) : null,
         },
         await moltbookIntegrationStatus(context, moltbook),
+        await hereNowIntegrationStatus(context, hereNow),
     ];
 }
 

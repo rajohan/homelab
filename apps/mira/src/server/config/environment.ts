@@ -1,4 +1,5 @@
 import { agentMailReadConfiguration } from "../integrations/agentmail/configuration";
+import { hereNowReadConfiguration } from "../integrations/herenow/configuration";
 import { moltbookReadConfiguration } from "../integrations/moltbook/configuration";
 import { pilotEnvironment, type PilotConfig } from "../runtime/configuration";
 
@@ -33,5 +34,6 @@ export function miraEnvironment() {
         filesDirectory: process.env.HOMELAB_MIRA_FILES_DIR,
         agentMail: agentMailReadConfiguration(process.env),
         moltbook: moltbookReadConfiguration(process.env),
+        hereNow: hereNowReadConfiguration(process.env),
     };
 }

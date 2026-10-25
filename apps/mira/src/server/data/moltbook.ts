@@ -47,6 +47,7 @@ export async function moltbookIntegrationStatus(
     const base = {
         key: "integration:moltbook",
         title: "Moltbook",
+        description: "Read your Moltbook profile, feed and selected posts.",
         configured: false,
         ready: false,
         message: null as string | null,
