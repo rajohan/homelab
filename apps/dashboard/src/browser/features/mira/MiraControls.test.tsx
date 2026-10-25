@@ -7,6 +7,7 @@ import {
 } from "@homelab/contracts/mira";
 import type { MiraAttachment } from "@homelab/contracts/mira";
 import type { MiraMailDraft } from "@homelab/contracts/miraMail";
+import type { MiraPublication } from "@homelab/contracts/miraPublication";
 import { IdentityClient } from "@homelab/ui/identity/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -26,6 +27,8 @@ import { MailEditor } from "./MailEditor";
 import { MailReview } from "./MailReview";
 import { MiraRunTable } from "./MiraRunTable";
 import { ProposalReview } from "./ProposalReview";
+import { PublicationEditor } from "./PublicationEditor";
+import { PublicationReview } from "./PublicationReview";
 import { RunAutomationButton } from "./RunAutomationButton";
 import { TaskEditor } from "./TaskEditor";
 import { TaskExecution } from "./TaskExecution";
@@ -1020,6 +1023,162 @@ test("existing task edits submit only writable fields accepted by the public sch
         });
         expect(submitted[0]).not.toHaveProperty("createdAt");
         expect(submitted[0]).not.toHaveProperty("updatedAt");
+    } finally {
+        cleanup();
+        request.mockRestore();
+    }
+});
+
+test("publication review shows public visibility and files and retries only the exact displayed approval", async () => {
+    const draft: MiraPublication = {
+        id: crypto.randomUUID(),
+        accountId: "synthetic",
+        version: 2,
+        state: "draft",
+        contentHash: "a".repeat(64),
+        conversationId: null,
+        phase: null,
+        slug: null,
+        providerVersionId: null,
+        message: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        content: {
+            title: "Reviewed publication",
+            target: { slug: "owned-site", baseVersionId: "reviewed-version" },
+            visibility: "anyone_with_link",
+            files: [
+                {
+                    id: crypto.randomUUID(),
+                    name: "Reviewed page.html",
+                    path: "index.html",
+                    mediaType: "text/html",
+                    bytes: 20,
+                    sha256: "b".repeat(64),
+                },
+            ],
+        },
+    };
+    const requested: unknown[] = [];
+    let closed = 0;
+    const request = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+            (_input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+                if (typeof init?.body !== "string")
+                    throw new Error("Expected approval body");
+                const body = JSON.parse(init.body) as { "0": { json: unknown } };
+                requested.push(body["0"].json);
+                return requested.length === 1
+                    ? Promise.reject(new Error("Synthetic response loss"))
+                    : Promise.resolve(
+                          Response.json([{ result: { data: serialize(draft) } }])
+                      );
+            },
+            { preconnect: fetch.preconnect }
+        )
+    );
+    const cleanup = fixture(
+        <PublicationReview
+            draft={draft}
+            onClose={() => {
+                closed++;
+            }}
+        />
+    );
+    try {
+        expect(
+            screen.getByText(/replaces all existing files on owned-site/)
+        ).toBeInTheDocument();
+        expect(
+            screen.getByText(/Anyone with the link can view every file/)
+        ).toBeInTheDocument();
+        expect(screen.getByText("index.html")).toBeInTheDocument();
+        expect(screen.getByRole("link", { name: "Download" })).toHaveAttribute(
+            "href",
+            `/api/mira/files/${draft.content.files[0]!.id}`
+        );
+        const user = userEvent.setup();
+        await user.click(screen.getByRole("button", { name: "Publish publicly" }));
+        await waitFor(() => expect(requested).toHaveLength(1));
+        expect(closed).toBe(0);
+        await waitFor(() =>
+            expect(screen.getByRole("button", { name: "Publish publicly" })).toBeEnabled()
+        );
+        await user.click(screen.getByRole("button", { name: "Publish publicly" }));
+        await waitFor(() => expect(closed).toBe(1));
+        expect(requested).toEqual(
+            Array.from({ length: 2 }, () => ({
+                id: draft.id,
+                version: draft.version,
+                contentHash: draft.contentHash,
+                reviewedContent: draft.content,
+            }))
+        );
+    } finally {
+        cleanup();
+        request.mockRestore();
+    }
+});
+
+test("publication editor preserves title and selected site path through the shared file picker", async () => {
+    const file: MiraAttachment = {
+        id: crypto.randomUUID(),
+        name: "Selected page.html",
+        mediaType: "text/plain; charset=utf-8",
+        bytes: 100,
+        createdAt: new Date().toISOString(),
+    };
+    const requested: unknown[] = [];
+    const request = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+            (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+                const url = input instanceof Request ? input.url : String(input);
+                if (url.includes("files.list"))
+                    return Promise.resolve(
+                        Response.json([
+                            {
+                                result: {
+                                    data: serialize({ rows: [file], nextCursor: null }),
+                                },
+                            },
+                        ])
+                    );
+                if (typeof init?.body !== "string")
+                    throw new Error("Expected draft body");
+                const body = JSON.parse(init.body) as { "0": { json: unknown } };
+                requested.push(body["0"].json);
+                return Promise.resolve(
+                    Response.json([{ result: { data: serialize({}) } }])
+                );
+            },
+            { preconnect: fetch.preconnect }
+        )
+    );
+    const cleanup = fixture(<PublicationEditor onClose={() => {}} />, true);
+    try {
+        const user = userEvent.setup();
+        await user.type(screen.getByLabelText("Title"), "Preserved publication");
+        await user.click(screen.getByRole("button", { name: "Choose file" }));
+        await user.click(
+            await screen.findByRole("button", { name: `Actions for ${file.name}` })
+        );
+        await user.click(screen.getByRole("menuitem", { name: "Attach" }));
+        expect(screen.getByLabelText("Title")).toHaveValue("Preserved publication");
+        const input = screen.getByLabelText(`Published path for ${file.name}`);
+        await user.clear(input);
+        await user.type(input, "assets/index.html");
+        await user.click(screen.getByRole("button", { name: "Save draft" }));
+        await waitFor(() => expect(requested).toHaveLength(1));
+        expect(requested[0]).toMatchObject({
+            version: 0,
+            conversationId: null,
+            content: {
+                title: "Preserved publication",
+                target: null,
+                visibility: "anyone_with_link",
+                files: [{ id: file.id, path: "assets/index.html" }],
+            },
+        });
     } finally {
         cleanup();
         request.mockRestore();

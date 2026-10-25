@@ -27,6 +27,11 @@ import {
     miraMailFilterSchema,
     miraMailSaveSchema,
 } from "@homelab/contracts/miraMail";
+import {
+    miraPublicationSaveSchema,
+    miraPublicationApproveSchema,
+    miraPublicationFilterSchema,
+} from "@homelab/contracts/miraPublication";
 import { idSchema, versionedIdSchema } from "@homelab/contracts/operations";
 import {
     deleteMiraAutomation,
@@ -68,6 +73,12 @@ import {
     saveMiraMail,
 } from "@homelab/mira/data/mail";
 import { listMiraProposals, decideMiraProposal } from "@homelab/mira/data/proposals";
+import {
+    saveMiraPublication,
+    approveMiraPublication,
+    cancelMiraPublication,
+    listMiraPublications,
+} from "@homelab/mira/data/publications";
 import { listMiraRuns } from "@homelab/mira/data/queue";
 import { readMiraRun } from "@homelab/mira/data/runHistory";
 import { readTaskExecution, runMiraTask } from "@homelab/mira/data/taskExecution";
@@ -116,6 +127,37 @@ function execute<T>(
 
 const record = v.strictObject({ id: idSchema });
 export const miraRouter = trpc.router({
+    publications: trpc.router({
+        list: trpc.procedure
+            .input(miraPublicationFilterSchema)
+            .query(({ ctx, input }) =>
+                execute(ctx, (mira) => listMiraPublications(mira, input))
+            ),
+        save: trpc.procedure
+            .input(miraPublicationSaveSchema)
+            .mutation(({ ctx, input }) =>
+                execute(ctx, (mira) =>
+                    saveMiraPublication(mira, input, ctx.operations?.hereNowBinding)
+                )
+            ),
+        approve: trpc.procedure
+            .input(miraPublicationApproveSchema)
+            .mutation(({ ctx, input }) =>
+                execute(ctx, (mira) =>
+                    approveMiraPublication(
+                        mira,
+                        input,
+                        ctx.operations?.hereNowBinding,
+                        ctx.operations?.miraFilesDirectory
+                    )
+                )
+            ),
+        cancel: trpc.procedure
+            .input(versionedIdSchema)
+            .mutation(({ ctx, input }) =>
+                execute(ctx, (mira) => cancelMiraPublication(mira, input))
+            ),
+    }),
     mail: trpc.router({
         list: trpc.procedure
             .input(miraMailFilterSchema)

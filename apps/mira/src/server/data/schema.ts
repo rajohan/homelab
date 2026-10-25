@@ -6,6 +6,7 @@ import {
     type MiraSchedule,
 } from "@homelab/contracts/mira";
 import type { MiraMailContent } from "@homelab/contracts/miraMail";
+import type { MiraPublicationContent } from "@homelab/contracts/miraPublication";
 import { sql } from "drizzle-orm";
 import {
     type AnyPgColumn,
@@ -494,3 +495,47 @@ export const miraTaskRunReviews = pgTable("mira_task_run_reviews", {
     actor: text().notNull(),
     reviewedAt: time("reviewed_at").notNull().defaultNow(),
 });
+
+export const miraPublications = pgTable(
+    "mira_publications",
+    {
+        id: uuid().primaryKey(),
+        owner: text().notNull(),
+        conversationId: uuid("conversation_id").references(() => miraConversations.id),
+        accountId: text("account_id").notNull(),
+        bindingHash: text("binding_hash").notNull(),
+        version: integer().notNull().default(1),
+        state: text().notNull().default("draft"),
+        content: jsonb().$type<MiraPublicationContent>().notNull(),
+        contentHash: text("content_hash").notNull(),
+        approvedVersion: integer("approved_version"),
+        approvedBy: text("approved_by"),
+        approvedAt: time("approved_at"),
+        controlVersion: integer("control_version"),
+        attemptToken: uuid("attempt_token"),
+        retryAfter: time("retry_after"),
+        startedAt: time("started_at"),
+        phase: text(),
+        slug: text(),
+        providerVersionId: text("provider_version_id"),
+        message: text(),
+        createdAt: time("created_at").notNull().defaultNow(),
+        updatedAt: time("updated_at").notNull().defaultNow(),
+    },
+    (t) => [
+        index("mira_publications_owner").on(t.owner, t.createdAt, t.id),
+        index("mira_publications_dispatch").on(t.state, t.id),
+        uniqueIndex("mira_publications_active_owner")
+            .on(t.owner)
+            .where(sql`${t.state} = 'publishing'`),
+        check(
+            "mira_publications_state",
+            sql`${t.state} IN ('draft','queued','publishing','published','needs_attention','cancelled')`
+        ),
+        check("mira_publications_version", sql`${t.version} >= 1`),
+        check(
+            "mira_publications_approval",
+            sql`${t.state} NOT IN ('queued','publishing','published','needs_attention') OR (${t.approvedVersion} IS NOT NULL AND ${t.approvedBy} IS NOT NULL AND ${t.approvedAt} IS NOT NULL AND ${t.controlVersion} IS NOT NULL)`
+        ),
+    ]
+);

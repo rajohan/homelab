@@ -18,6 +18,10 @@ import {
     type HereNowReadConfiguration,
 } from "../integrations/herenow/configuration";
 import {
+    dispatchMiraPublication,
+    reconcileMiraPublications,
+} from "../integrations/herenow/outbox";
+import {
     moltbookBindingHash,
     type MoltbookReadConfiguration,
 } from "../integrations/moltbook/configuration";
@@ -76,7 +80,7 @@ export async function runMiraExecutor(options: {
             owner: options.hereNow.owner,
             key: "here-now",
             bindingHash: hereNowBindingHash(options.hereNow),
-            sendConfigured: false,
+            sendConfigured: Boolean(options.hereNow.publishApiKey),
         });
     let model: string | null = null;
     let models: MiraModel[] = [];
@@ -177,6 +181,19 @@ export async function runMiraExecutor(options: {
             await wait(5000);
         }
     };
+    const publicationDelivery = async () => {
+        while (!signal.aborted) {
+            await reconcileMiraPublications(client, options.hereNow);
+            if (options.hereNow)
+                await dispatchMiraPublication(
+                    client,
+                    options.hereNow,
+                    signal,
+                    options.filesDirectory
+                );
+            await wait(5000);
+        }
+    };
     const cleaner = async () => {
         while (!signal.aborted) {
             let runtime: CodexRuntime | undefined;
@@ -247,6 +264,7 @@ export async function runMiraExecutor(options: {
         stopOnFailure(coordinator()),
         stopOnFailure(integrations()),
         stopOnFailure(mailDelivery()),
+        stopOnFailure(publicationDelivery()),
         stopOnFailure(scheduler()),
         stopOnFailure(inspector()),
         stopOnFailure(cleaner()),

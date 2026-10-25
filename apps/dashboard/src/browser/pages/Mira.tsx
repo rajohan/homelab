@@ -1,6 +1,6 @@
 import { Button, Modal, PageHeader } from "@homelab/ui";
 import { useParams } from "@tanstack/react-router";
-import { Brain, Files, Mail } from "lucide-react";
+import { Brain, Files, Mail, Globe } from "lucide-react";
 import { useState } from "react";
 import * as v from "valibot";
 
@@ -10,6 +10,7 @@ import { ConversationList } from "../features/mira/ConversationList";
 import { FileLibrary } from "../features/mira/FileLibrary";
 import { MailLibrary } from "../features/mira/MailLibrary";
 import { MemoryLibrary } from "../features/mira/MemoryLibrary";
+import { PublicationLibrary } from "../features/mira/PublicationLibrary";
 
 /**
  * Present persistent Mira chat within the existing Homelab shell and shared design.
@@ -17,7 +18,9 @@ import { MemoryLibrary } from "../features/mira/MemoryLibrary";
  */
 export function Mira() {
     const [choosingConversation, setChoosingConversation] = useState(false);
-    const [library, setLibrary] = useState<"files" | "memory" | "mail">();
+    const [library, setLibrary] = useState<
+        "files" | "memory" | "mail" | "publications"
+    >();
     const parsed = v.safeParse(
         v.object({ conversationId: v.optional(v.pipe(v.string(), v.uuid())) }),
         useParams({ strict: false })
@@ -33,6 +36,13 @@ export function Mira() {
                     description="Chat, plan work and keep your tasks and context together."
                     actions={
                         <>
+                            <Button
+                                variant="secondary"
+                                onClick={() => setLibrary("publications")}
+                            >
+                                <Globe size={16} aria-hidden="true" />
+                                Publications
+                            </Button>
                             <Button
                                 variant="secondary"
                                 onClick={() => setLibrary("mail")}
@@ -86,6 +96,12 @@ export function Mira() {
                         onSelect={() => setChoosingConversation(false)}
                     />
                 </Modal>
+            )}
+            {library === "publications" && (
+                <PublicationLibrary
+                    conversationId={conversationId}
+                    onClose={() => setLibrary(undefined)}
+                />
             )}
             {library === "mail" && (
                 <MailLibrary

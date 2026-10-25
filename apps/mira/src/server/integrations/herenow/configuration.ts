@@ -18,6 +18,7 @@ const bindingSchema = v.strictObject({
 export type HereNowBinding = v.InferOutput<typeof bindingSchema>;
 export interface HereNowReadConfiguration extends HereNowBinding {
     apiKey: string;
+    publishApiKey?: string | undefined;
 }
 
 /**
@@ -47,12 +48,18 @@ export function hereNowReadConfiguration(
 ): HereNowReadConfiguration | undefined {
     const binding = hereNowBinding(environment);
     const apiKey = environment.HOMELAB_MIRA_HERENOW_API_KEY;
-    if (!apiKey) return;
-    if (!binding || !/^[\u0021-\u007E]{20,2048}$/.test(apiKey))
+    const publishApiKey = environment.HOMELAB_MIRA_HERENOW_PUBLISH_API_KEY;
+    if (!apiKey && !publishApiKey) return;
+    if (
+        !binding ||
+        !apiKey ||
+        !/^[\u0021-\u007E]{20,2048}$/.test(apiKey) ||
+        (publishApiKey !== undefined && !/^[\u0021-\u007E]{20,2048}$/.test(publishApiKey))
+    )
         throw new Error(
             "HereNow requires an explicit owner, account ID and API credential."
         );
-    return { ...binding, apiKey };
+    return { ...binding, apiKey, ...(publishApiKey ? { publishApiKey } : {}) };
 }
 
 /**
