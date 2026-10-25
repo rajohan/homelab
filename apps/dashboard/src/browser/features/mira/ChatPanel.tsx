@@ -45,7 +45,9 @@ export function ChatPanel({
     onLibrary,
 }: {
     readonly id: string;
-    readonly onLibrary: (library: "files" | "memory" | "mail" | "publications") => void;
+    readonly onLibrary: (
+        library: "files" | "memory" | "mail" | "publications" | "social"
+    ) => void;
     readonly onChooseConversation: () => void;
 }) {
     const [text, setText] = useState("");
@@ -144,6 +146,12 @@ export function ChatPanel({
                             label="Conversation actions"
                             disabled={change.isPending || rename.isPending}
                             actions={[
+                                {
+                                    id: "social",
+                                    label: "Moltbook drafts",
+                                    icon: MessageSquare,
+                                    onSelect: () => onLibrary("social"),
+                                },
                                 {
                                     id: "publications",
                                     label: "Publications",

@@ -15,7 +15,8 @@ export async function publishMoltbookBinding(
     binding?: MoltbookBinding
 ): Promise<void> {
     const hash = binding ? moltbookBindingHash(binding) : null;
-    await query`INSERT INTO mira_integration_receivers(key,binding_hash,heartbeat_at) VALUES ('moltbook',${hash},now()) ON CONFLICT(key) DO UPDATE SET binding_hash=EXCLUDED.binding_hash,heartbeat_at=EXCLUDED.heartbeat_at`;
+    for (const key of ["moltbook", "moltbook-publish"])
+        await query`INSERT INTO mira_integration_receivers(key,binding_hash,heartbeat_at) VALUES (${key},${hash},now()) ON CONFLICT(key) DO UPDATE SET binding_hash=EXCLUDED.binding_hash,heartbeat_at=EXCLUDED.heartbeat_at`;
 }
 
 /**
@@ -38,16 +39,20 @@ export async function moltbookBindingCurrent(
  * Describe availability without exposing credentials, account names or another owner's settings.
  * @param context - Verified human account.
  * @param binding - Dashboard's nonsecret provisioned mapping.
+ * @param publishing - Whether to describe the separate reviewed publishing grant.
  * @returns Shared integration-card status, independent of deliberate pause.
  */
 export async function moltbookIntegrationStatus(
     context: MiraContext,
-    binding?: MoltbookBinding
+    binding?: MoltbookBinding,
+    publishing = false
 ) {
     const base = {
-        key: "integration:moltbook",
-        title: "Moltbook",
-        description: "Read your Moltbook profile, feed and selected posts.",
+        key: publishing ? "integration:moltbook-publish" : "integration:moltbook",
+        title: publishing ? "Moltbook publishing" : "Moltbook",
+        description: publishing
+            ? "Send individually reviewed posts and replies. Pause publishing independently of reads."
+            : "Read your Moltbook profile, feed and selected posts.",
         configured: false,
         ready: false,
         message: null as string | null,
@@ -57,10 +62,10 @@ export async function moltbookIntegrationStatus(
     const hash = moltbookBindingHash(binding);
     const [runtime] = await context.client<
         { matched: boolean; fresh: boolean }[]
-    >`SELECT integrations @> ${JSON.stringify([{ owner: binding.owner, key: "moltbook", bindingHash: hash }])}::text::jsonb AS matched,heartbeat_at>clock_timestamp()-interval '45 seconds' AS fresh FROM mira_runtime_status WHERE id=1`;
+    >`SELECT integrations @> ${JSON.stringify([{ owner: binding.owner, key: publishing ? "moltbook-publish" : "moltbook", bindingHash: hash }])}::text::jsonb AS matched,heartbeat_at>clock_timestamp()-interval '45 seconds' AS fresh FROM mira_runtime_status WHERE id=1`;
     const [control] = await context.client<
         { enabled: boolean; granted: boolean }[]
-    >`SELECT enabled,binding_hash=${hash} AS granted FROM mira_switches WHERE owner=${context.owner} AND key='integration:moltbook'`;
+    >`SELECT enabled,binding_hash=${hash} AS granted FROM mira_switches WHERE owner=${context.owner} AND key=${base.key}`;
     const configured = runtime?.matched === true;
     const confirmed = !control?.enabled || control.granted;
     let message: string | null = null;

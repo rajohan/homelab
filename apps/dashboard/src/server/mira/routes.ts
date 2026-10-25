@@ -32,6 +32,12 @@ import {
     miraPublicationApproveSchema,
     miraPublicationFilterSchema,
 } from "@homelab/contracts/miraPublication";
+import {
+    miraSocialSaveSchema,
+    miraSocialApproveSchema,
+    miraSocialVerifySchema,
+    miraSocialFilterSchema,
+} from "@homelab/contracts/miraSocial";
 import { idSchema, versionedIdSchema } from "@homelab/contracts/operations";
 import {
     deleteMiraAutomation,
@@ -81,6 +87,13 @@ import {
 } from "@homelab/mira/data/publications";
 import { listMiraRuns } from "@homelab/mira/data/queue";
 import { readMiraRun } from "@homelab/mira/data/runHistory";
+import {
+    saveMiraSocial,
+    approveMiraSocial,
+    verifyMiraSocial,
+    listMiraSocial,
+    cancelMiraSocial,
+} from "@homelab/mira/data/social";
 import { readTaskExecution, runMiraTask } from "@homelab/mira/data/taskExecution";
 import { reviewTaskRun } from "@homelab/mira/data/taskRecovery";
 import {
@@ -127,6 +140,39 @@ function execute<T>(
 
 const record = v.strictObject({ id: idSchema });
 export const miraRouter = trpc.router({
+    social: trpc.router({
+        list: trpc.procedure
+            .input(miraSocialFilterSchema)
+            .query(({ ctx, input }) =>
+                execute(ctx, (mira) => listMiraSocial(mira, input))
+            ),
+        save: trpc.procedure
+            .input(miraSocialSaveSchema)
+            .mutation(({ ctx, input }) =>
+                execute(ctx, (mira) =>
+                    saveMiraSocial(mira, input, ctx.operations?.moltbookBinding)
+                )
+            ),
+        approve: trpc.procedure
+            .input(miraSocialApproveSchema)
+            .mutation(({ ctx, input }) =>
+                execute(ctx, (mira) =>
+                    approveMiraSocial(mira, input, ctx.operations?.moltbookBinding)
+                )
+            ),
+        verify: trpc.procedure
+            .input(miraSocialVerifySchema)
+            .mutation(({ ctx, input }) =>
+                execute(ctx, (mira) =>
+                    verifyMiraSocial(mira, input, ctx.operations?.moltbookBinding)
+                )
+            ),
+        cancel: trpc.procedure
+            .input(versionedIdSchema)
+            .mutation(({ ctx, input }) =>
+                execute(ctx, (mira) => cancelMiraSocial(mira, input))
+            ),
+    }),
     publications: trpc.router({
         list: trpc.procedure
             .input(miraPublicationFilterSchema)
@@ -428,6 +474,7 @@ export const miraRouter = trpc.router({
                     [
                         "integration:agentmail",
                         "integration:moltbook",
+                        "integration:moltbook-publish",
                         "integration:here-now",
                     ].includes(input.key) &&
                     input.enabled
@@ -448,7 +495,9 @@ export const miraRouter = trpc.router({
                 }
                 let hash: string | undefined;
                 if (
-                    input.key === "integration:moltbook" &&
+                    ["integration:moltbook", "integration:moltbook-publish"].includes(
+                        input.key
+                    ) &&
                     moltbook?.owner === mira.owner
                 )
                     hash = moltbookBindingHash(moltbook);

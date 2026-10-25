@@ -25,6 +25,7 @@ import {
     moltbookBindingHash,
     type MoltbookReadConfiguration,
 } from "../integrations/moltbook/configuration";
+import { dispatchMiraSocial, reconcileMiraSocial } from "../integrations/moltbook/outbox";
 import { CodexRuntime } from "../runtime/codexRuntime";
 import { pilotArguments, type PilotConfig } from "../runtime/configuration";
 import { cleanupMiraResources } from "./cleanup";
@@ -74,6 +75,13 @@ export async function runMiraExecutor(options: {
             key: "moltbook",
             bindingHash: moltbookBindingHash(options.moltbook),
             sendConfigured: false,
+        });
+    if (options.moltbook?.publishApiKey)
+        integrationsCatalog.push({
+            owner: options.moltbook.owner,
+            key: "moltbook-publish",
+            bindingHash: moltbookBindingHash(options.moltbook),
+            sendConfigured: true,
         });
     if (options.hereNow)
         integrationsCatalog.push({
@@ -194,6 +202,14 @@ export async function runMiraExecutor(options: {
             await wait(5000);
         }
     };
+    const socialDelivery = async () => {
+        while (!signal.aborted) {
+            await reconcileMiraSocial(client, options.moltbook);
+            if (options.moltbook)
+                await dispatchMiraSocial(client, options.moltbook, signal);
+            await wait(5000);
+        }
+    };
     const cleaner = async () => {
         while (!signal.aborted) {
             let runtime: CodexRuntime | undefined;
@@ -265,6 +281,7 @@ export async function runMiraExecutor(options: {
         stopOnFailure(integrations()),
         stopOnFailure(mailDelivery()),
         stopOnFailure(publicationDelivery()),
+        stopOnFailure(socialDelivery()),
         stopOnFailure(scheduler()),
         stopOnFailure(inspector()),
         stopOnFailure(cleaner()),

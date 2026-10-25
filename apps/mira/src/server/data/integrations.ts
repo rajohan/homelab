@@ -74,6 +74,7 @@ export async function listMiraIntegrations(
             lastSuccessAt: configured ? (state?.lastSuccessAt ?? null) : null,
         },
         await moltbookIntegrationStatus(context, moltbook),
+        await moltbookIntegrationStatus(context, moltbook, true),
         await hereNowIntegrationStatus(context, hereNow),
     ];
 }

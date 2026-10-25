@@ -1,9 +1,12 @@
+import { miraSocialSaveSchema } from "@homelab/contracts/miraSocial";
 import type { SQL } from "bun";
 import * as v from "valibot";
 
+import type { MiraContext } from "../../data/context";
 import { MiraFailure } from "../../data/context";
 import { moltbookBindingCurrent } from "../../data/moltbook";
 import type { MiraClaim } from "../../data/queue";
+import { saveMiraSocial, listMiraSocial } from "../../data/social";
 import type { RuntimeTool } from "../../runtime/protocol";
 import { moltbookCommentsInputSchema } from "./comments";
 import {
@@ -28,7 +31,12 @@ export function createMoltbookTools(
     request: typeof fetch = fetch
 ): (Omit<RuntimeTool, "execute"> & {
     automatic: boolean;
-    action: (input: unknown, signal: AbortSignal) => Promise<unknown>;
+    transactional?: boolean;
+    action: (
+        input: unknown,
+        signal: AbortSignal,
+        context?: MiraContext
+    ) => Promise<unknown>;
 })[] {
     const reader = configuration ? new MoltbookReader(configuration, request) : undefined;
     const access = async (signal: AbortSignal, version?: number) => {
@@ -70,6 +78,83 @@ export function createMoltbookTools(
         return { data: result, trust: "untrusted_social_content" };
     };
     return [
+        {
+            name: "mira_moltbook_drafts",
+            automatic: true,
+            description:
+                "Read local Moltbook drafts and submission outcomes for this conversation. No external calls or publication. Pending verification is an operator action, never proof that content is publicly visible.",
+            inputSchema: { type: "object", properties: {}, additionalProperties: false },
+            action: async (input) => {
+                v.parse(v.strictObject({}), input);
+                const page = await listMiraSocial(
+                    { client, owner: run.owner, actor: "mira" },
+                    { conversationId: run.conversationId }
+                );
+                return {
+                    ...page,
+                    rows: page.rows.map(({ challenge: _challenge, ...draft }) => draft),
+                };
+            },
+        },
+        {
+            name: "mira_moltbook_draft",
+            automatic: false,
+            transactional: true,
+            description:
+                "Prepare a local text post or reply requested by the operator. Supply a stable UUID and version 0 for a new draft or the current version to edit. The operator must review the exact text and destination in Moltbook drafts before any send. This tool cannot publish, approve or solve provider verification.",
+            inputSchema: {
+                type: "object",
+                additionalProperties: false,
+                required: ["id", "version", "content"],
+                properties: {
+                    id: { type: "string" },
+                    version: { type: "integer", minimum: 0 },
+                    content: {
+                        oneOf: [
+                            {
+                                type: "object",
+                                additionalProperties: false,
+                                required: ["kind", "community", "title", "text"],
+                                properties: {
+                                    kind: { const: "post" },
+                                    community: { type: "string" },
+                                    title: { type: "string", maxLength: 300 },
+                                    text: { type: "string", maxLength: 40_000 },
+                                },
+                            },
+                            {
+                                type: "object",
+                                additionalProperties: false,
+                                required: ["kind", "postId", "parentId", "text"],
+                                properties: {
+                                    kind: { const: "comment" },
+                                    postId: { type: "string" },
+                                    parentId: { type: ["string", "null"] },
+                                    text: { type: "string", maxLength: 10_000 },
+                                },
+                            },
+                        ],
+                    },
+                },
+            },
+            action: (input, signal, context) => {
+                signal.throwIfAborted();
+                if (!context?.transaction)
+                    throw new MiraFailure(
+                        "FORBIDDEN",
+                        "Moltbook drafts require the owned tool transaction."
+                    );
+                const parsed = v.parse(
+                    v.omit(miraSocialSaveSchema, ["conversationId"]),
+                    input
+                );
+                return saveMiraSocial(
+                    context,
+                    { ...parsed, conversationId: run.conversationId },
+                    configuration
+                );
+            },
+        },
         {
             name: "mira_moltbook_activity",
             automatic: true,

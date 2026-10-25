@@ -1,0 +1,724 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "e7dde5e2-82c6-4917-8202-932c7f911f06",
+    "prevIds": ["c8098f7d-cbe7-4941-ae87-4a1a3ad5844b"],
+    "footprints": [
+        {
+            "statementType": "create_table",
+            "statementTarget": ["table", "public", "mira_social_cooldowns"],
+            "writes": [
+                "s|tbl|public.mira_social_cooldowns",
+                "n|tbl|public.mira_social_cooldowns",
+                "e|tbl|public.mira_social_cooldowns",
+                "n|rel|public.mira_social_cooldowns",
+                "n|type|public.mira_social_cooldowns",
+                "n|rel|public.mira_social_cooldowns_pkey"
+            ],
+            "reads": ["n|sch|public"]
+        },
+        {
+            "statementType": "create_table",
+            "statementTarget": ["table", "public", "mira_social_drafts"],
+            "writes": [
+                "s|tbl|public.mira_social_drafts",
+                "n|tbl|public.mira_social_drafts",
+                "e|tbl|public.mira_social_drafts",
+                "n|rel|public.mira_social_drafts",
+                "n|type|public.mira_social_drafts",
+                "n|rel|public.mira_social_drafts_pkey"
+            ],
+            "reads": ["n|sch|public"]
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": [
+                "index",
+                "public",
+                "mira_social_drafts",
+                "mira_social_drafts_owner"
+            ],
+            "writes": [
+                "s|idx|public.mira_social_drafts_owner",
+                "n|idx|public.mira_social_drafts_owner",
+                "e|idx|public.mira_social_drafts_owner",
+                "n|rel|public.mira_social_drafts_owner"
+            ],
+            "reads": [
+                "n|tbl|public.mira_social_drafts",
+                "n|sch|public",
+                "n|col|public.mira_social_drafts.owner",
+                "n|col|public.mira_social_drafts.created_at",
+                "n|col|public.mira_social_drafts.id"
+            ]
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": [
+                "index",
+                "public",
+                "mira_social_drafts",
+                "mira_social_drafts_dispatch"
+            ],
+            "writes": [
+                "s|idx|public.mira_social_drafts_dispatch",
+                "n|idx|public.mira_social_drafts_dispatch",
+                "e|idx|public.mira_social_drafts_dispatch",
+                "n|rel|public.mira_social_drafts_dispatch"
+            ],
+            "reads": [
+                "n|tbl|public.mira_social_drafts",
+                "n|sch|public",
+                "n|col|public.mira_social_drafts.state",
+                "n|col|public.mira_social_drafts.id"
+            ]
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": [
+                "index",
+                "public",
+                "mira_social_drafts",
+                "mira_social_drafts_active_owner"
+            ],
+            "writes": [
+                "s|idx|public.mira_social_drafts_active_owner",
+                "n|idx|public.mira_social_drafts_active_owner",
+                "e|idx|public.mira_social_drafts_active_owner",
+                "n|rel|public.mira_social_drafts_active_owner"
+            ],
+            "reads": [
+                "n|tbl|public.mira_social_drafts",
+                "n|sch|public",
+                "n|col|public.mira_social_drafts.owner"
+            ]
+        },
+        {
+            "statementType": "create_fk",
+            "statementTarget": ["table", "public", "mira_social_drafts"],
+            "writes": [
+                "s|fk|public.mira_social_drafts.mira_social_drafts_conversation_id_mira_conversations_id_fkey",
+                "n|fk|public.mira_social_drafts.mira_social_drafts_conversation_id_mira_conversations_id_fkey",
+                "e|fk|public.mira_social_drafts.mira_social_drafts_conversation_id_mira_conversations_id_fkey",
+                "n|con|public.mira_social_drafts.mira_social_drafts_conversation_id_mira_conversations_id_fkey"
+            ],
+            "reads": [
+                "n|tbl|public.mira_social_drafts",
+                "n|sch|public",
+                "n|tbl|public.mira_conversations",
+                "n|sch|public",
+                "n|col|public.mira_social_drafts.conversation_id",
+                "n|col|public.mira_conversations.id",
+                "e|uniqueness|public.mira_conversations.id"
+            ]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "name": "mira_social_cooldowns",
+                "isRlsEnabled": false,
+                "entityType": "tables"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "name": "mira_social_drafts",
+                "isRlsEnabled": false,
+                "entityType": "tables"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_cooldowns",
+                "name": "owner",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_cooldowns",
+                "name": "until",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_drafts",
+                "name": "id",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_drafts",
+                "name": "owner",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_drafts",
+                "name": "conversation_id",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_drafts",
+                "name": "agent_name",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_drafts",
+                "name": "binding_hash",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_drafts",
+                "name": "version",
+                "type": "integer",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "1",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_drafts",
+                "name": "state",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "'draft'",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_drafts",
+                "name": "content",
+                "type": "jsonb",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_drafts",
+                "name": "content_hash",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_drafts",
+                "name": "approved_version",
+                "type": "integer",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_drafts",
+                "name": "approved_by",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_drafts",
+                "name": "approved_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_drafts",
+                "name": "control_stamp",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_drafts",
+                "name": "attempt_token",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_drafts",
+                "name": "retry_after",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_drafts",
+                "name": "started_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_drafts",
+                "name": "provider_id",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_drafts",
+                "name": "verification_code",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_drafts",
+                "name": "challenge",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_drafts",
+                "name": "expires_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_drafts",
+                "name": "answer",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_drafts",
+                "name": "message",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_drafts",
+                "name": "created_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "now()",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_drafts",
+                "name": "updated_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "now()",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_drafts",
+                "name": "mira_social_drafts_owner",
+                "nameExplicit": true,
+                "columns": [
+                    {
+                        "value": "owner",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    },
+                    {
+                        "value": "created_at",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    },
+                    {
+                        "value": "id",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    }
+                ],
+                "isUnique": false,
+                "where": null,
+                "with": "",
+                "method": "btree",
+                "concurrently": false,
+                "entityType": "indexes"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_drafts",
+                "name": "mira_social_drafts_dispatch",
+                "nameExplicit": true,
+                "columns": [
+                    {
+                        "value": "state",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    },
+                    {
+                        "value": "id",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    }
+                ],
+                "isUnique": false,
+                "where": null,
+                "with": "",
+                "method": "btree",
+                "concurrently": false,
+                "entityType": "indexes"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_drafts",
+                "name": "mira_social_drafts_active_owner",
+                "nameExplicit": true,
+                "columns": [
+                    {
+                        "value": "owner",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    }
+                ],
+                "isUnique": true,
+                "where": "\"state\" IN ('publishing','verifying')",
+                "with": "",
+                "method": "btree",
+                "concurrently": false,
+                "entityType": "indexes"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_drafts",
+                "name": "mira_social_drafts_conversation_id_mira_conversations_id_fkey",
+                "nameExplicit": false,
+                "columns": ["conversation_id"],
+                "schemaTo": "public",
+                "tableTo": "mira_conversations",
+                "columnsTo": ["id"],
+                "onUpdate": "NO ACTION",
+                "onDelete": "NO ACTION",
+                "entityType": "fks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_cooldowns",
+                "name": "mira_social_cooldowns_pkey",
+                "columns": ["owner"],
+                "nameExplicit": false,
+                "entityType": "pks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_drafts",
+                "name": "mira_social_drafts_pkey",
+                "columns": ["id"],
+                "nameExplicit": false,
+                "entityType": "pks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_drafts",
+                "name": "mira_social_drafts_version",
+                "value": "\"version\" >= 1",
+                "entityType": "checks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_drafts",
+                "name": "mira_social_drafts_state",
+                "value": "\"state\" IN ('draft','queued','publishing','verification_required','queued_verification','verifying','submitted','needs_attention','cancelled')",
+                "entityType": "checks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_drafts",
+                "name": "mira_social_drafts_approval",
+                "value": "\"state\" IN ('draft','cancelled') OR (\"approved_version\" IS NOT NULL AND \"approved_by\" IS NOT NULL AND \"approved_at\" IS NOT NULL AND \"control_stamp\" IS NOT NULL)",
+                "entityType": "checks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_drafts",
+                "name": "mira_social_drafts_verification",
+                "value": "\"state\" NOT IN ('verification_required','queued_verification','verifying') OR (\"provider_id\" IS NOT NULL AND \"verification_code\" IS NOT NULL AND \"challenge\" IS NOT NULL AND \"expires_at\" IS NOT NULL)",
+                "entityType": "checks"
+            }
+        }
+    ]
+}

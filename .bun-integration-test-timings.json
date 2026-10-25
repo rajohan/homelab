@@ -39,6 +39,7 @@
         "apps/dashboard/src/server/tests/moltbook.integration.test.ts": 1235,
         "apps/dashboard/src/server/tests/herenow.integration.test.ts": 1601,
         "apps/dashboard/src/server/tests/miraPublications.integration.test.ts": 1637,
-        "apps/dashboard/src/server/tests/miraGeneratedFiles.integration.test.ts": 1430
+        "apps/dashboard/src/server/tests/miraGeneratedFiles.integration.test.ts": 1430,
+        "apps/dashboard/src/server/tests/miraSocial.integration.test.ts": 2788
     }
 }
