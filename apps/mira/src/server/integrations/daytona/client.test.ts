@@ -51,6 +51,7 @@ function sandbox() {
             "homelab.service": "mira",
         },
         state: "started",
+        env: {},
         public: false,
         networkBlockAll: true,
         networkAllowList: "",
@@ -308,7 +309,7 @@ test("Daytona reconciles a lost acknowledgement by deterministic name without st
                 ? key
                 : {
                       ...sandbox(),
-                      env: { SECRET: "private" },
+                      env: {},
                       toolboxProxyUrl: "https://untrusted.example/",
                       errorReason: "private",
                   }
@@ -349,6 +350,8 @@ for (const change of [
     });
 
 for (const change of [
+    { env: { SECRET: "private" } },
+    { env: undefined },
     { public: true },
     { networkBlockAll: false },
     { networkAllowList: "0.0.0.0/0" },
@@ -384,6 +387,7 @@ for (const change of [
         });
         const observed = await client.inspect({ runId, sandboxId }, signal);
         expect(observed?.policySatisfied).toBe(false);
+        expect(JSON.stringify(observed)).not.toContain("private");
         expect(await client.destroy({ runId, sandboxId }, signal)).toBe("requested");
         expect(calls.filter((call) => call.init.method === "DELETE")).toHaveLength(1);
         expect(calls.at(-1)?.path).toBe(`/api/sandbox/${sandboxId}`);

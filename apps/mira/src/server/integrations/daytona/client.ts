@@ -25,6 +25,7 @@ const sandboxSchema = v.object({
     state: v.optional(text(64), "unknown"),
 });
 const policySchema = v.object({
+    env: v.strictObject({}),
     public: v.literal(false),
     networkBlockAll: v.literal(true),
     networkAllowList: v.nullish(v.literal("")),
