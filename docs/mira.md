@@ -31,16 +31,16 @@ not the reserved light infrastructure worker.
 
 ## Delivery sequence
 
-| Delivery                   | Scope                                                                                                                        | Status                                                                                                          |
-| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Runtime qualification      | Separate ChatGPT login; streaming, host tools, interruption and process replacement                                          | Implemented; isolated live qualification passed                                                                 |
-| Chat and files             | Owned conversations, streaming, cancellation, search/archive/delete, bounded uploads and editable memory                     | Implemented; synthetic preview and live text/PDF/image qualification passed                                     |
-| Tasks                      | Four-column drag-and-drop board, keyboard controls, search/filters, versioned edits, progress and conversation links         | Board, product tools and [explicit task execution](mira-tasks.md) implemented; resource-context actions pending |
-| Automations and Reports    | Durable scheduler, heartbeat, reasoned individual/global pause, run history, report snapshots and deduplicated notifications | Core implemented; migrated presets installed paused; external hooks and improvement execution pending           |
-| Computer control           | Dedicated browser, required Windows pairing, scoped controls, preview, local stop and takeover                               | Driver candidate identified; companion and host acceptance pending                                              |
-| Voice                      | Shared conversation context, provider qualification and explicit billing limits                                              | Pending; no paid voice budget enabled                                                                           |
-| Migration and integrations | Validated legacy imports, AgentMail, Daytona, here.now and Moltbook adapters                                                 | Source audit complete; adapters, import and cutover pending                                                     |
-| Self-update                | Exact verified releases, independent deployment runner, receipts, health checks and compatible recovery                      | Mira image/release packaging implemented; replacement runner and automatic policy pending                       |
+| Delivery                   | Scope                                                                                                                        | Status                                                                                                                                         |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime qualification      | Separate ChatGPT login; streaming, host tools, interruption and process replacement                                          | Implemented; isolated live qualification passed                                                                                                |
+| Chat and files             | Owned conversations, streaming, cancellation, search/archive/delete, bounded uploads and editable memory                     | Implemented; synthetic preview and live text/PDF/image qualification passed                                                                    |
+| Tasks                      | Four-column drag-and-drop board, keyboard controls, search/filters, versioned edits, progress and conversation links         | Board, product tools and [explicit task execution](mira-tasks.md) implemented; resource-context actions pending                                |
+| Automations and Reports    | Durable scheduler, heartbeat, reasoned individual/global pause, run history, report snapshots and deduplicated notifications | Core implemented; migrated presets installed paused; external hooks and improvement execution pending                                          |
+| Computer control           | Dedicated browser, required Windows pairing, scoped controls, preview, local stop and takeover                               | Driver candidate identified; companion and host acceptance pending                                                                             |
+| Voice                      | Shared conversation context, provider qualification and explicit billing limits                                              | Pending; no paid voice budget enabled                                                                                                          |
+| Migration and integrations | Validated legacy imports, AgentMail, Daytona, here.now and Moltbook adapters                                                 | AgentMail delivery/attachments, here.now reads/publication and Moltbook reads implemented; Daytona, remaining actions and live cutover pending |
+| Self-update                | Exact verified releases, independent deployment runner, receipts, health checks and compatible recovery                      | Mira image/release packaging implemented; replacement runner and automatic policy pending                                                      |
 
 Each delivery uses Bun, Valibot, Effect boundaries, existing dashboard contracts and
 shared UI. Reuse cards, headers, actions, forms, lists and viewport-bounded modals;
@@ -70,6 +70,20 @@ isolated synthetic preview before production deployment.
   and garbage collection. PDF extraction runs in a credential-free bounded child;
   text extraction is limited to 100 pages / 256,000 characters. Images and extracted
   document context were exercised with the real isolated runtime.
+- Manual conversations can create downloadable UTF-8 artifacts using `mira_file_create`,
+  including Markdown, JSON, HTML and source code, up to 1 MiB each. Generated files
+  use the same private file store, attachment buttons, downloads and deletion as
+  uploads. Eight files per assistant response includes both generated files and mail
+  imports. Identical filename/content retries within a run reuse one immutable file;
+  changed content or another run creates a separate file. Filenames never select disk
+  paths, and no generated content is executed. Invalid Unicode in names or content is
+  rejected rather than silently replaced; valid UTF-8 bytes are retained exactly.
+  Binary generation is not implemented.
+  Live ownership, lease and cancellation are rechecked at acceptance; rejected writes
+  remove unexposed reservations. A lost acknowledgement after a committed file is
+  treated as uncertain, retains the attachment and fences further tool actions.
+  Generated file IDs can be selected by the existing email/publication draft tools;
+  external delivery still requires the operator's separate review and approval.
 - Two Mira execution lanes reserve foreground capacity for manual requests. They do
   not consume infrastructure workers. Leases, durable tool receipts and cancellation
   fencing prevent expired workers from recording new product effects. Uncertain
@@ -81,8 +95,9 @@ isolated synthetic preview before production deployment.
   to the owner and deduplicated.
 - The current automatic tool scope reads product/dashboard observations and creates
   reports. Manual chat can manage owned tasks, progress and explicit memory. This
-  core does not execute shell commands, merge code, deploy, send mail or publish
-  externally. The dashboard-improvement preset remains paused until its bounded
+  core does not execute shell commands, merge code or deploy. Mail and public-site
+  delivery use the separately reviewed [AgentMail](mira-agentmail.md) and
+  [here.now](mira-herenow.md) outboxes; model tools only prepare their drafts. The dashboard-improvement preset remains paused until its bounded
   execution adapter is delivered and qualified.
 - An optional `deploy/compose.mira.yaml` overlay builds/runs the separate Mira image.
   The pinned native runtime is bundled in that image; its updates follow reviewed

@@ -39,6 +39,7 @@ import { createHereNowTools } from "../integrations/herenow/tools";
 import type { MoltbookReadConfiguration } from "../integrations/moltbook/configuration";
 import { createMoltbookTools } from "../integrations/moltbook/tools";
 import type { RuntimeTool } from "../runtime/protocol";
+import { saveGeneratedMiraFile } from "./generatedFiles";
 
 const string = { type: "string" };
 const uuid = { type: "string", format: "uuid" };
@@ -96,6 +97,22 @@ export function createMiraTools(
             context: MiraContext
         ) => Promise<unknown>;
     })[] = [
+        {
+            name: "mira_file_create",
+            description:
+                "Create a downloadable UTF-8 text artifact requested by the operator, such as Markdown, JSON, HTML or source code. Give a display filename without paths and its complete content (up to 1 MiB). This attaches the immutable file to this response; at most eight files total, including email imports. Identical retries within the run reuse one file; changed bytes create a new version rather than overwriting. This tool never executes, emails or publishes content. Its returned file ID can be used in a separately reviewed email or publication draft.",
+            inputSchema: object(
+                {
+                    name: { type: "string", minLength: 1, maxLength: 200 },
+                    content: { type: "string", minLength: 1, maxLength: 1_048_576 },
+                },
+                ["name", "content"]
+            ),
+            automatic: false,
+            commitsIndependently: true,
+            action: (input, signal) =>
+                saveGeneratedMiraFile(client, run, filesDirectory, input, signal),
+        },
         {
             name: "mira_attachment_read",
             description:
