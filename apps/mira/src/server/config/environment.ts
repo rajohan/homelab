@@ -39,3 +39,22 @@ export function miraEnvironment() {
         daytona: daytonaExecutionConfiguration(process.env),
     };
 }
+
+/**
+ * Read the explicit disposable-image profile marker, without exporting any credentials.
+ * @returns Snapshot marker or undefined outside the check image; never a security attestation.
+ */
+export function sandboxProfileEnvironment(): string | undefined {
+    return process.env.HOMELAB_MIRA_SANDBOX_PROFILE;
+}
+
+/**
+ * Allow only executable lookup for local Docker smoke commands, not registry credentials or remote contexts.
+ * @returns Minimal host CLI environment; none of it is passed into the disposable container.
+ */
+export function sandboxSmokeEnvironment(): Record<string, string> {
+    return {
+        PATH: process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin",
+        HOME: "/nonexistent",
+    };
+}

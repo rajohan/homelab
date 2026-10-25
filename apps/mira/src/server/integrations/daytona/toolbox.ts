@@ -74,6 +74,20 @@ export class DaytonaToolboxUncertain extends Error {
     }
 }
 
+/** A confirmed pre-dispatch refusal because the required execution budget no longer fits. */
+export class DaytonaToolboxLifetimeError extends Error {
+    /**
+     * Describe a known no-write result using only the configured time budget.
+     * @param minimumMs - Validated minimum remaining runtime and collection allowance.
+     */
+    constructor(minimumMs: number) {
+        super(
+            `Daytona sandbox has less than ${minimumMs / 1000} seconds remaining; no write was dispatched.`
+        );
+        this.name = "DaytonaToolboxLifetimeError";
+    }
+}
+
 /** Bounded Daytona Cloud toolbox operations for one existing, persisted sandbox attempt. No host filesystem access. */
 export class DaytonaToolbox {
     private readonly configuration: DaytonaConfiguration;
@@ -126,11 +140,9 @@ export class DaytonaToolbox {
         return Date.parse(observed.expiresAt);
     }
 
-    private requireLifetime(expiresAt: number): void {
-        if (expiresAt - this.now() < 30_000)
-            throw new Error(
-                "Daytona sandbox has less than 30 seconds remaining; no write was dispatched."
-            );
+    private requireLifetime(expiresAt: number, minimumMs = 30_000): void {
+        if (expiresAt - this.now() < minimumMs)
+            throw new DaytonaToolboxLifetimeError(minimumMs);
     }
 
     private async response(args: Arguments, signal: AbortSignal): Promise<Response> {
@@ -284,15 +296,30 @@ export class DaytonaToolbox {
      * @param command - Exact approved command; never interpolated into a host shell.
      * @param signal - Run cancellation; cancellation after dispatch does not prove the process stopped.
      * @param authorize - Persist the unique command attempt and recheck consent/lease/limits before POST.
+     * @param lifetime - Optional minimum remaining budget and persisted local deadline, rechecked after authorization.
      * @returns Provider command ID to persist before polling. No automatic command retry is performed.
      */
     async submit(
         command: string,
         signal: AbortSignal,
-        authorize: () => Promise<void>
+        authorize: () => Promise<void>,
+        lifetime?: { minimumMs: number; deadline: number }
     ): Promise<string> {
         daytonaCommandHash(command);
-        const expiresAt = await this.ready(signal, true);
+        const minimumMs = lifetime?.minimumMs ?? 30_000;
+        if (
+            !Number.isSafeInteger(minimumMs) ||
+            minimumMs < 30_000 ||
+            minimumMs > 900_000 ||
+            (lifetime &&
+                (!Number.isSafeInteger(lifetime.deadline) || lifetime.deadline < 0))
+        )
+            throw new Error("Invalid Daytona command lifetime budget.");
+        const expiresAt = Math.min(
+            await this.ready(signal, true),
+            lifetime?.deadline ?? Infinity
+        );
+        this.requireLifetime(expiresAt, minimumMs);
         const session = await this.session(signal);
         if (!session || session.commands.length > 0)
             throw new Error("Daytona requires an acknowledged empty session.");
@@ -303,7 +330,7 @@ export class DaytonaToolbox {
         });
         await authorize();
         signal.throwIfAborted();
-        this.requireLifetime(expiresAt);
+        this.requireLifetime(expiresAt, minimumMs);
         try {
             const parsed = v.safeParse(
                 v.object({ cmdId: identifier }),

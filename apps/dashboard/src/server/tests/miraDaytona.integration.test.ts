@@ -116,6 +116,7 @@ async function fixture() {
 function provider(
     jobId: string,
     options: {
+        lifetimeMs?: number;
         unknown?: string;
         fail?: string;
         exitCode?: number;
@@ -132,6 +133,7 @@ function provider(
         command: string | null = null,
         completed = false;
     const calls: { url: URL; init: RequestInit }[] = [];
+    const createdAt = Date.now() - 1000;
     const sandbox = () => ({
         id: sandboxId,
         name: daytonaSandboxName(configuration, jobId),
@@ -155,8 +157,10 @@ function provider(
         autoDeleteInterval: 0,
         autoStopInterval: 5,
         autoPauseInterval: 0,
-        createdAt: new Date(Date.now() - 1000).toISOString(),
-        autoDestroyAt: new Date(Date.now() + 899_000).toISOString(),
+        createdAt: new Date(createdAt).toISOString(),
+        autoDestroyAt: new Date(
+            createdAt + (options.lifetimeMs ?? 900_000)
+        ).toISOString(),
     });
     const request = Object.assign(
         async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
@@ -1390,3 +1394,143 @@ test("late cleanup worker cannot overwrite operator resolution or delete after i
         await f.close();
     }
 });
+
+test("fixed Homelab check drafts bind attached patches and cannot start a sandbox", async () => {
+    const f = await fixture();
+    try {
+        const chat = await f.api.conversations.create({ title: "Check proposal" });
+        const patch = await saveMiraFile(f.context, f.directory, {
+            id: crypto.randomUUID(),
+            name: "changes.txt",
+            bytes: new TextEncoder().encode("reviewed patch"),
+        });
+        const unrelated = await saveMiraFile(f.context, f.directory, {
+            id: crypto.randomUUID(),
+            name: "unrelated.txt",
+            bytes: new TextEncoder().encode("unrelated"),
+        });
+        await f.api.conversations.send({
+            conversationId: chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Prepare a check",
+            attachmentIds: [patch.id],
+        });
+        const run = await claimMiraRun(f.client, crypto.randomUUID(), "foreground");
+        const tools = createMiraTools(
+            f.client,
+            run!,
+            f.directory,
+            undefined,
+            undefined,
+            undefined,
+            configuration
+        );
+        const tool = tools.find((entry) => entry.name === "mira_daytona_check_draft")!;
+        const input = {
+            id: crypto.randomUUID(),
+            version: 0,
+            commit: "a".repeat(40),
+            patchId: patch.id,
+        };
+        const call = {
+            callId: "fixed-profile",
+            threadId: "synthetic",
+            turnId: "synthetic",
+        };
+        expect(JSON.parse(await tool.execute(input, signal, call))).toMatchObject({
+            ok: true,
+        });
+        const job = await f.read(input.id);
+        expect(job).toMatchObject({
+            state: "draft",
+            phase: "idle",
+            conversationId: chat.id,
+        });
+        expect(job.content.command).toContain(
+            ` ${input.id} ${input.commit} ${new Bun.CryptoHasher("sha256").update("reviewed patch").digest("hex")}`
+        );
+        expect(job.content.inputs).toEqual([
+            {
+                id: patch.id,
+                sha256: new Bun.CryptoHasher("sha256")
+                    .update("reviewed patch")
+                    .digest("hex"),
+                name: "changes.txt",
+            },
+        ]);
+        expect(job.content.outputs).toEqual([
+            "check-result.json",
+            "check-log.txt",
+            "changes.txt",
+        ]);
+        for (const [name, changes] of Object.entries({
+            unselected: { patchId: unrelated.id },
+            malformed: { commit: "main; id" },
+            invalid: { commit: "b".repeat(39) },
+        })) {
+            expect(
+                JSON.parse(
+                    await tool.execute(
+                        { ...input, ...changes, id: crypto.randomUUID() },
+                        signal,
+                        { ...call, callId: name }
+                    )
+                )
+            ).toMatchObject({ ok: false });
+        }
+        expect(
+            JSON.parse(
+                await tool.execute(
+                    { ...input, id: crypto.randomUUID(), patchId: null },
+                    signal,
+                    { ...call, callId: "no-patch" }
+                )
+            )
+        ).toMatchObject({ ok: true });
+        await f.pause();
+        expect(
+            JSON.parse(
+                await tool.execute(
+                    { ...input, id: crypto.randomUUID(), patchId: null },
+                    signal,
+                    { ...call, callId: "paused-profile" }
+                )
+            )
+        ).toMatchObject({ ok: false });
+        const listed = await f.api.daytona.list({ conversationId: chat.id });
+        expect(listed.rows).toHaveLength(2);
+    } finally {
+        await f.close();
+    }
+});
+
+for (const boundary of ["provider", "admission"] as const)
+    test(`fixed check jobs refuse insufficient ${boundary} time and clean up without command submission`, async () => {
+        const f = await fixture();
+        try {
+            const job = await f.save({
+                ...defaultContent,
+                command: `bun --no-env-file /opt/homelab/daytona-check.js ${crypto.randomUUID()} ${"a".repeat(40)}`,
+            });
+            await f.approve(job);
+            const p = provider(job.id, {
+                lifetimeMs: boundary === "provider" ? 300_000 : 900_000,
+            });
+            await advance(f, p, 3);
+            expect(await f.read(job.id)).toMatchObject({ phase: "ready" });
+            if (boundary === "admission")
+                await f.client`UPDATE mira_daytona_jobs SET deadline=clock_timestamp()+interval '5 minutes' WHERE id=${job.id}`;
+            await advance(f, p, 3);
+            expect(
+                p.calls.filter((call) => call.url.pathname.endsWith("/exec"))
+            ).toHaveLength(0);
+            expect(await f.read(job.id)).toMatchObject({
+                state: "cancelled",
+                cleanup: "confirmed",
+                message:
+                    "Stopped before command submission because insufficient time remains for execution and result collection.",
+            });
+        } finally {
+            await f.close();
+        }
+    });

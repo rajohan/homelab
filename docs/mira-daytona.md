@@ -78,3 +78,64 @@ A missing sandbox without a recorded deletion attempt does not release capacity 
 Pause Daytona without a scheduled resume, wait for the job deadline plus five minutes and any cleanup lease to expire, then verify in the original Daytona organization that the sandbox has been removed and no creation is pending. Type its exact name, record how removal was verified and confirm the external inspection. The server rechecks the persisted identity, pause, deadline, phase and lease atomically with global admission. A discovered sandbox ID invalidates an earlier review. This is an operator attestation, not proof provided by the API; do not use it when resource state is still unknown.
 
 Resolution stops retries and releases local admission, keeps Daytona paused, records the human actor/time/note and a `daytona.cleanup_resolved` audit event, and labels cleanup **Confirmed by operator**. It does not contact Daytona, delete resources, reset the rolling attempt count or turn an unknown execution into success. Late workers lose their lease token. Existing cancellation is retained; otherwise the job remains `needs_attention`. The record is readable after resolution. Models and service principals cannot resolve cleanup. Existing provider-confirmed cleanup remains distinct.
+
+## Fixed Homelab check profile
+
+`mira_daytona_check_draft` prepares an ordinary reviewed Cloud job for one exact
+40-character public Homelab commit and, optionally, one patch text file already
+attached to that conversation. It cannot choose another repository, approve a
+job, provision resources, publish a branch or deploy. The existing pause,
+qualification, exact-content approval, admission and cleanup controls still apply.
+The job runs the immutable snapshot's `/opt/homelab/daytona-check.js`; a generic
+Bun image is insufficient. Arbitrary Cloud commands remain a separate existing
+operator-reviewed capability.
+
+The harness uses Bun 1.4.4, a frozen install without lifecycle scripts, and native
+PostgreSQL 18 bound to loopback. Its fixed steps are `check`, both migration
+checks, `test`, `test:integration`, `build`, and `test:smoke`. Source is fetched by
+exact SHA from the public repository without credentials, Git hooks, recursive
+submodules or redirects. A selected patch is bounded to 1 MiB, hashed against the
+reviewed input and applied with Git's indexed path checks. No host directory,
+GitHub token, provider key or production database is available inside the image.
+The command has a ten-minute deadline within the provider's existing fifteen-minute
+resource TTL. Before submission, a command referencing this harness must have at least
+twelve minutes remaining in both the persisted job deadline and provider expiry
+(ten minutes for checks plus two for submission and result collection). The
+remaining budget is rechecked after authorization; a short budget cancels the
+command before dispatch and cleans up the existing sandbox. Ordinary subprocess groups are terminated on interruption; provider
+resource destruction is still independently confirmed by the dispatcher.
+
+Each attempt uses fresh directories and refuses replay. It returns
+`check-result.json`, `check-log.txt` and `changes.txt` (the normalized selected
+patch, not a newly generated change). Logs and files are bounded. Preparation and
+check failures return a nonzero exit status; when preparation has created the
+output directory, the report records incomplete steps and local database cleanup.
+An image/profile mismatch can fail before artifacts exist. Repository code can
+alter its own sandbox, so reports remain explicitly **untrusted sandbox results**,
+never evidence that authorizes automatic GitHub writes, merge or deployment.
+The profile does not run image builds or provider qualification inside itself.
+
+`deploy/daytona/Dockerfile` is the versioned snapshot recipe. The **Daytona check
+image** workflow builds and tests the actual non-root image with no host mounts,
+then publishes the same tested image on stable releases. `daytona-image.json`
+records the immutable registry reference separately from the three service
+images. Dependabot proposes Docker base updates through normal reviewed PRs.
+A new image release does not silently replace the configured snapshot: import the
+recorded digest into the dedicated Daytona organization, verify the fixed
+resources and runtime, exercise outputs/cancellation/TTL/deletion on that exact
+snapshot, then renew the qualified binding hash. The updater can track the
+versioned release artifact; snapshot activation remains an explicit qualified
+operation. Do not mark an image or binding qualified solely because CI passed.
+
+Local image qualification (Linux AMD64, Docker, public network access):
+
+```sh
+docker build -f deploy/daytona/Dockerfile -t homelab-daytona-harness:tested .
+bun run test:daytona <exact-public-commit-sha>
+```
+
+This smoke test uses a read-only container with two CPUs, 4 GiB memory, bounded
+process count and a 2 GiB temporary filesystem. It runs all fixed checks, verifies
+all three artifacts and replay refusal, then removes the container. It does not
+contact Daytona or consume provider credits. Live provider acceptance is still
+required before production enablement.
