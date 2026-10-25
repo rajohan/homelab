@@ -1,11 +1,20 @@
 import { Button, Modal, PageHeader } from "@homelab/ui";
 import { useParams } from "@tanstack/react-router";
-import { Brain, Files, Mail, Globe, MessageSquare, Cloud } from "lucide-react";
+import {
+    Brain,
+    Files,
+    Mail,
+    Globe,
+    MessageSquare,
+    Cloud,
+    GitPullRequest,
+} from "lucide-react";
 import { useState } from "react";
 import * as v from "valibot";
 
 import { ChatPanel } from "../features/mira/ChatPanel";
 import { ChatWelcome } from "../features/mira/ChatWelcome";
+import { CodeLibrary } from "../features/mira/CodeLibrary";
 import { ConversationList } from "../features/mira/ConversationList";
 import { DaytonaJobs } from "../features/mira/DaytonaJobs";
 import { FileLibrary } from "../features/mira/FileLibrary";
@@ -21,7 +30,7 @@ import { SocialLibrary } from "../features/mira/SocialLibrary";
 export function Mira() {
     const [choosingConversation, setChoosingConversation] = useState(false);
     const [library, setLibrary] = useState<
-        "files" | "memory" | "mail" | "publications" | "social" | "daytona"
+        "files" | "memory" | "mail" | "publications" | "social" | "daytona" | "code"
     >();
     const parsed = v.safeParse(
         v.object({ conversationId: v.optional(v.pipe(v.string(), v.uuid())) }),
@@ -38,6 +47,13 @@ export function Mira() {
                     description="Chat, plan work and keep your tasks and context together."
                     actions={
                         <>
+                            <Button
+                                variant="secondary"
+                                onClick={() => setLibrary("code")}
+                            >
+                                <GitPullRequest size={16} />
+                                Code changes
+                            </Button>
                             <Button
                                 variant="secondary"
                                 onClick={() => setLibrary("daytona")}
@@ -112,6 +128,12 @@ export function Mira() {
                         onSelect={() => setChoosingConversation(false)}
                     />
                 </Modal>
+            )}
+            {library === "code" && (
+                <CodeLibrary
+                    conversationId={conversationId}
+                    onClose={() => setLibrary(undefined)}
+                />
             )}
             {library === "daytona" && (
                 <DaytonaJobs

@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { capabilities } from "@homelab/contracts/operations";
 import { installMiraPresets } from "@homelab/mira/data/automationActions";
+import { saveMiraCode } from "@homelab/mira/data/code";
 import { createConversation, enqueueTurn } from "@homelab/mira/data/conversations";
 import { saveMiraDaytona } from "@homelab/mira/data/daytona";
 import { createReport, saveMemory } from "@homelab/mira/data/documents";
@@ -16,6 +17,7 @@ import { saveTask } from "@homelab/mira/data/tasks";
 
 import { createTestDatabase } from "../../../../../tests/database";
 import { createMiraTools } from "../../../../mira/src/server/executor/tools";
+import { daytonaEditContent } from "../../../../mira/src/server/sandbox/profile";
 import { syntheticPdf } from "../../../../mira/src/server/testing/document";
 import index from "../../index.html";
 import { connectDashboardDatabase } from "../database/connection";
@@ -67,6 +69,7 @@ export async function main(port = 3330): Promise<void> {
         hereNowBinding: previewHereNow,
         moltbookBinding: previewMoltbook,
         daytonaBinding: previewDaytona,
+        githubBinding: { owner: context.owner },
     };
     const principal = { kind: "human" as const, id: context.owner, capabilities };
     const worker = crypto.randomUUID();
@@ -127,6 +130,73 @@ export async function main(port = 3330): Promise<void> {
             );
             if (state !== "draft")
                 await database.client`UPDATE mira_daytona_jobs SET deadline=clock_timestamp()-interval '15 minutes',state=${state},phase=${state === "completed" ? "closed" : "cleaning"},cleanup=${state === "completed" ? "confirmed" : "pending"},exit_code=0,stdout='Bun 1.4.4\nBuild completed\nAll checks passed\n',files=${JSON.stringify([{ name: "result.json", id: cloudFile.id }])}::text::jsonb WHERE id=${id}`;
+        }
+        const edits = await saveMiraFile(context, directory, {
+            id: Bun.randomUUIDv7(),
+            name: "Example edits.json",
+            bytes: new TextEncoder().encode(
+                JSON.stringify(
+                    {
+                        version: 1,
+                        commit: "a".repeat(40),
+                        files: [
+                            {
+                                path: "apps/dashboard/src/browser/example.ts",
+                                beforeSha256: null,
+                                content: 'export const title = "Clearer job status";\n',
+                            },
+                        ],
+                    },
+                    null,
+                    2
+                )
+            ),
+        });
+        const [editFile] = await database.client<
+            { sha256: string }[]
+        >`SELECT sha256 FROM mira_attachments WHERE id=${edits.id}`;
+        for (const state of ["draft", "published", "needs_attention"] as const) {
+            const jobId = Bun.randomUUIDv7();
+            await saveMiraDaytona(
+                context,
+                {
+                    id: jobId,
+                    version: 0,
+                    conversationId: chat.id,
+                    taskId: null,
+                    content: daytonaEditContent(
+                        {
+                            id: jobId,
+                            commit: "a".repeat(40),
+                            editsSha256: editFile!.sha256,
+                        },
+                        { id: edits.id, sha256: editFile!.sha256 }
+                    ),
+                },
+                previewDaytona
+            );
+            await database.client`UPDATE mira_daytona_jobs SET state='completed',outcome='completed',cleanup='confirmed',phase='closed',exit_code=0 WHERE id=${jobId}`;
+            const draft = await saveMiraCode(
+                context,
+                {
+                    id: Bun.randomUUIDv7(),
+                    version: 0,
+                    conversationId: chat.id,
+                    content: {
+                        title: {
+                            draft: "fix(dashboard): clarify job progress",
+                            published: "fix(dashboard): align mobile actions",
+                            needs_attention: "fix(dashboard): recover publication status",
+                        }[state],
+                        body: "Show clear progress and keep the actions aligned on smaller screens.\n\nValidation: synthetic preview data only.",
+                        checkId: jobId,
+                        commit: "a".repeat(40),
+                    },
+                },
+                { owner: context.owner }
+            );
+            if (state !== "draft")
+                await database.client`UPDATE mira_code_publications SET state=${state},approved_version=1,approved_by=${context.actor},approved_at=now(),control_version=1,attempt_token=${crypto.randomUUID()},started_at=now(),phase=${state === "published" ? "pull_request:confirmed" : "pull_request:sending"},branch=${`mira/publication/${draft.id}`},commit=${"d".repeat(40)},number=${state === "published" ? 123 : null},message=${state === "published" ? "Synthetic draft PR created. No real GitHub request was sent." : "Synthetic interrupted publication. Inspect the outcome before any further action."} WHERE id=${draft.id}`;
         }
         await database.client`INSERT INTO mira_switches(owner,key,enabled,reason) VALUES(${context.owner},'integration:daytona',false,'Synthetic recovery preview; no provider connected.')`;
         await saveMiraSocial(

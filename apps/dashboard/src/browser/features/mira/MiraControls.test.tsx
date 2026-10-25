@@ -6,6 +6,7 @@ import {
     miraTaskUpdateSchema,
 } from "@homelab/contracts/mira";
 import type { MiraAttachment } from "@homelab/contracts/mira";
+import type { MiraCodePublication } from "@homelab/contracts/miraCode";
 import type { MiraDaytonaJob } from "@homelab/contracts/miraDaytona";
 import type { MiraMailDraft } from "@homelab/contracts/miraMail";
 import type { MiraPublication } from "@homelab/contracts/miraPublication";
@@ -25,6 +26,9 @@ import { ChatActivity } from "./ChatActivity";
 import { ChatComposer } from "./ChatComposer";
 import { ChatMessage } from "./ChatMessage";
 import { ChatSettings } from "./ChatSettings";
+import { CodeEditor } from "./CodeEditor";
+import { CodeLibrary } from "./CodeLibrary";
+import { CodeReview } from "./CodeReview";
 import { DaytonaDetails } from "./DaytonaDetails";
 import { DaytonaEditor } from "./DaytonaEditor";
 import { DaytonaJobs } from "./DaytonaJobs";
@@ -1777,6 +1781,254 @@ test("operator cleanup is shown as a distinct record without cancel or approval 
         expect(
             screen.queryByRole("button", { name: "Confirm external cleanup" })
         ).not.toBeInTheDocument();
+    } finally {
+        cleanup();
+    }
+});
+
+function codeDraft(state: MiraCodePublication["state"] = "draft"): MiraCodePublication {
+    return {
+        id: crypto.randomUUID(),
+        version: 2,
+        conversationId: null,
+        state,
+        content: {
+            title: "fix(dashboard): reviewed change",
+            body: "Exact PR description <script>passive</script>",
+            checkId: crypto.randomUUID(),
+            commit: "a".repeat(40),
+            edits: { id: crypto.randomUUID(), sha256: "b".repeat(64) },
+        },
+        contentHash: "c".repeat(64),
+        phase: null,
+        branch: null,
+        commit: null,
+        number: null,
+        observation: null,
+        inspectionRequested: false,
+        observedAt: null,
+        message: null,
+        createdAt: "2026-10-25T19:00:00Z",
+        updatedAt: "2026-10-25T19:00:00Z",
+    };
+}
+test("code review requires matching verified source and submits only the current exact proposal", async () => {
+    const draft = codeDraft(),
+        query = new QueryClient({
+            defaultOptions: {
+                queries: { enabled: false, retry: false, staleTime: Infinity },
+            },
+        });
+    const plan = {
+        version: 1,
+        commit: draft.content.commit,
+        files: [
+            {
+                path: "example.ts",
+                beforeSha256: null,
+                content: "<script>passive</script>",
+            },
+        ],
+    };
+    const key = ["operations", "mira", "code-source", draft.id, draft.contentHash];
+    query.setQueryData(key, { contentHash: "wrong", plan });
+    const requested: unknown[] = [];
+    let closed = false;
+    const request = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+            (_target: Parameters<typeof fetch>[0], init?: RequestInit) => {
+                if (typeof init?.body !== "string")
+                    return Promise.resolve(
+                        Response.json([
+                            {
+                                result: {
+                                    data: serialize({
+                                        contentHash: draft.contentHash,
+                                        plan,
+                                    }),
+                                },
+                            },
+                        ])
+                    );
+                requested.push(
+                    (JSON.parse(init.body) as { "0": { json: unknown } })["0"].json
+                );
+                return Promise.resolve(
+                    Response.json([
+                        { result: { data: serialize({ ...draft, state: "queued" }) } },
+                    ])
+                );
+            },
+            { preconnect: fetch.preconnect }
+        )
+    );
+    const cleanup = fixture(
+        <CodeReview
+            draft={draft}
+            onClose={() => {
+                closed = true;
+            }}
+        />,
+        false,
+        query
+    );
+    try {
+        expect(screen.getByRole("button", { name: "Create draft PR" })).toBeDisabled();
+        expect(screen.getByText(draft.content.body)).toBeInTheDocument();
+        expect(
+            screen.getByRole("region", { name: "Changes to example.ts" })
+        ).toHaveTextContent("<script>passive</script>");
+        act(() => {
+            query.setQueryData(key, { contentHash: draft.contentHash, plan });
+        });
+        await waitFor(() =>
+            expect(screen.getByRole("button", { name: "Create draft PR" })).toBeEnabled()
+        );
+        await userEvent
+            .setup()
+            .click(screen.getByRole("button", { name: "Create draft PR" }));
+        await waitFor(() => expect(closed).toBe(true));
+        expect(requested).toEqual([
+            {
+                id: draft.id,
+                version: draft.version,
+                contentHash: draft.contentHash,
+                reviewedContent: draft.content,
+            },
+        ]);
+    } finally {
+        cleanup();
+        request.mockRestore();
+    }
+});
+test("uncertain code publication offers inspection and a recovered PR link without any publish button", async () => {
+    const draft = codeDraft("needs_attention");
+    draft.observation = {
+        branchSha: "d".repeat(40),
+        pullRequest: {
+            number: 123,
+            url: "https://github.com/rajohan/homelab/pull/123",
+            state: "open",
+            draft: true,
+            commit: "d".repeat(40),
+            base: draft.content.commit,
+        },
+    };
+    const requested: unknown[] = [];
+    const request = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+            (_target: Parameters<typeof fetch>[0], init?: RequestInit) => {
+                if (typeof init?.body !== "string")
+                    throw new Error("Expected inspection mutation");
+                requested.push(
+                    (JSON.parse(init.body) as { "0": { json: unknown } })["0"].json
+                );
+                return Promise.resolve(
+                    Response.json([{ result: { data: serialize(undefined) } }])
+                );
+            },
+            { preconnect: fetch.preconnect }
+        )
+    );
+    const cleanup = fixture(<CodeReview draft={draft} onClose={() => {}} />);
+    try {
+        expect(
+            screen.queryByRole("button", { name: "Create draft PR" })
+        ).not.toBeInTheDocument();
+        expect(screen.getByRole("link", { name: "Open PR" })).toHaveAttribute(
+            "href",
+            "https://github.com/rajohan/homelab/pull/123"
+        );
+        await userEvent
+            .setup()
+            .click(screen.getByRole("button", { name: "Inspect GitHub" }));
+        await waitFor(() => expect(requested).toHaveLength(1));
+        expect(requested[0]).toEqual({ id: draft.id, version: draft.version });
+    } finally {
+        cleanup();
+        request.mockRestore();
+    }
+});
+test("code editor preserves PR text while choosing a successful check and saves only a local proposal", async () => {
+    const job = {
+        ...cloudJob(),
+        state: "completed" as const,
+        cleanup: "confirmed" as const,
+        exitCode: 0,
+    };
+    job.content.command = `bun --no-env-file /opt/homelab/daytona-check.js ${job.id} ${"a".repeat(40)} --edits ${"b".repeat(64)}`;
+    const query = new QueryClient({
+        defaultOptions: { queries: { enabled: false, retry: false } },
+    });
+    query.setQueryData(["operations", "mira", "code-checks", undefined], {
+        pages: [{ rows: [job, cloudJob()], nextCursor: null }],
+        pageParams: [undefined],
+    });
+    const requested: unknown[] = [];
+    const request = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+            (_target: Parameters<typeof fetch>[0], init?: RequestInit) => {
+                if (typeof init?.body !== "string")
+                    throw new Error("Expected draft body");
+                requested.push(
+                    (JSON.parse(init.body) as { "0": { json: unknown } })["0"].json
+                );
+                return Promise.resolve(
+                    Response.json([{ result: { data: serialize({}) } }])
+                );
+            },
+            { preconnect: fetch.preconnect }
+        )
+    );
+    const cleanup = fixture(<CodeEditor onClose={() => {}} />, false, query);
+    try {
+        const user = userEvent.setup();
+        expect(screen.getByRole("button", { name: "Save proposal" })).toBeDisabled();
+        await user.type(screen.getByLabelText("PR title"), "fix: retained title");
+        await user.type(screen.getByLabelText("Description"), "Retained body");
+        await user.click(screen.getByRole("button", { name: "Choose check" }));
+        expect(screen.getAllByRole("button", { name: "Choose check" })).toHaveLength(1);
+        await user.click(screen.getByRole("button", { name: "Choose check" }));
+        expect(screen.getByLabelText("PR title")).toHaveValue("fix: retained title");
+        await user.click(screen.getByRole("button", { name: "Save proposal" }));
+        await waitFor(() => expect(requested).toHaveLength(1));
+        expect(requested[0]).toMatchObject({
+            version: 0,
+            conversationId: null,
+            content: {
+                checkId: job.id,
+                commit: "a".repeat(40),
+                title: "fix: retained title",
+                body: "Retained body",
+            },
+        });
+    } finally {
+        cleanup();
+        request.mockRestore();
+    }
+});
+test("code history uses a bounded list and opens shared proposal review", async () => {
+    const draft = codeDraft("published");
+    draft.number = 123;
+    const query = new QueryClient({
+        defaultOptions: { queries: { enabled: false, retry: false } },
+    });
+    query.setQueryData(["operations", "mira", "code", undefined], {
+        pages: [{ rows: [draft], nextCursor: null }],
+        pageParams: [undefined],
+    });
+    const cleanup = fixture(<CodeLibrary />, false, query);
+    try {
+        expect(screen.getByRole("heading", { name: "Code changes" })).toBeInTheDocument();
+        const user = userEvent.setup();
+        await user.click(
+            screen.getByRole("button", { name: `Actions for ${draft.content.title}` })
+        );
+        await user.click(screen.getByRole("menuitem", { name: "View proposal" }));
+        expect(screen.getByRole("link", { name: "Open PR" })).toHaveAttribute(
+            "href",
+            "https://github.com/rajohan/homelab/pull/123"
+        );
     } finally {
         cleanup();
     }

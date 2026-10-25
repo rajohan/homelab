@@ -92,6 +92,7 @@ export async function main(): Promise<void> {
                         moltbook: configuration.moltbook,
                         hereNow: configuration.hereNow,
                         daytona: configuration.daytona,
+                        github: configuration.github,
                     }),
                 catch: () => new Error("Mira executor failed."),
             })

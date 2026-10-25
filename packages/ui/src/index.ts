@@ -65,3 +65,5 @@ export {
     type DropdownMenuAction,
 } from "./components/DropdownMenu/DropdownMenu";
 export { queryRefresh } from "./lib/queryRefresh";
+
+export { SyntaxSource } from "./components/Markdown/SyntaxSource";

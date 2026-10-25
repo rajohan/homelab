@@ -5,6 +5,7 @@ import {
     type MiraModel,
     type MiraSchedule,
 } from "@homelab/contracts/mira";
+import type { MiraCodeContent, MiraCodePublication } from "@homelab/contracts/miraCode";
 import type { MiraDaytonaContent } from "@homelab/contracts/miraDaytona";
 import type { MiraMailContent } from "@homelab/contracts/miraMail";
 import type { MiraPublicationContent } from "@homelab/contracts/miraPublication";
@@ -669,6 +670,62 @@ export const miraDaytonaJobs = pgTable(
         check(
             "mira_daytona_logs",
             sql`octet_length(${t.stdout})+octet_length(${t.stderr})+octet_length(${t.output})<=131072`
+        ),
+    ]
+);
+
+export const miraCodePublications = pgTable(
+    "mira_code_publications",
+    {
+        id: uuid().primaryKey(),
+        owner: text().notNull(),
+        conversationId: uuid("conversation_id").references(() => miraConversations.id),
+        checkId: uuid("check_id")
+            .notNull()
+            .references(() => miraDaytonaJobs.id),
+        bindingHash: text("binding_hash").notNull(),
+        version: integer().notNull().default(1),
+        state: text().notNull().default("draft"),
+        content: jsonb().$type<MiraCodeContent>().notNull(),
+        contentHash: text("content_hash").notNull(),
+        approvedVersion: integer("approved_version"),
+        approvedBy: text("approved_by"),
+        approvedAt: time("approved_at"),
+        controlVersion: integer("control_version"),
+        attemptToken: uuid("attempt_token"),
+        startedAt: time("started_at"),
+        authoredAt: text("authored_at"),
+        phase: text(),
+        branch: text(),
+        tree: text(),
+        commit: text(),
+        number: integer(),
+        observation: jsonb().$type<MiraCodePublication["observation"]>(),
+        inspectionRequested: boolean("inspection_requested").notNull().default(false),
+        inspectionToken: uuid("inspection_token"),
+        inspectionStartedAt: time("inspection_started_at"),
+        observedAt: time("observed_at"),
+        message: text(),
+        createdAt: time("created_at").notNull().defaultNow(),
+        updatedAt: time("updated_at").notNull().defaultNow(),
+    },
+    (t) => [
+        index("mira_code_owner").on(t.owner, t.createdAt, t.id),
+        index("mira_code_queue").on(t.state, t.id),
+        uniqueIndex("mira_code_one_active")
+            .on(sql`(true)`)
+            .where(sql`${t.state}='publishing'`),
+        uniqueIndex("mira_code_check_once")
+            .on(t.checkId)
+            .where(sql`${t.state} NOT IN ('draft','cancelled')`),
+        check(
+            "mira_code_state",
+            sql`${t.state} IN ('draft','queued','publishing','published','needs_attention','cancelled')`
+        ),
+        check("mira_code_version", sql`${t.version} >= 1`),
+        check(
+            "mira_code_approval",
+            sql`${t.state} NOT IN ('queued','publishing','published','needs_attention') OR (${t.approvedVersion} IS NOT NULL AND ${t.approvedBy} IS NOT NULL AND ${t.approvedAt} IS NOT NULL AND ${t.controlVersion} IS NOT NULL)`
         ),
     ]
 );

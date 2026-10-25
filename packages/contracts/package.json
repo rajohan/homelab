@@ -18,7 +18,8 @@
         "./miraMail": "./src/miraMail.ts",
         "./miraPublication": "./src/miraPublication.ts",
         "./miraSocial": "./src/miraSocial.ts",
-        "./miraDaytona": "./src/miraDaytona.ts"
+        "./miraDaytona": "./src/miraDaytona.ts",
+        "./miraCode": "./src/miraCode.ts"
     },
     "dependencies": {
         "valibot": "1.5.0"

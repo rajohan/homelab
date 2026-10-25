@@ -14,6 +14,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
+    GitPullRequest,
     Globe,
     Cloud,
     Archive,
@@ -47,7 +48,14 @@ export function ChatPanel({
 }: {
     readonly id: string;
     readonly onLibrary: (
-        library: "files" | "memory" | "mail" | "publications" | "social" | "daytona"
+        library:
+            | "files"
+            | "memory"
+            | "mail"
+            | "publications"
+            | "social"
+            | "daytona"
+            | "code"
     ) => void;
     readonly onChooseConversation: () => void;
 }) {
@@ -147,6 +155,12 @@ export function ChatPanel({
                             label="Conversation actions"
                             disabled={change.isPending || rename.isPending}
                             actions={[
+                                {
+                                    id: "code",
+                                    label: "Code changes",
+                                    icon: GitPullRequest,
+                                    onSelect: () => onLibrary("code"),
+                                },
                                 {
                                     id: "daytona",
                                     label: "Cloud jobs",

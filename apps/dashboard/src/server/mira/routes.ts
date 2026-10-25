@@ -23,6 +23,11 @@ import {
     miraTaskUpdateSchema,
 } from "@homelab/contracts/mira";
 import {
+    miraCodeSaveSchema,
+    miraCodeApproveSchema,
+    miraCodeFilterSchema,
+} from "@homelab/contracts/miraCode";
+import {
     miraDaytonaSaveSchema,
     miraDaytonaApproveSchema,
     miraDaytonaFilterSchema,
@@ -57,6 +62,15 @@ import {
     setMiraEnabled,
 } from "@homelab/mira/data/automations";
 import { listMiraModels, saveMiraChatSettings } from "@homelab/mira/data/chatSettings";
+import {
+    saveMiraCode,
+    approveMiraCode,
+    cancelMiraCode,
+    inspectMiraCode,
+    listMiraCode,
+    readMiraCode,
+} from "@homelab/mira/data/code";
+import { readCodeSource } from "@homelab/mira/data/codeSource";
 import { MiraFailure, type MiraContext } from "@homelab/mira/data/context";
 import {
     cancelRun,
@@ -123,6 +137,7 @@ import {
 } from "@homelab/mira/data/tasks";
 import { agentMailBindingHash } from "@homelab/mira/integrations/agentmail/configuration";
 import { daytonaBindingHash } from "@homelab/mira/integrations/daytona/configuration";
+import { githubBindingHash } from "@homelab/mira/integrations/github/configuration";
 import { hereNowBindingHash } from "@homelab/mira/integrations/herenow/configuration";
 import { moltbookBindingHash } from "@homelab/mira/integrations/moltbook/configuration";
 import * as v from "valibot";
@@ -237,6 +252,57 @@ export const miraRouter = trpc.router({
             .mutation(({ ctx, input }) =>
                 execute(ctx, (mira) => cancelMiraSocial(mira, input))
             ),
+    }),
+    code: trpc.router({
+        read: trpc.procedure
+            .input(record)
+            .query(({ ctx, input }) =>
+                execute(ctx, (mira) => readMiraCode(mira.client, mira.owner, input.id))
+            ),
+        list: trpc.procedure
+            .input(miraCodeFilterSchema)
+            .query(({ ctx, input }) => execute(ctx, (mira) => listMiraCode(mira, input))),
+        save: trpc.procedure
+            .input(miraCodeSaveSchema)
+            .mutation(({ ctx, input }) =>
+                execute(ctx, (mira) =>
+                    saveMiraCode(mira, input, ctx.operations?.githubBinding)
+                )
+            ),
+        approve: trpc.procedure
+            .input(miraCodeApproveSchema)
+            .mutation(({ ctx, input }) =>
+                execute(ctx, (mira) =>
+                    approveMiraCode(
+                        mira,
+                        input,
+                        ctx.operations?.githubBinding,
+                        ctx.operations?.miraFilesDirectory
+                    )
+                )
+            ),
+        cancel: trpc.procedure
+            .input(versionedIdSchema)
+            .mutation(({ ctx, input }) =>
+                execute(ctx, (mira) => cancelMiraCode(mira, input))
+            ),
+        inspect: trpc.procedure
+            .input(versionedIdSchema)
+            .mutation(({ ctx, input }) =>
+                execute(ctx, (mira) => inspectMiraCode(mira, input))
+            ),
+        source: trpc.procedure.input(record).query(({ ctx, input }) =>
+            execute(ctx, async (mira) => {
+                const draft = await readMiraCode(mira.client, mira.owner, input.id);
+                const source = await readCodeSource(
+                    mira,
+                    draft.content,
+                    draft.conversationId,
+                    ctx.operations?.miraFilesDirectory
+                );
+                return { contentHash: draft.contentHash, plan: source.plan };
+            })
+        ),
     }),
     publications: trpc.router({
         list: trpc.procedure
@@ -525,7 +591,8 @@ export const miraRouter = trpc.router({
                 ctx.operations?.agentMailHook,
                 ctx.operations?.moltbookBinding,
                 ctx.operations?.hereNowBinding,
-                ctx.operations?.daytonaBinding
+                ctx.operations?.daytonaBinding,
+                ctx.operations?.githubBinding
             )
         )
     ),
@@ -537,6 +604,7 @@ export const miraRouter = trpc.router({
                 const moltbook = ctx.operations?.moltbookBinding;
                 const hereNow = ctx.operations?.hereNowBinding;
                 const daytona = ctx.operations?.daytonaBinding;
+                const github = ctx.operations?.githubBinding;
                 if (
                     [
                         "integration:agentmail",
@@ -544,6 +612,7 @@ export const miraRouter = trpc.router({
                         "integration:moltbook-publish",
                         "integration:here-now",
                         "integration:daytona",
+                        "integration:github",
                     ].includes(input.key) &&
                     input.enabled
                 ) {
@@ -552,7 +621,8 @@ export const miraRouter = trpc.router({
                         binding,
                         moltbook,
                         hereNow,
-                        daytona
+                        daytona,
+                        github
                     );
                     const status = statuses.find((item) => item.key === input.key);
                     if (!status?.ready)
@@ -582,6 +652,8 @@ export const miraRouter = trpc.router({
                     hash = hereNowBindingHash(hereNow);
                 if (input.key === "integration:daytona" && daytona?.owner === mira.owner)
                     hash = daytonaBindingHash(daytona);
+                if (input.key === "integration:github" && github?.owner === mira.owner)
+                    hash = githubBindingHash(github);
                 return setMiraEnabled(mira, input, hash);
             })
         ),

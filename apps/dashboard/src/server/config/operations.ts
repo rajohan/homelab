@@ -10,6 +10,10 @@ import {
     type DaytonaBinding,
 } from "@homelab/mira/integrations/daytona/configuration";
 import {
+    githubBinding,
+    type GitHubBinding,
+} from "@homelab/mira/integrations/github/configuration";
+import {
     hereNowBinding,
     type HereNowBinding,
 } from "@homelab/mira/integrations/herenow/configuration";
@@ -58,6 +62,7 @@ export interface OperationsConfiguration {
     readonly agentMailHook?: AgentMailHookConfiguration | undefined;
     readonly moltbookBinding?: MoltbookBinding | undefined;
     readonly hereNowBinding?: HereNowBinding | undefined;
+    readonly githubBinding?: GitHubBinding | undefined;
     readonly daytonaBinding?: DaytonaBinding | undefined;
     readonly maintenanceTargets?: readonly MaintenanceTarget[];
     readonly releaseRepository?: string | undefined;
@@ -260,6 +265,7 @@ export function parseOperationsConfiguration(
         agentMailHook: agentMailHookConfiguration(environment),
         moltbookBinding: moltbookBinding(environment),
         hereNowBinding: hereNowBinding(environment),
+        githubBinding: githubBinding(environment),
         daytonaBinding: daytonaBinding(environment),
         maintenanceTargets: parseMaintenanceTargets(
             environment.HOMELAB_DASHBOARD_MAINTENANCE_TARGETS,

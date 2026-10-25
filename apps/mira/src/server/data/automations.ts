@@ -17,6 +17,7 @@ export const miraControlKeys = [
     "integration:agentmail",
     "integration:daytona",
     "integration:here-now",
+    "integration:github",
     "integration:moltbook",
     "integration:moltbook-publish",
     "computer:windows",
@@ -202,7 +203,7 @@ export async function setMiraEnabled(
             await query`INSERT INTO mira_control_windows (owner, key, version, started_at) VALUES (${context.owner}, ${input.key}, 1, '1970-01-01'::timestamptz)`;
         const rows = await query<
             { key: string; version: number; at: Date }[]
-        >`UPDATE mira_switches SET enabled = ${input.enabled}, reason = ${input.reason}, until = ${input.until ? new Date(input.until) : null}, version = version + 1, changed_at = clock_timestamp(), binding_activated_at = CASE WHEN ${input.key} IN ('integration:agentmail','integration:moltbook','integration:moltbook-publish','integration:here-now','integration:daytona') AND ${input.enabled} AND binding_hash IS DISTINCT FROM ${bindingHash ?? null} THEN clock_timestamp() ELSE binding_activated_at END, binding_hash = CASE WHEN ${input.key} IN ('integration:agentmail','integration:moltbook','integration:moltbook-publish','integration:here-now','integration:daytona') AND ${input.enabled} THEN ${bindingHash ?? null} ELSE binding_hash END WHERE owner = ${context.owner} AND key = ${input.key} AND version = ${input.version} RETURNING key, version, changed_at AS at`;
+        >`UPDATE mira_switches SET enabled = ${input.enabled}, reason = ${input.reason}, until = ${input.until ? new Date(input.until) : null}, version = version + 1, changed_at = clock_timestamp(), binding_activated_at = CASE WHEN ${input.key} IN ('integration:agentmail','integration:moltbook','integration:moltbook-publish','integration:here-now','integration:daytona','integration:github') AND ${input.enabled} AND binding_hash IS DISTINCT FROM ${bindingHash ?? null} THEN clock_timestamp() ELSE binding_activated_at END, binding_hash = CASE WHEN ${input.key} IN ('integration:agentmail','integration:moltbook','integration:moltbook-publish','integration:here-now','integration:daytona','integration:github') AND ${input.enabled} THEN ${bindingHash ?? null} ELSE binding_hash END WHERE owner = ${context.owner} AND key = ${input.key} AND version = ${input.version} RETURNING key, version, changed_at AS at`;
         if (!rows[0])
             throw new MiraFailure(
                 "CONFLICT",
@@ -266,6 +267,7 @@ export async function resumeMiraControls(
                 row.key === "integration:moltbook" ||
                 row.key === "integration:moltbook-publish" ||
                 row.key === "integration:here-now" ||
+                row.key === "integration:github" ||
                 row.key === "integration:daytona"
             ) {
                 const integration = row.key.slice(12);
@@ -276,7 +278,7 @@ export async function resumeMiraControls(
                         WHERE c.owner=${row.owner} AND c.key=${row.key}
                         AND receiver.heartbeat_at > now()-interval '45 seconds'
                         AND runtime.heartbeat_at > now()-interval '45 seconds'
-                        AND runtime.integrations @> jsonb_build_array(jsonb_build_object('owner',c.owner,'key',${integration}::text,'bindingHash',c.binding_hash) || CASE WHEN ${integration}::text='daytona' THEN '{"sendConfigured":true}'::jsonb ELSE '{}'::jsonb END)) AS current`;
+                        AND runtime.integrations @> jsonb_build_array(jsonb_build_object('owner',c.owner,'key',${integration}::text,'bindingHash',c.binding_hash) || CASE WHEN ${integration}::text IN ('daytona','github') THEN '{"sendConfigured":true}'::jsonb ELSE '{}'::jsonb END)) AS current`;
                 if (!binding?.current) continue;
             }
             const [resumed] = await query<
