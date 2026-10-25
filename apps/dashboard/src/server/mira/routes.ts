@@ -22,6 +22,11 @@ import {
     miraTaskInputSchema,
     miraTaskUpdateSchema,
 } from "@homelab/contracts/mira";
+import {
+    miraMailApproveSchema,
+    miraMailFilterSchema,
+    miraMailSaveSchema,
+} from "@homelab/contracts/miraMail";
 import { idSchema, versionedIdSchema } from "@homelab/contracts/operations";
 import {
     deleteMiraAutomation,
@@ -56,6 +61,12 @@ import {
 } from "@homelab/mira/data/documents";
 import { listMiraFiles, miraFileMetadata } from "@homelab/mira/data/files";
 import { listMiraIntegrations } from "@homelab/mira/data/integrations";
+import {
+    approveMiraMail,
+    cancelMiraMail,
+    listMiraMail,
+    saveMiraMail,
+} from "@homelab/mira/data/mail";
 import { listMiraProposals, decideMiraProposal } from "@homelab/mira/data/proposals";
 import { listMiraRuns } from "@homelab/mira/data/queue";
 import { readMiraRun } from "@homelab/mira/data/runHistory";
@@ -103,6 +114,30 @@ function execute<T>(
 
 const record = v.strictObject({ id: idSchema });
 export const miraRouter = trpc.router({
+    mail: trpc.router({
+        list: trpc.procedure
+            .input(miraMailFilterSchema)
+            .query(({ ctx, input }) => execute(ctx, (mira) => listMiraMail(mira, input))),
+        save: trpc.procedure
+            .input(miraMailSaveSchema)
+            .mutation(({ ctx, input }) =>
+                execute(ctx, (mira) =>
+                    saveMiraMail(mira, input, ctx.operations?.agentMailHook)
+                )
+            ),
+        approve: trpc.procedure
+            .input(miraMailApproveSchema)
+            .mutation(({ ctx, input }) =>
+                execute(ctx, (mira) =>
+                    approveMiraMail(mira, input, ctx.operations?.agentMailHook)
+                )
+            ),
+        cancel: trpc.procedure
+            .input(versionedIdSchema)
+            .mutation(({ ctx, input }) =>
+                execute(ctx, (mira) => cancelMiraMail(mira, input))
+            ),
+    }),
     proposals: trpc.router({
         list: trpc.procedure
             .input(record)
