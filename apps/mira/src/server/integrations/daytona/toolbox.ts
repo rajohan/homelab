@@ -2,6 +2,7 @@ import {
     FileSystemApiAxiosParamCreator,
     ProcessApiAxiosParamCreator,
 } from "@daytona/toolbox-api-client";
+import { version as toolboxVersion } from "@daytona/toolbox-api-client/package.json";
 import * as v from "valibot";
 
 import { integrationBytes, integrationJson } from "../http";
@@ -80,16 +81,19 @@ export class DaytonaToolbox {
     private readonly control: DaytonaClient;
     private readonly request: typeof fetch;
     private readonly sessionId: string;
+    private readonly now: () => number;
     /**
      * Bind the toolbox to a previously created sandbox; constructing this adapter performs no network request.
      * @param configuration - Explicit qualified account and immutable snapshot binding.
      * @param reference - Persisted unique attempt and exact provider sandbox UUID.
      * @param request - Injectable transport for synthetic qualification only.
+     * @param now - Wall-clock milliseconds; substitute only for deterministic lifetime qualification.
      */
     constructor(
         configuration: DaytonaConfiguration,
         reference: Reference,
-        request: typeof fetch = fetch
+        request: typeof fetch = fetch,
+        now: () => number = Date.now
     ) {
         const uuid = v.pipe(v.string(), v.uuid());
         if (
@@ -101,10 +105,11 @@ export class DaytonaToolbox {
         this.reference = { ...reference };
         this.control = new DaytonaClient(configuration, request);
         this.request = request;
+        this.now = now;
         this.sessionId = `mira-${reference.runId}`;
     }
 
-    private async ready(signal: AbortSignal, writing = false): Promise<void> {
+    private async ready(signal: AbortSignal, writing = false): Promise<number> {
         signal.throwIfAborted();
         if (writing) await this.control.preflight(signal, true);
         const observed = await this.control.inspect(this.reference, signal);
@@ -113,18 +118,22 @@ export class DaytonaToolbox {
             observed.state !== "started" ||
             !observed.settingsMatch ||
             !observed.expiresAt ||
-            Date.parse(observed.expiresAt) - Date.now() < (writing ? 30_000 : 0)
+            Date.parse(observed.expiresAt) - this.now() < (writing ? 30_000 : 0)
         )
             throw new Error(
                 "Daytona sandbox is not available with the required settings."
             );
+        return Date.parse(observed.expiresAt);
     }
 
-    private async response(
-        args: Arguments,
-        signal: AbortSignal,
-        raw?: Uint8Array
-    ): Promise<Response> {
+    private requireLifetime(expiresAt: number): void {
+        if (expiresAt - this.now() < 30_000)
+            throw new Error(
+                "Daytona sandbox has less than 30 seconds remaining; no write was dispatched."
+            );
+    }
+
+    private async response(args: Arguments, signal: AbortSignal): Promise<Response> {
         signal.throwIfAborted();
         const method = args.options.method?.toUpperCase();
         const route = new URL(args.url, "https://proxy.app.daytona.io");
@@ -139,11 +148,9 @@ export class DaytonaToolbox {
         )
             throw new Error("Invalid Daytona toolbox request.");
         const data: unknown = args.options.data;
-        if (raw === undefined && data !== undefined && typeof data !== "string")
+        if (data !== undefined && typeof data !== "string" && !(data instanceof FormData))
             throw new Error("Invalid Daytona toolbox payload.");
-        let body: string | Blob | undefined;
-        if (raw) body = new Blob([new Uint8Array(raw)]);
-        else if (typeof data === "string") body = data;
+        const body = data;
         return this.request(
             `https://proxy.app.daytona.io/toolbox/${this.reference.sandboxId}${args.url}`,
             {
@@ -152,8 +159,11 @@ export class DaytonaToolbox {
                     Authorization: `Bearer ${this.configuration.apiKey}`,
                     "X-Daytona-Organization-ID": this.configuration.organizationId,
                     "X-Daytona-Source": "homelab-mira",
+                    "X-Daytona-SDK-Version": toolboxVersion,
                     Accept: "application/json,application/octet-stream",
-                    "Content-Type": raw ? "application/octet-stream" : "application/json",
+                    ...(body instanceof FormData
+                        ? {}
+                        : { "Content-Type": "application/json" }),
                 },
                 ...(body === undefined ? {} : { body }),
                 credentials: "omit",
@@ -213,10 +223,11 @@ export class DaytonaToolbox {
      * @returns Acknowledgement only, not permission to resend an uncertain request.
      */
     async open(signal: AbortSignal, authorize: () => Promise<void>): Promise<void> {
-        await this.ready(signal, true);
+        const expiresAt = await this.ready(signal, true);
         const args = await processApi.createSession({ sessionId: this.sessionId });
         await authorize();
         signal.throwIfAborted();
+        this.requireLifetime(expiresAt);
         try {
             const response = await this.response(args, signal);
             if (!response.ok) {
@@ -247,18 +258,19 @@ export class DaytonaToolbox {
         if (bytes.byteLength > 1024 * 1024)
             throw new Error("Daytona input exceeds 1 MiB.");
         const input = new Uint8Array(bytes);
-        await this.ready(signal, true);
+        const expiresAt = await this.ready(signal, true);
         const session = await this.session(signal);
         if (session && session.commands.length > 0)
             throw new Error("Daytona inputs cannot change after a command has started.");
-        const args = await filesApi.uploadFile(path);
+        const args = await filesApi.uploadFile(
+            path,
+            new File([input], "input", { type: "application/octet-stream" })
+        );
         await authorize();
         signal.throwIfAborted();
+        this.requireLifetime(expiresAt);
         try {
-            const value = await integrationJson(
-                await this.response(args, signal, input),
-                4096
-            );
+            const value = await integrationJson(await this.response(args, signal), 4096);
             const parsed = v.safeParse(v.object({ path: v.literal(path) }), value);
             if (!parsed.success) throw new Error("Upload destination was not confirmed.");
             return path;
@@ -280,7 +292,7 @@ export class DaytonaToolbox {
         authorize: () => Promise<void>
     ): Promise<string> {
         daytonaCommandHash(command);
-        await this.ready(signal, true);
+        const expiresAt = await this.ready(signal, true);
         const session = await this.session(signal);
         if (!session || session.commands.length > 0)
             throw new Error("Daytona requires an acknowledged empty session.");
@@ -291,6 +303,7 @@ export class DaytonaToolbox {
         });
         await authorize();
         signal.throwIfAborted();
+        this.requireLifetime(expiresAt);
         try {
             const parsed = v.safeParse(
                 v.object({ cmdId: identifier }),

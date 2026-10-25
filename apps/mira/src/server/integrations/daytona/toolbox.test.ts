@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 import { rejects } from "node:assert/strict";
 
+import { version as toolboxVersion } from "@daytona/toolbox-api-client/package.json";
+
 import { daytonaBindingHash, daytonaSandboxName } from "./configuration";
 import { DaytonaToolbox, DaytonaToolboxUncertain, daytonaCommandHash } from "./toolbox";
 
@@ -386,10 +388,21 @@ test("Daytona copies approved upload bytes before awaiting and confirms the exac
         `/tmp/homelab-mira/${reference.runId}/inputs/src/input.bin`
     );
     const write = calls.find((call) => call.init.method === "POST")!;
-    expect(new Headers(write.init.headers).get("content-type")).toBe(
-        "application/octet-stream"
+    expect(new Headers(write.init.headers).has("content-type")).toBe(false);
+    expect(write.init.body).toBeInstanceOf(FormData);
+    const request = new Request(write.url.href, {
+        method: "POST",
+        headers: new Headers(write.init.headers),
+        body: write.init.body as FormData,
+    });
+    expect(request.headers.get("content-type")).toStartWith(
+        "multipart/form-data; boundary="
     );
-    const uploaded = await (write.init.body as Blob).arrayBuffer();
+    const form = await request.formData();
+    expect([...form.keys()]).toEqual(["file"]);
+    const file = form.get("file");
+    expect(file).toBeInstanceOf(File);
+    const uploaded = await (file as File).arrayBuffer();
     expect(new Uint8Array(uploaded)).toEqual(new Uint8Array([1, 2, 3]));
 });
 test("Daytona rejects changed upload acknowledgements and inputs after command dispatch", async () => {
@@ -491,3 +504,53 @@ test("Daytona cancellation during a response body propagates without a new reque
         1
     );
 });
+
+test("Daytona advertises the installed client version to negotiate structured logs", async () => {
+    const { client, calls } = transport((url, init) => {
+        if (!url.pathname.endsWith("/logs")) return withCommand(url, init);
+        if (new Headers(init.headers).get("x-daytona-sdk-version") !== toolboxVersion)
+            return new Response("legacy plain text");
+        return Response.json({ stdout: "structured", stderr: "", output: "structured" });
+    });
+    expect(await client.logs(hash, commandId, signal)).toEqual({
+        stdout: "structured",
+        stderr: "",
+        output: "structured",
+    });
+    for (const call of calls.filter((entry) => !urlIsControl(entry.url)))
+        expect(new Headers(call.init.headers).get("x-daytona-sdk-version")).toBe(
+            toolboxVersion
+        );
+});
+
+for (const phase of ["open", "submit", "upload"] as const)
+    for (const delay of [31_000, 61_000])
+        test(`Daytona ${phase} rechecks expiry after slow authorization without dispatch`, async () => {
+            const initial = Date.now();
+            let now = initial;
+            const { request, calls } = transport((url, init) =>
+                url.pathname.startsWith("/api/sandbox/")
+                    ? Response.json({
+                          ...sandbox(),
+                          autoDestroyAt: new Date(initial + 60_000).toISOString(),
+                      })
+                    : fixture(url, init)
+            );
+            const client = new DaytonaToolbox(
+                configuration,
+                reference,
+                request,
+                () => now
+            );
+            let admitted = false;
+            await rejects(
+                mutation(client, phase, signal, () => {
+                    admitted = true;
+                    now += delay;
+                    return Promise.resolve();
+                }),
+                /less than 30 seconds/
+            );
+            expect(admitted).toBe(true);
+            expect(calls.every((call) => call.init.method === "GET")).toBe(true);
+        });
