@@ -1,6 +1,7 @@
 import * as v from "valibot";
 
 import { integrationJson } from "../http";
+import { moltbookCommentsInputSchema, parseMoltbookComments } from "./comments";
 import { moltbookIdSchema, type MoltbookReadConfiguration } from "./configuration";
 
 const text = (maximum: number) => v.pipe(v.string(), v.maxLength(maximum));
@@ -28,6 +29,36 @@ const feedSchema = v.object({
     posts: v.pipe(v.array(postSchema), v.maxLength(25)),
     has_more: v.optional(v.boolean(), false),
     next_cursor: v.nullish(text(4096), null),
+});
+const namedSchema = v.object({ name: text(128) });
+const recentPostSchema = v.object({
+    id: moltbookIdSchema,
+    title: text(300),
+    content_preview: v.nullish(text(40_000), null),
+    verification_status: v.nullish(text(64), null),
+    is_deleted: v.nullish(v.boolean(), null),
+    is_spam: v.nullish(v.boolean(), null),
+    submolt: v.optional(namedSchema),
+    created_at: v.optional(text(100)),
+});
+const recentCommentSchema = v.object({
+    id: moltbookIdSchema,
+    content: v.nullish(text(40_000), null),
+    verification_status: v.nullish(text(64), null),
+    is_deleted: v.nullish(v.boolean(), null),
+    is_spam: v.nullish(v.boolean(), null),
+    created_at: v.optional(text(100)),
+    post: v.object({
+        id: moltbookIdSchema,
+        title: text(300),
+        submolt: v.optional(namedSchema),
+    }),
+});
+const activitySchema = v.object({
+    success: v.optional(v.literal(true)),
+    agent: namedSchema,
+    recentPosts: v.pipe(v.array(recentPostSchema), v.maxLength(25)),
+    recentComments: v.pipe(v.array(recentCommentSchema), v.maxLength(25)),
 });
 const feedInput = v.strictObject({
     sort: v.optional(v.picklist(["new", "hot", "top"]), "new"),
@@ -138,5 +169,83 @@ export class MoltbookReader {
             community: post.submolt?.name ?? null,
             createdAt: post.created_at ?? null,
         };
+    }
+
+    /**
+     * Read the configured agent's recent posts and comments with provider-reported moderation metadata without checking in or acknowledging activity.
+     * @param signal - Cancellation across credential verification and the public profile request.
+     * @returns Narrow recent activity only; the provider exposes no history cursor for these lists.
+     */
+    async activity(signal: AbortSignal) {
+        await this.profile(signal);
+        const params = new URLSearchParams({ name: this.configuration.agentName });
+        const page = v.parse(
+            activitySchema,
+            await this.json(`agents/profile?${params.toString()}`, signal)
+        );
+        if (page.agent.name !== this.configuration.agentName)
+            throw new Error("Moltbook returned a different activity account.");
+        return {
+            name: page.agent.name,
+            completeHistory: false,
+            posts: page.recentPosts.map((post) => ({
+                id: post.id,
+                title: post.title,
+                preview: post.is_deleted
+                    ? null
+                    : (post.content_preview?.slice(0, 800) ?? null),
+                previewTruncated:
+                    post.is_deleted || post.content_preview === null
+                        ? null
+                        : post.content_preview.length > 800,
+                verificationStatus: post.verification_status,
+                deleted: post.is_deleted,
+                spam: post.is_spam,
+                community: post.submolt?.name ?? null,
+                createdAt: post.created_at ?? null,
+            })),
+            comments: page.recentComments.map((comment) => ({
+                id: comment.id,
+                excerpt: comment.is_deleted
+                    ? null
+                    : (comment.content?.slice(0, 800) ?? null),
+                truncated:
+                    comment.is_deleted || comment.content === null
+                        ? null
+                        : comment.content.length > 800,
+                verificationStatus: comment.verification_status,
+                deleted: comment.is_deleted,
+                spam: comment.is_spam,
+                createdAt: comment.created_at ?? null,
+                post: {
+                    id: comment.post.id,
+                    title: comment.post.title,
+                    community: comment.post.submolt?.name ?? null,
+                },
+            })),
+        };
+    }
+
+    /**
+     * Read one page of root comments and its provider-returned replies from a selected post.
+     * @param input - Post identifier, supported root sort and opaque root continuation.
+     * @param signal - Cancellation covering identity, headers and bounded response bytes.
+     * @returns Passive excerpts with checked ancestry; root continuation cannot recover locally omitted replies.
+     */
+    async comments(
+        input: v.InferInput<typeof moltbookCommentsInputSchema>,
+        signal: AbortSignal
+    ) {
+        const parsed = v.parse(moltbookCommentsInputSchema, input);
+        await this.profile(signal);
+        const params = new URLSearchParams({ sort: parsed.sort, limit: "25" });
+        if (parsed.cursor) params.set("cursor", parsed.cursor);
+        return parseMoltbookComments(
+            await this.json(
+                `posts/${encodeURIComponent(parsed.id)}/comments?${params.toString()}`,
+                signal
+            ),
+            parsed
+        );
     }
 }

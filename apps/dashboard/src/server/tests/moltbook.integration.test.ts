@@ -13,6 +13,7 @@ import {
     type MoltbookBinding,
 } from "@homelab/mira/integrations/moltbook/configuration";
 import { MoltbookReader } from "@homelab/mira/integrations/moltbook/reader";
+import { createMoltbookTools } from "@homelab/mira/integrations/moltbook/tools";
 import type { SQL } from "bun";
 
 import { createMiraTools } from "../../../../mira/src/server/executor/tools";
@@ -287,6 +288,180 @@ test("dashboard provisioning publishes Moltbook account removal and never needs 
         await stopRemoved();
         expect(await moltbookBindingCurrent(f.client, binding)).toBe(false);
     } finally {
+        await f.close();
+    }
+});
+
+for (const name of ["mira_moltbook_activity", "mira_moltbook_comments"])
+    for (const change of ["pause", "regrant", "receiver", "lease", "cancel"] as const)
+        test(`${name} discards social content after ${change}`, async () => {
+            const f = await fixture();
+            const started = Promise.withResolvers<void>();
+            const finish = Promise.withResolvers<void>();
+            const request = Object.assign(
+                async (url: Parameters<typeof fetch>[0]) => {
+                    if (typeof url !== "string") throw new Error("Expected URL");
+                    if (url.endsWith("agents/me"))
+                        return Response.json({ agent: { name: "Mira" } });
+                    started.resolve();
+                    await finish.promise;
+                    return Response.json(
+                        name === "mira_moltbook_activity"
+                            ? {
+                                  agent: { name: "Mira" },
+                                  recentPosts: [
+                                      {
+                                          id: "post",
+                                          title: "must-not-return",
+                                          content_preview: "private-response",
+                                      },
+                                  ],
+                                  recentComments: [],
+                              }
+                            : {
+                                  post_id: "post",
+                                  sort: "new",
+                                  has_more: false,
+                                  comments: [
+                                      {
+                                          id: "comment",
+                                          post_id: "post",
+                                          content: "must-not-return",
+                                      },
+                                  ],
+                              }
+                    );
+                },
+                { preconnect: fetch.preconnect }
+            );
+            try {
+                await f.api.controls.setEnabled(enabled());
+                const claimed = await run(f);
+                const tool = createMoltbookTools(
+                    f.client,
+                    claimed,
+                    configuration,
+                    request
+                ).find((x) => x.name === name)!;
+                const pending = tool.action(
+                    name === "mira_moltbook_comments" ? { id: "post" } : {},
+                    new AbortController().signal
+                );
+                const rejected = rejects(
+                    pending,
+                    /paused or this run no longer has access/
+                );
+                await started.promise;
+                if (change === "pause" || change === "regrant") {
+                    await f.api.controls.setEnabled({
+                        ...enabled(2),
+                        enabled: false,
+                        reason: "Intentional pause",
+                    });
+                    if (change === "regrant") await f.api.controls.setEnabled(enabled(3));
+                } else if (change === "receiver")
+                    await publishMoltbookBinding(f.client, {
+                        ...binding,
+                        agentName: "Other",
+                    });
+                else if (change === "lease")
+                    await f.client`UPDATE mira_runs SET lease_expires_at=now()-interval '1 second' WHERE id=${claimed.id}`;
+                else
+                    await f.client`UPDATE mira_runs SET cancel_requested=true WHERE id=${claimed.id}`;
+                finish.resolve();
+                await rejected;
+            } finally {
+                finish.resolve();
+                await f.close();
+            }
+        });
+
+test("Moltbook activity and comments retain durable read receipts and cannot select another account", async () => {
+    const f = await fixture();
+    const activity = spyOn(MoltbookReader.prototype, "activity").mockResolvedValue({
+        name: "Mira",
+        completeHistory: false,
+        posts: [],
+        comments: [],
+    });
+    const comments = spyOn(MoltbookReader.prototype, "comments").mockResolvedValue({
+        postId: "post",
+        sort: "new",
+        comments: [],
+        rootsInPage: 0,
+        nextCursor: null,
+        truncated: false,
+    });
+    try {
+        await f.api.controls.setEnabled(enabled());
+        const claimed = await run(f);
+        const tools = createMiraTools(
+            f.client,
+            claimed,
+            undefined,
+            undefined,
+            configuration
+        );
+        for (const name of ["mira_moltbook_activity", "mira_moltbook_comments"]) {
+            const tool = tools.find((x) => x.name === name)!;
+            const input = name === "mira_moltbook_comments" ? { id: "post" } : {};
+            const response = result(
+                await tool.execute(input, new AbortController().signal, {
+                    callId: name,
+                    threadId: "synthetic",
+                    turnId: "synthetic",
+                })
+            );
+            expect(response).toMatchObject({
+                ok: true,
+                result: { trust: "untrusted_social_content" },
+            });
+            const invalid = result(
+                await tool.execute(
+                    { ...input, agentName: "Other" },
+                    new AbortController().signal,
+                    {
+                        callId: `${name}-invalid`,
+                        threadId: "synthetic",
+                        turnId: "synthetic",
+                    }
+                )
+            );
+            expect(invalid).toMatchObject({ ok: false, retryable: true });
+        }
+        expect(activity).toHaveBeenCalledTimes(1);
+        expect(comments).toHaveBeenCalledTimes(1);
+        const receipts = await f.client<
+            { state: string }[]
+        >`SELECT state FROM mira_tool_receipts WHERE run_id=${claimed.id}`;
+        expect(receipts.filter((x) => x.state === "succeeded")).toHaveLength(2);
+        expect(receipts.filter((x) => x.state === "failed")).toHaveLength(2);
+        await f.api.controls.setEnabled({
+            ...enabled(2),
+            enabled: false,
+            reason: "Stop social reads",
+        });
+        for (const name of ["mira_moltbook_activity", "mira_moltbook_comments"]) {
+            const response = result(
+                await tools
+                    .find((x) => x.name === name)!
+                    .execute(
+                        name === "mira_moltbook_comments" ? { id: "post" } : {},
+                        new AbortController().signal,
+                        {
+                            callId: `${name}-paused`,
+                            threadId: "synthetic",
+                            turnId: "synthetic",
+                        }
+                    )
+            );
+            expect(response).toMatchObject({ ok: false, retryable: true });
+        }
+        expect(activity).toHaveBeenCalledTimes(1);
+        expect(comments).toHaveBeenCalledTimes(1);
+    } finally {
+        activity.mockRestore();
+        comments.mockRestore();
         await f.close();
     }
 });
