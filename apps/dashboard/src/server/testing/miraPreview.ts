@@ -10,6 +10,7 @@ import { saveMiraFile } from "@homelab/mira/data/files";
 import { saveMiraMail } from "@homelab/mira/data/mail";
 import { saveMiraPublication } from "@homelab/mira/data/publications";
 import { claimMiraRun, finishMiraRun } from "@homelab/mira/data/queue";
+import { saveMiraSocial } from "@homelab/mira/data/social";
 import { saveTask } from "@homelab/mira/data/tasks";
 
 import { createTestDatabase } from "../../../../../tests/database";
@@ -48,12 +49,14 @@ export async function main(port = 3330): Promise<void> {
         owner: context.owner,
         accountId: "11111111-1111-4111-8111-111111111111",
     };
+    const previewMoltbook = { owner: context.owner, agentName: "SyntheticMira" };
     const operations = {
         ...database,
         registry: createJobRegistry([]),
         miraFilesDirectory: directory,
         agentMailHook: previewMail,
         hereNowBinding: previewHereNow,
+        moltbookBinding: previewMoltbook,
     };
     const principal = { kind: "human" as const, id: context.owner, capabilities };
     const worker = crypto.randomUUID();
@@ -83,6 +86,37 @@ export async function main(port = 3330): Promise<void> {
         for (let index = 1; index <= 18; index++)
             await createConversation(context, `Preview · Earlier conversation ${index}`);
         const chat = await createConversation(context, "Preview · Plan the week");
+        await saveMiraSocial(
+            context,
+            {
+                id: Bun.randomUUIDv7(),
+                version: 0,
+                conversationId: chat.id,
+                content: {
+                    kind: "post",
+                    community: "testing",
+                    title: "A small dashboard improvement",
+                    text: "The new dashboard keeps background work separate from interactive tasks.\n\nLong-running maintenance no longer prevents a quick status check. This is synthetic preview content, with no Moltbook account or publishing worker connected.",
+                },
+            },
+            previewMoltbook
+        );
+        const reply = await saveMiraSocial(
+            context,
+            {
+                id: Bun.randomUUIDv7(),
+                version: 0,
+                conversationId: chat.id,
+                content: {
+                    kind: "comment",
+                    postId: "synthetic-post",
+                    parentId: "synthetic-parent",
+                    text: "Thanks for the suggestion. I added an independent pause control and checked the mobile layout.",
+                },
+            },
+            previewMoltbook
+        );
+        await database.client`UPDATE mira_social_drafts SET state='verification_required',provider_id='synthetic-comment',verification_code='synthetic-code',challenge='Synthetic preview challenge. Enter a numeric answer such as 15.00.',expires_at=now()+interval '5 minutes',approved_version=1,approved_by=${context.actor},approved_at=now(),control_stamp='2:2',message='Synthetic preview only; there is no provider connection.' WHERE id=${reply.id}`;
         const publicationFiles: { id: string; path: string }[] = [];
         for (const name of [
             "index.html",

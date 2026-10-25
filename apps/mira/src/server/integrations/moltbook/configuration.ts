@@ -19,6 +19,7 @@ const bindingSchema = v.strictObject({
 export type MoltbookBinding = v.InferOutput<typeof bindingSchema>;
 export interface MoltbookReadConfiguration extends MoltbookBinding {
     apiKey: string;
+    publishApiKey?: string;
 }
 
 /**
@@ -53,7 +54,10 @@ export function moltbookReadConfiguration(
         throw new Error(
             "Moltbook requires an explicit owner, agent name and API credential."
         );
-    return { ...binding, apiKey };
+    const publishApiKey = environment.HOMELAB_MIRA_MOLTBOOK_PUBLISH_API_KEY || undefined;
+    if (publishApiKey && !/^[\u0021-\u007E]{20,2048}$/.test(publishApiKey))
+        throw new Error("Invalid Moltbook publishing credential.");
+    return { ...binding, apiKey, ...(publishApiKey ? { publishApiKey } : {}) };
 }
 
 /**

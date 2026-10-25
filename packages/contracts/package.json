@@ -16,7 +16,8 @@
         "./maintenance": "./src/maintenance.ts",
         "./mira": "./src/mira.ts",
         "./miraMail": "./src/miraMail.ts",
-        "./miraPublication": "./src/miraPublication.ts"
+        "./miraPublication": "./src/miraPublication.ts",
+        "./miraSocial": "./src/miraSocial.ts"
     },
     "dependencies": {
         "valibot": "1.5.0"

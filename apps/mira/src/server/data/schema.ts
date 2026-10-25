@@ -7,6 +7,7 @@ import {
 } from "@homelab/contracts/mira";
 import type { MiraMailContent } from "@homelab/contracts/miraMail";
 import type { MiraPublicationContent } from "@homelab/contracts/miraPublication";
+import type { MiraSocialContent } from "@homelab/contracts/miraSocial";
 import { sql } from "drizzle-orm";
 import {
     type AnyPgColumn,
@@ -539,3 +540,58 @@ export const miraPublications = pgTable(
         ),
     ]
 );
+
+export const miraSocialDrafts = pgTable(
+    "mira_social_drafts",
+    {
+        id: uuid().primaryKey(),
+        owner: text().notNull(),
+        conversationId: uuid("conversation_id").references(() => miraConversations.id),
+        agentName: text("agent_name").notNull(),
+        bindingHash: text("binding_hash").notNull(),
+        version: integer().notNull().default(1),
+        state: text().notNull().default("draft"),
+        content: jsonb().$type<MiraSocialContent>().notNull(),
+        contentHash: text("content_hash").notNull(),
+        approvedVersion: integer("approved_version"),
+        approvedBy: text("approved_by"),
+        approvedAt: time("approved_at"),
+        controlStamp: text("control_stamp"),
+        attemptToken: uuid("attempt_token"),
+        retryAfter: time("retry_after"),
+        startedAt: time("started_at"),
+        providerId: text("provider_id"),
+        verificationCode: text("verification_code"),
+        challenge: text(),
+        expiresAt: time("expires_at"),
+        answer: text(),
+        message: text(),
+        createdAt: time("created_at").notNull().defaultNow(),
+        updatedAt: time("updated_at").notNull().defaultNow(),
+    },
+    (t) => [
+        index("mira_social_drafts_owner").on(t.owner, t.createdAt, t.id),
+        index("mira_social_drafts_dispatch").on(t.state, t.id),
+        uniqueIndex("mira_social_drafts_active_owner")
+            .on(t.owner)
+            .where(sql`${t.state} IN ('publishing','verifying')`),
+        check("mira_social_drafts_version", sql`${t.version} >= 1`),
+        check(
+            "mira_social_drafts_state",
+            sql`${t.state} IN ('draft','queued','publishing','verification_required','queued_verification','verifying','submitted','needs_attention','cancelled')`
+        ),
+        check(
+            "mira_social_drafts_approval",
+            sql`${t.state} IN ('draft','cancelled') OR (${t.approvedVersion} IS NOT NULL AND ${t.approvedBy} IS NOT NULL AND ${t.approvedAt} IS NOT NULL AND ${t.controlStamp} IS NOT NULL)`
+        ),
+        check(
+            "mira_social_drafts_verification",
+            sql`${t.state} NOT IN ('verification_required','queued_verification','verifying') OR (${t.providerId} IS NOT NULL AND ${t.verificationCode} IS NOT NULL AND ${t.challenge} IS NOT NULL AND ${t.expiresAt} IS NOT NULL)`
+        ),
+    ]
+);
+
+export const miraSocialCooldowns = pgTable("mira_social_cooldowns", {
+    owner: text().primaryKey(),
+    until: time("until").notNull(),
+});

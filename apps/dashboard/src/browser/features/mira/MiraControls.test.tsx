@@ -8,6 +8,7 @@ import {
 import type { MiraAttachment } from "@homelab/contracts/mira";
 import type { MiraMailDraft } from "@homelab/contracts/miraMail";
 import type { MiraPublication } from "@homelab/contracts/miraPublication";
+import type { MiraSocialDraft } from "@homelab/contracts/miraSocial";
 import { IdentityClient } from "@homelab/ui/identity/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -30,6 +31,9 @@ import { ProposalReview } from "./ProposalReview";
 import { PublicationEditor } from "./PublicationEditor";
 import { PublicationReview } from "./PublicationReview";
 import { RunAutomationButton } from "./RunAutomationButton";
+import { SocialEditor } from "./SocialEditor";
+import { SocialLibrary } from "./SocialLibrary";
+import { SocialReview } from "./SocialReview";
 import { TaskEditor } from "./TaskEditor";
 import { TaskExecution } from "./TaskExecution";
 import { TaskRunDialog } from "./TaskRunDialog";
@@ -1179,6 +1183,209 @@ test("publication editor preserves title and selected site path through the shar
                 files: [{ id: file.id, path: "assets/index.html" }],
             },
         });
+    } finally {
+        cleanup();
+        request.mockRestore();
+    }
+});
+
+function socialDraft(state: MiraSocialDraft["state"] = "draft"): MiraSocialDraft {
+    return {
+        id: crypto.randomUUID(),
+        agentName: "SyntheticMira",
+        version: 3,
+        state,
+        content: {
+            kind: "comment",
+            postId: "reviewed-post",
+            parentId: "reviewed-parent",
+            text: "Exact reviewed reply\n<script>not executed</script>",
+        },
+        contentHash: "c".repeat(64),
+        conversationId: null,
+        providerId: state === "draft" ? null : "comment-1",
+        challenge:
+            state === "verification_required"
+                ? "Untrusted challenge: <a href='https://example.invalid'>link</a>"
+                : null,
+        expiresAt: new Date(Date.now() + 120_000).toISOString(),
+        message: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+    };
+}
+test("Moltbook review submits exactly the displayed reply and renders external text passively", async () => {
+    const draft = socialDraft();
+    const requested: unknown[] = [];
+    let closed = false;
+    const request = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+            (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+                if (typeof init?.body !== "string") throw new Error("Expected body");
+                const body = JSON.parse(init.body) as { "0": { json: unknown } };
+                requested.push(body["0"].json);
+                return Promise.resolve(
+                    Response.json([{ result: { data: serialize(draft) } }])
+                );
+            },
+            { preconnect: fetch.preconnect }
+        )
+    );
+    const cleanup = fixture(
+        <SocialReview
+            draft={draft}
+            onClose={() => {
+                closed = true;
+            }}
+        />
+    );
+    try {
+        expect(screen.getByText(/Posting as SyntheticMira/)).toHaveTextContent(
+            "Parent comment: reviewed-parent"
+        );
+        expect(screen.getByText(/<script>not executed/)).toBeInTheDocument();
+        const user = userEvent.setup();
+        await user.click(screen.getByRole("button", { name: "Send publicly" }));
+        await waitFor(() => expect(closed).toBe(true));
+        expect(requested).toEqual([
+            {
+                id: draft.id,
+                version: draft.version,
+                contentHash: draft.contentHash,
+                reviewedContent: draft.content,
+            },
+        ]);
+    } finally {
+        cleanup();
+        request.mockRestore();
+    }
+});
+test("Moltbook challenge submits only the selected draft version and operator answer", async () => {
+    const draft = socialDraft("verification_required");
+    const requested: unknown[] = [];
+    let closed = false;
+    const request = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+            (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+                if (typeof init?.body !== "string") throw new Error("Expected body");
+                const body = JSON.parse(init.body) as { "0": { json: unknown } };
+                requested.push(body["0"].json);
+                return Promise.resolve(
+                    Response.json([{ result: { data: serialize(draft) } }])
+                );
+            },
+            { preconnect: fetch.preconnect }
+        )
+    );
+    const cleanup = fixture(
+        <SocialReview
+            draft={draft}
+            onClose={() => {
+                closed = true;
+            }}
+        />
+    );
+    try {
+        expect(
+            screen.queryByRole("button", { name: "Send publicly" })
+        ).not.toBeInTheDocument();
+        expect(screen.queryByRole("link", { name: "link" })).not.toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Submit answer" })).toBeDisabled();
+        const user = userEvent.setup();
+        await user.type(screen.getByLabelText("Answer"), "15.00");
+        await user.click(screen.getByRole("button", { name: "Submit answer" }));
+        await waitFor(() => expect(closed).toBe(true));
+        expect(requested).toEqual([
+            { id: draft.id, version: draft.version, answer: "15.00" },
+        ]);
+    } finally {
+        cleanup();
+        request.mockRestore();
+    }
+});
+test("Moltbook editor preserves the reply destination and saves without approval", async () => {
+    const draft = socialDraft();
+    const requested: unknown[] = [];
+    let closed = false;
+    const request = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+            (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+                if (typeof init?.body !== "string") throw new Error("Expected body");
+                const body = JSON.parse(init.body) as { "0": { json: unknown } };
+                requested.push(body["0"].json);
+                return Promise.resolve(
+                    Response.json([{ result: { data: serialize(draft) } }])
+                );
+            },
+            { preconnect: fetch.preconnect }
+        )
+    );
+    const cleanup = fixture(
+        <SocialEditor
+            draft={draft}
+            onClose={() => {
+                closed = true;
+            }}
+        />
+    );
+    try {
+        expect(screen.getByLabelText("Post ID")).toHaveValue("reviewed-post");
+        expect(screen.getByLabelText("Parent comment ID")).toHaveValue("reviewed-parent");
+        const user = userEvent.setup();
+        await user.clear(screen.getByLabelText("Text"));
+        await user.type(screen.getByLabelText("Text"), "Edited reply");
+        await user.click(screen.getByRole("button", { name: "Save draft" }));
+        await waitFor(() => expect(closed).toBe(true));
+        expect(requested).toEqual([
+            {
+                id: draft.id,
+                version: draft.version,
+                conversationId: null,
+                content: {
+                    kind: "comment",
+                    postId: "reviewed-post",
+                    parentId: "reviewed-parent",
+                    text: "Edited reply",
+                },
+            },
+        ]);
+    } finally {
+        cleanup();
+        request.mockRestore();
+    }
+});
+
+test("Moltbook library opens the selected review and returns to its owned drafts", async () => {
+    const draft = socialDraft();
+    const request = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+            () =>
+                Promise.resolve(
+                    Response.json([
+                        {
+                            result: {
+                                data: serialize({ rows: [draft], nextCursor: null }),
+                            },
+                        },
+                    ])
+                ),
+            { preconnect: fetch.preconnect }
+        )
+    );
+    const cleanup = fixture(<SocialLibrary onClose={() => {}} />, true);
+    try {
+        await screen.findByText("Comment or reply");
+        const user = userEvent.setup();
+        await user.click(
+            screen.getByRole("button", { name: "Actions for Comment or reply" })
+        );
+        await user.click(screen.getByRole("menuitem", { name: "Review and send" }));
+        expect(screen.getByRole("button", { name: "Send publicly" })).toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "Close" }));
+        await user.click(screen.getByRole("button", { name: "New draft" }));
+        expect(screen.getByLabelText("Community")).toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "Cancel" }));
+        expect(screen.getByRole("button", { name: "New draft" })).toBeInTheDocument();
     } finally {
         cleanup();
         request.mockRestore();
