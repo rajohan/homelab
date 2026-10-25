@@ -2,12 +2,12 @@
  * Bound provider responses while the caller's timeout covers headers and body delivery.
  * @param response - Response from a fixed-origin integration request.
  * @param maximum - Service-owned body budget in bytes.
- * @returns Parsed JSON without provider error text or credentials in thrown messages.
+ * @returns Bounded response bytes without provider error text in thrown messages.
  */
-export async function integrationJson(
+export async function integrationBytes(
     response: Response,
     maximum: number
-): Promise<unknown> {
+): Promise<Uint8Array> {
     if (!response.ok || Number(response.headers.get("content-length")) > maximum) {
         await response.body?.cancel();
         throw new Error("The integration request failed or exceeded its response limit.");
@@ -39,6 +39,20 @@ export async function integrationJson(
         buffer.set(chunk, offset);
         offset += chunk.byteLength;
     }
+    return buffer;
+}
+
+/**
+ * Parse a bounded provider JSON body without leaking private diagnostics.
+ * @param response - Fixed-origin integration response.
+ * @param maximum - Service-owned byte budget.
+ * @returns Parsed JSON; invalid content produces a generic error.
+ */
+export async function integrationJson(
+    response: Response,
+    maximum: number
+): Promise<unknown> {
+    const buffer = await integrationBytes(response, maximum);
     try {
         return JSON.parse(
             new TextDecoder("utf-8", { fatal: true }).decode(buffer)

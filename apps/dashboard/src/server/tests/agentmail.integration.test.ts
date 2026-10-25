@@ -8,6 +8,8 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { capabilities } from "@homelab/contracts/operations";
 import { reconcileMiraControls } from "@homelab/mira/data/automations";
+import { readMiraFile } from "@homelab/mira/data/files";
+import * as fileData from "@homelab/mira/data/files";
 import {
     publishAgentMailReceiver,
     agentMailReceiverCurrent,
@@ -1013,6 +1015,7 @@ test("transient read-only mail failures permit retry and unrelated tools in the 
             format: "untrusted_text",
             content: "Passive content",
             truncated: false,
+            attachments: [],
         });
     try {
         await api.controls.setEnabled({
@@ -1448,6 +1451,182 @@ test("quota-rejected mail stays skipped after the hourly allowance resets while 
     }
 });
 
+function importToolResult(value: string) {
+    return JSON.parse(value) as {
+        ok: boolean;
+        message: string;
+        result: { file: { id: string }; text: string };
+    };
+}
+
+test("manual mail attachment imports are owned, retry-safe within a run and visible in its conversation", async () => {
+    const f = await operationFixture(),
+        directory = await mkdtemp(path.join(tmpdir(), "mira-mail-import-"));
+    const binding = await provisionTestAgentMail(f.client);
+    const api = appRouter.createCaller({
+        operations: { ...f, agentMailHook: binding, miraFilesDirectory: directory },
+        principal: { kind: "human", id: binding.owner, capabilities },
+    }).mira;
+    const download = spyOn(
+        AgentMailReader.prototype,
+        "downloadAttachment"
+    ).mockResolvedValue({
+        name: "imported.txt",
+        bytes: new TextEncoder().encode("Untrusted mail file"),
+        mediaType: "text/plain; charset=utf-8",
+        messageId: "message",
+        attachmentId: "attachment",
+    });
+    try {
+        await api.controls.setEnabled({
+            key: "integration:agentmail",
+            version: 1,
+            enabled: true,
+            reason: null,
+            until: null,
+        });
+        const chat = await api.conversations.create({ title: "Import mail file" });
+        await api.conversations.send({
+            conversationId: chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Import the selected attachment",
+        });
+        const run = await claimMiraRun(f.client, crypto.randomUUID(), "foreground");
+        expect(run).not.toBeNull();
+        const tools = createMiraTools(f.client, run!, directory, {
+            ...binding,
+            apiKey: "synthetic",
+        });
+        const importer = tools.find(
+            (tool) => tool.name === "mira_mail_attachment_import"
+        )!;
+        const execute = (callId: string) =>
+            importer.execute(
+                { messageId: "message", attachmentId: "attachment" },
+                new AbortController().signal,
+                { callId, threadId: "synthetic", turnId: "synthetic" }
+            );
+        const first = importToolResult(await execute("first"));
+        expect(first.ok).toBe(true);
+        const second = importToolResult(await execute("second"));
+        expect(second.result.file.id).toBe(first.result.file.id);
+        const conversation = await api.conversations.read({ id: chat.id });
+        expect(
+            conversation.messages.find((message) => message.role === "assistant")
+                ?.attachmentIds
+        ).toEqual([first.result.file.id]);
+        const content = await readMiraFile(
+            { client: f.client, owner: binding.owner, actor: "test" },
+            directory,
+            first.result.file.id
+        );
+        expect(new TextDecoder().decode(content.bytes)).toBe("Untrusted mail file");
+        await rejects(
+            readMiraFile(
+                { client: f.client, owner: "other", actor: "test" },
+                directory,
+                first.result.file.id
+            ),
+            /not found/
+        );
+        const fileReader = tools.find((tool) => tool.name === "mira_attachment_read")!;
+        const read = importToolResult(
+            await fileReader.execute(
+                { id: first.result.file.id },
+                new AbortController().signal,
+                { callId: "read", threadId: "synthetic", turnId: "synthetic" }
+            )
+        );
+        expect(read.result.text).toBe("Untrusted mail file");
+        const automatic = createMiraTools(
+            f.client,
+            { ...run!, automationId: crypto.randomUUID() },
+            directory,
+            { ...binding, apiKey: "synthetic" }
+        ).find((tool) => tool.name === "mira_mail_attachment_import")!;
+        const blocked = importToolResult(
+            await automatic.execute(
+                { messageId: "message", attachmentId: "attachment" },
+                new AbortController().signal,
+                { callId: "automatic", threadId: "synthetic", turnId: "synthetic" }
+            )
+        );
+        expect(blocked.ok).toBe(false);
+        expect(blocked.message).toContain("automatic run");
+        expect(
+            await f.client`SELECT id FROM mira_attachments WHERE ready_at IS NOT NULL`
+        ).toHaveLength(1);
+    } finally {
+        download.mockRestore();
+        await f.close();
+        await rm(directory, { recursive: true, force: true });
+    }
+});
+
+test("mail attachment imports discard downloaded content when access changes before storage", async () => {
+    const f = await operationFixture(),
+        directory = await mkdtemp(path.join(tmpdir(), "mira-mail-import-pause-"));
+    const binding = await provisionTestAgentMail(f.client);
+    const api = appRouter.createCaller({
+        operations: { ...f, agentMailHook: binding },
+        principal: { kind: "human", id: binding.owner, capabilities },
+    }).mira;
+    const download = spyOn(
+        AgentMailReader.prototype,
+        "downloadAttachment"
+    ).mockImplementation(async () => {
+        await api.controls.setEnabled({
+            key: "integration:agentmail",
+            version: 2,
+            enabled: false,
+            reason: "Pause while downloading",
+            until: null,
+        });
+        return {
+            name: "private.txt",
+            bytes: new TextEncoder().encode("Untrusted bytes"),
+            mediaType: "text/plain; charset=utf-8",
+            messageId: "message",
+            attachmentId: "attachment",
+        };
+    });
+    try {
+        await api.controls.setEnabled({
+            key: "integration:agentmail",
+            version: 1,
+            enabled: true,
+            reason: null,
+            until: null,
+        });
+        const chat = await api.conversations.create({ title: "Paused import" });
+        await api.conversations.send({
+            conversationId: chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Import",
+        });
+        const run = await claimMiraRun(f.client, crypto.randomUUID(), "foreground");
+        const tool = createMiraTools(f.client, run!, directory, {
+            ...binding,
+            apiKey: "synthetic",
+        }).find((tool) => tool.name === "mira_mail_attachment_import")!;
+        const result = importToolResult(
+            await tool.execute(
+                { messageId: "message", attachmentId: "attachment" },
+                new AbortController().signal,
+                { callId: "paused", threadId: "synthetic", turnId: "synthetic" }
+            )
+        );
+        expect(result.ok).toBe(false);
+        expect(result.message).toContain("paused");
+        expect(await f.client`SELECT id FROM mira_attachments`).toHaveLength(0);
+        expect(await readdir(directory)).toHaveLength(0);
+    } finally {
+        download.mockRestore();
+        await f.close();
+        await rm(directory, { recursive: true, force: true });
+    }
+});
+
 test("editing an enabled automation into a mail subscriber starts fresh receipt eligibility", async () => {
     const fixture = await operationFixture();
     const binding = await provisionTestAgentMail(fixture.client);
@@ -1536,5 +1715,204 @@ test("editing an enabled automation into a mail subscriber starts fresh receipt 
         ).toHaveLength(1);
     } finally {
         await fixture.close();
+    }
+});
+
+test.each(["cancelled", "expired"] as const)(
+    "a file committed before its receipt fence is uncertain when the run is %s",
+    async (condition) => {
+        const f = await operationFixture();
+        const directory = await mkdtemp(path.join(tmpdir(), "mira-import-fence-"));
+        const binding = await provisionTestAgentMail(f.client);
+        const api = appRouter.createCaller({
+            operations: { ...f, agentMailHook: binding, miraFilesDirectory: directory },
+            principal: { kind: "human", id: binding.owner, capabilities },
+        }).mira;
+        const download = spyOn(
+            AgentMailReader.prototype,
+            "downloadAttachment"
+        ).mockResolvedValue({
+            name: "committed.txt",
+            bytes: new TextEncoder().encode("Durable imported content"),
+            mediaType: "text/plain; charset=utf-8",
+            messageId: "message",
+            attachmentId: "attachment",
+        });
+        const originalSave = fileData.saveMiraFile;
+        const save = spyOn(fileData, "saveMiraFile").mockImplementation(
+            async (...args) => {
+                const result = await originalSave(...args);
+                const runId = args[0].run!.id;
+                await (condition === "cancelled"
+                    ? f.client`UPDATE mira_runs SET cancel_requested=true WHERE id=${runId}`
+                    : f.client`UPDATE mira_runs SET lease_expires_at=now()-interval '1 second' WHERE id=${runId}`);
+                return result;
+            }
+        );
+        try {
+            await api.controls.setEnabled({
+                key: "integration:agentmail",
+                version: 1,
+                enabled: true,
+                reason: null,
+                until: null,
+            });
+            const chat = await api.conversations.create({
+                title: "Interrupted import receipt",
+            });
+            await api.conversations.send({
+                conversationId: chat.id,
+                requestId: crypto.randomUUID(),
+                text: "Import the selected attachment",
+            });
+            const run = await claimMiraRun(f.client, crypto.randomUUID(), "foreground");
+            const tools = createMiraTools(f.client, run!, directory, {
+                ...binding,
+                apiKey: "synthetic",
+            });
+            const tool = tools.find(
+                (item) => item.name === "mira_mail_attachment_import"
+            )!;
+            const result: unknown = JSON.parse(
+                await tool.execute(
+                    { messageId: "message", attachmentId: "attachment" },
+                    new AbortController().signal,
+                    { callId: "import", threadId: "synthetic", turnId: "synthetic" }
+                )
+            );
+            expect(result).toMatchObject({ ok: false, retryable: false });
+            const receipts = await f.client<
+                { state: string; message: string }[]
+            >`SELECT state,message FROM mira_tool_receipts WHERE run_id=${run!.id}`;
+            expect(receipts).toHaveLength(1);
+            expect(receipts[0]?.state).toBe("unknown");
+            expect(receipts[0]?.message).toContain("uncertain");
+            expect(receipts[0]?.message).not.toContain("rolled back");
+            const files = await f.client<
+                { id: string }[]
+            >`SELECT id FROM mira_attachments WHERE ready_at IS NOT NULL`;
+            expect(files).toHaveLength(1);
+            const conversation = await api.conversations.read({ id: chat.id });
+            expect(
+                conversation.messages.find((message) => message.role === "assistant")
+                    ?.attachmentIds
+            ).toEqual([files[0]!.id]);
+            const later: unknown = JSON.parse(
+                await tools
+                    .find((item) => item.name === "mira_tasks_list")!
+                    .execute({}, new AbortController().signal, {
+                        callId: "later",
+                        threadId: "synthetic",
+                        turnId: "synthetic",
+                    })
+            );
+            expect(later).toMatchObject({ ok: false, retryable: false });
+            expect(download).toHaveBeenCalledTimes(1);
+        } finally {
+            save.mockRestore();
+            download.mockRestore();
+            await f.close();
+            await rm(directory, { recursive: true, force: true });
+        }
+    }
+);
+
+test("mail import limits leave no rejected reservations even when imports race for the eighth slot", async () => {
+    const f = await operationFixture();
+    const directory = await mkdtemp(path.join(tmpdir(), "mira-import-capacity-"));
+    const binding = await provisionTestAgentMail(f.client);
+    const api = appRouter.createCaller({
+        operations: { ...f, agentMailHook: binding, miraFilesDirectory: directory },
+        principal: { kind: "human", id: binding.owner, capabilities },
+    }).mira;
+    const download = spyOn(
+        AgentMailReader.prototype,
+        "downloadAttachment"
+    ).mockImplementation((messageId, attachmentId) =>
+        Promise.resolve({
+            messageId,
+            attachmentId,
+            name: `${attachmentId}.txt`,
+            bytes: new TextEncoder().encode("Synthetic mail file"),
+            mediaType: "text/plain; charset=utf-8",
+        })
+    );
+    let save: ReturnType<typeof spyOn<typeof fileData, "saveMiraFile">> | undefined;
+    try {
+        await api.controls.setEnabled({
+            key: "integration:agentmail",
+            version: 1,
+            enabled: true,
+            reason: null,
+            until: null,
+        });
+        const chat = await api.conversations.create({ title: "Import capacity" });
+        await api.conversations.send({
+            conversationId: chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Import selected files",
+        });
+        const run = await claimMiraRun(f.client, crypto.randomUUID(), "foreground");
+        const tool = createMiraTools(f.client, run!, directory, {
+            ...binding,
+            apiKey: "synthetic",
+        }).find((item) => item.name === "mira_mail_attachment_import")!;
+        const execute = async (attachmentId: string, callId = attachmentId) =>
+            importToolResult(
+                await tool.execute(
+                    { messageId: "message", attachmentId },
+                    new AbortController().signal,
+                    { callId, threadId: "synthetic", turnId: "synthetic" }
+                )
+            );
+        for (let index = 0; index < 7; index++) {
+            const imported = await execute(`file-${index}`);
+            expect(imported.ok).toBe(true);
+        }
+        const original = fileData.saveMiraFile;
+        let arrivals = 0;
+        const gate = Promise.withResolvers<void>();
+        save = spyOn(fileData, "saveMiraFile").mockImplementation(async (...args) => {
+            arrivals++;
+            if (arrivals === 2) gate.resolve();
+            await gate.promise;
+            return original(...args);
+        });
+        const competing = await Promise.all([execute("slot-a"), execute("slot-b")]);
+        save.mockRestore();
+        save = undefined;
+        expect(competing.filter((result) => result.ok)).toHaveLength(1);
+        expect(competing.find((result) => !result.ok)?.message).toContain("eight files");
+        const retained = await f.client<
+            { id: string; ready: boolean }[]
+        >`SELECT id,ready_at IS NOT NULL AS ready FROM mira_attachments ORDER BY id`;
+        expect(retained).toHaveLength(8);
+        expect(retained.every((file) => file.ready)).toBe(true);
+        const diskFiles = await readdir(directory);
+        expect(diskFiles.toSorted()).toEqual(retained.map((file) => file.id).toSorted());
+        for (let index = 0; index < 3; index++) {
+            const rejected = await execute(`excess-${index}`);
+            expect(rejected.ok).toBe(false);
+            expect(rejected.message).toContain("eight files");
+        }
+        const repeated = await execute("file-0", "repeat-existing");
+        expect(repeated.ok).toBe(true);
+        expect(
+            await f.client<
+                { id: string; ready: boolean }[]
+            >`SELECT id,ready_at IS NOT NULL AS ready FROM mira_attachments ORDER BY id`
+        ).toEqual(retained);
+        const finalDiskFiles = await readdir(directory);
+        expect(finalDiskFiles.toSorted()).toEqual(diskFiles.toSorted());
+        const conversation = await api.conversations.read({ id: chat.id });
+        expect(
+            conversation.messages.find((message) => message.role === "assistant")
+                ?.attachmentIds
+        ).toHaveLength(8);
+    } finally {
+        save?.mockRestore();
+        download.mockRestore();
+        await f.close();
+        await rm(directory, { recursive: true, force: true });
     }
 });

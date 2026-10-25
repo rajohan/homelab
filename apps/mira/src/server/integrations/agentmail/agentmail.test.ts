@@ -515,6 +515,126 @@ test("outgoing AgentMail requires a separate valid send credential without chang
     ).toThrow(/configuration/);
 });
 
+test("mail attachment downloads verify membership, pin the CDN and never forward the API credential", async () => {
+    const seen: {
+        url: string;
+        headers: Headers;
+        redirect: string | undefined;
+        credentials: string | undefined;
+    }[] = [];
+    const bytes = new TextEncoder().encode("Synthetic attachment");
+    let downloadUrl = "https://cdn.agentmail.to/attachments/synthetic?Signature=private";
+    let returnedId = "file-1",
+        returnedSize = bytes.length,
+        body: Uint8Array = bytes;
+    let labels = ["received"];
+    const request = Object.assign(
+        (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+            const url = new URL(input instanceof Request ? input.url : String(input));
+            seen.push({
+                url: url.toString(),
+                headers: new Headers(init?.headers),
+                redirect: init?.redirect,
+                credentials: init?.credentials,
+            });
+            if (url.hostname === "cdn.agentmail.to")
+                return Promise.resolve(new Response(Buffer.from(body)));
+            if (url.pathname.includes("/attachments/"))
+                return Promise.resolve(
+                    Response.json({
+                        attachment_id: returnedId,
+                        size: returnedSize,
+                        filename: "../../safe.txt",
+                        download_url: downloadUrl,
+                        expires_at: new Date(Date.now() + 60_000).toISOString(),
+                    })
+                );
+            return Promise.resolve(
+                Response.json({
+                    ...message,
+                    labels,
+                    attachments: [
+                        {
+                            attachment_id: "file-1",
+                            size: bytes.length,
+                            filename: "original.txt",
+                            content_type: "application/unknown",
+                        },
+                    ],
+                })
+            );
+        },
+        { preconnect: fetch.preconnect }
+    );
+    const reader = new AgentMailReader(
+        { ...binding, apiKey: "synthetic-api-key" },
+        request
+    );
+    const signal = new AbortController().signal;
+    const file = await reader.downloadAttachment(message.message_id, "file-1", signal);
+    expect(file.name).toBe("safe.txt");
+    expect(file.mediaType).toBe("text/plain; charset=utf-8");
+    expect(file.bytes).toEqual(bytes);
+    expect(JSON.stringify(file)).not.toContain("Signature");
+    expect(seen).toHaveLength(3);
+    expect(seen[0]?.headers.get("authorization")).toBe("Bearer synthetic-api-key");
+    expect(seen[2]?.headers.get("authorization")).toBeNull();
+    expect(seen[2]?.credentials).toBe("omit");
+    expect(seen.every((item) => item.redirect === "error")).toBe(true);
+    let start = seen.length;
+    await rejects(
+        reader.downloadAttachment(message.message_id, "not-listed", signal),
+        /unavailable/
+    );
+    expect(seen.length - start).toBe(1);
+    for (const unsafe of [
+        "http://cdn.agentmail.to/file",
+        "https://cdn.agentmail.to.attacker.test/file",
+        "https://api.agentmail.to/file",
+        "https://127.0.0.1/file",
+        "https://cdn.agentmail.to:8443/file",
+        "https://secret@cdn.agentmail.to/file",
+    ]) {
+        downloadUrl = unsafe;
+        start = seen.length;
+        await rejects(
+            reader.downloadAttachment(message.message_id, "file-1", signal),
+            /verified/
+        );
+        expect(seen.length - start).toBe(2);
+    }
+    downloadUrl = "https://cdn.agentmail.to/attachments/synthetic";
+    returnedId = "other";
+    await rejects(
+        reader.downloadAttachment(message.message_id, "file-1", signal),
+        /verified/
+    );
+    returnedId = "file-1";
+    returnedSize++;
+    await rejects(
+        reader.downloadAttachment(message.message_id, "file-1", signal),
+        /verified/
+    );
+    returnedSize = bytes.length;
+    body = bytes.subarray(1);
+    await rejects(
+        reader.downloadAttachment(message.message_id, "file-1", signal),
+        /size changed/
+    );
+    body = new Uint8Array(bytes.length + 1);
+    await rejects(
+        reader.downloadAttachment(message.message_id, "file-1", signal),
+        /limit/
+    );
+    labels = ["received", "agent-armor-held"];
+    start = seen.length;
+    await rejects(
+        reader.downloadAttachment(message.message_id, "file-1", signal),
+        /not eligible/
+    );
+    expect(seen.length - start).toBe(1);
+});
+
 test("reply target reads only the configured inbox thread with a one-message page", async () => {
     let result = {
         inbox_id: binding.inboxId,

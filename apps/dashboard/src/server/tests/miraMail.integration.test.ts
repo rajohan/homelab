@@ -997,6 +997,7 @@ test("reply drafts bind verified received-mail threads and retain them across op
         format: "untrusted_text",
         content: "Untrusted source content",
         truncated: false,
+        attachments: [],
     });
     const latest = spyOn(AgentMailReader.prototype, "latestMessageId")
         .mockResolvedValue("<original@example.test>")

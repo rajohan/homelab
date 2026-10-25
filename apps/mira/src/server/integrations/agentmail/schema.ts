@@ -47,8 +47,23 @@ export const agentMailEventPageSchema = v.object({
     ),
     next_page_token: v.nullish(v.pipe(v.string(), v.minLength(1), v.maxLength(4096))),
 });
+export const agentMailAttachmentSchema = v.object({
+    attachment_id: agentMailIdSchema,
+    size: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(1_000_000_000)),
+    filename: v.nullish(v.pipe(v.string(), v.maxLength(1000))),
+    content_type: v.nullish(v.pipe(v.string(), v.maxLength(200))),
+});
+export const agentMailAttachmentDownloadSchema = v.object({
+    ...agentMailAttachmentSchema.entries,
+    download_url: v.pipe(v.string(), v.maxLength(16_000)),
+    expires_at: v.pipe(v.string(), v.isoTimestamp()),
+});
 export const agentMailContentSchema = v.object({
     ...agentMailMessageSchema.entries,
+    attachments: v.optional(
+        v.pipe(v.array(agentMailAttachmentSchema), v.maxLength(100)),
+        []
+    ),
     reply_to: v.optional(
         v.pipe(v.array(v.pipe(v.string(), v.maxLength(1000))), v.maxLength(100)),
         []
