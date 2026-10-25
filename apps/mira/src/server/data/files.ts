@@ -4,7 +4,7 @@ import path from "node:path";
 
 import type { MiraAttachment } from "@homelab/contracts/mira";
 import { idSchema } from "@homelab/contracts/operations";
-import type { SQL } from "bun";
+import type { SQL, TransactionSQL } from "bun";
 import * as v from "valibot";
 
 import { auditMira, MiraFailure, type MiraContext } from "./context";
@@ -69,12 +69,14 @@ export function miraFileType(bytes: Uint8Array): string {
  * @param context - Verified human identity.
  * @param directory - Private persistent file volume.
  * @param input - Validated identity, display name and bounded upload bytes.
+ * @param accept - Internal ownership/link check committed with readiness, locking owner controls before files; never browser input.
  * @returns Public attachment metadata; retrying identical bytes returns the same record.
  */
 export async function saveMiraFile(
     context: MiraContext,
     directory: string | undefined,
-    input: { id: string; name: string; bytes: Uint8Array }
+    input: { id: string; name: string; bytes: Uint8Array },
+    accept?: (query: TransactionSQL, attachment: MiraAttachment) => Promise<void>
 ): Promise<MiraAttachment> {
     v.parse(idSchema, input.id);
     if (
@@ -96,6 +98,8 @@ export async function saveMiraFile(
     // Commit the reservation before touching disk. A crash always leaves a durable
     // pending receipt, and a lost commit response cannot delete an accepted file.
     await context.client.begin(async (query) => {
+        if (accept)
+            await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${context.owner}`},0))`;
         await query`SELECT pg_advisory_xact_lock(hashtextextended('homelab:mira:files', 0))`;
         const [existing] = await query<
             { name: string; sha256: string }[]
@@ -131,39 +135,61 @@ export async function saveMiraFile(
             );
         await query`INSERT INTO mira_attachments (id, owner, name, media_type, bytes, sha256) VALUES (${input.id}, ${context.owner}, ${input.name}, ${mediaType}, ${input.bytes.length}, ${sha256})`;
     });
-    return context.client.begin(async (query) => {
-        await query`SELECT pg_advisory_xact_lock(hashtextextended('homelab:mira:files', 0))`;
-        const [pending] = await query<
-            { readyAt: Date | null; sha256: string }[]
-        >`SELECT ready_at AS "readyAt", sha256 FROM mira_attachments WHERE id = ${input.id} AND owner = ${context.owner} AND deleted_at IS NULL FOR UPDATE`;
-        if (!pending || pending.sha256 !== sha256)
-            throw new MiraFailure("CONFLICT", "This upload is no longer available.");
-        if (!pending.readyAt) {
-            // Only an unexposed pending upload may be replaced after a process interruption.
-            await removeFile(filePath);
-            const handle = await open(
-                filePath,
-                constants.O_WRONLY |
-                    constants.O_CREAT |
-                    constants.O_EXCL |
-                    constants.O_NOFOLLOW,
-                0o600
-            );
+    try {
+        return await context.client.begin(async (query) => {
+            if (accept)
+                await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${context.owner}`},0))`;
+            await query`SELECT pg_advisory_xact_lock(hashtextextended('homelab:mira:files', 0))`;
+            const [pending] = await query<
+                { readyAt: Date | null; sha256: string }[]
+            >`SELECT ready_at AS "readyAt", sha256 FROM mira_attachments WHERE id = ${input.id} AND owner = ${context.owner} AND deleted_at IS NULL FOR UPDATE`;
+            if (!pending || pending.sha256 !== sha256)
+                throw new MiraFailure("CONFLICT", "This upload is no longer available.");
+            if (!pending.readyAt) {
+                // Only an unexposed pending upload may be replaced after a process interruption.
+                await removeFile(filePath);
+                const handle = await open(
+                    filePath,
+                    constants.O_WRONLY |
+                        constants.O_CREAT |
+                        constants.O_EXCL |
+                        constants.O_NOFOLLOW,
+                    0o600
+                );
 
-            try {
-                await handle.writeFile(input.bytes);
-                await handle.sync();
-            } finally {
-                await handle.close();
+                try {
+                    await handle.writeFile(input.bytes);
+                    await handle.sync();
+                } finally {
+                    await handle.close();
+                }
+                await query`UPDATE mira_attachments SET ready_at = now() WHERE id = ${input.id}`;
             }
-            await query`UPDATE mira_attachments SET ready_at = now() WHERE id = ${input.id}`;
-            await auditMira(query, context, "file.uploaded", input.id);
+            const [record] = await query<
+                MiraAttachment[]
+            >`SELECT id, name, media_type AS "mediaType", bytes, created_at::text AS "createdAt" FROM mira_attachments WHERE id = ${input.id}`;
+            if (accept) await accept(query, record!);
+            if (!pending.readyAt)
+                await auditMira(query, context, "file.uploaded", input.id);
+            return record!;
+        });
+    } catch (error) {
+        if (accept && error instanceof MiraFailure) {
+            // A rejected readiness transaction did not expose this pending file. Recheck
+            // under the file lock so cleanup cannot remove a concurrent successful retry.
+            await context.client.begin(async (query) => {
+                await query`SELECT pg_advisory_xact_lock(hashtextextended('homelab:mira:files', 0))`;
+                const pending = await query<
+                    { id: string }[]
+                >`SELECT id FROM mira_attachments WHERE id=${input.id} AND owner=${context.owner} AND ready_at IS NULL AND deleted_at IS NULL FOR UPDATE`;
+                if (pending[0]) {
+                    await removeFile(filePath);
+                    await query`DELETE FROM mira_attachments WHERE id=${input.id} AND owner=${context.owner} AND ready_at IS NULL`;
+                }
+            });
         }
-        const [record] = await query<
-            MiraAttachment[]
-        >`SELECT id, name, media_type AS "mediaType", bytes, created_at::text AS "createdAt" FROM mira_attachments WHERE id = ${input.id}`;
-        return record!;
-    });
+        throw error;
+    }
 }
 
 /**

@@ -76,14 +76,12 @@ prevents automatic dispatch. Receipts and pause reasons remain available.
 account binding, the integration control and the current run lease before and
 after provider access. Metadata listing is bounded to 100 messages and a 31-day
 window per request; message text is limited to 48,000 characters. HTML is passive
-text; remote images and attachments are not fetched. Spam, blocked, unauthenticated
+text; remote images are not fetched. Attachment metadata is listed without downloading bytes. Spam, blocked, unauthenticated
 trashed and `agent-armor-held` messages are excluded. When Agent Armor metadata is
 present, pending/unavailable scans and review verdicts without a recorded human
 release are also excluded, including before the held label has appeared. Mail content cannot authorize actions.
 
-Received-mail tools remain read-only. The separate reviewed outbox below can send new
-plain-text messages and reviewed replies with its dedicated credential. Incoming
-attachment ingestion remains a separate delivery.
+Mail listing and message reading remain read-only. A separately scoped manual tool can import selected attachments into the current conversation. The reviewed outbox below sends new plain-text messages and reviewed replies with its dedicated credential.
 
 Provider declarations use stable discovery and invocation tools. Each resumed
 conversation receives the current trusted server instructions and resolves the
@@ -131,7 +129,7 @@ The executor claims a queued draft once before invoking the official [AgentMail 
 
 Approval expires after fifteen minutes before dispatch. Disabling/re-enabling the integration returns same-inbox queued work to draft for another review. Removing or changing the inbox cancels obsolete approvals before sending. Already-started provider calls cannot be recalled by pausing. The receiver and executor must agree on the inbox before approval/dispatch. Cancellation is available only before dispatch; it does not claim to unsend mail. Repeated approval requests return the same queued/sent/unknown record and cannot send a second copy.
 
-Outgoing messages support up to five explicitly selected uploaded files totaling 4 MiB. The server snapshots each owned file's name, MIME type, size and digest into the reviewed content hash. Files must still exist unchanged at approval and dispatch. The request embeds verified bytes as base64 and enforces the provider's 6 MB serialized request limit; arbitrary download URLs are never accepted. Local verification failure returns the email to draft without a provider request. A model can propose only files already shared in its current conversation. The operator can choose from their own file library and remove files before saving. Incoming attachment ingestion remains outstanding. No actual inbox or outgoing provider transport is activated by a development preview.
+Outgoing messages support up to five explicitly selected uploaded files totaling 4 MiB. The server snapshots each owned file's name, MIME type, size and digest into the reviewed content hash. Files must still exist unchanged at approval and dispatch. The request embeds verified bytes as base64 and enforces the provider's 6 MB serialized request limit; arbitrary download URLs are never accepted. Local verification failure returns the email to draft without a provider request. A model can propose only files already shared in its current conversation. The operator can choose from their own file library and remove files before saving. No actual inbox or outgoing provider transport is activated by a development preview.
 
 ### Mail-triggered workload limits
 
@@ -153,6 +151,18 @@ In manual chat, `mira_mail_reply_draft_create` reads an eligible received messag
 
 Dispatch uses AgentMail's [reply endpoint](https://docs.agentmail.to/api-reference/inboxes/messages/reply) with explicit To/Cc/Bcc lists and `reply_all: false`; no subject or unreviewed custom headers are submitted. The provider response must identify the expected thread before the dashboard records acceptance. Unknown results remain for review and are never automatically resent. Durable local claims provide retry protection for replies without assuming the provider's send-only deduplication contract covers the reply endpoint. The free-plan footer disclosure applies to replies too.
 
+### Selected incoming attachments
+
+`mira_mail_read` lists bounded attachment metadata. During a manual conversation, `mira_mail_attachment_import` can import one selected attachment from the configured inbox. Automatic mail runs cannot import files. Each import re-reads an eligible original message, verifies attachment membership, retrieves fresh signed metadata and checks the declared size against the delivered bytes. Pending, held, rejected, foreign and missing messages cannot supply attachments.
+
+Downloads accept only HTTPS on the documented `cdn.agentmail.to` host at its default port, with no URL credentials, fragments or redirects. The API credential is sent only to the fixed API origin, never the CDN. Signed URLs are neither returned to the model nor retained in the product. A different provider CDN requires separate qualification before support is extended. The deployed inbox/CDN contract still needs live qualification; synthetic tests do not establish that provisioning.
+
+The same 25 MiB passive-file limit, content classification, owner quotas, private storage, digest checks and deletion controls apply as ordinary chat files. Sender filenames become bounded display names, never disk paths. The source is treated as untrusted data. The import attaches the file to the current assistant response only when the integration binding, control version, run lease and conversation remain valid. At most eight files attach to one response. Repeating an import within the same run reuses its file identity; a later explicitly requested run can import its own copy. Interrupted unready files follow existing bounded cleanup.
+
+Imported text and PDF content can be read with the current conversation's file tool. Images remain downloadable and previewable; the operator must attach an imported image to a new user message to provide it to the model's visual input. Importing never sends mail or executes file content.
+
+References: [attachment metadata and download contract](https://docs.agentmail.to/api-reference/inboxes/messages/get-attachment), [documented CDN origin](https://docs.agentmail.to/api-reference/inboxes/files/get).
+
 Editing an automation into or out of an event subscription resets that automation's receipt-time eligibility and skips its pending deliveries. Older messages cannot be replayed into a newly selected subscription. Ordinary prompt/title edits preserve the subscription. Existing pause reasons and audit receipts remain intact.
 
 Outbox reconciliation also honors the receiver's last explicitly published binding. A removed or replacement dashboard inbox cancels obsolete unsent drafts even while the executor still has its old configuration. An offline receiver with the same binding is a temporary availability problem and does not cancel drafts.
@@ -164,3 +174,7 @@ Attachment approvals include the exact attachment metadata rendered by the revie
 Reply reads expose original Reply-To, To and Cc routing headers. The draft retains Reply-To for human review without inferring additional recipients. Draft creation and dispatch verify the thread's latest message through the bounded thread endpoint. A reply overtaken by a new message is cancelled before sending; create and review a new reply for that context. Thread lookup failures (including timeouts, missing messages and invalid responses) retain the queue entry without claiming a send or stopping the executor. The failed reply is deferred for 30 seconds in the database so other approved emails can proceed. A later pass retries the read only while the existing approval remains valid; service shutdown still interrupts the operation. Immediately before claiming the send, the database checks approval expiry against wall time again, including time spent on provider and attachment reads. Provider message and thread IDs remain available even when an acknowledgement reports an unexpected thread.
 
 Reply approval also requires the exact original reply context rendered by the dialog, so a pre-reply browser bundle must reload before approval. A provider message can still arrive after the final thread check; AgentMail offers no atomic conditional-reply operation.
+
+An imported file commits independently from its final tool receipt. Cancellation or lease loss between those commits is reported as an uncertain outcome, with the retained file visible in the conversation. The executor stops further tools and never describes that durable import as rolled back or safe to retry.
+
+The eight-file response limit is checked before reserving storage. The final link rechecks capacity; a rejected concurrent import removes only its still-pending reservation and bytes under the file lock. Already-ready files and successful retries are retained. Repeated attempts at the limit do not consume upload quota.

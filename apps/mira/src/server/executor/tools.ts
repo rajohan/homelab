@@ -80,6 +80,7 @@ export function createMiraTools(
     const definitions: (Omit<RuntimeTool, "execute"> & {
         automatic: boolean;
         transactional?: boolean;
+        commitsIndependently?: boolean;
         confirmation?: boolean;
         action: (
             input: unknown,
@@ -398,10 +399,17 @@ export function createMiraTools(
                     agentMail
                 ),
         },
-        ...createAgentMailTools(client, run, agentMail),
+        ...createAgentMailTools(client, run, agentMail, fetch, filesDirectory),
     ];
     return definitions.map(
-        ({ action, automatic, transactional, confirmation, ...definition }) => ({
+        ({
+            action,
+            automatic,
+            transactional,
+            commitsIndependently,
+            confirmation,
+            ...definition
+        }) => ({
             ...definition,
             description: confirmation
                 ? `${definition.description} This tool only proposes a change. The operator must review and approve its exact fields in the conversation; never report it as applied before approval.`
@@ -434,6 +442,7 @@ export function createMiraTools(
                         message:
                             "This action was already attempted or the run no longer owns its lease. It was not replayed.",
                     });
+                let actionCompleted = false;
                 try {
                     const invoke = async (query?: TransactionSQL) => {
                         signal.throwIfAborted();
@@ -483,6 +492,7 @@ export function createMiraTools(
                             signal,
                             query ? { ...context, transaction: query } : context
                         );
+                        actionCompleted = true;
                         signal.throwIfAborted();
                         const connection = query ?? client;
                         const saved = await connection<
@@ -499,12 +509,14 @@ export function createMiraTools(
                         ? await client.begin((query) => invoke(query))
                         : await invoke();
                 } catch (error) {
+                    // Independent file commits cannot roll back with the later receipt fence.
                     const known =
-                        error instanceof MiraFailure || error instanceof v.ValiError;
+                        !(commitsIndependently && actionCompleted) &&
+                        (error instanceof MiraFailure || error instanceof v.ValiError);
                     uncertain = !known;
                     let message =
                         "The action outcome is uncertain. Do not retry; review this run before continuing.";
-                    if (error instanceof MiraFailure) message = error.message;
+                    if (known && error instanceof MiraFailure) message = error.message;
                     else if (known)
                         message = "The tool input was invalid; no change was committed.";
                     try {

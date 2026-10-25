@@ -1,9 +1,11 @@
 import * as v from "valibot";
 
-import { integrationJson } from "../http";
+import { miraFileLimit, miraFileType } from "../../data/files";
+import { integrationBytes, integrationJson } from "../http";
 import type { AgentMailReadConfiguration } from "./configuration";
 import {
     agentMailContentSchema,
+    agentMailAttachmentDownloadSchema,
     agentMailIdSchema,
     agentMailEventPageSchema,
     agentMailMessageSchema,
@@ -283,6 +285,85 @@ export class AgentMailReader {
             format: plain === undefined ? "untrusted_html_text" : "untrusted_text",
             content: content.slice(0, 48_000),
             truncated: content.length > 48_000,
+            attachments: message.attachments.map((item) => ({
+                id: item.attachment_id,
+                name: item.filename ?? "attachment",
+                bytes: item.size,
+                declaredMediaType: item.content_type ?? null,
+            })),
+        };
+    }
+
+    /**
+     * Download an explicitly selected attachment from a fresh eligible inbox message.
+     * @param messageId - Provider message identity in the configured inbox.
+     * @param attachmentId - Attachment listed by that same message.
+     * @param signal - Owned run cancellation; the complete read also has a 30-second budget.
+     * @returns Verified passive bytes and a safe display name, never the signed CDN URL.
+     */
+    async downloadAttachment(
+        messageId: string,
+        attachmentId: string,
+        signal: AbortSignal
+    ) {
+        const id = v.parse(agentMailIdSchema, attachmentId);
+        const bounded = AbortSignal.any([signal, AbortSignal.timeout(30_000)]);
+        const original = await this.read(messageId, bounded);
+        const listed = original.attachments.find((item) => item.id === id);
+        if (!listed || !listed.bytes || listed.bytes > miraFileLimit)
+            throw new Error(
+                "This message attachment is unavailable or exceeds the file limit."
+            );
+        const metadata = v.parse(
+            agentMailAttachmentDownloadSchema,
+            await this.get(
+                `/messages/${encodeURIComponent(original.messageId)}/attachments/${encodeURIComponent(id)}`,
+                new URLSearchParams(),
+                bounded
+            )
+        );
+        const url = new URL(metadata.download_url);
+        if (
+            metadata.attachment_id !== id ||
+            metadata.size !== listed.bytes ||
+            Date.parse(metadata.expires_at) <= Date.now() ||
+            url.protocol !== "https:" ||
+            url.hostname !== "cdn.agentmail.to" ||
+            url.port ||
+            url.username ||
+            url.password ||
+            url.hash
+        )
+            throw new Error("AgentMail attachment download could not be verified.");
+        bounded.throwIfAborted();
+        const response = await this.request(url, {
+            method: "GET",
+            redirect: "error",
+            credentials: "omit",
+            signal: bounded,
+        });
+        if (response.status !== 200) {
+            await response.body?.cancel();
+            throw new Error("AgentMail attachment download failed.");
+        }
+        const bytes = await integrationBytes(response, listed.bytes);
+        bounded.throwIfAborted();
+        if (bytes.length !== listed.bytes)
+            throw new Error("AgentMail attachment size changed.");
+        const mediaType = miraFileType(bytes);
+        const basename = (metadata.filename ?? listed.name).split(/[\\/]/).at(-1) ?? "";
+        let safeName = "";
+        for (const character of basename) {
+            const code = character.codePointAt(0)!;
+            if (code >= 32 && code !== 127) safeName += character;
+        }
+        const name = safeName.trim().slice(0, 200) || "attachment";
+        return {
+            name,
+            bytes,
+            mediaType,
+            messageId: original.messageId,
+            attachmentId: id,
         };
     }
 }
