@@ -146,7 +146,6 @@ export function createAgentMailTools(
                     filesDirectory,
                     { id, name: source.name, bytes: source.bytes },
                     async (query) => {
-                        await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${run.owner}`},0))`;
                         await requireAccess(signal, current.version);
                         await auditMira(query, context, "file.mail_imported", id);
                         const linked = await query<

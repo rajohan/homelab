@@ -1510,6 +1510,45 @@ test("manual mail attachment imports are owned, retry-safe within a run and visi
         expect(first.ok).toBe(true);
         const second = importToolResult(await execute("second"));
         expect(second.result.file.id).toBe(first.result.file.id);
+        // Approval holds owner controls before sharing the file row. A reimport must
+        // wait before taking that file row, rather than invert the lock order.
+        const ownerLocked = Promise.withResolvers<number>();
+        const inspectFile = Promise.withResolvers<void>();
+        const holder = f.client.begin(async (query) => {
+            await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${binding.owner}`},0))`;
+            const [process] = await query<
+                { pid: number }[]
+            >`SELECT pg_backend_pid() AS pid`;
+            ownerLocked.resolve(process!.pid);
+            await inspectFile.promise;
+            await query`SET LOCAL lock_timeout='200ms'`;
+            await query`SELECT id FROM mira_attachments WHERE id=${first.result.file.id} FOR SHARE`;
+        });
+        const holderPid = await ownerLocked.promise;
+        const reimporting = execute("approval-concurrent-import");
+        const settled = Promise.allSettled([holder, reimporting]);
+        let waiting = false;
+        try {
+            for (let attempt = 0; attempt < 100; attempt++) {
+                const [locks] = await f.client<
+                    { waiting: boolean }[]
+                >`SELECT EXISTS(SELECT 1 FROM pg_locks waiter JOIN pg_locks holder ON waiter.locktype=holder.locktype AND waiter.classid=holder.classid AND waiter.objid=holder.objid AND waiter.objsubid=holder.objsubid WHERE NOT waiter.granted AND holder.granted AND holder.pid=${holderPid} AND holder.locktype='advisory') AS waiting`;
+                if (locks?.waiting) {
+                    waiting = true;
+                    break;
+                }
+                await delay(10);
+            }
+        } finally {
+            inspectFile.resolve();
+        }
+        const outcomes = await settled;
+        expect(waiting).toBe(true);
+        expect(outcomes[0]?.status).toBe("fulfilled");
+        const imported = outcomes[1];
+        expect(imported?.status).toBe("fulfilled");
+        if (imported?.status === "fulfilled")
+            expect(importToolResult(imported.value).ok).toBe(true);
         const conversation = await api.conversations.read({ id: chat.id });
         expect(
             conversation.messages.find((message) => message.role === "assistant")

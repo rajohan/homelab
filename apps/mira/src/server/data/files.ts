@@ -69,7 +69,7 @@ export function miraFileType(bytes: Uint8Array): string {
  * @param context - Verified human identity.
  * @param directory - Private persistent file volume.
  * @param input - Validated identity, display name and bounded upload bytes.
- * @param accept - Optional internal ownership/link check committed with readiness; never browser input.
+ * @param accept - Internal ownership/link check committed with readiness, locking owner controls before files; never browser input.
  * @returns Public attachment metadata; retrying identical bytes returns the same record.
  */
 export async function saveMiraFile(
@@ -98,6 +98,8 @@ export async function saveMiraFile(
     // Commit the reservation before touching disk. A crash always leaves a durable
     // pending receipt, and a lost commit response cannot delete an accepted file.
     await context.client.begin(async (query) => {
+        if (accept)
+            await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${context.owner}`},0))`;
         await query`SELECT pg_advisory_xact_lock(hashtextextended('homelab:mira:files', 0))`;
         const [existing] = await query<
             { name: string; sha256: string }[]
@@ -135,6 +137,8 @@ export async function saveMiraFile(
     });
     try {
         return await context.client.begin(async (query) => {
+            if (accept)
+                await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${context.owner}`},0))`;
             await query`SELECT pg_advisory_xact_lock(hashtextextended('homelab:mira:files', 0))`;
             const [pending] = await query<
                 { readyAt: Date | null; sha256: string }[]
