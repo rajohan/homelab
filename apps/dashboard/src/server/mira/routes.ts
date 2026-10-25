@@ -129,7 +129,12 @@ export const miraRouter = trpc.router({
             .input(miraMailApproveSchema)
             .mutation(({ ctx, input }) =>
                 execute(ctx, (mira) =>
-                    approveMiraMail(mira, input, ctx.operations?.agentMailHook)
+                    approveMiraMail(
+                        mira,
+                        input,
+                        ctx.operations?.agentMailHook,
+                        ctx.operations?.miraFilesDirectory
+                    )
                 )
             ),
         cancel: trpc.procedure

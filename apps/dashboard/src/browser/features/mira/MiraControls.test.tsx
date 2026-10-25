@@ -22,6 +22,7 @@ import { ChatActivity } from "./ChatActivity";
 import { ChatComposer } from "./ChatComposer";
 import { ChatMessage } from "./ChatMessage";
 import { ChatSettings } from "./ChatSettings";
+import { MailEditor } from "./MailEditor";
 import { MailReview } from "./MailReview";
 import { MiraRunTable } from "./MiraRunTable";
 import { ProposalReview } from "./ProposalReview";
@@ -608,6 +609,15 @@ test("email review displays every destination and retries only the same approved
             bcc: ["hidden@example.com"],
             subject: "Synthetic approval",
             text: "<img src=x onerror=alert(1)>\nExact plain text",
+            attachments: [
+                {
+                    id: "11111111-1111-4111-8111-111111111111",
+                    name: "Reviewed report.txt",
+                    mediaType: "application/pdf",
+                    bytes: 1024,
+                    sha256: "b".repeat(64),
+                },
+            ],
         },
     };
     const requested: unknown[] = [];
@@ -647,6 +657,12 @@ test("email review displays every destination and retries only the same approved
         ])
             expect(screen.getByText(address)).toBeInTheDocument();
         expect(screen.getByText(/Exact plain text/)).toBeInTheDocument();
+        expect(screen.getByText(/Reviewed report.txt/)).toBeInTheDocument();
+        expect(screen.getByText(/application\/pdf/)).toBeInTheDocument();
+        expect(screen.getByRole("link", { name: "Download" })).toHaveAttribute(
+            "href",
+            "/api/mira/files/11111111-1111-4111-8111-111111111111"
+        );
         expect(screen.getByText(/Sent via AgentMail/)).toBeInTheDocument();
         expect(document.querySelector("img")).toBeNull();
         const user = userEvent.setup();
@@ -663,8 +679,73 @@ test("email review displays every destination and retries only the same approved
                 id: draft.id,
                 version: 3,
                 contentHash: draft.contentHash,
+                reviewedAttachments: draft.content.attachments,
             }))
         );
+    } finally {
+        cleanup();
+        request.mockRestore();
+    }
+});
+
+test("email editor returns from file selection with its content intact and removes chosen attachments", async () => {
+    const file: MiraAttachment = {
+        id: crypto.randomUUID(),
+        name: "Choose me.txt",
+        mediaType: "text/plain",
+        bytes: 1024,
+        createdAt: new Date().toISOString(),
+    };
+    const requests: unknown[] = [];
+    const request = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+            (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+                const url = input instanceof Request ? input.url : String(input);
+                if (url.includes("files.list"))
+                    return Promise.resolve(
+                        Response.json([
+                            {
+                                result: {
+                                    data: serialize({ rows: [file], nextCursor: null }),
+                                },
+                            },
+                        ])
+                    );
+                if (typeof init?.body !== "string")
+                    throw new Error("Expected draft save");
+                const body = JSON.parse(init.body) as { "0": { json: unknown } };
+                requests.push(body["0"].json);
+                return Promise.resolve(
+                    Response.json([{ result: { data: serialize({}) } }])
+                );
+            },
+            { preconnect: fetch.preconnect }
+        )
+    );
+    const cleanup = fixture(<MailEditor onClose={() => {}} />, true);
+    try {
+        const user = userEvent.setup();
+        await user.type(screen.getByLabelText("To"), "recipient@example.com");
+        await user.type(screen.getByLabelText("Subject"), "Preserved subject");
+        await user.type(screen.getByLabelText("Message"), "Preserved body");
+        await user.click(screen.getByRole("button", { name: "Choose file" }));
+        await user.click(
+            await screen.findByRole("button", { name: "Actions for Choose me.txt" })
+        );
+        await user.click(screen.getByRole("menuitem", { name: "Attach" }));
+        expect(screen.getByLabelText("Subject")).toHaveValue("Preserved subject");
+        expect(screen.getByText(file.name)).toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: `Remove ${file.name}` }));
+        expect(screen.queryByText(file.name)).toBeNull();
+        await user.click(screen.getByRole("button", { name: "Save draft" }));
+        await waitFor(() => expect(requests).toHaveLength(1));
+        expect(requests[0]).toMatchObject({
+            content: {
+                subject: "Preserved subject",
+                text: "Preserved body",
+                attachmentIds: [],
+            },
+        });
     } finally {
         cleanup();
         request.mockRestore();

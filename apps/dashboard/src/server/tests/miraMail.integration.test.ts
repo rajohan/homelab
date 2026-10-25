@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { capabilities } from "@homelab/contracts/operations";
+import { saveMiraFile, deleteMiraFile } from "@homelab/mira/data/files";
 import { publishAgentMailReceiver } from "@homelab/mira/data/integrations";
 import { approveMiraMail, saveMiraMail } from "@homelab/mira/data/mail";
 import { claimMiraRun } from "@homelab/mira/data/queue";
@@ -45,9 +46,13 @@ async function mailFixture() {
         apiKey: "synthetic-api-key-not-a-secret",
         sendApiKey: "synthetic-send-key-not-a-secret",
     };
-    const caller = (owner = "operator") =>
+    const caller = (owner = "operator", filesDirectory?: string) =>
         appRouter.createCaller({
-            operations: { ...fixture, agentMailHook: binding },
+            operations: {
+                ...fixture,
+                agentMailHook: binding,
+                miraFilesDirectory: filesDirectory,
+            },
             principal: { kind: "human", id: owner, capabilities },
         }).mira;
     const api = caller();
@@ -541,6 +546,271 @@ test("outbox migration upgrades an already migrated parent database", async () =
         await connection.client.close();
         await allocation.close();
         await rm(prior, { recursive: true, force: true });
+    }
+});
+
+test("reviewed attachments send the exact owned bytes and retain durable fingerprints", async () => {
+    const f = await mailFixture();
+    const directory = await mkdtemp(path.join(tmpdir(), "mira-mail-files-"));
+    const owner = {
+        client: f.client,
+        owner: f.binding.owner,
+        actor: `human:${f.binding.owner}`,
+    };
+    try {
+        const bytes = new TextEncoder().encode("Synthetic attachment contents");
+        const file = await saveMiraFile(owner, directory, {
+            id: crypto.randomUUID(),
+            name: "report.txt",
+            bytes,
+        });
+        const input = {
+            id: crypto.randomUUID(),
+            version: 0,
+            conversationId: f.chat.id,
+            content: { ...content, attachmentIds: [file.id] },
+        };
+        const draft = await f.api.mail.save(input);
+        expect(draft.content.attachments).toMatchObject([
+            {
+                id: file.id,
+                name: "report.txt",
+                bytes: bytes.length,
+                sha256: new Bun.CryptoHasher("sha256").update(bytes).digest("hex"),
+            },
+        ]);
+        const plain = await f.create();
+        expect(draft.contentHash).not.toBe(plain.contentHash);
+        const legacyApproval = {
+            id: draft.id,
+            version: draft.version,
+            contentHash: draft.contentHash,
+        };
+        await rejects(
+            f.caller("operator", directory).mail.approve(legacyApproval),
+            /review every attachment/
+        );
+        await rejects(
+            f.caller("operator", directory).mail.approve({
+                ...legacyApproval,
+                reviewedAttachments: [
+                    { ...draft.content.attachments![0]!, mediaType: "application/pdf" },
+                ],
+            }),
+            /review every attachment/
+        );
+        await f.caller("operator", directory).mail.approve({
+            id: draft.id,
+            version: draft.version,
+            contentHash: draft.contentHash,
+            reviewedAttachments: draft.content.attachments,
+        });
+        let calls = 0;
+        const request = Object.assign(
+            (_input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+                calls++;
+                if (typeof init?.body !== "string")
+                    throw new Error("Expected serialized content");
+                expect(JSON.parse(init.body) as unknown).toEqual({
+                    ...content,
+                    track_opens: false,
+                    attachments: [
+                        {
+                            filename: "report.txt",
+                            content_type: "text/plain; charset=utf-8",
+                            content: Buffer.from(bytes).toString("base64"),
+                        },
+                    ],
+                });
+                return Promise.resolve(
+                    Response.json({
+                        message_id: "sent-with-attachment",
+                        thread_id: "thread",
+                    })
+                );
+            },
+            { preconnect: fetch.preconnect }
+        );
+        expect(
+            await dispatchMiraMail(f.client, f.configuration, signal, request, directory)
+        ).toBe(true);
+        expect(calls).toBe(1);
+        await deleteMiraFile(owner, directory, file.id);
+        const retry = await f.api.mail.save(input);
+        expect(retry.state).toBe("sent");
+        expect(retry.contentHash).toBe(draft.contentHash);
+        expect(
+            await dispatchMiraMail(f.client, f.configuration, signal, request, directory)
+        ).toBe(false);
+    } finally {
+        await f.close();
+        await rm(directory, { recursive: true, force: true });
+    }
+});
+
+for (const failure of [
+    "deleted-before-approval",
+    "missing-before-approval",
+    "altered-before-approval",
+    "deleted-after-approval",
+    "altered-bytes",
+] as const) {
+    test(`email attachments fail closed when ${failure}`, async () => {
+        const f = await mailFixture();
+        const directory = await mkdtemp(path.join(tmpdir(), "mira-mail-files-"));
+        const owner = {
+            client: f.client,
+            owner: f.binding.owner,
+            actor: `human:${f.binding.owner}`,
+        };
+        try {
+            const file = await saveMiraFile(owner, directory, {
+                id: crypto.randomUUID(),
+                name: "report.txt",
+                bytes: new TextEncoder().encode("Original content"),
+            });
+            const draft = await f.api.mail.save({
+                id: crypto.randomUUID(),
+                version: 0,
+                conversationId: f.chat.id,
+                content: { ...content, attachmentIds: [file.id] },
+            });
+            if (failure.endsWith("before-approval")) {
+                if (failure === "deleted-before-approval")
+                    await deleteMiraFile(owner, directory, file.id);
+                if (failure === "missing-before-approval")
+                    await rm(path.join(directory, file.id));
+                if (failure === "altered-before-approval")
+                    await Bun.write(path.join(directory, file.id), "Tampered content");
+                await rejects(
+                    f.caller("operator", directory).mail.approve({
+                        id: draft.id,
+                        version: draft.version,
+                        contentHash: draft.contentHash,
+                        reviewedAttachments: draft.content.attachments,
+                    }),
+                    /available|could not be verified/
+                );
+            } else {
+                await f.caller("operator", directory).mail.approve({
+                    id: draft.id,
+                    version: draft.version,
+                    contentHash: draft.contentHash,
+                    reviewedAttachments: draft.content.attachments,
+                });
+                await (failure === "deleted-after-approval"
+                    ? deleteMiraFile(owner, directory, file.id)
+                    : Bun.write(path.join(directory, file.id), "Tampered content"));
+                let calls = 0;
+                const request = Object.assign(
+                    () => {
+                        calls++;
+                        return Promise.reject(new Error("Must not send"));
+                    },
+                    { preconnect: fetch.preconnect }
+                );
+                expect(
+                    await dispatchMiraMail(
+                        f.client,
+                        f.configuration,
+                        signal,
+                        request,
+                        directory
+                    )
+                ).toBe(false);
+                expect(calls).toBe(0);
+                const result = await f.api.mail.list({});
+                expect(result.rows[0]?.state).toBe("draft");
+                expect(result.rows[0]?.message).toContain(
+                    "attachments could not be verified"
+                );
+            }
+        } finally {
+            await f.close();
+            await rm(directory, { recursive: true, force: true });
+        }
+    });
+}
+
+test("attachment drafts reject foreign, oversized and duplicate files and models cannot inspect the whole library", async () => {
+    const f = await mailFixture();
+    const directory = await mkdtemp(path.join(tmpdir(), "mira-mail-files-"));
+    const owner = {
+        client: f.client,
+        owner: f.binding.owner,
+        actor: `human:${f.binding.owner}`,
+    };
+    try {
+        const file = await saveMiraFile(owner, directory, {
+            id: crypto.randomUUID(),
+            name: "private.txt",
+            bytes: new TextEncoder().encode("Only shared when selected"),
+        });
+        const input = (ids: string[]) => ({
+            id: crypto.randomUUID(),
+            version: 0,
+            conversationId: f.chat.id,
+            content: { ...content, attachmentIds: ids },
+        });
+        await rejects(
+            f.caller("other").mail.save({ ...input([file.id]), conversationId: null }),
+            /configured|available/
+        );
+        const foreign = await saveMiraFile(
+            { ...owner, owner: "other", actor: "human:other" },
+            directory,
+            {
+                id: crypto.randomUUID(),
+                name: "foreign.txt",
+                bytes: new TextEncoder().encode("Another owner's file"),
+            }
+        );
+        await rejects(f.api.mail.save(input([foreign.id])), /available/);
+        await rejects(f.api.mail.save(input([file.id, file.id])), /different/);
+        const large = await saveMiraFile(owner, directory, {
+            id: crypto.randomUUID(),
+            name: "large.txt",
+            bytes: new Uint8Array(4 * 1024 * 1024 + 1).fill(65),
+        });
+        await rejects(f.api.mail.save(input([large.id])), /4 MiB/);
+        const shared = await saveMiraFile(owner, directory, {
+            id: crypto.randomUUID(),
+            name: "shared.txt",
+            bytes: new TextEncoder().encode("Deliberately shared"),
+        });
+        await f.api.conversations.send({
+            conversationId: f.chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Prepare a draft using only the selected attachment",
+            attachmentIds: [shared.id],
+        });
+        const run = await claimMiraRun(f.client, crypto.randomUUID(), "foreground");
+        const tool = createMiraTools(f.client, run!, directory, f.configuration).find(
+            (item) => item.name === "mira_mail_draft_create"
+        )!;
+        const denied: unknown = JSON.parse(
+            await tool.execute({ ...content, attachmentIds: [file.id] }, signal, {
+                callId: "unshared",
+                threadId: "test",
+                turnId: "test",
+            })
+        );
+        expect(denied).toMatchObject({ ok: false });
+        expect(await f.client`SELECT id FROM mira_mail_drafts`).toHaveLength(0);
+        const allowed: unknown = JSON.parse(
+            await tool.execute({ ...content, attachmentIds: [shared.id] }, signal, {
+                callId: "shared",
+                threadId: "test",
+                turnId: "test",
+            })
+        );
+        expect(allowed).toMatchObject({
+            ok: true,
+            result: { content: { attachments: [{ id: shared.id }] } },
+        });
+    } finally {
+        await f.close();
+        await rm(directory, { recursive: true, force: true });
     }
 });
 

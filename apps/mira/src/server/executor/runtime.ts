@@ -143,7 +143,13 @@ export async function runMiraExecutor(options: {
         while (!signal.aborted) {
             await reconcileMiraMail(client, options.agentMail);
             if (options.agentMail)
-                await dispatchMiraMail(client, options.agentMail, signal);
+                await dispatchMiraMail(
+                    client,
+                    options.agentMail,
+                    signal,
+                    fetch,
+                    options.filesDirectory
+                );
             await wait(5000);
         }
     };

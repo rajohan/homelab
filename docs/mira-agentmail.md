@@ -131,7 +131,7 @@ The executor claims a queued draft once before invoking the official [AgentMail 
 
 Approval expires after fifteen minutes before dispatch. Disabling/re-enabling the integration returns same-inbox queued work to draft for another review. Removing or changing the inbox cancels obsolete approvals before sending. Already-started provider calls cannot be recalled by pausing. The receiver and executor must agree on the inbox before approval/dispatch. Cancellation is available only before dispatch; it does not claim to unsend mail. Repeated approval requests return the same queued/sent/unknown record and cannot send a second copy.
 
-This first outgoing implementation handles new plain-text messages. Threaded replies and outgoing attachments are not yet implemented. No actual inbox or outgoing provider transport is activated by a development preview.
+Outgoing messages support up to five explicitly selected uploaded files totaling 4 MiB. The server snapshots each owned file's name, MIME type, size and digest into the reviewed content hash. Files must still exist unchanged at approval and dispatch. The request embeds verified bytes as base64 and enforces the provider's 6 MB serialized request limit; arbitrary download URLs are never accepted. Local verification failure returns the email to draft without a provider request. A model can propose only files already shared in its current conversation. The operator can choose from their own file library and remove files before saving. Threaded replies and incoming attachment ingestion remain outstanding. No actual inbox or outgoing provider transport is activated by a development preview.
 
 ### Mail-triggered workload limits
 
@@ -152,3 +152,5 @@ Editing an automation into or out of an event subscription resets that automatio
 Outbox reconciliation also honors the receiver's last explicitly published binding. A removed or replacement dashboard inbox cancels obsolete unsent drafts even while the executor still has its old configuration. An offline receiver with the same binding is a temporary availability problem and does not cancel drafts.
 
 The dashboard receiver is authoritative during rolling configuration changes. Drafts for its current inbox remain editable while an older or temporarily absent executor catches up; the old executor cannot claim or cancel those approvals. An empty optional send-key environment value enables read-only operation, while malformed nonempty keys are rejected.
+
+Attachment approvals include the exact attachment metadata rendered by the review dialog. An old browser bundle cannot approve an attachment-bearing draft using only its opaque content hash; it must reload and show the filenames, detected media types and sizes first.

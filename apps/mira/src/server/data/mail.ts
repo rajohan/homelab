@@ -1,5 +1,8 @@
 import {
+    miraMailAttachmentSchema,
     miraMailContentSchema,
+    type MiraMailApprove,
+    miraMailInputSchema,
     type MiraMailContent,
     type MiraMailDraft,
     type MiraMailSave,
@@ -19,6 +22,11 @@ import {
     type MiraQuery,
 } from "./context";
 import { agentMailBindingStatus, agentMailReceiverCurrent } from "./integrations";
+import {
+    captureMailAttachments,
+    verifyMailAttachments,
+    miraMailRequestBody,
+} from "./mailAttachments";
 
 /**
  * Fingerprint the exact normalized recipients and plain-text body shown for approval.
@@ -65,8 +73,7 @@ export async function saveMiraMail(
     binding?: AgentMailBinding
 ): Promise<MiraMailDraft> {
     const configured = bindingFor(context, binding);
-    const content = v.parse(miraMailContentSchema, input.content);
-    const hash = miraMailHash(content);
+    const proposed = v.parse(miraMailInputSchema, input.content);
     const bindingHash = agentMailBindingHash(configured);
     return miraTransaction(context, async (query) => {
         await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:mail:${context.owner}:${input.id}`},0))`;
@@ -75,17 +82,31 @@ export async function saveMiraMail(
                 owner: string;
                 version: number;
                 state: string;
-                hash: string;
+                content: MiraMailContent;
                 binding: string;
                 conversationId: string | null;
             }[]
-        >`SELECT owner,version,state,content_hash AS hash,binding_hash AS binding,conversation_id AS "conversationId" FROM mira_mail_drafts WHERE id=${input.id} FOR UPDATE`;
+        >`SELECT owner,version,state,content,binding_hash AS binding,conversation_id AS "conversationId" FROM mira_mail_drafts WHERE id=${input.id} FOR UPDATE`;
         if (existing) {
             if (existing.owner !== context.owner)
                 throw new MiraFailure("NOT_FOUND", "Mail draft not found.");
             if (
                 input.version === 0 &&
-                existing.hash === hash &&
+                JSON.stringify(
+                    v.parse(miraMailInputSchema, {
+                        to: existing.content.to,
+                        cc: existing.content.cc,
+                        bcc: existing.content.bcc,
+                        subject: existing.content.subject,
+                        text: existing.content.text,
+                        attachmentIds:
+                            existing.content.attachments?.map((file) => file.id) ?? [],
+                    })
+                ) ===
+                    JSON.stringify({
+                        ...proposed,
+                        attachmentIds: proposed.attachmentIds ?? [],
+                    }) &&
                 existing.binding === bindingHash &&
                 existing.conversationId === input.conversationId
             )
@@ -105,6 +126,18 @@ export async function saveMiraMail(
         // New or changed links still require an active owned conversation.
         if (!existing || existing.conversationId !== input.conversationId)
             await requireConversation(query, context.owner, input.conversationId);
+        const attachments = await captureMailAttachments(
+            query,
+            context,
+            proposed.attachmentIds ?? [],
+            input.conversationId
+        );
+        const { attachmentIds: _ids, ...message } = proposed;
+        const content: MiraMailContent = {
+            ...message,
+            ...(attachments.length > 0 ? { attachments } : {}),
+        };
+        const hash = miraMailHash(content);
         await (existing
             ? query`UPDATE mira_mail_drafts SET content=${JSON.stringify(content)}::text::jsonb,content_hash=${hash},conversation_id=${input.conversationId},version=version+1,updated_at=now() WHERE id=${input.id}`
             : query`INSERT INTO mira_mail_drafts (id,owner,conversation_id,inbox_id,binding_hash,content,content_hash) VALUES (${input.id},${context.owner},${input.conversationId},${configured.inboxId},${bindingHash},${JSON.stringify(content)}::text::jsonb,${hash})`);
@@ -134,12 +167,14 @@ export async function listMiraMail(
  * @param context - Human-only product context; model tools cannot call this action.
  * @param input - Draft version and displayed content fingerprint.
  * @param binding - Dashboard's configured receiver, matched against the live executor.
+ * @param filesDirectory - Shared private file store; attachment bytes must pass integrity checks before approval.
  * @returns Current draft state; an approval retry never schedules a second delivery.
  */
 export async function approveMiraMail(
     context: MiraContext,
-    input: { id: string; version: number; contentHash: string },
-    binding?: AgentMailBinding
+    input: MiraMailApprove,
+    binding?: AgentMailBinding,
+    filesDirectory?: string
 ): Promise<MiraMailDraft> {
     if (context.run || context.actor !== `human:${context.owner}`)
         throw new MiraFailure(
@@ -156,13 +191,27 @@ export async function approveMiraMail(
                 hash: string;
                 binding: string;
                 approvedVersion: number | null;
+                content: MiraMailContent;
             }[]
-        >`SELECT version,state,content_hash AS hash,binding_hash AS binding,approved_version AS "approvedVersion" FROM mira_mail_drafts WHERE id=${input.id} AND owner=${context.owner} FOR UPDATE`;
+        >`SELECT version,state,content,content_hash AS hash,binding_hash AS binding,approved_version AS "approvedVersion" FROM mira_mail_drafts WHERE id=${input.id} AND owner=${context.owner} FOR UPDATE`;
         if (!row) throw new MiraFailure("NOT_FOUND", "Mail draft not found.");
         if (row.hash !== input.contentHash)
             throw new MiraFailure(
                 "CONFLICT",
                 "The email changed. Review the current recipients and content before sending."
+            );
+        const attachments = row.content.attachments ?? [];
+        if (
+            JSON.stringify(
+                v.parse(
+                    v.array(miraMailAttachmentSchema),
+                    input.reviewedAttachments ?? []
+                )
+            ) !== JSON.stringify(v.parse(v.array(miraMailAttachmentSchema), attachments))
+        )
+            throw new MiraFailure(
+                "CONFLICT",
+                "Reload the dashboard and review every attachment before sending."
             );
         if (row.approvedVersion === input.version)
             return readDraft(query, context.owner, input.id);
@@ -175,6 +224,19 @@ export async function approveMiraMail(
                 "CONFLICT",
                 "This draft changed or belongs to a previous inbox. Refresh before sending."
             );
+        await verifyMailAttachments(query, context, row.content.attachments ?? []);
+        try {
+            await miraMailRequestBody(
+                { ...context, transaction: query },
+                filesDirectory,
+                row.content
+            );
+        } catch {
+            throw new MiraFailure(
+                "PRECONDITION_FAILED",
+                "The email attachments could not be verified. Check the files before sending."
+            );
+        }
         const status = await agentMailBindingStatus(query, configured);
         if (
             !status.enabled ||
