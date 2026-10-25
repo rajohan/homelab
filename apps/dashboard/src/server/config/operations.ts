@@ -1,6 +1,10 @@
 import { readFileSync } from "node:fs";
 
 import type { UpdateSource } from "@homelab/contracts/updates";
+import {
+    agentMailHookConfiguration,
+    type AgentMailHookConfiguration,
+} from "@homelab/mira/integrations/agentmail/configuration";
 import * as v from "valibot";
 
 import type { RulesConfiguration } from "../integrations/alerts/rules";
@@ -39,6 +43,7 @@ const storeSchema = v.strictObject({
 
 export interface OperationsConfiguration {
     readonly miraFilesDirectory?: string | undefined;
+    readonly agentMailHook?: AgentMailHookConfiguration | undefined;
     readonly maintenanceTargets?: readonly MaintenanceTarget[];
     readonly releaseRepository?: string | undefined;
     readonly dockerHub?: DockerHubCredential | undefined;
@@ -237,6 +242,7 @@ export function parseOperationsConfiguration(
         throw new Error("Every update target requires a configured reporting source");
     return {
         miraFilesDirectory: environment.HOMELAB_MIRA_FILES_DIR,
+        agentMailHook: agentMailHookConfiguration(environment),
         maintenanceTargets: parseMaintenanceTargets(
             environment.HOMELAB_DASHBOARD_MAINTENANCE_TARGETS,
             updateTargets

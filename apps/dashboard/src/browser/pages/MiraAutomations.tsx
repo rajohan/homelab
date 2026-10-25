@@ -21,6 +21,7 @@ import { useState } from "react";
 import { api } from "../api/client";
 import { AutomationEditor } from "../features/mira/AutomationEditor";
 import { MiraDisableDialog } from "../features/mira/MiraDisableDialog";
+import { MiraIntegrations } from "../features/mira/MiraIntegrations";
 import { MiraRunHistory } from "../features/mira/MiraRunHistory";
 import { RunAutomationButton } from "../features/mira/RunAutomationButton";
 import { useOperation } from "../features/operations/useOperation";
@@ -256,9 +257,11 @@ export function MiraAutomations() {
                     Load more automations
                 </Button>
             )}
+            <MiraIntegrations />
             <MiraRunHistory />
             {editing && (
                 <AutomationEditor
+                    agentMailAvailable
                     automation={editing === "new" ? undefined : editing}
                     onClose={() => setEditing(undefined)}
                 />

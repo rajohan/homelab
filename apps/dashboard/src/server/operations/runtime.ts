@@ -1,4 +1,5 @@
 import type { UpdateSource } from "@homelab/contracts/updates";
+import type { AgentMailHookConfiguration } from "@homelab/mira/integrations/agentmail/configuration";
 
 import type { OperationsConfiguration } from "../config/operations";
 import { connectDashboardDatabase } from "../database/connection";
@@ -148,6 +149,7 @@ export function createOperationsRuntime(
         : undefined;
     return {
         miraFilesDirectory: configuration.miraFilesDirectory,
+        agentMailHook: configuration.agentMailHook,
         maintenanceTargets: configuration.maintenanceTargets ?? [],
         releaseRepository: configuration.releaseRepository,
         updateTargets: configuration.updateTargets ?? [],
@@ -165,6 +167,7 @@ export function createOperationsRuntime(
 }
 export type OperationsRuntime = ReturnType<typeof connectDashboardDatabase> & {
     readonly miraFilesDirectory?: string | undefined;
+    readonly agentMailHook?: AgentMailHookConfiguration | undefined;
     readonly maintenanceTargets?: readonly MaintenanceTarget[];
     readonly releaseRepository?: string | undefined;
     readonly updateTargets?: readonly UpdateTarget[];
