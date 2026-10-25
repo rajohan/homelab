@@ -5,6 +5,7 @@ import {
     type MiraModel,
     type MiraSchedule,
 } from "@homelab/contracts/mira";
+import type { MiraDaytonaContent } from "@homelab/contracts/miraDaytona";
 import type { MiraMailContent } from "@homelab/contracts/miraMail";
 import type { MiraPublicationContent } from "@homelab/contracts/miraPublication";
 import type { MiraSocialContent } from "@homelab/contracts/miraSocial";
@@ -23,6 +24,8 @@ import {
     uniqueIndex,
     uuid,
 } from "drizzle-orm/pg-core";
+
+import type { DaytonaBinding } from "../integrations/daytona/configuration";
 
 const time = (name: string) => timestamp(name, { withTimezone: true });
 export const miraConversations = pgTable(
@@ -595,3 +598,68 @@ export const miraSocialCooldowns = pgTable("mira_social_cooldowns", {
     owner: text().primaryKey(),
     until: time("until").notNull(),
 });
+
+export const miraDaytonaJobs = pgTable(
+    "mira_daytona_jobs",
+    {
+        id: uuid().primaryKey(),
+        owner: text().notNull(),
+        conversationId: uuid("conversation_id").references(() => miraConversations.id),
+        taskId: uuid("task_id").references(() => miraTasks.id),
+        binding: jsonb().$type<DaytonaBinding>().notNull(),
+        bindingHash: text("binding_hash").notNull(),
+        version: integer().notNull().default(1),
+        content: jsonb().$type<MiraDaytonaContent>().notNull(),
+        contentHash: text("content_hash").notNull(),
+        state: text().notNull().default("draft"),
+        phase: text().notNull().default("idle"),
+        cleanup: text().notNull().default("not_needed"),
+        outcome: text(),
+        cancelRequested: boolean("cancel_requested").notNull().default(false),
+        approvedAt: time("approved_at"),
+        controlVersion: integer("control_version"),
+        startedAt: time("started_at"),
+        deadline: time("deadline"),
+        leaseToken: uuid("lease_token"),
+        leaseExpiresAt: time("lease_expires_at"),
+        retryAt: time("retry_at"),
+        sandboxId: uuid("sandbox_id"),
+        commandId: text("command_id"),
+        uploadIndex: integer("upload_index").notNull().default(0),
+        deleteAttempted: boolean("delete_attempted").notNull().default(false),
+        exitCode: integer("exit_code"),
+        stdout: text().notNull().default(""),
+        stderr: text().notNull().default(""),
+        output: text().notNull().default(""),
+        files: jsonb().$type<{ name: string; id: string }[]>().notNull().default([]),
+        message: text(),
+        createdAt: time("created_at").notNull().defaultNow(),
+        updatedAt: time("updated_at").notNull().defaultNow(),
+    },
+    (t) => [
+        index("mira_daytona_owner").on(t.owner, t.createdAt, t.id),
+        index("mira_daytona_dispatch").on(t.cleanup, t.state, t.retryAt),
+        index("mira_daytona_admission").on(t.startedAt),
+        uniqueIndex("mira_daytona_single_active")
+            .on(sql`(true)`)
+            .where(sql`${t.cleanup}='pending'`),
+        check(
+            "mira_daytona_state",
+            sql`${t.state} IN ('draft','queued','running','completed','failed','cancelled','needs_attention')`
+        ),
+        check(
+            "mira_daytona_cleanup",
+            sql`${t.cleanup} IN ('not_needed','pending','confirmed')`
+        ),
+        check(
+            "mira_daytona_outcome",
+            sql`${t.outcome} IS NULL OR ${t.outcome} IN ('completed','failed','cancelled','needs_attention')`
+        ),
+        check("mira_daytona_version", sql`${t.version}>0`),
+        check("mira_daytona_upload", sql`${t.uploadIndex} BETWEEN 0 AND 4`),
+        check(
+            "mira_daytona_logs",
+            sql`octet_length(${t.stdout})+octet_length(${t.stderr})+octet_length(${t.output})<=131072`
+        ),
+    ]
+);

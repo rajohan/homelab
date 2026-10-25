@@ -12,6 +12,7 @@ import {
     type MiraClaim,
 } from "../data/queue";
 import type { AgentMailReadConfiguration } from "../integrations/agentmail/configuration";
+import type { DaytonaBinding } from "../integrations/daytona/configuration";
 import type { HereNowReadConfiguration } from "../integrations/herenow/configuration";
 import type { MoltbookReadConfiguration } from "../integrations/moltbook/configuration";
 import { CodexRuntime } from "../runtime/codexRuntime";
@@ -40,6 +41,7 @@ export const miraInstructionsHash = new Bun.CryptoHasher("sha256")
  * @param agentMail - Optional inbox settings, never forwarded to the model child.
  * @param hereNow - Optional scoped website metadata settings; credentials stay in the executor.
  * @param moltbook - Optional social read settings, retained only by the service.
+ * @param daytona - Nonsecret cloud mapping for local drafts and result reads.
  * @returns Completion after recording the observed terminal outcome and reaping the child.
  */
 export async function executeMiraTurn(
@@ -50,7 +52,8 @@ export async function executeMiraTurn(
     filesDirectory?: string,
     agentMail?: AgentMailReadConfiguration,
     moltbook?: MoltbookReadConfiguration,
-    hereNow?: HereNowReadConfiguration
+    hereNow?: HereNowReadConfiguration,
+    daytona?: DaytonaBinding
 ): Promise<void> {
     const controller = new AbortController();
     const deadline = new AbortController();
@@ -135,7 +138,15 @@ export async function executeMiraTurn(
             record = await readMiraTurnInput(client, run);
         }
         const tools = createMiraToolRouter(
-            createMiraTools(client, run, filesDirectory, agentMail, moltbook, hereNow),
+            createMiraTools(
+                client,
+                run,
+                filesDirectory,
+                agentMail,
+                moltbook,
+                hereNow,
+                daytona
+            ),
             record.providerThread !== null
         );
         let threadId = record.providerThread;

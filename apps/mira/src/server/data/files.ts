@@ -305,6 +305,7 @@ export async function deleteMiraFile(
     v.parse(idSchema, id);
     const root = await miraFileDirectory(directory);
     await context.client.begin(async (query) => {
+        await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${context.owner}`},0))`;
         await query`SELECT pg_advisory_xact_lock(hashtextextended('homelab:mira:files', 0))`;
         const [file] = await query<
             { id: string }[]
@@ -313,6 +314,14 @@ export async function deleteMiraFile(
         const active = await query<
             { id: string }[]
         >`SELECT r.id FROM mira_runs r JOIN mira_messages m ON m.conversation_id = r.conversation_id WHERE r.owner = ${context.owner} AND r.state IN ('queued','running') AND m.attachment_ids @> ${JSON.stringify([id])}::text::jsonb LIMIT 1`;
+        const cloud = await query<
+            { id: string }[]
+        >`SELECT id FROM mira_daytona_jobs WHERE owner=${context.owner} AND (state='queued' OR cleanup='pending') AND content->'inputs' @> ${JSON.stringify([{ id }])}::text::jsonb LIMIT 1`;
+        if (cloud[0])
+            throw new MiraFailure(
+                "CONFLICT",
+                "Cancel or finish the cloud job before deleting its input file."
+            );
         if (active.length > 0)
             throw new MiraFailure(
                 "CONFLICT",

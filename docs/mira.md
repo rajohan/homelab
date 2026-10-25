@@ -31,16 +31,16 @@ not the reserved light infrastructure worker.
 
 ## Delivery sequence
 
-| Delivery                   | Scope                                                                                                                        | Status                                                                                                                                         |
-| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| Runtime qualification      | Separate ChatGPT login; streaming, host tools, interruption and process replacement                                          | Implemented; isolated live qualification passed                                                                                                |
-| Chat and files             | Owned conversations, streaming, cancellation, search/archive/delete, bounded uploads and editable memory                     | Implemented; synthetic preview and live text/PDF/image qualification passed                                                                    |
-| Tasks                      | Four-column drag-and-drop board, keyboard controls, search/filters, versioned edits, progress and conversation links         | Board, product tools and [explicit task execution](mira-tasks.md) implemented; resource-context actions pending                                |
-| Automations and Reports    | Durable scheduler, heartbeat, reasoned individual/global pause, run history, report snapshots and deduplicated notifications | Core implemented; migrated presets installed paused; external hooks and improvement execution pending                                          |
-| Computer control           | Dedicated browser, required Windows pairing, scoped controls, preview, local stop and takeover                               | Driver candidate identified; companion and host acceptance pending                                                                             |
-| Voice                      | Shared conversation context, provider qualification and explicit billing limits                                              | Pending; no paid voice budget enabled                                                                                                          |
-| Migration and integrations | Validated legacy imports, AgentMail, Daytona, here.now and Moltbook adapters                                                 | AgentMail delivery/attachments, here.now reads/publication and Moltbook reads implemented; Daytona, remaining actions and live cutover pending |
-| Self-update                | Exact verified releases, independent deployment runner, receipts, health checks and compatible recovery                      | Mira image/release packaging implemented; replacement runner and automatic policy pending                                                      |
+| Delivery                   | Scope                                                                                                                        | Status                                                                                                                                                     |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime qualification      | Separate ChatGPT login; streaming, host tools, interruption and process replacement                                          | Implemented; isolated live qualification passed                                                                                                            |
+| Chat and files             | Owned conversations, streaming, cancellation, search/archive/delete, bounded uploads and editable memory                     | Implemented; synthetic preview and live text/PDF/image qualification passed                                                                                |
+| Tasks                      | Four-column drag-and-drop board, keyboard controls, search/filters, versioned edits, progress and conversation links         | Board, product tools and [explicit task execution](mira-tasks.md) implemented; resource-context actions pending                                            |
+| Automations and Reports    | Durable scheduler, heartbeat, reasoned individual/global pause, run history, report snapshots and deduplicated notifications | Core implemented; migrated presets installed paused; external hooks and improvement execution pending                                                      |
+| Computer control           | Dedicated browser, required Windows pairing, scoped controls, preview, local stop and takeover                               | Driver candidate identified; companion and host acceptance pending                                                                                         |
+| Voice                      | Shared conversation context, provider qualification and explicit billing limits                                              | Pending; no paid voice budget enabled                                                                                                                      |
+| Migration and integrations | Validated legacy imports, AgentMail, Daytona, here.now and Moltbook adapters                                                 | AgentMail delivery/attachments, here.now publication, Moltbook participation and reviewed Daytona jobs implemented; live qualification and cutover pending |
+| Self-update                | Exact verified releases, independent deployment runner, receipts, health checks and compatible recovery                      | Mira image/release packaging implemented; replacement runner and automatic policy pending                                                                  |
 
 Each delivery uses Bun, Valibot, Effect boundaries, existing dashboard contracts and
 shared UI. Reuse cards, headers, actions, forms, lists and viewport-bounded modals;
@@ -158,10 +158,11 @@ AgentMail keeps Mira's existing inbox. Replace the old custom signature transfor
 with raw-body Svix verification, durable event acceptance, deduplication and missed
 message reconciliation. Replies require explicit authority. Mail content is untrusted.
 
-Daytona/Crabbox provides bounded disposable verification environments after its CLI,
-SDK, snapshots and runner are qualified together. Preserve the exact Bun pin,
-frozen installs, output/diff recovery, timeouts and cleanup on every exit path.
-Paid activation needs configured resource and spending limits.
+Daytona provides durable cloud jobs with reviewed commands, selected file transfers,
+bounded logs and confirmed cleanup. The coding harness and snapshot still need live
+qualification, including the exact Bun pin, frozen installs and output/diff recovery.
+Paid activation needs qualified runtime isolation and configured spending limits;
+job admission limits alone are not a currency budget.
 
 here.now publishes only authorized outputs; internal reports stay private by default.
 Moltbook retains separate participation permissions, cadence and notification rules.
@@ -212,7 +213,7 @@ Test DST, missed schedules, concurrent edits, notification races and process cra
 The feature is not complete until Windows acceptance, external adapters, updates,
 disable preservation and server-side independent execution pass their checks.
 
-AgentMail delivery and provisioning are documented in [Mira AgentMail](mira-agentmail.md). The signed receiver, read tools, recovery and pause controls are implemented; real activation and outgoing drafts remain pending.
+AgentMail delivery and provisioning are documented in [Mira AgentMail](mira-agentmail.md). The signed receiver, read tools, recovery, pause controls and reviewed outgoing drafts with attachments are implemented; live qualification and activation remain pending.
 
 ### Proposed product changes
 
@@ -222,4 +223,8 @@ Proposals expire after 24 hours; cleanup removes their argument contents, and de
 
 ## Daytona delivery
 
-The control-plane foundation and bounded command/file toolbox are implemented but not activated. See [Daytona adapter qualification](mira-daytona.md) for the pinned official client, isolation limits, recovery contract and remaining execution/dashboard work.
+The control-plane adapter, bounded command/file toolbox, durable queue and dashboard are implemented but not activated. See [Daytona adapter qualification](mira-daytona.md) for the pinned official clients, isolation limits, recovery contract and remaining harness and live qualification work.
+
+### Reviewed Daytona cloud jobs
+
+Cloud jobs are available from Chat and Jobs with local drafts, exact operator review, durable execution phases, bounded logs, selected file transfers and independently confirmed cleanup. The model can propose a command and read recorded results, but cannot approve cloud spending. Daytona has its own pause control; cleanup remains active while paused. See [Daytona qualification](mira-daytona.md) for admission limits, explicit environment settings and the required live qualification before activation.

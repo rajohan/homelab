@@ -91,6 +91,7 @@ export async function main(): Promise<void> {
                         agentMail: configuration.agentMail,
                         moltbook: configuration.moltbook,
                         hereNow: configuration.hereNow,
+                        daytona: configuration.daytona,
                     }),
                 catch: () => new Error("Mira executor failed."),
             })

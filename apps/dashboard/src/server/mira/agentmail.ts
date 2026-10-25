@@ -1,3 +1,4 @@
+import { publishDaytonaBinding } from "@homelab/mira/data/daytona";
 import { publishHereNowBinding } from "@homelab/mira/data/herenow";
 import { publishAgentMailReceiver } from "@homelab/mira/data/integrations";
 import { publishMoltbookBinding } from "@homelab/mira/data/moltbook";
@@ -114,7 +115,11 @@ export function agentMailWebhookReceiver(
 export function agentMailReceiverHeartbeat(
     operations?: Pick<
         OperationsRuntime,
-        "client" | "agentMailHook" | "moltbookBinding" | "hereNowBinding"
+        | "client"
+        | "agentMailHook"
+        | "moltbookBinding"
+        | "hereNowBinding"
+        | "daytonaBinding"
     >
 ): () => Promise<void> {
     let pending: Promise<unknown> | undefined;
@@ -124,6 +129,7 @@ export function agentMailReceiverHeartbeat(
             publishAgentMailReceiver(operations.client, operations.agentMailHook),
             publishMoltbookBinding(operations.client, operations.moltbookBinding),
             publishHereNowBinding(operations.client, operations.hereNowBinding),
+            publishDaytonaBinding(operations.client, operations.daytonaBinding),
         ])
             .catch(() => {
                 /* Expired evidence keeps timed resumption paused until the database recovers. */

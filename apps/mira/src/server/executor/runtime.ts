@@ -14,6 +14,11 @@ import { dispatchMiraMail, reconcileMiraMail } from "../integrations/agentmail/o
 import { pollAgentMail } from "../integrations/agentmail/poll";
 import { AgentMailReader } from "../integrations/agentmail/reader";
 import {
+    daytonaBindingHash,
+    type DaytonaExecutionConfiguration,
+} from "../integrations/daytona/configuration";
+import { dispatchMiraDaytona } from "../integrations/daytona/jobs";
+import {
     hereNowBindingHash,
     type HereNowReadConfiguration,
 } from "../integrations/herenow/configuration";
@@ -53,6 +58,7 @@ export async function runMiraExecutor(options: {
     agentMail?: AgentMailReadConfiguration | undefined;
     moltbook?: MoltbookReadConfiguration | undefined;
     hereNow?: HereNowReadConfiguration | undefined;
+    daytona?: DaytonaExecutionConfiguration | undefined;
 }): Promise<void> {
     const { client, config, health } = options;
     const failed = new AbortController();
@@ -90,6 +96,24 @@ export async function runMiraExecutor(options: {
             bindingHash: hereNowBindingHash(options.hereNow),
             sendConfigured: Boolean(options.hereNow.publishApiKey),
         });
+    if (options.daytona)
+        integrationsCatalog.push({
+            owner: options.daytona.owner,
+            key: "daytona",
+            bindingHash: daytonaBindingHash(options.daytona),
+            sendConfigured: options.daytona.executionQualified,
+        });
+    const cloudJobs = async () => {
+        while (!signal.aborted) {
+            await dispatchMiraDaytona(
+                client,
+                options.daytona,
+                signal,
+                options.filesDirectory
+            );
+            await wait(5000);
+        }
+    };
     let model: string | null = null;
     let models: MiraModel[] = [];
     let defaultReady = false;
@@ -257,7 +281,8 @@ export async function runMiraExecutor(options: {
                             options.filesDirectory,
                             options.agentMail,
                             options.moltbook,
-                            options.hereNow
+                            options.hereNow,
+                            options.daytona
                         );
                     } finally {
                         health.active--;
@@ -282,6 +307,7 @@ export async function runMiraExecutor(options: {
         stopOnFailure(mailDelivery()),
         stopOnFailure(publicationDelivery()),
         stopOnFailure(socialDelivery()),
+        stopOnFailure(cloudJobs()),
         stopOnFailure(scheduler()),
         stopOnFailure(inspector()),
         stopOnFailure(cleaner()),
