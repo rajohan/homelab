@@ -392,12 +392,12 @@ test("Moltbook comments omit deleted bodies, preserve moderation indicators and 
             sort,
         })).comments({ id: "selected", sort }, signal);
         expect(data.comments[0]).toMatchObject({
-            excerpt: "",
-            truncated: false,
+            excerpt: null,
+            truncated: null,
             author: null,
             deleted: true,
             spam: true,
-            providerReplyCount: 12,
+            verificationStatus: null,
         });
         expect(data.sort).toBe(sort);
     }
@@ -416,4 +416,141 @@ test("Moltbook new reads reject invalid input, cancellation and credential misma
     await rejects(reader.activity(aborted.signal));
     await rejects(reader.comments({ id: "selected" }, aborted.signal));
     expect(seen).toHaveLength(2);
+});
+
+test("Moltbook activity distinguishes missing text from an explicitly empty provider preview", async () => {
+    const page = {
+        ...activityPage(),
+        recentPosts: [
+            { id: "missing", title: "Missing" },
+            { id: "null", title: "Null", content_preview: null },
+            { id: "empty", title: "Empty", content_preview: "" },
+        ],
+        recentComments: [{ id: "missing-comment", post: { id: "post", title: "Post" } }],
+    };
+    const data = await responseReader(() => page).activity(signal);
+    expect(data.posts.map((post) => [post.preview, post.previewTruncated])).toEqual([
+        [null, null],
+        [null, null],
+        ["", false],
+    ]);
+    expect(data.posts[0]).toMatchObject({
+        verificationStatus: null,
+        deleted: null,
+        spam: null,
+    });
+    expect(data.comments[0]).toMatchObject({
+        excerpt: null,
+        truncated: null,
+        verificationStatus: null,
+        deleted: null,
+        spam: null,
+    });
+});
+
+for (const status of ["pending", "failed", "verified", "future-provider-status"])
+    test(`Moltbook preserves ${status} moderation metadata for own posts and comments`, async () => {
+        const data = await responseReader(() => ({
+            ...activityPage(),
+            recentPosts: [
+                {
+                    ...activityPage().recentPosts[0],
+                    verification_status: status,
+                    is_deleted: false,
+                    is_spam: true,
+                },
+            ],
+            recentComments: [
+                {
+                    ...activityPage().recentComments[0],
+                    verification_status: status,
+                    is_deleted: false,
+                    is_spam: true,
+                },
+            ],
+        })).activity(signal);
+        expect(data.posts[0]).toMatchObject({
+            verificationStatus: status,
+            deleted: false,
+            spam: true,
+        });
+        expect(data.comments[0]).toMatchObject({
+            verificationStatus: status,
+            deleted: false,
+            spam: true,
+        });
+        expect(data.posts[0]?.preview).toHaveLength(800);
+    });
+
+test("Moltbook activity hides deleted text while retaining the provider's deletion status", async () => {
+    const data = await responseReader(() => ({
+        ...activityPage(),
+        recentPosts: [
+            {
+                ...activityPage().recentPosts[0],
+                content_preview: "must-not-return-post",
+                is_deleted: true,
+            },
+        ],
+        recentComments: [
+            {
+                ...activityPage().recentComments[0],
+                content: "must-not-return-comment",
+                is_deleted: true,
+            },
+        ],
+    })).activity(signal);
+    expect(data.posts[0]).toMatchObject({
+        preview: null,
+        previewTruncated: null,
+        deleted: true,
+    });
+    expect(data.comments[0]).toMatchObject({
+        excerpt: null,
+        truncated: null,
+        deleted: true,
+    });
+    expect(JSON.stringify(data)).not.toContain("must-not-return");
+});
+
+test("Moltbook comment trees preserve moderation and omit unreliable provider reply counts", async () => {
+    const data = await responseReader(() =>
+        commentsPage([
+            {
+                ...comment("root"),
+                reply_count: 0,
+                verification_status: "pending",
+                is_spam: true,
+                replies: [comment("child", "root")],
+            },
+        ])
+    ).comments({ id: "selected" }, signal);
+    expect(data.comments).toHaveLength(2);
+    expect(data.comments[0]).toMatchObject({
+        verificationStatus: "pending",
+        spam: true,
+        deleted: null,
+    });
+    expect(data.comments[1]).toMatchObject({
+        parentId: "root",
+        verificationStatus: null,
+        spam: null,
+        deleted: null,
+    });
+    expect(JSON.stringify(data)).not.toMatch(/reply_count|providerReplyCount/);
+});
+
+test("Moltbook comment trees distinguish missing text from an explicitly empty comment", async () => {
+    const data = await responseReader(() =>
+        commentsPage([
+            { ...comment("missing"), content: undefined },
+            { ...comment("null"), content: null },
+            { ...comment("empty"), content: "" },
+        ])
+    ).comments({ id: "selected" }, signal);
+    expect(data.comments.map((row) => [row.excerpt, row.truncated])).toEqual([
+        [null, null],
+        [null, null],
+        ["", false],
+    ]);
 });

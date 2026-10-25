@@ -21,17 +21,17 @@ const commentSchema = v.object({
     id: moltbookIdSchema,
     post_id: moltbookIdSchema,
     parent_id: v.nullish(moltbookIdSchema, null),
-    content: v.nullish(text(40_000), ""),
+    content: v.nullish(text(40_000), null),
     author: v.nullish(v.object({ name: text(128) })),
     created_at: v.optional(text(100)),
-    is_deleted: v.optional(v.boolean(), false),
-    is_spam: v.optional(v.boolean(), false),
-    reply_count: v.nullish(v.pipe(v.number(), v.integer(), v.minValue(0)), null),
+    is_deleted: v.nullish(v.boolean(), null),
+    is_spam: v.nullish(v.boolean(), null),
+    verification_status: v.nullish(text(64), null),
     replies: v.optional(v.array(v.unknown()), []),
 });
 
 /**
- * Project a bounded visible comment tree without recursively parsing provider-controlled nesting.
+ * Project a bounded provider comment tree without recursively parsing provider-controlled nesting.
  * @param value - JSON already bounded by the provider transport's response budget.
  * @param input - Validated selected post, root sort and optional root continuation.
  * @returns Up to 100 passive excerpts with derived ancestry, separate root pagination and explicit local truncation.
@@ -49,13 +49,13 @@ export function parseMoltbookComments(
         id: string;
         parentId: string | null;
         depth: number;
-        excerpt: string;
-        truncated: boolean;
+        excerpt: string | null;
+        truncated: boolean | null;
         author: string | null;
         createdAt: string | null;
-        deleted: boolean;
-        spam: boolean;
-        providerReplyCount: number | null;
+        deleted: boolean | null;
+        spam: boolean | null;
+        verificationStatus: string | null;
     }[];
     const stack = [
         { nodes: page.comments, index: 0, parentId: null as string | null, depth: 0 },
@@ -84,13 +84,16 @@ export function parseMoltbookComments(
             id: comment.id,
             parentId: frame.parentId,
             depth: frame.depth,
-            excerpt: comment.is_deleted ? "" : comment.content.slice(0, 800),
-            truncated: !comment.is_deleted && comment.content.length > 800,
+            excerpt: comment.is_deleted ? null : (comment.content?.slice(0, 800) ?? null),
+            truncated:
+                comment.is_deleted || comment.content === null
+                    ? null
+                    : comment.content.length > 800,
             author: comment.author?.name ?? null,
             createdAt: comment.created_at ?? null,
             deleted: comment.is_deleted,
             spam: comment.is_spam,
-            providerReplyCount: comment.reply_count,
+            verificationStatus: comment.verification_status,
         });
         if (comment.replies.length > 0) {
             if (frame.depth === 32) truncated = true;

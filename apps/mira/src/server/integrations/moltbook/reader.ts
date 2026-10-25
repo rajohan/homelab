@@ -34,13 +34,19 @@ const namedSchema = v.object({ name: text(128) });
 const recentPostSchema = v.object({
     id: moltbookIdSchema,
     title: text(300),
-    content_preview: v.nullish(text(40_000), ""),
+    content_preview: v.nullish(text(40_000), null),
+    verification_status: v.nullish(text(64), null),
+    is_deleted: v.nullish(v.boolean(), null),
+    is_spam: v.nullish(v.boolean(), null),
     submolt: v.optional(namedSchema),
     created_at: v.optional(text(100)),
 });
 const recentCommentSchema = v.object({
     id: moltbookIdSchema,
-    content: v.nullish(text(40_000), ""),
+    content: v.nullish(text(40_000), null),
+    verification_status: v.nullish(text(64), null),
+    is_deleted: v.nullish(v.boolean(), null),
+    is_spam: v.nullish(v.boolean(), null),
     created_at: v.optional(text(100)),
     post: v.object({
         id: moltbookIdSchema,
@@ -166,7 +172,7 @@ export class MoltbookReader {
     }
 
     /**
-     * Read the configured agent's recent visible posts and comments without checking in or acknowledging activity.
+     * Read the configured agent's recent posts and comments with provider-reported moderation metadata without checking in or acknowledging activity.
      * @param signal - Cancellation across credential verification and the public profile request.
      * @returns Narrow recent activity only; the provider exposes no history cursor for these lists.
      */
@@ -185,15 +191,31 @@ export class MoltbookReader {
             posts: page.recentPosts.map((post) => ({
                 id: post.id,
                 title: post.title,
-                preview: post.content_preview.slice(0, 800),
-                previewTruncated: post.content_preview.length > 800,
+                preview: post.is_deleted
+                    ? null
+                    : (post.content_preview?.slice(0, 800) ?? null),
+                previewTruncated:
+                    post.is_deleted || post.content_preview === null
+                        ? null
+                        : post.content_preview.length > 800,
+                verificationStatus: post.verification_status,
+                deleted: post.is_deleted,
+                spam: post.is_spam,
                 community: post.submolt?.name ?? null,
                 createdAt: post.created_at ?? null,
             })),
             comments: page.recentComments.map((comment) => ({
                 id: comment.id,
-                excerpt: comment.content.slice(0, 800),
-                truncated: comment.content.length > 800,
+                excerpt: comment.is_deleted
+                    ? null
+                    : (comment.content?.slice(0, 800) ?? null),
+                truncated:
+                    comment.is_deleted || comment.content === null
+                        ? null
+                        : comment.content.length > 800,
+                verificationStatus: comment.verification_status,
+                deleted: comment.is_deleted,
+                spam: comment.is_spam,
                 createdAt: comment.created_at ?? null,
                 post: {
                     id: comment.post.id,
@@ -205,7 +227,7 @@ export class MoltbookReader {
     }
 
     /**
-     * Read one page of root comments and its visible replies from a selected post.
+     * Read one page of root comments and its provider-returned replies from a selected post.
      * @param input - Post identifier, supported root sort and opaque root continuation.
      * @param signal - Cancellation covering identity, headers and bounded response bytes.
      * @returns Passive excerpts with checked ancestry; root continuation cannot recover locally omitted replies.
