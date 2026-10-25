@@ -260,7 +260,6 @@ test("due task capture does not reverse the control-to-automation lock order", a
     const release = Promise.withResolvers<void>();
     let control: Promise<void> | undefined;
     let scheduled: Promise<number> | undefined;
-    let deadline: ReturnType<typeof setTimeout> | undefined;
     try {
         for (const schedule of [
             { kind: "event", event: "task_due" } as const,
@@ -302,23 +301,19 @@ test("due task capture does not reverse the control-to-automation lock order", a
         });
         await held.promise;
         scheduled = scheduleMiraRuns(fixture.client);
-        const result = await Promise.race([
-            scheduled,
-            new Promise<never>((_resolve, reject) => {
-                deadline = setTimeout(
-                    () =>
-                        reject(
-                            new Error(
-                                "Scheduler waited for the control lock after locking automation rows."
-                            )
-                        ),
-                    2000
-                );
-            }),
-        ]);
-        expect(result).toBe(2);
+        let waiting = false;
+        for (let attempt = 0; attempt < 100 && !waiting; attempt++) {
+            const [row] = await fixture.client<{ count: number }[]>`
+                SELECT count(*)::int AS count FROM pg_stat_activity WHERE datname=current_database()
+                AND wait_event_type='Lock' AND query LIKE '%pg_advisory_xact_lock%'`;
+            waiting = (row?.count ?? 0) > 0;
+            if (!waiting) await delay(10);
+        }
+        expect(waiting).toBe(true);
+        release.resolve();
+        await control;
+        expect(await scheduled).toBe(2);
     } finally {
-        clearTimeout(deadline);
         release.resolve();
         await Promise.allSettled([control, scheduled]);
         await fixture.close();
@@ -580,3 +575,219 @@ test("event dispatch waits for edited instructions instead of snapshotting an un
         await fixture.close();
     }
 });
+
+test.each(["autonomy", "automation"] as const)(
+    "a concurrent %s pause skips due-task capture without replay after resume",
+    async (scope) => {
+        const fixture = await operationFixture();
+        const api = appRouter.createCaller({
+            operations: fixture,
+            principal: { kind: "human", id: "operator", capabilities },
+        }).mira;
+        const captured = Promise.withResolvers<void>(),
+            release = Promise.withResolvers<void>();
+        let recording: Promise<void> | undefined;
+        let pausing: Promise<void> | undefined;
+        try {
+            const automation = await api.automations.create({
+                title: "Pause due capture",
+                prompt: "Review",
+                kind: "custom",
+                schedule: { kind: "event", event: "task_due" },
+                budgetSeconds: 60,
+            });
+            await api.controls.setEnabled({
+                key: `automation:${automation.id}`,
+                version: 1,
+                enabled: true,
+                reason: null,
+                until: null,
+            });
+            const task = await api.tasks.create({
+                title: "Due during pause",
+                description: "Synthetic",
+                status: "todo",
+                assignee: "mira",
+                priority: "normal",
+                labels: [],
+                dueAt: new Date(Date.now() - 1000).toISOString(),
+                completionCriteria: "Review",
+                conversationId: null,
+            });
+            const [row] = await fixture.client<
+                { due: string }[]
+            >`SELECT due_at::text AS due FROM mira_tasks WHERE id=${task.id}`;
+            recording = fixture.client.begin(async (query) => {
+                await recordMiraEvent(query, {
+                    owner: "operator",
+                    kind: "task_due",
+                    key: `${task.id}:${row!.due}`,
+                    reference: task.id,
+                    taskId: task.id,
+                });
+                captured.resolve();
+                await release.promise;
+            });
+            await captured.promise;
+            const key = scope === "autonomy" ? "autonomy" : `automation:${automation.id}`;
+            const version = scope === "autonomy" ? 1 : 2;
+            pausing = api.controls.setEnabled({
+                key,
+                version,
+                enabled: false,
+                reason: "Planned pause",
+                until: null,
+            });
+            let waiting = false;
+            for (let attempt = 0; attempt < 100 && !waiting; attempt++) {
+                const [blocked] = await fixture.client<{ count: number }[]>`
+                    SELECT count(*)::int AS count FROM pg_stat_activity WHERE datname=current_database()
+                    AND wait_event_type='Lock' AND query LIKE '%pg_advisory_xact_lock%'`;
+                waiting = (blocked?.count ?? 0) > 0;
+                if (!waiting) await delay(10);
+            }
+            expect(waiting).toBe(true);
+            release.resolve();
+            await recording;
+            await pausing;
+            await api.controls.setEnabled({
+                key,
+                version: version + 1,
+                enabled: true,
+                reason: null,
+                until: null,
+            });
+            expect(await scheduleMiraRuns(fixture.client)).toBe(0);
+            expect(
+                await claimMiraRun(fixture.client, crypto.randomUUID(), "general")
+            ).toBeNull();
+            const deliveries = await fixture.client<
+                { state: string }[]
+            >`SELECT state FROM mira_event_deliveries`;
+            expect(deliveries).toEqual([{ state: "skipped" }]);
+        } finally {
+            release.resolve();
+            await Promise.allSettled([recording, pausing]);
+            await fixture.close();
+        }
+    }
+);
+
+for (const source of ["task_due", "agentmail"] as const) {
+    for (const destination of ["event", "interval"] as const) {
+        test(`changing ${source} to another ${destination} trigger retires queued and pending events`, async () => {
+            const fixture = await operationFixture();
+            const api = appRouter.createCaller({
+                operations: fixture,
+                principal: { kind: "human", id: "operator", capabilities },
+            }).mira;
+            try {
+                const fields = {
+                    title: "Changing trigger",
+                    prompt: "Review",
+                    kind: "custom" as const,
+                    schedule: { kind: "event" as const, event: source },
+                    budgetSeconds: 60,
+                };
+                const automation = await api.automations.create(fields);
+                for (const key of [
+                    `automation:${automation.id}`,
+                    "integration:agentmail",
+                ])
+                    await api.controls.setEnabled({
+                        key,
+                        version: 1,
+                        enabled: true,
+                        reason: null,
+                        until: null,
+                    });
+                for (let index = 0; index < 2; index++) {
+                    let taskId: string | undefined,
+                        key = `message-${index}`;
+                    if (source === "task_due") {
+                        const task = await api.tasks.create({
+                            title: `Due ${index}`,
+                            description: "Synthetic",
+                            status: "todo",
+                            assignee: "mira",
+                            priority: "normal",
+                            labels: [],
+                            dueAt: new Date(Date.now() - 1000).toISOString(),
+                            completionCriteria: "Review",
+                            conversationId: null,
+                        });
+                        taskId = task.id;
+                        const [row] = await fixture.client<
+                            { due: string }[]
+                        >`SELECT due_at::text AS due FROM mira_tasks WHERE id=${task.id}`;
+                        key = `${task.id}:${row!.due}`;
+                    }
+                    await fixture.client.begin((query) =>
+                        recordMiraEvent(query, {
+                            owner: "operator",
+                            kind: source,
+                            key,
+                            reference: taskId ?? key,
+                            ...(taskId ? { taskId } : {}),
+                        })
+                    );
+                }
+                expect(await scheduleMiraRuns(fixture.client)).toBe(1);
+                const manual = await api.automations.run({
+                    id: automation.id,
+                    requestId: crypto.randomUUID(),
+                });
+                await api.automations.update({
+                    ...fields,
+                    id: automation.id,
+                    version: 1,
+                    schedule:
+                        destination === "event"
+                            ? {
+                                  kind: "event",
+                                  event: source === "task_due" ? "agentmail" : "task_due",
+                              }
+                            : { kind: "interval", intervalSeconds: 1800 },
+                });
+                const runs = await api.runs.list({ search: "", archived: false });
+                const automatic = runs.rows.find((run) => run.id !== manual.id)!;
+                expect(automatic).toMatchObject({
+                    state: "interrupted",
+                    message: "Automation trigger changed before execution.",
+                });
+                expect(runs.rows.find((run) => run.id === manual.id)?.state).toBe(
+                    "queued"
+                );
+                const chat = await api.conversations.read({
+                    id: automatic.conversationId,
+                });
+                expect(
+                    chat.messages.find((message) => message.role === "assistant")?.state
+                ).toBe("interrupted");
+                const pending = await fixture.client<
+                    { count: number }[]
+                >`SELECT count(*)::int AS count FROM mira_event_deliveries WHERE state='pending'`;
+                expect(pending[0]?.count).toBe(0);
+                await api.automations.update({
+                    ...fields,
+                    id: automation.id,
+                    version: 2,
+                });
+                expect(
+                    await scheduleMiraRuns(fixture.client, new Date(Date.now() + 60_000))
+                ).toBe(0);
+                const claimed = await claimMiraRun(
+                    fixture.client,
+                    crypto.randomUUID(),
+                    "foreground"
+                );
+                expect(claimed?.id).toBe(manual.id);
+                expect(
+                    await claimMiraRun(fixture.client, crypto.randomUUID(), "general")
+                ).toBeNull();
+            } finally {
+                await fixture.close();
+            }
+        });
+    }
+}

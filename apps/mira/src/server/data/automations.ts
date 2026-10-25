@@ -104,8 +104,11 @@ export async function saveMiraAutomation(
     if (input.schedule.kind === "once" && !next)
         throw new MiraFailure("BAD_REQUEST", "Choose a future time for this automation.");
     return context.client.begin(async (query) => {
+        await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${context.owner}`},0))`;
         const id = input.id ?? Bun.randomUUIDv7();
         if (input.id) {
+            const [previous] = await query<{ schedule: MiraSchedule }[]>`
+                SELECT schedule FROM mira_automations WHERE id=${id} AND owner=${context.owner} AND version=${input.version ?? 0} AND deleted_at IS NULL FOR UPDATE`;
             const changed = await query<
                 { id: string }[]
             >`UPDATE mira_automations SET title = ${input.title}, prompt = ${input.prompt}, kind = ${input.kind}, delivery = ${input.delivery}, schedule = ${JSON.stringify(input.schedule)}::text::jsonb, budget_seconds = ${input.budgetSeconds}, next_run_at = ${next}, version = version + 1 WHERE id = ${id} AND owner = ${context.owner} AND version = ${input.version ?? 0} AND deleted_at IS NULL RETURNING id`;
@@ -114,6 +117,20 @@ export async function saveMiraAutomation(
                     "CONFLICT",
                     "The automation changed. Refresh before saving."
                 );
+            if (
+                previous?.schedule.kind === "event" &&
+                (input.schedule.kind !== "event" ||
+                    input.schedule.event !== previous.schedule.event)
+            ) {
+                const cancelled = await query<{ assistantMessageId: string }[]>`
+                    UPDATE mira_runs r SET state='interrupted',message='Automation trigger changed before execution.',finished_at=now()
+                    WHERE r.owner=${context.owner} AND r.automation_id=${id} AND NOT r.manual AND r.state='queued'
+                    AND EXISTS (SELECT 1 FROM mira_event_deliveries d WHERE d.run_id=r.id)
+                    RETURNING r.assistant_message_id AS "assistantMessageId"`;
+                for (const run of cancelled)
+                    await query`UPDATE mira_messages SET state='interrupted' WHERE id=${run.assistantMessageId}`;
+                await query`UPDATE mira_event_deliveries SET state='skipped' WHERE automation_id=${id} AND state='pending'`;
+            }
         } else {
             await query`INSERT INTO mira_automations (id, owner, title, prompt, kind, delivery, schedule, budget_seconds, next_run_at) VALUES (${id}, ${context.owner}, ${input.title}, ${input.prompt}, ${input.kind}, ${input.delivery}, ${JSON.stringify(input.schedule)}::text::jsonb, ${input.budgetSeconds}, ${next})`;
             await query`INSERT INTO mira_switches (owner, key, enabled, reason) VALUES (${context.owner}, ${`automation:${id}`}, false, 'Not enabled yet.')`;

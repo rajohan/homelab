@@ -220,6 +220,19 @@ export async function finishMiraRun(
     });
 }
 
+async function lockScheduledOwners(query: TransactionSQL, now: Date): Promise<string[]> {
+    // Snapshot bounded candidate owners before taking any task, automation or delivery locks.
+    // New owners discovered on a later tick must not introduce control locks after row locks.
+    const rows = await query<{ owner: string }[]>`
+        SELECT owner FROM (SELECT owner FROM mira_automations WHERE deleted_at IS NULL AND next_run_at<=${now} ORDER BY next_run_at LIMIT 20) recurring
+        UNION SELECT owner FROM (SELECT t.owner FROM mira_tasks t WHERE t.deleted_at IS NULL AND t.status<>'done' AND t.due_at<=${now} AND t.due_at>${new Date(now.getTime() - 86_400_000)} AND NOT EXISTS (SELECT 1 FROM mira_events e WHERE e.owner=t.owner AND e.kind='task_due' AND e.source_key=t.id::text || ':' || t.due_at::text) ORDER BY t.due_at LIMIT 20) tasks
+        UNION SELECT owner FROM (SELECT e.owner FROM mira_event_deliveries d JOIN mira_events e ON e.id=d.event_id WHERE d.state='pending' AND d.next_attempt_at<=${now} ORDER BY d.next_attempt_at,e.id LIMIT 20) deliveries
+        ORDER BY owner`;
+    for (const row of rows)
+        await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${row.owner}`},0))`;
+    return rows.map((row) => row.owner);
+}
+
 /**
  * Dispatch due recurring work once, with durable scheduling and no missed-run burst.
  * @param client - Dedicated agent executor database pool.
@@ -230,6 +243,7 @@ export async function scheduleMiraRuns(client: SQL, now = new Date()): Promise<n
     return client.begin(async (query) => {
         await query`SELECT pg_advisory_xact_lock(hashtextextended('homelab:mira:scheduler', 0))`;
         await resumeMiraControls(query, now);
+        const owners = await lockScheduledOwners(query, now);
         const due = await query<
             {
                 id: string;
@@ -240,8 +254,8 @@ export async function scheduleMiraRuns(client: SQL, now = new Date()): Promise<n
                 budgetSeconds: number;
                 nextRunAt: Date;
             }[]
-        >`SELECT id, owner, title, prompt, schedule, budget_seconds AS "budgetSeconds", next_run_at AS "nextRunAt" FROM mira_automations WHERE deleted_at IS NULL AND next_run_at <= ${now} ORDER BY next_run_at LIMIT 20 FOR UPDATE SKIP LOCKED`;
-        let queued = await scheduleMiraEvents(query, now);
+        >`SELECT id, owner, title, prompt, schedule, budget_seconds AS "budgetSeconds", next_run_at AS "nextRunAt" FROM mira_automations WHERE owner IN (SELECT jsonb_array_elements_text(${JSON.stringify(owners)}::text::jsonb)) AND deleted_at IS NULL AND next_run_at <= ${now} ORDER BY next_run_at LIMIT 20 FOR UPDATE SKIP LOCKED`;
+        let queued = await scheduleMiraEvents(query, now, owners);
         for (const automation of due) {
             const next = nextMiraOccurrence(
                 automation.schedule,

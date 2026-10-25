@@ -29,10 +29,9 @@ export async function recordMiraEvent(
         input.reference.length > 1000
     )
         throw new Error("Invalid Mira event reference.");
-    if (input.kind === "agentmail") {
-        await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${input.owner}`}, 0))`;
+    await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${input.owner}`}, 0))`;
+    if (input.kind === "agentmail")
         await resumeMiraControls(query, new Date(), input.owner);
-    }
     const id = Bun.randomUUIDv7();
     const observedAt = input.observedAt ?? new Date();
     const inserted = await query<
@@ -64,15 +63,17 @@ export async function recordMiraEvent(
  * Observe due tasks once per deadline and dispatch bounded durable event deliveries.
  * @param query - The globally serialized Mira scheduler transaction.
  * @param now - Scheduler clock; old deliveries expire instead of bursting after downtime.
+ * @param owners - Bounded accounts whose controls were locked before scheduler row locks.
  * @returns Number of queued event runs; busy subscribers retain a bounded retry.
  */
 export async function scheduleMiraEvents(
     query: TransactionSQL,
-    now: Date
+    now: Date,
+    owners: readonly string[]
 ): Promise<number> {
     const tasks = await query<
         { id: string; owner: string; due: string }[]
-    >`SELECT t.id, t.owner, t.due_at::text AS due FROM mira_tasks t WHERE t.deleted_at IS NULL AND t.status <> 'done' AND t.due_at <= ${now} AND t.due_at > ${new Date(now.getTime() - 86_400_000)} AND NOT EXISTS (SELECT 1 FROM mira_events e WHERE e.owner = t.owner AND e.kind = 'task_due' AND e.source_key = t.id::text || ':' || t.due_at::text) ORDER BY t.due_at LIMIT 20 FOR SHARE OF t SKIP LOCKED`;
+    >`SELECT t.id, t.owner, t.due_at::text AS due FROM mira_tasks t WHERE t.owner IN (SELECT jsonb_array_elements_text(${JSON.stringify(owners)}::text::jsonb)) AND t.deleted_at IS NULL AND t.status <> 'done' AND t.due_at <= ${now} AND t.due_at > ${new Date(now.getTime() - 86_400_000)} AND NOT EXISTS (SELECT 1 FROM mira_events e WHERE e.owner = t.owner AND e.kind = 'task_due' AND e.source_key = t.id::text || ':' || t.due_at::text) ORDER BY t.due_at LIMIT 20 FOR SHARE OF t SKIP LOCKED`;
     for (const task of tasks)
         await recordMiraEvent(query, {
             owner: task.owner,
@@ -95,7 +96,7 @@ export async function scheduleMiraEvents(
             prompt: string;
             budget: number;
         }[]
-    >`SELECT d.event_id AS "eventId", d.automation_id AS "automationId", e.owner, e.kind, e.reference, e.task_id AS "taskId", e.created_at AS "createdAt", a.title, a.prompt, a.budget_seconds AS budget FROM mira_event_deliveries d JOIN mira_events e ON e.id = d.event_id JOIN mira_automations a ON a.id = d.automation_id WHERE d.state = 'pending' AND d.next_attempt_at <= ${now} ORDER BY d.next_attempt_at, e.id LIMIT 20 FOR UPDATE OF d, a SKIP LOCKED`;
+    >`SELECT d.event_id AS "eventId", d.automation_id AS "automationId", e.owner, e.kind, e.reference, e.task_id AS "taskId", e.created_at AS "createdAt", a.title, a.prompt, a.budget_seconds AS budget FROM mira_event_deliveries d JOIN mira_events e ON e.id = d.event_id JOIN mira_automations a ON a.id = d.automation_id WHERE e.owner IN (SELECT jsonb_array_elements_text(${JSON.stringify(owners)}::text::jsonb)) AND d.state = 'pending' AND d.next_attempt_at <= ${now} ORDER BY d.next_attempt_at, e.id LIMIT 20 FOR UPDATE OF d, a SKIP LOCKED`;
     let queued = 0;
     for (const event of pending) {
         if (event.taskId)
