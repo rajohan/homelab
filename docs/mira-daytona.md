@@ -98,7 +98,11 @@ submodules or redirects. A selected patch is bounded to 1 MiB, hashed against th
 reviewed input and applied with Git's indexed path checks. No host directory,
 GitHub token, provider key or production database is available inside the image.
 The command has a ten-minute deadline within the provider's existing fifteen-minute
-resource TTL. Ordinary subprocess groups are terminated on interruption; provider
+resource TTL. Before submission, a command referencing this harness must have at least
+twelve minutes remaining in both the persisted job deadline and provider expiry
+(ten minutes for checks plus two for submission and result collection). The
+remaining budget is rechecked after authorization; a short budget cancels the
+command before dispatch and cleans up the existing sandbox. Ordinary subprocess groups are terminated on interruption; provider
 resource destruction is still independently confirmed by the dispatcher.
 
 Each attempt uses fresh directories and refuses replay. It returns

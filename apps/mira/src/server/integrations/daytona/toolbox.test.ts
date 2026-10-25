@@ -554,3 +554,70 @@ for (const phase of ["open", "submit", "upload"] as const)
             expect(admitted).toBe(true);
             expect(calls.every((call) => call.init.method === "GET")).toBe(true);
         });
+
+for (const boundary of ["provider", "admission"] as const)
+    for (const delayed of [false, true])
+        test(`Daytona reserves the full command budget at ${boundary} expiry (delayed=${delayed})`, async () => {
+            const initial = Date.now();
+            let now = initial;
+            const minimumMs = 720_000;
+            const available = delayed ? 730_000 : 700_000;
+            const { request, calls } = transport((url, init) =>
+                url.pathname.startsWith("/api/sandbox/")
+                    ? Response.json({
+                          ...sandbox(),
+                          autoDestroyAt: new Date(
+                              initial + (boundary === "provider" ? available : 899_000)
+                          ).toISOString(),
+                      })
+                    : fixture(url, init)
+            );
+            const client = new DaytonaToolbox(
+                configuration,
+                reference,
+                request,
+                () => now
+            );
+            let authorized = false;
+            await rejects(
+                client.submit(
+                    command,
+                    signal,
+                    () => {
+                        authorized = true;
+                        if (delayed) now += 20_000;
+                        return Promise.resolve();
+                    },
+                    {
+                        minimumMs,
+                        deadline:
+                            initial + (boundary === "admission" ? available : 899_000),
+                    }
+                ),
+                /less than 720 seconds/
+            );
+            expect(authorized).toBe(delayed);
+            expect(calls.every((call) => call.init.method === "GET")).toBe(true);
+        });
+
+test("Daytona accepts a sufficient finite command budget and rejects invalid budgets before requests", async () => {
+    const { client, calls } = transport();
+    expect(
+        await client.submit(command, signal, approve, {
+            minimumMs: 720_000,
+            deadline: Date.now() + 800_000,
+        })
+    ).toBe(commandId);
+    expect(calls.filter((call) => call.url.pathname.endsWith("/exec"))).toHaveLength(1);
+    for (const minimumMs of [0, 29_999, 900_001, Infinity, Number.NaN]) {
+        const f = transport();
+        await rejects(
+            f.client.submit(command, signal, approve, {
+                minimumMs,
+                deadline: Date.now() + 800_000,
+            }),
+            /lifetime budget/
+        );
+        expect(f.calls).toHaveLength(0);
+    }
+});

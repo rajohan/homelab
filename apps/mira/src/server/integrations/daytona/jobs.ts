@@ -13,13 +13,18 @@ import {
     validateDaytonaInputs,
 } from "../../data/daytona";
 import { readMiraFile, saveMiraFile } from "../../data/files";
+import { daytonaCheckMinimumLifetime } from "../../sandbox/profile";
 import {
     daytonaBindingHash,
     type DaytonaBinding,
     type DaytonaExecutionConfiguration,
 } from "./configuration";
 import { DaytonaClient } from "./controlPlane";
-import { daytonaCommandHash, DaytonaToolbox } from "./toolbox";
+import {
+    daytonaCommandHash,
+    DaytonaToolbox,
+    DaytonaToolboxLifetimeError,
+} from "./toolbox";
 
 interface Job {
     id: string;
@@ -303,7 +308,11 @@ export async function dispatchMiraDaytona(
             const commandId = await toolbox.submit(
                 job.content.command,
                 signal,
-                authorize("submitting")
+                authorize("submitting"),
+                {
+                    minimumMs: daytonaCheckMinimumLifetime(job.content.command),
+                    deadline: job.deadline?.getTime() ?? 0,
+                }
             );
             await client`UPDATE mira_daytona_jobs SET command_id=${commandId},phase='executing',version=version+1,updated_at=now() WHERE id=${job.id} AND lease_token=${job.token} AND lease_expires_at>clock_timestamp()`;
             return true;
@@ -351,9 +360,16 @@ export async function dispatchMiraDaytona(
             return true;
         }
         throw new Error("Unsupported cloud job phase.");
-    } catch {
+    } catch (error) {
         // Transport/provider diagnostics may contain private inputs. Store a fixed public message.
-        if (job.phase === "admitted") {
+        if (error instanceof DaytonaToolboxLifetimeError) {
+            await cleanup(
+                client,
+                job,
+                "cancelled",
+                "Stopped before command submission because insufficient time remains for execution and result collection."
+            );
+        } else if (job.phase === "admitted") {
             await client`UPDATE mira_daytona_jobs SET state='failed',phase='closed',cleanup='confirmed',outcome='failed',message='Preflight failed before creating a sandbox.',version=version+1 WHERE id=${job.id} AND lease_token=${job.token} AND lease_expires_at>clock_timestamp()`;
         } else if (job.phase === "cleaning") {
             await client`UPDATE mira_daytona_jobs SET state='needs_attention',message='Sandbox cleanup could not be confirmed. Mira will keep checking.',retry_at=clock_timestamp()+interval '30 seconds',version=version+1 WHERE id=${job.id} AND lease_token=${job.token}`;

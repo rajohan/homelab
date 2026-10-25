@@ -7,7 +7,11 @@ import path from "node:path";
 import { createSandboxDirectory, readSandboxPatch, writeSandboxArtifact } from "./files";
 import { runDaytonaChecks } from "./harness";
 import { runSandboxProcess } from "./process";
-import { daytonaCheckContent, daytonaCheckProfile } from "./profile";
+import {
+    daytonaCheckContent,
+    daytonaCheckProfile,
+    daytonaCheckMinimumLifetime,
+} from "./profile";
 import { executeDaytonaChecks, sandboxEnvironment } from "./workflow";
 
 const signal = new AbortController().signal;
@@ -26,6 +30,8 @@ test("fixed check proposals bind exact commit and selected patch without shell a
     );
     expect(content.outputs).toEqual(daytonaCheckProfile.outputs);
     expect(content.inputs).toEqual([]);
+    expect(daytonaCheckMinimumLifetime(content.command)).toBe(720_000);
+    expect(daytonaCheckMinimumLifetime("bun --version")).toBe(30_000);
     const patch = { id, sha256: hash("patch") };
     expect(
         daytonaCheckContent({ id, commit, patchSha256: patch.sha256 }, patch).inputs
@@ -281,6 +287,7 @@ async function workflowFixture(mode: string, patchText: string | null = null) {
                         resolve({
                             ...result,
                             exitCode: mode === "database-exit" ? 1 : 0,
+                            truncated: mode === "database-log",
                         }),
                     { once: true }
                 )
@@ -323,6 +330,7 @@ test.each([
     "database-spawn",
     "database-exit",
     "database-stop",
+    "database-log",
     "long-log",
 ])(
     "fixed check workflow records %s without replaying or hiding incomplete checks",
@@ -335,7 +343,9 @@ test.each([
                 f.controller.signal,
                 f.execute
             );
-            expect(code).toBe(["success", "long-log"].includes(mode) ? 0 : 1);
+            expect(code).toBe(
+                ["success", "long-log", "database-log"].includes(mode) ? 0 : 1
+            );
             const report = JSON.parse(
                 await readFile(
                     path.join(f.directory, "outputs/check-result.json"),
@@ -349,7 +359,8 @@ test.each([
                 steps: { name: string; exitCode: number }[];
             };
             expect(report.ok).toBe(code === 0);
-            if (mode.startsWith("database-")) expect(report.databaseStopped).toBe(false);
+            if (["database-spawn", "database-exit", "database-stop"].includes(mode))
+                expect(report.databaseStopped).toBe(false);
             if (mode === "check-failure") {
                 expect(report.steps.find((step) => step.name === "check")?.exitCode).toBe(
                     1
@@ -359,6 +370,7 @@ test.each([
                 );
             }
             if (mode === "cancel") expect(report.failure).toContain("interrupted");
+            if (mode === "database-log") expect(report.logTruncated).toBe(true);
             if (mode === "long-log") {
                 expect(report.logTruncated).toBe(true);
                 const log = await readFile(

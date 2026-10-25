@@ -13,6 +13,7 @@ export const daytonaCheckProfile = Object.freeze({
     bunVersion: "1.4.4",
     executable: "/opt/homelab/daytona-check.js",
     minutes: 10,
+    collectionSeconds: 120,
     outputs: ["check-result.json", "check-log.txt", "changes.txt"],
 });
 
@@ -38,4 +39,16 @@ export function daytonaCheckContent(
         inputs: patch ? [{ ...patch, name: "changes.txt" }] : [],
         outputs: [...daytonaCheckProfile.outputs],
     };
+}
+
+/**
+ * Reserve the fixed check duration and result collection before dispatching a referenced harness command.
+ * @param command - Exact approved command; referencing the harness conservatively reserves its full budget.
+ * @returns Minimum milliseconds remaining in both local admission and provider lifetime. This grants no authority.
+ */
+export function daytonaCheckMinimumLifetime(command: string): number {
+    return command.includes(daytonaCheckProfile.executable)
+        ? (daytonaCheckProfile.minutes * 60 + daytonaCheckProfile.collectionSeconds) *
+              1000
+        : 30_000;
 }

@@ -116,6 +116,7 @@ async function fixture() {
 function provider(
     jobId: string,
     options: {
+        lifetimeMs?: number;
         unknown?: string;
         fail?: string;
         exitCode?: number;
@@ -157,7 +158,9 @@ function provider(
         autoStopInterval: 5,
         autoPauseInterval: 0,
         createdAt: new Date(createdAt).toISOString(),
-        autoDestroyAt: new Date(createdAt + 900_000).toISOString(),
+        autoDestroyAt: new Date(
+            createdAt + (options.lifetimeMs ?? 900_000)
+        ).toISOString(),
     });
     const request = Object.assign(
         async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
@@ -1500,3 +1503,34 @@ test("fixed Homelab check drafts bind attached patches and cannot start a sandbo
         await f.close();
     }
 });
+
+for (const boundary of ["provider", "admission"] as const)
+    test(`fixed check jobs refuse insufficient ${boundary} time and clean up without command submission`, async () => {
+        const f = await fixture();
+        try {
+            const job = await f.save({
+                ...defaultContent,
+                command: `bun --no-env-file /opt/homelab/daytona-check.js ${crypto.randomUUID()} ${"a".repeat(40)}`,
+            });
+            await f.approve(job);
+            const p = provider(job.id, {
+                lifetimeMs: boundary === "provider" ? 300_000 : 900_000,
+            });
+            await advance(f, p, 3);
+            expect(await f.read(job.id)).toMatchObject({ phase: "ready" });
+            if (boundary === "admission")
+                await f.client`UPDATE mira_daytona_jobs SET deadline=clock_timestamp()+interval '5 minutes' WHERE id=${job.id}`;
+            await advance(f, p, 3);
+            expect(
+                p.calls.filter((call) => call.url.pathname.endsWith("/exec"))
+            ).toHaveLength(0);
+            expect(await f.read(job.id)).toMatchObject({
+                state: "cancelled",
+                cleanup: "confirmed",
+                message:
+                    "Stopped before command submission because insufficient time remains for execution and result collection.",
+            });
+        } finally {
+            await f.close();
+        }
+    });

@@ -293,6 +293,7 @@ export async function executeDaytonaChecks(
             databaseController.abort();
             try {
                 const final = await database;
+                logTruncated ||= final.truncated;
                 if (final.exitCode !== 0 || final.timedOut) databaseStopped = false;
                 append(`\n--- PostgreSQL ---\n${final.stdout}${final.stderr}`);
             } catch {
