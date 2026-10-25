@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 import { rejects } from "node:assert/strict";
 
-import { DaytonaClient, DaytonaUncertainMutation } from "./client";
 import {
     daytonaBinding,
     daytonaBindingHash,
@@ -9,6 +8,7 @@ import {
     daytonaPolicy,
     daytonaSandboxName,
 } from "./configuration";
+import { DaytonaClient, DaytonaUncertainMutation } from "./controlPlane";
 
 const configuration = {
     trustBoundary: "dedicated-organization" as const,
