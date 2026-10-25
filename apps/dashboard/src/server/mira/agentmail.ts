@@ -1,4 +1,5 @@
 import { publishAgentMailReceiver } from "@homelab/mira/data/integrations";
+import { publishMoltbookBinding } from "@homelab/mira/data/moltbook";
 import {
     acceptAgentMailMessage,
     verifyAgentMailWebhook,
@@ -105,17 +106,20 @@ export function agentMailWebhookReceiver(
 }
 
 /**
- * Keep receiver configuration evidence fresh for timed integration resume.
- * @param operations - This dashboard's explicit database and optional inbox binding.
+ * Keep dashboard integration bindings fresh for reads and timed resume.
+ * @param operations - This dashboard's database and optional integration bindings.
  * @returns Shutdown hook that stops publication before the owning pool closes.
  */
 export function agentMailReceiverHeartbeat(
-    operations?: Pick<OperationsRuntime, "client" | "agentMailHook">
+    operations?: Pick<OperationsRuntime, "client" | "agentMailHook" | "moltbookBinding">
 ): () => Promise<void> {
-    let pending: Promise<void> | undefined;
+    let pending: Promise<unknown> | undefined;
     const publish = () => {
         if (!operations || pending) return;
-        pending = publishAgentMailReceiver(operations.client, operations.agentMailHook)
+        pending = Promise.allSettled([
+            publishAgentMailReceiver(operations.client, operations.agentMailHook),
+            publishMoltbookBinding(operations.client, operations.moltbookBinding),
+        ])
             .catch(() => {
                 /* Expired evidence keeps timed resumption paused until the database recovers. */
             })

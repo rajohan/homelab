@@ -59,6 +59,7 @@
     "packages/ui/src/features/identity/api/verificationCoordinator.test.ts": 0,
     "packages/ui/src/features/identity/validation/feedback.test.ts": 0,
     "packages/ui/src/lib/queryRefresh.test.ts": 0,
-    "scripts/testing/coverageInventory.test.ts": 0
+    "scripts/testing/coverageInventory.test.ts": 0,
+    "apps/mira/src/server/integrations/moltbook/moltbook.test.ts": 3
   }
 }

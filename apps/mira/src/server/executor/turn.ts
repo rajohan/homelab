@@ -12,6 +12,7 @@ import {
     type MiraClaim,
 } from "../data/queue";
 import type { AgentMailReadConfiguration } from "../integrations/agentmail/configuration";
+import type { MoltbookReadConfiguration } from "../integrations/moltbook/configuration";
 import { CodexRuntime } from "../runtime/codexRuntime";
 import { pilotArguments, type PilotConfig } from "../runtime/configuration";
 import { RuntimeResponseError } from "../runtime/responseError";
@@ -36,6 +37,7 @@ export const miraInstructionsHash = new Bun.CryptoHasher("sha256")
  * @param stopping - Executor shutdown signal, translated into provider interruption.
  * @param filesDirectory - Explicit shared attachment volume, absent until provisioned.
  * @param agentMail - Optional inbox settings, never forwarded to the model child.
+ * @param moltbook - Optional social read settings, retained only by the service.
  * @returns Completion after recording the observed terminal outcome and reaping the child.
  */
 export async function executeMiraTurn(
@@ -44,7 +46,8 @@ export async function executeMiraTurn(
     run: MiraClaim,
     stopping: AbortSignal,
     filesDirectory?: string,
-    agentMail?: AgentMailReadConfiguration
+    agentMail?: AgentMailReadConfiguration,
+    moltbook?: MoltbookReadConfiguration
 ): Promise<void> {
     const controller = new AbortController();
     const deadline = new AbortController();
@@ -129,7 +132,7 @@ export async function executeMiraTurn(
             record = await readMiraTurnInput(client, run);
         }
         const tools = createMiraToolRouter(
-            createMiraTools(client, run, filesDirectory, agentMail),
+            createMiraTools(client, run, filesDirectory, agentMail, moltbook),
             record.providerThread !== null
         );
         let threadId = record.providerThread;

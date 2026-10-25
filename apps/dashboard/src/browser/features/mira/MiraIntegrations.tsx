@@ -8,7 +8,7 @@ import {
     SectionHeader,
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
-import { Mail, Plug } from "lucide-react";
+import { Globe, Mail, Plug } from "lucide-react";
 import { useState } from "react";
 
 import { api } from "../../api/client";
@@ -74,9 +74,15 @@ export function MiraIntegrations() {
                     >
                         <SectionHeader
                             title={integration.title}
-                            icon={Mail}
+                            icon={
+                                integration.key === "integration:agentmail" ? Mail : Globe
+                            }
                             badge={<Badge>{label}</Badge>}
-                            description="Read incoming email and trigger enabled mail automations."
+                            description={
+                                integration.key === "integration:agentmail"
+                                    ? "Read incoming email and trigger enabled mail automations."
+                                    : "Read your Moltbook profile, feed and selected posts."
+                            }
                             actions={
                                 control && (
                                     <Button

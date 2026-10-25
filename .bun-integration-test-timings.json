@@ -35,6 +35,7 @@
         "apps/dashboard/src/server/integrations/metrics/transport.integration.test.ts": 15,
         "apps/dashboard/src/server/tests/http.integration.test.ts": 5,
         "apps/dashboard/src/server/tests/monitoringPreview.integration.test.ts": 2,
-        "apps/dashboard/src/server/tests/miraMail.integration.test.ts": 1102
+        "apps/dashboard/src/server/tests/miraMail.integration.test.ts": 1102,
+        "apps/dashboard/src/server/tests/moltbook.integration.test.ts": 1235
     }
 }

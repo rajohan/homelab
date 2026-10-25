@@ -5,6 +5,10 @@ import {
     agentMailHookConfiguration,
     type AgentMailHookConfiguration,
 } from "@homelab/mira/integrations/agentmail/configuration";
+import {
+    moltbookBinding,
+    type MoltbookBinding,
+} from "@homelab/mira/integrations/moltbook/configuration";
 import * as v from "valibot";
 
 import type { RulesConfiguration } from "../integrations/alerts/rules";
@@ -44,6 +48,7 @@ const storeSchema = v.strictObject({
 export interface OperationsConfiguration {
     readonly miraFilesDirectory?: string | undefined;
     readonly agentMailHook?: AgentMailHookConfiguration | undefined;
+    readonly moltbookBinding?: MoltbookBinding | undefined;
     readonly maintenanceTargets?: readonly MaintenanceTarget[];
     readonly releaseRepository?: string | undefined;
     readonly dockerHub?: DockerHubCredential | undefined;
@@ -243,6 +248,7 @@ export function parseOperationsConfiguration(
     return {
         miraFilesDirectory: environment.HOMELAB_MIRA_FILES_DIR,
         agentMailHook: agentMailHookConfiguration(environment),
+        moltbookBinding: moltbookBinding(environment),
         maintenanceTargets: parseMaintenanceTargets(
             environment.HOMELAB_DASHBOARD_MAINTENANCE_TARGETS,
             updateTargets

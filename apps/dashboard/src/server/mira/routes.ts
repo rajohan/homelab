@@ -80,6 +80,7 @@ import {
     taskProgress,
 } from "@homelab/mira/data/tasks";
 import { agentMailBindingHash } from "@homelab/mira/integrations/agentmail/configuration";
+import { moltbookBindingHash } from "@homelab/mira/integrations/moltbook/configuration";
 import * as v from "valibot";
 
 import { runOperation, trpc } from "../api/trpc";
@@ -364,29 +365,47 @@ export const miraRouter = trpc.router({
             ),
     }),
     integrations: trpc.procedure.query(({ ctx }) =>
-        execute(ctx, (mira) => listMiraIntegrations(mira, ctx.operations?.agentMailHook))
+        execute(ctx, (mira) =>
+            listMiraIntegrations(
+                mira,
+                ctx.operations?.agentMailHook,
+                ctx.operations?.moltbookBinding
+            )
+        )
     ),
     controls: trpc.router({
         list: trpc.procedure.query(({ ctx }) => execute(ctx, listMiraSwitches)),
         setEnabled: trpc.procedure.input(miraEnableSchema).mutation(({ ctx, input }) =>
             execute(ctx, async (mira) => {
                 const binding = ctx.operations?.agentMailHook;
-                if (input.key === "integration:agentmail" && input.enabled) {
-                    const [status] = await listMiraIntegrations(mira, binding);
+                const moltbook = ctx.operations?.moltbookBinding;
+                if (
+                    ["integration:agentmail", "integration:moltbook"].includes(
+                        input.key
+                    ) &&
+                    input.enabled
+                ) {
+                    const statuses = await listMiraIntegrations(mira, binding, moltbook);
+                    const status = statuses.find((item) => item.key === input.key);
                     if (!status?.ready)
                         throw new MiraFailure(
                             "PRECONDITION_FAILED",
                             status?.message ??
-                                "AgentMail must be configured and connected before enabling it."
+                                "The integration must be configured and connected before enabling it."
                         );
                 }
-                return setMiraEnabled(
-                    mira,
-                    input,
+                let hash: string | undefined;
+                if (
+                    input.key === "integration:moltbook" &&
+                    moltbook?.owner === mira.owner
+                )
+                    hash = moltbookBindingHash(moltbook);
+                else if (
+                    input.key === "integration:agentmail" &&
                     binding?.owner === mira.owner
-                        ? agentMailBindingHash(binding)
-                        : undefined
-                );
+                )
+                    hash = agentMailBindingHash(binding);
+                return setMiraEnabled(mira, input, hash);
             })
         ),
     }),
