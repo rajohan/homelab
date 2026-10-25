@@ -274,7 +274,7 @@ export async function cancelMiraDaytona(
         await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${context.owner}`},0))`;
         const [row] = await query<
             { id: string }[]
-        >`UPDATE mira_daytona_jobs SET cancel_requested=true,state=CASE WHEN cleanup='not_needed' THEN 'cancelled' ELSE state END,version=version+1,updated_at=now() WHERE id=${input.id} AND owner=${context.owner} AND version=${input.version} AND (state IN ('draft','queued','running','needs_attention')) RETURNING id`;
+        >`UPDATE mira_daytona_jobs SET cancel_requested=true,state=CASE WHEN cleanup='not_needed' THEN 'cancelled' ELSE state END,phase=CASE WHEN cleanup='not_needed' THEN 'closed' ELSE phase END,version=version+1,updated_at=now() WHERE id=${input.id} AND owner=${context.owner} AND version=${input.version} AND (state IN ('draft','queued','running','needs_attention')) RETURNING id`;
         if (!row)
             throw new MiraFailure(
                 "CONFLICT",

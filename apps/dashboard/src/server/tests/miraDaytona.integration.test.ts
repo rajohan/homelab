@@ -478,7 +478,10 @@ for (const phaseCount of [0, 1, 2, 3, 4, 5])
             await f.api.daytona.cancel({ id: job.id, version: current.version });
             const writes = p.writes().length;
             await advance(f, p, 4);
-            expect(await f.read(job.id)).toMatchObject({ state: "cancelled" });
+            expect(await f.read(job.id)).toMatchObject({
+                state: "cancelled",
+                phase: "closed",
+            });
             expect(
                 p
                     .writes()
@@ -967,6 +970,35 @@ test("Daytona model listing paginates older jobs within the current conversation
                 })
             )
         ).toMatchObject({ ok: false });
+    } finally {
+        await f.close();
+    }
+});
+
+test("Daytona closes cancelled drafts without dispatching a sandbox", async () => {
+    const f = await fixture();
+    try {
+        const draft = await f.save();
+        const cancelled = await f.api.daytona.cancel({
+            id: draft.id,
+            version: draft.version,
+        });
+        expect(cancelled).toMatchObject({
+            state: "cancelled",
+            phase: "closed",
+            cleanup: "not_needed",
+        });
+        const p = provider(draft.id);
+        expect(
+            await dispatchMiraDaytona(
+                f.client,
+                configuration,
+                signal,
+                f.directory,
+                p.request
+            )
+        ).toBe(false);
+        expect(p.writes()).toHaveLength(0);
     } finally {
         await f.close();
     }
