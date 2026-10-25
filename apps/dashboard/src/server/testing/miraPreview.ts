@@ -179,6 +179,21 @@ export async function main(port = 3330): Promise<void> {
                 new AbortController().signal,
                 { callId: "preview-proposal", threadId: "synthetic", turnId: "synthetic" }
             );
+        await createMiraTools(database.client, initial, directory)
+            .find((tool) => tool.name === "mira_file_create")!
+            .execute(
+                {
+                    name: "Preview report.md",
+                    content:
+                        "# Synthetic report\n\nThis file was generated through the actual Mira tool using disposable preview data.\n",
+                },
+                new AbortController().signal,
+                {
+                    callId: "preview-generated-file",
+                    threadId: "synthetic",
+                    turnId: "synthetic",
+                }
+            );
         await finishMiraRun(database.client, initial, {
             state: "completed",
             message: null,
