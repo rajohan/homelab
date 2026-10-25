@@ -88,6 +88,7 @@ export async function main(): Promise<void> {
                         signal: controller.signal,
                         health,
                         filesDirectory: configuration.filesDirectory,
+                        agentMail: configuration.agentMail,
                     }),
                 catch: () => new Error("Mira executor failed."),
             })

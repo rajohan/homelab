@@ -5,7 +5,8 @@
     "exports": {
         "./data/*": "./src/server/data/*.ts",
         "./files/*": "./src/server/files/*.ts",
-        "./runtime/*": "./src/server/runtime/*.ts"
+        "./runtime/*": "./src/server/runtime/*.ts",
+        "./integrations/*": "./src/server/integrations/*.ts"
     },
     "dependencies": {
         "@homelab/contracts": "workspace:*",
@@ -14,6 +15,7 @@
         "@openai/codex": "0.164.0",
         "drizzle-orm": "1.0.0-rc.5",
         "effect": "4.0.5",
+        "svix": "2.9.0",
         "unpdf": "1.9.1",
         "valibot": "1.5.0"
     }

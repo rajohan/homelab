@@ -6,6 +6,12 @@ import type { SQL } from "bun";
 import { runtimeEnvironment } from "../config/environment";
 import { reconcileMiraControls } from "../data/automations";
 import { claimMiraRun, reconcileMiraRuns, scheduleMiraRuns } from "../data/queue";
+import {
+    agentMailBindingHash,
+    type AgentMailReadConfiguration,
+} from "../integrations/agentmail/configuration";
+import { pollAgentMail } from "../integrations/agentmail/poll";
+import { AgentMailReader } from "../integrations/agentmail/reader";
 import { CodexRuntime } from "../runtime/codexRuntime";
 import { pilotArguments, type PilotConfig } from "../runtime/configuration";
 import { cleanupMiraResources } from "./cleanup";
@@ -30,11 +36,22 @@ export async function runMiraExecutor(options: {
     signal: AbortSignal;
     health: MiraHealth;
     filesDirectory?: string | undefined;
+    agentMail?: AgentMailReadConfiguration | undefined;
 }): Promise<void> {
     const { client, config, health } = options;
     const failed = new AbortController();
     const signal = AbortSignal.any([options.signal, failed.signal]);
     const workerId = crypto.randomUUID();
+    const reader = options.agentMail ? new AgentMailReader(options.agentMail) : undefined;
+    const integrationsCatalog = options.agentMail
+        ? [
+              {
+                  owner: options.agentMail.owner,
+                  key: "agentmail",
+                  bindingHash: agentMailBindingHash(options.agentMail),
+              },
+          ]
+        : [];
     let model: string | null = null;
     let models: MiraModel[] = [];
     let defaultReady = false;
@@ -56,7 +73,7 @@ export async function runMiraExecutor(options: {
                 health.ready && cleanupPending
                     ? "Mira is connected, but deleted-data cleanup needs attention."
                     : message;
-            await client`INSERT INTO mira_runtime_status (id, worker_id, version, model, ready, message, heartbeat_at, models) VALUES (1, ${workerId}, ${options.version}, ${model}, ${health.ready}, ${currentMessage}, now(), ${JSON.stringify(models)}::text::jsonb) ON CONFLICT (id) DO UPDATE SET worker_id = EXCLUDED.worker_id, version = EXCLUDED.version, model = EXCLUDED.model, ready = EXCLUDED.ready, message = EXCLUDED.message, heartbeat_at = EXCLUDED.heartbeat_at, models = EXCLUDED.models`;
+            await client`INSERT INTO mira_runtime_status (id, worker_id, version, model, ready, message, heartbeat_at, models, integrations) VALUES (1, ${workerId}, ${options.version}, ${model}, ${health.ready}, ${currentMessage}, now(), ${JSON.stringify(models)}::text::jsonb, ${JSON.stringify(integrationsCatalog)}::text::jsonb) ON CONFLICT (id) DO UPDATE SET worker_id = EXCLUDED.worker_id, version = EXCLUDED.version, model = EXCLUDED.model, ready = EXCLUDED.ready, message = EXCLUDED.message, heartbeat_at = EXCLUDED.heartbeat_at, models = EXCLUDED.models, integrations = EXCLUDED.integrations`;
             health.heartbeatAt = Date.now();
             await Promise.race([wait(5000), changed]);
         }
@@ -113,6 +130,13 @@ export async function runMiraExecutor(options: {
             await wait(30_000);
         }
     };
+    const integrations = async () => {
+        while (!signal.aborted) {
+            if (reader && options.agentMail)
+                await pollAgentMail(client, options.agentMail, reader, signal);
+            await wait(5000);
+        }
+    };
     const cleaner = async () => {
         while (!signal.aborted) {
             let runtime: CodexRuntime | undefined;
@@ -157,7 +181,8 @@ export async function runMiraExecutor(options: {
                             config,
                             run,
                             signal,
-                            options.filesDirectory
+                            options.filesDirectory,
+                            options.agentMail
                         );
                     } finally {
                         health.active--;
@@ -178,6 +203,7 @@ export async function runMiraExecutor(options: {
     };
     const outcomes = await Promise.allSettled([
         stopOnFailure(coordinator()),
+        stopOnFailure(integrations()),
         stopOnFailure(scheduler()),
         stopOnFailure(inspector()),
         stopOnFailure(cleaner()),

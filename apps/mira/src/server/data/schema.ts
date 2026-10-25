@@ -29,6 +29,7 @@ export const miraConversations = pgTable(
         title: text().notNull(),
         version: integer().notNull().default(1),
         providerThread: text("provider_thread"),
+        providerPolicyHash: text("provider_policy_hash"),
         providerPurgeRetryAt: time("provider_purge_retry_at"),
         providerContextReady: boolean("provider_context_ready").notNull().default(false),
         model: text(),
@@ -164,6 +165,9 @@ export const miraSwitches = pgTable(
         reason: text(),
         until: time("until"),
         version: integer().notNull().default(1),
+        changedAt: time("changed_at").notNull().defaultNow(),
+        bindingHash: text("binding_hash"),
+        bindingActivatedAt: time("binding_activated_at"),
     },
     (t) => [
         primaryKey({ columns: [t.owner, t.key] }),
@@ -321,6 +325,10 @@ export const miraRuntimeStatus = pgTable(
         message: text(),
         heartbeatAt: time("heartbeat_at").notNull(),
         models: jsonb().$type<MiraModel[]>().notNull().default([]),
+        integrations: jsonb()
+            .$type<{ owner: string; key: string }[]>()
+            .notNull()
+            .default([]),
     },
     (t) => [check("mira_runtime_status_singleton", sql`${t.id} = 1`)]
 );
@@ -333,9 +341,15 @@ export const miraEvents = pgTable(
         sourceKey: text("source_key").notNull(),
         reference: text().notNull(),
         taskId: uuid("task_id").references(() => miraTasks.id),
+        receivedAt: time("received_at").notNull().defaultNow(),
         createdAt: time("created_at").notNull().defaultNow(),
+        eligibilityAt: time("eligibility_at"),
     },
-    (t) => [uniqueIndex("mira_events_source").on(t.owner, t.kind, t.sourceKey)]
+    (t) => [
+        uniqueIndex("mira_events_source").on(t.owner, t.kind, t.sourceKey),
+        index("mira_events_received_owner").on(t.owner, t.kind, t.receivedAt),
+        index("mira_events_received_cleanup").on(t.kind, t.receivedAt),
+    ]
 );
 export const miraEventDeliveries = pgTable(
     "mira_event_deliveries",
@@ -353,9 +367,63 @@ export const miraEventDeliveries = pgTable(
     (t) => [
         primaryKey({ columns: [t.eventId, t.automationId] }),
         index("mira_events_pending").on(t.state, t.nextAttemptAt),
+        index("mira_events_run").on(t.runId),
         check(
             "mira_events_delivery_state",
             sql`${t.state} in ('pending','dispatched','skipped')`
         ),
     ]
 );
+
+export const miraIntegrationState = pgTable(
+    "mira_integration_state",
+    {
+        owner: text().notNull(),
+        key: text().notNull(),
+        binding: text().notNull(),
+        controlVersion: integer("control_version").notNull(),
+        startedAt: time("started_at").notNull(),
+        completedThrough: time("completed_through").notNull(),
+        windowEnd: time("window_end"),
+        cursor: text(),
+        eventAnchor: text("event_anchor"),
+        windowHead: text("window_head"),
+        pendingScans: jsonb("pending_scans")
+            .notNull()
+            .default(sql`'[]'::jsonb`),
+        leaseToken: uuid("lease_token"),
+        leaseExpiresAt: time("lease_expires_at"),
+        nextAttemptAt: time("next_attempt_at").notNull(),
+        lastSuccessAt: time("last_success_at"),
+        message: text(),
+        heartbeatAt: time("heartbeat_at").notNull().defaultNow(),
+    },
+    (t) => [primaryKey({ columns: [t.owner, t.key] })]
+);
+
+export const miraControlWindows = pgTable(
+    "mira_control_windows",
+    {
+        owner: text().notNull(),
+        key: text().notNull(),
+        version: integer().notNull(),
+        startedAt: time("started_at").notNull(),
+        endedAt: time("ended_at"),
+    },
+    (t) => [
+        primaryKey({ columns: [t.owner, t.key, t.version] }),
+        index("mira_control_windows_eligibility").on(t.owner, t.key, t.startedAt),
+    ]
+);
+
+export const miraIntegrationReceivers = pgTable("mira_integration_receivers", {
+    key: text().primaryKey(),
+    bindingHash: text("binding_hash"),
+    heartbeatAt: time("heartbeat_at").notNull().defaultNow(),
+});
+
+// One account-wide watermark bounds durable quota suppression independently of traffic.
+export const miraMailIntake = pgTable("mira_mail_intake", {
+    owner: text().primaryKey(),
+    skippedThrough: time("skipped_through").notNull(),
+});

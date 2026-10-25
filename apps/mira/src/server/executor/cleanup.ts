@@ -2,6 +2,7 @@ import type { SQL } from "bun";
 
 import { auditMira } from "../data/context";
 import { cleanupMiraFiles } from "../data/files";
+import { cleanupMiraMailEvents } from "../data/mailLimits";
 import type { CodexRuntime } from "../runtime/codexRuntime";
 import { cleanupMiraScratch } from "./scratch";
 
@@ -26,7 +27,7 @@ export async function cleanupMiraConversations(
             await client.begin(async (query) => {
                 const updated = await query<
                     { id: string }[]
-                >`UPDATE mira_conversations SET provider_thread = NULL, provider_context_ready = false, provider_purge_retry_at = NULL WHERE id = ${row.id} AND deleted_at IS NOT NULL AND provider_thread = ${row.providerThread} RETURNING id`;
+                >`UPDATE mira_conversations SET provider_thread = NULL, provider_policy_hash = NULL, provider_context_ready = false, provider_purge_retry_at = NULL WHERE id = ${row.id} AND deleted_at IS NOT NULL AND provider_thread = ${row.providerThread} RETURNING id`;
                 if (updated.length > 0)
                     await auditMira(
                         query,
@@ -60,6 +61,7 @@ export async function cleanupMiraResources(options: {
     home: string;
 }): Promise<boolean> {
     const outcomes = await Promise.allSettled([
+        cleanupMiraMailEvents(options.client),
         options.client`UPDATE mira_tool_receipts SET proposal=NULL,state='expired',message='The proposed change expired without approval.',finished_at=now() WHERE state='awaiting_approval' AND created_at <= now()-interval '24 hours'`,
         options.runtime
             ? cleanupMiraConversations(options.client, options.runtime)

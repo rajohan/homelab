@@ -39,7 +39,10 @@ import {
     type MiraHealth,
 } from "../../../../mira/src/server/executor/runtime";
 import { createMiraTools } from "../../../../mira/src/server/executor/tools";
-import { executeMiraTurn } from "../../../../mira/src/server/executor/turn";
+import {
+    executeMiraTurn,
+    miraInstructionsHash,
+} from "../../../../mira/src/server/executor/turn";
 import { CodexRuntime } from "../../../../mira/src/server/runtime/codexRuntime";
 import { appRouter } from "../api/router";
 import { operationFixture } from "../testing/operations";
@@ -860,7 +863,12 @@ test("heartbeat run history exposes owned failures without reports or paging thr
     }
 });
 
-test.each(["resume-missing", "resume-missing-other"])(
+test.each([
+    "resume-missing",
+    "resume-missing-other",
+    "policy-rotation",
+    "delete-other-error",
+])(
     "provider %s preserves or rebuilds the stored conversation appropriately",
     async (mode) => {
         const fixture = await operationFixture();
@@ -906,7 +914,7 @@ test.each(["resume-missing", "resume-missing-other"])(
                 attachmentIds: [image.id],
             });
             await api.runs.cancel(first);
-            await fixture.client`UPDATE mira_conversations SET provider_thread='stored-thread',provider_context_ready=true WHERE id=${chat.id}`;
+            await fixture.client`UPDATE mira_conversations SET provider_thread='stored-thread',provider_policy_hash=${mode.startsWith("resume-") ? miraInstructionsHash : "previous-policy"},provider_context_ready=true WHERE id=${chat.id}`;
             await api.conversations.send({
                 conversationId: chat.id,
                 requestId: crypto.randomUUID(),
@@ -929,7 +937,11 @@ test.each(["resume-missing", "resume-missing-other"])(
             const [stored] = await fixture.client<
                 { thread: string; ready: boolean }[]
             >`SELECT provider_thread AS thread,provider_context_ready AS ready FROM mira_conversations WHERE id=${chat.id}`;
-            if (mode === "resume-missing") {
+            if (mode === "resume-missing" || mode === "policy-rotation") {
+                const [policy] = await fixture.client<
+                    { hash: string }[]
+                >`SELECT provider_policy_hash AS hash FROM mira_conversations WHERE id=${chat.id}`;
+                expect(policy?.hash).toBe(miraInstructionsHash);
                 expect(history.run?.state).toBe("completed");
                 expect(history.messages.at(-1)?.content).toContain("localImage");
                 expect(history.messages.at(-1)?.content).toContain(image.id);

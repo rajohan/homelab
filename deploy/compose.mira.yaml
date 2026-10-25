@@ -4,6 +4,9 @@ services:
     environment:
       HOMELAB_DASHBOARD_DATABASE_URL:
       HOMELAB_MIRA_FILES_DIR: /var/lib/mira/files
+      HOMELAB_MIRA_AGENTMAIL_OWNER:
+      HOMELAB_MIRA_AGENTMAIL_INBOX:
+      HOMELAB_MIRA_AGENTMAIL_WEBHOOK_SECRET:
     volumes:
       - type: bind
         source: ${HOMELAB_MIRA_FILES_DIR:?Set the private shared attachment directory}
@@ -18,7 +21,10 @@ services:
       HOMELAB_DASHBOARD_DATABASE_URL:
       HOMELAB_MIRA_CONFIG: /etc/homelab-mira/runtime.json
       HOMELAB_MIRA_FILES_DIR: /var/lib/mira/files
+      HOMELAB_MIRA_AGENTMAIL_OWNER:
+      HOMELAB_MIRA_AGENTMAIL_INBOX:
       HOMELAB_MIRA_HEALTH_PORT: "3440"
+      HOMELAB_MIRA_AGENTMAIL_API_KEY:
     volumes:
       - type: bind
         source: ${HOMELAB_MIRA_CONFIG:?Set the nonsecret Mira runtime JSON path}

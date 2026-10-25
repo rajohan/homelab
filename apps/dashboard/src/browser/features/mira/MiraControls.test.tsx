@@ -513,6 +513,21 @@ test("run history opens the selected old result and shows its uncertain tool rec
     }
 });
 
+test("the AgentMail adapter makes its event trigger available in the automation editor", async () => {
+    const cleanup = fixture(<AutomationEditor agentMailAvailable onClose={() => {}} />);
+    try {
+        const user = userEvent.setup();
+        await user.click(screen.getByRole("button", { name: "Schedule type" }));
+        await user.click(screen.getByRole("option", { name: "Event" }));
+        await user.click(screen.getByRole("button", { name: "Trigger event" }));
+        expect(
+            screen.getByRole("option", { name: "AgentMail message" })
+        ).toBeInTheDocument();
+    } finally {
+        cleanup();
+    }
+});
+
 test("existing task edits submit only writable fields accepted by the public schema", async () => {
     const task = {
         id: crypto.randomUUID(),
