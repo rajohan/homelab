@@ -19,7 +19,7 @@ export const daytonaCleanupLabels = {
 export const daytonaCleanupDescriptions = {
     confirmed: "Sandbox cleanup confirmed",
     pending: "Sandbox cleanup pending",
-    not_needed: "Awaiting review",
+    not_needed: "No sandbox requested",
 } as const;
 
 export const daytonaPhaseLabels: Record<string, string> = {
