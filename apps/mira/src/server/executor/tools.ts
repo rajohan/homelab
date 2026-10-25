@@ -7,7 +7,7 @@ import {
     miraTaskInputSchema,
     miraTaskUpdateSchema,
 } from "@homelab/contracts/mira";
-import { miraMailContentSchema } from "@homelab/contracts/miraMail";
+import { miraMailInputSchema } from "@homelab/contracts/miraMail";
 import { idSchema } from "@homelab/contracts/operations";
 import type { SQL, TransactionSQL } from "bun";
 import * as v from "valibot";
@@ -374,7 +374,7 @@ export function createMiraTools(
             transactional: true,
             automatic: false,
             description:
-                "Prepare a local plain-text email draft when the operator requests it. Specify every recipient explicitly. The operator must review and confirm it in the dashboard before anything is sent. Attachments and threaded replies are not supported by this draft tool.",
+                "Prepare a local plain-text email draft when the operator requests it. Specify every recipient explicitly. The operator must review and confirm it in the dashboard before anything is sent. Optional attachments must be files already shared in this conversation; at most five files totaling 4 MiB. Threaded replies are not supported by this draft tool.",
             inputSchema: object(
                 {
                     to: { type: "array", items: string },
@@ -382,6 +382,7 @@ export function createMiraTools(
                     bcc: { type: "array", items: string },
                     subject: string,
                     text: string,
+                    attachmentIds: { type: "array", items: uuid, maxItems: 5 },
                 },
                 ["to", "subject", "text"]
             ),
@@ -391,7 +392,7 @@ export function createMiraTools(
                     {
                         id: Bun.randomUUIDv7(),
                         version: 0,
-                        content: v.parse(miraMailContentSchema, input),
+                        content: v.parse(miraMailInputSchema, input),
                         conversationId: run.conversationId,
                     },
                     agentMail
