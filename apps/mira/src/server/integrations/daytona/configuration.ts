@@ -2,6 +2,8 @@ import * as v from "valibot";
 
 const id = v.pipe(v.string(), v.uuid());
 const bindingSchema = v.strictObject({
+    trustBoundary: v.literal("dedicated-organization"),
+    networkAccess: v.literal("provider-default"),
     owner: v.pipe(
         v.string(),
         v.minLength(1),
@@ -39,8 +41,20 @@ export function daytonaBinding(
     const organizationId = environment.HOMELAB_MIRA_DAYTONA_ORGANIZATION_ID;
     const snapshotId = environment.HOMELAB_MIRA_DAYTONA_SNAPSHOT_ID;
     const target = environment.HOMELAB_MIRA_DAYTONA_TARGET;
-    if (!owner && !organizationId && !snapshotId && !target) return;
+    const trustBoundary = environment.HOMELAB_MIRA_DAYTONA_TRUST_BOUNDARY;
+    const networkAccess = environment.HOMELAB_MIRA_DAYTONA_NETWORK_ACCESS;
+    if (
+        !owner &&
+        !organizationId &&
+        !snapshotId &&
+        !target &&
+        !trustBoundary &&
+        !networkAccess
+    )
+        return;
     const result = v.safeParse(bindingSchema, {
+        trustBoundary,
+        networkAccess,
         owner,
         organizationId,
         snapshotId,
@@ -48,7 +62,7 @@ export function daytonaBinding(
     });
     if (!result.success)
         throw new Error(
-            "Daytona requires an explicit owner, organization, snapshot ID and region."
+            "Daytona requires an explicit dedicated-organization trust boundary, provider-default network access, owner, organization, snapshot ID and region."
         );
     return result.output;
 }
@@ -76,6 +90,8 @@ export function daytonaConfiguration(
  */
 export function daytonaBindingHash(binding: DaytonaBinding): string {
     const parsed = v.parse(bindingSchema, {
+        trustBoundary: binding.trustBoundary,
+        networkAccess: binding.networkAccess,
         owner: binding.owner,
         organizationId: binding.organizationId,
         snapshotId: binding.snapshotId,

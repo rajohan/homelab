@@ -1,5 +1,6 @@
 import {
     ApiKeysApiAxiosParamCreator,
+    OrganizationsApiAxiosParamCreator,
     SandboxApiAxiosParamCreator,
     SnapshotsApiAxiosParamCreator,
     type CreateSandbox,
@@ -27,7 +28,7 @@ const sandboxSchema = v.object({
 const policySchema = v.object({
     env: v.strictObject({}),
     public: v.literal(false),
-    networkBlockAll: v.literal(true),
+    networkBlockAll: v.literal(false),
     networkAllowList: v.nullish(v.literal("")),
     domainAllowList: v.nullish(v.literal("")),
     outboundProxyUrl: v.nullish(v.literal("")),
@@ -60,6 +61,7 @@ const snapshotSchema = v.object({
 });
 const api = SandboxApiAxiosParamCreator();
 const keys = ApiKeysApiAxiosParamCreator();
+const organizations = OrganizationsApiAxiosParamCreator();
 const snapshots = SnapshotsApiAxiosParamCreator();
 type Arguments = Awaited<ReturnType<typeof api.getSandbox>>;
 export interface DaytonaReference {
@@ -70,7 +72,7 @@ export interface DaytonaObservation {
     id: string;
     name: string;
     state: string;
-    policySatisfied: boolean;
+    settingsMatch: boolean;
     createdAt: string | null;
     expiresAt: string | null;
 }
@@ -115,7 +117,7 @@ export class DaytonaClient {
     ): Promise<unknown> {
         signal.throwIfAborted();
         if (
-            !/^\/(?:api-keys\/current|snapshots\/[a-zA-Z0-9-]+|sandbox(?:\/[a-zA-Z0-9-]+)?)$/.test(
+            !/^\/(?:api-keys\/current|organizations\/[a-zA-Z0-9-]+(?:\/users)?|snapshots\/[a-zA-Z0-9-]+|sandbox(?:\/[a-zA-Z0-9-]+)?)$/.test(
                 args.url
             )
         )
@@ -175,7 +177,7 @@ export class DaytonaClient {
         )
             throw new Error("Daytona did not confirm ownership of this sandbox.");
         const policy = v.safeParse(policySchema, value);
-        let policySatisfied = false;
+        let settingsMatch = false;
         let createdAt: string | null = null,
             expiresAt: string | null = null;
         if (policy.success) {
@@ -183,7 +185,7 @@ export class DaytonaClient {
             createdAt = p.createdAt;
             expiresAt = p.autoDestroyAt;
             const lifetime = Date.parse(expiresAt) - Date.parse(createdAt);
-            policySatisfied =
+            settingsMatch =
                 p.target === this.configuration.target &&
                 (p.snapshot === this.configuration.snapshotId ||
                     p.snapshot === snapshotName) &&
@@ -196,7 +198,7 @@ export class DaytonaClient {
             id: row.id,
             name: row.name,
             state: row.state,
-            policySatisfied,
+            settingsMatch,
             createdAt,
             expiresAt,
         };
@@ -205,13 +207,14 @@ export class DaytonaClient {
     /**
      * Verify that the actual credential belongs to the expected organization and can remove its sandboxes.
      * @param signal - Cancellation covering both headers and bounded response body.
-     * @param creating - Also require create permission before spending resources.
+     * @param creating - Also require create permission and a sole-owner organization before spending resources or executing code.
      * @returns Completion without exposing key metadata or masked credentials.
      */
     async preflight(signal: AbortSignal, creating = false): Promise<void> {
         const row = v.parse(
             v.object({
                 organizationId: id,
+                userId: v.pipe(text(256), v.minLength(1)),
                 permissions: v.pipe(v.array(text(128)), v.maxLength(100)),
                 expiresAt: v.nullable(timestamp),
             }),
@@ -226,6 +229,43 @@ export class DaytonaClient {
             throw new Error(
                 "Daytona credential does not match the configured organization or required permissions."
             );
+        if (creating) {
+            const organization = v.parse(
+                v.object({ id, suspended: v.literal(false) }),
+                await this.json(
+                    await organizations.getOrganization(
+                        this.configuration.organizationId
+                    ),
+                    signal
+                )
+            );
+            const members = v.parse(
+                v.pipe(
+                    v.array(
+                        v.object({
+                            organizationId: id,
+                            userId: text(256),
+                            role: v.literal("owner"),
+                        })
+                    ),
+                    v.length(1)
+                ),
+                await this.json(
+                    await organizations.listOrganizationMembers(
+                        this.configuration.organizationId
+                    ),
+                    signal
+                )
+            );
+            if (
+                organization.id !== this.configuration.organizationId ||
+                members[0]!.organizationId !== this.configuration.organizationId ||
+                members[0]!.userId !== row.userId
+            )
+                throw new Error(
+                    "Daytona requires a dedicated organization with only the credential owner as a member."
+                );
+        }
     }
 
     private async snapshot(signal: AbortSignal) {
@@ -245,11 +285,11 @@ export class DaytonaClient {
     }
 
     /**
-     * Create one private, network-blocked sandbox with fixed resources and a provider-enforced wall-clock TTL.
+     * Create one private sandbox with explicitly allowed provider-default networking, fixed resources and a wall-clock TTL.
      * @param runId - Durable unique attempt ID; callers must never call create twice for one attempt.
      * @param signal - Service cancellation; an interrupted POST still has an uncertain external outcome.
      * @param authorize - Last admission check and durable attempt claim, called after provider preflight and before POST.
-     * @returns Immediate provider receipt, without waiting for readiness or executing code. Persist it before continuing.
+     * @returns Immediate provider receipt; matching settings are not execution authority. Persist it before continuing.
      */
     async create(
         runId: string,
@@ -266,7 +306,7 @@ export class DaytonaClient {
             labels: this.labels(runId),
             env: {},
             public: false,
-            networkBlockAll: true,
+            networkBlockAll: false,
             kvm: false,
             volumes: [],
             secrets: [],
@@ -314,7 +354,7 @@ export class DaytonaClient {
         );
         if (value === null) return null;
         const observation = this.observation(value, reference);
-        if (observation.policySatisfied) return observation;
+        if (observation.settingsMatch) return observation;
         // Some API versions return the snapshot name instead of its immutable ID.
         // Snapshot availability must not prevent identifying and deleting a resource.
         try {

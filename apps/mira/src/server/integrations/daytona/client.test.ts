@@ -11,6 +11,8 @@ import {
 } from "./configuration";
 
 const configuration = {
+    trustBoundary: "dedicated-organization" as const,
+    networkAccess: "provider-default" as const,
     owner: "operator",
     organizationId: "11111111-1111-4111-8111-111111111111",
     snapshotId: "22222222-2222-4222-8222-222222222222",
@@ -22,6 +24,7 @@ const sandboxId = "44444444-4444-4444-8444-444444444444";
 const otherId = "55555555-5555-4555-8555-555555555555";
 const signal = new AbortController().signal;
 const key = {
+    userId: "daytona-operator",
     organizationId: configuration.organizationId,
     permissions: ["write:sandboxes", "delete:sandboxes"],
     expiresAt: null,
@@ -53,7 +56,7 @@ function sandbox() {
         state: "started",
         env: {},
         public: false,
-        networkBlockAll: true,
+        networkBlockAll: false,
         networkAllowList: "",
         domainAllowList: "",
         kvm: false,
@@ -101,6 +104,16 @@ function transport(
 }
 function fixture(path: string, init: RequestInit): Response {
     if (path === "/api/api-keys/current") return Response.json(key);
+    if (path === `/api/organizations/${configuration.organizationId}`)
+        return Response.json({ id: configuration.organizationId, suspended: false });
+    if (path === `/api/organizations/${configuration.organizationId}/users`)
+        return Response.json([
+            {
+                organizationId: configuration.organizationId,
+                userId: key.userId,
+                role: "owner",
+            },
+        ]);
     if (path === `/api/snapshots/${configuration.snapshotId}`)
         return Response.json(snapshot);
     return Response.json({
@@ -117,12 +130,16 @@ test("Daytona configuration is explicit and credential rotation preserves the bi
         })
     ).toBeUndefined();
     const environment = {
+        HOMELAB_MIRA_DAYTONA_TRUST_BOUNDARY: configuration.trustBoundary,
+        HOMELAB_MIRA_DAYTONA_NETWORK_ACCESS: configuration.networkAccess,
         HOMELAB_MIRA_DAYTONA_OWNER: configuration.owner,
         HOMELAB_MIRA_DAYTONA_ORGANIZATION_ID: configuration.organizationId,
         HOMELAB_MIRA_DAYTONA_SNAPSHOT_ID: configuration.snapshotId,
         HOMELAB_MIRA_DAYTONA_TARGET: configuration.target,
     };
     expect(daytonaBinding(environment)).toEqual({
+        trustBoundary: configuration.trustBoundary,
+        networkAccess: configuration.networkAccess,
         owner: configuration.owner,
         organizationId: configuration.organizationId,
         snapshotId: configuration.snapshotId,
@@ -147,6 +164,10 @@ test("Daytona configuration is explicit and credential rotation preserves the bi
             daytonaBindingHash(configuration)
         );
     for (const change of [
+        { HOMELAB_MIRA_DAYTONA_TRUST_BOUNDARY: undefined },
+        { HOMELAB_MIRA_DAYTONA_TRUST_BOUNDARY: "shared-organization" },
+        { HOMELAB_MIRA_DAYTONA_NETWORK_ACCESS: undefined },
+        { HOMELAB_MIRA_DAYTONA_NETWORK_ACCESS: "block-all" },
         { HOMELAB_MIRA_DAYTONA_ORGANIZATION_ID: "name" },
         { HOMELAB_MIRA_DAYTONA_SNAPSHOT_ID: "latest" },
         { HOMELAB_MIRA_DAYTONA_TARGET: "../api" },
@@ -170,11 +191,22 @@ test("Daytona configuration is explicit and credential rotation preserves the bi
 test("Daytona create checks account and snapshot before admission and posts fixed bounded isolation settings once", async () => {
     const { client, calls } = transport(fixture);
     const result = await client.create(runId, signal, () => {
-        expect(calls.map((call) => call.init.method)).toEqual(["GET", "GET"]);
+        expect(calls.map((call) => call.init.method)).toEqual([
+            "GET",
+            "GET",
+            "GET",
+            "GET",
+        ]);
         return Promise.resolve();
     });
-    expect(calls.map((call) => call.init.method)).toEqual(["GET", "GET", "POST"]);
-    const body = calls[2]?.init.body;
+    expect(calls.map((call) => call.init.method)).toEqual([
+        "GET",
+        "GET",
+        "GET",
+        "GET",
+        "POST",
+    ]);
+    const body = calls[4]?.init.body;
     if (typeof body !== "string") throw new Error("Expected JSON body");
     expect(JSON.parse(body)).toEqual({
         name: daytonaSandboxName(configuration, runId),
@@ -187,7 +219,7 @@ test("Daytona create checks account and snapshot before admission and posts fixe
         },
         env: {},
         public: false,
-        networkBlockAll: true,
+        networkBlockAll: false,
         kvm: false,
         volumes: [],
         secrets: [],
@@ -204,9 +236,9 @@ test("Daytona create checks account and snapshot before admission and posts fixe
     expect(result).toMatchObject({
         id: sandboxId,
         state: "started",
-        policySatisfied: true,
+        settingsMatch: true,
     });
-    expect(JSON.stringify(calls[2]?.init.body)).not.toContain(configuration.apiKey);
+    expect(JSON.stringify(calls[4]?.init.body)).not.toContain(configuration.apiKey);
 });
 
 for (const change of [
@@ -242,11 +274,18 @@ for (const change of [
     { sandboxClass: "linux-vm" },
 ])
     test(`Daytona denies unqualified snapshot ${JSON.stringify(change)}`, async () => {
-        const { client, calls } = transport((path) =>
-            Response.json(path.includes("api-keys") ? key : { ...snapshot, ...change })
+        const { client, calls } = transport((path, init) =>
+            path.includes("snapshots")
+                ? Response.json({ ...snapshot, ...change })
+                : fixture(path, init)
         );
         await rejects(client.create(runId, signal, async () => {}));
-        expect(calls.map((call) => call.init.method)).toEqual(["GET", "GET"]);
+        expect(calls.map((call) => call.init.method)).toEqual([
+            "GET",
+            "GET",
+            "GET",
+            "GET",
+        ]);
     });
 
 test("Daytona admission revocation or cancellation after preflight sends no create", async () => {
@@ -257,7 +296,7 @@ test("Daytona admission revocation or cancellation after preflight sends no crea
         ),
         /permission changed/
     );
-    expect(denied.calls).toHaveLength(2);
+    expect(denied.calls).toHaveLength(4);
     const cancelled = transport(fixture),
         controller = new AbortController();
     await rejects(
@@ -266,7 +305,7 @@ test("Daytona admission revocation or cancellation after preflight sends no crea
             return Promise.resolve();
         })
     );
-    expect(cancelled.calls).toHaveLength(2);
+    expect(cancelled.calls).toHaveLength(4);
     const before = transport(fixture);
     await rejects(before.client.inspect({ runId }, controller.signal));
     expect(before.calls).toHaveLength(0);
@@ -316,7 +355,7 @@ test("Daytona reconciles a lost acknowledgement by deterministic name without st
         )
     );
     const found = await client.inspect({ runId }, signal);
-    expect(found).toMatchObject({ id: sandboxId, policySatisfied: true });
+    expect(found).toMatchObject({ id: sandboxId, settingsMatch: true });
     expect(calls[1]?.path).toBe(
         `/api/sandbox/${daytonaSandboxName(configuration, runId)}`
     );
@@ -353,7 +392,7 @@ for (const change of [
     { env: { SECRET: "private" } },
     { env: undefined },
     { public: true },
-    { networkBlockAll: false },
+    { networkBlockAll: true },
     { networkAllowList: "0.0.0.0/0" },
     { domainAllowList: "*" },
     { outboundProxyUrl: "https://untrusted.example/" },
@@ -374,7 +413,7 @@ for (const change of [
     { createdAt: "2020-01-01T00:00:00Z" },
     { autoDestroyAt: "2099-01-01T00:00:00Z" },
 ])
-    test(`Daytona policy drift prevents readiness but does not prevent owned cleanup: ${JSON.stringify(change)}`, async () => {
+    test(`Daytona reports settings drift without preventing owned cleanup: ${JSON.stringify(change)}`, async () => {
         const { client, calls } = transport((path, init) => {
             if (path.includes("api-keys")) return Response.json(key);
             if (path.includes("snapshots"))
@@ -386,7 +425,7 @@ for (const change of [
             });
         });
         const observed = await client.inspect({ runId, sandboxId }, signal);
-        expect(observed?.policySatisfied).toBe(false);
+        expect(observed?.settingsMatch).toBe(false);
         expect(JSON.stringify(observed)).not.toContain("private");
         expect(await client.destroy({ runId, sandboxId }, signal)).toBe("requested");
         expect(calls.filter((call) => call.init.method === "DELETE")).toHaveLength(1);
@@ -400,7 +439,7 @@ test("Daytona accepts a name-only snapshot receipt only after resolving the conf
             : fixture(path, init)
     );
     const observed = await client.inspect({ runId }, signal);
-    expect(observed?.policySatisfied).toBe(true);
+    expect(observed?.settingsMatch).toBe(true);
 });
 
 test("Daytona separates absent, confirmed destroyed and merely requested deletion", async () => {
@@ -464,3 +503,64 @@ test("Daytona bounds advertised and streamed metadata and cancels oversized bodi
     }
     expect(cancelled).toBe(2);
 });
+
+for (const members of [
+    [],
+    [
+        {
+            organizationId: configuration.organizationId,
+            userId: "different-owner",
+            role: "owner",
+        },
+    ],
+    [{ organizationId: otherId, userId: key.userId, role: "owner" }],
+    [
+        {
+            organizationId: configuration.organizationId,
+            userId: key.userId,
+            role: "member",
+        },
+    ],
+    [
+        {
+            organizationId: configuration.organizationId,
+            userId: key.userId,
+            role: "owner",
+        },
+        {
+            organizationId: configuration.organizationId,
+            userId: "additional-member",
+            role: "owner",
+        },
+    ],
+])
+    test("Daytona blocks creation when dedicated organization membership is not confirmed", async () => {
+        const { client, calls } = transport((path, init) =>
+            path.endsWith("/users") ? Response.json(members) : fixture(path, init)
+        );
+        let admitted = false;
+        await rejects(
+            client.create(runId, signal, () => {
+                admitted = true;
+                return Promise.resolve();
+            })
+        );
+        expect(admitted).toBe(false);
+        expect(calls.every((call) => call.init.method === "GET")).toBe(true);
+        expect(calls.some((call) => call.path.includes("snapshots"))).toBe(false);
+        expect(await client.destroy({ runId, sandboxId }, signal)).toBe("requested");
+    });
+for (const change of [{ id: otherId }, { suspended: true }])
+    test("Daytona blocks an unavailable or different organization before claiming resources", async () => {
+        const { client, calls } = transport((path, init) =>
+            path === `/api/organizations/${configuration.organizationId}`
+                ? Response.json({
+                      id: configuration.organizationId,
+                      suspended: false,
+                      ...change,
+                  })
+                : fixture(path, init)
+        );
+        await rejects(client.create(runId, signal, async () => {}));
+        expect(calls.every((call) => call.init.method === "GET")).toBe(true);
+    });
