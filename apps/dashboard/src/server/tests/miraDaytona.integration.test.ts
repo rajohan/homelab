@@ -120,6 +120,8 @@ function provider(
         exitCode?: number;
         logs?: string;
         missingOutput?: boolean;
+        output?: string;
+        beforeDownload?: () => Promise<void>;
         beforeCreate?: () => Promise<void>;
     } = {}
 ) {
@@ -235,10 +237,12 @@ function provider(
                     stderr: "",
                     output: "",
                 });
-            if (p.endsWith("/download"))
+            if (p.endsWith("/download")) {
+                await options.beforeDownload?.();
                 return options.missingOutput
                     ? new Response(null, { status: 404 })
-                    : new Response('{"result":true}');
+                    : new Response(options.output ?? '{"result":true}');
+            }
             if (p.endsWith(`/session/mira-${jobId}`))
                 return opened
                     ? Response.json({
@@ -999,6 +1003,184 @@ test("Daytona closes cancelled drafts without dispatching a sandbox", async () =
             )
         ).toBe(false);
         expect(p.writes()).toHaveLength(0);
+    } finally {
+        await f.close();
+    }
+});
+
+test("Daytona cancellation replaces a pending failure outcome but cannot cancel a finalized result", async () => {
+    const f = await fixture();
+    try {
+        const job = await f.save({ ...defaultContent, outputs: ["missing.txt"] });
+        await f.approve(job);
+        const p = provider(job.id, { missingOutput: true });
+        p.complete();
+        await advance(f, p, 6);
+        const pending = await f.read(job.id);
+        expect(pending).toMatchObject({ phase: "cleaning", cleanup: "pending" });
+        await f.api.daytona.cancel({ id: job.id, version: pending.version });
+        await advance(f, p, 3);
+        expect(await f.read(job.id)).toMatchObject({
+            state: "cancelled",
+            cleanup: "confirmed",
+            exitCode: 0,
+        });
+        const failed = await f.save({ ...defaultContent, outputs: ["missing.txt"] });
+        await f.approve(failed);
+        const other = provider(failed.id, { missingOutput: true });
+        other.complete();
+        await advance(f, other, 10);
+        const terminal = await f.read(failed.id);
+        expect(terminal).toMatchObject({
+            state: "needs_attention",
+            cleanup: "confirmed",
+        });
+        await rejects(
+            f.api.daytona.cancel({ id: failed.id, version: terminal.version }),
+            /changed/
+        );
+        expect(await f.read(failed.id)).toMatchObject({
+            state: "needs_attention",
+            cancelRequested: false,
+        });
+    } finally {
+        await f.close();
+    }
+});
+
+test("Daytona cancellation survives a concurrent artifact failure", async () => {
+    const f = await fixture();
+    try {
+        const job = await f.save({ ...defaultContent, outputs: ["missing.txt"] });
+        await f.approve(job);
+        const p = provider(job.id, {
+            missingOutput: true,
+            beforeDownload: async () => {
+                const current = await f.read(job.id);
+                await f.api.daytona.cancel({ id: job.id, version: current.version });
+            },
+        });
+        p.complete();
+        await advance(f, p, 10);
+        expect(await f.read(job.id)).toMatchObject({
+            state: "cancelled",
+            cleanup: "confirmed",
+            cancelRequested: true,
+        });
+    } finally {
+        await f.close();
+    }
+});
+
+test("Daytona clears a recovered log warning without erasing unrelated notices", async () => {
+    const f = await fixture();
+    try {
+        const job = await f.save();
+        await f.approve(job);
+        const options: { fail?: string; logs: string } = {
+            fail: "/logs",
+            logs: "Recovered complete logs",
+        };
+        const p = provider(job.id, options);
+        await advance(f, p, 5);
+        const incomplete = await f.read(job.id);
+        expect(incomplete.message).toContain("incomplete");
+        delete options.fail;
+        await advance(f, p);
+        expect(await f.read(job.id)).toMatchObject({
+            stdout: options.logs,
+            message: null,
+        });
+        await f.client`UPDATE mira_daytona_jobs SET message='Separate retained notice.' WHERE id=${job.id}`;
+        p.complete();
+        await advance(f, p, 5);
+        expect(await f.read(job.id)).toMatchObject({
+            state: "completed",
+            cleanup: "confirmed",
+            message: "Separate retained notice.",
+        });
+    } finally {
+        await f.close();
+    }
+});
+
+test("Mira reads bounded cloud artifacts only from its owned conversation", async () => {
+    const f = await fixture();
+    try {
+        const chat = await f.api.conversations.create({ title: "Cloud artifacts" });
+        const otherChat = await f.api.conversations.create({
+            title: "Other conversation",
+        });
+        const executeOutput = async (conversationId: string, output: string) => {
+            const job = await f.api.daytona.save({
+                id: crypto.randomUUID(),
+                version: 0,
+                conversationId,
+                taskId: null,
+                content: { ...defaultContent, outputs: ["result.txt"] },
+            });
+            await f.approve(job);
+            const p = provider(job.id, { output });
+            p.complete();
+            await advance(f, p, 10);
+            const result = await f.read(job.id);
+            expect(result).toMatchObject({ state: "completed", cleanup: "confirmed" });
+            expect(result.files).toHaveLength(1);
+            return result;
+        };
+        const content = "Untrusted artifact text.\n" + "x".repeat(60_000);
+        const job = await executeOutput(chat.id, content);
+        const other = await executeOutput(
+            otherChat.id,
+            "Not authorized for this conversation"
+        );
+        const unlinked = await saveMiraFile(f.context, f.directory, {
+            id: crypto.randomUUID(),
+            name: "unlinked.txt",
+            bytes: new TextEncoder().encode("Unlinked private content"),
+        });
+        await f.api.conversations.send({
+            conversationId: chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Read the recorded result",
+            attachmentIds: [],
+        });
+        const run = await claimMiraRun(f.client, crypto.randomUUID(), "foreground");
+        expect(run).not.toBeNull();
+        const tools = createMiraTools(
+            f.client,
+            run!,
+            f.directory,
+            undefined,
+            undefined,
+            undefined,
+            configuration
+        );
+        const reader = tools.find((tool) => tool.name === "mira_attachment_read")!;
+        const read = async (id: string, offset = 0) =>
+            JSON.parse(
+                await reader.execute({ id, offset }, signal, {
+                    callId: crypto.randomUUID(),
+                    threadId: "synthetic",
+                    turnId: "synthetic",
+                })
+            ) as { ok: boolean; result: { text: string; nextOffset: number | null } };
+        await f.pause();
+        const first = await read(job.files[0]!.id);
+        expect(first.ok).toBe(true);
+        expect(first.result.text).toBe(content.slice(0, 48_000));
+        expect(first.result.nextOffset).toBe(48_000);
+        const second = await read(job.files[0]!.id, first.result.nextOffset!);
+        expect(second.ok).toBe(true);
+        expect(second.result.text).toBe(content.slice(48_000));
+        expect(second.result.nextOffset).toBeNull();
+        expect(await read(other.files[0]!.id)).toMatchObject({ ok: false });
+        expect(await read(unlinked.id)).toMatchObject({ ok: false });
+        await f.client`UPDATE mira_daytona_jobs SET owner='different-owner' WHERE id=${job.id}`;
+        expect(await read(job.files[0]!.id)).toMatchObject({ ok: false });
+        await f.client`UPDATE mira_daytona_jobs SET owner=${configuration.owner} WHERE id=${job.id}`;
+        await deleteMiraFile(f.context, f.directory, job.files[0]!.id);
+        expect(await read(job.files[0]!.id)).toMatchObject({ ok: false });
     } finally {
         await f.close();
     }

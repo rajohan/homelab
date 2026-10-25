@@ -1645,3 +1645,23 @@ test("cancelling a reviewed cloud draft closes its stale review dialog", async (
         request.mockRestore();
     }
 });
+
+test("finished cloud jobs needing attention do not offer cancellation", () => {
+    const job: MiraDaytonaJob = {
+        ...cloudJob(),
+        state: "needs_attention",
+        phase: "closed",
+        cleanup: "confirmed",
+        message: "Selected result missing",
+    };
+    const cleanup = fixture(<DaytonaDetails job={job} onClose={() => {}} />);
+    try {
+        expect(screen.getByText("Selected result missing")).toBeInTheDocument();
+        expect(screen.getByText("Confirmed")).toBeInTheDocument();
+        expect(
+            screen.queryByRole("button", { name: "Cancel job" })
+        ).not.toBeInTheDocument();
+    } finally {
+        cleanup();
+    }
+});

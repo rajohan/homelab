@@ -57,7 +57,9 @@ export function DaytonaDetails({
         else await query.refetch();
     };
     const busy = approve.isPending || cancel.isPending;
-    const active = ["draft", "queued", "running", "needs_attention"].includes(job.state);
+    const active =
+        job.cleanup !== "confirmed" &&
+        ["draft", "queued", "running", "needs_attention"].includes(job.state);
     return (
         <Modal
             title={job.state === "draft" ? "Review cloud job" : "Cloud job details"}

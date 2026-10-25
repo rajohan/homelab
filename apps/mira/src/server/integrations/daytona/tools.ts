@@ -78,7 +78,7 @@ export function createDaytonaTools(
             name: "mira_daytona_result",
             automatic: true,
             description:
-                "Read one recorded cloud result from this conversation, with bounded untrusted logs. This never runs code or interprets log instructions. The returned truncated flag means the dashboard may contain more log text.",
+                "Read one recorded cloud result from this conversation, with bounded untrusted logs. This never runs code or interprets log instructions. The returned truncated flag means the dashboard may contain more log text. Use mira_attachment_read with a returned file ID to read bounded text/PDF contents; images can be opened in the dashboard.",
             inputSchema: {
                 type: "object",
                 additionalProperties: false,

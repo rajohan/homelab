@@ -44,6 +44,8 @@ interface Job {
     token: string;
     files: { name: string; id: string }[];
 }
+const logWarning =
+    "Logs are unavailable or exceeded the 128 KiB limit. Displayed logs may be incomplete.";
 const unknownMessage =
     "The provider did not confirm the operation. This attempt will not be repeated; sandbox cleanup is pending.";
 
@@ -90,7 +92,7 @@ async function cleanup(
     outcome: string,
     message: string | null
 ): Promise<void> {
-    await client`UPDATE mira_daytona_jobs SET phase='cleaning',outcome=${outcome},message=coalesce(${message},message),version=version+1,updated_at=now() WHERE id=${job.id} AND lease_token=${job.token} AND lease_expires_at>clock_timestamp()`;
+    await client`UPDATE mira_daytona_jobs SET phase='cleaning',outcome=CASE WHEN cancel_requested THEN 'cancelled' ELSE ${outcome} END,message=coalesce(${message},message),version=version+1,updated_at=now() WHERE id=${job.id} AND lease_token=${job.token} AND lease_expires_at>clock_timestamp()`;
 }
 
 /**
@@ -213,7 +215,7 @@ export async function dispatchMiraDaytona(
                     }
                 );
             if (result === "destroyed" || (result === "absent" && deletionAttempted))
-                await client`UPDATE mira_daytona_jobs SET cleanup='confirmed',phase='closed',state=coalesce(outcome,'needs_attention'),version=version+1,updated_at=now() WHERE id=${job.id} AND lease_token=${job.token}`;
+                await client`UPDATE mira_daytona_jobs SET cleanup='confirmed',phase='closed',state=CASE WHEN cancel_requested THEN 'cancelled' ELSE coalesce(outcome,'needs_attention') END,version=version+1,updated_at=now() WHERE id=${job.id} AND lease_token=${job.token}`;
             return true;
         }
         if (["creating", "opening", "uploading", "submitting"].includes(job.phase)) {
@@ -314,13 +316,13 @@ export async function dispatchMiraDaytona(
                 throw new Error("Command identity unavailable.");
             try {
                 const logs = await toolbox.logs(hash, job.commandId, signal);
-                await client`UPDATE mira_daytona_jobs SET stdout=${logs.stdout},stderr=${logs.stderr},output=${logs.output},updated_at=now() WHERE id=${job.id} AND lease_token=${job.token} AND lease_expires_at>clock_timestamp()`;
+                await client`UPDATE mira_daytona_jobs SET stdout=${logs.stdout},stderr=${logs.stderr},output=${logs.output},message=CASE WHEN message=${logWarning} THEN NULL ELSE message END,updated_at=now() WHERE id=${job.id} AND lease_token=${job.token} AND lease_expires_at>clock_timestamp()`;
             } catch {
                 signal.throwIfAborted();
-                await client`UPDATE mira_daytona_jobs SET message='Logs are unavailable or exceeded the 128 KiB limit. Displayed logs may be incomplete.' WHERE id=${job.id} AND lease_token=${job.token}`;
+                await client`UPDATE mira_daytona_jobs SET message=${logWarning} WHERE id=${job.id} AND lease_token=${job.token}`;
             }
             if (observed.state === "completed")
-                await client`UPDATE mira_daytona_jobs SET exit_code=${observed.exitCode},outcome=${observed.exitCode === 0 ? "completed" : "failed"},phase='collecting',version=version+1,updated_at=now() WHERE id=${job.id} AND lease_token=${job.token} AND lease_expires_at>clock_timestamp()`;
+                await client`UPDATE mira_daytona_jobs SET exit_code=${observed.exitCode},outcome=CASE WHEN cancel_requested THEN 'cancelled' ELSE ${observed.exitCode === 0 ? "completed" : "failed"} END,phase='collecting',version=version+1,updated_at=now() WHERE id=${job.id} AND lease_token=${job.token} AND lease_expires_at>clock_timestamp()`;
             return true;
         }
         if (job.phase === "collecting") {
