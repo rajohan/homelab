@@ -1633,7 +1633,7 @@ test("task deletion scrubs pending proposals atomically and fences late proposal
             labels: [],
             dueAt: null,
             completionCriteria: "Private criteria",
-            conversationId: chat.id,
+            conversationId: null,
         };
         const task = await api.tasks.create(fields);
         const other = await api.tasks.create({ ...fields, title: "Keep this task" });

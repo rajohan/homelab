@@ -1,9 +1,13 @@
 import { expect, test } from "bun:test";
 import { rejects } from "node:assert/strict";
+import { cp, mkdtemp, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 import { miraModelSchema } from "@homelab/contracts/mira";
 import type { MiraTaskInput } from "@homelab/contracts/mira";
 import { capabilities } from "@homelab/contracts/operations";
+import { enqueueTurn } from "@homelab/mira/data/conversations";
 import { createReport, saveMemory } from "@homelab/mira/data/documents";
 import { recordMiraEvent } from "@homelab/mira/data/events";
 import {
@@ -15,12 +19,21 @@ import {
     saveMiraActivity,
     scheduleMiraRuns,
 } from "@homelab/mira/data/queue";
+import { runMiraTask } from "@homelab/mira/data/taskExecution";
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
+import { migrate } from "drizzle-orm/bun-sql/migrator";
 import superjson from "superjson";
 import * as v from "valibot";
 
+import { createTestDatabase } from "../../../../../tests/database";
 import { appRouter } from "../api/router";
+import { connectDashboardDatabase } from "../database/connection";
+import {
+    dashboardMigrationsFolder,
+    migrateDashboard,
+    assertDashboardSchema,
+} from "../database/migrations";
 import { operationFixture } from "../testing/operations";
 
 const page = { search: "", archived: false };
@@ -595,6 +608,579 @@ test("verified events reach every enabled subscriber across pagination boundarie
     }
 });
 
+test("explicit task starts are owner-scoped, idempotent and independent of board status", async () => {
+    const database = await fixture();
+    try {
+        const api = database.caller().mira;
+        const created = await api.tasks.create(task);
+        const input = {
+            id: created.id,
+            version: 1,
+            requestId: crypto.randomUUID(),
+            instructions: "Check the recorded state only.",
+        };
+        await rejects(database.caller("other").mira.tasks.run(input), /not found/);
+        const [first, retried] = await Promise.all([
+            api.tasks.run(input),
+            api.tasks.run(input),
+        ]);
+        expect(retried).toEqual(first);
+        const generated = await api.conversations.read({ id: first.conversationId });
+        expect(generated.conversation.title).toBe(`Task ${created.id.slice(0, 8)}`);
+        expect(generated.messages[0]?.content).toContain(created.id);
+        expect(generated.messages[0]?.content).toContain("mira_task_read");
+        expect(generated.messages[0]?.content).not.toContain(task.title);
+        expect(generated.messages[0]?.content).not.toContain(task.completionCriteria);
+        await rejects(
+            api.tasks.run({ ...input, instructions: "Different work" }),
+            /different task action/
+        );
+        const listed = await api.tasks.list(page);
+        expect(listed.rows[0]).toMatchObject({
+            id: created.id,
+            status: "todo",
+            version: 2,
+            conversationId: first.conversationId,
+        });
+        const execution = await api.tasks.execution({ id: created.id });
+        expect(execution.rows).toHaveLength(1);
+        expect(execution.rows[0]).toMatchObject({
+            id: first.id,
+            taskId: created.id,
+            state: "queued",
+        });
+        await rejects(
+            database.caller("other").mira.tasks.execution({ id: created.id }),
+            /not found/
+        );
+        await rejects(api.tasks.delete({ id: created.id, version: 2 }), /Stop or finish/);
+        await rejects(
+            api.tasks.run({ ...input, version: 2, requestId: crypto.randomUUID() }),
+            /current task run/
+        );
+        await api.runs.cancel({ id: first.id });
+        const continued = await api.tasks.run({
+            ...input,
+            version: 2,
+            requestId: crypto.randomUUID(),
+        });
+        expect(continued.conversationId).toBe(first.conversationId);
+        expect(continued.id).not.toBe(first.id);
+        const history = await api.tasks.execution({ id: created.id });
+        expect(history.rows).toHaveLength(2);
+        await api.runs.cancel({ id: continued.id });
+        await api.tasks.delete({ id: created.id, version: 3 });
+        await rejects(
+            api.tasks.run({ ...input, version: 3, requestId: crypto.randomUUID() }),
+            /not found/
+        );
+    } finally {
+        await database.close();
+    }
+});
+
+test("task continuation requires review of uncertain actions and never rewrites their receipts", async () => {
+    const database = await fixture();
+    try {
+        const api = database.caller().mira;
+        const created = await api.tasks.create(task);
+        const first = await api.tasks.run({
+            id: created.id,
+            version: 1,
+            requestId: crypto.randomUUID(),
+        });
+        const claim = await claimMiraRun(
+            database.client,
+            crypto.randomUUID(),
+            "foreground"
+        );
+        expect(claim?.id).toBe(first.id);
+        await database.client`INSERT INTO mira_tool_receipts (id, run_id, call_id, tool, input_hash, state) VALUES (${Bun.randomUUIDv7()}, ${first.id}, 'uncertain', 'synthetic_action', 'synthetic', 'running')`;
+        await database.client`UPDATE mira_runs SET lease_expires_at = now() - interval '1 second' WHERE id = ${first.id}`;
+        await reconcileMiraRuns(database.client);
+        const execution = await api.tasks.execution({ id: created.id });
+        expect(execution.reviewRunId).toBe(first.id);
+        const resume = { id: created.id, version: 2, requestId: crypto.randomUUID() };
+        await rejects(api.tasks.run(resume), /Review the uncertain run/);
+        await rejects(
+            api.tasks.run({ ...resume, reviewedRunId: crypto.randomUUID() }),
+            /Review the uncertain run/
+        );
+        const continued = await api.tasks.run({ ...resume, reviewedRunId: first.id });
+        expect(continued.conversationId).toBe(first.conversationId);
+        const receipts = await database.client<
+            { state: string }[]
+        >`SELECT state FROM mira_tool_receipts WHERE run_id = ${first.id}`;
+        expect(receipts).toEqual([{ state: "unknown" }]);
+        const conversation = await api.conversations.read({ id: first.conversationId });
+        expect(conversation.messages.at(-2)?.content).toContain(first.id);
+        const acknowledged = await api.tasks.execution({ id: created.id });
+        expect(acknowledged.reviewRunId).toBeNull();
+        await api.runs.cancel({ id: continued.id });
+        const next = await api.tasks.run({
+            id: created.id,
+            version: 3,
+            requestId: crypto.randomUUID(),
+        });
+        expect(next.conversationId).toBe(first.conversationId);
+    } finally {
+        await database.close();
+    }
+});
+
+test("automatic task events and a manual start share one execution slot per task", async () => {
+    const database = await fixture();
+    try {
+        const api = database.caller().mira;
+        const created = await api.tasks.create({
+            ...task,
+            dueAt: new Date(Date.now() - 1000).toISOString(),
+        });
+        const automation = await api.automations.create({
+            title: "Due-task review",
+            prompt: "Review due tasks",
+            kind: "custom",
+            schedule: { kind: "event", event: "task_due" },
+            budgetSeconds: 60,
+        });
+        await api.controls.setEnabled({
+            key: `automation:${automation.id}`,
+            enabled: true,
+            version: 1,
+            reason: null,
+            until: null,
+        });
+        const [scheduled] = await Promise.allSettled([
+            scheduleMiraRuns(database.client),
+            api.tasks.run({ id: created.id, version: 1, requestId: crypto.randomUUID() }),
+        ]);
+        expect(scheduled.status).toBe("fulfilled");
+        const runs = await api.tasks.execution({ id: created.id });
+        expect(runs.rows).toHaveLength(1);
+        expect(runs.rows[0]).toMatchObject({ taskId: created.id, state: "queued" });
+        const unrelated = await api.tasks.create({ ...task, title: "Different task" });
+        const separate = await api.tasks.execution({ id: unrelated.id });
+        expect(separate.rows).toHaveLength(0);
+    } finally {
+        await database.close();
+    }
+});
+
+test("completed or operator-owned tasks cannot start and archived task context is preserved", async () => {
+    const database = await fixture();
+    try {
+        const api = database.caller().mira;
+        for (const fields of [
+            { status: "done" as const },
+            { assignee: "operator" as const },
+        ]) {
+            const saved = await api.tasks.create({ ...task, ...fields });
+            await rejects(
+                api.tasks.run({
+                    id: saved.id,
+                    version: 1,
+                    requestId: crypto.randomUUID(),
+                }),
+                /unfinished task to Mira/
+            );
+        }
+        const chat = await api.conversations.create({ title: "Archived task context" });
+        const saved = await api.tasks.create({ ...task, conversationId: chat.id });
+        await api.conversations.change({ id: chat.id, version: 1, action: "archive" });
+        await rejects(
+            api.tasks.run({ id: saved.id, version: 1, requestId: crypto.randomUUID() }),
+            /Restore the task/
+        );
+        await api.conversations.change({ id: chat.id, version: 2, action: "restore" });
+        const started = await api.tasks.run({
+            id: saved.id,
+            version: 1,
+            requestId: crypto.randomUUID(),
+        });
+        expect(started.conversationId).toBe(chat.id);
+    } finally {
+        await database.close();
+    }
+});
+
+test.each(["needs_attention", "unknown receipt"])(
+    "automatic task delivery waits for explicit review after %s",
+    async (outcome) => {
+        const database = await fixture();
+        try {
+            const api = database.caller().mira;
+            const saved = await api.tasks.create({
+                ...task,
+                dueAt: new Date(Date.now() - 1000).toISOString(),
+            });
+            const first = await api.tasks.run({
+                id: saved.id,
+                version: 1,
+                requestId: crypto.randomUUID(),
+            });
+            const automation = await api.automations.create({
+                title: "Due task",
+                prompt: "Review due tasks",
+                kind: "custom",
+                schedule: { kind: "event", event: "task_due" },
+                budgetSeconds: 60,
+            });
+            await api.controls.setEnabled({
+                key: `automation:${automation.id}`,
+                version: 1,
+                enabled: true,
+                reason: null,
+                until: null,
+            });
+            expect(await scheduleMiraRuns(database.client)).toBe(0);
+            await api.runs.cancel({ id: first.id });
+            await (outcome === "needs_attention"
+                ? database.client`UPDATE mira_runs SET state='needs_attention' WHERE id=${first.id}`
+                : database.client`INSERT INTO mira_tool_receipts (id, run_id, call_id, tool, input_hash, state) VALUES (${Bun.randomUUIDv7()}, ${first.id}, 'uncertain', 'synthetic_action', 'synthetic', 'unknown')`);
+            const now = new Date(Date.now() + 31_000);
+            expect(await scheduleMiraRuns(database.client, now)).toBe(0);
+            const waiting = await database.client<
+                { state: string }[]
+            >`SELECT state FROM mira_event_deliveries`;
+            expect(waiting).toEqual([{ state: "pending" }]);
+            const blockedHistory = await api.tasks.execution({ id: saved.id });
+            expect(blockedHistory.rows).toHaveLength(1);
+            const reviewed = await api.tasks.run({
+                id: saved.id,
+                version: 2,
+                requestId: crypto.randomUUID(),
+                reviewedRunId: first.id,
+            });
+            expect(
+                await scheduleMiraRuns(database.client, new Date(now.getTime() + 31_000))
+            ).toBe(0);
+            await api.runs.cancel({ id: reviewed.id });
+            expect(
+                await scheduleMiraRuns(database.client, new Date(now.getTime() + 62_000))
+            ).toBe(1);
+            const history = await api.tasks.execution({ id: saved.id });
+            expect(history.reviewRunId).toBeNull();
+            expect(history.rows).toHaveLength(3);
+            expect(history.rows[0]?.automationId).toBe(automation.id);
+            const [index] = await database.client<
+                { definition: string }[]
+            >`SELECT indexdef AS definition FROM pg_indexes WHERE schemaname='public' AND indexname='mira_runs_task'`;
+            expect(index?.definition).toContain("(owner, task_id, id)");
+        } finally {
+            await database.close();
+        }
+    }
+);
+
+test("linked chat sends retain task history, admission and retry identity", async () => {
+    const database = await fixture();
+    try {
+        const api = database.caller().mira;
+        const saved = await api.tasks.create(task);
+        const initial = await api.tasks.run({
+            id: saved.id,
+            version: 1,
+            requestId: Bun.randomUUIDv7(),
+        });
+        await api.runs.cancel({ id: initial.id });
+        const input = {
+            conversationId: initial.conversationId,
+            requestId: Bun.randomUUIDv7(),
+            text: "Continue the saved task.",
+        };
+        const continued = await api.conversations.send(input);
+        expect(await api.conversations.send(input)).toEqual(continued);
+        const history = await api.tasks.execution({ id: saved.id });
+        expect(history.rows.map((run) => run.id)).toContain(continued.id);
+        await rejects(
+            api.tasks.run({
+                id: saved.id,
+                version: history.version,
+                requestId: Bun.randomUUIDv7(),
+            }),
+            /current task run/
+        );
+        await rejects(
+            database
+                .caller("other")
+                .mira.conversations.send({ ...input, requestId: Bun.randomUUIDv7() }),
+            /active conversation/
+        );
+        await api.runs.cancel({ id: continued.id });
+        await database.client`UPDATE mira_runs SET state = 'needs_attention' WHERE id = ${continued.id}`;
+        expect(await api.conversations.send(input)).toEqual(continued);
+        await rejects(
+            api.conversations.send({ ...input, requestId: Bun.randomUUIDv7() }),
+            /Review the uncertain run/
+        );
+        await database.client`UPDATE mira_runs SET state = 'failed' WHERE id = ${continued.id}`;
+        await database.client`INSERT INTO mira_tool_receipts (id, run_id, call_id, tool, input_hash, state) VALUES (${Bun.randomUUIDv7()}, ${continued.id}, 'synthetic', 'synthetic', 'synthetic', 'unknown')`;
+        await rejects(
+            api.conversations.send({ ...input, requestId: Bun.randomUUIDv7() }),
+            /Review the uncertain run/
+        );
+        const reviewed = await api.tasks.run({
+            id: saved.id,
+            version: history.version,
+            requestId: Bun.randomUUIDv7(),
+            reviewedRunId: continued.id,
+        });
+        await api.runs.cancel({ id: reviewed.id });
+        const afterReview = await api.conversations.send({
+            ...input,
+            requestId: Bun.randomUUIDv7(),
+        });
+        const reviewedHistory = await api.tasks.execution({ id: saved.id });
+        expect(reviewedHistory.rows.map((run) => run.id)).toContain(afterReview.id);
+    } finally {
+        await database.close();
+    }
+});
+
+test("linked chat cannot race task admission or overlap work in another conversation", async () => {
+    const database = await fixture();
+    try {
+        const api = database.caller().mira;
+        const chat = await api.conversations.create({ title: "Linked task" });
+        const saved = await api.tasks.create({ ...task, conversationId: chat.id });
+        const input = {
+            conversationId: chat.id,
+            requestId: Bun.randomUUIDv7(),
+            text: "Continue.",
+        };
+        await database.client.begin(async (query) => {
+            await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:task:operator:${saved.id}`}, 0))`;
+            await rejects(api.conversations.send(input), /Task admission is busy/);
+        });
+        const otherChat = await api.conversations.create({
+            title: "Automatic task context",
+        });
+        const automatic = await api.conversations.send({
+            ...input,
+            conversationId: otherChat.id,
+            requestId: Bun.randomUUIDv7(),
+        });
+        await database.client`UPDATE mira_runs SET task_id = ${saved.id} WHERE id = ${automatic.id}`;
+        await rejects(api.conversations.send(input), /current task run/);
+        await api.runs.cancel({ id: automatic.id });
+        await api.tasks.update({
+            ...task,
+            id: saved.id,
+            version: 1,
+            conversationId: chat.id,
+            status: "done",
+        });
+        await rejects(api.conversations.send(input), /unfinished task/);
+        await api.tasks.update({
+            ...task,
+            id: saved.id,
+            version: 2,
+            conversationId: chat.id,
+        });
+        await rejects(
+            api.tasks.create({ ...task, conversationId: chat.id }),
+            /already belongs/
+        );
+        const second = await api.tasks.create(task);
+        // Legacy ambiguous links still fail closed, although the editor no longer creates them.
+        await database.client`UPDATE mira_tasks SET conversation_id=${chat.id} WHERE id=${second.id}`;
+        await rejects(api.conversations.send(input), /multiple tasks/);
+        await rejects(
+            api.tasks.run({ id: saved.id, version: 3, requestId: Bun.randomUUIDv7() }),
+            /multiple tasks/
+        );
+        await api.tasks.delete({ id: second.id, version: 1 });
+        const run = await api.conversations.send(input);
+        const history = await api.tasks.execution({ id: saved.id });
+        expect(history.rows.map((entry) => entry.id)).toContain(run.id);
+    } finally {
+        await database.close();
+    }
+});
+
+test("automatic task conversations retain admission after uncertainty, relinking and deletion", async () => {
+    const database = await fixture();
+    try {
+        const api = database.caller().mira;
+        const saved = await api.tasks.create({
+            ...task,
+            dueAt: new Date(Date.now() - 1000).toISOString(),
+        });
+        const automation = await api.automations.create({
+            title: "Automatic task",
+            prompt: "Review task",
+            kind: "custom",
+            schedule: { kind: "event", event: "task_due" },
+            budgetSeconds: 60,
+        });
+        await api.controls.setEnabled({
+            key: `automation:${automation.id}`,
+            version: 1,
+            enabled: true,
+            reason: null,
+            until: null,
+        });
+        expect(await scheduleMiraRuns(database.client)).toBe(1);
+        let history = await api.tasks.execution({ id: saved.id });
+        const initial = history.rows[0]!;
+        expect(history.conversationId).toBeNull();
+        await api.runs.cancel({ id: initial.id });
+        await database.client`UPDATE mira_runs SET state='needs_attention' WHERE id=${initial.id}`;
+        const input = {
+            conversationId: initial.conversationId,
+            requestId: crypto.randomUUID(),
+            text: "Follow up on this automatic task",
+        };
+        await rejects(api.conversations.send(input), /Review the uncertain run/);
+        const reviewed = await api.tasks.run({
+            id: saved.id,
+            version: 1,
+            requestId: crypto.randomUUID(),
+            reviewedRunId: initial.id,
+        });
+        expect(reviewed.conversationId).not.toBe(initial.conversationId);
+        await rejects(api.conversations.send(input), /current task run/);
+        await api.runs.cancel({ id: reviewed.id });
+        const continued = await api.conversations.send(input);
+        history = await api.tasks.execution({ id: saved.id });
+        expect(history.rows.map((run) => run.id)).toContain(continued.id);
+        await api.runs.cancel({ id: continued.id });
+        await rejects(
+            api.tasks.create({ ...task, conversationId: initial.conversationId }),
+            /already belongs/
+        );
+        const unrelated = await api.tasks.create(task);
+        await database.client`UPDATE mira_tasks SET conversation_id=${initial.conversationId} WHERE id=${unrelated.id}`;
+        await rejects(
+            api.conversations.send({ ...input, requestId: crypto.randomUUID() }),
+            /multiple tasks/
+        );
+        await api.tasks.update({
+            ...task,
+            id: unrelated.id,
+            version: 1,
+            conversationId: null,
+        });
+        await api.tasks.delete({ id: saved.id, version: history.version });
+        await rejects(
+            api.conversations.send({ ...input, requestId: crypto.randomUUID() }),
+            /deleted task/
+        );
+    } finally {
+        await database.close();
+    }
+});
+
+test.each(["queued", "running", "needs_attention", "unknown receipt"])(
+    "linking a task adopts pre-link %s runs before admission",
+    async (state) => {
+        const database = await fixture();
+        try {
+            const api = database.caller().mira;
+            const chat = await api.conversations.create({
+                title: "Existing ordinary work",
+            });
+            const first = await api.conversations.send({
+                conversationId: chat.id,
+                requestId: crypto.randomUUID(),
+                text: "Inspect before linking",
+            });
+            if (state === "running")
+                await claimMiraRun(database.client, crypto.randomUUID(), "foreground");
+            if (state === "needs_attention" || state === "unknown receipt") {
+                await api.runs.cancel({ id: first.id });
+                await (state === "needs_attention"
+                    ? database.client`UPDATE mira_runs SET state='needs_attention' WHERE id=${first.id}`
+                    : database.client`INSERT INTO mira_tool_receipts (id,run_id,call_id,tool,input_hash,state) VALUES (${Bun.randomUUIDv7()},${first.id},'uncertain','synthetic','synthetic','unknown')`);
+            }
+            const saved = await api.tasks.create({
+                ...task,
+                conversationId: chat.id,
+                dueAt: new Date(Date.now() - 1000).toISOString(),
+            });
+            const automation = await api.automations.create({
+                title: "Due task",
+                prompt: "Review",
+                kind: "custom",
+                schedule: { kind: "event", event: "task_due" },
+                budgetSeconds: 60,
+            });
+            await api.controls.setEnabled({
+                key: `automation:${automation.id}`,
+                version: 1,
+                enabled: true,
+                reason: null,
+                until: null,
+            });
+            const history = await api.tasks.execution({ id: saved.id });
+            expect(history.rows.map((run) => run.id)).toEqual([first.id]);
+            expect(history.rows[0]?.taskId).toBe(saved.id);
+            expect(await scheduleMiraRuns(database.client)).toBe(0);
+            const start = { id: saved.id, version: 1, requestId: crypto.randomUUID() };
+            await rejects(
+                api.tasks.run(start),
+                /current task run|Review the uncertain run/
+            );
+            if (["needs_attention", "unknown receipt"].includes(state)) {
+                expect(history.reviewRunId).toBe(first.id);
+                const resumed = await api.tasks.run({
+                    ...start,
+                    reviewedRunId: first.id,
+                });
+                expect(resumed.conversationId).toBe(chat.id);
+            }
+            await rejects(
+                database
+                    .caller("other")
+                    .mira.tasks.create({ ...task, conversationId: chat.id }),
+                /not found/
+            );
+        } finally {
+            await database.close();
+        }
+    }
+);
+
+test("linking and ordinary send serialize without losing task history", async () => {
+    const database = await fixture();
+    try {
+        const api = database.caller().mira;
+        const chat = await api.conversations.create({ title: "Concurrent link" });
+        const saved = await api.tasks.create(task);
+        const [linked, sent] = await Promise.all([
+            api.tasks.update({
+                ...task,
+                id: saved.id,
+                version: 1,
+                conversationId: chat.id,
+            }),
+            api.conversations.send({
+                conversationId: chat.id,
+                requestId: crypto.randomUUID(),
+                text: "Inspect",
+            }),
+        ]);
+        expect(linked.id).toBe(saved.id);
+        const history = await api.tasks.execution({ id: saved.id });
+        expect(history.rows.map((run) => run.id)).toEqual([sent.id]);
+        const empty = await api.tasks.create(task);
+        await rejects(
+            api.tasks.update({
+                ...task,
+                id: empty.id,
+                version: 1,
+                conversationId: chat.id,
+            }),
+            /already belongs/
+        );
+        const unchanged = await api.tasks.execution({ id: empty.id });
+        expect(unchanged.rows).toHaveLength(0);
+        expect(unchanged.conversationId).toBeNull();
+    } finally {
+        await database.close();
+    }
+});
+
 test("historical run details retain uncertain receipts across later turns and chat deletion", async () => {
     const database = await fixture();
     try {
@@ -657,6 +1243,239 @@ test("historical run details retain uncertain receipts across later turns and ch
             before: detail.nextCursor!,
         });
         expect(retained.rows.at(-1)?.state).toBe("unknown");
+    } finally {
+        await database.close();
+    }
+});
+
+test("task execution upgrades the migrated AgentMail parent without skipping earlier feature changes", async () => {
+    const allocation = await createTestDatabase();
+    const connection = connectDashboardDatabase(allocation.url);
+    const prior = await mkdtemp(path.join(tmpdir(), "mira-task-parent-"));
+    try {
+        const source = dashboardMigrationsFolder();
+        const entries = await readdir(source, { withFileTypes: true });
+        const feature = entries.find((entry) =>
+            entry.name.endsWith("_mira_task_execution")
+        );
+        if (!feature) throw new Error("Expected task execution migration");
+        for (const entry of entries.filter(
+            (entry) => entry.isDirectory() && entry.name < feature.name
+        ))
+            await cp(path.join(source, entry.name), path.join(prior, entry.name), {
+                recursive: true,
+            });
+        await migrate(connection.database, { migrationsFolder: prior });
+        expect(
+            await connection.client`SELECT column_name FROM information_schema.columns WHERE table_name='mira_runs' AND column_name='reviewed_run_id'`
+        ).toHaveLength(0);
+        const legacy: { taskId: string; runId: string; conversationId: string }[] = [];
+        for (const state of ["queued", "needs_attention", "completed"]) {
+            const taskId = crypto.randomUUID(),
+                runId = crypto.randomUUID(),
+                conversationId = crypto.randomUUID(),
+                userId = crypto.randomUUID(),
+                assistantId = crypto.randomUUID();
+            await connection.client`INSERT INTO mira_conversations(id,owner,title) VALUES (${conversationId},'operator','Legacy conversation')`;
+            await connection.client`INSERT INTO mira_tasks(id,owner,title,description,status,assignee,priority,completion_criteria,conversation_id) VALUES (${taskId},'operator','Legacy task','','in_progress','mira','normal','',${conversationId})`;
+            await connection.client`INSERT INTO mira_messages(id,conversation_id,role,state) VALUES (${userId},${conversationId},'user','completed'),(${assistantId},${conversationId},'assistant','completed')`;
+            await connection.client`INSERT INTO mira_runs(id,owner,request_key,request_hash,conversation_id,user_message_id,assistant_message_id,state,priority,budget_seconds) VALUES (${runId},'operator',${runId},'legacy',${conversationId},${userId},${assistantId},${state},1,60)`;
+            if (state === "completed")
+                await connection.client`INSERT INTO mira_tool_receipts(id,run_id,call_id,tool,input_hash,state) VALUES (${crypto.randomUUID()},${runId},'legacy','synthetic','legacy','unknown')`;
+            legacy.push({ taskId, runId, conversationId });
+        }
+        const deletedTask = crypto.randomUUID(),
+            deletedChat = crypto.randomUUID(),
+            deletedRun = crypto.randomUUID();
+        await connection.client`INSERT INTO mira_conversations(id,owner,title) VALUES (${deletedChat},'operator','Deleted legacy task')`;
+        await connection.client`INSERT INTO mira_tasks(id,owner,title,description,status,assignee,priority,completion_criteria,conversation_id,deleted_at) VALUES (${deletedTask},'operator','Deleted task','','todo','mira','normal','',${deletedChat},now())`;
+        await connection.client`INSERT INTO mira_runs(id,owner,request_key,request_hash,conversation_id,user_message_id,assistant_message_id,state,priority,budget_seconds) SELECT ${deletedRun},owner,${deletedRun},request_hash,${deletedChat},user_message_id,assistant_message_id,'needs_attention',priority,budget_seconds FROM mira_runs WHERE id=${legacy[1]!.runId}`;
+        const conflicting = crypto.randomUUID();
+        await connection.client`INSERT INTO mira_tasks(id,owner,title,description,status,assignee,priority,completion_criteria,conversation_id) VALUES (${conflicting},'operator','Conflicting task','','todo','mira','normal','',${legacy[0]!.conversationId})`;
+        await rejects(
+            migrateDashboard(connection),
+            /Conflicting task conversation links/
+        );
+        await connection.client`UPDATE mira_tasks SET conversation_id=NULL WHERE id=${conflicting}`;
+        const competingConversation = crypto.randomUUID(),
+            competingRun = crypto.randomUUID();
+        await connection.client`INSERT INTO mira_conversations(id,owner,title) VALUES (${competingConversation},'operator','Legacy due-task work')`;
+        await connection.client`INSERT INTO mira_runs(id,owner,request_key,request_hash,conversation_id,user_message_id,assistant_message_id,task_id,state,priority,budget_seconds) SELECT ${competingRun},owner,${competingRun},request_hash,${competingConversation},user_message_id,assistant_message_id,${legacy[0]!.taskId},'queued',priority,budget_seconds FROM mira_runs WHERE id=${legacy[0]!.runId}`;
+        await rejects(migrateDashboard(connection), /Active task run collisions/);
+        const unadopted = await connection.client<
+            { taskId: string | null }[]
+        >`SELECT task_id AS "taskId" FROM mira_runs WHERE id=${legacy[0]!.runId}`;
+        expect(unadopted[0]?.taskId).toBeNull();
+        await connection.client`UPDATE mira_runs SET state='interrupted' WHERE id=${competingRun}`;
+
+        await migrateDashboard(connection);
+        await assertDashboardSchema(connection);
+        const [deletedAdoption] = await connection.client<
+            { taskId: string }[]
+        >`SELECT task_id AS "taskId" FROM mira_runs WHERE id=${deletedRun}`;
+        expect(deletedAdoption?.taskId).toBe(deletedTask);
+        await rejects(
+            connection.client.begin((query) =>
+                enqueueTurn(
+                    query,
+                    { owner: "operator", actor: "human:operator" },
+                    {
+                        conversationId: deletedChat,
+                        requestId: crypto.randomUUID(),
+                        text: "Continue",
+                        attachmentIds: [],
+                    }
+                )
+            ),
+            /deleted task/
+        );
+        for (const item of legacy) {
+            const [adopted] = await connection.client<
+                { taskId: string }[]
+            >`SELECT task_id AS "taskId" FROM mira_runs WHERE id=${item.runId}`;
+            expect(adopted?.taskId).toBe(item.taskId);
+            await rejects(
+                runMiraTask(
+                    {
+                        client: connection.client,
+                        owner: "operator",
+                        actor: "human:operator",
+                    },
+                    {
+                        id: item.taskId,
+                        version: 1,
+                        requestId: crypto.randomUUID(),
+                        instructions: "",
+                        reviewedRunId: null,
+                    }
+                ),
+                /current task run|uncertain run/
+            );
+        }
+        await migrateDashboard(connection);
+        expect(
+            await connection.client`SELECT column_name FROM information_schema.columns WHERE table_name='mira_runs' AND column_name='reviewed_run_id'`
+        ).toHaveLength(1);
+        expect(
+            await connection.client`SELECT indexname FROM pg_indexes WHERE tablename='mira_runs' AND indexname IN ('mira_runs_task','mira_runs_conversation','mira_runs_conversation_history','mira_runs_reviewed_run')`
+        ).toHaveLength(4);
+    } finally {
+        await connection.client.close();
+        await allocation.close();
+        await rm(prior, { recursive: true, force: true });
+    }
+});
+
+test("relinking cannot adopt a second active task run and shares the task admission lock", async () => {
+    const database = await fixture();
+    try {
+        const api = database.caller().mira;
+        const saved = await api.tasks.create(task);
+        const first = await api.tasks.run({
+            id: saved.id,
+            version: 1,
+            requestId: crypto.randomUUID(),
+        });
+        const chat = await api.conversations.create({ title: "Separate active work" });
+        const second = await api.conversations.send({
+            conversationId: chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Existing work",
+        });
+        const update = { ...task, id: saved.id, version: 2, conversationId: chat.id };
+        await rejects(api.tasks.update(update), /Stop or finish active work/);
+        const [unadopted] = await database.client<
+            { taskId: string | null }[]
+        >`SELECT task_id AS "taskId" FROM mira_runs WHERE id=${second.id}`;
+        expect(unadopted?.taskId).toBeNull();
+        await database.client.begin(async (query) => {
+            await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:task:operator:${saved.id}`},0))`;
+            await rejects(api.tasks.update(update), /Task admission is busy/);
+        });
+        await api.runs.cancel({ id: first.id });
+        await api.tasks.update(update);
+        const history = await api.tasks.execution({ id: saved.id });
+        expect(
+            history.rows
+                .filter((run) => ["queued", "running"].includes(run.state))
+                .map((run) => run.id)
+        ).toEqual([second.id]);
+    } finally {
+        await database.close();
+    }
+});
+
+test("every adopted uncertain outcome must be reviewed without scheduling intermediate work", async () => {
+    const database = await fixture();
+    try {
+        const api = database.caller().mira;
+        const chat = await api.conversations.create({
+            title: "Multiple uncertain outcomes",
+        });
+        const runs: string[] = [];
+        for (const state of ["needs_attention", "unknown receipt"]) {
+            const run = await api.conversations.send({
+                conversationId: chat.id,
+                requestId: crypto.randomUUID(),
+                text: state,
+            });
+            await api.runs.cancel(run);
+            await (state === "needs_attention"
+                ? database.client`UPDATE mira_runs SET state='needs_attention' WHERE id=${run.id}`
+                : database.client`INSERT INTO mira_tool_receipts(id,run_id,call_id,tool,input_hash,state) VALUES (${Bun.randomUUIDv7()},${run.id},'unknown','synthetic','synthetic','unknown')`);
+            runs.push(run.id);
+        }
+        const saved = await api.tasks.create({ ...task, conversationId: chat.id });
+        const newest = runs[1]!,
+            older = runs[0]!;
+        await rejects(
+            api.tasks.run({
+                id: saved.id,
+                version: 1,
+                requestId: crypto.randomUUID(),
+                reviewedRunId: newest,
+            }),
+            /Review every uncertain/
+        );
+        await rejects(
+            database
+                .caller("other")
+                .mira.tasks.reviewRun({ id: saved.id, version: 1, runId: newest }),
+            /not found/
+        );
+        await api.tasks.reviewRun({ id: saved.id, version: 1, runId: newest });
+        await api.tasks.reviewRun({ id: saved.id, version: 1, runId: newest });
+        const middle = await api.tasks.execution({ id: saved.id });
+        expect(middle.version).toBe(1);
+        expect(middle.reviewRunId).toBe(older);
+        expect(middle.rows).toHaveLength(2);
+        expect(
+            middle.rows.every((run) => !["queued", "running"].includes(run.state))
+        ).toBe(true);
+        await rejects(
+            api.tasks.run({ id: saved.id, version: 1, requestId: crypto.randomUUID() }),
+            /Review the uncertain/
+        );
+        await rejects(
+            api.tasks.reviewRun({ id: saved.id, version: 2, runId: older }),
+            /task changed/
+        );
+        await api.tasks.reviewRun({ id: saved.id, version: 1, runId: older });
+        const reviewed = await api.tasks.execution({ id: saved.id });
+        expect(reviewed.reviewRunId).toBeNull();
+        await api.tasks.update({
+            ...task,
+            id: saved.id,
+            version: 1,
+            conversationId: chat.id,
+            title: "Edited immediately after review",
+        });
+        const next = await api.tasks.run({
+            id: saved.id,
+            version: 2,
+            requestId: crypto.randomUUID(),
+        });
+        expect(next.conversationId).toBe(chat.id);
     } finally {
         await database.close();
     }
@@ -754,6 +1573,23 @@ test.each(["pause", "delete"])(
         }
     }
 );
+
+test("task admission never waits for a chat request lock while owning its conversation", async () => {
+    const database = await fixture();
+    try {
+        const api = database.caller().mira;
+        const chat = await api.conversations.create({ title: "Task request lock order" });
+        const saved = await api.tasks.create({ ...task, conversationId: chat.id });
+        const requestId = crypto.randomUUID();
+        await database.client.begin(async (query) => {
+            await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:request:operator:${requestId}`},0))`;
+            const run = await api.tasks.run({ id: saved.id, version: 1, requestId });
+            expect(run.conversationId).toBe(chat.id);
+        });
+    } finally {
+        await database.close();
+    }
+});
 
 test("conversation paging follows recent activity with stable microsecond cursors", async () => {
     const db = await fixture();

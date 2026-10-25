@@ -85,7 +85,7 @@ export async function decideMiraProposal(
         if (link.state === decision) return { state: decision };
         const [conversation] = await query<
             { id: string }[]
-        >`SELECT id FROM mira_conversations WHERE id=${link.conversationId} AND owner=${context.owner} AND deleted_at IS NULL FOR SHARE`;
+        >`SELECT id FROM mira_conversations WHERE id=${link.conversationId} AND owner=${context.owner} AND deleted_at IS NULL FOR UPDATE`;
         if (!conversation) {
             // A committed decision followed by deletion may have raced the first read.
             const completed = await readDecision();

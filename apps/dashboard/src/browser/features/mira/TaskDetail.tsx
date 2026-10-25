@@ -14,7 +14,7 @@ import {
     SectionHeader,
 } from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import {
     Pencil,
     Trash2,
@@ -30,7 +30,9 @@ import { useState } from "react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
+import { TaskExecution } from "./TaskExecution";
 import { taskStates, taskPriorityTone } from "./taskPresentation";
+import { TaskRunDialog } from "./TaskRunDialog";
 
 /**
  * Inspect task requirements and attributed progress without inventing execution state.
@@ -45,8 +47,13 @@ export function TaskDetail({
     readonly onEdit: () => void;
     readonly onClose: () => void;
 }) {
+    const navigate = useNavigate();
     const [progress, setProgress] = useState("");
     const [deleting, setDeleting] = useState(false);
+    const [starting, setStarting] = useState<{
+        version: number;
+        reviewRunId: string | null;
+    }>();
     const query = useInfiniteQuery({
         queryKey: ["operations", "mira", "task", task.id, "progress"],
         initialPageParam: undefined as string | undefined,
@@ -64,6 +71,23 @@ export function TaskDetail({
     const remove = useOperation(() =>
         api.mira.tasks.delete.mutate({ id: task.id, version: task.version })
     );
+    if (starting)
+        return (
+            <TaskRunDialog
+                id={task.id}
+                title={task.title}
+                version={starting.version}
+                reviewRunId={starting.reviewRunId}
+                onClose={() => setStarting(undefined)}
+                onStarted={(conversationId) => {
+                    onClose();
+                    void navigate({
+                        to: "/mira/$conversationId",
+                        params: { conversationId },
+                    });
+                }}
+            />
+        );
     if (deleting)
         return (
             <ConfirmDialog
@@ -151,6 +175,13 @@ export function TaskDetail({
                         <Markdown>{task.completionCriteria}</Markdown>
                     </section>
                 )}
+                <TaskExecution
+                    id={task.id}
+                    canStart={task.assignee === "mira" && task.status !== "done"}
+                    onStart={(version, reviewRunId) =>
+                        setStarting({ version, reviewRunId })
+                    }
+                />
                 <section className="space-y-3">
                     <SectionHeader title="Progress" icon={History} />
                     {query.data?.pages
