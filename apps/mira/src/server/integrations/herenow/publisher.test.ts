@@ -9,6 +9,7 @@ import {
 import * as v from "valibot";
 
 import { publicationProvider } from "../../testing/herenow";
+import { hereNowReadConfiguration } from "./configuration";
 import { HereNowPublisher } from "./publisher";
 
 const configuration = {
@@ -307,4 +308,58 @@ test("equivalent MIME casing and spacing still uploads the exact reviewed header
         call.url.hostname.endsWith(".r2.cloudflarestorage.com")
     )!;
     expect(upload.headers.get("content-type")).toBe(content.files[0]!.mediaType);
+});
+
+for (const displayName of ["Changed title", null])
+    test(`final publication must retain the reviewed title: ${displayName ?? "missing"}`, async () => {
+        const normal = publicationProvider(content);
+        const provider = publicationProvider(content, async (call) => {
+            if (
+                call.method !== "GET" ||
+                call.url.pathname !== "/api/v1/publish/synthetic-site"
+            )
+                return;
+            normal.state.current = "version-new";
+            const response = await normal.request(call.url.href);
+            const body = (await response.json()) as { displayName?: string };
+            if (displayName === null) delete body.displayName;
+            else body.displayName = displayName;
+            return Response.json(body);
+        });
+        await rejects(
+            new HereNowPublisher(configuration, provider.request).publish(
+                content,
+                [bytes],
+                signal,
+                guard,
+                progress
+            ),
+            /could not be verified/
+        );
+    });
+
+test("an empty optional publishing key preserves read-only and unprovisioned startup", () => {
+    const environment = {
+        HOMELAB_MIRA_HERENOW_OWNER: configuration.owner,
+        HOMELAB_MIRA_HERENOW_ACCOUNT_ID: configuration.accountId,
+        HOMELAB_MIRA_HERENOW_API_KEY: configuration.apiKey,
+        HOMELAB_MIRA_HERENOW_PUBLISH_API_KEY: "",
+    };
+    const { publishApiKey: _key, ...readOnly } = configuration;
+    expect(hereNowReadConfiguration(environment)).toEqual(readOnly);
+    expect(
+        hereNowReadConfiguration({ HOMELAB_MIRA_HERENOW_PUBLISH_API_KEY: "" })
+    ).toBeUndefined();
+    expect(() =>
+        hereNowReadConfiguration({
+            ...environment,
+            HOMELAB_MIRA_HERENOW_PUBLISH_API_KEY: "invalid",
+        })
+    ).toThrow();
+    expect(
+        hereNowReadConfiguration({
+            ...environment,
+            HOMELAB_MIRA_HERENOW_PUBLISH_API_KEY: configuration.publishApiKey,
+        })
+    ).toEqual(configuration);
 });

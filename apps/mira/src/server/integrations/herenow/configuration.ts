@@ -48,7 +48,7 @@ export function hereNowReadConfiguration(
 ): HereNowReadConfiguration | undefined {
     const binding = hereNowBinding(environment);
     const apiKey = environment.HOMELAB_MIRA_HERENOW_API_KEY;
-    const publishApiKey = environment.HOMELAB_MIRA_HERENOW_PUBLISH_API_KEY;
+    const publishApiKey = environment.HOMELAB_MIRA_HERENOW_PUBLISH_API_KEY || undefined;
     if (!apiKey && !publishApiKey) return;
     if (
         !binding ||

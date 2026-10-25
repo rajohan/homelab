@@ -249,6 +249,7 @@ export class HereNowPublisher {
         const verified = await this.reader.site(staged.slug, signal);
         if (
             verified.currentVersionId !== final.currentVersionId ||
+            verified.displayName !== content.title ||
             verified.access.mode !== "anyone_with_link" ||
             verified.manifest.length !== content.files.length ||
             verified.manifestTruncated ||

@@ -112,6 +112,7 @@ export function publicationProvider(
                 return Response.json({
                     slug,
                     status: "active",
+                    displayName: content.title,
                     currentVersionId: state.current,
                     pendingVersionId: state.pending,
                     updatedAt: "2026-10-25T00:00:00Z",
