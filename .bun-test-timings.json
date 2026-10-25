@@ -65,6 +65,7 @@
     "apps/mira/src/server/integrations/herenow/publisher.test.ts": 6,
     "apps/mira/src/server/integrations/moltbook/publisher.test.ts": 4,
     "apps/mira/src/server/integrations/daytona/client.test.ts": 57,
-    "apps/mira/src/server/integrations/daytona/toolbox.test.ts": 39
+    "apps/mira/src/server/integrations/daytona/toolbox.test.ts": 39,
+    "apps/mira/src/server/sandbox/sandbox.test.ts": 529
   }
 }

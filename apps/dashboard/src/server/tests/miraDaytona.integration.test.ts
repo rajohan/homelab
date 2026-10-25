@@ -1390,3 +1390,112 @@ test("late cleanup worker cannot overwrite operator resolution or delete after i
         await f.close();
     }
 });
+
+test("fixed Homelab check drafts bind attached patches and cannot start a sandbox", async () => {
+    const f = await fixture();
+    try {
+        const chat = await f.api.conversations.create({ title: "Check proposal" });
+        const patch = await saveMiraFile(f.context, f.directory, {
+            id: crypto.randomUUID(),
+            name: "changes.txt",
+            bytes: new TextEncoder().encode("reviewed patch"),
+        });
+        const unrelated = await saveMiraFile(f.context, f.directory, {
+            id: crypto.randomUUID(),
+            name: "unrelated.txt",
+            bytes: new TextEncoder().encode("unrelated"),
+        });
+        await f.api.conversations.send({
+            conversationId: chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Prepare a check",
+            attachmentIds: [patch.id],
+        });
+        const run = await claimMiraRun(f.client, crypto.randomUUID(), "foreground");
+        const tools = createMiraTools(
+            f.client,
+            run!,
+            f.directory,
+            undefined,
+            undefined,
+            undefined,
+            configuration
+        );
+        const tool = tools.find((entry) => entry.name === "mira_daytona_check_draft")!;
+        const input = {
+            id: crypto.randomUUID(),
+            version: 0,
+            commit: "a".repeat(40),
+            patchId: patch.id,
+        };
+        const call = {
+            callId: "fixed-profile",
+            threadId: "synthetic",
+            turnId: "synthetic",
+        };
+        expect(JSON.parse(await tool.execute(input, signal, call))).toMatchObject({
+            ok: true,
+        });
+        const job = await f.read(input.id);
+        expect(job).toMatchObject({
+            state: "draft",
+            phase: "idle",
+            conversationId: chat.id,
+        });
+        expect(job.content.command).toContain(
+            ` ${input.id} ${input.commit} ${new Bun.CryptoHasher("sha256").update("reviewed patch").digest("hex")}`
+        );
+        expect(job.content.inputs).toEqual([
+            {
+                id: patch.id,
+                sha256: new Bun.CryptoHasher("sha256")
+                    .update("reviewed patch")
+                    .digest("hex"),
+                name: "changes.txt",
+            },
+        ]);
+        expect(job.content.outputs).toEqual([
+            "check-result.json",
+            "check-log.txt",
+            "changes.txt",
+        ]);
+        for (const [name, changes] of Object.entries({
+            unselected: { patchId: unrelated.id },
+            malformed: { commit: "main; id" },
+            invalid: { commit: "b".repeat(39) },
+        })) {
+            expect(
+                JSON.parse(
+                    await tool.execute(
+                        { ...input, ...changes, id: crypto.randomUUID() },
+                        signal,
+                        { ...call, callId: name }
+                    )
+                )
+            ).toMatchObject({ ok: false });
+        }
+        expect(
+            JSON.parse(
+                await tool.execute(
+                    { ...input, id: crypto.randomUUID(), patchId: null },
+                    signal,
+                    { ...call, callId: "no-patch" }
+                )
+            )
+        ).toMatchObject({ ok: true });
+        await f.pause();
+        expect(
+            JSON.parse(
+                await tool.execute(
+                    { ...input, id: crypto.randomUUID(), patchId: null },
+                    signal,
+                    { ...call, callId: "paused-profile" }
+                )
+            )
+        ).toMatchObject({ ok: false });
+        const listed = await f.api.daytona.list({ conversationId: chat.id });
+        expect(listed.rows).toHaveLength(2);
+    } finally {
+        await f.close();
+    }
+});

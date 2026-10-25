@@ -45,7 +45,8 @@
         "test:integration:coverage": "bun scripts/test.ts integration-coverage",
         "test:integration:timings": "bun scripts/test.ts integration-timings",
         "test:inventory": "bun scripts/testing/inventory.ts",
-        "test:coverage:check": "bun scripts/testing/coverage.ts"
+        "test:coverage:check": "bun scripts/testing/coverage.ts",
+        "test:daytona": "bun --no-env-file apps/mira/src/server/testing/daytonaSmoke.ts"
     },
     "devDependencies": {
         "@happy-dom/global-registrator": "21.0.4",

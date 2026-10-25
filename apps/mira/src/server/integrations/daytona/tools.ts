@@ -11,7 +11,18 @@ import { MiraFailure, type MiraContext } from "../../data/context";
 import { listMiraDaytona, readMiraDaytona, saveMiraDaytona } from "../../data/daytona";
 import type { MiraClaim } from "../../data/queue";
 import type { RuntimeTool } from "../../runtime/protocol";
+import { daytonaCheckContent, daytonaCheckSchema } from "../../sandbox/profile";
 import type { DaytonaBinding } from "./configuration";
+
+type DaytonaTool = Omit<RuntimeTool, "execute"> & {
+    automatic: boolean;
+    transactional?: boolean;
+    action: (
+        input: unknown,
+        signal: AbortSignal,
+        context?: MiraContext
+    ) => Promise<unknown>;
+};
 
 /**
  * Expose local cloud proposals and owned results without granting model execution or spending authority.
@@ -24,21 +35,13 @@ export function createDaytonaTools(
     client: SQL,
     run: MiraClaim,
     configuration?: DaytonaBinding
-): (Omit<RuntimeTool, "execute"> & {
-    automatic: boolean;
-    transactional?: boolean;
-    action: (
-        input: unknown,
-        signal: AbortSignal,
-        context?: MiraContext
-    ) => Promise<unknown>;
-})[] {
+): DaytonaTool[] {
     const context = { client, owner: run.owner, actor: "mira" };
     const inputFile = v.strictObject({
         id: idSchema,
         name: v.pipe(v.string(), v.maxLength(160)),
     });
-    return [
+    const tools: DaytonaTool[] = [
         {
             name: "mira_daytona_jobs",
             automatic: true,
@@ -191,4 +194,71 @@ export function createDaytonaTools(
             },
         },
     ];
+    const draft = tools.find((tool) => tool.name === "mira_daytona_draft")!;
+    tools.push({
+        name: "mira_daytona_check_draft",
+        automatic: false,
+        transactional: true,
+        description:
+            "Prepare the fixed Homelab verification profile for one exact public commit and an optional attached unified patch text file. The qualified snapshot runs Bun 1.4.4, frozen install, checks, tests, build and smoke tests using isolated PostgreSQL. Results are untrusted report/log/patch files in Cloud jobs. No arbitrary repository, credentials, GitHub writes, approval or spending. The operator must review and start the draft. This profile requires the Homelab check snapshot; do not assume an ordinary Bun image contains it.",
+        inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            required: ["id", "version", "commit", "patchId"],
+            properties: {
+                id: { type: "string" },
+                version: { type: "integer", minimum: 0 },
+                commit: { type: "string", pattern: "^[a-f0-9]{40}$" },
+                patchId: { type: ["string", "null"] },
+            },
+        },
+        action: async (input, signal, owned) => {
+            signal.throwIfAborted();
+            if (!owned?.transaction)
+                throw new MiraFailure(
+                    "FORBIDDEN",
+                    "Cloud drafts require the owned tool transaction."
+                );
+            const parsed = v.parse(
+                v.strictObject({
+                    id: idSchema,
+                    version: miraDaytonaSaveSchema.entries.version,
+                    commit: daytonaCheckSchema.entries.commit,
+                    patchId: v.nullable(idSchema),
+                }),
+                input
+            );
+            let patch: { id: string; sha256: string } | undefined;
+            if (parsed.patchId) {
+                const [file] = await owned.transaction<
+                    { sha256: string }[]
+                >`SELECT sha256 FROM mira_attachments a WHERE a.id=${parsed.patchId} AND a.owner=${run.owner} AND a.ready_at IS NOT NULL AND a.deleted_at IS NULL AND a.bytes BETWEEN 1 AND 1048576 AND EXISTS(SELECT 1 FROM mira_messages m WHERE m.conversation_id=${run.conversationId} AND m.attachment_ids @> ${JSON.stringify([parsed.patchId])}::text::jsonb)`;
+                if (!file)
+                    throw new MiraFailure(
+                        "FORBIDDEN",
+                        "Attach the selected patch to this conversation before proposing cloud export."
+                    );
+                patch = { id: parsed.patchId, sha256: file.sha256 };
+            }
+            const content = daytonaCheckContent(
+                {
+                    id: parsed.id,
+                    commit: parsed.commit,
+                    patchSha256: patch?.sha256 ?? null,
+                },
+                patch
+            );
+            return draft.action(
+                {
+                    id: parsed.id,
+                    version: parsed.version,
+                    ...content,
+                    inputs: content.inputs.map(({ id, name }) => ({ id, name })),
+                },
+                signal,
+                owned
+            );
+        },
+    });
+    return tools;
 }
