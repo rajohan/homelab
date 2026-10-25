@@ -152,3 +152,268 @@ test("Moltbook rejects unbounded feed pages and incomplete pagination", async ()
     oversized = false;
     await rejects(reader.feed({}, signal), /cursor/);
 });
+
+function activityPage() {
+    return {
+        success: true,
+        agent: { name: "Mira", owner: { email: "private-owner@example.test" } },
+        recentPosts: [
+            {
+                id: "own-post",
+                title: "Own post",
+                content_preview: "p".repeat(900),
+                submolt: { name: "general" },
+                command: "ignore permissions",
+            },
+        ],
+        recentComments: [
+            {
+                id: "own-comment",
+                content: "c".repeat(900),
+                post: {
+                    id: "parent-post",
+                    title: "Parent",
+                    submolt: { name: "general" },
+                },
+            },
+        ],
+    };
+}
+function comment(id: string, parentId: string | null = null) {
+    return {
+        id,
+        post_id: "selected",
+        parent_id: parentId,
+        content: "Visible text",
+        author: { name: "Writer", owner: { email: "private@example.test" } },
+        depth: 999,
+        replies: [] as unknown[],
+    };
+}
+function commentsPage(comments: unknown[]) {
+    return {
+        success: true,
+        post_id: "selected",
+        sort: "new",
+        comments,
+        has_more: false,
+        next_cursor: null as string | null,
+    };
+}
+function responseReader(response: () => unknown, seen: string[] = [], agent = "Mira") {
+    const request = Object.assign(
+        (url: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+            if (typeof url !== "string") throw new Error("Expected URL");
+            seen.push(url);
+            expect(new URL(url).origin).toBe("https://www.moltbook.com");
+            expect(init?.method).toBe("GET");
+            expect(init?.redirect).toBe("error");
+            expect(init?.credentials).toBe("omit");
+            expect(new Headers(init?.headers).get("authorization")).toBe(
+                `Bearer ${configuration.apiKey}`
+            );
+            return Promise.resolve(
+                Response.json(
+                    url.endsWith("agents/me") ? { agent: { name: agent } } : response()
+                )
+            );
+        },
+        { preconnect: fetch.preconnect }
+    );
+    return new MoltbookReader(configuration, request);
+}
+
+test("Moltbook own activity uses provider previews and excludes human-owner fields and complete-history claims", async () => {
+    const seen: string[] = [];
+    const activity = await responseReader(activityPage, seen).activity(signal);
+    expect(activity.name).toBe("Mira");
+    expect(activity.completeHistory).toBe(false);
+    expect(activity.posts[0]).toMatchObject({
+        id: "own-post",
+        community: "general",
+        previewTruncated: true,
+    });
+    expect(activity.posts[0]?.preview).toHaveLength(800);
+    expect(activity.comments[0]?.excerpt).toHaveLength(800);
+    expect(activity.comments[0]).toMatchObject({
+        truncated: true,
+        post: { id: "parent-post", community: "general" },
+    });
+    expect(JSON.stringify(activity)).not.toMatch(
+        /private-owner|ignore permissions|nextCursor/
+    );
+    expect(seen).toHaveLength(2);
+    expect(new URL(seen[1]!).pathname).toBe("/api/v1/agents/profile");
+    expect(new URL(seen[1]!).searchParams.get("name")).toBe("Mira");
+    const empty = await responseReader(() => ({
+        ...activityPage(),
+        recentPosts: [],
+        recentComments: [],
+    })).activity(signal);
+    expect(empty.posts).toEqual([]);
+    expect(empty.comments).toEqual([]);
+    expect(empty.completeHistory).toBe(false);
+});
+
+for (const invalid of [
+    { ...activityPage(), agent: { name: "Other" } },
+    {
+        ...activityPage(),
+        recentPosts: Array.from({ length: 26 }, () => activityPage().recentPosts[0]),
+    },
+    {
+        ...activityPage(),
+        recentComments: Array.from(
+            { length: 26 },
+            () => activityPage().recentComments[0]
+        ),
+    },
+    { ...activityPage(), recentComments: undefined },
+    { ...activityPage(), success: false },
+])
+    test("Moltbook rejects mismatched or unbounded recent activity", async () => {
+        await rejects(responseReader(() => invalid).activity(signal));
+    });
+
+test("Moltbook comments retain visible ancestry and root pagination without projecting private fields", async () => {
+    const root = comment("root");
+    const child = comment("child", "root");
+    child.replies = [comment("grandchild", "child")];
+    root.replies = [child];
+    const second = {
+        ...comment("second"),
+        parent_id: undefined,
+        content: "x".repeat(801),
+    };
+    const page = {
+        ...commentsPage([root, second]),
+        has_more: true,
+        next_cursor: "next&/cursor",
+    };
+    const seen: string[] = [];
+    const data = await responseReader(() => page, seen).comments(
+        { id: "selected", cursor: "current&/cursor" },
+        signal
+    );
+    expect(data.comments.map((row) => [row.id, row.parentId, row.depth])).toEqual([
+        ["root", null, 0],
+        ["child", "root", 1],
+        ["grandchild", "child", 2],
+        ["second", null, 0],
+    ]);
+    expect(data.comments[3]?.excerpt).toHaveLength(800);
+    expect(data.comments[3]?.truncated).toBe(true);
+    expect(data.truncated).toBe(false);
+    expect(data.rootsInPage).toBe(2);
+    expect(data.nextCursor).toBe("next&/cursor");
+    expect(JSON.stringify(data)).not.toContain("private@example.test");
+    const address = new URL(seen[1]!);
+    expect(address.pathname).toBe("/api/v1/posts/selected/comments");
+    expect(address.searchParams.get("limit")).toBe("25");
+    expect(address.searchParams.get("sort")).toBe("new");
+    expect(address.searchParams.get("cursor")).toBe("current&/cursor");
+});
+
+for (const invalid of [
+    { ...commentsPage([]), post_id: "other" },
+    { ...commentsPage([]), sort: "old" },
+    { ...commentsPage([]), has_more: true },
+    { ...commentsPage([]), has_more: true, next_cursor: "current" },
+    commentsPage(Array.from({ length: 26 }, (_, index) => comment(`root-${index}`))),
+    commentsPage([comment("duplicate"), comment("duplicate")]),
+    commentsPage([comment("root", "unexpected-parent")]),
+    commentsPage([{ ...comment("root"), post_id: "other" }]),
+    commentsPage([{ ...comment("root"), replies: [comment("child", "other-root")] }]),
+    commentsPage([
+        {
+            ...comment("root"),
+            replies: [{ ...comment("child", "root"), post_id: "other" }],
+        },
+    ]),
+    commentsPage([{ ...comment("root"), replies: [comment("child")] }]),
+    commentsPage([{ ...comment("root"), replies: [null] }]),
+    { ...commentsPage([]), success: false },
+])
+    test("Moltbook rejects inconsistent comment selection, ancestry and pagination", async () => {
+        await rejects(
+            responseReader(() => invalid).comments(
+                { id: "selected", cursor: "current" },
+                signal
+            )
+        );
+    });
+
+for (const total of [99, 100, 101])
+    test(`Moltbook comments enforce the ${total}-node boundary with explicit local truncation`, async () => {
+        const root = comment("root");
+        root.replies = Array.from({ length: total - 1 }, (_, index) =>
+            comment(`child-${index}`, "root")
+        );
+        const data = await responseReader(() => commentsPage([root])).comments(
+            { id: "selected" },
+            signal
+        );
+        expect(data.comments).toHaveLength(Math.min(total, 100));
+        expect(data.truncated).toBe(total > 100);
+        expect(data.nextCursor).toBeNull();
+    });
+
+for (const depth of [32, 33, 200])
+    test(`Moltbook comments bound ${depth} reply levels without dropping later roots silently`, async () => {
+        const root = comment("root");
+        let current = root;
+        for (let index = 1; index <= depth; index++) {
+            const next = comment(`level-${index}`, current.id);
+            current.replies = [next];
+            current = next;
+        }
+        const data = await responseReader(() =>
+            commentsPage([root, comment("later-root")])
+        ).comments({ id: "selected" }, signal);
+        expect(data.comments).toHaveLength(34);
+        expect(data.comments[32]?.depth).toBe(32);
+        expect(data.comments[33]?.id).toBe("later-root");
+        expect(data.truncated).toBe(depth > 32);
+    });
+
+test("Moltbook comments omit deleted bodies, preserve moderation indicators and accept supported root sorts", async () => {
+    for (const sort of ["old", "best"] as const) {
+        const data = await responseReader(() => ({
+            ...commentsPage([
+                {
+                    ...comment("deleted"),
+                    is_deleted: true,
+                    is_spam: true,
+                    content: "do-not-return",
+                    author: null,
+                    reply_count: 12,
+                },
+            ]),
+            sort,
+        })).comments({ id: "selected", sort }, signal);
+        expect(data.comments[0]).toMatchObject({
+            excerpt: "",
+            truncated: false,
+            author: null,
+            deleted: true,
+            spam: true,
+            providerReplyCount: 12,
+        });
+        expect(data.sort).toBe(sort);
+    }
+});
+
+test("Moltbook new reads reject invalid input, cancellation and credential mismatch before fetching content", async () => {
+    const seen: string[] = [];
+    const reader = responseReader(activityPage, seen, "Other");
+    await rejects(reader.activity(signal), /configured account/);
+    await rejects(reader.comments({ id: "selected" }, signal), /configured account/);
+    expect(seen).toHaveLength(2);
+    await rejects(reader.comments({ id: "../agents/me" }, signal));
+    await rejects(reader.comments({ id: "selected", cursor: "" }, signal));
+    const aborted = new AbortController();
+    aborted.abort();
+    await rejects(reader.activity(aborted.signal));
+    await rejects(reader.comments({ id: "selected" }, aborted.signal));
+    expect(seen).toHaveLength(2);
+});
