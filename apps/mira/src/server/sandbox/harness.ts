@@ -6,8 +6,9 @@ import * as v from "valibot";
 import { sandboxProfileEnvironment } from "../config/environment";
 import {
     daytonaCheckProfile,
-    daytonaCheckSchema,
-    type DaytonaCheckRequest,
+    daytonaSandboxSchema,
+    parseDaytonaArguments,
+    type DaytonaSandboxRequest,
 } from "./profile";
 import { executeDaytonaChecks } from "./workflow";
 
@@ -18,14 +19,14 @@ import { executeDaytonaChecks } from "./workflow";
  * @returns Nonzero when preparation, any required check, result recovery or local database cleanup fails.
  */
 export async function runDaytonaChecks(
-    request: DaytonaCheckRequest,
+    request: DaytonaSandboxRequest,
     stopping: AbortSignal
 ): Promise<number> {
-    const input = v.parse(daytonaCheckSchema, request);
+    const input = v.parse(daytonaSandboxSchema, request);
     if (
         process.platform !== "linux" ||
         process.getuid?.() === 0 ||
-        sandboxProfileEnvironment() !== "homelab-check-v1" ||
+        sandboxProfileEnvironment() !== "homelab-check-v2" ||
         Bun.version !== daytonaCheckProfile.bunVersion
     )
         throw new Error(
@@ -50,14 +51,7 @@ export async function runDaytonaChecks(
  * @returns Completion with the check result as process exit status.
  */
 export async function main(): Promise<void> {
-    const [id, commit, patchSha256, ...extra] = process.argv.slice(2);
-    if (extra.length > 0)
-        throw new Error("Expected job UUID, public commit and optional patch SHA-256.");
-    const input = v.parse(daytonaCheckSchema, {
-        id,
-        commit,
-        patchSha256: patchSha256 ?? null,
-    });
+    const input = parseDaytonaArguments(process.argv.slice(2));
     const controller = new AbortController();
     const stop = () => controller.abort();
     process.once("SIGTERM", stop);

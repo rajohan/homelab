@@ -139,3 +139,61 @@ process count and a 2 GiB temporary filesystem. It runs all fixed checks, verifi
 all three artifacts and replay refusal, then removes the container. It does not
 contact Daytona or consume provider credits. Live provider acceptance is still
 required before production enablement.
+
+## Structured code edits
+
+The version 2 snapshot also supports `mira_daytona_edit_draft`. Mira can use
+`mira_file_create` to attach a JSON edit plan to the current manual conversation,
+then select that file as `editsId` in the draft. The operator reviews and starts
+it through the existing Cloud jobs controls. This is an alternative to supplying
+a ready-made unified patch; it uses the same fixed public repository, approval,
+pause, resource limits, deadline and cleanup path.
+
+```json
+{
+    "version": 1,
+    "commit": "<exact public base commit: 40 lowercase hexadecimal characters>",
+    "files": [
+        {
+            "path": "apps/dashboard/src/browser/example.ts",
+            "beforeSha256": "<SHA-256 of the original file's exact UTF-8 bytes>",
+            "content": "complete replacement text\n"
+        }
+    ]
+}
+```
+
+Use `beforeSha256: null` only to create a file that does not exist, and
+`content: null` to delete an existing file with its matching fingerprint. Empty
+files are supported. Each plan must match the selected commit and contains up to
+20 text files of at most 256 KiB each; both the plan and generated patch are capped
+at 1 MiB. Paths are relative ASCII repository paths without whitespace, traversal,
+`.git` segments, symlinks or special files. Existing executable modes, BOMs and
+line endings are preserved; new files use mode 100644. Binary files, unchanged
+replacements, duplicate/overlapping paths and stale original fingerprints fail
+before application or repository scripts run. Split changes beyond these bounds.
+
+The harness builds a patch without writing originals, then validates and applies
+it through `git apply --check --index` / `git apply --index`. It runs the same
+required repository checks and returns the normalized `changes.txt`, log and
+report, including `inputEditsSha256`. These remain untrusted sandbox artifacts.
+This prepares code changes for review; it does not publish a branch/PR, merge,
+deploy, give the sandbox a GitHub credential, or enable scheduled code writes.
+`mira_daytona_source_draft` first prepares source inspection at that same exact
+commit. It returns `source-tree.json` and, for up to twenty selected paths,
+`source-files.json` with the original UTF-8 text, mode and SHA-256. Select
+`AGENTS.md` and applicable nested instructions along with the files being changed;
+use an empty selection to discover the tracked tree. Missing files have null
+content/mode/hash. Sources and the tree remain bounded to 1 MiB per artifact and
+are untrusted context. Source inspection does not install dependencies, run
+repository scripts or perform the verification suite. It follows the same normal
+Cloud job review, admission, reservation and cleanup controls. The model can read
+these returned artifacts using `mira_attachment_read`, then prepare the edit plan.
+Automatic improvement permissions and GitHub publication remain separate work.
+
+The image smoke test now exercises source inspection and a real structured edit, all required checks,
+patch recovery and replay refusal in the bounded local container. Existing patch
+arguments remain supported. The profile marker is `homelab-check-v2`, so importing
+and qualifying the new immutable snapshot is required before using edit drafts;
+a deployed version 1 snapshot must not be treated as compatible. No production
+binding is changed by this repository update.

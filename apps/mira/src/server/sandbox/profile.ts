@@ -1,20 +1,44 @@
 import type { MiraDaytonaContent } from "@homelab/contracts/miraDaytona";
 import * as v from "valibot";
 
+import { sandboxPathSchema } from "./edits";
+
 export const daytonaCheckSchema = v.strictObject({
     id: v.pipe(v.string(), v.uuid()),
     commit: v.pipe(v.string(), v.regex(/^[a-f0-9]{40}$/)),
     patchSha256: v.nullable(v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/))),
 });
 export type DaytonaCheckRequest = v.InferOutput<typeof daytonaCheckSchema>;
+export const daytonaEditSchema = v.strictObject({
+    id: daytonaCheckSchema.entries.id,
+    commit: daytonaCheckSchema.entries.commit,
+    editsSha256: v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/)),
+});
+export const daytonaSourceSchema = v.strictObject({
+    id: daytonaCheckSchema.entries.id,
+    commit: daytonaCheckSchema.entries.commit,
+    paths: v.pipe(v.array(sandboxPathSchema), v.maxLength(20)),
+});
+export const daytonaSandboxSchema = v.union([
+    daytonaCheckSchema,
+    daytonaEditSchema,
+    daytonaSourceSchema,
+]);
+export type DaytonaSandboxRequest = v.InferOutput<typeof daytonaSandboxSchema>;
 export const daytonaCheckProfile = Object.freeze({
-    version: 1,
+    version: 2,
     repository: "https://github.com/rajohan/homelab.git",
     bunVersion: "1.4.4",
     executable: "/opt/homelab/daytona-check.js",
     minutes: 10,
     collectionSeconds: 120,
     outputs: ["check-result.json", "check-log.txt", "changes.txt"],
+    sourceOutputs: [
+        "check-result.json",
+        "check-log.txt",
+        "source-files.json",
+        "source-tree.json",
+    ],
 });
 
 /**
@@ -51,4 +75,61 @@ export function daytonaCheckMinimumLifetime(command: string): number {
         ? (daytonaCheckProfile.minutes * 60 + daytonaCheckProfile.collectionSeconds) *
               1000
         : 30_000;
+}
+
+/**
+ * Bind one immutable edit plan to the fixed sandbox and normal operator review.
+ * @param request - Attempt, public commit and selected edit-plan digest.
+ * @param edits - Authorized conversation attachment, never host files or inline shell input.
+ * @returns Ordinary cloud draft; no execution or GitHub publication is authorized.
+ */
+export function daytonaEditContent(
+    request: v.InferOutput<typeof daytonaEditSchema>,
+    edits: { id: string; sha256: string }
+): MiraDaytonaContent {
+    const parsed = v.parse(daytonaEditSchema, request);
+    if (edits.sha256 !== parsed.editsSha256)
+        throw new Error("Edit plan digest does not match the selected input.");
+    return {
+        title: `Edit and check Homelab ${parsed.commit.slice(0, 12)}`,
+        command: `bun --no-env-file ${daytonaCheckProfile.executable} ${parsed.id} ${parsed.commit} --edits ${parsed.editsSha256}`,
+        inputs: [{ ...edits, name: "edits.json" }],
+        outputs: [...daytonaCheckProfile.outputs],
+    };
+}
+
+/**
+ * Parse the fixed entry-point arguments without ambiguous modes or extra parameters.
+ * @param args - Positional arguments after the executable.
+ * @returns An exact patch, structured edit or source-only request.
+ */
+export function parseDaytonaArguments(args: string[]): DaytonaSandboxRequest {
+    const [id, commit, mode, digest] = args;
+    if (mode === "--source")
+        return v.parse(daytonaSourceSchema, { id, commit, paths: args.slice(3) });
+    if (args.length === 4 && mode === "--edits")
+        return v.parse(daytonaEditSchema, { id, commit, editsSha256: digest });
+    if (args.length === 2 || args.length === 3)
+        return v.parse(daytonaCheckSchema, { id, commit, patchSha256: mode ?? null });
+    throw new Error(
+        "Expected job UUID, commit and optional patch digest, --edits digest or --source paths."
+    );
+}
+
+/**
+ * Prepare exact public source inspection through the existing operator-reviewed cloud path.
+ * @param request - Durable attempt, public commit and up to twenty selected text paths.
+ * @returns A fixed command with visible, validated single-quoted paths and no execution authority.
+ */
+export function daytonaSourceContent(
+    request: v.InferOutput<typeof daytonaSourceSchema>
+): MiraDaytonaContent {
+    const parsed = v.parse(daytonaSourceSchema, request);
+    const selection = parsed.paths.map((name) => ` '${name}'`).join("");
+    return {
+        title: `Inspect Homelab ${parsed.commit.slice(0, 12)}`,
+        command: `bun --no-env-file ${daytonaCheckProfile.executable} ${parsed.id} ${parsed.commit} --source${selection}`,
+        inputs: [],
+        outputs: [...daytonaCheckProfile.sourceOutputs],
+    };
 }
