@@ -1,0 +1,1 @@
+ALTER TABLE "mira_mail_drafts" ADD COLUMN "retry_after" timestamp with time zone;

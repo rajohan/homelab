@@ -3,6 +3,8 @@ import {
     miraMailContentSchema,
     type MiraMailApprove,
     miraMailInputSchema,
+    miraMailReplySchema,
+    type MiraMailReply,
     type MiraMailContent,
     type MiraMailDraft,
     type MiraMailSave,
@@ -55,7 +57,7 @@ async function readDraft(
 ): Promise<MiraMailDraft> {
     const [row] = await query<
         MiraMailDraft[]
-    >`SELECT id,inbox_id AS "inboxId",version,state,content,content_hash AS "contentHash",conversation_id AS "conversationId",message,provider_message_id AS "providerMessageId",created_at::text AS "createdAt",updated_at::text AS "updatedAt" FROM mira_mail_drafts WHERE id=${id} AND owner=${owner}`;
+    >`SELECT id,inbox_id AS "inboxId",version,state,content,content_hash AS "contentHash",conversation_id AS "conversationId",message,provider_message_id AS "providerMessageId",provider_thread_id AS "providerThreadId",created_at::text AS "createdAt",updated_at::text AS "updatedAt" FROM mira_mail_drafts WHERE id=${id} AND owner=${owner}`;
     if (!row) throw new MiraFailure("NOT_FOUND", "Mail draft not found.");
     return row;
 }
@@ -65,15 +67,20 @@ async function readDraft(
  * @param context - Human owner or fenced transactional assistant tool context.
  * @param input - Stable draft identity, expected version and complete proposed content.
  * @param binding - Provisioned inbox; rebinding never silently moves an existing draft.
+ * @param trustedReply - Optional server-read thread reference for a new reply; public draft input cannot supply it.
  * @returns Saved draft; an identical create retry returns the original record.
  */
 export async function saveMiraMail(
     context: MiraContext,
     input: MiraMailSave,
-    binding?: AgentMailBinding
+    binding?: AgentMailBinding,
+    trustedReply?: MiraMailReply
 ): Promise<MiraMailDraft> {
     const configured = bindingFor(context, binding);
     const proposed = v.parse(miraMailInputSchema, input.content);
+    const verifiedReply = trustedReply
+        ? v.parse(miraMailReplySchema, trustedReply)
+        : undefined;
     const bindingHash = agentMailBindingHash(configured);
     return miraTransaction(context, async (query) => {
         await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:mail:${context.owner}:${input.id}`},0))`;
@@ -87,6 +94,9 @@ export async function saveMiraMail(
                 conversationId: string | null;
             }[]
         >`SELECT owner,version,state,content,binding_hash AS binding,conversation_id AS "conversationId" FROM mira_mail_drafts WHERE id=${input.id} FOR UPDATE`;
+        const previousReply = existing?.content.reply
+            ? v.parse(miraMailReplySchema, existing.content.reply)
+            : undefined;
         if (existing) {
             if (existing.owner !== context.owner)
                 throw new MiraFailure("NOT_FOUND", "Mail draft not found.");
@@ -107,6 +117,8 @@ export async function saveMiraMail(
                         ...proposed,
                         attachmentIds: proposed.attachmentIds ?? [],
                     }) &&
+                JSON.stringify(previousReply ?? null) ===
+                    JSON.stringify(verifiedReply ?? null) &&
                 existing.binding === bindingHash &&
                 existing.conversationId === input.conversationId
             )
@@ -122,6 +134,21 @@ export async function saveMiraMail(
                 );
         } else if (input.version !== 0)
             throw new MiraFailure("NOT_FOUND", "Mail draft not found.");
+        if (
+            existing &&
+            verifiedReply &&
+            JSON.stringify(previousReply ?? null) !== JSON.stringify(verifiedReply)
+        )
+            throw new MiraFailure(
+                "CONFLICT",
+                "A reply cannot be moved to another email thread."
+            );
+        const reply = previousReply ?? verifiedReply;
+        if (existing?.content.reply && proposed.subject !== existing.content.subject)
+            throw new MiraFailure(
+                "BAD_REQUEST",
+                "The subject of a reply follows its original email thread."
+            );
         // Existing owned drafts remain editable after their source chat is deleted.
         // New or changed links still require an active owned conversation.
         if (!existing || existing.conversationId !== input.conversationId)
@@ -135,6 +162,7 @@ export async function saveMiraMail(
         const { attachmentIds: _ids, ...message } = proposed;
         const content: MiraMailContent = {
             ...message,
+            ...(reply ? { reply } : {}),
             ...(attachments.length > 0 ? { attachments } : {}),
         };
         const hash = miraMailHash(content);
@@ -158,7 +186,7 @@ export async function listMiraMail(
 ) {
     const rows = await context.client<
         MiraMailDraft[]
-    >`SELECT id,inbox_id AS "inboxId",version,state,content,content_hash AS "contentHash",conversation_id AS "conversationId",message,provider_message_id AS "providerMessageId",created_at::text AS "createdAt",updated_at::text AS "updatedAt" FROM mira_mail_drafts WHERE owner=${context.owner} AND (${filter.before ?? null}::uuid IS NULL OR (created_at,id)<(SELECT created_at,id FROM mira_mail_drafts WHERE id=${filter.before ?? null}::uuid AND owner=${context.owner})) AND (${filter.conversationId ?? null}::uuid IS NULL OR conversation_id=${filter.conversationId ?? null}::uuid) ORDER BY created_at DESC,id DESC LIMIT 20`;
+    >`SELECT id,inbox_id AS "inboxId",version,state,content,content_hash AS "contentHash",conversation_id AS "conversationId",message,provider_message_id AS "providerMessageId",provider_thread_id AS "providerThreadId",created_at::text AS "createdAt",updated_at::text AS "updatedAt" FROM mira_mail_drafts WHERE owner=${context.owner} AND (${filter.before ?? null}::uuid IS NULL OR (created_at,id)<(SELECT created_at,id FROM mira_mail_drafts WHERE id=${filter.before ?? null}::uuid AND owner=${context.owner})) AND (${filter.conversationId ?? null}::uuid IS NULL OR conversation_id=${filter.conversationId ?? null}::uuid) ORDER BY created_at DESC,id DESC LIMIT 20`;
     return { rows, nextCursor: rows.length === 20 ? rows.at(-1)!.id : null };
 }
 
@@ -199,6 +227,17 @@ export async function approveMiraMail(
             throw new MiraFailure(
                 "CONFLICT",
                 "The email changed. Review the current recipients and content before sending."
+            );
+        const reviewedReply = input.reviewedReply
+            ? v.parse(miraMailReplySchema, input.reviewedReply)
+            : null;
+        const reply = row.content.reply
+            ? v.parse(miraMailReplySchema, row.content.reply)
+            : null;
+        if (JSON.stringify(reviewedReply) !== JSON.stringify(reply))
+            throw new MiraFailure(
+                "CONFLICT",
+                "Reload the dashboard and review the original reply context before sending."
             );
         const attachments = row.content.attachments ?? [];
         if (
@@ -253,7 +292,7 @@ export async function approveMiraMail(
         const [control] = await query<
             { version: number }[]
         >`SELECT version FROM mira_switches WHERE owner=${context.owner} AND key='integration:agentmail'`;
-        await query`UPDATE mira_mail_drafts SET state='queued',message=NULL,approved_version=version,approved_by=${context.actor},approved_at=now(),control_version=${control!.version},version=version+1,updated_at=now() WHERE id=${input.id}`;
+        await query`UPDATE mira_mail_drafts SET state='queued',message=NULL,retry_after=NULL,approved_version=version,approved_by=${context.actor},approved_at=now(),control_version=${control!.version},version=version+1,updated_at=now() WHERE id=${input.id}`;
         await auditMira(query, context, "mail.send_approved", input.id);
         return readDraft(query, context.owner, input.id);
     });

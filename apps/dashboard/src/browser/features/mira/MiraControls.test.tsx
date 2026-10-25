@@ -679,6 +679,7 @@ test("email review displays every destination and retries only the same approved
                 id: draft.id,
                 version: 3,
                 contentHash: draft.contentHash,
+                reviewedReply: draft.content.reply ?? null,
                 reviewedAttachments: draft.content.attachments,
             }))
         );
@@ -893,6 +894,51 @@ test.each([true, false])(
         }
     }
 );
+
+test("reply editing preserves the subject and review shows the original thread and sender", () => {
+    const draft: MiraMailDraft = {
+        id: crypto.randomUUID(),
+        inboxId: "mira@example.test",
+        version: 1,
+        state: "draft",
+        contentHash: "a".repeat(64),
+        conversationId: null,
+        message: null,
+        providerMessageId: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        content: {
+            to: ["recipient@example.test"],
+            cc: [],
+            bcc: [],
+            subject: "Original subject",
+            text: "Reply text",
+            reply: {
+                messageId: "original-message",
+                threadId: "original-thread",
+                from: "Original sender <sender@example.test>",
+                subject: "Full original thread subject",
+            },
+        },
+    };
+    let cleanup = fixture(<MailEditor draft={draft} onClose={() => {}} />);
+    try {
+        expect(screen.getByLabelText("Subject")).toHaveAttribute("readonly");
+        expect(
+            screen.getByText("Replies keep the original email thread and subject.")
+        ).toBeInTheDocument();
+        cleanup();
+        cleanup = fixture(<MailReview draft={draft} onClose={() => {}} />);
+        expect(screen.getByText("Full original thread subject")).toBeInTheDocument();
+        expect(
+            screen.getByText("Original sender <sender@example.test>")
+        ).toBeInTheDocument();
+        expect(screen.getByText("recipient@example.test")).toBeInTheDocument();
+    } finally {
+        cleanup();
+    }
+});
+
 test("the AgentMail adapter makes its event trigger available in the automation editor", async () => {
     const cleanup = fixture(<AutomationEditor agentMailAvailable onClose={() => {}} />);
     try {

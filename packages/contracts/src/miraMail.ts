@@ -30,9 +30,40 @@ export const miraMailAttachmentSchema = v.strictObject({
     bytes: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(4 * 1024 * 1024)),
     sha256: v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/)),
 });
+const providerId = v.pipe(
+    v.string(),
+    v.minLength(1),
+    v.maxLength(320),
+    v.regex(/^[\u0021-\u007E]+$/)
+);
+export const miraMailReplySchema = v.strictObject({
+    messageId: providerId,
+    threadId: providerId,
+    from: v.pipe(v.string(), v.maxLength(1000)),
+    replyTo: v.optional(
+        v.pipe(v.array(v.pipe(v.string(), v.maxLength(1000))), v.maxLength(100))
+    ),
+    subject: v.pipe(v.string(), v.maxLength(5000)),
+});
+export const miraMailReplyDraftSchema = v.pipe(
+    v.strictObject({
+        messageId: providerId,
+        to: mailFields.to,
+        cc: mailFields.cc,
+        bcc: mailFields.bcc,
+        text: mailFields.text,
+        attachmentIds: v.optional(v.pipe(v.array(idSchema), v.maxLength(5))),
+    }),
+    v.check(
+        (content) => content.to.length + content.cc.length + content.bcc.length <= 50,
+        "An email can have at most 50 recipients across To, Cc and Bcc."
+    )
+);
+export type MiraMailReply = v.InferOutput<typeof miraMailReplySchema>;
 export const miraMailContentSchema = v.pipe(
     v.strictObject({
         ...mailFields,
+        reply: v.optional(miraMailReplySchema),
         attachments: v.optional(
             v.pipe(v.array(miraMailAttachmentSchema), v.maxLength(5))
         ),
@@ -61,6 +92,7 @@ export const miraMailSaveSchema = v.strictObject({
 export const miraMailApproveSchema = v.strictObject({
     ...versionedIdSchema.entries,
     contentHash: v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/)),
+    reviewedReply: v.optional(v.nullable(miraMailReplySchema)),
     reviewedAttachments: v.optional(
         v.pipe(v.array(miraMailAttachmentSchema), v.maxLength(5))
     ),
@@ -90,6 +122,7 @@ export interface MiraMailDraft {
     conversationId: string | null;
     message: string | null;
     providerMessageId: string | null;
+    providerThreadId?: string | null;
     createdAt: string;
     updatedAt: string;
 }

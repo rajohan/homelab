@@ -1,8 +1,10 @@
+import { miraMailReplyDraftSchema } from "@homelab/contracts/miraMail";
 import type { SQL } from "bun";
 import * as v from "valibot";
 
-import { MiraFailure } from "../../data/context";
+import { MiraFailure, type MiraContext } from "../../data/context";
 import { agentMailReceiverCurrent } from "../../data/integrations";
+import { saveMiraMail } from "../../data/mail";
 import type { MiraClaim } from "../../data/queue";
 import type { RuntimeTool } from "../../runtime/protocol";
 import { agentMailBindingHash, type AgentMailReadConfiguration } from "./configuration";
@@ -27,7 +29,7 @@ async function readMail<T>(operation: () => Promise<T>): Promise<T> {
  * @param run - Owned durable run; arguments cannot choose an inbox or account.
  * @param configuration - Server-provisioned reader, absent before integration activation.
  * @param request - HTTP transport; replace only for synthetic qualification.
- * @returns Read-only tool handlers without send, attachment download or credential access.
+ * @returns Bounded reads and local reply drafting; no handler can approve or send mail.
  */
 export function createAgentMailTools(
     client: SQL,
@@ -36,7 +38,12 @@ export function createAgentMailTools(
     request: typeof fetch = fetch
 ): (Omit<RuntimeTool, "execute"> & {
     automatic: boolean;
-    action: (input: unknown, signal: AbortSignal) => Promise<unknown>;
+    transactional?: boolean;
+    action: (
+        input: unknown,
+        signal: AbortSignal,
+        context?: MiraContext
+    ) => Promise<unknown>;
 })[] {
     const reader = configuration
         ? new AgentMailReader(configuration, request)
@@ -63,6 +70,82 @@ export function createAgentMailTools(
         return { reader, version: access.version };
     };
     return [
+        {
+            name: "mira_mail_reply_draft_create",
+            description:
+                "Prepare a local reply draft to an eligible received message in the configured inbox when the operator requests it. Read the message routing headers and honor Reply-To when choosing the explicit To/Cc/Bcc recipients; reply-all is never inferred. The original thread and subject are retained. Optional attachments must already be shared in this conversation. The operator must review and confirm the draft in the dashboard before sending.",
+            inputSchema: {
+                type: "object",
+                properties: {
+                    messageId: { type: "string" },
+                    to: { type: "array", items: { type: "string" } },
+                    cc: { type: "array", items: { type: "string" } },
+                    bcc: { type: "array", items: { type: "string" } },
+                    text: { type: "string" },
+                    attachmentIds: {
+                        type: "array",
+                        items: { type: "string", format: "uuid" },
+                        maxItems: 5,
+                    },
+                },
+                required: ["messageId", "to", "text"],
+                additionalProperties: false,
+            },
+            automatic: false,
+            transactional: true,
+            action: async (input, signal, context) => {
+                if (
+                    !context?.transaction ||
+                    context.owner !== run.owner ||
+                    context.run?.id !== run.id
+                )
+                    throw new MiraFailure(
+                        "FORBIDDEN",
+                        "Reply drafts require their owned execution transaction."
+                    );
+                const parsed = v.parse(miraMailReplyDraftSchema, input);
+                const current = await requireAccess(signal);
+                const original = await readMail(() =>
+                    current.reader.read(parsed.messageId, signal)
+                );
+                const latest = await readMail(() =>
+                    current.reader.latestMessageId(original.threadId, signal)
+                );
+                if (latest !== original.messageId)
+                    throw new MiraFailure(
+                        "CONFLICT",
+                        "The email thread has a newer message. Read the current thread before preparing a new reply."
+                    );
+                await requireAccess(signal, current.version);
+                const { messageId: _messageId, ...content } = parsed;
+                return saveMiraMail(
+                    context,
+                    {
+                        id: Bun.randomUUIDv7(),
+                        version: 0,
+                        conversationId: run.conversationId,
+                        content: {
+                            ...content,
+                            subject:
+                                original.subject
+                                    .replaceAll(/[\r\n]+/g, " ")
+                                    .trim()
+                                    .slice(0, 200) || "(no subject)",
+                        },
+                    },
+                    configuration,
+                    {
+                        messageId: original.messageId,
+                        threadId: original.threadId,
+                        from: original.from,
+                        ...(original.replyTo.length > 0
+                            ? { replyTo: original.replyTo }
+                            : {}),
+                        subject: original.subject,
+                    }
+                );
+            },
+        },
         {
             name: "mira_mail_list",
             description:

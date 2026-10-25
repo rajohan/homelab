@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test, spyOn } from "bun:test";
 import { rejects } from "node:assert/strict";
 import { cp, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -14,6 +14,7 @@ import {
     dispatchMiraMail,
     reconcileMiraMail,
 } from "@homelab/mira/integrations/agentmail/outbox";
+import { AgentMailReader } from "@homelab/mira/integrations/agentmail/reader";
 import type { TransactionSQL } from "bun";
 import { migrate } from "drizzle-orm/bun-sql/migrator";
 
@@ -512,42 +513,69 @@ test("reconciliation expires offline approvals and cancels obsolete inbox drafts
     }
 });
 
-test("outbox migration upgrades an already migrated parent database", async () => {
-    const allocation = await createTestDatabase();
-    const connection = connectDashboardDatabase(allocation.url);
-    const prior = await mkdtemp(path.join(tmpdir(), "mira-parent-migrations-"));
-    try {
-        const source = dashboardMigrationsFolder();
-        const entries = await readdir(source, { withFileTypes: true });
-        const outbox = entries.find((entry) => entry.name.endsWith("_mira_mail_outbox"));
-        if (!outbox) throw new Error("Expected outbox migration");
-        const parents = entries.filter(
-            (entry) => entry.isDirectory() && entry.name < outbox.name
-        );
-        expect(parents.every((entry) => entry.name < outbox.name)).toBe(true);
-        for (const entry of parents)
-            await cp(path.join(source, entry.name), path.join(prior, entry.name), {
-                recursive: true,
-            });
-        await migrate(connection.database, { migrationsFolder: prior });
-        const [before] = await connection.client<
-            { name: string | null }[]
-        >`SELECT to_regclass('public.mira_mail_drafts')::text AS name`;
-        expect(before?.name).toBeNull();
-        await migrateDashboard(connection);
-        await assertDashboardSchema(connection);
-        await migrateDashboard(connection);
-        await assertDashboardSchema(connection);
-        const [after] = await connection.client<
-            { name: string | null }[]
-        >`SELECT to_regclass('public.mira_mail_drafts')::text AS name`;
-        expect(after?.name).toBe("mira_mail_drafts");
-    } finally {
-        await connection.client.close();
-        await allocation.close();
-        await rm(prior, { recursive: true, force: true });
+test.each(["mira_mail_outbox", "mira_mail_reply_retry"] as const)(
+    "%s migration upgrades its already migrated parent database",
+    async (migration) => {
+        const allocation = await createTestDatabase();
+        const connection = connectDashboardDatabase(allocation.url);
+        const prior = await mkdtemp(path.join(tmpdir(), "mira-parent-migrations-"));
+        try {
+            const source = dashboardMigrationsFolder();
+            const entries = await readdir(source, { withFileTypes: true });
+            const target = entries.find((entry) => entry.name.endsWith(`_${migration}`));
+            if (!target) throw new Error("Expected mail migration");
+            const parents = entries.filter(
+                (entry) => entry.isDirectory() && entry.name < target.name
+            );
+            for (const entry of parents)
+                await cp(path.join(source, entry.name), path.join(prior, entry.name), {
+                    recursive: true,
+                });
+            await migrate(connection.database, { migrationsFolder: prior });
+            const [before] = await connection.client<
+                { name: string | null }[]
+            >`SELECT to_regclass('public.mira_mail_drafts')::text AS name`;
+            const retained = crypto.randomUUID();
+            if (migration === "mira_mail_outbox") expect(before?.name).toBeNull();
+            else {
+                expect(before?.name).toBe("mira_mail_drafts");
+                await connection.client`INSERT INTO mira_mail_drafts (id,owner,inbox_id,binding_hash,version,state,content,content_hash,approved_version,approved_by,approved_at,control_version) VALUES (${retained},'operator','synthetic@example.test','binding',2,'queued',${JSON.stringify(content)}::text::jsonb,'fingerprint',1,'human:operator',now(),1)`;
+            }
+            await migrateDashboard(connection);
+            await assertDashboardSchema(connection);
+            await migrateDashboard(connection);
+            await assertDashboardSchema(connection);
+            const [after] = await connection.client<
+                { name: string | null }[]
+            >`SELECT to_regclass('public.mira_mail_drafts')::text AS name`;
+            expect(after?.name).toBe("mira_mail_drafts");
+            if (migration === "mira_mail_reply_retry") {
+                const [pending] = await connection.client<
+                    {
+                        state: string;
+                        version: number;
+                        approved: number;
+                        retry: Date | null;
+                        hash: string;
+                        content: typeof content;
+                    }[]
+                >`SELECT state,version,approved_version AS approved,retry_after AS retry,content_hash AS hash,content FROM mira_mail_drafts WHERE id=${retained}`;
+                expect(pending).toEqual({
+                    state: "queued",
+                    version: 2,
+                    approved: 1,
+                    retry: null,
+                    hash: "fingerprint",
+                    content,
+                });
+            }
+        } finally {
+            await connection.client.close();
+            await allocation.close();
+            await rm(prior, { recursive: true, force: true });
+        }
     }
-});
+);
 
 test("reviewed attachments send the exact owned bytes and retain durable fingerprints", async () => {
     const f = await mailFixture();
@@ -956,6 +984,212 @@ test("deleting a chat retains editable owned drafts without admitting new delete
     }
 });
 
+test("reply drafts bind verified received-mail threads and retain them across operator edits", async () => {
+    const f = await mailFixture();
+    const read = spyOn(AgentMailReader.prototype, "read").mockResolvedValue({
+        messageId: "<original@example.test>",
+        threadId: "original-thread",
+        from: "Original sender <sender@example.test>",
+        replyTo: ["Replies <replies@example.test>"],
+        to: ["mira@example.test"],
+        cc: [],
+        subject: "Original subject",
+        format: "untrusted_text",
+        content: "Untrusted source content",
+        truncated: false,
+    });
+    const latest = spyOn(AgentMailReader.prototype, "latestMessageId")
+        .mockResolvedValue("<original@example.test>")
+        .mockResolvedValueOnce("newer-message");
+    try {
+        await f.api.conversations.send({
+            conversationId: f.chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Prepare a reply for review",
+        });
+        const run = await claimMiraRun(f.client, crypto.randomUUID(), "foreground");
+        if (!run) throw new Error("Expected run");
+        const tool = createMiraTools(f.client, run, undefined, f.configuration).find(
+            (entry) => entry.name === "mira_mail_reply_draft_create"
+        )!;
+        const input = {
+            messageId: "<original@example.test>",
+            to: ["reviewed@example.test"],
+            text: "Reviewed reply",
+        };
+        const call = { callId: "reply", threadId: "synthetic", turnId: "synthetic" };
+        const stale: unknown = JSON.parse(
+            await tool.execute(input, signal, { ...call, callId: "stale" })
+        );
+        expect(stale).toMatchObject({ ok: false });
+        const empty = await f.api.mail.list({});
+        expect(empty.rows).toHaveLength(0);
+        const result: unknown = JSON.parse(await tool.execute(input, signal, call));
+        expect(result).toMatchObject({ ok: true, result: { state: "draft" } });
+        const duplicate: unknown = JSON.parse(await tool.execute(input, signal, call));
+        expect(duplicate).toMatchObject({ ok: false });
+        expect(read).toHaveBeenCalledTimes(2);
+        const page = await f.api.mail.list({});
+        expect(page.rows).toHaveLength(1);
+        const draft = page.rows[0]!;
+        expect(draft.content).toMatchObject({
+            to: input.to,
+            subject: "Original subject",
+            reply: {
+                messageId: input.messageId,
+                threadId: "original-thread",
+                from: "Original sender <sender@example.test>",
+                replyTo: ["Replies <replies@example.test>"],
+                subject: "Original subject",
+            },
+        });
+        const edit = {
+            id: draft.id,
+            version: draft.version,
+            conversationId: f.chat.id,
+            content: {
+                ...content,
+                to: input.to,
+                subject: draft.content.subject,
+                text: "Updated reply",
+            },
+        };
+        await rejects(
+            f.api.mail.save({
+                ...edit,
+                content: { ...edit.content, subject: "Changed thread subject" },
+            }),
+            /subject.*original email thread/
+        );
+        const updated = await f.api.mail.save(edit);
+        expect(updated.content.reply).toEqual(draft.content.reply);
+        expect(updated.contentHash).not.toBe(draft.contentHash);
+        await rejects(
+            saveMiraMail(
+                { client: f.client, owner: "operator", actor: "human:operator" },
+                { ...edit, version: updated.version },
+                f.binding,
+                { ...draft.content.reply!, threadId: "another-thread" }
+            ),
+            /cannot be moved/
+        );
+        const automatic = createMiraTools(
+            f.client,
+            { ...run, automationId: crypto.randomUUID() },
+            undefined,
+            f.configuration
+        ).find((entry) => entry.name === tool.name)!;
+        const denied: unknown = JSON.parse(
+            await automatic.execute(input, signal, { ...call, callId: "automatic" })
+        );
+        expect(denied).toMatchObject({ ok: false });
+        expect(read).toHaveBeenCalledTimes(2);
+    } finally {
+        read.mockRestore();
+        latest.mockRestore();
+        await f.close();
+    }
+});
+
+test.each([true, false])(
+    "reviewed replies use explicit recipients and verify the accepted thread (%s)",
+    async (sameThread) => {
+        const f = await mailFixture();
+        try {
+            const context = {
+                client: f.client,
+                owner: "operator",
+                actor: "human:operator",
+            };
+            const input = {
+                id: crypto.randomUUID(),
+                version: 0,
+                conversationId: f.chat.id,
+                content,
+            };
+            const reply = {
+                messageId: "<original@example.test>",
+                threadId: "original-thread",
+                from: "sender@example.test",
+                subject: content.subject,
+            };
+            const draft = await saveMiraMail(context, input, f.binding, reply);
+            expect(await saveMiraMail(context, input, f.binding, reply)).toEqual(draft);
+            await rejects(saveMiraMail(context, input, f.binding), /changed/);
+            const approval = {
+                id: draft.id,
+                version: draft.version,
+                contentHash: draft.contentHash,
+                reviewedReply: draft.content.reply,
+            };
+            const { reviewedReply: _reply, ...legacyApproval } = approval;
+            await rejects(f.api.mail.approve(legacyApproval), /original reply context/);
+            await f.api.mail.approve(approval);
+            let calls = 0;
+            const request = Object.assign(
+                (
+                    url: Parameters<typeof fetch>[0],
+                    init?: Parameters<typeof fetch>[1]
+                ) => {
+                    if (init?.method === "GET") {
+                        expect(url instanceof Request ? url.url : String(url)).toBe(
+                            `https://api.agentmail.to/v0/inboxes/${encodeURIComponent(f.binding.inboxId)}/threads/original-thread?limit=1`
+                        );
+                        expect(new Headers(init.headers).get("authorization")).toBe(
+                            `Bearer ${f.configuration.apiKey}`
+                        );
+                        return Promise.resolve(
+                            Response.json({
+                                inbox_id: f.binding.inboxId,
+                                thread_id: reply.threadId,
+                                last_message_id: reply.messageId,
+                            })
+                        );
+                    }
+                    calls++;
+                    expect(url).toBe(
+                        `https://api.agentmail.to/v0/inboxes/${encodeURIComponent(f.binding.inboxId)}/messages/${encodeURIComponent(reply.messageId)}/reply`
+                    );
+                    expect(init?.redirect).toBe("error");
+                    if (typeof init?.body !== "string")
+                        throw new Error("Expected serialized reply");
+                    const body: unknown = JSON.parse(init.body);
+                    expect(body).toEqual({
+                        to: content.to,
+                        cc: content.cc,
+                        bcc: content.bcc,
+                        text: content.text,
+                        reply_all: false,
+                        track_opens: false,
+                    });
+                    return Promise.resolve(
+                        Response.json({
+                            message_id: "reply-message",
+                            thread_id: sameThread ? reply.threadId : "unexpected-thread",
+                        })
+                    );
+                },
+                { preconnect: fetch.preconnect }
+            );
+            expect(
+                await dispatchMiraMail(f.client, f.configuration, signal, request)
+            ).toBe(true);
+            expect(
+                await dispatchMiraMail(f.client, f.configuration, signal, request)
+            ).toBe(false);
+            expect(calls).toBe(1);
+            const outcome = await f.api.mail.approve(approval);
+            expect(outcome.state).toBe(sameThread ? "sent" : "needs_attention");
+            expect(outcome.providerMessageId).toBe("reply-message");
+            expect(outcome.providerThreadId).toBe(
+                sameThread ? reply.threadId : "unexpected-thread"
+            );
+        } finally {
+            await f.close();
+        }
+    }
+);
+
 test.each(["removed", "changed", "offline"] as const)(
     "outbox reconciliation follows a %s dashboard receiver while the executor retains its old binding",
     async (change) => {
@@ -1177,6 +1411,305 @@ test("shutdown after claiming but before transport preserves a retryable approva
             providerMessageId: "after-restart",
         });
         expect(calls).toBe(1);
+    } finally {
+        await f.close();
+    }
+});
+
+test.each([
+    "newer",
+    "unavailable",
+    "missing",
+    "malformed",
+    "timeout",
+    "shutdown",
+] as const)(
+    "reply dispatch retains safe state when the latest thread is %s",
+    async (condition) => {
+        const f = await mailFixture();
+        try {
+            const draft = await saveMiraMail(
+                { client: f.client, owner: "operator", actor: "human:operator" },
+                {
+                    id: crypto.randomUUID(),
+                    version: 0,
+                    conversationId: f.chat.id,
+                    content,
+                },
+                f.binding,
+                {
+                    messageId: "selected",
+                    threadId: "thread",
+                    from: "sender@example.test",
+                    subject: "Original",
+                }
+            );
+            const queued = await f.api.mail.approve({
+                id: draft.id,
+                version: draft.version,
+                contentHash: draft.contentHash,
+                reviewedReply: draft.content.reply,
+            });
+            let posts = 0;
+            let recovered = false;
+            const shutdown = new AbortController();
+            const request = Object.assign(
+                (
+                    _url: Parameters<typeof fetch>[0],
+                    init?: Parameters<typeof fetch>[1]
+                ) => {
+                    if (init?.method !== "GET") {
+                        posts++;
+                        return Promise.resolve(
+                            Response.json({
+                                message_id: "sent-reply",
+                                thread_id: "thread",
+                            })
+                        );
+                    }
+                    if (recovered || condition === "newer")
+                        return Promise.resolve(
+                            Response.json({
+                                inbox_id: f.binding.inboxId,
+                                thread_id: "thread",
+                                last_message_id: recovered ? "selected" : "newer",
+                            })
+                        );
+                    if (condition === "timeout")
+                        return Promise.reject(
+                            new DOMException("Synthetic timeout", "TimeoutError")
+                        );
+                    if (condition === "shutdown") {
+                        const stopped = new Error("Synthetic service shutdown");
+                        shutdown.abort(stopped);
+                        return Promise.reject(stopped);
+                    }
+                    return Promise.resolve(
+                        condition === "malformed"
+                            ? Response.json({ inbox_id: f.binding.inboxId })
+                            : new Response("Sensitive upstream error", {
+                                  status: condition === "missing" ? 404 : 503,
+                              })
+                    );
+                },
+                { preconnect: fetch.preconnect }
+            );
+            if (condition === "shutdown")
+                await rejects(
+                    dispatchMiraMail(f.client, f.configuration, shutdown.signal, request),
+                    /Synthetic service shutdown/
+                );
+            else
+                expect(
+                    await dispatchMiraMail(f.client, f.configuration, signal, request)
+                ).toBe(false);
+            const page = await f.api.mail.list({});
+            expect(page.rows[0]).toMatchObject({
+                state: condition === "newer" ? "cancelled" : "queued",
+                version: queued.version + (condition === "newer" ? 1 : 0),
+            });
+            const [attempt] = await f.client<
+                { token: string | null; started: Date | null }[]
+            >`SELECT attempt_token AS token,started_at AS started FROM mira_mail_drafts WHERE id=${draft.id}`;
+            expect(attempt).toEqual({ token: null, started: null });
+            expect(posts).toBe(0);
+            if (condition !== "newer") {
+                if (condition !== "shutdown") {
+                    expect(
+                        await dispatchMiraMail(f.client, f.configuration, signal, request)
+                    ).toBe(false);
+                    await f.client`UPDATE mira_mail_drafts SET retry_after=clock_timestamp()-interval '1 second' WHERE id=${draft.id}`;
+                }
+                recovered = true;
+                expect(
+                    await dispatchMiraMail(f.client, f.configuration, signal, request)
+                ).toBe(true);
+                expect(
+                    await dispatchMiraMail(f.client, f.configuration, signal, request)
+                ).toBe(false);
+                const sent = await f.api.mail.list({});
+                expect(sent.rows[0]).toMatchObject({
+                    state: "sent",
+                    providerMessageId: "sent-reply",
+                });
+                expect(posts).toBe(1);
+            }
+        } finally {
+            await f.close();
+        }
+    }
+);
+
+test("a deferred reply does not block unrelated approved mail", async () => {
+    const f = await mailFixture();
+    try {
+        const context = { client: f.client, owner: "operator", actor: "human:operator" };
+        const blocked = await saveMiraMail(
+            context,
+            {
+                id: "00000000-0000-4000-8000-000000000001",
+                version: 0,
+                conversationId: f.chat.id,
+                content,
+            },
+            f.binding,
+            {
+                messageId: "selected",
+                threadId: "thread",
+                from: "sender@example.test",
+                subject: "Original",
+            }
+        );
+        const ordinary = await saveMiraMail(
+            context,
+            {
+                id: "ffffffff-ffff-4fff-8fff-fffffffffff2",
+                version: 0,
+                conversationId: f.chat.id,
+                content,
+            },
+            f.binding
+        );
+        for (const draft of [blocked, ordinary])
+            await f.api.mail.approve({
+                id: draft.id,
+                version: draft.version,
+                contentHash: draft.contentHash,
+                reviewedReply: draft.content.reply,
+            });
+        let reads = 0,
+            posts = 0;
+        const request = Object.assign(
+            (url: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+                if (init?.method === "GET") {
+                    reads++;
+                    return Promise.resolve(new Response(null, { status: 404 }));
+                }
+                posts++;
+                expect(typeof url === "string" && url.endsWith("/messages/send")).toBe(
+                    true
+                );
+                return Promise.resolve(
+                    Response.json({
+                        message_id: "ordinary-sent",
+                        thread_id: "ordinary-thread",
+                    })
+                );
+            },
+            { preconnect: fetch.preconnect }
+        );
+        expect(await dispatchMiraMail(f.client, f.configuration, signal, request)).toBe(
+            false
+        );
+        expect(await dispatchMiraMail(f.client, f.configuration, signal, request)).toBe(
+            true
+        );
+        expect(await dispatchMiraMail(f.client, f.configuration, signal, request)).toBe(
+            false
+        );
+        const page = await f.api.mail.list({});
+        expect(page.rows.find((row) => row.id === blocked.id)?.state).toBe("queued");
+        expect(page.rows.find((row) => row.id === ordinary.id)?.state).toBe("sent");
+        expect(reads).toBe(1);
+        expect(posts).toBe(1);
+        await f.client`UPDATE mira_mail_drafts SET approved_at=clock_timestamp()-interval '16 minutes' WHERE id=${blocked.id}`;
+        await reconcileMiraMail(f.client, f.configuration);
+        const expired = await f.api.mail.list({});
+        const draft = expired.rows.find((row) => row.id === blocked.id)!;
+        expect(draft.state).toBe("draft");
+        await f.api.mail.approve({
+            id: draft.id,
+            version: draft.version,
+            contentHash: draft.contentHash,
+            reviewedReply: draft.content.reply,
+        });
+        expect(await dispatchMiraMail(f.client, f.configuration, signal, request)).toBe(
+            false
+        );
+        expect(reads).toBe(2);
+        expect(posts).toBe(1);
+    } finally {
+        await f.close();
+    }
+});
+
+test("reply approval is checked against wall time after provider reads before claiming a send", async () => {
+    const f = await mailFixture();
+    try {
+        const draft = await saveMiraMail(
+            { client: f.client, owner: "operator", actor: "human:operator" },
+            {
+                id: crypto.randomUUID(),
+                version: 0,
+                conversationId: f.chat.id,
+                content,
+            },
+            f.binding,
+            {
+                messageId: "selected",
+                threadId: "thread",
+                from: "sender@example.test",
+                subject: "Original",
+            }
+        );
+        await f.api.mail.approve({
+            id: draft.id,
+            version: draft.version,
+            contentHash: draft.contentHash,
+            reviewedReply: draft.content.reply,
+        });
+        let activeQuery: TransactionSQL | undefined;
+        const observed = new Proxy(f.client, {
+            get(target, property, receiver) {
+                if (property !== "begin")
+                    return Reflect.get(target, property, receiver) as unknown;
+                return (callback: (query: TransactionSQL) => Promise<unknown>) =>
+                    target.begin(async (query) => {
+                        activeQuery = query;
+                        return callback(query);
+                    });
+            },
+        });
+        let reads = 0,
+            posts = 0;
+        const request = Object.assign(
+            async (
+                _url: Parameters<typeof fetch>[0],
+                init?: Parameters<typeof fetch>[1]
+            ) => {
+                if (init?.method !== "GET") {
+                    posts++;
+                    return Response.json({
+                        message_id: "must-not-send",
+                        thread_id: "thread",
+                    });
+                }
+                reads++;
+                const query = activeQuery!;
+                // Expire inside the existing transaction; now() would still consider it fresh.
+                await query`UPDATE mira_mail_drafts SET approved_at=clock_timestamp()-interval '15 minutes'+interval '50 milliseconds' WHERE id=${draft.id}`;
+                await query`SELECT pg_sleep(0.1)`;
+                const [clock] = await query<
+                    { transactionFresh: boolean; realFresh: boolean }[]
+                >`SELECT approved_at>now()-interval '15 minutes' AS "transactionFresh",approved_at>clock_timestamp()-interval '15 minutes' AS "realFresh" FROM mira_mail_drafts WHERE id=${draft.id}`;
+                expect(clock).toEqual({ transactionFresh: true, realFresh: false });
+                return Response.json({
+                    inbox_id: f.binding.inboxId,
+                    thread_id: "thread",
+                    last_message_id: "selected",
+                });
+            },
+            { preconnect: fetch.preconnect }
+        );
+        expect(await dispatchMiraMail(observed, f.configuration, signal, request)).toBe(
+            false
+        );
+        const [result] = await f.client<
+            { state: string; token: string | null; approved: number | null }[]
+        >`SELECT state,attempt_token AS token,approved_version AS approved FROM mira_mail_drafts WHERE id=${draft.id}`;
+        expect(result).toEqual({ state: "draft", token: null, approved: null });
+        expect(reads).toBe(1);
+        expect(posts).toBe(0);
     } finally {
         await f.close();
     }

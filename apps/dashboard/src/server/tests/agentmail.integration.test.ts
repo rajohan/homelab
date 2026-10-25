@@ -1004,7 +1004,11 @@ test("transient read-only mail failures permit retry and unrelated tools in the 
         .mockRejectedValueOnce(new Error("Synthetic transport timeout"))
         .mockResolvedValue({
             messageId: "mail",
+            threadId: "thread",
             from: "synthetic@example.test",
+            replyTo: [],
+            to: [],
+            cc: [],
             subject: "Synthetic",
             format: "untrusted_text",
             content: "Passive content",

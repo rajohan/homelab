@@ -97,7 +97,7 @@ export async function miraMailRequestBody(
     directory: string | undefined,
     content: MiraMailContent
 ): Promise<string> {
-    const { attachments: snapshots = [], ...message } = content;
+    const { attachments: snapshots = [], reply, subject, ...message } = content;
     const attachments: { filename: string; content_type: string; content: string }[] = [];
     for (const snapshot of snapshots) {
         const file = await readMiraFile(context, directory, snapshot.id);
@@ -118,6 +118,7 @@ export async function miraMailRequestBody(
     }
     const body = JSON.stringify({
         ...message,
+        ...(reply ? { reply_all: false } : { subject }),
         ...(attachments.length > 0 ? { attachments } : {}),
         track_opens: false,
     });

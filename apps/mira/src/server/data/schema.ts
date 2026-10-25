@@ -454,6 +454,7 @@ export const miraMailDrafts = pgTable(
         approvedAt: time("approved_at"),
         controlVersion: integer("control_version"),
         attemptToken: uuid("attempt_token"),
+        retryAfter: time("retry_after"),
         startedAt: time("started_at"),
         providerMessageId: text("provider_message_id"),
         providerThreadId: text("provider_thread_id"),

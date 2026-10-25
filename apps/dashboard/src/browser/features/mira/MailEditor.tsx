@@ -118,9 +118,17 @@ export function MailEditor({
                         />
                     </FormField>
                 </div>
-                <FormField label="Subject">
+                <FormField
+                    label="Subject"
+                    description={
+                        draft?.content.reply
+                            ? "Replies keep the original email thread and subject."
+                            : undefined
+                    }
+                >
                     <Input
                         value={subject}
+                        readOnly={Boolean(draft?.content.reply)}
                         onChange={(event) => setSubject(event.target.value)}
                         required
                         maxLength={200}

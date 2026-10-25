@@ -82,8 +82,8 @@ present, pending/unavailable scans and review verdicts without a recorded human
 release are also excluded, including before the held label has appeared. Mail content cannot authorize actions.
 
 Received-mail tools remain read-only. The separate reviewed outbox below can send new
-plain-text messages with its dedicated credential; threaded replies and attachment
-ingestion remain separate deliveries.
+plain-text messages and reviewed replies with its dedicated credential. Incoming
+attachment ingestion remains a separate delivery.
 
 Provider declarations use stable discovery and invocation tools. Each resumed
 conversation receives the current trusted server instructions and resolves the
@@ -131,7 +131,7 @@ The executor claims a queued draft once before invoking the official [AgentMail 
 
 Approval expires after fifteen minutes before dispatch. Disabling/re-enabling the integration returns same-inbox queued work to draft for another review. Removing or changing the inbox cancels obsolete approvals before sending. Already-started provider calls cannot be recalled by pausing. The receiver and executor must agree on the inbox before approval/dispatch. Cancellation is available only before dispatch; it does not claim to unsend mail. Repeated approval requests return the same queued/sent/unknown record and cannot send a second copy.
 
-Outgoing messages support up to five explicitly selected uploaded files totaling 4 MiB. The server snapshots each owned file's name, MIME type, size and digest into the reviewed content hash. Files must still exist unchanged at approval and dispatch. The request embeds verified bytes as base64 and enforces the provider's 6 MB serialized request limit; arbitrary download URLs are never accepted. Local verification failure returns the email to draft without a provider request. A model can propose only files already shared in its current conversation. The operator can choose from their own file library and remove files before saving. Threaded replies and incoming attachment ingestion remain outstanding. No actual inbox or outgoing provider transport is activated by a development preview.
+Outgoing messages support up to five explicitly selected uploaded files totaling 4 MiB. The server snapshots each owned file's name, MIME type, size and digest into the reviewed content hash. Files must still exist unchanged at approval and dispatch. The request embeds verified bytes as base64 and enforces the provider's 6 MB serialized request limit; arbitrary download URLs are never accepted. Local verification failure returns the email to draft without a provider request. A model can propose only files already shared in its current conversation. The operator can choose from their own file library and remove files before saving. Incoming attachment ingestion remains outstanding. No actual inbox or outgoing provider transport is activated by a development preview.
 
 ### Mail-triggered workload limits
 
@@ -147,6 +147,12 @@ Quota suppression is durable. An owner-wide receipt-time watermark skips quota-r
 
 Trusted Mira instructions are hashed with each provider thread. When the hash changes (or a legacy thread has no hash), the executor retires that provider thread before rebuilding bounded conversation history from product messages under the new instructions. Failed deletion retains the old reference for retry; it never resumes with an unverified policy. An offline native Codex 0.164.0 probe confirmed that cold resume sent policy A to the mock Responses endpoint after accepting policy B, so this workflow does not rely on that override reaching the model.
 
+### Reviewed replies in existing threads
+
+In manual chat, `mira_mail_reply_draft_create` reads an eligible received message from the configured inbox before creating a local reply draft. Every recipient must be supplied explicitly; automatic mail-triggered work cannot create replies. The server retains the original message/thread identity, sender and subject in the approved content fingerprint. Editing keeps this reference immutable, and the review shows the original sender and full thread subject. The editor's bounded subject preview cannot change the provider-owned thread subject.
+
+Dispatch uses AgentMail's [reply endpoint](https://docs.agentmail.to/api-reference/inboxes/messages/reply) with explicit To/Cc/Bcc lists and `reply_all: false`; no subject or unreviewed custom headers are submitted. The provider response must identify the expected thread before the dashboard records acceptance. Unknown results remain for review and are never automatically resent. Durable local claims provide retry protection for replies without assuming the provider's send-only deduplication contract covers the reply endpoint. The free-plan footer disclosure applies to replies too.
+
 Editing an automation into or out of an event subscription resets that automation's receipt-time eligibility and skips its pending deliveries. Older messages cannot be replayed into a newly selected subscription. Ordinary prompt/title edits preserve the subscription. Existing pause reasons and audit receipts remain intact.
 
 Outbox reconciliation also honors the receiver's last explicitly published binding. A removed or replacement dashboard inbox cancels obsolete unsent drafts even while the executor still has its old configuration. An offline receiver with the same binding is a temporary availability problem and does not cancel drafts.
@@ -154,3 +160,7 @@ Outbox reconciliation also honors the receiver's last explicitly published bindi
 The dashboard receiver is authoritative during rolling configuration changes. Drafts for its current inbox remain editable while an older or temporarily absent executor catches up; the old executor cannot claim or cancel those approvals. An empty optional send-key environment value enables read-only operation, while malformed nonempty keys are rejected.
 
 Attachment approvals include the exact attachment metadata rendered by the review dialog. An old browser bundle cannot approve an attachment-bearing draft using only its opaque content hash; it must reload and show the filenames, detected media types and sizes first.
+
+Reply reads expose original Reply-To, To and Cc routing headers. The draft retains Reply-To for human review without inferring additional recipients. Draft creation and dispatch verify the thread's latest message through the bounded thread endpoint. A reply overtaken by a new message is cancelled before sending; create and review a new reply for that context. Thread lookup failures (including timeouts, missing messages and invalid responses) retain the queue entry without claiming a send or stopping the executor. The failed reply is deferred for 30 seconds in the database so other approved emails can proceed. A later pass retries the read only while the existing approval remains valid; service shutdown still interrupts the operation. Immediately before claiming the send, the database checks approval expiry against wall time again, including time spent on provider and attachment reads. Provider message and thread IDs remain available even when an acknowledgement reports an unexpected thread.
+
+Reply approval also requires the exact original reply context rendered by the dialog, so a pre-reply browser bundle must reload before approval. A provider message can still arrive after the final thread check; AgentMail offers no atomic conditional-reply operation.
