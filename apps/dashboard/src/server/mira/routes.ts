@@ -26,6 +26,7 @@ import {
     miraDaytonaSaveSchema,
     miraDaytonaApproveSchema,
     miraDaytonaFilterSchema,
+    miraDaytonaResolveSchema,
 } from "@homelab/contracts/miraDaytona";
 import {
     miraMailApproveSchema,
@@ -74,6 +75,10 @@ import {
     cancelMiraDaytona,
     daytonaInputDescriptor,
 } from "@homelab/mira/data/daytona";
+import {
+    readMiraDaytonaRecovery,
+    resolveMiraDaytonaCleanup,
+} from "@homelab/mira/data/daytonaRecovery";
 import {
     changeReport,
     createReport,
@@ -155,6 +160,16 @@ function execute<T>(
 const record = v.strictObject({ id: idSchema });
 export const miraRouter = trpc.router({
     daytona: trpc.router({
+        recovery: trpc.procedure
+            .input(record)
+            .query(({ ctx, input }) =>
+                execute(ctx, (mira) => readMiraDaytonaRecovery(mira, input.id))
+            ),
+        resolveCleanup: trpc.procedure
+            .input(miraDaytonaResolveSchema)
+            .mutation(({ ctx, input }) =>
+                execute(ctx, (mira) => resolveMiraDaytonaCleanup(mira, input))
+            ),
         list: trpc.procedure
             .input(miraDaytonaFilterSchema)
             .query(({ ctx, input }) =>

@@ -73,7 +73,7 @@ export interface MiraDaytonaJob {
         | "cancelled"
         | "needs_attention";
     phase: string;
-    cleanup: "not_needed" | "pending" | "confirmed";
+    cleanup: "not_needed" | "pending" | "confirmed" | "operator_confirmed";
     cancelRequested: boolean;
     exitCode: number | null;
     stdout: string;
@@ -83,4 +83,30 @@ export interface MiraDaytonaJob {
     message: string | null;
     createdAt: string;
     updatedAt: string;
+}
+
+export const miraDaytonaResolveSchema = v.strictObject({
+    id: idSchema,
+    identityHash: hash,
+    sandboxName: v.pipe(v.string(), v.minLength(1), v.maxLength(100)),
+    reason: v.pipe(v.string(), v.trim(), v.minLength(10), v.maxLength(2000)),
+    accountInspected: v.literal(true),
+});
+export type MiraDaytonaResolve = v.InferOutput<typeof miraDaytonaResolveSchema>;
+export interface MiraDaytonaResolution {
+    actor: string;
+    reason: string;
+    at: string;
+}
+export interface MiraDaytonaRecovery {
+    id: string;
+    identityHash: string;
+    organizationId: string;
+    snapshotId: string;
+    target: string;
+    sandboxId: string | null;
+    sandboxName: string;
+    eligibleAt: string | null;
+    blockedReason: string | null;
+    resolution: MiraDaytonaResolution | null;
 }
