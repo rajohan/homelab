@@ -70,12 +70,13 @@ export async function reconcileMiraMail(
                 await query`UPDATE mira_mail_drafts SET state='cancelled',approved_version=NULL,approved_by=NULL,approved_at=NULL,control_version=NULL,message='AgentMail was removed or its inbox changed. This email was cancelled before sending. Create a new draft for the current inbox if needed.',version=version+1,updated_at=now() WHERE id=${candidate.id}`;
                 return;
             }
-            if (row.state !== "queued" || !executorMatches || !configuration) return;
+            // Expiry and access revocation remain authoritative while executors roll over.
+            if (row.state !== "queued") return;
             const [control] = await query<
                 { enabled: boolean; version: number; binding: string | null }[]
             >`SELECT enabled,version,binding_hash AS binding FROM mira_switches WHERE owner=${candidate.owner} AND key='integration:agentmail'`;
             if (
-                !configuration.sendApiKey ||
+                (executorMatches && !configuration?.sendApiKey) ||
                 !row.fresh ||
                 !control?.enabled ||
                 control.version !== row.controlVersion ||

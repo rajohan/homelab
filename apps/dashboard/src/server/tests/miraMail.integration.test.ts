@@ -790,6 +790,73 @@ test("rolling inbox updates retain drafts for the receiver while the old executo
     }
 });
 
+test.each([
+    ["missing", "expired"],
+    ["missing", "disabled"],
+    ["missing", "regranted"],
+    ["previous", "expired"],
+    ["previous", "disabled"],
+    ["previous", "regranted"],
+] as const)(
+    "%s executor configuration still reconciles %s approvals for the current receiver",
+    async (executorState, change) => {
+        const f = await mailFixture();
+        try {
+            const draft = await f.create();
+            const queued = await f.api.mail.approve({
+                id: draft.id,
+                version: draft.version,
+                contentHash: draft.contentHash,
+            });
+            const executor =
+                executorState === "missing"
+                    ? undefined
+                    : { ...f.configuration, inboxId: "previous@example.test" };
+            await reconcileMiraMail(f.client, executor);
+            const pending = await f.api.mail.list({});
+            expect(pending.rows[0]).toMatchObject({
+                state: "queued",
+                version: queued.version,
+            });
+            if (change === "expired")
+                await f.client`UPDATE mira_mail_drafts SET approved_at=now()-interval '16 minutes' WHERE id=${draft.id}`;
+            else if (change === "disabled")
+                await f.client`UPDATE mira_switches SET enabled=false WHERE owner=${f.binding.owner} AND key='integration:agentmail'`;
+            else
+                await f.client`UPDATE mira_switches SET version=version+1 WHERE owner=${f.binding.owner} AND key='integration:agentmail'`;
+            await reconcileMiraMail(f.client, executor);
+            const [result] = await f.client<
+                {
+                    state: string;
+                    version: number;
+                    approved: number | null;
+                    actor: string | null;
+                    at: Date | null;
+                    control: number | null;
+                }[]
+            >`SELECT state,version,approved_version AS approved,approved_by AS actor,approved_at AS at,control_version AS control FROM mira_mail_drafts WHERE id=${draft.id}`;
+            expect(result).toEqual({
+                state: "draft",
+                version: queued.version + 1,
+                approved: null,
+                actor: null,
+                at: null,
+                control: null,
+            });
+            await reconcileMiraMail(f.client, executor);
+            const restored = await f.api.mail.list({});
+            expect(restored.rows[0]).toMatchObject({
+                state: "draft",
+                version: queued.version + 1,
+                inboxId: f.binding.inboxId,
+                content,
+            });
+        } finally {
+            await f.close();
+        }
+    }
+);
+
 test("shutdown after claiming but before transport preserves a retryable approval", async () => {
     const f = await mailFixture();
     try {
