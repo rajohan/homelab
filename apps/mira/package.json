@@ -10,6 +10,7 @@
     },
     "dependencies": {
         "@daytona/api-client": "0.226.1",
+        "@daytona/toolbox-api-client": "0.226.1",
         "@homelab/contracts": "workspace:*",
         "@homelab/notifications": "workspace:*",
         "@homelab/scheduling": "workspace:*",

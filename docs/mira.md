@@ -222,4 +222,4 @@ Proposals expire after 24 hours; cleanup removes their argument contents, and de
 
 ## Daytona delivery
 
-The control-plane foundation is implemented but not activated. See [Daytona adapter qualification](mira-daytona.md) for the pinned official client, isolation limits, recovery contract and remaining execution/dashboard work.
+The control-plane foundation and bounded command/file toolbox are implemented but not activated. See [Daytona adapter qualification](mira-daytona.md) for the pinned official client, isolation limits, recovery contract and remaining execution/dashboard work.
