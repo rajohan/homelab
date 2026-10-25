@@ -142,6 +142,10 @@ test("here.now metadata reads pin account and origin and omit provider secrets a
         accessPolicyVersion: 3,
         allowedEmails: ["guest@example.test"],
         allowedDomains: [],
+        allowedEmailCount: 1,
+        allowedDomainCount: 0,
+        allowedEmailsTruncated: false,
+        allowedDomainsTruncated: false,
     });
     expect(JSON.stringify({ selected, list, details })).not.toContain("must-not-return");
     expect(JSON.stringify(details)).not.toContain("downloadUrl");
@@ -251,4 +255,75 @@ for (const response of [
             preconnect: fetch.preconnect,
         });
         await rejects(new HereNowReader(configuration, request).account(signal));
+    });
+
+for (const [emailCount, domainCount] of [
+    [0, 0],
+    [100, 100],
+    [101, 0],
+    [0, 101],
+    [1001, 1001],
+    [10_000, 10_000],
+    [10_001, 0],
+    [0, 10_001],
+] as const)
+    test(`here.now summarizes ${emailCount} email and ${domainCount} domain rules`, async () => {
+        const domains = Array.from(
+            { length: Math.max(emailCount, domainCount) },
+            (_, index) =>
+                `${String(index).padStart(6, "0")}${"a".repeat(57)}.${"b".repeat(63)}.${"c".repeat(63)}.${"d".repeat(61)}`
+        );
+        const allowedDomains = domains.slice(0, domainCount);
+        const allowedEmails = domains
+            .slice(0, emailCount)
+            .map((domain) => `a@${domain.slice(0, 252)}`);
+        const request = Object.assign(
+            (url: Parameters<typeof fetch>[0]) => {
+                if (typeof url !== "string") throw new Error("Expected URL");
+                if (url.endsWith("accounts"))
+                    return Promise.resolve(
+                        Response.json({
+                            currentAccountId: configuration.accountId,
+                            accounts: [account],
+                        })
+                    );
+                if (url.endsWith("access"))
+                    return Promise.resolve(
+                        Response.json({
+                            access: {
+                                mode: "restricted",
+                                accessPolicyVersion: 3,
+                                allowedEmails,
+                                allowedDomains,
+                            },
+                        })
+                    );
+                return Promise.resolve(
+                    Response.json({
+                        ...site,
+                        currentVersionSource: null,
+                        currentVersionCreatedAt: null,
+                        manifest: [],
+                    })
+                );
+            },
+            { preconnect: fetch.preconnect }
+        );
+        const reading = new HereNowReader(configuration, request).site(site.slug, signal);
+        if (Math.max(emailCount, domainCount) > 10_000) {
+            await rejects(reading);
+            return;
+        }
+        const details = await reading;
+        expect(details.currentVersionId).toBe(site.currentVersionId);
+        expect(details.access).toEqual({
+            mode: "restricted",
+            accessPolicyVersion: 3,
+            allowedEmails: allowedEmails.slice(0, 100),
+            allowedDomains: allowedDomains.slice(0, 100),
+            allowedEmailCount: emailCount,
+            allowedDomainCount: domainCount,
+            allowedEmailsTruncated: emailCount > 100,
+            allowedDomainsTruncated: domainCount > 100,
+        });
     });

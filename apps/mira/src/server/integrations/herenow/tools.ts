@@ -95,7 +95,7 @@ export function createHereNowTools(
             name: "mira_herenow_site",
             automatic: true,
             description:
-                "Read an owned here.now site's current version, file metadata and access policy. These are separate observations, not an atomic snapshot or authorization to overwrite or publish. Does not fetch file bytes or public URLs.",
+                "Read an owned here.now site's current version, file metadata and access policy. Email/domain rules show up to 100 each with total counts and truncation flags. These are separate observations, not an atomic snapshot or authorization to overwrite, replace access lists or publish. Does not fetch file bytes or public URLs.",
             inputSchema: {
                 type: "object",
                 properties: { slug: { type: "string" } },

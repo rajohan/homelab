@@ -43,7 +43,11 @@ export class HereNowReader {
         this.configuration = configuration;
         this.request = request;
     }
-    private async json(path: string, signal: AbortSignal): Promise<unknown> {
+    private async json(
+        path: string,
+        signal: AbortSignal,
+        maximumBytes = 2 * 1024 * 1024
+    ): Promise<unknown> {
         signal.throwIfAborted();
         const response = await this.request(`https://here.now/api/v1/${path}`, {
             method: "GET",
@@ -57,7 +61,7 @@ export class HereNowReader {
             redirect: "error",
             signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
         });
-        return integrationJson(response, 2 * 1024 * 1024);
+        return integrationJson(response, maximumBytes);
     }
     /**
      * Verify the selected account and project only that account's passive metadata.
@@ -134,18 +138,30 @@ export class HereNowReader {
                         "account_members",
                     ]),
                     accessPolicyVersion: v.pipe(v.number(), v.integer(), v.minValue(0)),
-                    allowedEmails: v.pipe(v.array(text(320)), v.maxLength(1000)),
-                    allowedDomains: v.pipe(v.array(text(255)), v.maxLength(1000)),
+                    allowedEmails: v.pipe(v.array(text(320)), v.maxLength(10_000)),
+                    allowedDomains: v.pipe(v.array(text(255)), v.maxLength(10_000)),
                 }),
             }),
-            await this.json(`publish/${encodeURIComponent(parsed)}/access`, signal)
+            await this.json(
+                `publish/${encodeURIComponent(parsed)}/access`,
+                signal,
+                8 * 1024 * 1024
+            )
         );
         return {
             ...details,
             url: `https://${parsed}.here.now/`,
             manifest: details.manifest.slice(0, 100),
             manifestTruncated: details.manifest.length > 100,
-            access,
+            access: {
+                ...access,
+                allowedEmails: access.allowedEmails.slice(0, 100),
+                allowedDomains: access.allowedDomains.slice(0, 100),
+                allowedEmailCount: access.allowedEmails.length,
+                allowedDomainCount: access.allowedDomains.length,
+                allowedEmailsTruncated: access.allowedEmails.length > 100,
+                allowedDomainsTruncated: access.allowedDomains.length > 100,
+            },
         };
     }
 }
