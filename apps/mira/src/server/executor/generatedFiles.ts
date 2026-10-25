@@ -41,6 +41,11 @@ export async function saveGeneratedMiraFile(
             "Generated files require a manual run and configured file storage."
         );
     const parsed = v.parse(inputSchema, input);
+    if (!parsed.name.isWellFormed() || !parsed.content.isWellFormed())
+        throw new MiraFailure(
+            "BAD_REQUEST",
+            "Use valid Unicode text in the filename and content; unpaired surrogate characters cannot be saved exactly."
+        );
     const bytes = new TextEncoder().encode(parsed.content);
     if (
         bytes.length > maximumBytes ||

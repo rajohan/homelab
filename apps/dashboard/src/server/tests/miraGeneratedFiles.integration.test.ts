@@ -187,6 +187,10 @@ test("invalid names, unscoped arguments, binary content and byte overflow leave 
             { name: "../escape.html", content },
             { name: "empty.txt", content: "" },
             { name: "owned.txt", content, owner: "other" },
+            { name: "high.txt", content: "\uD800" },
+            { name: "low.txt", content: "\uDC00" },
+            { name: "mixed.txt", content: "before\uD800after" },
+            { name: "invalid\uD800.txt", content },
             { name: "large.txt", content: "x".repeat(1_048_577) },
             { name: "unicode.txt", content: "😀".repeat(262_145) },
             { name: "binary.txt", content: "bad\u0000text" },
@@ -368,6 +372,25 @@ test("Mira can propose its generated site through the existing reviewed publicat
                 ],
             },
         });
+    } finally {
+        await f.close();
+    }
+});
+
+test("valid Unicode and an actual replacement character retain their exact UTF-8 bytes", async () => {
+    const f = await fixture();
+    try {
+        for (const text of ["\uFFFD", "\uFEFFNorsk øæå, emoji 😀, replacement �"]) {
+            const result = await f.create("unicode.txt", text);
+            expect(result.ok).toBe(true);
+            const file = await readMiraFile(
+                f.context,
+                f.directory,
+                result.result!.file.id
+            );
+            expect(file.bytes).toEqual(Buffer.from(new TextEncoder().encode(text)));
+        }
+        expect(await f.files()).toHaveLength(2);
     } finally {
         await f.close();
     }

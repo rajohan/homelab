@@ -76,7 +76,9 @@ isolated synthetic preview before production deployment.
   uploads. Eight files per assistant response includes both generated files and mail
   imports. Identical filename/content retries within a run reuse one immutable file;
   changed content or another run creates a separate file. Filenames never select disk
-  paths, and no generated content is executed. Binary generation is not implemented.
+  paths, and no generated content is executed. Invalid Unicode in names or content is
+  rejected rather than silently replaced; valid UTF-8 bytes are retained exactly.
+  Binary generation is not implemented.
   Live ownership, lease and cancellation are rechecked at acceptance; rejected writes
   remove unexposed reservations. A lost acknowledgement after a committed file is
   treated as uncertain, retains the attachment and fences further tool actions.
