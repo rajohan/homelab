@@ -727,3 +727,43 @@ test("model drafts use only this conversation's files and cannot approve or bypa
         await f.close();
     }
 });
+
+for (const removed of ["configuration", "publishing-key"] as const)
+    test(`removing executor ${removed} revokes approval even while the dashboard binding remains current`, async () => {
+        const f = await fixture();
+        try {
+            const draft = await f.save();
+            await f.approve(draft);
+            const { publishApiKey: _key, ...readOnly } = configuration;
+            await reconcileMiraPublications(
+                f.client,
+                removed === "configuration" ? undefined : readOnly
+            );
+            expect(await f.read(draft.id)).toMatchObject({ state: "draft" });
+            const provider = publicationProvider(draft.content);
+            expect(
+                await dispatchMiraPublication(
+                    f.client,
+                    configuration,
+                    signal,
+                    f.directory,
+                    provider.request
+                )
+            ).toBe(false);
+            expect(provider.calls).toHaveLength(0);
+            await rejects(f.approve(draft), /changed/);
+            await f.approve(await f.read(draft.id));
+            expect(
+                await dispatchMiraPublication(
+                    f.client,
+                    configuration,
+                    signal,
+                    f.directory,
+                    provider.request
+                )
+            ).toBe(true);
+            expect(await f.read(draft.id)).toMatchObject({ state: "published" });
+        } finally {
+            await f.close();
+        }
+    });

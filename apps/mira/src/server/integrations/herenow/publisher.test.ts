@@ -3,6 +3,7 @@ import { rejects } from "node:assert/strict";
 
 import {
     miraPublicationInputSchema,
+    miraPublicationContentSchema,
     type MiraPublicationContent,
 } from "@homelab/contracts/miraPublication";
 import * as v from "valibot";
@@ -68,11 +69,13 @@ test("publication pins account, keeps credentials off storage and verifies the f
 });
 
 test("updating a public site sends the reviewed base version and preserves its access policy", async () => {
-    const update = {
+    const baseVersionId = "v".repeat(128);
+    const update = v.parse(miraPublicationContentSchema, {
         ...content,
-        target: { slug: "owned-site", baseVersionId: "version-old" },
-    };
+        target: { slug: "owned-site", baseVersionId },
+    });
     const provider = publicationProvider(update);
+    provider.state.current = baseVersionId;
     const publisher = new HereNowPublisher(configuration, provider.request);
     await publisher.preflight(update, signal);
     await publisher.publish(update, [bytes], signal, guard, progress);
@@ -81,7 +84,7 @@ test("updating a public site sends the reviewed base version and preserves its a
     )!;
     if (typeof stage.body !== "string") throw new Error("Expected JSON body");
     expect(JSON.parse(stage.body) as unknown).toMatchObject({
-        baseVersionId: "version-old",
+        baseVersionId,
     });
     expect(provider.calls.some((call) => call.method === "PATCH")).toBe(false);
 });
@@ -220,3 +223,88 @@ for (const path of [
             }).success
         ).toBe(false);
     });
+
+for (const plannedType of [
+    "text/html; charset=iso-8859-1",
+    "text/html; charset=utf-8; unreviewed=value",
+])
+    test(`staging cannot change the complete reviewed MIME type: ${plannedType}`, async () => {
+        const normal = publicationProvider(content);
+        const provider = publicationProvider(content, async (call) => {
+            if (call.method !== "POST" || call.url.pathname !== "/api/v1/publish") return;
+            const response = await normal.request(call.url.href, { method: "POST" });
+            const body = (await response.json()) as {
+                upload: { uploads: { headers: Record<string, string> }[] };
+            };
+            body.upload.uploads[0]!.headers["Content-Type"] = plannedType;
+            return Response.json(body);
+        });
+        await rejects(
+            new HereNowPublisher(configuration, provider.request).publish(
+                content,
+                [bytes],
+                signal,
+                guard,
+                progress
+            ),
+            /content type/
+        );
+        expect(provider.state.uploads).toBe(0);
+        expect(provider.calls).toHaveLength(1);
+    });
+
+for (const liveType of ["text/html; charset=iso-8859-1", undefined])
+    test(`final manifest must confirm the reviewed MIME parameters: ${liveType ?? "missing"}`, async () => {
+        const normal = publicationProvider(content);
+        const provider = publicationProvider(content, async (call) => {
+            if (
+                call.method !== "GET" ||
+                call.url.pathname !== "/api/v1/publish/synthetic-site"
+            )
+                return;
+            normal.state.current = "version-new";
+            const response = await normal.request(call.url.href);
+            const body = (await response.json()) as {
+                manifest: { contentType?: string }[];
+            };
+            if (liveType === undefined) delete body.manifest[0]!.contentType;
+            else body.manifest[0]!.contentType = liveType;
+            return Response.json(body);
+        });
+        await rejects(
+            new HereNowPublisher(configuration, provider.request).publish(
+                content,
+                [bytes],
+                signal,
+                guard,
+                progress
+            ),
+            /could not be verified/
+        );
+    });
+
+test("equivalent MIME casing and spacing still uploads the exact reviewed header", async () => {
+    const normal = publicationProvider(content);
+    const provider = publicationProvider(content, async (call) => {
+        if (call.method !== "POST" || call.url.pathname !== "/api/v1/publish") return;
+        const response = await normal.request(call.url.href, { method: "POST" });
+        const body = (await response.json()) as {
+            upload: { uploads: { headers: Record<string, string> }[] };
+        };
+        body.upload.uploads[0]!.headers["Content-Type"] = "TEXT/HTML;CHARSET=UTF-8";
+        return Response.json(body);
+    });
+    // The override stages on the companion transport; retain the same pending version.
+    provider.state.pending = "version-new";
+    await new HereNowPublisher(configuration, provider.request).publish(
+        content,
+        [bytes],
+        signal,
+        guard,
+        progress
+    );
+    const upload = provider.calls.find((call) =>
+        call.url.hostname.endsWith(".r2.cloudflarestorage.com")
+    )!;
+    expect(upload.headers.get("content-type")).toBe(content.files[0]!.mediaType);
+});

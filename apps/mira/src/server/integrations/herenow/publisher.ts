@@ -32,6 +32,13 @@ const stagedSchema = v.object({
     }),
 });
 
+function normalizedType(value: string): string {
+    return value
+        .split(";")
+        .map((part) => part.trim().toLowerCase())
+        .join(";");
+}
+
 /** A changed target that requires a fresh draft instead of a publication retry. */
 export class PublicationConflict extends Error {}
 
@@ -176,10 +183,10 @@ export class HereNowPublisher {
             const headers = new Headers(upload.headers);
             for (const key of headers.keys())
                 if (key !== "content-type") throw new Error("Unexpected upload header.");
-            const type = headers.get("content-type") ?? file.mediaType;
+            const type = file.mediaType;
             if (
-                type.split(";")[0]!.trim().toLowerCase() !==
-                file.mediaType.split(";")[0]!.trim().toLowerCase()
+                normalizedType(headers.get("content-type") ?? type) !==
+                normalizedType(type)
             )
                 throw new Error("Unexpected upload content type.");
             await guard();
@@ -251,6 +258,9 @@ export class HereNowPublisher {
                         (item) =>
                             item.path === file.path &&
                             item.size === file.bytes &&
+                            item.contentType !== undefined &&
+                            normalizedType(item.contentType) ===
+                                normalizedType(file.mediaType) &&
                             (item.hash === undefined || item.hash === file.sha256)
                     )
             )

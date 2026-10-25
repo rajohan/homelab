@@ -15,7 +15,7 @@ export const miraPublicationTargetSchema = v.strictObject({
         v.maxLength(128),
         v.regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
     ),
-    baseVersionId: v.pipe(v.string(), v.minLength(1), v.maxLength(64)),
+    baseVersionId: v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
 });
 const selection = v.strictObject({ id: idSchema, path: miraPublicationPathSchema });
 const fields = {

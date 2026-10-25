@@ -83,7 +83,8 @@ export async function reconcileMiraPublications(
                 !control?.enabled ||
                 control.version !== row.control ||
                 control.binding !== row.binding ||
-                (matches && !configuration?.publishApiKey)
+                !configuration ||
+                (matches && !configuration.publishApiKey)
             )
                 await query`UPDATE mira_publications SET state='draft',approved_version=NULL,approved_by=NULL,approved_at=NULL,control_version=NULL,retry_after=NULL,message=${reviewMessage},version=version+1,updated_at=now() WHERE id=${candidate.id}`;
         });
