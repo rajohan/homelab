@@ -18,6 +18,18 @@ export async function main(): Promise<void> {
     assert.ok(/^[a-z0-9][a-z0-9./:_-]{1,200}$/.test(image), "Invalid local image name.");
     const name = `homelab-daytona-smoke-${crypto.randomUUID()}`;
     const id = crypto.randomUUID();
+    const edits = JSON.stringify({
+        version: 1,
+        commit,
+        files: [
+            {
+                path: "docs/daytona-edit-smoke.txt",
+                beforeSha256: null,
+                content: "Daytona structured edit qualification.\n",
+            },
+        ],
+    });
+    const editsSha256 = new Bun.CryptoHasher("sha256").update(edits).digest("hex");
     const signal = AbortSignal.timeout(720_000);
     const docker = async (args: string[], timeoutMs = 30_000) => {
         const result = await runSandboxProcess(["docker", ...args], {
@@ -64,6 +76,70 @@ export async function main(): Promise<void> {
         ]);
         assert.equal(start.exitCode, 0, start.stderr);
         created = true;
+        const sourceId = crypto.randomUUID();
+        const inspected = await docker(
+            [
+                "exec",
+                "--workdir",
+                "/tmp",
+                name,
+                "bun",
+                "--no-env-file",
+                daytonaCheckProfile.executable,
+                sourceId,
+                commit,
+                "--source",
+                "AGENTS.md",
+                ".bun-version",
+            ],
+            60_000
+        );
+        assert.equal(inspected.exitCode, 0, inspected.stderr);
+        const source = await docker([
+            "exec",
+            "--workdir",
+            "/tmp",
+            name,
+            "cat",
+            `/tmp/homelab-mira/${sourceId}/outputs/source-files.json`,
+        ]);
+        assert.equal(source.exitCode, 0);
+        const context = JSON.parse(source.stdout) as {
+            commit: string;
+            files: { path: string; content: string; sha256: string }[];
+        };
+        assert.equal(context.commit, commit);
+        const selectedBun = context.files.find((file) => file.path === ".bun-version");
+        assert.ok(selectedBun);
+        assert.equal(selectedBun.content.trim(), "1.4.4");
+        assert.equal(
+            selectedBun.sha256,
+            new Bun.CryptoHasher("sha256").update(selectedBun.content).digest("hex")
+        );
+        const sourceReport = await docker([
+            "exec",
+            "--workdir",
+            "/tmp",
+            name,
+            "cat",
+            `/tmp/homelab-mira/${sourceId}/outputs/check-result.json`,
+        ]);
+        assert.equal(sourceReport.exitCode, 0);
+        assert.match(sourceReport.stdout, /Source inspection only/);
+
+        const prepared = await docker([
+            "exec",
+            "--workdir",
+            "/tmp",
+            name,
+            "bun",
+            "--no-env-file",
+            "-e",
+            'import {mkdir,writeFile} from "node:fs/promises";import {dirname} from "node:path";const [target,text]=process.argv.slice(1);await mkdir(dirname(target),{recursive:true});await writeFile(target,text,{flag:"wx"});',
+            `/tmp/homelab-mira/${id}/inputs/edits.json`,
+            edits,
+        ]);
+        assert.equal(prepared.exitCode, 0, prepared.stderr);
         const result = await docker(
             [
                 "exec",
@@ -75,6 +151,8 @@ export async function main(): Promise<void> {
                 daytonaCheckProfile.executable,
                 id,
                 commit,
+                "--edits",
+                editsSha256,
             ],
             660_000
         );
@@ -115,6 +193,7 @@ export async function main(): Promise<void> {
                         "trust",
                         "databaseStopped",
                         "inputPatchSha256",
+                        "inputEditsSha256",
                     ].includes(key)
                 )
             ),
@@ -124,6 +203,7 @@ export async function main(): Promise<void> {
                 trust: "untrusted_sandbox_result",
                 databaseStopped: true,
                 inputPatchSha256: null,
+                inputEditsSha256: editsSha256,
             }
         );
         assert.ok(Array.isArray(report.steps));
@@ -157,6 +237,21 @@ export async function main(): Promise<void> {
             assert.equal(file.exitCode, 0);
             assert.ok(Number(file.stdout) > 0 && Number(file.stdout) <= 1_048_576);
         }
+        const patch = await docker([
+            "exec",
+            "--workdir",
+            "/tmp",
+            name,
+            "cat",
+            `/tmp/homelab-mira/${id}/outputs/changes.txt`,
+        ]);
+        assert.equal(patch.exitCode, 0);
+        assert.ok(
+            patch.stdout.includes(
+                "diff --git a/docs/daytona-edit-smoke.txt b/docs/daytona-edit-smoke.txt"
+            )
+        );
+        assert.ok(patch.stdout.includes("+Daytona structured edit qualification."));
         // Replaying an attempt must fail before overwriting any result or starting another checkout.
         const replay = await docker([
             "exec",

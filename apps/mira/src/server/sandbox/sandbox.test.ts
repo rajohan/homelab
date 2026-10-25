@@ -247,11 +247,18 @@ test("sandbox timeout and cancellation terminate commands and inherited child pr
     }
 });
 
-async function workflowFixture(mode: string, patchText: string | null = null) {
+async function workflowFixture(
+    mode: string,
+    patchText: string | null = null,
+    editing = false
+) {
     const directory = await temporary();
     if (patchText !== null) {
         const inputs = await createSandboxDirectory(directory, "inputs");
-        await writeFile(path.join(inputs, "changes.txt"), patchText);
+        await writeFile(
+            path.join(inputs, editing ? "edits.json" : "changes.txt"),
+            patchText
+        );
     }
     const calls: string[][] = [];
     const controller = new AbortController();
@@ -422,3 +429,98 @@ test.each([true, false])(
         }
     }
 );
+
+test.each([true, false])(
+    "structured edit workflow validates original content before apply/install (matching=%s)",
+    async (matching) => {
+        const text = JSON.stringify({
+            version: 1,
+            commit,
+            files: [
+                {
+                    path: ".bun-version",
+                    beforeSha256: hash(matching ? "1.4.4" : "wrong"),
+                    content: "1.4.4\n",
+                },
+            ],
+        });
+        const f = await workflowFixture("success", text, true);
+        try {
+            expect(
+                await executeDaytonaChecks(
+                    { id, commit, editsSha256: hash(text) },
+                    f.directory,
+                    signal,
+                    f.execute
+                )
+            ).toBe(matching ? 0 : 1);
+            expect(f.calls.filter((args) => args.includes("apply"))).toHaveLength(
+                matching ? 2 : 0
+            );
+            expect(
+                f.calls.some((args) => args[0] === "bun" && args[1] === "install")
+            ).toBe(matching);
+            const report = JSON.parse(
+                await readFile(
+                    path.join(f.directory, "outputs/check-result.json"),
+                    "utf8"
+                )
+            ) as { failure: string | null };
+            expect(report).toMatchObject({
+                ok: matching,
+                inputPatchSha256: null,
+                inputEditsSha256: hash(text),
+            });
+            if (matching)
+                expect(
+                    await readFile(
+                        path.join(f.directory, "work/selected-patch.txt"),
+                        "utf8"
+                    )
+                ).toContain("diff --git a/.bun-version b/.bun-version");
+            else expect(report.failure).toContain("fingerprint differs");
+        } finally {
+            await f.close();
+        }
+    }
+);
+
+test("source-only workflow returns files and tree without installing or executing repository scripts", async () => {
+    const f = await workflowFixture("success");
+    try {
+        expect(
+            await executeDaytonaChecks(
+                { id, commit, paths: [".bun-version", "missing.txt"] },
+                f.directory,
+                signal,
+                f.execute
+            )
+        ).toBe(0);
+        expect(
+            f.calls.some((args) =>
+                ["bun", "initdb", "postgres", "pg_ctl"].includes(args[0]!)
+            )
+        ).toBe(false);
+        expect(f.calls.some((args) => args.includes("apply"))).toBe(false);
+        const report = JSON.parse(
+            await readFile(path.join(f.directory, "outputs/check-result.json"), "utf8")
+        ) as { scope: string };
+        expect(report).toMatchObject({
+            ok: true,
+            scope: "Source inspection only; no installation, repository checks or execution.",
+        });
+        const source = JSON.parse(
+            await readFile(path.join(f.directory, "outputs/source-files.json"), "utf8")
+        ) as unknown;
+        expect(source).toMatchObject({
+            commit,
+            files: [
+                { path: ".bun-version", content: "1.4.4", sha256: hash("1.4.4") },
+                { path: "missing.txt", content: null, sha256: null },
+            ],
+        });
+        await rejects(readFile(path.join(f.directory, "outputs/changes.txt")));
+    } finally {
+        await f.close();
+    }
+});

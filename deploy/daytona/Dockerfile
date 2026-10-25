@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ca-certific
 COPY --from=build /usr/local/bin/bun /usr/local/bin/bun
 COPY --from=build /output/ /opt/homelab/
 RUN mkdir -p /tmp/homelab-mira && chown postgres:postgres /tmp/homelab-mira
-ENV HOMELAB_MIRA_SANDBOX_PROFILE=homelab-check-v1
+ENV HOMELAB_MIRA_SANDBOX_PROFILE=homelab-check-v2
 ENV PATH=/usr/local/bin:/usr/lib/postgresql/18/bin:/usr/bin:/bin
 USER postgres
 WORKDIR /tmp/homelab-mira
