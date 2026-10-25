@@ -96,6 +96,16 @@ test("sandbox patch and output files reject substitution, oversized data and rep
         await writeFile(file, "");
         await rejects(readSandboxPatch(file, hash("")), new RegExp("regular file"));
         await rejects(readSandboxPatch(inputs, hash("x")));
+        const fifo = path.join(inputs, "pipe");
+        const made = await runSandboxProcess(["mkfifo", fifo], {
+            cwd: directory,
+            env: { PATH: "/usr/bin:/bin" },
+            signal,
+            timeoutMs: 1000,
+        });
+        expect(made.exitCode).toBe(0);
+        await rejects(readSandboxPatch(fifo, hash("x")), /regular file/);
+
         await writeSandboxArtifact(directory, "check-log.txt", "result");
         expect(await readFile(path.join(directory, "check-log.txt"), "utf8")).toBe(
             "result"
@@ -264,6 +274,9 @@ async function workflowFixture(mode: string, patchText: string | null = null) {
         if (args[0] === "pg_ctl" && mode === "database-stop")
             throw new Error("Synthetic stop failure");
         if (args[0] === "bun" && args[1] === "run") {
+            if (mode === "check-timeout" && args[2] === "check")
+                return { ...result, timedOut: true };
+
             if (mode === "check-failure" && args[2] === "check")
                 return { ...result, exitCode: 1, stderr: "Synthetic check failure" };
             if (mode === "cancel") {
@@ -287,6 +300,7 @@ async function workflowFixture(mode: string, patchText: string | null = null) {
 test.each([
     "success",
     "check-failure",
+    "check-timeout",
     "cancel",
     "wrong-commit",
     "wrong-bun",

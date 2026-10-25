@@ -111,7 +111,8 @@ export async function executeDaytonaChecks(
         append(
             `\n--- ${name} (exit ${result.exitCode}) ---\n${result.stdout}${result.stderr}`
         );
-        if (required && result.exitCode !== 0) throw new Error(`Failed: ${name}`);
+        if (required && (result.exitCode !== 0 || result.timedOut))
+            throw new Error(`Failed: ${name}`);
         return result;
     };
     const databaseController = new AbortController();
@@ -163,7 +164,7 @@ export async function executeDaytonaChecks(
             git("diff", "--cached", "--binary", "--no-ext-diff", "--no-textconv"),
             { cwd: repo, env, signal, timeoutMs: 30_000, maxBytes: 1_048_576 }
         );
-        if (diff.exitCode !== 0 || diff.truncated)
+        if (diff.exitCode !== 0 || diff.timedOut || diff.truncated)
             throw new Error("The normalized patch exceeded the recovery limit.");
         patch = diff.stdout;
         const selectedBun = await readFile(path.join(repo, ".bun-version"), "utf8");
@@ -223,7 +224,7 @@ export async function executeDaytonaChecks(
                 ["pg_isready", "-h", "127.0.0.1", "-p", "55432", "-U", "homelab_test"],
                 { cwd: work, env, signal, timeoutMs: 1000, maxBytes: 1024 }
             );
-            if (probe.exitCode === 0) {
+            if (probe.exitCode === 0 && !probe.timedOut) {
                 ready = true;
                 break;
             }
@@ -284,14 +285,15 @@ export async function executeDaytonaChecks(
                         maxBytes: 4096,
                     }
                 );
-                databaseStopped = stopped.exitCode === 0 && !databaseError;
+                databaseStopped =
+                    stopped.exitCode === 0 && !stopped.timedOut && !databaseError;
             } catch {
                 databaseStopped = false;
             }
             databaseController.abort();
             try {
                 const final = await database;
-                if (final.exitCode !== 0) databaseStopped = false;
+                if (final.exitCode !== 0 || final.timedOut) databaseStopped = false;
                 append(`\n--- PostgreSQL ---\n${final.stdout}${final.stderr}`);
             } catch {
                 databaseStopped = false;
@@ -299,7 +301,9 @@ export async function executeDaytonaChecks(
         } else databaseStopped = true;
     }
     const ok =
-        failure === null && databaseStopped && steps.every((step) => step.exitCode === 0);
+        failure === null &&
+        databaseStopped &&
+        steps.every((step) => step.exitCode === 0 && !step.timedOut);
     await writeSandboxArtifact(
         outputs,
         "changes.txt",

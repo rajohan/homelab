@@ -31,7 +31,10 @@ export async function readSandboxPatch(
     expectedHash: string
 ): Promise<Uint8Array> {
     if (!/^[a-f0-9]{64}$/.test(expectedHash)) throw new Error("Invalid patch digest.");
-    const file = await open(filename, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const file = await open(
+        filename,
+        constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK
+    );
     try {
         const stat = await file.stat();
         if (!stat.isFile() || stat.size === 0 || stat.size > 1_048_576)
