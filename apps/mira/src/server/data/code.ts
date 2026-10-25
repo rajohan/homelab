@@ -115,7 +115,10 @@ export async function saveMiraCode(
             }[]
         >`SELECT owner,version,state,content,binding_hash AS binding,conversation_id AS "conversationId" FROM mira_code_publications WHERE id=${input.id} FOR UPDATE`;
         if (existing) {
-            if (existing.owner !== context.owner)
+            if (
+                existing.owner !== context.owner ||
+                (context.run && existing.conversationId !== input.conversationId)
+            )
                 throw new MiraFailure("NOT_FOUND", "Code proposal not found.");
             const { edits: _edits, ...original } = v.parse(
                 miraCodeContentSchema,

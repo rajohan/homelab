@@ -415,7 +415,14 @@ test("code tools create only a conversation-bound local draft with fenced receip
     const f = await fixture();
     try {
         const chat = await f.api.conversations.create({ title: "Code proposal" });
-        await f.client`UPDATE mira_daytona_jobs SET conversation_id=${chat.id} WHERE id=${f.checkId}`;
+        const outside = await f.save();
+        const checkId = crypto.randomUUID();
+        const edits = f.checked.inputs[0]!;
+        const checked = daytonaEditContent(
+            { id: checkId, commit: base, editsSha256: edits.sha256 },
+            edits
+        );
+        await f.client`INSERT INTO mira_daytona_jobs(id,owner,conversation_id,binding,binding_hash,content,content_hash,state,phase,cleanup,outcome,exit_code) VALUES (${checkId},${binding.owner},${chat.id},'{}'::jsonb,'synthetic',${JSON.stringify(checked)}::text::jsonb,'synthetic','completed','closed','confirmed','completed',0)`;
         await f.api.conversations.send({
             conversationId: chat.id,
             requestId: crypto.randomUUID(),
@@ -439,7 +446,7 @@ test("code tools create only a conversation-bound local draft with fenced receip
         ).toBe(false);
         const draft = tools.find((tool) => tool.name === "mira_code_draft")!;
         const call = { callId: "code-draft", threadId: "synthetic", turnId: "synthetic" };
-        const input = { id: crypto.randomUUID(), version: 0, ...f.content };
+        const input = { id: crypto.randomUUID(), version: 0, ...f.content, checkId };
         expect(JSON.parse(await draft.execute(input, signal, call))).toMatchObject({
             ok: true,
         });
@@ -455,6 +462,20 @@ test("code tools create only a conversation-bound local draft with fenced receip
         ).toMatchObject({
             ok: true,
             result: { rows: [{ id: input.id, state: "draft" }] },
+        });
+        expect(
+            JSON.parse(
+                await draft.execute(
+                    { ...input, id: outside.id, version: outside.version },
+                    signal,
+                    { ...call, callId: "foreign-conversation" }
+                )
+            )
+        ).toMatchObject({ ok: false });
+        expect(await f.api.code.read({ id: outside.id })).toMatchObject({
+            conversationId: null,
+            version: outside.version,
+            content: { checkId: f.checkId },
         });
         await f.api.controls.setEnabled({
             key: "integration:github",

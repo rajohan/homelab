@@ -1862,16 +1862,20 @@ test("code review requires matching verified source and submits only the current
             { preconnect: fetch.preconnect }
         )
     );
-    const cleanup = fixture(
-        <CodeReview
-            draft={draft}
-            onClose={() => {
-                closed = true;
-            }}
-        />,
-        false,
-        query
+    const identity = new IdentityClient();
+    const content = () => (
+        <QueryClientProvider client={query}>
+            <IdentityClientContext value={identity}>
+                <CodeReview
+                    draft={draft}
+                    onClose={() => {
+                        closed = true;
+                    }}
+                />
+            </IdentityClientContext>
+        </QueryClientProvider>
     );
+    const view = render(content());
     try {
         expect(screen.getByRole("button", { name: "Create draft PR" })).toBeDisabled();
         expect(screen.getByText(draft.content.body)).toBeInTheDocument();
@@ -1881,9 +1885,10 @@ test("code review requires matching verified source and submits only the current
         act(() => {
             query.setQueryData(key, { contentHash: draft.contentHash, plan });
         });
-        await waitFor(() =>
-            expect(screen.getByRole("button", { name: "Create draft PR" })).toBeEnabled()
-        );
+        // Render the same instance against the changed cache without depending on
+        // React Query's deferred notification timer under the parallel DOM runner.
+        view.rerender(content());
+        expect(screen.getByRole("button", { name: "Create draft PR" })).toBeEnabled();
         await userEvent
             .setup()
             .click(screen.getByRole("button", { name: "Create draft PR" }));
@@ -1897,7 +1902,9 @@ test("code review requires matching verified source and submits only the current
             },
         ]);
     } finally {
-        cleanup();
+        view.unmount();
+        identity.cancelActions();
+        query.clear();
         request.mockRestore();
     }
 });
