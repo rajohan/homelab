@@ -1,5 +1,6 @@
 import type { UpdateSource } from "@homelab/contracts/updates";
 import type { AgentMailHookConfiguration } from "@homelab/mira/integrations/agentmail/configuration";
+import type { HereNowBinding } from "@homelab/mira/integrations/herenow/configuration";
 import type { MoltbookBinding } from "@homelab/mira/integrations/moltbook/configuration";
 
 import type { OperationsConfiguration } from "../config/operations";
@@ -152,6 +153,7 @@ export function createOperationsRuntime(
         miraFilesDirectory: configuration.miraFilesDirectory,
         agentMailHook: configuration.agentMailHook,
         moltbookBinding: configuration.moltbookBinding,
+        hereNowBinding: configuration.hereNowBinding,
         maintenanceTargets: configuration.maintenanceTargets ?? [],
         releaseRepository: configuration.releaseRepository,
         updateTargets: configuration.updateTargets ?? [],
@@ -171,6 +173,7 @@ export type OperationsRuntime = ReturnType<typeof connectDashboardDatabase> & {
     readonly miraFilesDirectory?: string | undefined;
     readonly agentMailHook?: AgentMailHookConfiguration | undefined;
     readonly moltbookBinding?: MoltbookBinding | undefined;
+    readonly hereNowBinding?: HereNowBinding | undefined;
     readonly maintenanceTargets?: readonly MaintenanceTarget[];
     readonly releaseRepository?: string | undefined;
     readonly updateTargets?: readonly UpdateTarget[];

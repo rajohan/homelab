@@ -80,6 +80,7 @@ import {
     taskProgress,
 } from "@homelab/mira/data/tasks";
 import { agentMailBindingHash } from "@homelab/mira/integrations/agentmail/configuration";
+import { hereNowBindingHash } from "@homelab/mira/integrations/herenow/configuration";
 import { moltbookBindingHash } from "@homelab/mira/integrations/moltbook/configuration";
 import * as v from "valibot";
 
@@ -369,7 +370,8 @@ export const miraRouter = trpc.router({
             listMiraIntegrations(
                 mira,
                 ctx.operations?.agentMailHook,
-                ctx.operations?.moltbookBinding
+                ctx.operations?.moltbookBinding,
+                ctx.operations?.hereNowBinding
             )
         )
     ),
@@ -379,13 +381,21 @@ export const miraRouter = trpc.router({
             execute(ctx, async (mira) => {
                 const binding = ctx.operations?.agentMailHook;
                 const moltbook = ctx.operations?.moltbookBinding;
+                const hereNow = ctx.operations?.hereNowBinding;
                 if (
-                    ["integration:agentmail", "integration:moltbook"].includes(
-                        input.key
-                    ) &&
+                    [
+                        "integration:agentmail",
+                        "integration:moltbook",
+                        "integration:here-now",
+                    ].includes(input.key) &&
                     input.enabled
                 ) {
-                    const statuses = await listMiraIntegrations(mira, binding, moltbook);
+                    const statuses = await listMiraIntegrations(
+                        mira,
+                        binding,
+                        moltbook,
+                        hereNow
+                    );
                     const status = statuses.find((item) => item.key === input.key);
                     if (!status?.ready)
                         throw new MiraFailure(
@@ -405,6 +415,11 @@ export const miraRouter = trpc.router({
                     binding?.owner === mira.owner
                 )
                     hash = agentMailBindingHash(binding);
+                else if (
+                    input.key === "integration:here-now" &&
+                    hereNow?.owner === mira.owner
+                )
+                    hash = hereNowBindingHash(hereNow);
                 return setMiraEnabled(mira, input, hash);
             })
         ),
