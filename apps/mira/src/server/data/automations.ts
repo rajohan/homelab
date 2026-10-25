@@ -201,7 +201,7 @@ export async function setMiraEnabled(
             await query`INSERT INTO mira_control_windows (owner, key, version, started_at) VALUES (${context.owner}, ${input.key}, 1, '1970-01-01'::timestamptz)`;
         const rows = await query<
             { key: string; version: number; at: Date }[]
-        >`UPDATE mira_switches SET enabled = ${input.enabled}, reason = ${input.reason}, until = ${input.until ? new Date(input.until) : null}, version = version + 1, changed_at = clock_timestamp(), binding_activated_at = CASE WHEN ${input.key} = 'integration:agentmail' AND ${input.enabled} AND binding_hash IS DISTINCT FROM ${bindingHash ?? null} THEN clock_timestamp() ELSE binding_activated_at END, binding_hash = CASE WHEN ${input.key} = 'integration:agentmail' AND ${input.enabled} THEN ${bindingHash ?? null} ELSE binding_hash END WHERE owner = ${context.owner} AND key = ${input.key} AND version = ${input.version} RETURNING key, version, changed_at AS at`;
+        >`UPDATE mira_switches SET enabled = ${input.enabled}, reason = ${input.reason}, until = ${input.until ? new Date(input.until) : null}, version = version + 1, changed_at = clock_timestamp(), binding_activated_at = CASE WHEN ${input.key} IN ('integration:agentmail','integration:moltbook') AND ${input.enabled} AND binding_hash IS DISTINCT FROM ${bindingHash ?? null} THEN clock_timestamp() ELSE binding_activated_at END, binding_hash = CASE WHEN ${input.key} IN ('integration:agentmail','integration:moltbook') AND ${input.enabled} THEN ${bindingHash ?? null} ELSE binding_hash END WHERE owner = ${context.owner} AND key = ${input.key} AND version = ${input.version} RETURNING key, version, changed_at AS at`;
         if (!rows[0])
             throw new MiraFailure(
                 "CONFLICT",
@@ -260,15 +260,19 @@ export async function resumeMiraControls(
             { owner: string; key: string }[]
         >`SELECT owner, key FROM mira_switches WHERE owner = ${account.owner} AND NOT enabled AND until <= ${now} FOR UPDATE`;
         for (const row of rows) {
-            if (row.key === "integration:agentmail") {
+            if (
+                row.key === "integration:agentmail" ||
+                row.key === "integration:moltbook"
+            ) {
+                const integration = row.key.slice(12);
                 const [binding] = await query<{ current: boolean }[]>`
                     SELECT EXISTS (SELECT 1 FROM mira_switches c
-                        JOIN mira_integration_receivers receiver ON receiver.key='agentmail' AND receiver.binding_hash=c.binding_hash
+                        JOIN mira_integration_receivers receiver ON receiver.key=${integration} AND receiver.binding_hash=c.binding_hash
                         JOIN mira_runtime_status runtime ON runtime.id=1
                         WHERE c.owner=${row.owner} AND c.key=${row.key}
                         AND receiver.heartbeat_at > now()-interval '45 seconds'
                         AND runtime.heartbeat_at > now()-interval '45 seconds'
-                        AND runtime.integrations @> jsonb_build_array(jsonb_build_object('owner',c.owner,'key','agentmail','bindingHash',c.binding_hash))) AS current`;
+                        AND runtime.integrations @> jsonb_build_array(jsonb_build_object('owner',c.owner,'key',${integration}::text,'bindingHash',c.binding_hash))) AS current`;
                 if (!binding?.current) continue;
             }
             const [resumed] = await query<

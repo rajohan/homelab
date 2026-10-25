@@ -2,7 +2,9 @@ import {
     agentMailBindingHash,
     type AgentMailBinding,
 } from "../integrations/agentmail/configuration";
+import type { MoltbookBinding } from "../integrations/moltbook/configuration";
 import type { MiraContext, MiraQuery } from "./context";
+import { moltbookIntegrationStatus } from "./moltbook";
 
 /**
  * Compare the provisioned inbox across services and the operator's current grant.
@@ -34,11 +36,13 @@ export async function agentMailBindingStatus(
  * Read the current operator's provisioned integrations without exposing credentials or other bindings.
  * @param context - Authenticated product owner.
  * @param binding - Dashboard's configured receiver, checked against the executor's inbox.
+ * @param moltbook - Dashboard account mapping for passive social reads.
  * @returns Configured availability and redacted recovery status; intentional pause stays separate.
  */
 export async function listMiraIntegrations(
     context: MiraContext,
-    binding?: AgentMailBinding
+    binding?: AgentMailBinding,
+    moltbook?: MoltbookBinding
 ) {
     const status =
         binding?.owner === context.owner
@@ -64,6 +68,7 @@ export async function listMiraIntegrations(
             message,
             lastSuccessAt: configured ? (state?.lastSuccessAt ?? null) : null,
         },
+        await moltbookIntegrationStatus(context, moltbook),
     ];
 }
 

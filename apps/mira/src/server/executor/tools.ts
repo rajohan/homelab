@@ -34,6 +34,8 @@ import {
 import { readMiraPdf } from "../files/content";
 import type { AgentMailReadConfiguration } from "../integrations/agentmail/configuration";
 import { createAgentMailTools } from "../integrations/agentmail/tools";
+import type { MoltbookReadConfiguration } from "../integrations/moltbook/configuration";
+import { createMoltbookTools } from "../integrations/moltbook/tools";
 import type { RuntimeTool } from "../runtime/protocol";
 
 const string = { type: "string" };
@@ -62,13 +64,15 @@ const object = (properties: Record<string, unknown>, required: string[] = []) =>
  * @param run - Currently leased invocation; models cannot replace its owner or grants.
  * @param filesDirectory - Explicit shared file volume, scoped by selected message attachments.
  * @param agentMail - Optional provisioned inbox for checked mail reads and local drafts; sending requires separate human approval.
+ * @param moltbook - Optional social read settings, retained only by the service.
  * @returns The fixed tool declarations for this conversation and their checked handlers.
  */
 export function createMiraTools(
     client: SQL,
     run: MiraClaim,
     filesDirectory?: string,
-    agentMail?: AgentMailReadConfiguration
+    agentMail?: AgentMailReadConfiguration,
+    moltbook?: MoltbookReadConfiguration
 ): RuntimeTool[] {
     const context: MiraContext = {
         client,
@@ -400,6 +404,7 @@ export function createMiraTools(
                 ),
         },
         ...createAgentMailTools(client, run, agentMail, fetch, filesDirectory),
+        ...createMoltbookTools(client, run, moltbook),
     ];
     return definitions.map(
         ({

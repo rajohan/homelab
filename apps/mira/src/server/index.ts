@@ -89,6 +89,7 @@ export async function main(): Promise<void> {
                         health,
                         filesDirectory: configuration.filesDirectory,
                         agentMail: configuration.agentMail,
+                        moltbook: configuration.moltbook,
                     }),
                 catch: () => new Error("Mira executor failed."),
             })

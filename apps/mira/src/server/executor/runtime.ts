@@ -13,6 +13,10 @@ import {
 import { dispatchMiraMail, reconcileMiraMail } from "../integrations/agentmail/outbox";
 import { pollAgentMail } from "../integrations/agentmail/poll";
 import { AgentMailReader } from "../integrations/agentmail/reader";
+import {
+    moltbookBindingHash,
+    type MoltbookReadConfiguration,
+} from "../integrations/moltbook/configuration";
 import { CodexRuntime } from "../runtime/codexRuntime";
 import { pilotArguments, type PilotConfig } from "../runtime/configuration";
 import { cleanupMiraResources } from "./cleanup";
@@ -38,6 +42,7 @@ export async function runMiraExecutor(options: {
     health: MiraHealth;
     filesDirectory?: string | undefined;
     agentMail?: AgentMailReadConfiguration | undefined;
+    moltbook?: MoltbookReadConfiguration | undefined;
 }): Promise<void> {
     const { client, config, health } = options;
     const failed = new AbortController();
@@ -54,6 +59,13 @@ export async function runMiraExecutor(options: {
               },
           ]
         : [];
+    if (options.moltbook)
+        integrationsCatalog.push({
+            owner: options.moltbook.owner,
+            key: "moltbook",
+            bindingHash: moltbookBindingHash(options.moltbook),
+            sendConfigured: false,
+        });
     let model: string | null = null;
     let models: MiraModel[] = [];
     let defaultReady = false;
@@ -198,7 +210,8 @@ export async function runMiraExecutor(options: {
                             run,
                             signal,
                             options.filesDirectory,
-                            options.agentMail
+                            options.agentMail,
+                            options.moltbook
                         );
                     } finally {
                         health.active--;
