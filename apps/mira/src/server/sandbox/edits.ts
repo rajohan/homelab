@@ -39,7 +39,12 @@ function validText(text: string): boolean {
     }
     return true;
 }
-function utf8(bytes: Uint8Array): string {
+/**
+ * Decode exact passive UTF-8 text, preserving a BOM and refusing binary/control data.
+ * @param bytes - Bytes already bounded by the caller's file or plan budget.
+ * @returns Lossless decoded text; invalid UTF-8 and non-text controls fail.
+ */
+export function decodeSandboxText(bytes: Uint8Array): string {
     const text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
     if (!validText(text)) throw new Error("Edit plans support text files only.");
     return text;
@@ -122,7 +127,7 @@ async function original(
             if (length !== stat.size || length > fileLimit)
                 throw new Error("Original file changed while reading.");
             return {
-                text: utf8(bytes.subarray(0, length)),
+                text: decodeSandboxText(bytes.subarray(0, length)),
                 mode: stat.mode & 0o111 ? "100755" : "100644",
             };
         } finally {
@@ -156,18 +161,7 @@ export async function buildSandboxEdits(
         (await realpath(repository)) !== repository
     )
         throw new Error("Invalid edit plan size or checkout directory.");
-    const plan = v.parse(planSchema, JSON.parse(utf8(bytes)) as unknown);
-    if (plan.commit !== commit)
-        throw new Error("Edit plan targets a different base commit.");
-    const selected = new Set<string>();
-    for (const file of plan.files) {
-        if (
-            selected.has(file.path) ||
-            plan.files.some((other) => other.path.startsWith(`${file.path}/`))
-        )
-            throw new Error("Edit paths must be unique and cannot overlap.");
-        selected.add(file.path);
-    }
+    const plan = parseSandboxEditPlan(bytes, commit);
     let result = "";
     for (const file of plan.files) {
         signal.throwIfAborted();
@@ -237,4 +231,35 @@ export async function readSandboxSources(
     if (Buffer.byteLength(result) > 1_048_576)
         throw new Error("Selected source context exceeds one MiB; select fewer files.");
     return result;
+}
+
+export type SandboxEditPlan = v.InferOutput<typeof planSchema>;
+
+/**
+ * Validate the same bounded edit document used by sandbox checks and reviewed publication.
+ * @param bytes - Exact selected immutable JSON document, up to one MiB.
+ * @param commit - Expected public base commit, independently selected by the service.
+ * @returns A strict plan with unique, non-overlapping paths and bounded passive replacements.
+ */
+export function parseSandboxEditPlan(bytes: Uint8Array, commit: string): SandboxEditPlan {
+    if (bytes.length === 0 || bytes.length > 1_048_576)
+        throw new Error("Invalid edit plan size.");
+    const plan = v.parse(planSchema, JSON.parse(decodeSandboxText(bytes)) as unknown);
+    if (plan.commit !== commit)
+        throw new Error("Edit plan targets a different base commit.");
+    const selected = new Set<string>();
+    for (const file of plan.files) {
+        if (
+            selected.has(file.path) ||
+            plan.files.some((other) => other.path.startsWith(`${file.path}/`))
+        )
+            throw new Error("Edit paths must be unique and cannot overlap.");
+        selected.add(file.path);
+        if (
+            file.content !== null &&
+            (!validText(file.content) || Buffer.byteLength(file.content) > fileLimit)
+        )
+            throw new Error("Replacement must be valid UTF-8 text up to 256 KiB.");
+    }
+    return plan;
 }
