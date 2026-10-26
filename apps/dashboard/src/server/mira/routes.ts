@@ -34,6 +34,10 @@ import {
     miraDaytonaResolveSchema,
 } from "@homelab/contracts/miraDaytona";
 import {
+    miraImprovementGrantSchema,
+    miraImprovementResolveSchema,
+} from "@homelab/contracts/miraImprovement";
+import {
     miraMailApproveSchema,
     miraMailFilterSchema,
     miraMailSaveSchema,
@@ -135,6 +139,11 @@ import {
     saveTask,
     taskProgress,
 } from "@homelab/mira/data/tasks";
+import {
+    readImprovementGrant,
+    saveImprovementGrant,
+    resolveImprovement,
+} from "@homelab/mira/improvement/policy";
 import { agentMailBindingHash } from "@homelab/mira/integrations/agentmail/configuration";
 import { daytonaBindingHash } from "@homelab/mira/integrations/daytona/configuration";
 import { githubBindingHash } from "@homelab/mira/integrations/github/configuration";
@@ -550,6 +559,31 @@ export const miraRouter = trpc.router({
             .input(versionedIdSchema)
             .mutation(({ ctx, input }) =>
                 execute(ctx, (mira) => deleteMemory(mira, input.id, input.version))
+            ),
+    }),
+    improvements: trpc.router({
+        resolve: trpc.procedure
+            .input(miraImprovementResolveSchema)
+            .mutation(({ ctx, input }) =>
+                execute(ctx, (mira) => resolveImprovement(mira, input))
+            ),
+        grant: trpc.procedure.input(record).query(({ ctx, input }) =>
+            execute(ctx, (mira) =>
+                readImprovementGrant(mira, input.id, {
+                    daytona: ctx.operations?.daytonaBinding,
+                    github: ctx.operations?.githubBinding,
+                })
+            )
+        ),
+        allow: trpc.procedure
+            .input(miraImprovementGrantSchema)
+            .mutation(({ ctx, input }) =>
+                execute(ctx, (mira) =>
+                    saveImprovementGrant(mira, input, {
+                        daytona: ctx.operations?.daytonaBinding,
+                        github: ctx.operations?.githubBinding,
+                    })
+                )
             ),
     }),
     automations: trpc.router({

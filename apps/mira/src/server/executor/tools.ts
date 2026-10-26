@@ -32,6 +32,7 @@ import {
     taskProgress,
 } from "../data/tasks";
 import { readMiraPdf } from "../files/content";
+import { createImprovementTools } from "../improvement/tools";
 import type { AgentMailReadConfiguration } from "../integrations/agentmail/configuration";
 import { createAgentMailTools } from "../integrations/agentmail/tools";
 import type { DaytonaBinding } from "../integrations/daytona/configuration";
@@ -49,6 +50,26 @@ import { createMoltbookTools } from "../integrations/moltbook/tools";
 import type { RuntimeTool } from "../runtime/protocol";
 import { saveGeneratedMiraFile } from "./generatedFiles";
 
+const improvementContextTools = new Set([
+    "mira_attachment_read",
+    "mira_tasks_list",
+    "mira_task_read",
+    "mira_task_progress_list",
+    "mira_runs_list",
+    "mira_reports_list",
+    "mira_report_create",
+    "mira_controls_list",
+    "mira_dashboard_state",
+    "mira_daytona_jobs",
+    "mira_daytona_result",
+    "mira_code_proposals",
+    "mira_improvement_status",
+    "mira_improvement_submit",
+    "mira_github_work",
+    "mira_github_pull_request",
+    "mira_github_tree",
+    "mira_github_file",
+]);
 const string = { type: "string" };
 const uuid = { type: "string", format: "uuid" };
 const taskProperties = {
@@ -441,6 +462,7 @@ export function createMiraTools(
         ...createDaytonaTools(client, run, daytona),
         ...createHereNowTools(client, run, hereNow),
         ...createGitHubTools(client, run, github),
+        ...createImprovementTools(client, run, { daytona, github }),
         ...createGitHubReadTools(
             client,
             run,
@@ -475,6 +497,17 @@ export function createMiraTools(
                         message:
                             "This automatic run does not have permission for that action.",
                     });
+                if (run.automationId && !improvementContextTools.has(definition.name)) {
+                    const [automation] = await client<
+                        { kind: string }[]
+                    >`SELECT automation_kind AS kind FROM mira_runs WHERE id=${run.id} AND owner=${run.owner}`;
+                    if (!automation?.kind || automation.kind === "improvement")
+                        return JSON.stringify({
+                            ok: false,
+                            message:
+                                "Improvement runs use repository, task and operational context only. Private inbox, memory and unrelated integrations are unavailable.",
+                        });
+                }
                 const receipt = Bun.randomUUIDv7();
                 const hash = new Bun.CryptoHasher("sha256")
                     .update(JSON.stringify(input))

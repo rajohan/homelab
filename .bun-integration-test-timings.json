@@ -43,6 +43,7 @@
         "apps/dashboard/src/server/tests/miraSocial.integration.test.ts": 2788,
         "apps/dashboard/src/server/tests/miraDaytona.integration.test.ts": 2581,
         "apps/dashboard/src/server/tests/miraCode.integration.test.ts": 2000,
-        "apps/dashboard/src/server/tests/miraGitHubRead.integration.test.ts": 2100
+        "apps/dashboard/src/server/tests/miraGitHubRead.integration.test.ts": 2100,
+        "apps/dashboard/src/server/tests/miraImprovement.integration.test.ts": 3500
     }
 }
