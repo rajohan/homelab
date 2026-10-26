@@ -17,6 +17,7 @@
         "@homelab/notifications": "workspace:*",
         "@homelab/scheduling": "workspace:*",
         "@openai/codex": "0.164.0",
+        "@trycua/cua-driver": "0.37.0",
         "drizzle-orm": "1.0.0-rc.5",
         "effect": "4.0.6",
         "image-size": "2.0.4",
