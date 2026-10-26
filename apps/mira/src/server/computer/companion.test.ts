@@ -5,6 +5,8 @@ import { PassThrough } from "node:stream";
 import {
     ComputerCompanion,
     ComputerConnectionError,
+    ComputerRequestCancelledError,
+    isComputerCancellation,
     computerOrigin,
     fetchComputer,
 } from "./companion";
@@ -152,7 +154,15 @@ test("local cancellation stops a pending response body and never returns its lat
     const pending = client.connect(credential, stopped.signal);
     await Bun.sleep(1);
     stopped.abort();
-    await rejects(pending, ComputerConnectionError);
+    await rejects(pending, (error: unknown) => {
+        expect(error).toBeInstanceOf(ComputerRequestCancelledError);
+        expect(isComputerCancellation(error, stopped.signal)).toBe(true);
+        expect(isComputerCancellation(error, AbortSignal.abort())).toBe(false);
+        return true;
+    });
+    expect(
+        isComputerCancellation(new Error("Unrelated teardown failure"), stopped.signal)
+    ).toBe(false);
     expect(cancelled).toBe(true);
 });
 

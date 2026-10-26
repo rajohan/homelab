@@ -265,7 +265,10 @@ local shutdown, and a task that has not completed cleanup blocks replacement.
 It creates a local host, checks pending access, and invokes accepted-session work
 only after the existing controller has obtained local consent, server acceptance,
 fresh permits and native readiness. Closing a local window or declining a request
-retires that attempt. Every attempt is fully cleaned up before another host can
+retires that attempt, including an in-flight pending/accept/permit request.
+Cancellation is tied to its original signal; an unrelated failure after a signal
+was aborted is not treated as cancellation. Accepted-session work must finish
+its own teardown, and an unexpected teardown failure blocks replacement. Every attempt is fully cleaned up before another host can
 be created. It retains claimed request IDs for the entire generation, including
 failed/declined attempts whose stop acknowledgement was lost, so polling cannot
 reopen the same prompt. The bounded ID set never evicts old requests; exhausting

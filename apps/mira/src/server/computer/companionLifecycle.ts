@@ -1,7 +1,11 @@
 import { setTimeout as delay } from "node:timers/promises";
 
 import { RuntimeCleanupError } from "../runtime/rpcProcess";
-import { type ComputerCompanion, ComputerConnectionError } from "./companion";
+import {
+    type ComputerCompanion,
+    ComputerConnectionError,
+    isComputerCancellation,
+} from "./companion";
 import { ComputerConsentController, type ComputerConsentHost } from "./companionConsent";
 
 /**
@@ -15,6 +19,7 @@ export async function runComputerConsentLoop(options: {
     connectionId: string;
     signal: AbortSignal;
     createHost: () => ComputerConsentHost;
+    /** Must finish its own teardown before settling; unexpected rejection blocks replacement. */
     runSession: (
         controller: ComputerConsentController,
         signal: AbortSignal
@@ -27,12 +32,14 @@ export async function runComputerConsentLoop(options: {
     const seen = new Set<string>();
     try {
         while (!options.signal.aborted) {
+            const host = options.createHost();
+            let sessionStarted = false;
             const controller = new ComputerConsentController({
                 companion: options.companion,
                 credential: options.credential,
                 connectionId: options.connectionId,
                 signal: options.signal,
-                host: options.createHost(),
+                host,
                 claimRequest(id) {
                     if (seen.has(id)) return false;
                     // No eviction: a server replay cannot re-open consent after an uncertain stop.
@@ -44,26 +51,30 @@ export async function runComputerConsentLoop(options: {
             try {
                 while (!options.signal.aborted && !controller.signal.aborted) {
                     if (await controller.review()) {
+                        options.signal.throwIfAborted();
+                        controller.signal.throwIfAborted();
+                        sessionStarted = true;
                         await options.runSession(controller, controller.signal);
                         break;
                     }
                     if (!controller.signal.aborted) await wait(2000, options.signal);
                 }
             } catch (error) {
-                if (error instanceof RuntimeCleanupError) throw error;
                 if (
-                    !options.signal.aborted &&
-                    (error instanceof ComputerConnectionError ||
-                        !controller.signal.aborted)
-                )
+                    !isComputerCancellation(error, controller.signal) &&
+                    !isComputerCancellation(error, host.signal) &&
+                    !isComputerCancellation(error, options.signal)
+                ) {
+                    if (sessionStarted) throw new RuntimeCleanupError();
                     throw error;
+                }
             } finally {
                 await closeController(controller);
             }
             if (!options.signal.aborted) await wait(2000, options.signal);
         }
     } catch (error) {
-        if (error instanceof RuntimeCleanupError || !options.signal.aborted) throw error;
+        if (!isComputerCancellation(error, options.signal)) throw error;
     }
 }
 

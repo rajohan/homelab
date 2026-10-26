@@ -44,10 +44,14 @@ function fixture() {
         heartbeat: () => 200,
         pending: () => request,
         stop: () => 200,
+        intercept: (_route: string, _init: RequestInit): Promise<Response> | undefined =>
+            undefined,
     };
     const client = new ComputerCompanion("https://private.example.test", (url, init) => {
         const route = url.pathname.split("/").at(-1)!;
         events.push(route);
+        const intercepted = behavior.intercept(route, init);
+        if (intercepted) return intercepted;
         const body = JSON.parse(
             typeof init.body === "string" ? init.body : "null"
         ) as Record<string, unknown>;
@@ -417,4 +421,102 @@ test("local shutdown cannot hide an unconfirmed connection task cleanup even whe
     await rejects(run, RuntimeCleanupError);
     expect(f.generationIds).toHaveLength(1);
     expect(f.events).not.toContain("reconnecting");
+});
+
+test("local closure during a pending, accept or permit request retires only that attempt", async () => {
+    for (const stalledRoute of ["pending", "accept", "permit"]) {
+        const f = fixture();
+        const stalled = deferred<void>();
+        const h = f.host();
+        let hosts = 0,
+            sessions = 0;
+        f.behavior.intercept = (route, init) => {
+            if (route !== stalledRoute) return;
+            const signal = init.signal!;
+            stalled.resolve();
+            return new Promise((_resolve, reject) => {
+                signal.addEventListener("abort", () => reject(signal.reason as Error), {
+                    once: true,
+                });
+            });
+        };
+        const run = runComputerConsentLoop({
+            companion: f.client,
+            credential: f.credential,
+            connectionId: crypto.randomUUID(),
+            signal: f.stop.signal,
+            createHost: () => {
+                hosts++;
+                if (hosts === 1) return h.value;
+                f.stop.abort();
+                return f.host().value;
+            },
+            runSession: () => {
+                sessions++;
+                return Promise.resolve();
+            },
+            wait: () => Promise.resolve(),
+        });
+        await stalled.promise;
+        h.local.abort();
+        await run;
+        expect(hosts).toBe(2);
+        expect(sessions).toBe(0);
+        expect(f.events).not.toContain("open");
+    }
+});
+
+test("accepted-session teardown failures remain terminal after local or global retirement", async () => {
+    for (const kind of ["local", "global", "unrelated-abort"]) {
+        const f = fixture();
+        const h = f.host();
+        let hosts = 0;
+        await rejects(
+            runComputerConsentLoop({
+                companion: f.client,
+                credential: f.credential,
+                connectionId: crypto.randomUUID(),
+                signal: f.stop.signal,
+                createHost: () => {
+                    hosts++;
+                    return h.value;
+                },
+                runSession: () => {
+                    if (kind === "global") f.stop.abort();
+                    else h.local.abort();
+                    const failure = new Error("Accepted-session teardown failed");
+                    if (kind === "unrelated-abort") failure.name = "AbortError";
+                    return Promise.reject(failure);
+                },
+                wait: () => Promise.reject(new Error("No replacement permitted")),
+            }),
+            RuntimeCleanupError
+        );
+        expect(hosts).toBe(1);
+        expect(f.events.filter((event) => event === "driver-closed")).toHaveLength(1);
+    }
+});
+
+test("accepted-session work may finish with its exact cancellation reason after releasing its resources", async () => {
+    const f = fixture();
+    const h = f.host();
+    let hosts = 0;
+    await runComputerConsentLoop({
+        companion: f.client,
+        credential: f.credential,
+        connectionId: crypto.randomUUID(),
+        signal: f.stop.signal,
+        createHost: () => {
+            if (++hosts === 1) return h.value;
+            f.stop.abort();
+            return f.host().value;
+        },
+        runSession: (_controller, signal) => {
+            h.local.abort();
+            return Promise.reject(signal.reason as Error);
+        },
+        wait: () => Promise.resolve(),
+    });
+    expect(hosts).toBe(2);
+    expect(f.events.filter((event) => event === "driver-closed")).toHaveLength(1);
 });

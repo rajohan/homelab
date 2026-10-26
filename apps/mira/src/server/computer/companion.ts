@@ -65,6 +65,45 @@ export class ComputerConnectionError extends Error {
     }
 }
 
+/** A transport request cancelled by its caller, without remote error bodies or credentials. */
+export class ComputerRequestCancelledError extends ComputerConnectionError {
+    private readonly stopped: AbortSignal;
+    /**
+     * Retain the exact local cancellation source rather than inferring it from later controller state.
+     * @param stopped - The caller signal already aborted when the request was cancelled.
+     */
+    constructor(stopped: AbortSignal) {
+        super(false);
+        this.stopped = stopped;
+    }
+    /**
+     * Match cancellation to its original caller, never another already-retired controller.
+     * @param signal - The local lifetime being checked.
+     * @returns Whether this exact caller cancelled the request.
+     */
+    cancelledBy(signal: AbortSignal): boolean {
+        return signal.aborted && signal === this.stopped;
+    }
+}
+
+/**
+ * Identify an expected cancellation without hiding unrelated failures after a signal was aborted.
+ * @param error - Transport cancellation, exact abort reason or the timers API's wrapped abort reason.
+ * @param signal - The specific lifetime that must have caused cancellation.
+ * @returns True only for cancellation tied to this already-aborted signal.
+ */
+export function isComputerCancellation(error: unknown, signal: AbortSignal): boolean {
+    return (
+        signal.aborted &&
+        (error === signal.reason ||
+            (error instanceof ComputerRequestCancelledError &&
+                error.cancelledBy(signal)) ||
+            (error instanceof Error &&
+                error.name === "AbortError" &&
+                error.cause === signal.reason))
+    );
+}
+
 /**
  * Validate an explicit HTTPS dashboard origin before any credential is read or sent.
  * @param input - Operator-supplied origin, without path, credentials, query or fragment.
@@ -381,7 +420,7 @@ export class ComputerCompanion {
             }
             return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
         } catch (error) {
-            if (stopped.aborted) throw new ComputerConnectionError(false);
+            if (stopped.aborted) throw new ComputerRequestCancelledError(stopped);
             if (error instanceof ComputerConnectionError) throw error;
             throw new ComputerConnectionError(!(error instanceof SyntaxError));
         } finally {
