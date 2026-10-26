@@ -315,7 +315,7 @@ export async function runMiraExecutor(options: {
                             options.moltbook,
                             options.hereNow,
                             options.daytona,
-                            options.github ? { owner: options.github.owner } : undefined
+                            options.github
                         );
                     } finally {
                         health.active--;

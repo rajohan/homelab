@@ -68,6 +68,7 @@
     "apps/mira/src/server/integrations/daytona/toolbox.test.ts": 39,
     "apps/mira/src/server/sandbox/sandbox.test.ts": 529,
     "apps/mira/src/server/sandbox/edits.test.ts": 40,
-    "apps/mira/src/server/integrations/github/github.test.ts": 70
+    "apps/mira/src/server/integrations/github/github.test.ts": 70,
+    "apps/mira/src/server/integrations/github/reader.test.ts": 35
   }
 }

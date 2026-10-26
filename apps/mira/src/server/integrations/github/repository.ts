@@ -164,6 +164,39 @@ export class GitHubClient {
         }
         return parsed.tree;
     }
+    protected async blob(entry: GitHubTreeEntry, signal: AbortSignal, limit = 262_144) {
+        if (
+            entry.type !== "blob" ||
+            !["100644", "100755"].includes(entry.mode) ||
+            entry.size === undefined ||
+            entry.size > limit
+        )
+            throw new Error("Choose a bounded regular text file.");
+        const blob = v.parse(
+            v.object({
+                sha: gitShaSchema,
+                encoding: v.literal("base64"),
+                size: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(limit)),
+                content: v.pipe(v.string(), v.maxLength(400_000)),
+            }),
+            await this.json(
+                "GET",
+                `${githubRepositoryPath}/git/blobs/${entry.sha}`,
+                signal
+            )
+        );
+        const encoded = blob.content.replaceAll("\n", "").replaceAll("\r", "");
+        const bytes = Buffer.from(encoded, "base64");
+        if (
+            bytes.toString("base64") !== encoded ||
+            blob.sha !== entry.sha ||
+            bytes.length !== blob.size ||
+            blob.size !== entry.size ||
+            githubBlobHash(bytes) !== entry.sha
+        )
+            throw new Error("Original Git blob bytes could not be verified.");
+        return { bytes, text: decodeSandboxText(bytes) };
+    }
     protected async prepare(plan: SandboxEditPlan, signal: AbortSignal) {
         await this.verifyBinding(signal);
         await this.requireBase(plan.commit, signal);
@@ -220,35 +253,7 @@ export class GitHubClient {
                         "The original is missing, special or exceeds the text limit."
                     );
                 mode = previous.mode as "100644" | "100755";
-                const blob = v.parse(
-                    v.object({
-                        sha: gitShaSchema,
-                        encoding: v.literal("base64"),
-                        size: v.pipe(
-                            v.number(),
-                            v.integer(),
-                            v.minValue(0),
-                            v.maxValue(262_144)
-                        ),
-                        content: v.pipe(v.string(), v.maxLength(400_000)),
-                    }),
-                    await this.json(
-                        "GET",
-                        `${githubRepositoryPath}/git/blobs/${previous.sha}`,
-                        signal
-                    )
-                );
-                const encoded = blob.content.replaceAll("\n", "").replaceAll("\r", "");
-                const bytes = Buffer.from(encoded, "base64");
-                if (
-                    bytes.toString("base64") !== encoded ||
-                    blob.sha !== previous.sha ||
-                    bytes.length !== blob.size ||
-                    blob.size !== previous.size ||
-                    githubBlobHash(bytes) !== previous.sha
-                )
-                    throw new Error("Original Git blob bytes could not be verified.");
-                const original = decodeSandboxText(bytes);
+                const { bytes, text: original } = await this.blob(previous, signal);
                 if (
                     new Bun.CryptoHasher("sha256").update(bytes).digest("hex") !==
                     file.beforeSha256
