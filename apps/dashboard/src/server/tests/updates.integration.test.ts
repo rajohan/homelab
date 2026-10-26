@@ -168,12 +168,12 @@ test.each(["sized", "chunked"] as const)(
             const rows = await fixture.client<
                 { count: number }[]
             >`SELECT jsonb_array_length(value->'items')::int AS count FROM operation_snapshots WHERE key = 'updates:demo'`;
-            expect(rows).toEqual([{ count: 1500 }]);
-            expect(
-                await fixture.client<
+            expect([...rows]).toEqual([{ count: 1500 }]);
+            expect([
+                ...(await fixture.client<
                     { action: string; state: string }[]
-                >`SELECT action,state FROM job_runs`
-            ).toEqual([{ action: "updates.releases", state: "queued" }]);
+                >`SELECT action,state FROM job_runs`),
+            ]).toEqual([{ action: "updates.releases", state: "queued" }]);
         } finally {
             await server.stop(true);
             await fixture.close();
@@ -363,16 +363,16 @@ test.each(["succeeded", "failed", "timed_out", "expired"] as const)(
             await Promise.all(
                 machines.map((machine) => machine.updates.publish(observation(1000)))
             );
-            expect(
-                await fixture.client<
+            expect([
+                ...(await fixture.client<
                     {
                         action: string;
                         state: string;
                         requested_by: string;
                         payload: Record<string, unknown>;
                     }[]
-                >`SELECT action,state,requested_by,payload FROM job_runs`
-            ).toEqual([
+                >`SELECT action,state,requested_by,payload FROM job_runs`),
+            ]).toEqual([
                 {
                     action: "updates.releases",
                     state: "queued",
@@ -392,11 +392,11 @@ test.each(["succeeded", "failed", "timed_out", "expired"] as const)(
             await started.promise;
             const newest = observation(2000);
             await Promise.all(machines.map((machine) => machine.updates.publish(newest)));
-            expect(
-                await fixture.client<
+            expect([
+                ...(await fixture.client<
                     { state: string }[]
-                >`SELECT state FROM job_runs ORDER BY id`
-            ).toEqual([{ state: "running" }, { state: "queued" }]);
+                >`SELECT state FROM job_runs ORDER BY id`),
+            ]).toEqual([{ state: "running" }, { state: "queued" }]);
             expect(
                 await claimJob(fixture.client, worker, [handler.definition.key])
             ).toBeUndefined();
@@ -427,11 +427,11 @@ test.each(["succeeded", "failed", "timed_out", "expired"] as const)(
                     candidateVerified: true,
                 });
             }
-            expect(
-                await fixture.client<
+            expect([
+                ...(await fixture.client<
                     { action: string; state: string }[]
-                >`SELECT action,state FROM job_runs ORDER BY id`
-            ).toEqual([
+                >`SELECT action,state FROM job_runs ORDER BY id`),
+            ]).toEqual([
                 {
                     action: "updates.releases",
                     state: outcome === "expired" ? "failed" : outcome,
@@ -483,20 +483,20 @@ test("publication-triggered checks respect disabled schedules, worker pause and 
         expect(
             await claimJob(fixture.client, worker, [handler.definition.key])
         ).toBeUndefined();
-        expect(
-            await fixture.client<{ state: string }[]>`SELECT state FROM job_runs`
-        ).toEqual([{ state: "queued" }]);
+        expect([
+            ...(await fixture.client<{ state: string }[]>`SELECT state FROM job_runs`),
+        ]).toEqual([{ state: "queued" }]);
         // Without a successor, ordinary retry must retain the same check.
         await fixture.client`UPDATE worker_control SET paused = false WHERE id = 1`;
         const original = (await claimJob(fixture.client, worker, [
             handler.definition.key,
         ]))!;
         await settleClaim(fixture.client, original, "failed");
-        expect(
-            await fixture.client<
+        expect([
+            ...(await fixture.client<
                 { id: string; state: string; attempt: number }[]
-            >`SELECT id,state,attempt FROM job_runs`
-        ).toEqual([{ id: original.id, state: "queued", attempt: 1 }]);
+            >`SELECT id,state,attempt FROM job_runs`),
+        ]).toEqual([{ id: original.id, state: "queued", attempt: 1 }]);
         // Fill the existing bounded queue with unrelated synthetic jobs; publication
         // and its required check must fail atomically, without replacing the report.
         await fixture.client`UPDATE job_runs SET action='fixture.other'`;
@@ -545,11 +545,11 @@ test.each(["publication", "receipt"] as const)(
             expect(
                 await fixture.client`SELECT key FROM operation_snapshots WHERE key = 'updates.resolved:demo'`
             ).toHaveLength(0);
-            expect(
-                await fixture.client<
+            expect([
+                ...(await fixture.client<
                     { action: string; state: string }[]
-                >`SELECT action,state FROM job_runs`
-            ).toEqual([{ action: "updates.releases", state: "queued" }]);
+                >`SELECT action,state FROM job_runs`),
+            ]).toEqual([{ action: "updates.releases", state: "queued" }]);
             await handler.execute(
                 {},
                 {
@@ -703,11 +703,11 @@ test("scoped preparations validate access and scope, preserve idempotency, and c
                 },
             })
             .updates.publish(report());
-        expect(
-            await fixture.client<
+        expect([
+            ...(await fixture.client<
                 { payload: unknown }[]
-            >`SELECT payload FROM job_runs ORDER BY id`
-        ).toEqual([
+            >`SELECT payload FROM job_runs ORDER BY id`),
+        ]).toEqual([
             { payload: { source: "alpha", purpose: "prepare" } },
             { payload: {} },
         ]);
@@ -744,11 +744,11 @@ test.each(["failed", "expired"] as const)(
                 await fixture.client`UPDATE job_runs SET lease_expires_at=now()-interval '1 second' WHERE id=${id}`;
                 await claimJob(fixture.client, worker, [handler.definition.key]);
             } else await settleClaim(fixture.client, current, "failed");
-            expect(
-                await fixture.client<
+            expect([
+                ...(await fixture.client<
                     { state: string }[]
-                >`SELECT state FROM job_runs WHERE id=${id}`
-            ).toEqual([{ state: "queued" }]);
+                >`SELECT state FROM job_runs WHERE id=${id}`),
+            ]).toEqual([{ state: "queued" }]);
         } finally {
             await fixture.close();
         }
@@ -818,11 +818,11 @@ test("automatic admission reads current APT candidates before choosing an exact 
         expect(reads).toBe(1);
         const current = (await readUpdateReport(fixture.client, "demo"))!;
         expect(current.items[0]!.available).toBe("1.0.2");
-        expect(
-            await fixture.client<
+        expect([
+            ...(await fixture.client<
                 { payload: unknown }[]
-            >`SELECT payload FROM job_runs WHERE action='updates.install.demo-apt'`
-        ).toEqual([
+            >`SELECT payload FROM job_runs WHERE action='updates.install.demo-apt'`),
+        ]).toEqual([
             {
                 payload: {
                     target: target.id,

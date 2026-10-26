@@ -95,7 +95,7 @@ test("concurrent retirement fences an acquisition waiting for the registration l
         expect(await fixture.client`SELECT key FROM resource_leases`).toHaveLength(0);
     } finally {
         if (transactionOpen) await retirement`ROLLBACK`;
-        retirement.release();
+        await retirement.release();
         await claim;
         await fixture.close();
     }
@@ -442,11 +442,11 @@ test("worker performs real queued work then drains without leaving active claims
             version: "test",
         });
         expect(completed).toBe(true);
-        expect(
-            await fixture.client<
+        expect([
+            ...(await fixture.client<
                 { message: string }[]
-            >`SELECT message FROM operation_audit WHERE action='jobs.progress'`
-        ).toEqual([{ message: "Processing a generic worker task." }]);
+            >`SELECT message FROM operation_audit WHERE action='jobs.progress'`),
+        ]).toEqual([{ message: "Processing a generic worker task." }]);
         const runs = await listJobs(fixture.client, 30, undefined);
         expect(runs.some((row) => row.state === "running")).toBe(false);
         expect(await fixture.client`SELECT id FROM workers`).toHaveLength(0);

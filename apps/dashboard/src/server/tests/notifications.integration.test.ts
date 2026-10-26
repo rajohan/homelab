@@ -480,7 +480,7 @@ test("final job notifications share settlement and retries do not report prematu
         const rows = await fixture.client<
             { severity: string; source_key: string }[]
         >`SELECT severity,source_key FROM dashboard_notifications`;
-        expect(rows).toEqual([{ severity: "error", source_key: id }]);
+        expect([...rows]).toEqual([{ severity: "error", source_key: id }]);
     } finally {
         await fixture.close();
     }
@@ -517,7 +517,7 @@ test.each([
                 >`SELECT severity FROM dashboard_notifications WHERE source='jobs' AND source_key=${id}`;
                 const visible = outcome !== "succeeded" || actor.startsWith("human:");
                 const severity = outcome === "succeeded" ? "success" : "error";
-                expect(rows).toEqual(visible ? [{ severity }] : []);
+                expect([...rows]).toEqual(visible ? [{ severity }] : []);
             }
         } finally {
             await fixture.close();
@@ -552,7 +552,7 @@ test.each(["succeeded", "failed", "timed_out"] as const)(
             const notifications = await fixture.client<
                 { severity: string }[]
             >`SELECT severity FROM dashboard_notifications WHERE source_key=${id}`;
-            expect(notifications).toEqual(
+            expect([...notifications]).toEqual(
                 outcome === "succeeded" ? [] : [{ severity: "error" }]
             );
         } finally {

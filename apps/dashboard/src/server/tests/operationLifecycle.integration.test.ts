@@ -171,9 +171,11 @@ test("retention removes only aged completed history and preserves queued and cur
         expect(registrations.map((worker) => worker.id).toSorted()).toEqual(
             [recent, active, worker].toSorted()
         );
-        expect(
-            await fixture.client<{ id: string }[]>`SELECT id FROM dashboard_notifications`
-        ).toEqual([{ id: current }]);
+        expect([
+            ...(await fixture.client<
+                { id: string }[]
+            >`SELECT id FROM dashboard_notifications`),
+        ]).toEqual([{ id: current }]);
         expect(
             await fixture.client`SELECT notification_id FROM notification_receipts`
         ).toHaveLength(0);
@@ -215,7 +217,7 @@ test("retention skips a locked recovering worker and retains its refreshed regis
         ).toHaveLength(1);
     } finally {
         if (transactionOpen) await recovery`ROLLBACK`;
-        recovery.release();
+        await recovery.release();
         await fixture.close();
     }
 });

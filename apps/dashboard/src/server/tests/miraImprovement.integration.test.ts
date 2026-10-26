@@ -268,7 +268,7 @@ test("automatic frontend work continues after the model turn and publishes one v
         const notices = await f.client<
             { recipient: string; destination: string; severity: string }[]
         >`SELECT recipient,destination,severity FROM dashboard_notifications WHERE source='mira' AND source_key=${`improvement:${id}`}`;
-        expect(notices).toEqual([
+        expect([...notices]).toEqual([
             {
                 recipient: `human:${github.owner}`,
                 destination: "reports",
@@ -609,7 +609,7 @@ test("blocked automatic work requires human review, settled cleanup and a fresh 
         const warnings = await f.client<
             { severity: string; recipient: string }[]
         >`SELECT severity,recipient FROM dashboard_notifications WHERE source_key=${`improvement:${id}`}`;
-        expect(warnings).toEqual([
+        expect([...warnings]).toEqual([
             { severity: "warning", recipient: `human:${github.owner}` },
         ]);
         const review = {

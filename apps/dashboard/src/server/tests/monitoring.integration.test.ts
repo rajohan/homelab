@@ -521,14 +521,16 @@ test("Alertmanager transport strips private metadata, includes suppressed alerts
         await fixture.client.begin((transaction) =>
             synchronizeAlerts(transaction, equivalent)
         );
-        expect(
-            await fixture.client<
+        expect([
+            ...(await fixture.client<
                 { id: string; source_key: string; state: string }[]
-            >`SELECT id, source_key, state FROM operational_incidents`
-        ).toEqual(before);
-        expect(
-            await fixture.client<{ id: string }[]>`SELECT id FROM dashboard_notifications`
-        ).toEqual(notifications);
+            >`SELECT id, source_key, state FROM operational_incidents`),
+        ]).toEqual(before);
+        expect([
+            ...(await fixture.client<
+                { id: string }[]
+            >`SELECT id FROM dashboard_notifications`),
+        ]).toEqual(notifications);
         const otherSource = await readAlerts(
             { ...configuration, url: server.url.origin + "/other" },
             AbortSignal.timeout(2000)
