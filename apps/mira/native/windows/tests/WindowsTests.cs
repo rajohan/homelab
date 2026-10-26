@@ -7,6 +7,11 @@ using Homelab.Mira.Computer;
 
 internal static class WindowsTests
 {
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr GetDesktopWindow();
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr GetShellWindow();
+
     private static int assertions;
     private static void Check(bool value)
     {
@@ -15,8 +20,12 @@ internal static class WindowsTests
     }
     private static void Reject(Action operation)
     {
+        Reject<InvalidDataException>(operation);
+    }
+    private static void Reject<T>(Action operation) where T : Exception
+    {
         bool failed = false;
-        try { operation(); } catch (InvalidDataException) { failed = true; }
+        try { operation(); } catch (T) { failed = true; }
         Check(failed);
     }
     private static Dictionary<string, object> Request()
@@ -69,6 +78,9 @@ internal static class WindowsTests
             Reject(delegate { ConsentProtocol.Id(message, 1); });
             message["params"] = new object[] { };
             Reject(delegate { ConsentProtocol.Parameters(message); });
+            Reject<InvalidOperationException>(delegate { NativeWindows.Identity(GetDesktopWindow()); });
+            IntPtr shell = GetShellWindow();
+            if (shell != IntPtr.Zero) Reject<InvalidOperationException>(delegate { NativeWindows.Identity(shell); });
             Check(NativeWindows.SessionReady(1, 1, 1, 0, 1));
             foreach (int state in new[] { 1, 2, 3, 4, 5, 6, 7, 8, 9 })
                 Check(!NativeWindows.SessionReady(1, 1, 1, state, 1));
@@ -94,9 +106,9 @@ internal static class WindowsTests
             Console.WriteLine("{\"windowsConsent\":\"passed\",\"assertions\":" + assertions + "}");
             return 0;
         }
-        catch (Exception)
+        catch (Exception error)
         {
-            Console.Error.WriteLine("Windows consent tests failed.");
+            Console.Error.WriteLine("Windows consent tests failed after " + assertions + " assertions (" + error.GetType().Name + ").");
             return 1;
         }
     }

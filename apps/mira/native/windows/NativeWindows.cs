@@ -102,6 +102,10 @@ namespace Homelab.Mira.Computer
         [DllImport("user32.dll")]
         private static extern bool IsWindowVisible(IntPtr window);
         [DllImport("user32.dll")]
+        private static extern IntPtr GetShellWindow();
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetDesktopWindow();
+        [DllImport("user32.dll")]
         private static extern uint GetWindowThreadProcessId(IntPtr window, out uint pid);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         private static extern int GetWindowText(IntPtr window, StringBuilder text, int capacity);
@@ -169,7 +173,8 @@ namespace Homelab.Mira.Computer
             uint pid;
             uint session;
             uint currentSession;
-            if (!IsWindowVisible(window) || GetWindowThreadProcessId(window, out pid) == 0 ||
+            if (window == IntPtr.Zero || window == GetDesktopWindow() || window == GetShellWindow() ||
+                !IsWindowVisible(window) || GetWindowThreadProcessId(window, out pid) == 0 ||
                 !ProcessIdToSessionId(pid, out session) ||
                 !ProcessIdToSessionId((uint)Process.GetCurrentProcess().Id, out currentSession) ||
                 session != currentSession)

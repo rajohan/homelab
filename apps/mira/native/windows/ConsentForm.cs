@@ -10,6 +10,22 @@ using Microsoft.Win32;
 
 namespace Homelab.Mira.Computer
 {
+    // Keep the native button's accessibility and keyboard behavior while making disabled text readable.
+    internal sealed class ConsentActionButton : Button
+    {
+        protected override void OnPaint(PaintEventArgs args)
+        {
+            base.OnPaint(args);
+            if (Enabled) return;
+            Color background = Color.FromArgb(30, 41, 59);
+            args.Graphics.Clear(background);
+            using (var border = new Pen(Color.FromArgb(71, 85, 105)))
+                args.Graphics.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
+            TextRenderer.DrawText(args.Graphics, Text, Font, ClientRectangle,
+                Color.FromArgb(148, 163, 184), TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+        }
+    }
+
     internal sealed class ConsentForm : Form
     {
         private readonly ConsentRequest request;
@@ -18,7 +34,7 @@ namespace Homelab.Mira.Computer
         private readonly double consentDeadline;
         private readonly double sessionDeadline;
         private readonly ListView windows = new ListView();
-        private readonly Button allow = new Button();
+        private readonly Button allow = new ConsentActionButton();
         private readonly Button stop = new Button();
         private readonly CheckBox foreground = new CheckBox();
         private readonly Label status = new Label();
