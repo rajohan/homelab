@@ -1,6 +1,6 @@
 # Daytona cloud jobs and qualification
 
-Mira provides reviewed cloud-job drafts, a durable independent dispatcher and shared dashboard status, logs, results and cancellation. Chat tools can propose jobs and read recorded results; they cannot approve or execute commands. Production activation and live account/snapshot qualification remain outstanding. Publishing this code does not provision a paid sandbox.
+Mira provides reviewed cloud-job drafts, a durable independent dispatcher and shared dashboard status, logs, results and cancellation. Chat tools can propose jobs and read recorded results; they cannot approve or execute commands. [Automatic frontend improvements](mira-improvements.md) use a separate explicit operator policy to queue only the fixed structured-edit check. Production activation and live account/snapshot qualification remain outstanding. Publishing this code does not provision a paid sandbox.
 
 ## Operator workflow
 

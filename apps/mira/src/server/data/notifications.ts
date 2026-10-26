@@ -83,7 +83,7 @@ export async function notifyMiraRun(query: TransactionSQL, runId: string): Promi
             delivery: string | null;
             reportCount: number;
         }[]
-    >`SELECT r.owner, r.automation_id AS "automationId", r.manual, r.state, r.message, r.observation_hash AS "observationHash", a.title, a.delivery, (SELECT count(*)::int FROM mira_reports p WHERE p.run_id = r.id AND p.deleted_at IS NULL) AS "reportCount" FROM mira_runs r LEFT JOIN mira_automations a ON a.id = r.automation_id WHERE r.id = ${runId}`;
+    >`SELECT r.owner, r.automation_id AS "automationId", r.manual, r.state, r.message, r.observation_hash AS "observationHash", a.title, a.delivery, (SELECT count(*)::int FROM mira_reports p WHERE p.run_id = r.id AND p.deleted_at IS NULL AND NOT EXISTS(SELECT 1 FROM mira_improvements i WHERE i.report_id=p.id AND i.owner=p.owner)) AS "reportCount" FROM mira_runs r LEFT JOIN mira_automations a ON a.id = r.automation_id WHERE r.id = ${runId}`;
     if (!run || !["completed", "failed", "needs_attention"].includes(run.state)) return;
     if (
         run.automationId &&

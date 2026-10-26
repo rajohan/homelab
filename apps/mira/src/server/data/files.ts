@@ -311,6 +311,14 @@ export async function deleteMiraFile(
             { id: string }[]
         >`SELECT id FROM mira_attachments WHERE id = ${id} AND owner = ${context.owner} FOR UPDATE`;
         if (!file) throw new MiraFailure("NOT_FOUND", "File not found.");
+        const [improvement] = await query<
+            { id: string }[]
+        >`SELECT id FROM mira_improvements WHERE id=${id} AND owner=${context.owner} AND state IN ('queued','checking','publishing','needs_attention') LIMIT 1`;
+        if (improvement)
+            throw new MiraFailure(
+                "CONFLICT",
+                "Finish or review automatic code work before deleting its edit file."
+            );
         const active = await query<
             { id: string }[]
         >`SELECT r.id FROM mira_runs r JOIN mira_messages m ON m.conversation_id = r.conversation_id WHERE r.owner = ${context.owner} AND r.state IN ('queued','running') AND m.attachment_ids @> ${JSON.stringify([id])}::text::jsonb LIMIT 1`;
