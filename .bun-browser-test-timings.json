@@ -49,6 +49,7 @@
     "apps/dashboard/src/browser/features/jobs/MaintenanceResults.test.tsx": 2,
     "apps/dashboard/src/browser/features/jobs/RunEvent.test.tsx": 1,
     "apps/dashboard/src/browser/features/jobs/useJobCompletionRefresh.test.tsx": 1,
-    "apps/dashboard/src/browser/features/updates/RestartStatus.test.tsx": 1
+    "apps/dashboard/src/browser/features/updates/RestartStatus.test.tsx": 1,
+    "apps/dashboard/src/browser/features/mira/MiraComputers.test.tsx": 870
   }
 }

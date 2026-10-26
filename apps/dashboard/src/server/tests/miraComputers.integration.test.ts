@@ -361,7 +361,7 @@ test("the server never activates the computer endpoint without identity and oper
             `http://127.0.0.1:${server.port}/api/mira/computers/enroll`,
             { method: "POST" }
         );
-        expect(result.status).toBe(503);
+        expect(result.status).toBe(404);
         expect(result.headers.get("cache-control")).toBe("no-store");
     } finally {
         await server.stop(true);
@@ -418,3 +418,52 @@ test("machine request bodies have a deadline and a bounded concurrency budget", 
         await f.close();
     }
 }, 10_000);
+
+test("machine presence is isolated from the public dashboard and both listeners stop together", async () => {
+    const f = await fixture();
+    const server = startDashboardServer({
+        hostname: "127.0.0.1",
+        port: 0,
+        development: false,
+        computerBinding: { hostname: "127.0.0.1", port: 0 },
+        authentication: {
+            issuer: "https://identity.example.invalid",
+            origin: "https://dashboard.example.invalid",
+            clientId: "synthetic",
+            clientSecret: "synthetic",
+            tokenEndpointAuthMethod: "client_secret_post",
+            sessionKey: new Uint8Array(32),
+            development: false,
+        },
+        operations: {
+            databaseUrl: f.url,
+            metricsUrl: undefined,
+            metricsToken: undefined,
+            concurrency: 3,
+            retentionDays: 30,
+        },
+    });
+    const privateOrigin = `http://127.0.0.1:${server.computerPort}`;
+    const publicOrigin = `http://127.0.0.1:${server.port}`;
+    const pair = await f.api.pair({ label: "Private PC" });
+    const init = {
+        method: "POST",
+        headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${pair.token}`,
+        },
+        body: JSON.stringify(metadata()),
+    };
+    try {
+        await status(fetch(publicOrigin + "/api/mira/computers/enroll", init), 404);
+        await status(fetch(privateOrigin + "/api/trpc/system.status"), 404);
+        await status(fetch(privateOrigin + "/"), 404);
+        await status(fetch(privateOrigin + "/api/mira/computers/enroll", init), 200);
+        expect(await f.api.list()).toMatchObject([{ state: "paired" }]);
+    } finally {
+        await server.stop(true);
+        await f.close();
+    }
+    await rejects(fetch(privateOrigin));
+    await rejects(fetch(publicOrigin));
+});

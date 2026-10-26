@@ -1,7 +1,9 @@
 import index from "../index.html";
 import { authenticateAutomation } from "./automation/authentication";
+import { privateComputerAddress } from "./config/computer";
 import {
     dashboardBindOptions,
+    dashboardComputerBinding,
     dashboardDevelopment,
     dashboardAuthConfiguration,
     dashboardOperationsConfiguration,
@@ -29,6 +31,11 @@ import { createOperationsRuntime } from "./operations/runtime";
  */
 export function startDashboardServer(options: DashboardServerOptions = {}) {
     const bindOptions = dashboardBindOptions();
+    const computerBinding =
+        options.computerBinding === undefined
+            ? dashboardComputerBinding()
+            : options.computerBinding;
+    if (computerBinding) privateComputerAddress(computerBinding.hostname);
     const configuration =
         options.authentication === undefined
             ? dashboardAuthConfiguration()
@@ -44,9 +51,7 @@ export function startDashboardServer(options: DashboardServerOptions = {}) {
         ? createOperationsRuntime(operationalConfiguration)
         : undefined;
 
-    const receiveComputer = miraComputerReceiver(
-        authentication ? operations?.client : undefined
-    );
+    let computerServer: ReturnType<typeof Bun.serve> | undefined;
     const receiveAgentMail = agentMailWebhookReceiver(operations);
     const stopAgentMailHeartbeat = agentMailReceiverHeartbeat(operations);
 
@@ -57,7 +62,7 @@ export function startDashboardServer(options: DashboardServerOptions = {}) {
                 incomingPath === "/api/mira/computers" ||
                 incomingPath.startsWith("/api/mira/computers/")
             )
-                return await receiveComputer(incoming);
+                return json("NOT_FOUND", "Not found.", 404);
             if (incomingPath === "/api/mira/hooks/agentmail")
                 return await receiveAgentMail(incoming);
             if (
@@ -219,11 +224,31 @@ export function startDashboardServer(options: DashboardServerOptions = {}) {
     });
     const stop = server.stop.bind(server);
     server.stop = async (closeActiveConnections?: boolean) => {
-        await stop(closeActiveConnections);
+        await Promise.all([
+            stop(closeActiveConnections),
+            computerServer?.stop(closeActiveConnections),
+        ]);
         await stopAgentMailHeartbeat();
         await operations?.client.close();
     };
-    return server;
+    try {
+        if (computerBinding) {
+            if (!authentication || !operations)
+                throw new Error(
+                    "Computer connectivity requires identity and operations."
+                );
+            computerServer = Bun.serve({
+                ...computerBinding,
+                development: false,
+                maxRequestBodySize: 2048,
+                fetch: miraComputerReceiver(operations.client),
+            });
+        }
+    } catch (error) {
+        void server.stop(true).catch(() => null);
+        throw error;
+    }
+    return Object.assign(server, { computerPort: computerServer?.port ?? null });
 }
 if (import.meta.main) {
     try {

@@ -9,6 +9,7 @@ export interface DashboardServerOptions {
     readonly hostname?: string;
     readonly port?: number;
     readonly development?: boolean;
+    readonly computerBinding?: { hostname: string; port: number } | null;
     readonly authentication?: DashboardAuthConfiguration | null;
     readonly operations?: OperationsConfiguration | null;
 }

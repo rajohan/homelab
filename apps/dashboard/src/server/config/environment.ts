@@ -2,6 +2,7 @@ import { isIP } from "node:net";
 
 import type { ApplicationTarget } from "../integrations/applications/configuration";
 import { parseDashboardAuthConfiguration } from "./auth";
+import { parseComputerBinding } from "./computer";
 import { parseOperationsConfiguration } from "./operations";
 
 /**
@@ -69,4 +70,12 @@ export function workerHealthBinding() {
         HOMELAB_DASHBOARD_HOST: process.env.HOMELAB_DASHBOARD_WORKER_HOST ?? "127.0.0.1",
         HOMELAB_DASHBOARD_PORT: process.env.HOMELAB_DASHBOARD_WORKER_PORT ?? "3112",
     });
+}
+
+/**
+ * Read the separately bound, opt-in computer transport configuration.
+ * @returns A private listener or undefined; the public dashboard never serves machine requests.
+ */
+export function dashboardComputerBinding() {
+    return parseComputerBinding(process.env);
 }
