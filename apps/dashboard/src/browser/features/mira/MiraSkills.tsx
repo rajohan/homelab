@@ -63,47 +63,48 @@ export function MiraSkills() {
                 {query.data?.map((skill) => (
                     <section
                         key={skill.id}
-                        className="space-y-3 rounded-lg border border-primary-700 bg-primary-950/40 p-4"
+                        className="@container/skill space-y-3 rounded-lg border border-primary-700 bg-primary-950/40 p-4"
                     >
-                        <SectionHeader
-                            title={skill.title}
-                            icon={BookOpen}
-                            description={skill.description}
-                            badge={
-                                <Badge>
-                                    {skill.control.enabled ? "Enabled" : "Paused"}
-                                </Badge>
-                            }
-                            actions={
-                                <ActionGroup className="w-full min-[30rem]:w-52 min-[30rem]:shrink-0">
-                                    <Button
-                                        variant="secondary"
-                                        onClick={() => setSelected(skill)}
-                                    >
-                                        <Eye size={16} aria-hidden="true" />
-                                        View
-                                    </Button>
-                                    <Button
-                                        variant="secondary"
-                                        disabled={
-                                            !skill.control.enabled &&
-                                            skill.compatibility !== "available"
-                                        }
-                                        busy={
-                                            enable.isPending &&
-                                            enable.variables?.id === skill.id
-                                        }
-                                        onClick={() =>
-                                            skill.control.enabled
-                                                ? setPaused(skill)
-                                                : enable.mutate(skill)
-                                        }
-                                    >
-                                        {skill.control.enabled ? "Pause" : "Enable"}
-                                    </Button>
-                                </ActionGroup>
-                            }
-                        />
+                        <div className="grid gap-3 @min-[36rem]/skill:grid-cols-[minmax(0,1fr)_13rem] @min-[36rem]/skill:items-center">
+                            {" "}
+                            <SectionHeader
+                                title={skill.title}
+                                icon={BookOpen}
+                                description={skill.description}
+                                badge={
+                                    <Badge>
+                                        {skill.control.enabled ? "Enabled" : "Paused"}
+                                    </Badge>
+                                }
+                            />
+                            <ActionGroup className="w-full @min-[36rem]/skill:w-52">
+                                <Button
+                                    variant="secondary"
+                                    onClick={() => setSelected(skill)}
+                                >
+                                    <Eye size={16} aria-hidden="true" />
+                                    View
+                                </Button>
+                                <Button
+                                    variant="secondary"
+                                    disabled={
+                                        !skill.control.enabled &&
+                                        skill.compatibility !== "available"
+                                    }
+                                    busy={
+                                        enable.isPending &&
+                                        enable.variables?.id === skill.id
+                                    }
+                                    onClick={() =>
+                                        skill.control.enabled
+                                            ? setPaused(skill)
+                                            : enable.mutate(skill)
+                                    }
+                                >
+                                    {skill.control.enabled ? "Pause" : "Enable"}
+                                </Button>
+                            </ActionGroup>
+                        </div>
                         <p className="text-sm text-primary-400">
                             Version {skill.version}
                         </p>
