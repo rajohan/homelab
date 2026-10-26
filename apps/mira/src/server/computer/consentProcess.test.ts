@@ -6,6 +6,7 @@ import path from "node:path";
 
 import { computerEnvironment } from "../config/environment";
 import { openComputerConsentSurface } from "./consentProcess";
+import { computerWindowManifest } from "./policy";
 
 async function fixture(mode: string) {
     const directory = await mkdtemp(path.join(tmpdir(), "mira-local-consent-"));
@@ -94,33 +95,45 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     };
 }
 
-test("a real private child yields one immutable local target and fresh readiness without secrets or ambient config", async () => {
-    const f = await fixture("normal");
-    try {
-        const surface = await openComputerConsentSurface(f.options);
-        if (!surface) throw new Error("Expected synthetic consent.");
-        expect(surface.target).toEqual(f.target);
-        expect(Object.isFrozen(surface.target)).toBe(true);
-        await surface.assertReady();
-        const record = await f.record();
-        expect(record.unsafe).toBe(false);
-        expect(record.input).toEqual({
-            id: f.options.request.id,
-            runId: f.options.request.runId,
-            origin: f.options.origin,
-            mode: "view",
-            consentExpiresAt: f.options.request.consentExpiresAt,
-            expiresAt: f.options.request.expiresAt,
-        });
-        await surface.close();
-        expect(surface.signal.aborted).toBe(true);
-        expect(() => process.kill(record.pid, 0)).toThrow();
-        await rejects(surface.assertReady(), /no longer available/);
-    } finally {
-        f.stop.abort();
-        await f.remove();
+test.each(["view", "control"] as const)(
+    "a real private child preserves the trusted %s scope through the native manifest and returns an immutable target",
+    async (mode) => {
+        const f = await fixture("normal");
+        try {
+            const options = { ...f.options, request: { ...f.options.request, mode } };
+            const opening = openComputerConsentSurface(options);
+            // Later caller mutation must not rewrite the consent already sent to the local host.
+            options.request.mode = mode === "view" ? "control" : "view";
+            const surface = await opening;
+            if (!surface) throw new Error("Expected synthetic consent.");
+            expect(surface.target).toEqual({ ...f.target, mode });
+            expect(computerWindowManifest(surface.target).allow.tools).toEqual(
+                mode === "view"
+                    ? ["get_window_state"]
+                    : ["get_window_state", "click", "type_text"]
+            );
+            expect(Object.isFrozen(surface.target)).toBe(true);
+            await surface.assertReady();
+            const record = await f.record();
+            expect(record.unsafe).toBe(false);
+            expect(record.input).toEqual({
+                id: f.options.request.id,
+                runId: f.options.request.runId,
+                origin: f.options.origin,
+                mode,
+                consentExpiresAt: f.options.request.consentExpiresAt,
+                expiresAt: f.options.request.expiresAt,
+            });
+            await surface.close();
+            expect(surface.signal.aborted).toBe(true);
+            expect(() => process.kill(record.pid, 0)).toThrow();
+            await rejects(surface.assertReady(), /no longer available/);
+        } finally {
+            f.stop.abort();
+            await f.remove();
+        }
     }
-});
+);
 
 test("local rejection, connection cancellation and late selections never yield a target", async () => {
     for (const mode of ["decline", "late", "no-selection"]) {

@@ -11,7 +11,7 @@ import { computerChildEnvironment } from "./process";
 /** A local consent surface; its pipe never receives credentials, pixels or input commands. */
 export interface ComputerConsentSurface {
     signal: AbortSignal;
-    target: Readonly<ComputerWindowGrant>;
+    target: Readonly<ComputerWindowGrant & { mode: MiraComputerConsentRequest["mode"] }>;
     /**
      * Recheck the selected window and independently observed interactive desktop state.
      * @returns Completion only while the same local selection remains available.
@@ -50,8 +50,8 @@ export async function openComputerConsentSurface(
         throw new Error("Computer consent expired.");
     const stopped = new AbortController();
     const signal = AbortSignal.any([options.signal, stopped.signal]);
-    let resolveSelection!: (target: Readonly<ComputerWindowGrant> | null) => void;
-    const selection = new Promise<Readonly<ComputerWindowGrant> | null>((resolve) => {
+    let resolveSelection!: (target: ComputerConsentSurface["target"] | null) => void;
+    const selection = new Promise<ComputerConsentSurface["target"] | null>((resolve) => {
         resolveSelection = resolve;
     });
     const connection = new RpcProcess({
@@ -84,7 +84,7 @@ export async function openComputerConsentSurface(
             if (target.delivery !== "foreground" || target.mode !== undefined)
                 throw new Error("Unexpected local consent target scope.");
             selected = true;
-            resolveSelection(Object.freeze(target));
+            resolveSelection(Object.freeze({ ...target, mode: request.mode }));
         } else throw new Error("Unexpected local consent message.");
     });
     const timer = setTimeout(() => stopped.abort(), remaining);
