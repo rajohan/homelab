@@ -9,7 +9,13 @@ import { openNativeComputerWindow } from "./native";
 
 async function fixture() {
     const executable = await realpath(process.execPath);
-    const grant = { executable, pid: 123, windowId: "456", delivery: "background" };
+    const grant: {
+        executable: string;
+        pid: number;
+        windowId: string;
+        delivery: string;
+        mode?: "view" | "control";
+    } = { executable, pid: 123, windowId: "456", delivery: "background" };
     let manifest = "";
     let shuts = 0;
     let destroys = 0;
@@ -214,4 +220,22 @@ test("native shutdown failure still releases its handle and temporary manifest",
     await assert.rejects(driver.close(), /shutdown/);
     expect(f.destroys()).toBe(1);
     expect(await Bun.file(f.manifest()).exists()).toBe(false);
+});
+
+test("view-only native policy omits input tools and the adapter refuses them before SDK dispatch", async () => {
+    const f = await fixture();
+    f.grant.mode = "view";
+    const driver = await f.open();
+    try {
+        expect(await Bun.file(f.manifest()).json()).toMatchObject({
+            allow: { tools: ["get_window_state"] },
+        });
+        await driver.observe(signal());
+        const before = f.calls.length;
+        await assert.rejects(driver.click(1, 1, signal()), /view-only/);
+        await assert.rejects(driver.type("Never sent", signal()), /view-only/);
+        expect(f.calls).toHaveLength(before);
+    } finally {
+        await driver.close();
+    }
 });

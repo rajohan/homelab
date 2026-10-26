@@ -101,3 +101,37 @@ completion, expired leases, pairing revocation, deleted conversations and change
 pause-control versions all invalidate access. Resuming a pause requires a new
 human request and new local consent. Stop records durable denial; it does not
 claim an already dispatched OS action was undone.
+
+## Local consent controller
+
+The companion transport now reads consent requests, accepts one opaque target,
+checks a short `access/permit` receipt and records stop on the private listener.
+A permit rechecks the same live run, pause versions, device generation, target and
+scope as the executor gate. It cannot extend the original consent deadline or
+reveal worker credentials. Responses are bounded and identity-checked; acceptance
+and input are never retried after uncertain delivery.
+
+`ComputerConsentController` is a single-use local lifecycle for that connection.
+Its host must show the requested job and view/control scope, obtain explicit local
+consent, resolve one exact native target, and independently check OS readiness.
+Only an opaque UUID leaves the PC during consent; executable, PID and window
+identity stay local. The controller rejects remote target overrides and freezes
+the locally selected target. View-only mode removes native input tools from the
+capability manifest and refuses click/type in both adapters.
+
+Readiness and server authority are checked before startup and before/after each
+operation. Permit freshness is measured from request start using a monotonic
+clock. A short watchdog aborts authority when renewal stalls; successful renewals
+still cannot extend the absolute session lifetime. Connection loss, local stop,
+lock/readiness failure and expired or changed server authority permanently retire
+the controller. Late observations are discarded and interrupted input remains
+unknown. Stop aborts immediately, waits for the starting/active native port to be
+reaped, then attempts a bounded server stop. Server unavailability cannot restore
+local access. The caller must await cleanup before creating another controller;
+failed cleanup must block replacement.
+
+This is the tested consent lifecycle and private protocol, not a deployed Windows
+consent window. The presence-only CLI still does not instantiate it. The native
+Windows picker/readiness monitor, process-tree ownership, command delivery,
+Chat controls, installer, signed release distribution, autostart and updater
+qualification remain required before enabling screen/input on the user's PC.

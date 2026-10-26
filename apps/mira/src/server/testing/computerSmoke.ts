@@ -108,6 +108,28 @@ export async function qualifyComputerFixture() {
         windowId,
         delivery: "foreground",
     };
+    const view = await openNativeComputerWindow({ ...grant, mode: "view" });
+    try {
+        await view.observe(AbortSignal.timeout(3000));
+        for (const operation of [
+            () =>
+                view.click(fixture.button.x, fixture.button.y, AbortSignal.timeout(3000)),
+            () => view.type("Not allowed", AbortSignal.timeout(3000)),
+        ]) {
+            let denied = false;
+            try {
+                await operation();
+            } catch {
+                denied = true;
+            }
+            if (!denied) throw new Error("View-only native access admitted input.");
+        }
+        const untouched = await readState();
+        if (untouched.text !== fixture.text || untouched.count !== fixture.count)
+            throw new Error("View-only input changed the independent fixture state.");
+    } finally {
+        await view.close();
+    }
     const wrong = await openNativeComputerWindow({
         ...grant,
         executable: await realpath(process.execPath),
@@ -178,6 +200,7 @@ export async function qualifyComputerFixture() {
             replayDenied: true,
             stopped: true,
             supervised: true,
+            viewOnly: true,
         };
     } finally {
         await session.close();

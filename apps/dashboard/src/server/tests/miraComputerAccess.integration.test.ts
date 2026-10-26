@@ -6,6 +6,7 @@ import { setMiraEnabled } from "@homelab/mira/data/automations";
 import {
     acceptMiraComputerAccess,
     pendingMiraComputerAccess,
+    permitMiraComputerAccessLocally,
     requestMiraComputerAccess,
     requireMiraComputerAccess,
     stopMiraComputerAccessLocally,
@@ -601,3 +602,107 @@ test("a deadline elapsed between validation and insertion returns a public preco
         }
     }
 }, 10_000);
+
+test("paired PC permits preserve exact generation, target, view scope and pause invalidation", async () => {
+    const f = await fixture();
+    try {
+        const grant = await f.api.computers.access.request({
+            ...f.request,
+            mode: "view",
+        });
+        const input = {
+            id: grant.id,
+            connectionId: f.connection.connectionId,
+            targetId: f.targetId,
+            mode: "view",
+        };
+        const permit = (
+            change: Record<string, unknown> = {},
+            token = f.device.credential
+        ) => permitMiraComputerAccessLocally(f.client, token, { ...input, ...change });
+        await rejects(permit(), /no longer available/);
+        await f.accept(grant.id);
+        const allowed = await permit();
+        expect(allowed).toMatchObject(input);
+        expect(allowed.validForMs).toBeGreaterThan(0);
+        expect(allowed.validForMs).toBeLessThanOrEqual(5000);
+        for (const change of [
+            { id: crypto.randomUUID() },
+            { targetId: crypto.randomUUID() },
+            { connectionId: crypto.randomUUID() },
+            { mode: "control" },
+        ])
+            await rejects(permit(change));
+        await rejects(permit({}, "invalid"));
+        const otherPair = await f.api.computers.pair({ label: "Other PC" });
+        const other = await enrollMiraComputer(f.client, otherPair.token, {
+            installationId: crypto.randomUUID(),
+            platform: "win32",
+            version: "0.10.0",
+        });
+        const otherConnection = await connectMiraComputer(f.client, other.credential);
+        await rejects(
+            permit({ connectionId: otherConnection.connectionId }, other.credential)
+        );
+        await f.api.computers.access.stop({ id: grant.id });
+        await rejects(permit(), /no longer available/);
+        const next = await f.api.computers.access.request(f.request);
+        await f.accept(next.id);
+        const active = { ...input, id: next.id, mode: "control" };
+        expect(
+            await permitMiraComputerAccessLocally(f.client, f.device.credential, active)
+        ).toMatchObject(active);
+        await cancelRun(f.context, f.run.id);
+        await rejects(
+            permitMiraComputerAccessLocally(f.client, f.device.credential, active)
+        );
+    } finally {
+        await f.close();
+    }
+});
+
+test("private permit HTTP route admits only a valid machine binding and reveals no run lease", async () => {
+    const f = await fixture();
+    const server = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        fetch: miraComputerReceiver(f.client),
+    });
+    try {
+        const grant = await f.api.computers.access.request(f.request);
+        await f.accept(grant.id);
+        const input = {
+            id: grant.id,
+            connectionId: f.connection.connectionId,
+            targetId: f.targetId,
+            mode: "control",
+        };
+        const post = (body: unknown, headers: Record<string, string> = {}) =>
+            fetch(new URL("/api/mira/computers/access/permit", server.url), {
+                method: "POST",
+                headers: {
+                    authorization: `Bearer ${f.device.credential}`,
+                    "content-type": "application/json",
+                    ...headers,
+                },
+                body: JSON.stringify(body),
+            });
+        const response = await post(input);
+        expect(response.status).toBe(200);
+        expect(response.headers.get("cache-control")).toBe("no-store");
+        const payload = await response.json();
+        expect(payload).toMatchObject(input);
+        expect(JSON.stringify(payload)).not.toContain(f.run.leaseToken);
+        expect(
+            await post(input, { origin: "https://public.example.test" })
+        ).toMatchObject({ status: 403 });
+        expect(await post({ ...input, executable: "/injected" })).toMatchObject({
+            status: 400,
+        });
+        await connectMiraComputer(f.client, f.device.credential);
+        expect(await post(input)).toMatchObject({ status: 403 });
+    } finally {
+        await server.stop(true);
+        await f.close();
+    }
+});

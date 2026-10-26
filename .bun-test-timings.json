@@ -75,7 +75,7 @@
     "apps/mira/src/server/runtime/runtimeVisual.test.ts": 98,
     "apps/mira/src/server/runtime/toolResult.test.ts": 17,
     "apps/mira/src/server/visualQualification.test.ts": 9,
-    "apps/mira/src/server/computer/native.test.ts": 14,
+    "apps/mira/src/server/computer/native.test.ts": 11,
     "apps/mira/src/server/computer/policy.test.ts": 1,
     "apps/mira/src/server/computer/session.test.ts": 6,
     "apps/mira/src/server/computer/process.test.ts": 11229,
@@ -84,6 +84,7 @@
     "scripts/buildComputer.test.ts": 242,
     "apps/mira/src/server/computer/companion.test.ts": 12,
     "apps/dashboard/src/server/config/computer.test.ts": 2,
-    "packages/contracts/src/miraComputers.test.ts": 5
+    "packages/contracts/src/miraComputers.test.ts": 5,
+    "apps/mira/src/server/computer/companionConsent.test.ts": 149
   }
 }

@@ -61,3 +61,10 @@ export interface MiraComputerAccessSummary {
     state: "pending" | "active" | "stopped" | "expired" | "unavailable";
     expiresAt: string;
 }
+
+export const miraComputerAccessPermitSchema = v.strictObject({
+    id,
+    connectionId: id,
+    targetId: id,
+    mode: v.picklist(["view", "control"]),
+});

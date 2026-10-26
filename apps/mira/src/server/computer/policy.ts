@@ -8,6 +8,7 @@ const grantSchema = v.strictObject({
     pid: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(2_147_483_647)),
     windowId: v.pipe(v.string(), v.regex(/^[1-9][0-9]{0,19}$/)),
     delivery: v.picklist(["background", "foreground"]),
+    mode: v.optional(v.picklist(["view", "control"])),
 });
 export type ComputerWindowGrant = v.InferOutput<typeof grantSchema>;
 
@@ -39,7 +40,12 @@ export function computerWindowManifest(input: unknown) {
         version: 3,
         expires_after: "5m",
         idle_timeout: "1m",
-        allow: { tools: ["get_window_state", "click", "type_text"] },
+        allow: {
+            tools:
+                grant.mode === "view"
+                    ? ["get_window_state"]
+                    : ["get_window_state", "click", "type_text"],
+        },
         resources: {
             apps: [{ executable: grant.executable, windows: "all" }],
             desktop: { display: false },
