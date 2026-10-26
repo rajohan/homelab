@@ -45,6 +45,7 @@
         "apps/dashboard/src/server/tests/miraCode.integration.test.ts": 2000,
         "apps/dashboard/src/server/tests/miraGitHubRead.integration.test.ts": 2100,
         "apps/dashboard/src/server/tests/miraImprovement.integration.test.ts": 3500,
-        "apps/dashboard/src/server/tests/miraSkills.integration.test.ts": 395
+        "apps/dashboard/src/server/tests/miraSkills.integration.test.ts": 395,
+        "apps/dashboard/src/server/tests/miraComputers.integration.test.ts": 5911
     }
 }

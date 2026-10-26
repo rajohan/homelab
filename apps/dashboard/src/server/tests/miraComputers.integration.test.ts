@@ -1,0 +1,420 @@
+import { expect, test } from "bun:test";
+import { rejects } from "node:assert/strict";
+
+import { capabilities } from "@homelab/contracts/operations";
+import {
+    connectMiraComputer,
+    enrollMiraComputer,
+    heartbeatMiraComputer,
+} from "@homelab/mira/data/computers";
+
+import { appRouter } from "../api/router";
+import { authenticateAutomation } from "../automation/authentication";
+import { startDashboardServer } from "../index";
+import { miraComputerReceiver } from "../mira/computerReceiver";
+import { operationFixture } from "../testing/operations";
+
+const metadata = () => ({
+    installationId: crypto.randomUUID(),
+    platform: "win32",
+    version: "0.10.0",
+});
+async function fixture() {
+    const f = await operationFixture();
+    let verifications = 0;
+    const caller = (
+        id = "operator",
+        verifiedId = id,
+        kind: "human" | "automation" = "human"
+    ) =>
+        appRouter.createCaller({
+            operations: f,
+            principal: { kind, id, capabilities },
+            verifyHuman: () => {
+                verifications++;
+                return Promise.resolve({ kind, id: verifiedId, capabilities });
+            },
+        }).mira.computers;
+    const api = caller();
+    const enroll = async () => {
+        const pair = await api.pair({ label: "Synthetic PC" });
+        const device = await enrollMiraComputer(f.client, pair.token, metadata());
+        return { pair, device };
+    };
+    return { ...f, caller, api, enroll, verifications: () => verifications };
+}
+
+test("computer pairing requires a freshly verified human and isolates metadata and revocation by owner", async () => {
+    const f = await fixture();
+    try {
+        await rejects(
+            f.caller("operator", "other").pair({ label: "Wrong identity" }),
+            /account changed/
+        );
+        await rejects(
+            f.caller("machine", "machine", "automation").pair({ label: "Machine" }),
+            /signed-in operator/
+        );
+        const missing = appRouter.createCaller({
+            operations: f,
+            principal: { kind: "human", id: "operator", capabilities },
+        }).mira.computers;
+        await rejects(missing.pair({ label: "No MFA verifier" }), /verified operator/);
+        const { pair, device } = await f.enroll();
+        const listed = await f.api.list();
+        expect(listed).toHaveLength(1);
+        expect(listed[0]).toMatchObject({
+            id: pair.id,
+            state: "paired",
+            version: 2,
+            platform: "win32",
+            connected: false,
+        });
+        expect(JSON.stringify(listed)).not.toContain("digest");
+        expect(JSON.stringify(listed)).not.toContain(device.credential);
+        expect(await f.caller("other").list()).toEqual([]);
+        await rejects(f.caller("other").revoke({ id: pair.id, version: 2 }), /changed/);
+        await rejects(missing.revoke({ id: pair.id, version: 2 }), /verified operator/);
+        expect(f.verifications()).toBeGreaterThan(1);
+        await f.api.revoke({ id: pair.id, version: 2 });
+        expect(await f.api.list()).toMatchObject([
+            { state: "revoked", version: 3, connected: false },
+        ]);
+        const audit = await f.client<
+            { action: string; target: string; actor: string }[]
+        >`SELECT action,target,actor FROM mira_audit ORDER BY id`;
+        expect(audit.map((r) => r.action)).toEqual([
+            "computer.pairing_created",
+            "computer.enrolled",
+            "computer.revoked",
+        ]);
+        expect(JSON.stringify(audit)).not.toContain(pair.token);
+        expect(JSON.stringify(audit)).not.toContain(device.credential);
+    } finally {
+        await f.close();
+    }
+});
+
+test("concurrent enrollment consumes one ticket exactly once and never returns replacement credentials", async () => {
+    const f = await fixture();
+    try {
+        const pair = await f.api.pair({ label: "One PC" });
+        const results = await Promise.allSettled([
+            enrollMiraComputer(f.client, pair.token, metadata()),
+            enrollMiraComputer(f.client, pair.token, metadata()),
+        ]);
+        expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+        expect(results.filter((r) => r.status === "rejected")).toHaveLength(1);
+        const enrolled = results.find((r) => r.status === "fulfilled")!;
+        if (enrolled.status !== "fulfilled") throw new Error("Expected one enrollment.");
+        expect(enrolled.value.controlAllowed).toBe(false);
+        await rejects(
+            enrollMiraComputer(f.client, pair.token, metadata()),
+            /invalid or expired/
+        );
+        await rejects(connectMiraComputer(f.client, pair.token), /invalid or expired/);
+        await rejects(
+            enrollMiraComputer(f.client, enrolled.value.credential, metadata()),
+            /invalid or expired/
+        );
+        const [stored] = await f.client<
+            { pair_digest: string | null; credential_digest: string }[]
+        >`SELECT pair_digest,credential_digest FROM mira_computers WHERE id=${pair.id}`;
+        expect(stored!.pair_digest).toBeNull();
+        expect(stored!.credential_digest).toMatch(/^[a-f0-9]{64}$/);
+        expect(stored!.credential_digest).not.toBe(enrolled.value.credential);
+        await rejects(
+            authenticateAutomation(f.client, `Bearer ${enrolled.value.credential}`)
+        );
+    } finally {
+        await f.close();
+    }
+});
+
+test("expired, revoked and forged tickets never enroll or extend their lifetime", async () => {
+    const f = await fixture();
+    try {
+        for (const mode of ["expired", "revoked", "forged"]) {
+            const pair = await f.api.pair({ label: mode });
+            if (mode === "expired")
+                await f.client`UPDATE mira_computers SET expires_at=clock_timestamp()-interval '1 second' WHERE id=${pair.id}`;
+            if (mode === "revoked") await f.api.revoke({ id: pair.id, version: 1 });
+            const token =
+                mode === "forged"
+                    ? pair.token.slice(0, -1) + (pair.token.endsWith("A") ? "B" : "A")
+                    : pair.token;
+            await rejects(
+                enrollMiraComputer(f.client, token, metadata()),
+                /invalid or expired/
+            );
+            const [row] = await f.client<
+                { credential_digest: string | null }[]
+            >`SELECT credential_digest FROM mira_computers WHERE id=${pair.id}`;
+            expect(row!.credential_digest).toBeNull();
+        }
+    } finally {
+        await f.close();
+    }
+});
+
+test("new connection generations reject old, duplicated and expired heartbeats", async () => {
+    const f = await fixture();
+    try {
+        const { pair, device } = await f.enroll();
+        const first = await connectMiraComputer(f.client, device.credential);
+        expect(first).toMatchObject({
+            controlAllowed: false,
+            heartbeatSeconds: 15,
+            leaseSeconds: 45,
+        });
+        expect(
+            await heartbeatMiraComputer(f.client, device.credential, {
+                connectionId: first.connectionId,
+                sequence: 1,
+            })
+        ).toMatchObject({ controlAllowed: false });
+        await rejects(
+            heartbeatMiraComputer(f.client, device.credential, {
+                connectionId: first.connectionId,
+                sequence: 1,
+            }),
+            /connection/
+        );
+        const next = await connectMiraComputer(f.client, device.credential);
+        expect(next.connectionId).not.toBe(first.connectionId);
+        await rejects(
+            heartbeatMiraComputer(f.client, device.credential, {
+                connectionId: first.connectionId,
+                sequence: 2,
+            }),
+            /connection/
+        );
+        await heartbeatMiraComputer(f.client, device.credential, {
+            connectionId: next.connectionId,
+            sequence: 1,
+        });
+        expect(await f.api.list()).toMatchObject([{ connected: true }]);
+        await f.client`UPDATE mira_computers SET connection_expires_at=clock_timestamp()-interval '1 second' WHERE id=${pair.id}`;
+        expect(await f.api.list()).toMatchObject([{ connected: false }]);
+        await rejects(
+            heartbeatMiraComputer(f.client, device.credential, {
+                connectionId: next.connectionId,
+                sequence: 2,
+            }),
+            /connection/
+        );
+        const recovered = await connectMiraComputer(f.client, device.credential);
+        await heartbeatMiraComputer(f.client, device.credential, {
+            connectionId: recovered.connectionId,
+            sequence: 1,
+        });
+        await f.api.revoke({ id: pair.id, version: 2 });
+        await rejects(
+            connectMiraComputer(f.client, device.credential),
+            /invalid or expired/
+        );
+        await rejects(
+            heartbeatMiraComputer(f.client, device.credential, {
+                connectionId: recovered.connectionId,
+                sequence: 2,
+            }),
+            /connection/
+        );
+        const [row] = await f.client<
+            {
+                credential_digest: string | null;
+                connection_id: string | null;
+                connection_expires_at: Date | null;
+            }[]
+        >`SELECT credential_digest,connection_id,connection_expires_at FROM mira_computers WHERE id=${pair.id}`;
+        expect(row).toEqual({
+            credential_digest: null,
+            connection_id: null,
+            connection_expires_at: null,
+        });
+    } finally {
+        await f.close();
+    }
+});
+
+test("credential expiry and concurrent revoke versus reconnect cannot restore device access", async () => {
+    const f = await fixture();
+    try {
+        const { pair, device } = await f.enroll();
+        await Promise.allSettled([
+            f.api.revoke({ id: pair.id, version: 2 }),
+            connectMiraComputer(f.client, device.credential),
+        ]);
+        expect(await f.api.list()).toMatchObject([
+            { state: "revoked", connected: false },
+        ]);
+        await rejects(connectMiraComputer(f.client, device.credential));
+        const other = await f.enroll();
+        await f.client`UPDATE mira_computers SET expires_at=clock_timestamp()-interval '1 second' WHERE id=${other.pair.id}`;
+        await rejects(connectMiraComputer(f.client, other.device.credential));
+        await rejects(
+            heartbeatMiraComputer(f.client, other.device.credential, {
+                connectionId: crypto.randomUUID(),
+                sequence: 1,
+            })
+        );
+    } finally {
+        await f.close();
+    }
+});
+
+test("pairing quotas serialize simultaneous tickets and bound even revoked-ticket churn", async () => {
+    const f = await fixture();
+    try {
+        const issued = await Promise.allSettled(
+            Array.from({ length: 21 }, (_, i) => f.api.pair({ label: `PC ${i}` }))
+        );
+        expect(issued.filter((r) => r.status === "fulfilled")).toHaveLength(20);
+        expect(issued.filter((r) => r.status === "rejected")).toHaveLength(1);
+        for (const row of await f.api.list())
+            await f.api.revoke({ id: row.id, version: row.version });
+        await rejects(f.api.pair({ label: "Too soon" }), /limit/);
+        expect(await f.caller("other").pair({ label: "Separate owner" })).toHaveProperty(
+            "id"
+        );
+        await f.client`UPDATE mira_computers SET created_at=clock_timestamp()-interval '2 hours' WHERE owner='operator'`;
+        expect(await f.api.pair({ label: "After cooldown" })).toHaveProperty("id");
+    } finally {
+        await f.close();
+    }
+});
+
+test("real HTTP enrollment and heartbeats reject browser credentials, query secrets and control commands", async () => {
+    const f = await fixture();
+    const receiver = miraComputerReceiver(f.client);
+    const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: receiver });
+    const base = `http://127.0.0.1:${server.port}/api/mira/computers`;
+    const pair = await f.api.pair({ label: "HTTP PC" });
+    const post = (
+        route: string,
+        token: string,
+        data: unknown,
+        extra: Record<string, string> = {}
+    ) =>
+        fetch(base + route, {
+            method: "POST",
+            headers: {
+                "content-type": "application/json",
+                authorization: `Bearer ${token}`,
+                ...extra,
+            },
+            body: JSON.stringify(data),
+        });
+
+    try {
+        for (const extra of [
+            { origin: "https://example.invalid" },
+            { cookie: "session=synthetic" },
+        ])
+            await status(post("/enroll", pair.token, metadata(), extra), 403);
+        await status(post("/enroll?token=synthetic", pair.token, metadata()), 404);
+        await status(post("/enroll", pair.token, { ...metadata(), owner: "other" }), 400);
+        await status(post("/enroll", pair.token, { padding: "x".repeat(2049) }), 400);
+        const enrolled = await post("/enroll", pair.token, metadata());
+        expect(enrolled.status).toBe(200);
+        expect(enrolled.headers.get("cache-control")).toBe("no-store");
+        const device = (await enrolled.json()) as {
+            credential: string;
+            controlAllowed: boolean;
+        };
+        expect(device.controlAllowed).toBe(false);
+        const connected = await post("/connect", device.credential, {});
+        const connection = (await connected.json()) as { connectionId: string };
+        expect(connected.status).toBe(200);
+        await status(
+            post("/heartbeat", device.credential, {
+                connectionId: connection.connectionId,
+                sequence: 1,
+            }),
+            200
+        );
+        await status(post("/click", device.credential, { x: 0, y: 0 }), 404);
+        await status(post("/connect", device.credential, { command: "observe" }), 400);
+        await status(post("/enroll", pair.token, metadata()), 403);
+        await status(fetch(base + "/enroll"), 405);
+        await status(post("/enroll", "invalid", metadata()), 403);
+        await status(
+            post("/enroll", pair.token, metadata(), { "content-type": "text/plain" }),
+            415
+        );
+    } finally {
+        await server.stop(true);
+        await f.close();
+    }
+});
+
+test("the server never activates the computer endpoint without identity and operations configuration", async () => {
+    const server = startDashboardServer({
+        hostname: "127.0.0.1",
+        port: 0,
+        authentication: null,
+        operations: null,
+        development: false,
+    });
+    try {
+        const result = await fetch(
+            `http://127.0.0.1:${server.port}/api/mira/computers/enroll`,
+            { method: "POST" }
+        );
+        expect(result.status).toBe(503);
+        expect(result.headers.get("cache-control")).toBe("no-store");
+    } finally {
+        await server.stop(true);
+    }
+});
+
+async function status(pending: Promise<Response>, expected: number) {
+    const result = await pending;
+    expect(result.status).toBe(expected);
+    await result.arrayBuffer();
+}
+
+test("machine request bodies have a deadline and a bounded concurrency budget", async () => {
+    const f = await fixture();
+    const pair = await f.api.pair({ label: "Body bounds" });
+    const receiver = miraComputerReceiver(f.client);
+    const controllers: ReadableStreamDefaultController<Uint8Array>[] = [];
+    const request = () =>
+        new Request("https://synthetic.invalid/api/mira/computers/enroll", {
+            method: "POST",
+            headers: {
+                "content-type": "application/json",
+                authorization: `Bearer ${pair.token}`,
+            },
+            body: new ReadableStream<Uint8Array>({
+                start(controller) {
+                    controllers.push(controller);
+                },
+            }),
+        });
+    try {
+        const pending = Array.from({ length: 8 }, () => receiver(request()));
+        const overflow = await receiver(request());
+        expect(overflow.status).toBe(429);
+        for (const controller of controllers) controller.close();
+        const results = await Promise.all(pending);
+        expect(results.every((result) => result.status === 400)).toBe(true);
+        const started = performance.now();
+        const expired = await receiver(request());
+        expect(expired.status).toBe(400);
+        expect(performance.now() - started).toBeLessThan(6000);
+        const parsed = await receiver(
+            new Request("https://synthetic.invalid/api/mira/computers/enroll", {
+                method: "POST",
+                headers: {
+                    "content-type": "application/json",
+                    authorization: `Bearer ${pair.token}`,
+                },
+                body: JSON.stringify(metadata()),
+            })
+        );
+        expect(parsed.status).toBe(200);
+    } finally {
+        await f.close();
+    }
+}, 10_000);

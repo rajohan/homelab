@@ -1,0 +1,108 @@
+import {
+    connectMiraComputer,
+    enrollMiraComputer,
+    heartbeatMiraComputer,
+} from "@homelab/mira/data/computers";
+import { MiraFailure } from "@homelab/mira/data/context";
+import type { SQL } from "bun";
+import { Effect } from "effect";
+import * as v from "valibot";
+
+const response = (status: number, data?: unknown) =>
+    Response.json(data ?? { error: "Computer request was refused." }, {
+        status,
+        headers: { "cache-control": "no-store", "x-content-type-options": "nosniff" },
+    });
+
+async function body(request: Request): Promise<unknown> {
+    if (!request.body || Number(request.headers.get("content-length")) > 2048)
+        throw new Error("Invalid body.");
+    const reader = request.body.getReader();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+            reject(new Error("Body deadline."));
+            void reader.cancel().catch(() => {});
+        }, 5000);
+    });
+    let bytes = Buffer.alloc(0);
+    try {
+        for (;;) {
+            const next = await Promise.race([reader.read(), deadline]);
+            if (next.done) break;
+            const chunk: unknown = next.value;
+            if (!(chunk instanceof Uint8Array) || bytes.length + chunk.length > 2048) {
+                await reader.cancel();
+                throw new Error("Body limit.");
+            }
+            bytes = Buffer.concat([bytes, chunk]);
+        }
+        return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+    } finally {
+        clearTimeout(timer);
+        reader.releaseLock();
+    }
+}
+
+/**
+ * Accept enrollment and heartbeat traffic without admitting browser credentials or control commands.
+ * @param client - Explicit database, supplied only when dashboard identity and operations are configured.
+ * @returns A bounded machine-only receiver; its credential can never access tRPC or automation APIs.
+ */
+export function miraComputerReceiver(client?: SQL) {
+    let active = 0;
+    return async (request: Request): Promise<Response> => {
+        if (!client) return response(503);
+        const url = new URL(request.url);
+        if (
+            ![
+                "/api/mira/computers/enroll",
+                "/api/mira/computers/connect",
+                "/api/mira/computers/heartbeat",
+            ].includes(url.pathname) ||
+            url.search
+        )
+            return response(404);
+        if (request.method !== "POST") return response(405);
+        if (request.headers.has("origin") || request.headers.has("cookie"))
+            return response(403);
+        if (
+            request.headers.get("content-type")?.split(";", 1)[0]?.trim() !==
+            "application/json"
+        )
+            return response(415);
+        const auth = request.headers.get("authorization") ?? "";
+        if (!/^Bearer mira_(?:pair|device)_[a-f0-9-]{36}\.[A-Za-z0-9_-]{43}$/.test(auth))
+            return response(403);
+        if (active >= 8) return response(429);
+        active++;
+        try {
+            let input: unknown;
+            try {
+                input = await body(request);
+            } catch {
+                return response(400);
+            }
+            const token = auth.slice(7);
+            const result = await Effect.runPromise(
+                Effect.tryPromise({
+                    try: async () => {
+                        if (url.pathname.endsWith("/enroll"))
+                            return await enrollMiraComputer(client, token, input);
+                        if (url.pathname.endsWith("/heartbeat"))
+                            return await heartbeatMiraComputer(client, token, input);
+                        v.parse(v.strictObject({}), input);
+                        return await connectMiraComputer(client, token);
+                    },
+                    catch: (error: unknown) => error,
+                }).pipe(Effect.result)
+            );
+            if (result._tag === "Success") return response(200, result.success);
+            if (v.isValiError(result.failure)) return response(400);
+            if (result.failure instanceof MiraFailure) return response(403);
+            return response(503);
+        } finally {
+            active--;
+        }
+    };
+}

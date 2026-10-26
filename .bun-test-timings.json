@@ -79,6 +79,7 @@
     "apps/mira/src/server/computer/policy.test.ts": 1,
     "apps/mira/src/server/computer/session.test.ts": 6,
     "apps/mira/src/server/computer/process.test.ts": 11229,
-    "apps/mira/src/server/computer/child.test.ts": 41
+    "apps/mira/src/server/computer/child.test.ts": 41,
+    "apps/mira/src/server/computer/credentials.test.ts": 6
   }
 }

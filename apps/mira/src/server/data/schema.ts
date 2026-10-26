@@ -796,3 +796,46 @@ export const miraImprovements = pgTable(
         ),
     ]
 );
+
+export const miraComputers = pgTable(
+    "mira_computers",
+    {
+        id: uuid().primaryKey(),
+        owner: text().notNull(),
+        label: text().notNull(),
+        version: integer().notNull().default(1),
+        state: text().notNull(),
+        pairDigest: text("pair_digest"),
+        credentialDigest: text("credential_digest"),
+        installationId: uuid("installation_id"),
+        platform: text(),
+        companionVersion: text("companion_version"),
+        pairedAt: time("paired_at"),
+        expiresAt: time("expires_at").notNull(),
+        connectionId: uuid("connection_id"),
+        connectionExpiresAt: time("connection_expires_at"),
+        sequence: integer().notNull().default(0),
+        lastSeenAt: time("last_seen_at"),
+        createdAt: time("created_at").notNull().defaultNow(),
+    },
+    (t) => [
+        index("mira_computers_owner").on(t.owner, t.createdAt, t.id),
+        check("mira_computers_version", sql`${t.version} > 0 AND ${t.sequence} >= 0`),
+        check("mira_computers_label", sql`length(${t.label}) BETWEEN 1 AND 80`),
+        check(
+            "mira_computers_platform",
+            sql`${t.platform} IS NULL OR ${t.platform} IN ('win32','linux','darwin')`
+        ),
+        check(
+            "mira_computers_credential_state",
+            sql`
+        (${t.state}='pending' AND ${t.pairDigest} IS NOT NULL AND ${t.credentialDigest} IS NULL AND ${t.pairedAt} IS NULL) OR
+        (${t.state}='paired' AND ${t.pairDigest} IS NULL AND ${t.credentialDigest} IS NOT NULL AND ${t.pairedAt} IS NOT NULL AND ${t.installationId} IS NOT NULL AND ${t.platform} IS NOT NULL AND ${t.companionVersion} IS NOT NULL) OR
+        (${t.state}='revoked' AND ${t.pairDigest} IS NULL AND ${t.credentialDigest} IS NULL)`
+        ),
+        check(
+            "mira_computers_connection",
+            sql`(${t.connectionId} IS NULL AND ${t.connectionExpiresAt} IS NULL) OR (${t.state}='paired' AND ${t.connectionId} IS NOT NULL AND ${t.connectionExpiresAt} IS NOT NULL)`
+        ),
+    ]
+);
