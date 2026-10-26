@@ -78,6 +78,7 @@ export function pilotEnvironment(
  * @returns Arguments for the supported stdio app-server transport.
  */
 export const disabledRuntimeFeatures = [
+    "code_mode_tool_search",
     "sleep_tool",
     "shell_tool",
     "unified_exec",
@@ -97,12 +98,18 @@ export const disabledRuntimeFeatures = [
     "memories",
 ] as const;
 
+export const enabledRuntimeFeatures = ["code_mode", "code_mode_interrupt"] as const;
+
 /**
  * Build launch settings that are also checked against effective managed configuration.
  * @returns Arguments for the supported stdio app-server transport.
  */
 export function pilotArguments(): string[] {
     return [
+        ...enabledRuntimeFeatures.flatMap((feature) => [
+            "-c",
+            `features.${feature}=true`,
+        ]),
         ...disabledRuntimeFeatures.flatMap((feature) => [
             "-c",
             `features.${feature}=false`,
@@ -166,7 +173,10 @@ export function assertRuntimeIsolation(input: unknown): void {
     );
     if (Object.keys(config.mcp_servers).length > 0)
         throw new Error("Mira cannot use a runtime with configured MCP servers.");
-    if (disabledRuntimeFeatures.some((feature) => config.features[feature] !== false))
+    if (
+        disabledRuntimeFeatures.some((feature) => config.features[feature] !== false) ||
+        enabledRuntimeFeatures.some((feature) => config.features[feature] !== true)
+    )
         throw new Error("Mira cannot use a runtime with overridden capability settings.");
     if (Object.keys(config.model_providers ?? {}).length > 0)
         throw new Error("Mira cannot use custom model provider definitions.");

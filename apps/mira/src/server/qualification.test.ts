@@ -101,12 +101,16 @@ test.each(["ok", "nonce", "resume-tool", "recovery-refusal"])(
                     interruption: true,
                 });
                 expect(receipt).not.toBe(nonce);
-                expect(closed).toBe(2);
+                expect(closed).toBe(3);
             } else {
                 await rejects(result);
                 const expectedTurn = mode === "resume-tool" ? 2 : 4;
                 expect(turn).toBe(mode === "nonce" ? 1 : expectedTurn);
-                expect(closed).toBe(mode === "nonce" ? 1 : 2);
+                const expectedCloses: Record<string, number> = {
+                    nonce: 1,
+                    "resume-tool": 2,
+                };
+                expect(closed).toBe(expectedCloses[mode] ?? 3);
             }
         } finally {
             connect.mockRestore();

@@ -129,6 +129,9 @@ export function qualifyRuntime(config: PilotConfig, progress: (message: string) 
             progress(
                 "Interrupted an active tool turn and observed the terminal interrupted status."
             );
+            await runtime.close();
+            runtime = await connect(config);
+            await runtime.resumeThread(threadId, tools);
             const recovered = await runtime.turn(
                 threadId,
                 "Reply with exactly MIRA_READY. Do not use tools."
@@ -138,7 +141,7 @@ export function qualifyRuntime(config: PilotConfig, progress: (message: string) 
                 recovered.text.trim() !== "MIRA_READY"
             )
                 throw new Error("Mira did not recover after interruption.");
-            progress("Completed a new turn after interruption.");
+            progress("Resumed the conversation in a fresh process after interruption.");
             return {
                 model,
                 streaming: true,

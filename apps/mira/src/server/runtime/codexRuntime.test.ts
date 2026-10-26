@@ -7,6 +7,7 @@ import type { MiraActivity } from "@homelab/contracts/mira";
 import { CodexRuntime } from "./codexRuntime";
 import {
     disabledRuntimeFeatures,
+    enabledRuntimeFeatures,
     parsePilotConfig,
     pilotArguments,
     pilotEnvironment,
@@ -65,6 +66,7 @@ describe("Mira runtime transport", () => {
         await runtime.close();
     });
     test.each([
+        ...enabledRuntimeFeatures.map((feature) => `required-feature:${feature}`),
         "admin-skill",
         "disabled-admin-skill",
         "outside-system-skill",
@@ -187,8 +189,9 @@ describe("Mira runtime transport", () => {
         }
     });
 
-    test("cancels a turn, excludes concurrent turns and permits another run", async () => {
+    test("cancels a turn, retires the child and resumes through a fresh connection", async () => {
         const runtime = await CodexRuntime.connect(options("wait"));
+        let resumed: CodexRuntime | undefined;
         try {
             const thread = await runtime.startThread("synthetic", process.cwd(), []);
             const abort = new AbortController();
@@ -197,13 +200,14 @@ describe("Mira runtime transport", () => {
             abort.abort();
             const cancelled = await pending;
             expect(cancelled.status).toBe("interrupted");
-            const next = new AbortController();
-            const resumed = runtime.turn(thread, "again", { signal: next.signal });
-            next.abort();
-            const second = await resumed;
-            expect(second.status).toBe("interrupted");
+            await rejects(runtime.turn(thread, "reuse retired child"), /closed/);
+            resumed = await CodexRuntime.connect(options());
+            await resumed.resumeThread(thread, []);
+            const continued = await resumed.turn(thread, "continue");
+            expect(continued.status).toBe("completed");
         } finally {
             await runtime.close();
+            await resumed?.close();
         }
     });
 

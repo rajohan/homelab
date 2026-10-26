@@ -20,6 +20,7 @@ import { RuntimeResponseError } from "./responseError";
 import { RpcProcess, type RpcProcessOptions } from "./rpcProcess";
 import { assertSkillCatalog } from "./skillCatalog";
 import { assertSystemSkills } from "./systemSkills";
+import { runtimeContentItems, type RuntimeToolResult } from "./toolResult";
 
 interface ActiveTurn {
     threadId: string;
@@ -34,7 +35,7 @@ interface ActiveTurn {
 export class CodexRuntime {
     private readonly workspace: string;
     private readonly connection: RpcProcess;
-    private readonly threads = new Map<string, RuntimeTool[]>();
+    private readonly threads = new Map<string, RuntimeTool<RuntimeToolResult>[]>();
     private active: ActiveTurn | null = null;
 
     private constructor(options: Omit<RpcProcessOptions, "onRequest">) {
@@ -146,8 +147,8 @@ export class CodexRuntime {
     async startThread(
         model: string,
         workspace: string,
-        tools: RuntimeTool[],
-        instructions = "You are Mira in a synthetic runtime qualification. Use only the supplied qualification tools. Do not inspect files, access websites or use other tools. Do not delegate. Follow the user's synthetic test instructions."
+        tools: RuntimeTool<RuntimeToolResult>[],
+        instructions = "You are Mira in a synthetic runtime qualification. Use only the supplied qualification tools and the runtime code-mode helpers for invoking tools and displaying their results. Render returned image data URLs with the image helper to inspect them; never print encoded image bytes. Do not inspect files, access websites or use other tools. Do not delegate. Follow the user's synthetic test instructions."
     ): Promise<string> {
         if (workspace !== this.workspace)
             throw new Error("Mira thread workspace differs from its isolated workspace.");
@@ -183,7 +184,7 @@ export class CodexRuntime {
      */
     async resumeThread(
         threadId: string,
-        tools: RuntimeTool[],
+        tools: RuntimeTool<RuntimeToolResult>[],
         instructions?: string
     ): Promise<void> {
         const result = v.parse(
@@ -211,7 +212,7 @@ export class CodexRuntime {
      * @param threadId - Thread established by this adapter.
      * @param text - User input for this turn.
      * @param options - Optional deadline, cancellation and synchronous text observer.
-     * @returns The final provider outcome and collected text.
+     * @returns The final provider outcome and collected text. Interruption retires this connection; resume through a new adapter.
      */
     async turn(
         threadId: string,
@@ -336,6 +337,8 @@ export class CodexRuntime {
             const result = await completion.promise;
             if (result.id !== active.id)
                 throw new Error("Mira returned an unexpected turn.");
+            // Retire the native code host as well; a cancelled cell must never survive into another run.
+            if (result.status === "interrupted") await this.close();
             return result;
         } finally {
             clearTimeout(deadline);
@@ -418,13 +421,13 @@ export class CodexRuntime {
         turnSignal.throwIfAborted();
         try {
             active.onActivity?.({ phase: "tool", tool: tool.name });
-            const text = await tool.execute(call.arguments, turnSignal, {
+            const result = await tool.execute(call.arguments, turnSignal, {
                 callId: call.callId,
                 threadId: call.threadId,
                 turnId: call.turnId,
             });
             turnSignal.throwIfAborted();
-            return { success: true, contentItems: [{ type: "inputText", text }] };
+            return { success: true, contentItems: runtimeContentItems(result) };
         } catch {
             return {
                 success: false,

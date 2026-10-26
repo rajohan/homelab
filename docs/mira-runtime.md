@@ -142,3 +142,54 @@ Resume qualification requires the exact earlier receipt without another echo-too
 call. Recovery requires exactly `MIRA_READY`; a refusal that merely contains the
 marker fails. Cancellation is rechecked after listener registration to close the
 abort race. The strengthened isolated live qualification passed on 2026-10-24.
+
+## Visual tool output
+
+Host tools may return existing text or an explicit ordered `content` array of text
+and inline PNG/JPEG images. The stable `mira_tool_call` router preserves these
+items; JSON-looking text is never promoted into an image. The runtime converts
+validated images to app-server `inputImage` items using data URLs only. It never
+fetches a URL or reads a caller-supplied filesystem path.
+
+Limits apply before sending: eight items, two images, two MiB total decoded image
+bytes, 256 KiB total UTF-8 text, dimensions up to 8192 per side and 16,777,216
+pixels per image, and three MiB for serialized content. Image-size 2.0.4 checks
+format and dimensions from headers without decoding pixels. This is a metadata
+and resource boundary, not a guarantee that every compressed image can decode.
+Invalid output produces a fixed failure response without returning input bytes.
+Cancellation is checked after the host tool completes, before images are emitted.
+The pinned runtime uses explicitly enabled code mode and code-mode interruption
+so its image helper can display returned images. Code-mode tool search stays off;
+the model receives only the registered product tools. These settings are checked
+against the effective runtime configuration before a thread can start.
+Existing run ownership, tool registration and cancellation rules still apply.
+An interrupted turn retires the native process and its code host. Resume the
+conversation through a fresh connection, as the executor already does between
+product runs; the runtime qualification exercises this same recovery path.
+
+Run the real vision qualification separately from ordinary CI:
+
+```sh
+bun run mira:qualify-visual /absolute/path/to/pilot.json
+```
+
+It uses Mira's isolated ChatGPT login and the model catalog, so it consumes plan
+usage. Two fresh six-digit PNG challenges are generated in memory. Their answers
+are absent from the prompts and text tool output. The model must call the normal
+tool router, display the returned data URL with the code-mode image helper, and
+read each exact answer from the image. Commentary may precede the answer, but
+the final line must contain the one correct six-digit code, with no conflicting
+codes elsewhere. Only fixed
+milestones and capability results are printed; the synthetic provider thread is
+deleted afterward. CI uses synthetic transport and qualification fixtures and
+never needs provider credentials or inference.
+
+This qualifies the visual return channel only. Browser/desktop drivers, paired
+hosts, session authority, takeover and live computer acceptance remain separate
+requirements. No computer control, shell access, plugins or native browser tools are enabled
+by this support.
+
+Protocol reference: [Codex App Server](https://learn.chatgpt.com/docs/app-server).
+The pinned Codex 0.164.0 generated `DynamicToolCallResponse` schema includes
+`inputImage` with `imageUrl`; generated schema support alone is not a successful
+live visual qualification.

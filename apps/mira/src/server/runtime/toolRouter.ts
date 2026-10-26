@@ -1,6 +1,7 @@
 import * as v from "valibot";
 
 import type { RuntimeTool } from "./protocol";
+import type { RuntimeToolResult } from "./toolResult";
 
 /**
  * Keep provider declarations stable while resolving the current server-side tool registry on every run.
@@ -8,10 +9,10 @@ import type { RuntimeTool } from "./protocol";
  * @param includeLegacyHandlers - Accept persisted direct declarations when resuming pre-router threads.
  * @returns Discovery and invocation tools whose schemas remain valid through provider thread resume.
  */
-export function createMiraToolRouter(
-    tools: RuntimeTool[],
+export function createMiraToolRouter<Result extends RuntimeToolResult>(
+    tools: RuntimeTool<Result>[],
     includeLegacyHandlers = false
-): RuntimeTool[] {
+): RuntimeTool<Result | string>[] {
     const registry = new Map(tools.map((tool) => [tool.name, tool]));
     if (
         registry.size !== tools.length ||
@@ -43,7 +44,7 @@ export function createMiraToolRouter(
         {
             name: "mira_tool_call",
             description:
-                "Invoke a tool returned by mira_tools_list using its exact argument schema. The server enforces current permissions and records the actual tool outcome. Discovery never grants extra authority.",
+                "Invoke a tool returned by mira_tools_list using its exact argument schema. The server enforces current permissions and records the actual tool outcome. Discovery never grants extra authority. In code mode, mixed text and images arrive as a string containing newline-separated data:image/ URLs. Split that string on newlines and pass each complete data:image/ URL line individually to image(); display only the other lines with text(). Never print the encoded image bytes.",
             inputSchema: {
                 type: "object",
                 properties: {
