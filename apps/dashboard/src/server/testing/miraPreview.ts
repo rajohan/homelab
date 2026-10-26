@@ -5,6 +5,11 @@ import path from "node:path";
 import { capabilities } from "@homelab/contracts/operations";
 import { installMiraPresets } from "@homelab/mira/data/automationActions";
 import { saveMiraCode } from "@homelab/mira/data/code";
+import {
+    createMiraComputerPairing,
+    enrollMiraComputer,
+    connectMiraComputer,
+} from "@homelab/mira/data/computers";
 import { createConversation, enqueueTurn } from "@homelab/mira/data/conversations";
 import { saveMiraDaytona } from "@homelab/mira/data/daytona";
 import { createReport, saveMemory } from "@homelab/mira/data/documents";
@@ -86,6 +91,19 @@ export async function main(port = 3330): Promise<void> {
     try {
         await migrateDashboard(database);
         await installMiraPresets(context);
+        for (const [label, online] of [
+            ["Windows desktop", true],
+            ["Laptop", false],
+        ] as const) {
+            const ticket = await createMiraComputerPairing(context, { label });
+            const device = await enrollMiraComputer(database.client, ticket.token, {
+                installationId: crypto.randomUUID(),
+                platform: "win32",
+                version: "0.10.0",
+            });
+            if (online) await connectMiraComputer(database.client, device.credential);
+        }
+        await createMiraComputerPairing(context, { label: "New computer" });
         await provisionTestAgentMail(database.client, previewMail);
         await saveMemory(context, {
             title: "Design preference",
@@ -383,6 +401,7 @@ export async function main(port = 3330): Promise<void> {
             initial.id
         );
         const pump = async () => {
+            await database.client`UPDATE mira_computers SET last_seen_at=now(),connection_expires_at=now()+interval '45 seconds' WHERE owner=${context.owner} AND label='Windows desktop' AND state='paired'`;
             await database.client`INSERT INTO mira_runtime_status (id, worker_id, version, model, ready, message, heartbeat_at, skill_catalog_hash, skill_catalog_worker_id) VALUES (1, ${worker}, 'preview', 'Synthetic replies', true, 'Interactive preview only. No production or provider connection.', now(), ${miraSkillCatalogHash}, ${worker}) ON CONFLICT (id) DO UPDATE SET worker_id = EXCLUDED.worker_id, heartbeat_at = now(), skill_catalog_hash = EXCLUDED.skill_catalog_hash, skill_catalog_worker_id = EXCLUDED.skill_catalog_worker_id`;
             const run = await claimMiraRun(database.client, worker, "foreground");
             if (run)
@@ -436,7 +455,14 @@ export function serveMiraPreview({
     const api = (request: Request) => {
         if (!isSameOriginApiRequest(request, origin))
             return Response.json({ message: "Invalid preview origin" }, { status: 403 });
-        return dashboardApiRequest(request, { operations, principal });
+        return dashboardApiRequest(request, {
+            operations,
+            principal,
+            verifyHuman: () =>
+                principal
+                    ? Promise.resolve(principal)
+                    : Promise.reject(new Error("No preview principal")),
+        });
     };
     return Bun.serve({
         hostname: "127.0.0.1",
@@ -445,6 +471,35 @@ export function serveMiraPreview({
         maxRequestBodySize: 26_214_400,
         routes: {
             "/preview": miraViewport,
+            "/api/account": {
+                GET: () =>
+                    Response.json({
+                        user: {
+                            id: principal?.id ?? "preview-operator",
+                            username: "Preview",
+                            email: "preview@example.test",
+                            emailVerified: true,
+                        },
+                        factors: [],
+                        recoveryCodesRemaining: 0,
+                        applications: [],
+                        sessions: [
+                            {
+                                id: "disposable-preview",
+                                userAgent: "Synthetic preview",
+                                current: true,
+                                createdAt: new Date().toISOString(),
+                                lastSeenAt: new Date().toISOString(),
+                                expiresAt: new Date(
+                                    Date.now() + 86_400_000
+                                ).toISOString(),
+                            },
+                        ],
+                    }),
+            },
+            "/api/account/activity": {
+                GET: () => Response.json({ events: [], nextCursor: null }),
+            },
             "/api/session": () =>
                 Response.json({
                     authenticated: true,
