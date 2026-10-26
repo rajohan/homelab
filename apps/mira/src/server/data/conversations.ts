@@ -240,7 +240,7 @@ export async function enqueueTurn(
         userMessage = Bun.randomUUIDv7(),
         assistantMessage = Bun.randomUUIDv7();
     await query`INSERT INTO mira_messages (id, conversation_id, role, content, state, attachment_ids) VALUES (${userMessage}, ${input.conversationId}, 'user', ${input.text}, 'completed', ${JSON.stringify(input.attachmentIds)}::text::jsonb), (${assistantMessage}, ${input.conversationId}, 'assistant', '', 'queued', '[]'::jsonb)`;
-    await query`INSERT INTO mira_runs (id, owner, request_key, request_hash, conversation_id, user_message_id, assistant_message_id, automation_id, task_id, state, priority, budget_seconds, manual, settings) VALUES (${id}, ${context.owner}, ${requestKey}, ${hash}, ${input.conversationId}, ${userMessage}, ${assistantMessage}, ${source.automationId ?? null}, ${taskId ?? null}, 'queued', ${manual ? 100 : 0}, ${source.budgetSeconds ?? 300}, ${manual}, ${JSON.stringify(conversation.settings)}::text::jsonb)`;
+    await query`INSERT INTO mira_runs (id, owner, request_key, request_hash, conversation_id, user_message_id, assistant_message_id, automation_id, automation_kind, task_id, state, priority, budget_seconds, manual, settings) VALUES (${id}, ${context.owner}, ${requestKey}, ${hash}, ${input.conversationId}, ${userMessage}, ${assistantMessage}, ${source.automationId ?? null}, (SELECT kind FROM mira_automations WHERE id=${source.automationId ?? null} AND owner=${context.owner}), ${taskId ?? null}, 'queued', ${manual ? 100 : 0}, ${source.budgetSeconds ?? 300}, ${manual}, ${JSON.stringify(conversation.settings)}::text::jsonb)`;
     await query`UPDATE mira_conversations SET version = version + 1, updated_at = now() WHERE id = ${input.conversationId}`;
     await auditMira(query, context, "run.queued", id);
     return { id };
@@ -319,6 +319,14 @@ export async function changeConversation(
         const [code] = await query<
             { id: string }[]
         >`SELECT id FROM mira_code_publications WHERE owner=${context.owner} AND conversation_id=${input.id} AND state IN ('queued','publishing') LIMIT 1`;
+        const [improvement] = await query<
+            { id: string }[]
+        >`SELECT id FROM mira_improvements WHERE owner=${context.owner} AND conversation_id=${input.id} AND state IN ('queued','checking','publishing','needs_attention') LIMIT 1`;
+        if (improvement)
+            throw new MiraFailure(
+                "CONFLICT",
+                "Finish or review automatic code work before changing this conversation."
+            );
         if (code)
             throw new MiraFailure(
                 "CONFLICT",
@@ -336,6 +344,7 @@ export async function changeConversation(
             );
         await query`UPDATE mira_conversations SET archived_at = ${input.action === "archive" ? new Date() : null}, deleted_at = ${input.action === "delete" ? new Date() : null}, title = CASE WHEN ${input.action === "delete"} THEN 'Deleted conversation' ELSE title END, version = version + 1, updated_at = now() WHERE id = ${input.id}`;
         if (input.action === "delete") {
+            await query`UPDATE mira_improvements SET content='{}'::jsonb,content_hash='',message=NULL WHERE owner=${context.owner} AND conversation_id=${input.id}`;
             await query`UPDATE mira_code_publications SET content=jsonb_set(jsonb_set(content,'{title}','"chore: deleted proposal"'::jsonb),'{body}','"Conversation deleted."'::jsonb),content_hash='',message=NULL,inspection_requested=false,inspection_token=NULL,observation=NULL,state=CASE WHEN state='draft' THEN 'cancelled' ELSE state END,version=version+1,updated_at=now() WHERE owner=${context.owner} AND conversation_id=${input.id}`;
             await query`UPDATE mira_daytona_jobs SET content='{"title":"Deleted job","command":"true","inputs":[],"outputs":[]}'::jsonb,content_hash='',stdout='',stderr='',output='',files='[]'::jsonb,message=NULL,state=CASE WHEN state='draft' THEN 'cancelled' ELSE state END,version=version+1 WHERE owner=${context.owner} AND conversation_id=${input.id}`;
             await query`UPDATE mira_tool_receipts SET proposal=NULL,state=CASE WHEN state='awaiting_approval' THEN 'rejected' ELSE state END WHERE run_id IN (SELECT id FROM mira_runs WHERE conversation_id=${input.id} AND owner=${context.owner}) AND proposal IS NOT NULL`;

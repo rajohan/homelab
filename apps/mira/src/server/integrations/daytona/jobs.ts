@@ -13,6 +13,7 @@ import {
     validateDaytonaInputs,
 } from "../../data/daytona";
 import { readMiraFile, saveMiraFile } from "../../data/files";
+import { improvementJobAllowed } from "../../improvement/policy";
 import { daytonaCheckMinimumLifetime } from "../../sandbox/profile";
 import {
     daytonaBindingHash,
@@ -65,6 +66,7 @@ async function permission(
 ): Promise<void> {
     if (
         !configuration.executionQualified ||
+        !(await improvementJobAllowed(query, job.id, "cloud")) ||
         daytonaBindingHash(configuration) !== job.bindingHash ||
         (await daytonaPermission(query, configuration)) !== job.controlVersion
     )
@@ -137,7 +139,12 @@ export async function dispatchMiraDaytona(
                 daytonaBindingHash(configuration) === row.bindingHash
                     ? await daytonaPermission(query, configuration)
                     : null;
-            if (!fresh?.fresh || consent !== row.controlVersion || row.cancelRequested) {
+            if (
+                !fresh?.fresh ||
+                consent !== row.controlVersion ||
+                row.cancelRequested ||
+                !(await improvementJobAllowed(query, row.id, "cloud"))
+            ) {
                 await query`UPDATE mira_daytona_jobs SET state=${row.cancelRequested ? "cancelled" : "draft"},approved_at=NULL,control_version=NULL,version=version+1,updated_at=now(),message='Approval expired or access changed. Review this job again.' WHERE id=${row.id}`;
                 return null;
             }

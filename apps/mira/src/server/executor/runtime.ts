@@ -6,6 +6,7 @@ import type { SQL } from "bun";
 import { runtimeEnvironment } from "../config/environment";
 import { reconcileMiraControls } from "../data/automations";
 import { claimMiraRun, reconcileMiraRuns, scheduleMiraRuns } from "../data/queue";
+import { dispatchMiraImprovement } from "../improvement/worker";
 import {
     agentMailBindingHash,
     type AgentMailReadConfiguration,
@@ -132,6 +133,17 @@ export async function runMiraExecutor(options: {
                     options.filesDirectory
                 );
             }
+            await wait(5000);
+        }
+    };
+    const improvements = async () => {
+        while (!signal.aborted) {
+            await dispatchMiraImprovement(
+                client,
+                { daytona: options.daytona, github: options.github },
+                signal,
+                options.filesDirectory
+            );
             await wait(5000);
         }
     };
@@ -341,6 +353,7 @@ export async function runMiraExecutor(options: {
         stopOnFailure(publicationDelivery()),
         stopOnFailure(socialDelivery()),
         stopOnFailure(cloudJobs()),
+        stopOnFailure(improvements()),
         stopOnFailure(codeDelivery()),
         stopOnFailure(scheduler()),
         stopOnFailure(inspector()),
