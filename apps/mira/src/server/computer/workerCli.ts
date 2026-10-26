@@ -1,4 +1,5 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -31,6 +32,31 @@ export async function runComputerWorker(args: readonly string[]): Promise<void> 
         );
     } else if (args.length === 1 && args[0] === "--check-runtime") {
         // Fixed state-only qualification: load the native module and read metadata, never a screen or app.
+        const directory = path.dirname(process.execPath);
+        const requireNative = createRequire(
+            pathToFileURL(path.join(directory, "runtime.cjs"))
+        );
+        const nodeBinding = requireNative(
+            path.join(
+                directory,
+                "node_modules/@ubjs/node-win32-x64-msvc/uniffi-runtime-napi.win32-x64-msvc.node"
+            )
+        ) as { UniffiNativeModule?: unknown };
+        const nodeRuntime = requireNative(
+            path.join(directory, "node_modules/@ubjs/node/lib.js")
+        ) as { UniffiNativeModule?: unknown };
+        const driverBinding = requireNative(
+            path.join(
+                directory,
+                "node_modules/@trycua/cua-driver-win32-x64-msvc/cua_driver_node_runtime.node"
+            )
+        ) as { UniffiNativeModule?: unknown };
+        if (
+            typeof nodeBinding.UniffiNativeModule !== "function" ||
+            nodeRuntime.UniffiNativeModule !== nodeBinding.UniffiNativeModule ||
+            typeof driverBinding.UniffiNativeModule !== "function"
+        )
+            throw new Error("Packaged N-API runtime qualification failed.");
         const sdk = await loadSdk();
         const temporary = await mkdtemp(path.join(tmpdir(), "mira-worker-check-"));
         let driver: ReturnType<typeof sdk.CuaDriver.createConfigured> | undefined;
@@ -64,6 +90,7 @@ export async function runComputerWorker(args: readonly string[]): Promise<void> 
                 JSON.stringify({
                     driver: metadata.driverVersion,
                     embedded: true,
+                    nativeAddons: true,
                     bun: Bun.version,
                 }) + "\n"
             );

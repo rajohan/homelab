@@ -64,12 +64,28 @@ export async function buildWindowsWorker(outputRoot: string) {
             "@ubjs/core,@ubjs/node"
     )
         throw new Error("The computer SDK package needs requalification.");
+    const node = await packageRoot("@ubjs/node", sdk);
+    const nodeMetadata = JSON.parse(
+        await readFile(path.join(node, "package.json"), "utf8")
+    ) as { version: string; optionalDependencies: Record<string, string> };
+    const nodeAddon = "@ubjs/node-win32-x64-msvc";
+    const nodeAddonVersion = nodeMetadata.optionalDependencies[nodeAddon];
+    if (
+        nodeMetadata.version !== sdkMetadata.dependencies["@ubjs/node"] ||
+        nodeAddonVersion !== nodeMetadata.version
+    )
+        throw new Error("The Windows N-API dependency needs requalification.");
     const packages = [
         ["@trycua/cua-driver", sdk, computerDriverVersion],
         [
             "@trycua/cua-driver-win32-x64-msvc",
             await packageRoot("@trycua/cua-driver-win32-x64-msvc/package.json", sdk),
             computerDriverVersion,
+        ],
+        [
+            nodeAddon,
+            await packageRoot(nodeAddon + "/package.json", node),
+            nodeAddonVersion,
         ],
         ...(await Promise.all(
             Object.entries(sdkMetadata.dependencies).map(async ([name, version]) => [

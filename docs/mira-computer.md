@@ -201,7 +201,8 @@ On Windows x64, run `bun run build:computer:windows-worker C:\absolute\empty\pac
 with the pinned Bun version and a frozen install. The builder creates
 `mira-computer-worker-host.exe`, `mira-computer-worker.exe` and a private
 `node_modules` containing the unchanged locked SDK, its Windows native DLL/N-API
-module and its two JavaScript dependencies, including package metadata and notices.
+module, both JavaScript dependencies and the locked `@ubjs` Windows addon, including
+package metadata and notices.
 An unexpected dependency set or version requires requalification. No globally
 installed Bun, SDK or source checkout is needed at runtime. The output directory
 must be empty; the builder never deletes an existing installation.
@@ -238,7 +239,9 @@ harmless fixtures. It verifies child and grandchild exit after parent EOF,
 supervisor termination and worker exit, with retained process handles to avoid PID
 reuse. It also checks environment filtering, builds the complete package, loads
 native SDK metadata from an unrelated working directory, initializes/closes the
-actual private port and rejects a missing native DLL. These checks do not capture
+actual private port, explicitly loads both N-API addons, and rejects each missing
+DLL/N-API binary in a separate fresh process. The `@ubjs/node` wrapper must resolve
+the exact packaged addon. These checks do not capture
 the desktop or send input. Windows CI runs them alongside consent/controller and
 cleanup-failure tests. CodeQL compiles and analyzes both C# executables without a
 third-party restore. Native assertions are reported separately from TypeScript

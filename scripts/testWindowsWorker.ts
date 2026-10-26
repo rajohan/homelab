@@ -51,7 +51,7 @@ export async function testWindowsWorker(): Promise<void> {
         );
         console.info(result.trim());
         console.info(
-            "Packaged Windows worker: SDK metadata, isolated startup, confirmed cleanup and missing-library refusal passed."
+            "Packaged Windows worker: SDK metadata, both N-API addons, isolated startup, confirmed cleanup and missing-library refusals passed."
         );
     } finally {
         await rm(root, { recursive: true, force: true });

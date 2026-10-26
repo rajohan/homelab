@@ -41,6 +41,7 @@ if (
     JSON.stringify({
         driver: computerDriverVersion,
         embedded: true,
+        nativeAddons: true,
         bun: Bun.version,
     })
 )
@@ -58,15 +59,21 @@ const port = await openWindowsComputerProcess(
 );
 await port.close();
 await port.close();
-const dll = path.join(
-    directory,
-    "node_modules/@trycua/cua-driver-win32-x64-msvc/cua_driver_sdk.dll"
-);
-await rename(dll, dll + ".missing");
-let refused = false;
-try {
-    execFileSync(worker, ["--check-runtime"], options);
-} catch {
-    refused = true;
+for (const relative of [
+    "@trycua/cua-driver-win32-x64-msvc/cua_driver_sdk.dll",
+    "@trycua/cua-driver-win32-x64-msvc/cua_driver_node_runtime.node",
+    "@ubjs/node-win32-x64-msvc/uniffi-runtime-napi.win32-x64-msvc.node",
+]) {
+    const library = path.join(directory, "node_modules", relative);
+    await rename(library, library + ".missing");
+    let refused = false;
+    try {
+        execFileSync(worker, ["--check-runtime"], options);
+    } catch {
+        refused = true;
+    } finally {
+        await rename(library + ".missing", library);
+    }
+    if (!refused) throw new Error("A missing packaged native library was not rejected.");
 }
-if (!refused) throw new Error("A missing packaged native library was not rejected.");
+execFileSync(worker, ["--check-runtime"], options);
