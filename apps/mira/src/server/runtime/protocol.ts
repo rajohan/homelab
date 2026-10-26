@@ -1,6 +1,8 @@
 import { miraModelSchema } from "@homelab/contracts/mira";
 import * as v from "valibot";
 
+import type { RuntimeToolResult } from "./toolResult";
+
 const id = v.union([v.string(), v.pipe(v.number(), v.integer())]);
 export const envelopeSchema = v.union([
     v.object({ id, method: v.string(), params: v.optional(v.unknown()) }),
@@ -52,7 +54,7 @@ export const toolCallSchema = v.object({
     tool: v.string(),
     arguments: v.unknown(),
 });
-export interface RuntimeTool {
+export interface RuntimeTool<Result extends RuntimeToolResult = string> {
     name: string;
     description: string;
     inputSchema: Record<string, unknown>;
@@ -60,7 +62,7 @@ export interface RuntimeTool {
         input: unknown,
         signal: AbortSignal,
         call: { callId: string; threadId: string; turnId: string }
-    ) => Promise<string>;
+    ) => Promise<Result>;
 }
 export interface TurnResult {
     id: string;

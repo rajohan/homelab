@@ -71,6 +71,9 @@
     "apps/mira/src/server/integrations/github/github.test.ts": 70,
     "apps/mira/src/server/integrations/github/reader.test.ts": 35,
     "apps/mira/src/server/improvement/plan.test.ts": 5,
-    "apps/mira/src/server/skills/catalog.test.ts": 5
+    "apps/mira/src/server/skills/catalog.test.ts": 5,
+    "apps/mira/src/server/runtime/runtimeVisual.test.ts": 98,
+    "apps/mira/src/server/runtime/toolResult.test.ts": 17,
+    "apps/mira/src/server/visualQualification.test.ts": 9
   }
 }

@@ -8,6 +8,7 @@
     ],
     "type": "module",
     "scripts": {
+        "mira:qualify-visual": "bun --no-env-file apps/mira/src/server/cli/qualifyVisual.ts",
         "mira:qualify": "bun --no-env-file apps/mira/src/server/cli/qualify.ts",
         "mira:qualify-product": "bun --no-env-file apps/dashboard/src/server/testing/miraQualification.ts",
         "dev:mira": "bun --no-env-file apps/mira/src/server/index.ts",

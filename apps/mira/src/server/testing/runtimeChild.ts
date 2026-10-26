@@ -1,7 +1,10 @@
 import path from "node:path";
 import { createInterface } from "node:readline";
 
-import { disabledRuntimeFeatures } from "../runtime/configuration";
+import {
+    disabledRuntimeFeatures,
+    enabledRuntimeFeatures,
+} from "../runtime/configuration";
 import manifest from "../runtime/systemSkills.json";
 
 // Synthetic process fixture. No provider access, account data or network calls.
@@ -83,12 +86,15 @@ for await (const line of reader) {
                           }
                         : {}),
 
-                    features: Object.fromEntries(
-                        disabledRuntimeFeatures.map((feature) => [
-                            feature,
-                            mode === `feature:${feature}`,
-                        ])
-                    ),
+                    features: Object.fromEntries([
+                        ...enabledRuntimeFeatures.map(
+                            (feature) =>
+                                [feature, mode !== `required-feature:${feature}`] as const
+                        ),
+                        ...disabledRuntimeFeatures.map(
+                            (feature) => [feature, mode === `feature:${feature}`] as const
+                        ),
+                    ]),
                     web_search: mode === "web-search" ? "live" : "disabled",
                     cli_auth_credentials_store: mode === "keyring" ? "keyring" : "file",
                     model_provider: mode === "configured-provider" ? "custom" : "openai",
@@ -259,8 +265,17 @@ for await (const line of reader) {
                         mode === "tool-other-thread" ? "other-thread" : "thread-test",
                     turnId,
                     callId: "call-1",
-                    tool: mode === "tool-unknown" ? "administer_host" : "echo",
-                    arguments: { marker: "test" },
+                    tool:
+                        (
+                            {
+                                "tool-unknown": "administer_host",
+                                "tool-router": "mira_tool_call",
+                            } as Record<string, string>
+                        )[mode] ?? "echo",
+                    arguments:
+                        mode === "tool-router"
+                            ? { name: "echo", arguments: { marker: "test" } }
+                            : { marker: "test" },
                 },
             });
             continue;
