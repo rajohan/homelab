@@ -59,3 +59,45 @@ On the PC, run `mira-computer pair https://computer.home.example.test`. Paste th
 `mira-computer run <origin>` connects and reports presence until Ctrl+C. Temporary outages reconnect after thirty seconds; credential/generation rejection stops instead of fighting another companion. `mira-computer forget <origin>` deletes the local key only; revoke in Settings to end already running connections. No background installation, autostart, provider credentials or remote command execution is enabled.
 
 The compiled presence executable was run on Windows x64 with `--version` and `--help`. `apps/mira/src/server/testing/computerVault.ts` separately qualified the real Windows vault using one random synthetic origin and confirmed removal afterward. This does not qualify native Windows input, lock detection or the live Meshnet route. The builder uses the pinned Bun CLI: its Windows output was exercised directly, rather than inferring executable readiness from a successful cross-compilation.
+
+## Per-run access protocol
+
+The server now stores a separate, short-lived permission for one running job and
+one paired computer. `mira.computers.access.request` requires fresh human MFA and
+an exact displayed computer version. A request is only pending consent: the
+presence-only companion does not consume it or enable native control yet. Chat
+controls and the local consent UI will use this protocol in a later slice.
+
+The permission captures the current worker lease, computer connection generation,
+view-only/input scope, automation definition and relevant pause-control versions.
+Only one pending/active permission can exist per computer and per run. A local
+consent request expires after one minute; all authority expires within five
+minutes and no later than the job's budget or device credential. Requests are
+limited to twenty per account per hour, including stopped requests.
+
+The private machine listener exposes `access/pending`, `access/accept` and
+`access/stop`. Acceptance is single-use and binds an opaque, locally generated
+window selection ID. The executable, PID, window handle and screenshots are not
+part of this protocol. A future companion must obtain explicit local consent,
+keep that ID mapped to the immutable host-selected target, retire any previous
+local controller before accepting a new session, and enforce OS
+readiness before opening the native driver. These endpoints alone cannot read
+screens or send input. Enrollment and heartbeat receipts remain
+`controlAllowed: false`; presence is never a computer-use capability.
+
+The executor's `requireMiraComputerAccess` gate verifies the exact owner, run
+lease, current connection, target and requested action scope. Its dispatch
+ceiling is at most five seconds, further bounded by all current lease deadlines.
+A transport must measure this from the start of the request using a monotonic
+clock, recheck before dispatch and after completion, close on a failed gate or
+lost connectivity, and never replay uncertain input. It is not a renewable
+standalone bearer credential. OS lock/sleep checks and native process ownership
+remain required before actual desktop control can be enabled.
+
+Human stop is idempotent and does not require another MFA challenge or an
+optimistic version. Local stop first closes the native session and then records
+the stop on the server; reconnecting must never restore it. Cancellation,
+completion, expired leases, pairing revocation, deleted conversations and changed
+pause-control versions all invalidate access. Resuming a pause requires a new
+human request and new local consent. Stop records durable denial; it does not
+claim an already dispatched OS action was undone.

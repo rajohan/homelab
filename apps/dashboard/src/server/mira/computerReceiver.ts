@@ -1,4 +1,9 @@
 import {
+    acceptMiraComputerAccess,
+    pendingMiraComputerAccess,
+    stopMiraComputerAccessLocally,
+} from "@homelab/mira/data/computerAccess";
+import {
     connectMiraComputer,
     enrollMiraComputer,
     heartbeatMiraComputer,
@@ -45,7 +50,7 @@ async function body(request: Request): Promise<unknown> {
 }
 
 /**
- * Accept enrollment and heartbeat traffic without admitting browser credentials or control commands.
+ * Accept private enrollment, presence and consent traffic without admitting browser credentials or input commands.
  * @param client - Explicit database, supplied only when dashboard identity and operations are configured.
  * @returns A bounded machine-only receiver; its credential can never access tRPC or automation APIs.
  */
@@ -59,6 +64,9 @@ export function miraComputerReceiver(client?: SQL) {
                 "/api/mira/computers/enroll",
                 "/api/mira/computers/connect",
                 "/api/mira/computers/heartbeat",
+                "/api/mira/computers/access/pending",
+                "/api/mira/computers/access/accept",
+                "/api/mira/computers/access/stop",
             ].includes(url.pathname) ||
             url.search
         )
@@ -87,6 +95,14 @@ export function miraComputerReceiver(client?: SQL) {
             const result = await Effect.runPromise(
                 Effect.tryPromise({
                     try: async () => {
+                        if (url.pathname.endsWith("/access/pending"))
+                            return await pendingMiraComputerAccess(client, token, input);
+                        if (url.pathname.endsWith("/access/accept"))
+                            return await acceptMiraComputerAccess(client, token, input);
+                        if (url.pathname.endsWith("/access/stop")) {
+                            await stopMiraComputerAccessLocally(client, token, input);
+                            return { stopped: true };
+                        }
                         if (url.pathname.endsWith("/enroll"))
                             return await enrollMiraComputer(client, token, input);
                         if (url.pathname.endsWith("/heartbeat"))
