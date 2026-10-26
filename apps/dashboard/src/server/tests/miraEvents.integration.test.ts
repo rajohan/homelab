@@ -166,7 +166,7 @@ test("verified AgentMail events deduplicate and cannot bypass integration disabl
         await rejects(other.automations.run(request), /Automation not found/);
         const stored = await fixture.client<{ id: string }[]>`
             SELECT id FROM mira_runs WHERE request_key = ${`operator:${request.requestId}`}`;
-        expect(stored).toEqual([{ id: manual.id }]);
+        expect([...stored]).toEqual([{ id: manual.id }]);
     } finally {
         await fixture.close();
     }
@@ -714,7 +714,7 @@ test.each(["autonomy", "automation"] as const)(
             const deliveries = await fixture.client<
                 { state: string }[]
             >`SELECT state FROM mira_event_deliveries`;
-            expect(deliveries).toEqual([{ state: "skipped" }]);
+            expect([...deliveries]).toEqual([{ state: "skipped" }]);
         } finally {
             release.resolve();
             await Promise.allSettled([recording, pausing]);

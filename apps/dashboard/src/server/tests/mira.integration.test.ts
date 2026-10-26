@@ -711,7 +711,7 @@ test("task continuation requires review of uncertain actions and never rewrites 
         const receipts = await database.client<
             { state: string }[]
         >`SELECT state FROM mira_tool_receipts WHERE run_id = ${first.id}`;
-        expect(receipts).toEqual([{ state: "unknown" }]);
+        expect([...receipts]).toEqual([{ state: "unknown" }]);
         const conversation = await api.conversations.read({ id: first.conversationId });
         expect(conversation.messages.at(-2)?.content).toContain(first.id);
         const acknowledged = await api.tasks.execution({ id: created.id });
@@ -842,7 +842,7 @@ test.each(["needs_attention", "unknown receipt"])(
             const waiting = await database.client<
                 { state: string }[]
             >`SELECT state FROM mira_event_deliveries`;
-            expect(waiting).toEqual([{ state: "pending" }]);
+            expect([...waiting]).toEqual([{ state: "pending" }]);
             const blockedHistory = await api.tasks.execution({ id: saved.id });
             expect(blockedHistory.rows).toHaveLength(1);
             const reviewed = await api.tasks.run({

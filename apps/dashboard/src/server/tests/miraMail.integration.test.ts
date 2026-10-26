@@ -214,7 +214,10 @@ test("one reviewed send survives concurrent dispatch and lost approval responses
             dispatchMiraMail(f.client, f.configuration, signal, request),
             dispatchMiraMail(f.client, f.configuration, signal, request),
         ]);
-        expect(attempts.toSorted()).toEqual([false, true]);
+        expect(attempts.toSorted((left, right) => Number(left) - Number(right))).toEqual([
+            false,
+            true,
+        ]);
         expect(calls).toBe(1);
         const recovered = await f.api.mail.approve(approval);
         expect(recovered).toMatchObject({
@@ -279,7 +282,7 @@ for (const outcome of [
             const notices = await f.client<
                 { recipient: string }[]
             >`SELECT recipient FROM dashboard_notifications WHERE source='mira-mail'`;
-            expect(notices).toEqual([{ recipient: "human:operator" }]);
+            expect([...notices]).toEqual([{ recipient: "human:operator" }]);
             await rejects(
                 f.api.mail.cancel({ id: result.id, version: result.version }),
                 /already started/
