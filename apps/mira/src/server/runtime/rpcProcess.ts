@@ -16,6 +16,8 @@ export interface RpcProcessOptions {
     args: string[];
     cwd: string;
     env: Record<string, string>;
+    /** Hide console windows by default; native consent surfaces explicitly opt out. */
+    windowsHide?: boolean;
     requestTimeoutMs?: number;
     signal?: AbortSignal;
     maxFrameBytes?: number;
@@ -48,7 +50,7 @@ export class RpcProcess {
         this.child = spawn(options.command, options.args, {
             cwd: options.cwd,
             env: options.env,
-            windowsHide: true,
+            windowsHide: options.windowsHide ?? true,
             stdio: ["pipe", "pipe", "pipe"],
         });
         this.exited = new Promise((resolve) => {

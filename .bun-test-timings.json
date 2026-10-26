@@ -85,6 +85,8 @@
     "apps/mira/src/server/computer/companion.test.ts": 12,
     "apps/dashboard/src/server/config/computer.test.ts": 2,
     "packages/contracts/src/miraComputers.test.ts": 5,
-    "apps/mira/src/server/computer/companionConsent.test.ts": 251
+    "apps/mira/src/server/computer/companionConsent.test.ts": 251,
+    "apps/mira/src/server/computer/consentProcess.test.ts": 8170,
+    "scripts/buildWindowsConsent.test.ts": 6
   }
 }

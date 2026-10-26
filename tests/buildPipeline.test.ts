@@ -63,7 +63,9 @@ const workflowStep = v.object({
     with: v.optional(v.record(v.string(), v.unknown())),
 });
 const workflowJob = v.object({
-    needs: v.optional(v.string()),
+    needs: v.optional(v.union([v.string(), v.array(v.string())])),
+    secrets: v.optional(v.unknown()),
+    env: v.optional(v.record(v.string(), v.string())),
     if: v.optional(v.string()),
     permissions: v.optional(v.record(v.string(), v.string())),
     "runs-on": v.string(),
@@ -89,6 +91,7 @@ async function ciWorkflow() {
                     permissions: v.record(v.string(), v.string()),
                 }),
                 verify: workflowJob,
+                windows: workflowJob,
                 coverage: workflowJob,
             }),
         }),
@@ -109,13 +112,27 @@ test("PR execution cannot share a runner or secrets with authenticated coverage 
     expect(workflow.source).not.toMatch(
         /secrets\.|github\.token|codecov\/codecov-action/
     );
-    expect(verify.needs).toBe("checks");
+    expect(verify.needs).toEqual(["checks", "windows"]);
+    expect(workflow.jobs.windows["runs-on"]).toBe("windows-latest");
+    expect(workflow.jobs.windows.permissions).toEqual({ contents: "read" });
+    expect(workflow.jobs.windows.secrets).toBeUndefined();
+    expect(JSON.stringify(workflow.jobs.windows)).not.toMatch(
+        /secrets\.|github\.token|codecov\/codecov-action/
+    );
+    expect(
+        workflow.jobs.windows.steps.find((step) =>
+            step.uses?.startsWith("actions/checkout@")
+        )?.with?.["persist-credentials"]
+    ).toBe(false);
     expect(verify.if).toBe("always()");
     expect(verify.steps).toEqual([
         {
             name: "Require successful source verification",
-            env: { CHECK_RESULT: "${{ needs.checks.result }}" },
-            run: 'test "$CHECK_RESULT" = success',
+            env: {
+                CHECK_RESULT: "${{ needs.checks.result }}",
+                WINDOWS_RESULT: "${{ needs.windows.result }}",
+            },
+            run: 'test "$CHECK_RESULT" = success && test "$WINDOWS_RESULT" = success',
         },
     ]);
     expect(coverage.needs).toBe("verify");

@@ -136,3 +136,51 @@ consent window. The presence-only CLI still does not instantiate it. The native
 Windows picker/readiness monitor, process-tree ownership, command delivery,
 Chat controls, installer, signed release distribution, autostart and updater
 qualification remain required before enabling screen/input on the user's PC.
+
+## Windows local consent host
+
+`bun run build:computer:windows-host` builds the repository-owned Windows GUI
+helper using the operating system's .NET Framework compiler. It has no NuGet
+packages or provider credentials. Bun remains the companion runtime and owns the
+private child-process transport. The GUI helper is Windows x64, requires Windows
+10 or newer and runs without elevation. It is a separate product executable,
+not a PowerShell command channel or a PC listener.
+
+The prompt identifies the exact requesting origin and job, distinguishes viewing
+from input control, and requires a local window selection. Input control also
+requires explicit consent to bring that window forward. No window is selected by
+default. Closing or declining the prompt permanently stops that request. Its
+countdown uses the original server consent deadline; approving it cannot renew
+the five-minute session ceiling. The helper does not itself capture pixels or
+send input, and its pipe accepts only initialization, readiness checks and stop.
+
+Only visible, non-elevated windows in the current interactive session are offered.
+The selection pins the canonical local executable, PID, process creation time and
+window handle. Window destruction, identity change, session transitions, sleep,
+parent loss and expiry retire the helper. Readiness independently checks both
+WTS active/unlocked session information and the current input desktop; a default
+input desktop alone is insufficient to detect a disconnected session. Reconnect
+changes cannot resume consent. The native helper also expires if the parent stops
+checking it for five seconds, independently of the UI refresh timer.
+
+`openComputerConsentSurface` launches the fixed host with filtered OS variables
+and bounded JSONL over inherited pipes. It waits for one explicit selection,
+checks readiness before returning it, and exposes permanent abort plus awaited
+cleanup. Unknown messages, malformed targets, late approvals, hung checks and
+host-tool requests retire the process. The returned surface must stay owned by
+the future controller/driver integration: its abort must stop that controller,
+and its process must be reaped before admitting a replacement. No device token,
+server credential, screenshot or input command is sent to this host.
+
+`bun run test:computer:windows` compiles the actual GUI binary and checks its
+redirected-pipe bootstrap, strict protocol parsing, deadline rules, session-state
+matrix and process/window identity checks. The native test entrypoint is compiled
+separately and is not distributed. CI runs these checks and the actual Bun child
+transport tests on Windows; CodeQL also analyzes the compiled C# host. Linux unit
+coverage is reported separately and does not claim C# line coverage or interactive
+Windows input qualification.
+
+The GUI host and its pipe adapter are not yet connected to the presence CLI or
+native driver. Per-run command transport, process-tree ownership, Chat controls,
+Windows input/lock transition acceptance, installer, download distribution,
+autostart and the companion updater remain required before production activation.
