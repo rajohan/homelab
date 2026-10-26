@@ -839,3 +839,46 @@ export const miraComputers = pgTable(
         ),
     ]
 );
+
+export const miraComputerAccess = pgTable(
+    "mira_computer_access",
+    {
+        id: uuid().primaryKey(),
+        owner: text().notNull(),
+        computerId: uuid("computer_id")
+            .notNull()
+            .references(() => miraComputers.id),
+        computerVersion: integer("computer_version").notNull(),
+        connectionId: uuid("connection_id").notNull(),
+        runId: uuid("run_id")
+            .notNull()
+            .references(() => miraRuns.id),
+        runLease: uuid("run_lease").notNull(),
+        controls: jsonb().notNull(),
+        mode: text().notNull(),
+        state: text().notNull().default("pending"),
+        targetId: uuid("target_id"),
+        expiresAt: time("expires_at").notNull(),
+        acceptedAt: time("accepted_at"),
+        stoppedAt: time("stopped_at"),
+        createdAt: time("created_at").notNull().defaultNow(),
+    },
+    (t) => [
+        index("mira_computer_access_owner").on(t.owner, t.createdAt, t.id),
+        uniqueIndex("mira_computer_access_computer")
+            .on(t.computerId)
+            .where(sql`${t.state} IN ('pending','active')`),
+        uniqueIndex("mira_computer_access_run")
+            .on(t.runId)
+            .where(sql`${t.state} IN ('pending','active')`),
+        check("mira_computer_access_mode", sql`${t.mode} IN ('view','control')`),
+        check(
+            "mira_computer_access_state",
+            sql`(${t.state}='pending' AND ${t.targetId} IS NULL AND ${t.acceptedAt} IS NULL AND ${t.stoppedAt} IS NULL) OR (${t.state}='active' AND ${t.targetId} IS NOT NULL AND ${t.acceptedAt} IS NOT NULL AND ${t.stoppedAt} IS NULL) OR (${t.state}='stopped' AND ${t.stoppedAt} IS NOT NULL)`
+        ),
+        check(
+            "mira_computer_access_duration",
+            sql`${t.expiresAt} > ${t.createdAt} AND ${t.expiresAt} <= ${t.createdAt}+interval '5 minutes'`
+        ),
+    ]
+);

@@ -1,0 +1,532 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "6e1ad3d1-f4e2-46f5-b98a-8d7d4dae2562",
+    "prevIds": ["4eb02778-551b-4539-bc96-d8940c7ae59f"],
+    "footprints": [
+        {
+            "statementType": "create_table",
+            "statementTarget": ["table", "public", "mira_computer_access"],
+            "writes": [
+                "s|tbl|public.mira_computer_access",
+                "n|tbl|public.mira_computer_access",
+                "e|tbl|public.mira_computer_access",
+                "n|rel|public.mira_computer_access",
+                "n|type|public.mira_computer_access",
+                "n|rel|public.mira_computer_access_pkey"
+            ],
+            "reads": ["n|sch|public"]
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": [
+                "index",
+                "public",
+                "mira_computer_access",
+                "mira_computer_access_owner"
+            ],
+            "writes": [
+                "s|idx|public.mira_computer_access_owner",
+                "n|idx|public.mira_computer_access_owner",
+                "e|idx|public.mira_computer_access_owner",
+                "n|rel|public.mira_computer_access_owner"
+            ],
+            "reads": [
+                "n|tbl|public.mira_computer_access",
+                "n|sch|public",
+                "n|col|public.mira_computer_access.owner",
+                "n|col|public.mira_computer_access.created_at",
+                "n|col|public.mira_computer_access.id"
+            ]
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": [
+                "index",
+                "public",
+                "mira_computer_access",
+                "mira_computer_access_computer"
+            ],
+            "writes": [
+                "s|idx|public.mira_computer_access_computer",
+                "n|idx|public.mira_computer_access_computer",
+                "e|idx|public.mira_computer_access_computer",
+                "n|rel|public.mira_computer_access_computer"
+            ],
+            "reads": [
+                "n|tbl|public.mira_computer_access",
+                "n|sch|public",
+                "n|col|public.mira_computer_access.computer_id"
+            ]
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": [
+                "index",
+                "public",
+                "mira_computer_access",
+                "mira_computer_access_run"
+            ],
+            "writes": [
+                "s|idx|public.mira_computer_access_run",
+                "n|idx|public.mira_computer_access_run",
+                "e|idx|public.mira_computer_access_run",
+                "n|rel|public.mira_computer_access_run"
+            ],
+            "reads": [
+                "n|tbl|public.mira_computer_access",
+                "n|sch|public",
+                "n|col|public.mira_computer_access.run_id"
+            ]
+        },
+        {
+            "statementType": "create_fk",
+            "statementTarget": ["table", "public", "mira_computer_access"],
+            "writes": [
+                "s|fk|public.mira_computer_access.mira_computer_access_computer_id_mira_computers_id_fkey",
+                "n|fk|public.mira_computer_access.mira_computer_access_computer_id_mira_computers_id_fkey",
+                "e|fk|public.mira_computer_access.mira_computer_access_computer_id_mira_computers_id_fkey",
+                "n|con|public.mira_computer_access.mira_computer_access_computer_id_mira_computers_id_fkey"
+            ],
+            "reads": [
+                "n|tbl|public.mira_computer_access",
+                "n|sch|public",
+                "n|tbl|public.mira_computers",
+                "n|sch|public",
+                "n|col|public.mira_computer_access.computer_id",
+                "n|col|public.mira_computers.id",
+                "e|uniqueness|public.mira_computers.id"
+            ]
+        },
+        {
+            "statementType": "create_fk",
+            "statementTarget": ["table", "public", "mira_computer_access"],
+            "writes": [
+                "s|fk|public.mira_computer_access.mira_computer_access_run_id_mira_runs_id_fkey",
+                "n|fk|public.mira_computer_access.mira_computer_access_run_id_mira_runs_id_fkey",
+                "e|fk|public.mira_computer_access.mira_computer_access_run_id_mira_runs_id_fkey",
+                "n|con|public.mira_computer_access.mira_computer_access_run_id_mira_runs_id_fkey"
+            ],
+            "reads": [
+                "n|tbl|public.mira_computer_access",
+                "n|sch|public",
+                "n|tbl|public.mira_runs",
+                "n|sch|public",
+                "n|col|public.mira_computer_access.run_id",
+                "n|col|public.mira_runs.id",
+                "e|uniqueness|public.mira_runs.id"
+            ]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "name": "mira_computer_access",
+                "isRlsEnabled": false,
+                "entityType": "tables"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_computer_access",
+                "name": "id",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_computer_access",
+                "name": "owner",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_computer_access",
+                "name": "computer_id",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_computer_access",
+                "name": "computer_version",
+                "type": "integer",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_computer_access",
+                "name": "connection_id",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_computer_access",
+                "name": "run_id",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_computer_access",
+                "name": "run_lease",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_computer_access",
+                "name": "controls",
+                "type": "jsonb",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_computer_access",
+                "name": "mode",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_computer_access",
+                "name": "state",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "'pending'",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_computer_access",
+                "name": "target_id",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_computer_access",
+                "name": "expires_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_computer_access",
+                "name": "accepted_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_computer_access",
+                "name": "stopped_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_computer_access",
+                "name": "created_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "now()",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_computer_access",
+                "name": "mira_computer_access_owner",
+                "nameExplicit": true,
+                "columns": [
+                    {
+                        "value": "owner",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    },
+                    {
+                        "value": "created_at",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    },
+                    {
+                        "value": "id",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    }
+                ],
+                "isUnique": false,
+                "where": null,
+                "with": "",
+                "method": "btree",
+                "concurrently": false,
+                "entityType": "indexes"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_computer_access",
+                "name": "mira_computer_access_computer",
+                "nameExplicit": true,
+                "columns": [
+                    {
+                        "value": "computer_id",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    }
+                ],
+                "isUnique": true,
+                "where": "\"state\" IN ('pending','active')",
+                "with": "",
+                "method": "btree",
+                "concurrently": false,
+                "entityType": "indexes"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_computer_access",
+                "name": "mira_computer_access_run",
+                "nameExplicit": true,
+                "columns": [
+                    {
+                        "value": "run_id",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    }
+                ],
+                "isUnique": true,
+                "where": "\"state\" IN ('pending','active')",
+                "with": "",
+                "method": "btree",
+                "concurrently": false,
+                "entityType": "indexes"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_computer_access",
+                "name": "mira_computer_access_computer_id_mira_computers_id_fkey",
+                "nameExplicit": false,
+                "columns": ["computer_id"],
+                "schemaTo": "public",
+                "tableTo": "mira_computers",
+                "columnsTo": ["id"],
+                "onUpdate": "NO ACTION",
+                "onDelete": "NO ACTION",
+                "entityType": "fks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_computer_access",
+                "name": "mira_computer_access_run_id_mira_runs_id_fkey",
+                "nameExplicit": false,
+                "columns": ["run_id"],
+                "schemaTo": "public",
+                "tableTo": "mira_runs",
+                "columnsTo": ["id"],
+                "onUpdate": "NO ACTION",
+                "onDelete": "NO ACTION",
+                "entityType": "fks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_computer_access",
+                "name": "mira_computer_access_pkey",
+                "columns": ["id"],
+                "nameExplicit": false,
+                "entityType": "pks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_computer_access",
+                "name": "mira_computer_access_mode",
+                "value": "\"mode\" IN ('view','control')",
+                "entityType": "checks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_computer_access",
+                "name": "mira_computer_access_state",
+                "value": "(\"state\"='pending' AND \"target_id\" IS NULL AND \"accepted_at\" IS NULL AND \"stopped_at\" IS NULL) OR (\"state\"='active' AND \"target_id\" IS NOT NULL AND \"accepted_at\" IS NOT NULL AND \"stopped_at\" IS NULL) OR (\"state\"='stopped' AND \"stopped_at\" IS NOT NULL)",
+                "entityType": "checks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_computer_access",
+                "name": "mira_computer_access_duration",
+                "value": "\"expires_at\" > \"created_at\" AND \"expires_at\" <= \"created_at\"+interval '5 minutes'",
+                "entityType": "checks"
+            }
+        }
+    ]
+}

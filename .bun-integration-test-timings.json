@@ -47,6 +47,7 @@
         "apps/dashboard/src/server/tests/miraImprovement.integration.test.ts": 3500,
         "apps/dashboard/src/server/tests/miraSkills.integration.test.ts": 395,
         "apps/dashboard/src/server/tests/miraComputers.integration.test.ts": 6404,
-        "apps/mira/src/server/computer/companion.integration.test.ts": 163
+        "apps/mira/src/server/computer/companion.integration.test.ts": 163,
+        "apps/dashboard/src/server/tests/miraComputerAccess.integration.test.ts": 6405
     }
 }

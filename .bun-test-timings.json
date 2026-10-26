@@ -83,6 +83,7 @@
     "apps/mira/src/server/computer/credentials.test.ts": 6,
     "scripts/buildComputer.test.ts": 242,
     "apps/mira/src/server/computer/companion.test.ts": 12,
-    "apps/dashboard/src/server/config/computer.test.ts": 2
+    "apps/dashboard/src/server/config/computer.test.ts": 2,
+    "packages/contracts/src/miraComputers.test.ts": 5
   }
 }

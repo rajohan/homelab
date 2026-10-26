@@ -38,3 +38,26 @@ export interface MiraComputerSummary {
     lastSeenAt: string | null;
     connected: boolean;
 }
+
+const id = v.pipe(v.string(), v.uuid());
+export const miraComputerAccessRequestSchema = v.strictObject({
+    computerId: id,
+    computerVersion: v.pipe(v.number(), v.integer(), v.minValue(1)),
+    runId: id,
+    mode: v.picklist(["view", "control"]),
+});
+export const miraComputerAccessConnectionSchema = v.strictObject({ connectionId: id });
+export const miraComputerAccessAcceptSchema = v.strictObject({
+    id,
+    connectionId: id,
+    targetId: id,
+});
+export const miraComputerAccessStopSchema = v.strictObject({ id });
+export interface MiraComputerAccessSummary {
+    id: string;
+    computerId: string;
+    runId: string;
+    mode: "view" | "control";
+    state: "pending" | "active" | "stopped" | "expired" | "unavailable";
+    expiresAt: string;
+}
