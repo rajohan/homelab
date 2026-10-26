@@ -34,7 +34,7 @@ const accessSummary = v.strictObject({
     state: v.picklist(["pending", "active"]),
     expiresAt: v.pipe(v.string(), v.isoTimestamp()),
 });
-const consentRequest = v.strictObject({
+export const computerConsentRequestSchema = v.strictObject({
     ...accessSummary.entries,
     state: v.literal("pending"),
     consentExpiresAt: v.pipe(v.string(), v.isoTimestamp()),
@@ -213,7 +213,7 @@ export class ComputerCompanion {
         if (!device || !v.is(uuid, connectionId))
             throw new ComputerConnectionError(false);
         const result = v.safeParse(
-            v.strictObject({ request: v.nullable(consentRequest) }),
+            v.strictObject({ request: v.nullable(computerConsentRequestSchema) }),
             await this.send("access/pending", token, { connectionId }, signal)
         );
         if (!result.success) throw new ComputerConnectionError(false);
