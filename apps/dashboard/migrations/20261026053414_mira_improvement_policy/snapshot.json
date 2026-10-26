@@ -2,7 +2,7 @@
     "type": "diff",
     "version": "9",
     "dialect": "postgres",
-    "id": "80ec042a-674e-4b5c-861f-19a11ce32a75",
+    "id": "b3d3feab-af2c-43b8-95d3-60d31324ebaf",
     "prevIds": ["9b09d7d8-83a1-41a9-905a-bc72fb04e978"],
     "footprints": [
         {
@@ -31,6 +31,16 @@
                 "n|rel|public.mira_improvements_run_id_key"
             ],
             "reads": ["n|sch|public"]
+        },
+        {
+            "statementType": "add_column",
+            "statementTarget": ["column", "public", "mira_runs", "automation_kind"],
+            "writes": [
+                "s|col|public.mira_runs.automation_kind",
+                "n|col|public.mira_runs.automation_kind",
+                "e|col|public.mira_runs.automation_kind"
+            ],
+            "reads": ["n|tbl|public.mira_runs", "n|sch|public"]
         },
         {
             "statementType": "create_index",
@@ -677,6 +687,22 @@
                 "notNull": true,
                 "dimensions": 0,
                 "default": "now()",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_runs",
+                "name": "automation_kind",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
                 "generated": null,
                 "identity": null,
                 "entityType": "columns"

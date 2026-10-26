@@ -12,7 +12,7 @@ The fixed policy allows at most ten `.ts`, `.tsx` or `.css` files beneath `apps/
 
 The automation inspects tasks, current source, applicable repository instructions and open PRs using passive tools, then calls `mira_improvement_submit`. Submission only means queued. A changed main, incomplete inventory, existing open Mira PR, invalid source, failed check or unconfirmed cleanup prevents publication. PR listings are observations and cannot atomically exclude a competing PR opened after the final check. GitHub publication uses the existing exact-content outbox, fixed repository/account, verified author and committer, and uncertain-write protections. The workflow never merges or deploys.
 
-Improvement runs have a restricted tool surface for repository, task and operational context. Private memory, inbox and unrelated integration tools are denied. No GitHub or Daytona credential is passed to the model or sandbox. Repository content cannot grant new authority or change the fixed command. Other automation kinds and ordinary Chat cannot submit an automatic improvement.
+Improvement runs have a restricted tool surface for repository, task and operational context. Private memory, inbox and unrelated integration tools are denied. The automation kind is captured when the run is queued; later definition edits cannot widen that run's tool access. Legacy automatic runs without a captured kind receive the restricted surface. No GitHub or Daytona credential is passed to the model or sandbox. Repository content cannot grant new authority or change the fixed command. Other automation kinds and ordinary Chat cannot submit an automatic improvement.
 
 ## Pause, changes and recovery
 
@@ -20,7 +20,7 @@ Pause the individual automation, Automatic work, Daytona or GitHub to revoke the
 
 The coordinator and outboxes hold separate durable leases. Restarting the executor resumes recorded local phases without starting a second provider mutation. A failed check is not automatically retried. An uncertain publication remains blocked and is never resent. Review **Cloud jobs** and **Code changes** on Jobs. Confirm or resolve sandbox cleanup first; an uncertain GitHub result needs a successful **Inspect GitHub** observation within fifteen minutes. Then the automation's Code permissions dialog accepts a review note and **Close reviewed attempt**. This records the operator decision and releases the automatic-work block; it does not change the external outcome, erase the proposal or retry a write. Existing open Mira PRs still block the next attempt.
 
-Queued and active attempts protect their conversations and input files from deletion. After completion, conversation deletion scrubs the retained edit payload and message while preserving bounded operational identifiers. The migration adds grants and attempts without granting or enabling any existing automation.
+Queued and active attempts protect their conversations and input files from deletion. Active and unresolved attempts also prevent automation deletion, keeping the operator recovery dialog reachable. The generated edit file stays protected across coordinator phases and while an outcome needs review. After completion, conversation deletion scrubs the retained edit payload and message while preserving bounded operational identifiers. The migration adds grants and attempts without granting or enabling any existing automation.
 
 ## Validation
 

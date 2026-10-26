@@ -36,7 +36,7 @@ not the reserved light infrastructure worker.
 | Runtime qualification      | Separate ChatGPT login; streaming, host tools, interruption and process replacement                                          | Implemented; isolated live qualification passed                                                                                                            |
 | Chat and files             | Owned conversations, streaming, cancellation, search/archive/delete, bounded uploads and editable memory                     | Implemented; synthetic preview and live text/PDF/image qualification passed                                                                                |
 | Tasks                      | Four-column drag-and-drop board, keyboard controls, search/filters, versioned edits, progress and conversation links         | Board, product tools and [explicit task execution](mira-tasks.md) implemented; resource-context actions pending                                            |
-| Automations and Reports    | Durable scheduler, heartbeat, reasoned individual/global pause, run history, report snapshots and deduplicated notifications | Core implemented; migrated presets installed paused; external hooks and improvement execution pending                                                      |
+| Automations and Reports    | Durable scheduler, heartbeat, reasoned individual/global pause, run history, report snapshots and deduplicated notifications | Core implemented; migrated presets installed paused; live qualification and activation pending                                                             |
 | Computer control           | Dedicated browser, required Windows pairing, scoped controls, preview, local stop and takeover                               | Driver candidate identified; companion and host acceptance pending                                                                                         |
 | Voice                      | Shared conversation context, provider qualification and explicit billing limits                                              | Pending; no paid voice budget enabled                                                                                                                      |
 | Migration and integrations | Validated legacy imports, AgentMail, Daytona, here.now and Moltbook adapters                                                 | AgentMail delivery/attachments, here.now publication, Moltbook participation and reviewed Daytona jobs implemented; live qualification and cutover pending |
@@ -151,8 +151,7 @@ not active replacement schedules. All times are Europe/Oslo:
 
 Dashboard improvement uses an isolated worktree, Mira's verified GitHub identity,
 current Bun pin, shared components and required checks. It checks existing tasks/PRs
-before starting. It cannot automatically merge, deploy, restart, change secrets,
-spend money or send external messages. Each job can be disabled independently.
+before starting. The [automatic frontend policy](mira-improvements.md) requires explicit per-automation permission for a bounded fixed cloud check and draft PR. It cannot automatically merge, deploy, restart, change secrets or send unrelated external messages. Each job can be disabled independently.
 
 AgentMail keeps Mira's existing inbox. Replace the old custom signature transform
 with raw-body Svix verification, durable event acceptance, deduplication and missed

@@ -500,8 +500,8 @@ export function createMiraTools(
                 if (run.automationId && !improvementContextTools.has(definition.name)) {
                     const [automation] = await client<
                         { kind: string }[]
-                    >`SELECT kind FROM mira_automations WHERE id=${run.automationId} AND owner=${run.owner}`;
-                    if (automation?.kind === "improvement")
+                    >`SELECT automation_kind AS kind FROM mira_runs WHERE id=${run.id} AND owner=${run.owner}`;
+                    if (!automation?.kind || automation.kind === "improvement")
                         return JSON.stringify({
                             ok: false,
                             message:

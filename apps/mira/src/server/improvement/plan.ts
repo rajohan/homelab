@@ -24,6 +24,8 @@ export function parseImprovement(input: unknown) {
     if (plan.files.length > miraImprovementPolicy.maximumFiles)
         throw new Error("Choose at most ten frontend files.");
     for (const file of plan.files) {
+        if (file.beforeSha256 === null && file.content === null)
+            throw new Error("A missing file cannot be deleted.");
         if (
             !miraImprovementPolicy.paths.some((prefix) => file.path.startsWith(prefix)) ||
             !/\.(ts|tsx|css)$/.test(file.path)

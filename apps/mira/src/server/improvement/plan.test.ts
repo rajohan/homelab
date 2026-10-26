@@ -105,3 +105,12 @@ test("automatic improvements enforce file count, UTF-8 bytes, total size and ori
         })
     ).toThrow();
 });
+
+test("automatic improvements reject deletion without an original fingerprint", () => {
+    expect(() =>
+        parseImprovement({
+            ...input,
+            plan: { ...input.plan, files: [{ ...input.plan.files[0]!, content: null }] },
+        })
+    ).toThrow("A missing file cannot be deleted");
+});

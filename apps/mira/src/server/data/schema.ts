@@ -213,6 +213,7 @@ export const miraRuns = pgTable(
             .references(() => miraMessages.id),
         taskId: uuid("task_id").references(() => miraTasks.id),
         automationId: uuid("automation_id").references(() => miraAutomations.id),
+        automationKind: text("automation_kind"),
         state: text().notNull(),
         priority: integer().notNull(),
         lane: text(),

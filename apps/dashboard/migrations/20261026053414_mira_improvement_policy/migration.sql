@@ -36,6 +36,7 @@ CREATE TABLE "mira_improvements" (
 	CONSTRAINT "mira_improvements_state" CHECK ("state" IN ('queued','checking','publishing','published','failed','cancelled','needs_attention'))
 );
 --> statement-breakpoint
+ALTER TABLE "mira_runs" ADD COLUMN "automation_kind" text;--> statement-breakpoint
 CREATE INDEX "mira_improvements_queue" ON "mira_improvements" ("state","id");--> statement-breakpoint
 CREATE INDEX "mira_improvements_owner" ON "mira_improvements" ("owner","id");--> statement-breakpoint
 CREATE UNIQUE INDEX "mira_improvements_one_active" ON "mira_improvements" ((true)) WHERE "state" IN ('queued','checking','publishing');--> statement-breakpoint

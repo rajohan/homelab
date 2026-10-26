@@ -6,6 +6,7 @@ import path from "node:path";
 
 import { capabilities } from "@homelab/contracts/operations";
 import { publishDaytonaBinding } from "@homelab/mira/data/daytona";
+import { saveMiraFile, deleteMiraFile } from "@homelab/mira/data/files";
 import { publishGitHubBinding } from "@homelab/mira/data/github";
 import { claimMiraRun } from "@homelab/mira/data/queue";
 import {
@@ -637,6 +638,95 @@ test("blocked automatic work requires human review, settled cleanup and a fresh 
         expect(await f.dispatch(provider.request)).toBe(false);
         expect(provider.calls).toHaveLength(calls);
         await rejects(f.api.improvements.resolve(review));
+    } finally {
+        await f.close();
+    }
+});
+
+test("automatic coding rejects missing-file deletion before admission or spending", async () => {
+    const f = await fixture();
+    try {
+        await f.grant(true);
+        const { submit } = await f.start();
+        expect(
+            await submit({
+                ...input,
+                plan: {
+                    ...input.plan,
+                    files: [{ ...input.plan.files[0]!, content: null }],
+                },
+            })
+        ).toMatchObject({ ok: false });
+        expect(await f.client`SELECT id FROM mira_improvements`).toHaveLength(0);
+        expect(await f.client`SELECT id FROM mira_daytona_jobs`).toHaveLength(0);
+    } finally {
+        await f.close();
+    }
+});
+
+test("the originating improvement tool restriction survives automation kind edits", async () => {
+    const f = await fixture();
+    try {
+        await f.grant(true);
+        const { run, tools, submit } = await f.start();
+        await f.api.automations.update({
+            ...f.fields,
+            id: f.automation.id,
+            version: 1,
+            kind: "custom",
+        });
+        const raw = await tools
+            .find((tool) => tool.name === "mira_memory_list")!
+            .execute({}, signal, {
+                callId: crypto.randomUUID(),
+                threadId: "synthetic",
+                turnId: "synthetic",
+            });
+        expect(JSON.parse(raw)).toMatchObject({ ok: false });
+        expect(await submit()).toMatchObject({ ok: false });
+        const [stamp] = await f.client<
+            { kind: string }[]
+        >`SELECT automation_kind AS kind FROM mira_runs WHERE id=${run.id}`;
+        expect(stamp!.kind).toBe("improvement");
+    } finally {
+        await f.close();
+    }
+});
+
+test("active and unresolved improvements protect automation deletion and generated edit files across phase gaps", async () => {
+    const f = await fixture();
+    try {
+        await f.grant(true);
+        const { run, submit } = await f.start(),
+            submitted = await submit(),
+            id = submitted.result!.id;
+        await f.client`UPDATE mira_runs SET state='completed' WHERE id=${run.id}`;
+        await saveMiraFile(f.context, f.directory, {
+            id,
+            name: "improvement-edits.json",
+            bytes: Buffer.from(JSON.stringify(input.plan)),
+        });
+        for (const state of ["queued", "checking", "publishing", "needs_attention"]) {
+            await f.client`UPDATE mira_improvements SET state=${state} WHERE id=${id}`;
+            await rejects(
+                f.api.automations.delete({ id: f.automation.id, version: 1 }),
+                /Finish or review automatic code/
+            );
+            await rejects(
+                deleteMiraFile(f.context, f.directory, id),
+                /Finish or review automatic code/
+            );
+        }
+        expect(await f.api.improvements.grant({ id: f.automation.id })).toMatchObject({
+            blocked: { id, canClose: true },
+        });
+        await f.api.improvements.resolve({
+            id,
+            reviewed: true,
+            reason: "Reviewed synthetic interrupted attempt; no external work exists.",
+        });
+        await deleteMiraFile(f.context, f.directory, id);
+        await f.api.automations.delete({ id: f.automation.id, version: 1 });
     } finally {
         await f.close();
     }
