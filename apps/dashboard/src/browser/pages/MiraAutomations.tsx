@@ -24,6 +24,7 @@ import { ImprovementPermission } from "../features/mira/ImprovementPermission";
 import { MiraDisableDialog } from "../features/mira/MiraDisableDialog";
 import { MiraIntegrations } from "../features/mira/MiraIntegrations";
 import { MiraRunHistory } from "../features/mira/MiraRunHistory";
+import { MiraSkills } from "../features/mira/MiraSkills";
 import { RunAutomationButton } from "../features/mira/RunAutomationButton";
 import { useOperation } from "../features/operations/useOperation";
 
@@ -271,6 +272,7 @@ export function MiraAutomations() {
                 </Button>
             )}
             <MiraIntegrations />
+            <MiraSkills />
             <MiraRunHistory />
             {editing && (
                 <AutomationEditor

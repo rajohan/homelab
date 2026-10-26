@@ -14,6 +14,7 @@ import { saveMiraPublication } from "@homelab/mira/data/publications";
 import { claimMiraRun, finishMiraRun } from "@homelab/mira/data/queue";
 import { saveMiraSocial } from "@homelab/mira/data/social";
 import { saveTask } from "@homelab/mira/data/tasks";
+import { miraSkillCatalogHash } from "@homelab/mira/skills/catalog";
 
 import { createTestDatabase } from "../../../../../tests/database";
 import { createMiraTools } from "../../../../mira/src/server/executor/tools";
@@ -382,7 +383,7 @@ export async function main(port = 3330): Promise<void> {
             initial.id
         );
         const pump = async () => {
-            await database.client`INSERT INTO mira_runtime_status (id, worker_id, version, model, ready, message, heartbeat_at) VALUES (1, ${worker}, 'preview', 'Synthetic replies', true, 'Interactive preview only. No production or provider connection.', now()) ON CONFLICT (id) DO UPDATE SET heartbeat_at = now()`;
+            await database.client`INSERT INTO mira_runtime_status (id, worker_id, version, model, ready, message, heartbeat_at, skill_catalog_hash, skill_catalog_worker_id) VALUES (1, ${worker}, 'preview', 'Synthetic replies', true, 'Interactive preview only. No production or provider connection.', now(), ${miraSkillCatalogHash}, ${worker}) ON CONFLICT (id) DO UPDATE SET worker_id = EXCLUDED.worker_id, heartbeat_at = now(), skill_catalog_hash = EXCLUDED.skill_catalog_hash, skill_catalog_worker_id = EXCLUDED.skill_catalog_worker_id`;
             const run = await claimMiraRun(database.client, worker, "foreground");
             if (run)
                 await finishMiraRun(database.client, run, {

@@ -1,0 +1,73 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "0357f680-8ea8-4a4e-9fa1-d8f12607fa84",
+    "prevIds": ["b3d3feab-af2c-43b8-95d3-60d31324ebaf"],
+    "footprints": [
+        {
+            "statementType": "add_column",
+            "statementTarget": [
+                "column",
+                "public",
+                "mira_runtime_status",
+                "skill_catalog_hash"
+            ],
+            "writes": [
+                "s|col|public.mira_runtime_status.skill_catalog_hash",
+                "n|col|public.mira_runtime_status.skill_catalog_hash",
+                "e|col|public.mira_runtime_status.skill_catalog_hash"
+            ],
+            "reads": ["n|tbl|public.mira_runtime_status", "n|sch|public"]
+        },
+        {
+            "statementType": "add_column",
+            "statementTarget": [
+                "column",
+                "public",
+                "mira_runtime_status",
+                "skill_catalog_worker_id"
+            ],
+            "writes": [
+                "s|col|public.mira_runtime_status.skill_catalog_worker_id",
+                "n|col|public.mira_runtime_status.skill_catalog_worker_id",
+                "e|col|public.mira_runtime_status.skill_catalog_worker_id"
+            ],
+            "reads": ["n|tbl|public.mira_runtime_status", "n|sch|public"]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_runtime_status",
+                "name": "skill_catalog_hash",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_runtime_status",
+                "name": "skill_catalog_worker_id",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        }
+    ]
+}

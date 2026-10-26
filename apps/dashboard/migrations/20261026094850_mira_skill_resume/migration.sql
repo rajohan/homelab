@@ -1,0 +1,3 @@
+ALTER TABLE "mira_switches" ADD COLUMN "skill_resume_at" timestamp with time zone;--> statement-breakpoint
+UPDATE "mira_switches" SET "skill_resume_at" = "until", "until" = NULL WHERE "key" LIKE 'skill:%';--> statement-breakpoint
+ALTER TABLE "mira_switches" ADD CONSTRAINT "mira_switches_skill_resume" CHECK (("key" like 'skill:%' and "until" is null and (not "enabled" or "skill_resume_at" is null)) or ("key" not like 'skill:%' and "skill_resume_at" is null));

@@ -10,10 +10,11 @@ import type { MiraCodePublication } from "@homelab/contracts/miraCode";
 import type { MiraDaytonaJob } from "@homelab/contracts/miraDaytona";
 import type { MiraMailDraft } from "@homelab/contracts/miraMail";
 import type { MiraPublication } from "@homelab/contracts/miraPublication";
+import type { MiraSkillSummary } from "@homelab/contracts/miraSkills";
 import type { MiraSocialDraft } from "@homelab/contracts/miraSocial";
 import { IdentityClient } from "@homelab/ui/identity/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState, type ReactNode } from "react";
 import { serialize } from "superjson";
@@ -37,10 +38,12 @@ import { ImprovementPermission } from "./ImprovementPermission";
 import { MailEditor } from "./MailEditor";
 import { MailReview } from "./MailReview";
 import { MiraRunTable } from "./MiraRunTable";
+import { MiraSkills } from "./MiraSkills";
 import { ProposalReview } from "./ProposalReview";
 import { PublicationEditor } from "./PublicationEditor";
 import { PublicationReview } from "./PublicationReview";
 import { RunAutomationButton } from "./RunAutomationButton";
+import { SkillDetails } from "./SkillDetails";
 import { SocialEditor } from "./SocialEditor";
 import { SocialLibrary } from "./SocialLibrary";
 import { SocialReview } from "./SocialReview";
@@ -2238,3 +2241,189 @@ test("blocked automatic attempt requires a review note and submits only its exac
         request.mockRestore();
     }
 });
+
+function skillSummary(): MiraSkillSummary {
+    return {
+        id: "task-tracking",
+        title: "Tasks and reports",
+        description: "Reviewed task guidance.",
+        version: "1.0.0",
+        packageHash: "a".repeat(64),
+        sources: ["https://github.com/rajohan/homelab/blob/synthetic/docs/mira-tasks.md"],
+        tools: ["mira_tasks_list"],
+        controls: [],
+        repositoryContext: true,
+        compatibility: "available",
+        files: [{ path: "SKILL.md", sha256: "b".repeat(64), bytes: 23 }],
+        control: {
+            key: "skill:task-tracking",
+            enabled: false,
+            version: 7,
+            reason: "Paused for review",
+            until: "2026-11-01T09:00:00.000Z",
+        },
+    };
+}
+
+test("skill preview is available while paused and enabling sends the displayed control version", async () => {
+    const skill = skillSummary();
+    const query = new QueryClient({
+        defaultOptions: { queries: { enabled: false, retry: false } },
+    });
+    query.setQueryData(["operations", "mira", "skills"], [skill]);
+    query.setQueryData(
+        ["operations", "mira", "skill", skill.id, skill.packageHash, "SKILL.md"],
+        {
+            id: skill.id,
+            packageHash: skill.packageHash,
+            version: "1.0.0",
+            path: "SKILL.md",
+            sha256: "b".repeat(64),
+            content: "# Review task progress\nRead the exact task before acting.",
+        }
+    );
+    const requested: unknown[] = [];
+    const request = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+            (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+                if (typeof init?.body !== "string")
+                    throw new Error("Expected mutation body");
+                requested.push(
+                    (JSON.parse(init.body) as { "0": { json: unknown } })["0"].json
+                );
+                return Promise.resolve(
+                    Response.json([{ result: { data: serialize(undefined) } }])
+                );
+            },
+            { preconnect: fetch.preconnect }
+        )
+    );
+    const cleanup = fixture(<MiraSkills />, false, query);
+    try {
+        const user = userEvent.setup();
+        expect(screen.getByText(/Paused for review.*Resumes/)).toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "View" }));
+        expect(
+            screen.getByRole("heading", { name: "Review task progress" })
+        ).toBeInTheDocument();
+        expect(screen.getByRole("link", { name: "View source" })).toHaveAttribute(
+            "href",
+            skill.sources[0]
+        );
+        expect(requested).toHaveLength(0);
+        await user.click(screen.getByRole("button", { name: "Close dialog" }));
+        await user.click(screen.getByRole("button", { name: "Enable" }));
+        await waitFor(() => expect(requested).toHaveLength(1));
+        expect(requested[0]).toEqual({
+            key: skill.control.key,
+            enabled: true,
+            version: 7,
+            reason: null,
+            until: null,
+        });
+        act(() => {
+            query.setQueryData(
+                ["operations", "mira", "skills"],
+                [
+                    {
+                        ...skill,
+                        control: {
+                            ...skill.control,
+                            enabled: true,
+                            version: 8,
+                            reason: null,
+                            until: null,
+                        },
+                    },
+                ]
+            );
+        });
+        await user.click(await screen.findByRole("button", { name: "Pause" }));
+        expect(
+            screen.getByText(/Previously loaded guidance remains in conversations/)
+        ).toBeInTheDocument();
+        expect(
+            screen.queryByText(/Queued automatic runs will be skipped/)
+        ).not.toBeInTheDocument();
+        await user.type(screen.getByLabelText("Reason"), "Review the new guidance first");
+        await user.click(
+            within(screen.getByRole("dialog")).getByRole("button", { name: "Pause" })
+        );
+        await waitFor(() => expect(requested).toHaveLength(2));
+        expect(requested[1]).toEqual({
+            key: skill.control.key,
+            enabled: false,
+            version: 8,
+            reason: "Review the new guidance first",
+            until: null,
+        });
+    } finally {
+        cleanup();
+        request.mockRestore();
+    }
+});
+
+test("skill preview switches only among supplied companion files without enabling them", async () => {
+    const skill = skillSummary();
+    skill.files.push({
+        path: "references/workflow.md",
+        sha256: "c".repeat(64),
+        bytes: 17,
+    });
+    const query = new QueryClient({
+        defaultOptions: { queries: { enabled: false, retry: false } },
+    });
+    for (const file of skill.files)
+        query.setQueryData(
+            ["operations", "mira", "skill", skill.id, skill.packageHash, file.path],
+            {
+                id: skill.id,
+                packageHash: skill.packageHash,
+                version: skill.version,
+                path: file.path,
+                sha256: file.sha256,
+                content:
+                    file.path === "SKILL.md" ? "Main guidance" : "Companion workflow",
+            }
+        );
+    const cleanup = fixture(
+        <SkillDetails skill={skill} onClose={() => {}} />,
+        false,
+        query
+    );
+    try {
+        const user = userEvent.setup();
+        expect(screen.getByText("Main guidance")).toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "Skill file" }));
+        await user.click(screen.getByRole("option", { name: "references/workflow.md" }));
+        expect(screen.getByText("Companion workflow")).toBeInTheDocument();
+        expect(screen.queryByText("Main guidance")).not.toBeInTheDocument();
+    } finally {
+        cleanup();
+    }
+});
+
+test.each(["offline", "update_required"] as const)(
+    "skill preview remains available when executor compatibility is %s",
+    async (compatibility) => {
+        const skill = { ...skillSummary(), compatibility };
+        const query = new QueryClient({
+            defaultOptions: { queries: { enabled: false, retry: false } },
+        });
+        query.setQueryData(["operations", "mira", "skills"], [skill]);
+        query.setQueryData(
+            ["operations", "mira", "skill", skill.id, skill.packageHash, "SKILL.md"],
+            { content: "Review the installed guidance." }
+        );
+        const cleanup = fixture(<MiraSkills />, false, query);
+        try {
+            expect(screen.getByRole("button", { name: "Enable" })).toBeDisabled();
+            await userEvent.setup().click(screen.getByRole("button", { name: "View" }));
+            expect(
+                screen.getByText("Review the installed guidance.")
+            ).toBeInTheDocument();
+        } finally {
+            cleanup();
+        }
+    }
+);

@@ -43,6 +43,7 @@ import {
 import { dispatchMiraSocial, reconcileMiraSocial } from "../integrations/moltbook/outbox";
 import { CodexRuntime } from "../runtime/codexRuntime";
 import { pilotArguments, type PilotConfig } from "../runtime/configuration";
+import { miraSkillCatalogHash } from "../skills/catalog";
 import { cleanupMiraResources } from "./cleanup";
 import { executeMiraTurn } from "./turn";
 
@@ -179,7 +180,7 @@ export async function runMiraExecutor(options: {
                 health.ready && cleanupPending
                     ? "Mira is connected, but deleted-data cleanup needs attention."
                     : message;
-            await client`INSERT INTO mira_runtime_status (id, worker_id, version, model, ready, message, heartbeat_at, models, integrations) VALUES (1, ${workerId}, ${options.version}, ${model}, ${health.ready}, ${currentMessage}, now(), ${JSON.stringify(models)}::text::jsonb, ${JSON.stringify(integrationsCatalog)}::text::jsonb) ON CONFLICT (id) DO UPDATE SET worker_id = EXCLUDED.worker_id, version = EXCLUDED.version, model = EXCLUDED.model, ready = EXCLUDED.ready, message = EXCLUDED.message, heartbeat_at = EXCLUDED.heartbeat_at, models = EXCLUDED.models, integrations = EXCLUDED.integrations`;
+            await client`INSERT INTO mira_runtime_status (id, worker_id, version, model, ready, message, heartbeat_at, models, integrations, skill_catalog_hash, skill_catalog_worker_id) VALUES (1, ${workerId}, ${options.version}, ${model}, ${health.ready}, ${currentMessage}, now(), ${JSON.stringify(models)}::text::jsonb, ${JSON.stringify(integrationsCatalog)}::text::jsonb, ${miraSkillCatalogHash}, ${workerId}) ON CONFLICT (id) DO UPDATE SET worker_id = EXCLUDED.worker_id, version = EXCLUDED.version, model = EXCLUDED.model, ready = EXCLUDED.ready, message = EXCLUDED.message, heartbeat_at = EXCLUDED.heartbeat_at, models = EXCLUDED.models, integrations = EXCLUDED.integrations, skill_catalog_hash = EXCLUDED.skill_catalog_hash, skill_catalog_worker_id = EXCLUDED.skill_catalog_worker_id`;
             health.heartbeatAt = Date.now();
             await Promise.race([wait(5000), changed]);
         }

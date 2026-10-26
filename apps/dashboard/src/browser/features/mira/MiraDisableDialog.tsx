@@ -20,10 +20,12 @@ export function MiraDisableDialog({
     control,
     title,
     onClose,
+    description = "Queued automatic runs will be skipped. Running work has a separate Stop control. This pause stays in place through updates.",
 }: {
     readonly control: MiraSwitch;
     readonly title: string;
     readonly onClose: () => void;
+    readonly description?: string;
 }) {
     const [timed, setTimed] = useState(control.until !== null);
     const [openedAt] = useState(Date.now);
@@ -44,7 +46,7 @@ export function MiraDisableDialog({
     return (
         <Modal
             title={`Pause ${title}`}
-            description="Queued automatic runs will be skipped. Running work has a separate Stop control. This pause stays in place through updates."
+            description={description}
             onClose={onClose}
             dismissible={!change.isPending}
         >

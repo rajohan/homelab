@@ -175,6 +175,7 @@ export const miraSwitches = pgTable(
         enabled: boolean().notNull(),
         reason: text(),
         until: time("until"),
+        skillResumeAt: time("skill_resume_at"),
         version: integer().notNull().default(1),
         changedAt: time("changed_at").notNull().defaultNow(),
         bindingHash: text("binding_hash"),
@@ -182,6 +183,10 @@ export const miraSwitches = pgTable(
     },
     (t) => [
         primaryKey({ columns: [t.owner, t.key] }),
+        check(
+            "mira_switches_skill_resume",
+            sql`(${t.key} like 'skill:%' and ${t.until} is null and (not ${t.enabled} or ${t.skillResumeAt} is null)) or (${t.key} not like 'skill:%' and ${t.skillResumeAt} is null)`
+        ),
         check(
             "mira_switches_intent",
             sql`(${t.enabled} and ${t.reason} is null and ${t.until} is null) or (not ${t.enabled} and length(${t.reason}) between 1 and 1000)`
@@ -342,6 +347,8 @@ export const miraRuntimeStatus = pgTable(
         id: integer().primaryKey().default(1),
         workerId: uuid("worker_id").notNull(),
         version: text().notNull(),
+        skillCatalogHash: text("skill_catalog_hash"),
+        skillCatalogWorkerId: uuid("skill_catalog_worker_id"),
         model: text(),
         ready: boolean().notNull(),
         message: text(),

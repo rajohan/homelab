@@ -22,7 +22,7 @@
         "apps/dashboard/src/server/tests/miraFiles.integration.test.ts": 461,
         "apps/dashboard/src/server/tests/miraEvents.integration.test.ts": 387,
         "apps/dashboard/src/server/tests/restart.integration.test.ts": 374,
-        "apps/dashboard/src/server/tests/miraRecovery.integration.test.ts": 361,
+        "apps/dashboard/src/server/tests/miraRecovery.integration.test.ts": 6829,
         "apps/dashboard/src/server/tests/agentmail.integration.test.ts": 353,
         "apps/dashboard/src/server/tests/tableSorting.integration.test.ts": 266,
         "apps/dashboard/src/server/tests/operationsHttp.integration.test.ts": 205,
@@ -44,6 +44,7 @@
         "apps/dashboard/src/server/tests/miraDaytona.integration.test.ts": 2581,
         "apps/dashboard/src/server/tests/miraCode.integration.test.ts": 2000,
         "apps/dashboard/src/server/tests/miraGitHubRead.integration.test.ts": 2100,
-        "apps/dashboard/src/server/tests/miraImprovement.integration.test.ts": 3500
+        "apps/dashboard/src/server/tests/miraImprovement.integration.test.ts": 3500,
+        "apps/dashboard/src/server/tests/miraSkills.integration.test.ts": 395
     }
 }

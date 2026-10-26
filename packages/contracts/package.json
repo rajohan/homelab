@@ -20,7 +20,8 @@
         "./miraSocial": "./src/miraSocial.ts",
         "./miraDaytona": "./src/miraDaytona.ts",
         "./miraCode": "./src/miraCode.ts",
-        "./miraImprovement": "./src/miraImprovement.ts"
+        "./miraImprovement": "./src/miraImprovement.ts",
+        "./miraSkills": "./src/miraSkills.ts"
     },
     "dependencies": {
         "valibot": "1.5.0"
