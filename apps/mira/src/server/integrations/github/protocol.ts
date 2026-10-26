@@ -1,3 +1,4 @@
+import { miraCodeTitleSchema, miraCodeBodySchema } from "@homelab/contracts/miraCode";
 import * as v from "valibot";
 
 export const gitShaSchema = v.pipe(v.string(), v.regex(/^[a-f0-9]{40}$/));
@@ -7,21 +8,8 @@ export const githubPublicationSchema = v.strictObject({
     id: v.pipe(v.string(), v.uuid()),
     commit: gitShaSchema,
     editsSha256: v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/)),
-    title: v.pipe(
-        v.string(),
-        v.minLength(1),
-        v.maxLength(160),
-        v.check((value) => value.isWellFormed() && !value.includes("\0")),
-        v.regex(
-            /^(feat|fix|perf|refactor|docs|test|build|ci|chore)(\([a-z0-9-]+\))?!?: [^\r\n]+$/
-        )
-    ),
-    body: v.pipe(
-        v.string(),
-        v.minLength(1),
-        v.maxLength(16_000),
-        v.check((value) => value.isWellFormed() && !value.includes("\0"))
-    ),
+    title: miraCodeTitleSchema,
+    body: miraCodeBodySchema,
     authoredAt: v.pipe(
         v.string(),
         v.regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000Z$/),

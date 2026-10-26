@@ -317,6 +317,14 @@ export async function deleteMiraFile(
         const cloud = await query<
             { id: string }[]
         >`SELECT id FROM mira_daytona_jobs WHERE owner=${context.owner} AND (state='queued' OR cleanup='pending') AND content->'inputs' @> ${JSON.stringify([{ id }])}::text::jsonb LIMIT 1`;
+        const [code] = await query<
+            { id: string }[]
+        >`SELECT id FROM mira_code_publications WHERE owner=${context.owner} AND state IN ('queued','publishing') AND content->'edits'->>'id'=${id} LIMIT 1`;
+        if (code)
+            throw new MiraFailure(
+                "CONFLICT",
+                "Cancel or finish code publication before deleting its tested input."
+            );
         if (cloud[0])
             throw new MiraFailure(
                 "CONFLICT",

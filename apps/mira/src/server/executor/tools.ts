@@ -36,6 +36,8 @@ import type { AgentMailReadConfiguration } from "../integrations/agentmail/confi
 import { createAgentMailTools } from "../integrations/agentmail/tools";
 import type { DaytonaBinding } from "../integrations/daytona/configuration";
 import { createDaytonaTools } from "../integrations/daytona/tools";
+import type { GitHubBinding } from "../integrations/github/configuration";
+import { createGitHubTools } from "../integrations/github/tools";
 import type { HereNowReadConfiguration } from "../integrations/herenow/configuration";
 import { createHereNowTools } from "../integrations/herenow/tools";
 import type { MoltbookReadConfiguration } from "../integrations/moltbook/configuration";
@@ -71,6 +73,7 @@ const object = (properties: Record<string, unknown>, required: string[] = []) =>
  * @param agentMail - Optional provisioned inbox for checked mail reads and local drafts; sending requires separate human approval.
  * @param hereNow - Optional scoped website metadata settings; credentials stay in the executor.
  * @param moltbook - Optional social read settings, retained only by the service.
+ * @param github - Nonsecret GitHub mapping for local code proposals, never publishing credentials.
  * @param daytona - Nonsecret cloud job mapping; model tools cannot execute or approve.
  * @returns The fixed tool declarations for this conversation and their checked handlers.
  */
@@ -81,7 +84,8 @@ export function createMiraTools(
     agentMail?: AgentMailReadConfiguration,
     moltbook?: MoltbookReadConfiguration,
     hereNow?: HereNowReadConfiguration,
-    daytona?: DaytonaBinding
+    daytona?: DaytonaBinding,
+    github?: GitHubBinding
 ): RuntimeTool[] {
     const context: MiraContext = {
         client,
@@ -432,6 +436,7 @@ export function createMiraTools(
         ...createMoltbookTools(client, run, moltbook),
         ...createDaytonaTools(client, run, daytona),
         ...createHereNowTools(client, run, hereNow),
+        ...createGitHubTools(client, run, github),
     ];
     return definitions.map(
         ({

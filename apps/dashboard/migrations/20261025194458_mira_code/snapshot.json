@@ -1,0 +1,804 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "9b09d7d8-83a1-41a9-905a-bc72fb04e978",
+    "prevIds": ["6be296d1-40fd-4e08-8bba-adb649b33291"],
+    "footprints": [
+        {
+            "statementType": "create_table",
+            "statementTarget": ["table", "public", "mira_code_publications"],
+            "writes": [
+                "s|tbl|public.mira_code_publications",
+                "n|tbl|public.mira_code_publications",
+                "e|tbl|public.mira_code_publications",
+                "n|rel|public.mira_code_publications",
+                "n|type|public.mira_code_publications",
+                "n|rel|public.mira_code_publications_pkey"
+            ],
+            "reads": ["n|sch|public"]
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": [
+                "index",
+                "public",
+                "mira_code_publications",
+                "mira_code_owner"
+            ],
+            "writes": [
+                "s|idx|public.mira_code_owner",
+                "n|idx|public.mira_code_owner",
+                "e|idx|public.mira_code_owner",
+                "n|rel|public.mira_code_owner"
+            ],
+            "reads": [
+                "n|tbl|public.mira_code_publications",
+                "n|sch|public",
+                "n|col|public.mira_code_publications.owner",
+                "n|col|public.mira_code_publications.created_at",
+                "n|col|public.mira_code_publications.id"
+            ]
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": [
+                "index",
+                "public",
+                "mira_code_publications",
+                "mira_code_queue"
+            ],
+            "writes": [
+                "s|idx|public.mira_code_queue",
+                "n|idx|public.mira_code_queue",
+                "e|idx|public.mira_code_queue",
+                "n|rel|public.mira_code_queue"
+            ],
+            "reads": [
+                "n|tbl|public.mira_code_publications",
+                "n|sch|public",
+                "n|col|public.mira_code_publications.state",
+                "n|col|public.mira_code_publications.id"
+            ]
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": [
+                "index",
+                "public",
+                "mira_code_publications",
+                "mira_code_one_active"
+            ],
+            "writes": [
+                "s|idx|public.mira_code_one_active",
+                "n|idx|public.mira_code_one_active",
+                "e|idx|public.mira_code_one_active",
+                "n|rel|public.mira_code_one_active"
+            ],
+            "reads": ["n|tbl|public.mira_code_publications", "n|sch|public"]
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": [
+                "index",
+                "public",
+                "mira_code_publications",
+                "mira_code_check_once"
+            ],
+            "writes": [
+                "s|idx|public.mira_code_check_once",
+                "n|idx|public.mira_code_check_once",
+                "e|idx|public.mira_code_check_once",
+                "n|rel|public.mira_code_check_once"
+            ],
+            "reads": [
+                "n|tbl|public.mira_code_publications",
+                "n|sch|public",
+                "n|col|public.mira_code_publications.check_id"
+            ]
+        },
+        {
+            "statementType": "create_fk",
+            "statementTarget": ["table", "public", "mira_code_publications"],
+            "writes": [
+                "s|fk|public.mira_code_publications.mira_code_publications_rYj2ZKQMF2dK_fkey",
+                "n|fk|public.mira_code_publications.mira_code_publications_rYj2ZKQMF2dK_fkey",
+                "e|fk|public.mira_code_publications.mira_code_publications_rYj2ZKQMF2dK_fkey",
+                "n|con|public.mira_code_publications.mira_code_publications_rYj2ZKQMF2dK_fkey"
+            ],
+            "reads": [
+                "n|tbl|public.mira_code_publications",
+                "n|sch|public",
+                "n|tbl|public.mira_conversations",
+                "n|sch|public",
+                "n|col|public.mira_code_publications.conversation_id",
+                "n|col|public.mira_conversations.id",
+                "e|uniqueness|public.mira_conversations.id"
+            ]
+        },
+        {
+            "statementType": "create_fk",
+            "statementTarget": ["table", "public", "mira_code_publications"],
+            "writes": [
+                "s|fk|public.mira_code_publications.mira_code_publications_check_id_mira_daytona_jobs_id_fkey",
+                "n|fk|public.mira_code_publications.mira_code_publications_check_id_mira_daytona_jobs_id_fkey",
+                "e|fk|public.mira_code_publications.mira_code_publications_check_id_mira_daytona_jobs_id_fkey",
+                "n|con|public.mira_code_publications.mira_code_publications_check_id_mira_daytona_jobs_id_fkey"
+            ],
+            "reads": [
+                "n|tbl|public.mira_code_publications",
+                "n|sch|public",
+                "n|tbl|public.mira_daytona_jobs",
+                "n|sch|public",
+                "n|col|public.mira_code_publications.check_id",
+                "n|col|public.mira_daytona_jobs.id",
+                "e|uniqueness|public.mira_daytona_jobs.id"
+            ]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "name": "mira_code_publications",
+                "isRlsEnabled": false,
+                "entityType": "tables"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "id",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "owner",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "conversation_id",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "check_id",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "binding_hash",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "version",
+                "type": "integer",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "1",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "state",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "'draft'",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "content",
+                "type": "jsonb",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "content_hash",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "approved_version",
+                "type": "integer",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "approved_by",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "approved_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "control_version",
+                "type": "integer",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "attempt_token",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "started_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "authored_at",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "phase",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "branch",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "tree",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "commit",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "number",
+                "type": "integer",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "observation",
+                "type": "jsonb",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "inspection_requested",
+                "type": "boolean",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "false",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "inspection_token",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "inspection_started_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "observed_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "message",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "created_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "now()",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "updated_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "now()",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "mira_code_owner",
+                "nameExplicit": true,
+                "columns": [
+                    {
+                        "value": "owner",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    },
+                    {
+                        "value": "created_at",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    },
+                    {
+                        "value": "id",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    }
+                ],
+                "isUnique": false,
+                "where": null,
+                "with": "",
+                "method": "btree",
+                "concurrently": false,
+                "entityType": "indexes"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "mira_code_queue",
+                "nameExplicit": true,
+                "columns": [
+                    {
+                        "value": "state",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    },
+                    {
+                        "value": "id",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    }
+                ],
+                "isUnique": false,
+                "where": null,
+                "with": "",
+                "method": "btree",
+                "concurrently": false,
+                "entityType": "indexes"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "mira_code_one_active",
+                "nameExplicit": true,
+                "columns": [
+                    {
+                        "value": "(true)",
+                        "isExpression": true,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    }
+                ],
+                "isUnique": true,
+                "where": "\"state\"='publishing'",
+                "with": "",
+                "method": "btree",
+                "concurrently": false,
+                "entityType": "indexes"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "mira_code_check_once",
+                "nameExplicit": true,
+                "columns": [
+                    {
+                        "value": "check_id",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    }
+                ],
+                "isUnique": true,
+                "where": "\"state\" NOT IN ('draft','cancelled')",
+                "with": "",
+                "method": "btree",
+                "concurrently": false,
+                "entityType": "indexes"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "mira_code_publications_rYj2ZKQMF2dK_fkey",
+                "nameExplicit": false,
+                "columns": ["conversation_id"],
+                "schemaTo": "public",
+                "tableTo": "mira_conversations",
+                "columnsTo": ["id"],
+                "onUpdate": "NO ACTION",
+                "onDelete": "NO ACTION",
+                "entityType": "fks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "mira_code_publications_check_id_mira_daytona_jobs_id_fkey",
+                "nameExplicit": false,
+                "columns": ["check_id"],
+                "schemaTo": "public",
+                "tableTo": "mira_daytona_jobs",
+                "columnsTo": ["id"],
+                "onUpdate": "NO ACTION",
+                "onDelete": "NO ACTION",
+                "entityType": "fks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "mira_code_publications_pkey",
+                "columns": ["id"],
+                "nameExplicit": false,
+                "entityType": "pks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "mira_code_state",
+                "value": "\"state\" IN ('draft','queued','publishing','published','needs_attention','cancelled')",
+                "entityType": "checks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "mira_code_version",
+                "value": "\"version\" >= 1",
+                "entityType": "checks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "mira_code_approval",
+                "value": "\"state\" NOT IN ('queued','publishing','published','needs_attention') OR (\"approved_version\" IS NOT NULL AND \"approved_by\" IS NOT NULL AND \"approved_at\" IS NOT NULL AND \"control_version\" IS NOT NULL)",
+                "entityType": "checks"
+            }
+        }
+    ]
+}

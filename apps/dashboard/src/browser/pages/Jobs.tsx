@@ -3,6 +3,7 @@ import { PageHeader } from "@homelab/ui";
 import { JobHistory } from "../features/jobs/JobHistory";
 import { SchedulesPanel } from "../features/jobs/SchedulesPanel";
 import { WorkerPanel } from "../features/jobs/WorkerPanel";
+import { CodeLibrary } from "../features/mira/CodeLibrary";
 import { DaytonaJobs } from "../features/mira/DaytonaJobs";
 import { MiraRunHistory } from "../features/mira/MiraRunHistory";
 
@@ -23,6 +24,7 @@ export function Jobs() {
             <JobHistory />
             <MiraRunHistory />
             <DaytonaJobs />
+            <CodeLibrary />
         </div>
     );
 }

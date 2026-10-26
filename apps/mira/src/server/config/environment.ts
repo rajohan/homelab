@@ -1,5 +1,6 @@
 import { agentMailReadConfiguration } from "../integrations/agentmail/configuration";
 import { daytonaExecutionConfiguration } from "../integrations/daytona/configuration";
+import { githubConfiguration } from "../integrations/github/configuration";
 import { hereNowReadConfiguration } from "../integrations/herenow/configuration";
 import { moltbookReadConfiguration } from "../integrations/moltbook/configuration";
 import { pilotEnvironment, type PilotConfig } from "../runtime/configuration";
@@ -37,6 +38,7 @@ export function miraEnvironment() {
         moltbook: moltbookReadConfiguration(process.env),
         hereNow: hereNowReadConfiguration(process.env),
         daytona: daytonaExecutionConfiguration(process.env),
+        github: githubConfiguration(process.env),
     };
 }
 

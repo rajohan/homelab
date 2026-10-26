@@ -1356,7 +1356,7 @@ test("automatic tools read paginated owned pause reasons and safe integration de
         expect(first.result.rows).toHaveLength(50);
         const second = await read(first.result.nextCursor!);
         const controls = [...first.result.rows, ...second.result.rows];
-        expect(controls).toHaveLength(70);
+        expect(controls).toHaveLength(71);
         expect(controls.some((row) => row.reason === "Private other reason")).toBe(false);
         expect(controls.find((row) => row.key === "integration:agentmail")).toMatchObject(
             { enabled: false, reason: "Not enabled yet." }
@@ -1364,13 +1364,13 @@ test("automatic tools read paginated owned pause reasons and safe integration de
         expect(second.result.nextCursor).toBeNull();
         await fixture.client`UPDATE mira_automations SET deleted_at=now() WHERE id IN (SELECT md5(i::text)::uuid FROM generate_series(1,55)i)`;
         const liveControls = await api.controls.list();
-        expect(liveControls).toHaveLength(15);
+        expect(liveControls).toHaveLength(16);
         const livePage = await readMiraControlPage({
             client: fixture.client,
             owner: "operator",
             actor: "human:operator",
         });
-        expect(livePage.rows).toHaveLength(15);
+        expect(livePage.rows).toHaveLength(16);
         expect(livePage.nextCursor).toBeNull();
         const retained = await fixture.client<
             { key: string }[]

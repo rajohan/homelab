@@ -316,6 +316,14 @@ export async function changeConversation(
         const cloud = await query<
             { id: string }[]
         >`SELECT id FROM mira_daytona_jobs WHERE conversation_id=${input.id} AND owner=${context.owner} AND (state='queued' OR cleanup='pending') LIMIT 1`;
+        const [code] = await query<
+            { id: string }[]
+        >`SELECT id FROM mira_code_publications WHERE owner=${context.owner} AND conversation_id=${input.id} AND state IN ('queued','publishing') LIMIT 1`;
+        if (code)
+            throw new MiraFailure(
+                "CONFLICT",
+                "Cancel or finish code publication before changing this conversation."
+            );
         if (cloud[0])
             throw new MiraFailure(
                 "CONFLICT",
@@ -328,6 +336,7 @@ export async function changeConversation(
             );
         await query`UPDATE mira_conversations SET archived_at = ${input.action === "archive" ? new Date() : null}, deleted_at = ${input.action === "delete" ? new Date() : null}, title = CASE WHEN ${input.action === "delete"} THEN 'Deleted conversation' ELSE title END, version = version + 1, updated_at = now() WHERE id = ${input.id}`;
         if (input.action === "delete") {
+            await query`UPDATE mira_code_publications SET content=jsonb_set(jsonb_set(content,'{title}','"chore: deleted proposal"'::jsonb),'{body}','"Conversation deleted."'::jsonb),content_hash='',message=NULL,inspection_requested=false,inspection_token=NULL,observation=NULL,state=CASE WHEN state='draft' THEN 'cancelled' ELSE state END,version=version+1,updated_at=now() WHERE owner=${context.owner} AND conversation_id=${input.id}`;
             await query`UPDATE mira_daytona_jobs SET content='{"title":"Deleted job","command":"true","inputs":[],"outputs":[]}'::jsonb,content_hash='',stdout='',stderr='',output='',files='[]'::jsonb,message=NULL,state=CASE WHEN state='draft' THEN 'cancelled' ELSE state END,version=version+1 WHERE owner=${context.owner} AND conversation_id=${input.id}`;
             await query`UPDATE mira_tool_receipts SET proposal=NULL,state=CASE WHEN state='awaiting_approval' THEN 'rejected' ELSE state END WHERE run_id IN (SELECT id FROM mira_runs WHERE conversation_id=${input.id} AND owner=${context.owner}) AND proposal IS NOT NULL`;
             await query`UPDATE mira_messages SET content = '', attachment_ids = '[]'::jsonb WHERE conversation_id = ${input.id}`;

@@ -1,4 +1,5 @@
 import { publishDaytonaBinding } from "@homelab/mira/data/daytona";
+import { publishGitHubBinding } from "@homelab/mira/data/github";
 import { publishHereNowBinding } from "@homelab/mira/data/herenow";
 import { publishAgentMailReceiver } from "@homelab/mira/data/integrations";
 import { publishMoltbookBinding } from "@homelab/mira/data/moltbook";
@@ -119,6 +120,7 @@ export function agentMailReceiverHeartbeat(
         | "agentMailHook"
         | "moltbookBinding"
         | "hereNowBinding"
+        | "githubBinding"
         | "daytonaBinding"
     >
 ): () => Promise<void> {
@@ -129,6 +131,7 @@ export function agentMailReceiverHeartbeat(
             publishAgentMailReceiver(operations.client, operations.agentMailHook),
             publishMoltbookBinding(operations.client, operations.moltbookBinding),
             publishHereNowBinding(operations.client, operations.hereNowBinding),
+            publishGitHubBinding(operations.client, operations.githubBinding),
             publishDaytonaBinding(operations.client, operations.daytonaBinding),
         ])
             .catch(() => {

@@ -41,6 +41,7 @@
         "apps/dashboard/src/server/tests/miraPublications.integration.test.ts": 1637,
         "apps/dashboard/src/server/tests/miraGeneratedFiles.integration.test.ts": 1430,
         "apps/dashboard/src/server/tests/miraSocial.integration.test.ts": 2788,
-        "apps/dashboard/src/server/tests/miraDaytona.integration.test.ts": 2581
+        "apps/dashboard/src/server/tests/miraDaytona.integration.test.ts": 2581,
+        "apps/dashboard/src/server/tests/miraCode.integration.test.ts": 2000
     }
 }
