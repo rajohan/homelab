@@ -458,3 +458,21 @@ test("local refusal retires the composed controller without acceptance or native
         await controller.close();
     }
 });
+
+test("unconfirmed supervisor cleanup during startup remains a failure on repeated host close", async () => {
+    const { RuntimeCleanupError } = await import("../runtime/rpcProcess");
+    for (const stage of ["surface", "driver"]) {
+        const f = fixture();
+        if (stage === "surface") {
+            f.factories.surface = () => Promise.reject(new RuntimeCleanupError());
+            await rejects(f.host.select(f.request, signal()), RuntimeCleanupError);
+        } else {
+            await f.host.select(f.request, signal());
+            f.factories.driver = () => Promise.reject(new RuntimeCleanupError());
+            await rejects(f.host.open(f.target, signal()), RuntimeCleanupError);
+        }
+        await rejects(f.host.close(), RuntimeCleanupError);
+        await rejects(f.host.close(), RuntimeCleanupError);
+        expect(f.host.signal.aborted).toBe(true);
+    }
+});

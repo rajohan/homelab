@@ -51,7 +51,9 @@
         "test:computer": "docker build -f deploy/computer-test/Dockerfile -t homelab-computer-test:local . && docker run --rm --init --network none --cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp:rw,nosuid,nodev,size=128m --tmpfs /home/bun:rw,nosuid,nodev,size=32m,uid=1000,gid=1000 --memory 768m --cpus 2 homelab-computer-test:local",
         "build:computer": "bun --no-env-file scripts/buildComputer.ts",
         "build:computer:windows-host": "bun --no-env-file scripts/buildWindowsConsent.ts",
-        "test:computer:windows": "bun --no-env-file scripts/testWindowsConsent.ts"
+        "test:computer:windows": "bun --no-env-file scripts/testWindowsConsent.ts",
+        "build:computer:windows-worker": "bun --no-env-file scripts/buildWindowsWorker.ts",
+        "test:computer:windows-worker": "bun --no-env-file scripts/testWindowsWorker.ts"
     },
     "devDependencies": {
         "@happy-dom/global-registrator": "21.0.4",
