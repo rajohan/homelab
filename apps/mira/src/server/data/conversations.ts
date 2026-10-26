@@ -321,11 +321,11 @@ export async function changeConversation(
         >`SELECT id FROM mira_code_publications WHERE owner=${context.owner} AND conversation_id=${input.id} AND state IN ('queued','publishing') LIMIT 1`;
         const [improvement] = await query<
             { id: string }[]
-        >`SELECT id FROM mira_improvements WHERE owner=${context.owner} AND conversation_id=${input.id} AND state IN ('queued','checking','publishing') LIMIT 1`;
+        >`SELECT id FROM mira_improvements WHERE owner=${context.owner} AND conversation_id=${input.id} AND state IN ('queued','checking','publishing','needs_attention') LIMIT 1`;
         if (improvement)
             throw new MiraFailure(
                 "CONFLICT",
-                "Pause and finish automatic code work before changing this conversation."
+                "Finish or review automatic code work before changing this conversation."
             );
         if (code)
             throw new MiraFailure(

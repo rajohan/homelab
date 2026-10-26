@@ -1,5 +1,7 @@
+import { publishNotification } from "@homelab/notifications";
 import type { SQL } from "bun";
 
+import { miraRunAllowed } from "../data/automations";
 import { codePermission, saveMiraCode } from "../data/code";
 import { auditMira, MiraFailure, type MiraQuery } from "../data/context";
 import { daytonaPermission, saveMiraDaytona, miraDaytonaHash } from "../data/daytona";
@@ -108,6 +110,31 @@ export async function dispatchMiraImprovement(
             );
             await query`UPDATE mira_improvements SET state=${state},message=${message},report_id=${report.id},updated_at=clock_timestamp() WHERE id=${job.id}`;
             await auditMira(query, context, `improvement.${state}`, job.id);
+            const [delivery] = await query<
+                { mode: string; enabled: boolean }[]
+            >`SELECT a.delivery AS mode,(g.enabled AND coalesce(d.enabled,false) AND coalesce(h.enabled,false)) AS enabled FROM mira_automations a JOIN mira_improvement_grants g ON g.automation_id=a.id AND g.owner=a.owner LEFT JOIN mira_switches d ON d.owner=a.owner AND d.key='integration:daytona' LEFT JOIN mira_switches h ON h.owner=a.owner AND h.key='integration:github' WHERE a.id=${job.automationId} AND a.owner=${job.owner} AND a.deleted_at IS NULL`;
+            if (
+                state !== "cancelled" &&
+                delivery?.enabled &&
+                delivery.mode !== "silent" &&
+                (await miraRunAllowed(query, job.owner, job.automationId))
+            ) {
+                await publishNotification(
+                    query,
+                    "mira",
+                    {
+                        key: `improvement:${job.id}`,
+                        title:
+                            state === "published"
+                                ? "Mira code change ready"
+                                : "Mira code change needs attention",
+                        message,
+                        severity: state === "published" ? "info" : "warning",
+                        destination: "reports",
+                    },
+                    `human:${job.owner}`
+                );
+            }
         });
     };
     const reader = configuration.github

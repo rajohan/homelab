@@ -265,6 +265,16 @@ test("automatic frontend work continues after the model turn and publishes one v
         expect(reports.rows).toHaveLength(1);
         expect(reports.rows[0]!.markdown).toContain("No merge or deployment");
         expect(reports.rows[0]!.runId).toBe(run.id);
+        const notices = await f.client<
+            { recipient: string; destination: string; severity: string }[]
+        >`SELECT recipient,destination,severity FROM dashboard_notifications WHERE source='mira' AND source_key=${`improvement:${id}`}`;
+        expect(notices).toEqual([
+            {
+                recipient: `human:${github.owner}`,
+                destination: "reports",
+                severity: "info",
+            },
+        ]);
     } finally {
         await f.close();
     }
@@ -382,6 +392,9 @@ for (const fault of [
             expect(provider.calls).toHaveLength(0);
             expect(await f.state(id)).toMatchObject({ state: "cancelled" });
             await rejects(f.api.daytona.read({ id }));
+            expect(
+                await f.client`SELECT id FROM dashboard_notifications WHERE source_key=${`improvement:${id}`}`
+            ).toHaveLength(0);
         } finally {
             await f.close();
         }
@@ -593,6 +606,12 @@ test("blocked automatic work requires human review, settled cleanup and a fresh 
         await f.client`UPDATE mira_code_publications SET state='needs_attention',message='Synthetic uncertain outcome' WHERE id=${id}`;
         await f.dispatch(provider.request);
         expect(await f.state(id)).toMatchObject({ state: "needs_attention" });
+        const warnings = await f.client<
+            { severity: string; recipient: string }[]
+        >`SELECT severity,recipient FROM dashboard_notifications WHERE source_key=${`improvement:${id}`}`;
+        expect(warnings).toEqual([
+            { severity: "warning", recipient: `human:${github.owner}` },
+        ]);
         const review = {
             id,
             reviewed: true as const,
@@ -706,10 +725,30 @@ test("active and unresolved improvements protect automation deletion and generat
             name: "improvement-edits.json",
             bytes: Buffer.from(JSON.stringify(input.plan)),
         });
+        const [conversation] = await f.client<
+            { version: number }[]
+        >`SELECT version FROM mira_conversations WHERE id=${run.conversationId}`;
         for (const state of ["queued", "checking", "publishing", "needs_attention"]) {
             await f.client`UPDATE mira_improvements SET state=${state} WHERE id=${id}`;
             await rejects(
                 f.api.automations.delete({ id: f.automation.id, version: 1 }),
+                /Finish or review automatic code/
+            );
+            await rejects(
+                f.api.automations.update({
+                    ...f.fields,
+                    id: f.automation.id,
+                    version: 1,
+                    kind: "custom",
+                }),
+                /Finish or review automatic code/
+            );
+            await rejects(
+                f.api.conversations.change({
+                    id: run.conversationId,
+                    version: conversation!.version,
+                    action: "delete",
+                }),
                 /Finish or review automatic code/
             );
             await rejects(
@@ -727,6 +766,38 @@ test("active and unresolved improvements protect automation deletion and generat
         });
         await deleteMiraFile(f.context, f.directory, id);
         await f.api.automations.delete({ id: f.automation.id, version: 1 });
+    } finally {
+        await f.close();
+    }
+});
+
+test("silent automation delivery retains durable outcome reports without a notification", async () => {
+    const f = await fixture();
+    try {
+        await f.api.automations.update({
+            ...f.fields,
+            id: f.automation.id,
+            version: 1,
+            delivery: "silent",
+        });
+        await f.api.improvements.allow({
+            automationId: f.automation.id,
+            automationVersion: 2,
+            version: 0,
+            enabled: true,
+            policyVersion: 1,
+        });
+        const { submit } = await f.start(),
+            result = await submit(),
+            id = result.result!.id;
+        await f.dispatch(githubReadProvider().request);
+        expect(await f.state(id)).toMatchObject({ state: "failed" });
+        expect(
+            await f.client`SELECT id FROM mira_reports WHERE run_id=(SELECT run_id FROM mira_improvements WHERE id=${id})`
+        ).toHaveLength(1);
+        expect(
+            await f.client`SELECT id FROM dashboard_notifications WHERE source_key=${`improvement:${id}`}`
+        ).toHaveLength(0);
     } finally {
         await f.close();
     }

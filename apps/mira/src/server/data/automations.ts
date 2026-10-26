@@ -109,6 +109,16 @@ export async function saveMiraAutomation(
         await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${context.owner}`},0))`;
         const id = input.id ?? Bun.randomUUIDv7();
         if (input.id) {
+            if (input.kind !== "improvement") {
+                const [improvement] = await query<
+                    { id: string }[]
+                >`SELECT id FROM mira_improvements WHERE automation_id=${id} AND owner=${context.owner} AND state IN ('queued','checking','publishing','needs_attention') LIMIT 1`;
+                if (improvement)
+                    throw new MiraFailure(
+                        "CONFLICT",
+                        "Finish or review automatic code work before changing this automation's kind."
+                    );
+            }
             const [previous] = await query<{ schedule: MiraSchedule }[]>`
                 SELECT schedule FROM mira_automations WHERE id=${id} AND owner=${context.owner} AND version=${input.version ?? 0} AND deleted_at IS NULL FOR UPDATE`;
             const oldEvent =
