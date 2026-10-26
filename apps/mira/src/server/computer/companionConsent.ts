@@ -1,4 +1,4 @@
-import type { MiraComputerAccessSummary } from "@homelab/contracts/miraComputers";
+import type { MiraComputerConsentRequest } from "@homelab/contracts/miraComputers";
 
 import type { ComputerCompanion } from "./companion";
 import { computerWindowGrant, type ComputerWindowGrant } from "./policy";
@@ -12,7 +12,7 @@ export interface ComputerConsentHost {
      * @returns A locally resolved immutable target, or null for rejection. Never auto-approve.
      */
     select(
-        request: Readonly<MiraComputerAccessSummary>,
+        request: Readonly<MiraComputerConsentRequest>,
         signal: AbortSignal
     ): Promise<ComputerWindowGrant | null>;
     /**
@@ -53,7 +53,7 @@ export class ComputerConsentController {
     private readonly abort = new AbortController();
     private readonly now: () => number;
     private readonly stopListener: () => void;
-    private request?: MiraComputerAccessSummary;
+    private request?: MiraComputerConsentRequest;
     private target?: Readonly<ComputerWindowGrant>;
     private targetId?: string;
     private session?: ComputerWindowSession;
@@ -63,6 +63,7 @@ export class ComputerConsentController {
     private reviewing = false;
     private attempted = false;
     private deadline = 0;
+    private consentDeadline = 0;
     private expiryTimer?: ReturnType<typeof setTimeout>;
     private permitTimer?: ReturnType<typeof setTimeout>;
     private refreshTimer?: ReturnType<typeof setTimeout>;
@@ -107,7 +108,15 @@ export class ComputerConsentController {
             if (!Number.isFinite(remaining) || remaining <= 0)
                 throw new Error("Computer consent expired.");
             this.deadline = this.now() + remaining;
-            this.expiryTimer = setTimeout(this.stopListener, Math.min(60_000, remaining));
+            const consentRemaining = Math.min(
+                60_000,
+                remaining,
+                Date.parse(request.consentExpiresAt) - Date.now()
+            );
+            if (!Number.isFinite(consentRemaining) || consentRemaining <= 0)
+                throw new Error("Computer consent expired.");
+            this.consentDeadline = this.now() + consentRemaining;
+            this.expiryTimer = setTimeout(this.stopListener, consentRemaining);
             const selected = await this.options.host.select(
                 this.request,
                 this.abort.signal
@@ -142,6 +151,7 @@ export class ComputerConsentController {
                 receipt.expiresAt !== request.expiresAt
             )
                 throw new Error("Computer consent receipt changed.");
+            this.consentDeadline = 0;
             clearTimeout(this.expiryTimer);
             this.expiryTimer = setTimeout(
                 this.stopListener,
@@ -244,6 +254,8 @@ export class ComputerConsentController {
     private assertLive() {
         this.abort.signal.throwIfAborted();
         this.options.signal.throwIfAborted();
+        if (this.consentDeadline && this.now() >= this.consentDeadline)
+            throw new Error("Computer consent expired.");
         if (this.deadline && this.now() >= this.deadline)
             throw new Error("Computer access expired.");
     }

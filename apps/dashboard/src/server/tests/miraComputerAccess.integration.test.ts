@@ -706,3 +706,22 @@ test("private permit HTTP route admits only a valid machine binding and reveals 
         await f.close();
     }
 });
+
+test("pending consent exposes the original one-minute deadline even when discovered late", async () => {
+    const f = await fixture();
+    try {
+        const grant = await f.api.computers.access.request(f.request);
+        await f.client`UPDATE mira_computer_access SET created_at=clock_timestamp()-interval '55 seconds',expires_at=clock_timestamp()+interval '1 minute' WHERE id=${grant.id}`;
+        const before = Date.now();
+        const pending = await pendingMiraComputerAccess(f.client, f.device.credential, {
+            connectionId: f.connection.connectionId,
+        });
+        expect(pending.request).not.toBeNull();
+        const deadline = Date.parse(pending.request!.consentExpiresAt);
+        expect(deadline - before).toBeGreaterThan(0);
+        expect(deadline - before).toBeLessThanOrEqual(5000);
+        expect(Date.parse(pending.request!.expiresAt) - deadline).toBeGreaterThan(50_000);
+    } finally {
+        await f.close();
+    }
+});

@@ -23,6 +23,7 @@ interface AccessRow {
     targetId: string | null;
     runLease: string;
     expiresAt: Date;
+    consentExpiresAt: Date;
     expired: boolean;
     available: boolean;
     validForMs: number;
@@ -47,6 +48,7 @@ async function readAccess(
     const [row] = await query<AccessRow[]>`
         SELECT g.id,g.owner,g.computer_id AS "computerId",g.run_id AS "runId",g.mode,g.state,
             g.connection_id AS "connectionId",g.target_id AS "targetId",g.run_lease AS "runLease",g.expires_at AS "expiresAt",
+            least(g.expires_at,g.created_at+interval '1 minute') AS "consentExpiresAt",
             g.expires_at<=clock_timestamp() AS expired,
             (g.state IN ('pending','active') AND g.expires_at>clock_timestamp()
              AND (g.state<>'pending' OR g.created_at>clock_timestamp()-interval '1 minute')
@@ -228,7 +230,14 @@ export async function pendingMiraComputerAccess(
         const row = candidate
             ? await readAccess(query, computer.owner, candidate.id)
             : undefined;
-        return { request: row?.available ? summary(row) : null };
+        return {
+            request: row?.available
+                ? {
+                      ...summary(row),
+                      consentExpiresAt: row.consentExpiresAt.toISOString(),
+                  }
+                : null,
+        };
     });
 }
 

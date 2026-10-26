@@ -10,6 +10,23 @@ import type { ComputerWindowGrant } from "./policy";
 import type { ComputerWindowPort } from "./session";
 
 const signal = () => new AbortController().signal;
+function summaryOf(request: {
+    id: string;
+    computerId: string;
+    runId: string;
+    mode: "view" | "control";
+    state: string;
+    expiresAt: string;
+}) {
+    return {
+        id: request.id,
+        computerId: request.computerId,
+        runId: request.runId,
+        mode: request.mode,
+        state: request.state,
+        expiresAt: request.expiresAt,
+    };
+}
 function deferred<T>() {
     let complete!: (value: T) => void;
     const promise = new Promise<T>((resolve) => {
@@ -21,13 +38,17 @@ function fixture(mode: "view" | "control" = "control") {
     const id = crypto.randomUUID();
     const credential = issueComputerCredential("device", id).token;
     const connectionId = crypto.randomUUID();
-    const request = {
+    const summary = {
         id: crypto.randomUUID(),
         computerId: id,
         runId: crypto.randomUUID(),
         mode,
         state: "pending" as const,
         expiresAt: new Date(Date.now() + 120_000).toISOString(),
+    };
+    const request = {
+        ...summary,
+        consentExpiresAt: new Date(Date.now() + 60_000).toISOString(),
     };
     const target: ComputerWindowGrant = {
         executable: path.resolve("synthetic-window"),
@@ -47,7 +68,7 @@ function fixture(mode: "view" | "control" = "control") {
         if (route === "pending") return { request: pending ? request : null };
         if (route === "accept") {
             accepted = input;
-            return { ...request, state: "active" };
+            return { ...summary, state: "active" };
         }
         if (route === "permit") {
             if (!available) throw new Error("offline");
@@ -258,7 +279,11 @@ test("OS readiness, in-transit expiry, clock reversal and uncertain acceptance a
             if (route === "accept" && failure === "accept")
                 throw new Error("lost receipt");
             if (route === "accept" && failure === "receipt")
-                return { ...f.request, state: "active", runId: crypto.randomUUID() };
+                return {
+                    ...summaryOf(f.request),
+                    state: "active",
+                    runId: crypto.randomUUID(),
+                };
             return original(route, input);
         };
         try {
@@ -455,4 +480,38 @@ test("consent receipts reject mismatched devices, identities, scopes, overlong p
         ComputerConnectionError
     );
     await f.controller.close();
+});
+
+test("a late-discovered prompt preserves its original consent deadline and never sends a late acceptance", async () => {
+    const f = fixture();
+    const prompted = deferred<boolean>();
+    const expired = deferred<boolean>();
+    const selected = deferred<ComputerWindowGrant | null>();
+    f.request.consentExpiresAt = new Date(Date.now() + 100).toISOString();
+    f.host.select = (_request, stopped) => {
+        stopped.addEventListener("abort", () => expired.resolve(true), { once: true });
+        prompted.resolve(true);
+        return selected.promise;
+    };
+    const review = f.controller.review();
+    try {
+        await prompted.promise;
+        await expired.promise;
+        selected.resolve(f.target);
+        await rejects(review);
+        expect(f.events).not.toContain("accept");
+        expect(f.events).not.toContain("open");
+    } finally {
+        selected.resolve(null);
+        await f.controller.close();
+    }
+    const g = fixture();
+    g.request.consentExpiresAt = new Date(Date.now() + 1000).toISOString();
+    g.host.select = () => {
+        g.advance(1001);
+        return Promise.resolve(g.target);
+    };
+    await rejects(g.controller.review(), /consent expired/);
+    expect(g.events).not.toContain("accept");
+    await g.controller.close();
 });

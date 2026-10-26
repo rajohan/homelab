@@ -3,6 +3,7 @@ import {
     miraComputerAccessAcceptSchema,
     miraComputerAccessPermitSchema,
     type MiraComputerAccessSummary,
+    type MiraComputerConsentRequest,
 } from "@homelab/contracts/miraComputers";
 import * as v from "valibot";
 
@@ -32,6 +33,11 @@ const accessSummary = v.strictObject({
     mode: v.picklist(["view", "control"]),
     state: v.picklist(["pending", "active"]),
     expiresAt: v.pipe(v.string(), v.isoTimestamp()),
+});
+const consentRequest = v.strictObject({
+    ...accessSummary.entries,
+    state: v.literal("pending"),
+    consentExpiresAt: v.pipe(v.string(), v.isoTimestamp()),
 });
 const permit = v.strictObject({
     ...miraComputerAccessPermitSchema.entries,
@@ -202,12 +208,12 @@ export class ComputerCompanion {
         token: string,
         connectionId: string,
         signal: AbortSignal
-    ): Promise<MiraComputerAccessSummary | null> {
+    ): Promise<MiraComputerConsentRequest | null> {
         const device = readComputerCredential(token, "device");
         if (!device || !v.is(uuid, connectionId))
             throw new ComputerConnectionError(false);
         const result = v.safeParse(
-            v.strictObject({ request: v.nullable(accessSummary) }),
+            v.strictObject({ request: v.nullable(consentRequest) }),
             await this.send("access/pending", token, { connectionId }, signal)
         );
         if (!result.success) throw new ComputerConnectionError(false);
@@ -216,6 +222,8 @@ export class ComputerCompanion {
             request &&
             (request.computerId !== device.id ||
                 request.state !== "pending" ||
+                Date.parse(request.consentExpiresAt) <= Date.now() ||
+                Date.parse(request.consentExpiresAt) > Date.parse(request.expiresAt) ||
                 Date.parse(request.expiresAt) <= Date.now())
         )
             throw new ComputerConnectionError(false);

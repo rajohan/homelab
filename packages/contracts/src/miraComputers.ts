@@ -68,3 +68,7 @@ export const miraComputerAccessPermitSchema = v.strictObject({
     targetId: id,
     mode: v.picklist(["view", "control"]),
 });
+
+export interface MiraComputerConsentRequest extends MiraComputerAccessSummary {
+    consentExpiresAt: string;
+}

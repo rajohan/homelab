@@ -106,6 +106,7 @@ claim an already dispatched OS action was undone.
 
 The companion transport now reads consent requests, accepts one opaque target,
 checks a short `access/permit` receipt and records stop on the private listener.
+Pending metadata includes the original server consent deadline; discovering a request late never starts a new one-minute consent window.
 A permit rechecks the same live run, pause versions, device generation, target and
 scope as the executor gate. It cannot extend the original consent deadline or
 reveal worker credentials. Responses are bounded and identity-checked; acceptance
