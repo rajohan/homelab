@@ -1,6 +1,7 @@
 import type { MiraComputerConsentRequest } from "@homelab/contracts/miraComputers";
 import * as v from "valibot";
 
+import { RuntimeCleanupError } from "../runtime/rpcProcess";
 import { computerConsentRequestSchema, computerOrigin } from "./companion";
 import type { ComputerConsentHost } from "./companionConsent";
 import {
@@ -30,6 +31,7 @@ export class ComputerLocalConsentHost implements ComputerConsentHost {
     private opened = false;
     private opening?: Promise<ComputerWindowPort>;
     private closing?: Promise<void>;
+    private startupCleanupFailure?: RuntimeCleanupError;
     private detach?: () => void;
     private readonly stop = () => {
         void this.close().catch(() => {});
@@ -74,14 +76,20 @@ export class ComputerLocalConsentHost implements ComputerConsentHost {
         signal.addEventListener("abort", this.stop, { once: true });
         this.detach = () => signal.removeEventListener("abort", this.stop);
         const combined = AbortSignal.any([signal, this.signal]);
-        this.selecting = Promise.resolve().then(() => {
-            combined.throwIfAborted();
-            return this.openSurface({
-                ...this.options,
-                request: shown,
-                signal: combined,
+        this.selecting = Promise.resolve()
+            .then(() => {
+                combined.throwIfAborted();
+                return this.openSurface({
+                    ...this.options,
+                    request: shown,
+                    signal: combined,
+                });
+            })
+            .catch((error: unknown) => {
+                if (error instanceof RuntimeCleanupError)
+                    this.startupCleanupFailure = error;
+                throw error;
             });
-        });
         try {
             const surface = await this.selecting;
             if (!surface) {
@@ -140,18 +148,26 @@ export class ComputerLocalConsentHost implements ComputerConsentHost {
             await this.assertReady(target, signal);
             const combined = AbortSignal.any([signal, this.signal]);
             combined.throwIfAborted();
-            this.opening = Promise.resolve().then(async () => {
-                combined.throwIfAborted();
-                const port = await this.openDriver(this.target!, combined);
-                let closing: Promise<void> | undefined;
-                return {
-                    observe: (signal: AbortSignal) => port.observe(signal),
-                    click: (x: number, y: number, signal: AbortSignal) =>
-                        port.click(x, y, signal),
-                    type: (text: string, signal: AbortSignal) => port.type(text, signal),
-                    close: () => (closing ??= Promise.resolve().then(() => port.close())),
-                };
-            });
+            this.opening = Promise.resolve()
+                .then(async () => {
+                    combined.throwIfAborted();
+                    const port = await this.openDriver(this.target!, combined);
+                    let closing: Promise<void> | undefined;
+                    return {
+                        observe: (signal: AbortSignal) => port.observe(signal),
+                        click: (x: number, y: number, signal: AbortSignal) =>
+                            port.click(x, y, signal),
+                        type: (text: string, signal: AbortSignal) =>
+                            port.type(text, signal),
+                        close: () =>
+                            (closing ??= Promise.resolve().then(() => port.close())),
+                    };
+                })
+                .catch((error: unknown) => {
+                    if (error instanceof RuntimeCleanupError)
+                        this.startupCleanupFailure = error;
+                    throw error;
+                });
             const port = await this.opening;
             await this.assertReady(target, combined);
             return port;
@@ -185,6 +201,7 @@ export class ComputerLocalConsentHost implements ComputerConsentHost {
                 await port?.close();
             })(),
         ]);
+        if (this.startupCleanupFailure) throw this.startupCleanupFailure;
         if (results.some((result) => result.status === "rejected"))
             throw new Error("Local computer cleanup could not be confirmed.");
     }

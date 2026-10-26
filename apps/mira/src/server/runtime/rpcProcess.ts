@@ -11,6 +11,14 @@ interface PendingRequest {
     reject: (error: Error) => void;
     timer: ReturnType<typeof setTimeout>;
 }
+
+/** A stopped connection whose supervisor did not prove that every owned process exited. */
+export class RuntimeCleanupError extends Error {
+    /** Create a content-free cleanup failure that must remain sticky across replacement attempts. */
+    constructor() {
+        super("Computer process-tree cleanup could not be confirmed.");
+    }
+}
 export interface RpcProcessOptions {
     command: string;
     args: string[];
@@ -18,6 +26,10 @@ export interface RpcProcessOptions {
     env: Record<string, string>;
     /** Hide console windows by default; native consent surfaces explicitly opt out. */
     windowsHide?: boolean;
+    /** Let a process-tree supervisor confirm cleanup after EOF before the forced-stop deadline. */
+    stopViaStdin?: boolean;
+    /** Require the supervisor's zero exit status as proof that its complete process tree exited. */
+    requireCleanExit?: boolean;
     requestTimeoutMs?: number;
     signal?: AbortSignal;
     maxFrameBytes?: number;
@@ -36,6 +48,7 @@ export class RpcProcess {
     private buffer = Buffer.alloc(0);
     private nextId = 1;
     private failure: Error | null = null;
+    private cleanExit = false;
     private forceStop: ReturnType<typeof setTimeout> | null = null;
     private readonly abort = () =>
         this.fail(new Error("Mira runtime operation was cancelled."));
@@ -54,7 +67,8 @@ export class RpcProcess {
             stdio: ["pipe", "pipe", "pipe"],
         });
         this.exited = new Promise((resolve) => {
-            this.child.once("close", () => {
+            this.child.once("close", (code, signal) => {
+                this.cleanExit = code === 0 && signal === null;
                 options.signal?.removeEventListener("abort", this.abort);
                 this.fail(
                     new Error(
@@ -152,6 +166,8 @@ export class RpcProcess {
     async close(): Promise<void> {
         this.fail(new Error("Mira runtime closed."));
         await this.exited;
+        if (this.options.requireCleanExit && !this.cleanExit)
+            throw new RuntimeCleanupError();
     }
 
     private send(message: unknown): void {
@@ -243,7 +259,7 @@ export class RpcProcess {
         this.pending.clear();
         this.listeners.clear();
         this.child.stdin.end();
-        this.child.kill();
+        if (!this.options.stopViaStdin) this.child.kill();
         this.forceStop = setTimeout(() => this.child.kill("SIGKILL"), 2000);
     }
 }

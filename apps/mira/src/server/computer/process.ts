@@ -1,11 +1,11 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { lstat, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { imageSize } from "image-size";
 import * as v from "valibot";
 
-import { RpcProcess } from "../runtime/rpcProcess";
+import { RpcProcess, type RpcProcessOptions } from "../runtime/rpcProcess";
 import { runtimeContentItems, type RuntimeToolResult } from "../runtime/toolResult";
 import { computerDriverVersion, computerWindowGrant } from "./policy";
 import type { ComputerWindowPort } from "./session";
@@ -90,9 +90,60 @@ export async function openComputerProcess(
     grantInput: unknown,
     options: ComputerProcessOptions
 ): Promise<ComputerWindowPort> {
-    const grant = computerWindowGrant(grantInput);
     if (!path.isAbsolute(options.entrypoint) || !path.isAbsolute(options.cwd))
         throw new Error("Computer worker paths must be absolute.");
+    return openWorker(grantInput, options, {
+        command: process.execPath,
+        args: ["--no-env-file", options.entrypoint],
+    });
+}
+
+/**
+ * Open the fixed packaged Windows supervisor, requiring confirmed process-tree cleanup on close.
+ * @param grantInput - Immutable local consent target; no executable path comes from the remote command.
+ * @param options - Trusted installed package directory, filtered environment and permanent stop signal.
+ * @returns A private worker port; unconfirmed cleanup rejects and must block replacement.
+ */
+export async function openWindowsComputerProcess(
+    grantInput: unknown,
+    options: Omit<ComputerProcessOptions, "entrypoint" | "cwd"> & { directory: string }
+): Promise<ComputerWindowPort> {
+    if (process.platform !== "win32" || process.arch !== "x64")
+        throw new Error("The packaged computer worker requires Windows x64.");
+    if (
+        !path.isAbsolute(options.directory) ||
+        (await realpath(options.directory)) !== options.directory
+    )
+        throw new Error("The worker package directory must be canonical and absolute.");
+    for (const name of ["mira-computer-worker-host.exe", "mira-computer-worker.exe"]) {
+        const file = path.join(options.directory, name);
+        const metadata = await lstat(file);
+        if (!metadata.isFile() || (await realpath(file)) !== file)
+            throw new Error(
+                "The worker package must contain ordinary local executables."
+            );
+    }
+    return openWorker(
+        grantInput,
+        { ...options, cwd: options.directory },
+        {
+            command: path.join(options.directory, "mira-computer-worker-host.exe"),
+            args: [],
+            stopViaStdin: true,
+            requireCleanExit: true,
+        }
+    );
+}
+
+async function openWorker(
+    grantInput: unknown,
+    options: Omit<ComputerProcessOptions, "entrypoint">,
+    launch: Pick<
+        RpcProcessOptions,
+        "command" | "args" | "stopViaStdin" | "requireCleanExit"
+    >
+): Promise<ComputerWindowPort> {
+    const grant = computerWindowGrant(grantInput);
     const timeout = options.requestTimeoutMs ?? 10_000;
     if (!Number.isInteger(timeout) || timeout < 1 || timeout > 10_000)
         throw new Error(
@@ -104,8 +155,7 @@ export async function openComputerProcess(
     let connection: RpcProcess;
     try {
         connection = new RpcProcess({
-            command: process.execPath,
-            args: ["--no-env-file", options.entrypoint],
+            ...launch,
             cwd: options.cwd,
             env: {
                 ...computerChildEnvironment(options.environment),

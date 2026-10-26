@@ -6,7 +6,7 @@ The computer foundation uses the unmodified, pinned `@trycua/cua-driver` 0.37.0 
 
 The host supplies a canonical executable, PID, native window ID and explicit `background` or `foreground` delivery mode. Model input cannot choose these values. A v3 bounded capability manifest allows only `get_window_state`, `click` and `type_text` for that executable, with desktop capture disabled. The adapter further fixes every request to the chosen PID/window. Driver authority expires after five minutes or one idle minute. Browser origins require a separate browser-only runtime; this native application grant does not provide origin isolation.
 
-`ComputerWindowSession` takes a trusted availability callback. Its eventual host must check the current owner/run lease, local stop, pauses, connection generation and interactive OS desktop state before each call and before returning results. The driver's `desktopUnlocked` and `desktopCaptureAuthorized` fields report capture permission, **not** Windows lock state. A paired Windows companion must run in the user's interactive session and supply an independently qualified lock/sleep/disconnect check.
+`ComputerWindowSession` takes a trusted availability callback. Its host must check the current owner/run lease, local stop, pauses, connection generation and interactive OS desktop state before each call and before returning results. The driver's `desktopUnlocked` and `desktopCaptureAuthorized` fields report capture permission, **not** Windows lock state. A paired Windows companion must run in the user's interactive session and supply an independently qualified lock/sleep/disconnect check.
 
 Each observation has one random identifier, expires after ten monotonic seconds and permits at most one input. A new observation invalidates the previous one. Overlapping calls are refused. Coordinates must fall within the observed native-resolution image; the native driver receives window-local coordinates, not desktop coordinates. No screenshot file paths or remote image URLs are read. PNG/JPEG data uses the same size, signature and dimension validation as Mira's runtime image transport. Partial accessibility trees are labelled incomplete, while a valid pixel frame remains usable.
 
@@ -18,7 +18,7 @@ The SDK's typed `TypeTextInput` currently omits `delivery_mode`. The adapter use
 
 The interactive host selects the packaged child entrypoint and working directory; neither is a model argument. `openComputerProcess` uses Mira's existing bounded private JSONL process transport. The child accepts only one initialization and fixed observe/click/type requests, refuses duplicate IDs and overlapping or oversized requests, and cannot call host tools. `ComputerWindowSession` remains responsible for fresh one-use observations and the host availability gate around those requests.
 
-Both ends enforce five-minute total and one-minute idle limits. Parent pipe loss aborts admitted work; the child has its own two-second forced-exit fallback for stuck native cleanup. The parent waits for actual process exit before removing its private temporary directory, including any native capability manifest. Parent-enforced termination is independent of the child event loop; the child's parent-loss fallback still requires that loop to run. OS-level process-tree ownership must be qualified before desktop activation. Native diagnostic output is drained without retaining it. Protocol failures return generic errors; possibly delivered input remains unknown.
+Both ends enforce five-minute total and one-minute idle limits. Parent pipe loss aborts admitted work; the child has its own two-second forced-exit fallback for stuck native cleanup. The parent waits for actual process exit before removing its private temporary directory, including any native capability manifest. Parent-enforced termination is independent of the child event loop; the child's parent-loss fallback still requires that loop to run. The packaged Windows supervisor described below additionally owns and confirms cleanup of the complete worker process tree; other platforms still need equivalent ownership before desktop activation. Native diagnostic output is drained without retaining it. Protocol failures return generic errors; possibly delivered input remains unknown.
 
 The child receives only explicitly selected OS/display variables. Provider tokens, database credentials, GitHub credentials, preload flags and other environment variables are omitted, and Bun dotenv loading is disabled. Display variables necessarily convey local desktop access. This is process supervision and driver scoping, **not an OS sandbox**: it does not remove the user's filesystem or network permissions. The native child source entrypoint is qualified only in the disposable image; packaging it into the presence companion, OS readiness checks and production activation remain separate work.
 
@@ -131,8 +131,7 @@ reaped, then attempts a bounded server stop. Server unavailability cannot restor
 local access. The caller must await cleanup before creating another controller;
 failed cleanup must block replacement.
 
-The presence-only CLI still does not instantiate the consent lifecycle. Native
-process-tree ownership, command delivery,
+The presence-only CLI still does not instantiate the consent lifecycle. Per-run command delivery,
 Chat controls, installer, signed release distribution, autostart and updater
 qualification remain required before enabling screen/input on the user's PC.
 
@@ -191,8 +190,60 @@ unknown and is never retried. Synthetic tests exercise the real child pipe with
 the actual consent transport/controller and a fake native input port; they do not
 control the test runner desktop.
 
-This composition is not yet enabled in the presence CLI. The driver factory must
-provide a qualified, packaged supervisor before Windows activation. Per-run
-command transport, process-tree ownership, Chat controls,
+This composition is not yet enabled in the presence CLI. The Windows driver factory can now use the packaged supervisor below. Per-run
+command transport, Chat controls,
 Windows input/lock transition acceptance, installer, download distribution,
 autostart and the companion updater remain required before production activation.
+
+## Packaged Windows worker
+
+On Windows x64, run `bun run build:computer:windows-worker C:\absolute\empty\package`
+with the pinned Bun version and a frozen install. The builder creates
+`mira-computer-worker-host.exe`, `mira-computer-worker.exe` and a private
+`node_modules` containing the unchanged locked SDK, its Windows native DLL/N-API
+module and its two JavaScript dependencies, including package metadata and notices.
+An unexpected dependency set or version requires requalification. No globally
+installed Bun, SDK or source checkout is needed at runtime. The output directory
+must be empty; the builder never deletes an existing installation.
+
+The Bun worker loads the SDK from its own executable directory. Automatic dotenv,
+bunfig and tsconfig loading are disabled. Package metadata loading is explicitly
+enabled because the external SDK uses package exports. The supervisor fixes the
+working directory to the installed package and supplies only selected OS variables;
+Bun preload/shell flags and provider credentials are not inherited. Installation
+integrity and authenticated update distribution are separate delivery requirements;
+this package does not defend against another process modifying its installed files
+with the same user's permissions.
+
+`openWindowsComputerProcess` accepts only a trusted canonical package directory
+and launches the fixed supervisor with no command arguments. The supervisor uses
+Windows 10+ process-creation job attributes and an explicit three-pipe handle list.
+The worker starts suspended inside an unnamed, non-inherited Job Object, with
+kill-on-close and no breakaway permission, before its initial thread can run. All
+descendants stay in the same ownership boundary. This controls process lifetime;
+it does not sandbox filesystem or network access.
+
+Parent pipe loss, malformed/oversized transport, child exit or the absolute
+lifetime stops the job. Normal cleanup confirms zero active processes before the
+supervisor returns success. Closing the supervisor unexpectedly closes its job
+handle and terminates descendants. The Bun parent waits for supervisor exit,
+forcing termination after two seconds if necessary. A nonzero/forced exit is
+unconfirmed cleanup, permanently rejects repeated close attempts, retains the
+private temporary directory and blocks a replacement controller. Startup failures
+retain the same cleanup failure even when no driver port was returned. Interrupted
+input is never replayed.
+
+`bun run test:computer:windows-worker` compiles the actual supervisor and separate
+harmless fixtures. It verifies child and grandchild exit after parent EOF,
+supervisor termination and worker exit, with retained process handles to avoid PID
+reuse. It also checks environment filtering, builds the complete package, loads
+native SDK metadata from an unrelated working directory, initializes/closes the
+actual private port and rejects a missing native DLL. These checks do not capture
+the desktop or send input. Windows CI runs them alongside consent/controller and
+cleanup-failure tests. CodeQL compiles and analyzes both C# executables without a
+third-party restore. Native assertions are reported separately from TypeScript
+coverage.
+
+This qualifies packaged startup and process ownership, not interactive Windows
+capture/input, lock/sleep transitions, installer signing, release distribution,
+private routing or the live PC connection. The presence CLI remains unchanged.

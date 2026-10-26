@@ -66,6 +66,8 @@ jobs:
           queries: security-extended
       - name: Compile the actual Windows host without third-party restore
         run: bun run build:computer:windows-host
+      - name: Compile the actual Windows worker supervisor without third-party restore
+        run: bun --no-env-file scripts/buildWindowsWorkerHost.ts
       - name: Analyze and upload results
         uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
