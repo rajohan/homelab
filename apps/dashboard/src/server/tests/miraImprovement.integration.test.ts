@@ -8,7 +8,7 @@ import { capabilities } from "@homelab/contracts/operations";
 import { publishDaytonaBinding } from "@homelab/mira/data/daytona";
 import { saveMiraFile, deleteMiraFile } from "@homelab/mira/data/files";
 import { publishGitHubBinding } from "@homelab/mira/data/github";
-import { claimMiraRun, reconcileMiraRuns } from "@homelab/mira/data/queue";
+import { claimMiraRun, reconcileMiraRuns, finishMiraRun } from "@homelab/mira/data/queue";
 import {
     improvementJobAllowed,
     resolveImprovement,
@@ -867,6 +867,77 @@ for (const stage of ["cloud", "publication"] as const)
             expect(provider.calls.some((call) => call.init.method === "POST")).toBe(
                 false
             );
+        } finally {
+            await f.close();
+        }
+    });
+
+for (const outcome of ["published", "failed", "cancelled", "with-model-report"] as const)
+    test(`run completion does not redeliver a coordinator report after ${outcome}`, async () => {
+        const f = await fixture();
+        try {
+            await f.grant(true);
+            const { run, tools, submit } = await f.start(),
+                result = await submit(),
+                id = result.result!.id,
+                provider = f.provider(id);
+            if (outcome === "cancelled") await f.grant(false, 1);
+            await f.dispatch(
+                outcome === "failed" ? githubReadProvider().request : provider.request
+            );
+            if (outcome === "published" || outcome === "with-model-report") {
+                await f.completed(id);
+                await f.dispatch(provider.request);
+                await dispatchMiraCode(
+                    f.client,
+                    github,
+                    signal,
+                    f.directory,
+                    provider.request
+                );
+                await f.dispatch(provider.request);
+            }
+            if (outcome === "with-model-report") {
+                const response = await tools
+                    .find((tool) => tool.name === "mira_report_create")!
+                    .execute(
+                        {
+                            title: "Model planning report",
+                            kind: "improvement",
+                            taskId: null,
+                            markdown: "Separate model-authored planning report.",
+                        },
+                        signal,
+                        {
+                            callId: crypto.randomUUID(),
+                            threadId: "synthetic",
+                            turnId: "synthetic",
+                        }
+                    );
+                expect(JSON.parse(response)).toMatchObject({ ok: true });
+            }
+            expect(
+                await finishMiraRun(f.client, run, {
+                    state: "completed",
+                    message: null,
+                    text: "The submitted work is recorded separately.",
+                })
+            ).toBe(true);
+            const notices = await f.client<
+                { key: string; message: string }[]
+            >`SELECT source_key AS key,message FROM dashboard_notifications WHERE source='mira' ORDER BY source_key`;
+            const expectedNotices = {
+                cancelled: 0,
+                published: 1,
+                failed: 1,
+                "with-model-report": 2,
+            }[outcome];
+            expect(notices).toHaveLength(expectedNotices);
+            if (outcome === "with-model-report")
+                expect(
+                    notices.find((notice) => notice.key === run.id)!.message
+                ).toContain("produced a report.");
+            else expect(notices.some((notice) => notice.key === run.id)).toBe(false);
         } finally {
             await f.close();
         }
