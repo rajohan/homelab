@@ -131,9 +131,8 @@ reaped, then attempts a bounded server stop. Server unavailability cannot restor
 local access. The caller must await cleanup before creating another controller;
 failed cleanup must block replacement.
 
-This is the tested consent lifecycle and private protocol, not a deployed Windows
-consent window. The presence-only CLI still does not instantiate it. The native
-Windows picker/readiness monitor, process-tree ownership, command delivery,
+The presence-only CLI still does not instantiate the consent lifecycle. Native
+process-tree ownership, command delivery,
 Chat controls, installer, signed release distribution, autostart and updater
 qualification remain required before enabling screen/input on the user's PC.
 
@@ -167,10 +166,11 @@ checking it for five seconds, independently of the UI refresh timer.
 and bounded JSONL over inherited pipes. It waits for one explicit selection,
 checks readiness before returning it, and exposes permanent abort plus awaited
 cleanup. Unknown messages, malformed targets, late approvals, hung checks and
-host-tool requests retire the process. The returned surface must stay owned by
-the future controller/driver integration: its abort must stop that controller,
-and its process must be reaped before admitting a replacement. No device token,
-server credential, screenshot or input command is sent to this host.
+host-tool requests retire the process. `ComputerLocalConsentHost` owns the
+returned surface and binds it to the controller and a qualified driver supervisor.
+Its abort immediately retires the controller, and cleanup waits for both
+processes before admitting a replacement. No device token, server credential,
+screenshot or input command is sent to this host.
 
 `bun run test:computer:windows` compiles the actual GUI binary and checks its
 redirected-pipe bootstrap, strict protocol parsing, deadline rules, session-state
@@ -180,7 +180,19 @@ transport tests on Windows; CodeQL also analyzes the compiled C# host. Linux uni
 coverage is reported separately and does not claim C# line coverage or interactive
 Windows input qualification.
 
-The GUI host and its pipe adapter are not yet connected to the presence CLI or
-native driver. Per-run command transport, process-tree ownership, Chat controls,
+The GUI host, controller and driver factory now share a tested lifecycle.
+`ComputerLocalConsentHost` retains the immutable selected target and exact
+view/control scope, checks readiness around startup, and owns late-starting
+resources. Local stop also retires idle controllers without waiting for another
+command. Closing the controller reaps both native resources before attempting
+server stop. Failed cleanup remains a failure on repeated close calls and must
+block replacement. A late capture is discarded; an interrupted input remains
+unknown and is never retried. Synthetic tests exercise the real child pipe with
+the actual consent transport/controller and a fake native input port; they do not
+control the test runner desktop.
+
+This composition is not yet enabled in the presence CLI. The driver factory must
+provide a qualified, packaged supervisor before Windows activation. Per-run
+command transport, process-tree ownership, Chat controls,
 Windows input/lock transition acceptance, installer, download distribution,
 autostart and the companion updater remain required before production activation.

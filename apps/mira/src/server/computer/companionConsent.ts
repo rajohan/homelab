@@ -5,6 +5,8 @@ import { computerWindowGrant, type ComputerWindowGrant } from "./policy";
 import { ComputerWindowSession, type ComputerWindowPort } from "./session";
 
 export interface ComputerConsentHost {
+    /** Permanent local stop, including closure or loss of the consent surface. */
+    readonly signal: AbortSignal;
     /**
      * Ask the local user to approve the displayed scope and select one native window.
      * @param request - Server metadata, never window names or executable instructions.
@@ -35,6 +37,11 @@ export interface ComputerConsentHost {
         target: Readonly<ComputerWindowGrant>,
         signal: AbortSignal
     ): Promise<ComputerWindowPort>;
+    /**
+     * Abort local consent and reap its surface, including a selection still starting.
+     * @returns Shared cleanup; a failed cleanup must block replacement.
+     */
+    close(): Promise<void>;
 }
 
 /** One local consent attempt and controller, permanently bound to one connection generation. */
@@ -79,7 +86,8 @@ export class ComputerConsentController {
             void this.close().catch(() => {});
         };
         options.signal.addEventListener("abort", this.stopListener, { once: true });
-        if (options.signal.aborted) this.stopListener();
+        options.host.signal.addEventListener("abort", this.stopListener, { once: true });
+        if (options.signal.aborted || options.host.signal.aborted) this.stopListener();
     }
 
     /**
@@ -121,11 +129,11 @@ export class ComputerConsentController {
                 this.request,
                 this.abort.signal
             );
-            this.assertLive();
             if (!selected) {
                 await this.close();
                 return false;
             }
+            this.assertLive();
             this.target = Object.freeze(
                 computerWindowGrant({ ...selected, mode: request.mode })
             );
@@ -215,12 +223,20 @@ export class ComputerConsentController {
      * @returns Shared cleanup; callers must await it before opening a replacement controller.
      */
     close(): Promise<void> {
+        if (this.closing) return this.closing;
+        // Install the shared promise before abort listeners can reenter cleanup.
+        this.closing = Promise.resolve().then(() => this.cleanup());
         this.abort.abort();
         clearTimeout(this.expiryTimer);
         clearTimeout(this.permitTimer);
         clearTimeout(this.refreshTimer);
         this.options.signal.removeEventListener("abort", this.stopListener);
-        this.closing ??= (async () => {
+        this.options.host.signal.removeEventListener("abort", this.stopListener);
+        return this.closing;
+    }
+
+    private async cleanup(): Promise<void> {
+        try {
             try {
                 if (this.session) await this.session.close();
                 else if (this.opening) {
@@ -228,17 +244,18 @@ export class ComputerConsentController {
                     await port?.close();
                 }
             } finally {
-                if (this.request)
-                    await this.options.companion
-                        .stopAccess(
-                            this.options.credential,
-                            this.request.id,
-                            AbortSignal.timeout(10_000)
-                        )
-                        .catch(() => {});
+                await this.options.host.close();
             }
-        })();
-        return this.closing;
+        } finally {
+            if (this.request)
+                await this.options.companion
+                    .stopAccess(
+                        this.options.credential,
+                        this.request.id,
+                        AbortSignal.timeout(10_000)
+                    )
+                    .catch(() => {});
+        }
     }
 
     private active() {
@@ -254,6 +271,7 @@ export class ComputerConsentController {
     private assertLive() {
         this.abort.signal.throwIfAborted();
         this.options.signal.throwIfAborted();
+        this.options.host.signal.throwIfAborted();
         if (this.consentDeadline && this.now() >= this.consentDeadline)
             throw new Error("Computer consent expired.");
         if (this.deadline && this.now() >= this.deadline)

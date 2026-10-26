@@ -59,6 +59,7 @@ function fixture(mode: "view" | "control" = "control") {
     const events: string[] = [];
     const bodies: unknown[] = [];
     const stopped = new AbortController();
+    const localStop = new AbortController();
     let clock = 100;
     let available = true;
     let pending = true;
@@ -123,6 +124,11 @@ function fixture(mode: "view" | "control" = "control") {
         },
     };
     const host: ComputerConsentHost = {
+        signal: localStop.signal,
+        close: () => {
+            events.push("host-closed");
+            return Promise.resolve();
+        },
         select: (shown) => {
             expect(shown).toEqual(request);
             events.push("prompt");
@@ -157,6 +163,7 @@ function fixture(mode: "view" | "control" = "control") {
         events,
         bodies,
         stopped,
+        localStop,
         host,
         port,
         responder,
@@ -242,7 +249,7 @@ test("no request, rejection, late local selection and concurrent prompts cannot 
     const g = fixture();
     g.host.select = () => Promise.resolve(null);
     expect(await g.controller.review()).toBe(false);
-    expect(g.events).toEqual(["pending", "stop"]);
+    expect(g.events).toEqual(["pending", "host-closed", "stop"]);
     await rejects(g.controller.review());
     await g.controller.close();
 });
@@ -322,12 +329,13 @@ test("stop waits for a late starting native child to close and never reopens it"
 });
 
 test("connection loss and changed readiness retire live access before further input", async () => {
-    for (const failure of ["connection", "server", "locked", "budget"]) {
+    for (const failure of ["connection", "local-stop", "server", "locked", "budget"]) {
         const f = fixture();
         try {
             await f.controller.review();
             const frame = await f.controller.observe(signal());
             if (failure === "connection") f.stopped.abort();
+            if (failure === "local-stop") f.localStop.abort();
             if (failure === "server") f.unavailable();
             if (failure === "locked")
                 f.host.assertReady = () => Promise.reject(new Error("locked"));
@@ -514,4 +522,28 @@ test("a late-discovered prompt preserves its original consent deadline and never
     await rejects(g.controller.review(), /consent expired/);
     expect(g.events).not.toContain("accept");
     await g.controller.close();
+});
+
+test("controller cleanup waits for the consent host even before driver startup and preserves failures", async () => {
+    for (const stage of ["pending", "active"]) {
+        const f = fixture();
+        const reaped = deferred<boolean>();
+        f.host.close = async () => {
+            f.events.push("host-closing");
+            await reaped.promise;
+            throw new Error("surface still running");
+        };
+        if (stage === "active") await f.controller.review();
+        const closing = f.controller.close();
+        const failed = rejects(closing, /surface still running/);
+        expect(f.controller.close()).toBe(closing);
+        await Bun.sleep(1);
+        expect(f.events).toContain("host-closing");
+        expect(f.events).not.toContain("stop");
+        reaped.resolve(true);
+        await failed;
+        await rejects(f.controller.close(), /surface still running/);
+        await rejects(f.controller.review());
+        if (stage === "active") expect(f.events).toContain("closed");
+    }
 });
