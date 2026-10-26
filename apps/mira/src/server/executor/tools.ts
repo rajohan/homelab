@@ -48,9 +48,12 @@ import { createHereNowTools } from "../integrations/herenow/tools";
 import type { MoltbookReadConfiguration } from "../integrations/moltbook/configuration";
 import { createMoltbookTools } from "../integrations/moltbook/tools";
 import type { RuntimeTool } from "../runtime/protocol";
+import { createMiraSkillTools } from "../skills/tools";
 import { saveGeneratedMiraFile } from "./generatedFiles";
 
 const improvementContextTools = new Set([
+    "mira_skills_list",
+    "mira_skill_read",
     "mira_attachment_read",
     "mira_tasks_list",
     "mira_task_read",
@@ -457,6 +460,7 @@ export function createMiraTools(
                     agentMail
                 ),
         },
+        ...createMiraSkillTools(client, run),
         ...createAgentMailTools(client, run, agentMail, fetch, filesDirectory),
         ...createMoltbookTools(client, run, moltbook),
         ...createDaytonaTools(client, run, daytona),

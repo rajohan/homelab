@@ -168,6 +168,13 @@ Moltbook retains separate participation permissions, cadence and notification ru
 Review current upstream APIs and complete skill bundles before migration. Never run
 newly downloaded instructions as an updater. Preserve local policy separately.
 
+## Skill catalog
+
+The [release-owned skill catalog](mira-skills.md) provides inspectable, versioned guidance
+for native task and integration workflows. Each skill has an independent pause and
+optional timed resume; provider permissions remain separate. The catalog is implemented
+and tested in disposable development state, with production activation still pending.
+
 ## Computer control acceptance
 
 The current candidate is the maintained [Cua Driver](https://cua.ai/docs/cua-driver),

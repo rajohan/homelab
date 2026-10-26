@@ -47,6 +47,7 @@ import {
     miraPublicationApproveSchema,
     miraPublicationFilterSchema,
 } from "@homelab/contracts/miraPublication";
+import { miraSkillReadSchema } from "@homelab/contracts/miraSkills";
 import {
     miraSocialSaveSchema,
     miraSocialApproveSchema,
@@ -123,6 +124,7 @@ import {
 } from "@homelab/mira/data/publications";
 import { listMiraRuns } from "@homelab/mira/data/queue";
 import { readMiraRun } from "@homelab/mira/data/runHistory";
+import { listMiraSkills, inspectMiraSkill } from "@homelab/mira/data/skills";
 import {
     saveMiraSocial,
     approveMiraSocial,
@@ -616,6 +618,14 @@ export const miraRouter = trpc.router({
             .input(miraAutomationUpdateSchema)
             .mutation(({ ctx, input }) =>
                 execute(ctx, (mira) => saveMiraAutomation(mira, input))
+            ),
+    }),
+    skills: trpc.router({
+        list: trpc.procedure.query(({ ctx }) => execute(ctx, listMiraSkills)),
+        read: trpc.procedure
+            .input(miraSkillReadSchema)
+            .query(({ ctx, input }) =>
+                execute(ctx, () => Promise.resolve(inspectMiraSkill(input)))
             ),
     }),
     integrations: trpc.procedure.query(({ ctx }) =>

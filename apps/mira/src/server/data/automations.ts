@@ -6,13 +6,16 @@ import {
     type miraAutomationInputSchema,
     type miraEnableSchema,
 } from "@homelab/contracts/mira";
+import { miraSkillIds } from "@homelab/contracts/miraSkills";
 import { nextScheduleOccurrence } from "@homelab/scheduling";
 import type { SQL } from "bun";
 import * as v from "valibot";
 
+import { miraSkillsCompatibility } from "../skills/status";
 import { auditMira, MiraFailure, type MiraContext, type MiraQuery } from "./context";
 
 export const miraControlKeys = [
+    ...miraSkillIds.map((id) => `skill:${id}` as const),
     "autonomy",
     "integration:agentmail",
     "integration:daytona",
@@ -206,6 +209,15 @@ export async function setMiraEnabled(
             if (!rows[0]) throw new MiraFailure("NOT_FOUND", "Automation not found.");
         } else if (!miraControlKeys.some((key) => key === input.key))
             throw new MiraFailure("BAD_REQUEST", "Unknown control.");
+        if (
+            input.enabled &&
+            input.key.startsWith("skill:") &&
+            (await miraSkillsCompatibility(query)) !== "available"
+        )
+            throw new MiraFailure(
+                "PRECONDITION_FAILED",
+                "Mira must be connected with the same skill catalog before enabling guidance."
+            );
         const inserted = await query<
             { enabled: boolean }[]
         >`INSERT INTO mira_switches (owner, key, enabled, reason) VALUES (${context.owner}, ${input.key}, ${input.key === "autonomy"}, ${input.key === "autonomy" ? null : "Not enabled yet."}) ON CONFLICT DO NOTHING RETURNING enabled`;
@@ -272,6 +284,11 @@ export async function resumeMiraControls(
             { owner: string; key: string }[]
         >`SELECT owner, key FROM mira_switches WHERE owner = ${account.owner} AND NOT enabled AND until <= ${now} FOR UPDATE`;
         for (const row of rows) {
+            if (
+                row.key.startsWith("skill:") &&
+                (await miraSkillsCompatibility(query)) !== "available"
+            )
+                continue;
             if (
                 row.key === "integration:agentmail" ||
                 row.key === "integration:moltbook" ||
