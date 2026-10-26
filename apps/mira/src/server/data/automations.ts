@@ -58,7 +58,7 @@ export function nextMiraOccurrence(
 export async function listMiraSwitches(context: MiraContext): Promise<MiraSwitch[]> {
     const rows = await context.client<
         MiraSwitch[]
-    >`SELECT key, enabled, reason, until::text AS until, version FROM mira_switches s WHERE owner = ${context.owner} AND (s.key NOT LIKE 'automation:%' OR EXISTS (SELECT 1 FROM mira_automations a WHERE s.key='automation:'||a.id::text AND a.owner=s.owner AND a.deleted_at IS NULL)) ORDER BY key`;
+    >`SELECT key, enabled, reason, COALESCE(skill_resume_at,until)::text AS until, version FROM mira_switches s WHERE owner = ${context.owner} AND (s.key NOT LIKE 'automation:%' OR EXISTS (SELECT 1 FROM mira_automations a WHERE s.key='automation:'||a.id::text AND a.owner=s.owner AND a.deleted_at IS NULL)) ORDER BY key`;
     for (const key of miraControlKeys)
         if (!rows.some((row) => row.key === key))
             rows.push({
@@ -225,7 +225,7 @@ export async function setMiraEnabled(
             await query`INSERT INTO mira_control_windows (owner, key, version, started_at) VALUES (${context.owner}, ${input.key}, 1, '1970-01-01'::timestamptz)`;
         const rows = await query<
             { key: string; version: number; at: Date }[]
-        >`UPDATE mira_switches SET enabled = ${input.enabled}, reason = ${input.reason}, until = ${input.until ? new Date(input.until) : null}, version = version + 1, changed_at = clock_timestamp(), binding_activated_at = CASE WHEN ${input.key} IN ('integration:agentmail','integration:moltbook','integration:moltbook-publish','integration:here-now','integration:daytona','integration:github') AND ${input.enabled} AND binding_hash IS DISTINCT FROM ${bindingHash ?? null} THEN clock_timestamp() ELSE binding_activated_at END, binding_hash = CASE WHEN ${input.key} IN ('integration:agentmail','integration:moltbook','integration:moltbook-publish','integration:here-now','integration:daytona','integration:github') AND ${input.enabled} THEN ${bindingHash ?? null} ELSE binding_hash END WHERE owner = ${context.owner} AND key = ${input.key} AND version = ${input.version} RETURNING key, version, changed_at AS at`;
+        >`UPDATE mira_switches SET enabled = ${input.enabled}, reason = ${input.reason}, until = ${!input.key.startsWith("skill:") && input.until ? new Date(input.until) : null}, skill_resume_at = ${input.key.startsWith("skill:") && input.until ? new Date(input.until) : null}, version = version + 1, changed_at = clock_timestamp(), binding_activated_at = CASE WHEN ${input.key} IN ('integration:agentmail','integration:moltbook','integration:moltbook-publish','integration:here-now','integration:daytona','integration:github') AND ${input.enabled} AND binding_hash IS DISTINCT FROM ${bindingHash ?? null} THEN clock_timestamp() ELSE binding_activated_at END, binding_hash = CASE WHEN ${input.key} IN ('integration:agentmail','integration:moltbook','integration:moltbook-publish','integration:here-now','integration:daytona','integration:github') AND ${input.enabled} THEN ${bindingHash ?? null} ELSE binding_hash END WHERE owner = ${context.owner} AND key = ${input.key} AND version = ${input.version} RETURNING key, version, changed_at AS at`;
         if (!rows[0])
             throw new MiraFailure(
                 "CONFLICT",
@@ -277,12 +277,12 @@ export async function resumeMiraControls(
 ): Promise<void> {
     const owners = await query<
         { owner: string }[]
-    >`SELECT DISTINCT owner FROM mira_switches WHERE NOT enabled AND until <= ${now} AND (${owner ?? null}::text IS NULL OR owner = ${owner ?? null}) ORDER BY owner`;
+    >`SELECT DISTINCT owner FROM mira_switches WHERE NOT enabled AND COALESCE(skill_resume_at,until) <= ${now} AND (${owner ?? null}::text IS NULL OR owner = ${owner ?? null}) ORDER BY owner`;
     for (const account of owners) {
         await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${account.owner}`}, 0))`;
         const rows = await query<
             { owner: string; key: string }[]
-        >`SELECT owner, key FROM mira_switches WHERE owner = ${account.owner} AND NOT enabled AND until <= ${now} FOR UPDATE`;
+        >`SELECT owner, key FROM mira_switches WHERE owner = ${account.owner} AND NOT enabled AND COALESCE(skill_resume_at,until) <= ${now} FOR UPDATE`;
         for (const row of rows) {
             if (
                 row.key.startsWith("skill:") &&
@@ -310,7 +310,7 @@ export async function resumeMiraControls(
             }
             const [resumed] = await query<
                 { version: number; at: Date }[]
-            >`UPDATE mira_switches SET enabled = true, reason = NULL, changed_at = until, until = NULL, version = version + 1 WHERE owner = ${row.owner} AND key = ${row.key} RETURNING version, changed_at AS at`;
+            >`UPDATE mira_switches SET enabled = true, reason = NULL, changed_at = COALESCE(skill_resume_at,until), until = NULL, skill_resume_at = NULL, version = version + 1 WHERE owner = ${row.owner} AND key = ${row.key} RETURNING version, changed_at AS at`;
             await query`INSERT INTO mira_control_windows (owner, key, version, started_at) VALUES (${row.owner}, ${row.key}, ${resumed!.version}, ${resumed!.at})`;
             await resetOccurrences(query, row.owner, row.key, now.getTime());
             await auditMira(
@@ -391,6 +391,6 @@ export async function readMiraControlPage(context: MiraContext, after?: string) 
     }));
     const rows = await context.client<
         (MiraSwitch & { automationTitle: string | null })[]
-    >`WITH controls AS (SELECT key,enabled,reason,until,version FROM mira_switches WHERE owner=${context.owner} UNION ALL SELECT d.key,d.enabled,d.reason,NULL::timestamptz,1 FROM jsonb_to_recordset(${JSON.stringify(defaults)}::text::jsonb) AS d(key text,enabled boolean,reason text) WHERE NOT EXISTS(SELECT 1 FROM mira_switches s WHERE s.owner=${context.owner} AND s.key=d.key)) SELECT c.key,c.enabled,c.reason,c.until::text AS until,c.version,a.title AS "automationTitle" FROM controls c LEFT JOIN mira_automations a ON c.key='automation:'||a.id::text AND a.owner=${context.owner} WHERE (c.key NOT LIKE 'automation:%' OR (a.id IS NOT NULL AND a.deleted_at IS NULL)) AND (${after ?? null}::text IS NULL OR c.key>${after ?? null}) ORDER BY c.key LIMIT 50`;
+    >`WITH controls AS (SELECT key,enabled,reason,COALESCE(skill_resume_at,until) AS until,version FROM mira_switches WHERE owner=${context.owner} UNION ALL SELECT d.key,d.enabled,d.reason,NULL::timestamptz,1 FROM jsonb_to_recordset(${JSON.stringify(defaults)}::text::jsonb) AS d(key text,enabled boolean,reason text) WHERE NOT EXISTS(SELECT 1 FROM mira_switches s WHERE s.owner=${context.owner} AND s.key=d.key)) SELECT c.key,c.enabled,c.reason,c.until::text AS until,c.version,a.title AS "automationTitle" FROM controls c LEFT JOIN mira_automations a ON c.key='automation:'||a.id::text AND a.owner=${context.owner} WHERE (c.key NOT LIKE 'automation:%' OR (a.id IS NOT NULL AND a.deleted_at IS NULL)) AND (${after ?? null}::text IS NULL OR c.key>${after ?? null}) ORDER BY c.key LIMIT 50`;
     return { rows, nextCursor: rows.length === 50 ? rows.at(-1)!.key : null };
 }

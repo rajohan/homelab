@@ -5,6 +5,7 @@ import {
     Button,
     Card,
     ErrorNotice,
+    formatDateTime,
     LoadingState,
     SectionHeader,
 } from "@homelab/ui";
@@ -111,6 +112,9 @@ export function MiraSkills() {
                             skill.control.reason && (
                                 <p className="text-sm text-primary-300">
                                     {skill.control.reason}
+                                    {skill.control.until
+                                        ? ` · Resumes ${formatDateTime(skill.control.until)}`
+                                        : ""}
                                 </p>
                             )}
                     </section>

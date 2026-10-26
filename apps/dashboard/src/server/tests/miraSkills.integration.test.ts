@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { rejects } from "node:assert/strict";
 
 import { capabilities } from "@homelab/contracts/operations";
-import { resumeMiraControls } from "@homelab/mira/data/automations";
+import { readMiraControlPage, resumeMiraControls } from "@homelab/mira/data/automations";
 import { claimMiraRun } from "@homelab/mira/data/queue";
 import { miraSkillCatalogHash } from "@homelab/mira/skills/catalog";
 import * as v from "valibot";
@@ -247,6 +247,24 @@ test("skill activation and timed resume require a fresh receipt from the matchin
         await f.client`UPDATE mira_runtime_status SET ready=true`;
         await f.toggle(skill, true);
         await f.toggle(skill, false, new Date(Date.now() + 60_000).toISOString());
+        const resumeTime = new Date(Date.now() + 120_000);
+        // The parent executor selects expired controls exclusively through `until`.
+        // Skills must be invisible to that unchanged rollback query.
+        await f.toggle("autonomy", false, new Date(Date.now() + 60_000).toISOString());
+        const legacy = await f.client<{ key: string }[]>`
+            UPDATE mira_switches SET enabled=true,reason=NULL,changed_at=until,until=NULL,version=version+1
+            WHERE owner='operator' AND NOT enabled AND until <= ${resumeTime} RETURNING key`;
+        expect([...legacy]).toEqual([{ key: "autonomy" }]);
+        const pausedPage = await readMiraControlPage({
+            client: f.client,
+            owner: "operator",
+            actor: "operator",
+        });
+        expect(pausedPage.rows.find((row) => row.key === skill)?.until).not.toBeNull();
+        await rejects(
+            f.client`UPDATE mira_switches SET until=now() WHERE owner='operator' AND key=${skill}`,
+            /mira_switches_skill_resume/
+        );
         await f.client`UPDATE mira_runtime_status SET skill_catalog_hash='outdated'`;
         await f.client.begin((query) =>
             resumeMiraControls(query, new Date(Date.now() + 120_000), "operator")
@@ -261,6 +279,36 @@ test("skill activation and timed resume require a fresh receipt from the matchin
         expect(resumed.find((row) => row.key === skill)?.enabled).toBe(true);
         await f.client`DELETE FROM mira_runtime_status`;
         expect(await compatibility()).toBe("offline");
+    } finally {
+        await f.close();
+    }
+});
+
+test("skill pause migration preserves deadlines without exposing them to legacy resume queries", async () => {
+    const f = await operationFixture();
+    try {
+        await f.client`ALTER TABLE mira_switches DROP CONSTRAINT mira_switches_skill_resume`;
+        await f.client`ALTER TABLE mira_switches DROP COLUMN skill_resume_at`;
+        const until = new Date(Date.now() + 60_000);
+        await f.client`INSERT INTO mira_switches(owner,key,enabled,reason,until,version) VALUES
+            ('operator','skill:task-tracking',false,'Review guidance',${until},9),
+            ('operator','voice',false,'Review voice',${until},3)`;
+        const migration = await Bun.file(
+            new URL(
+                "../../../migrations/20261026094850_mira_skill_resume/migration.sql",
+                import.meta.url
+            )
+        ).text();
+        for (const statement of migration.split("--> statement-breakpoint"))
+            if (statement.trim()) await f.client.unsafe(statement);
+        const rows = await f.client<
+            { key: string; until: Date | null; resume: Date | null; version: number }[]
+        >`
+            SELECT key,until,skill_resume_at AS resume,version FROM mira_switches WHERE owner='operator' ORDER BY key`;
+        expect([...rows]).toEqual([
+            { key: "skill:task-tracking", until: null, resume: until, version: 9 },
+            { key: "voice", until, resume: null, version: 3 },
+        ]);
     } finally {
         await f.close();
     }

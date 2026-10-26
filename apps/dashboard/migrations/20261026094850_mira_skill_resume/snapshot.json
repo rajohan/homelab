@@ -1,0 +1,65 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "09a6cb00-d35a-412c-8c85-aa1f464aaa8f",
+    "prevIds": ["0357f680-8ea8-4a4e-9fa1-d8f12607fa84"],
+    "footprints": [
+        {
+            "statementType": "add_column",
+            "statementTarget": ["column", "public", "mira_switches", "skill_resume_at"],
+            "writes": [
+                "s|col|public.mira_switches.skill_resume_at",
+                "n|col|public.mira_switches.skill_resume_at",
+                "e|col|public.mira_switches.skill_resume_at"
+            ],
+            "reads": ["n|tbl|public.mira_switches", "n|sch|public"]
+        },
+        {
+            "statementType": "add_check",
+            "statementTarget": ["table", "public", "mira_switches"],
+            "writes": [
+                "s|ck|public.mira_switches.mira_switches_skill_resume",
+                "n|ck|public.mira_switches.mira_switches_skill_resume",
+                "e|ck|public.mira_switches.mira_switches_skill_resume",
+                "n|con|public.mira_switches.mira_switches_skill_resume"
+            ],
+            "reads": [
+                "n|tbl|public.mira_switches",
+                "n|sch|public",
+                "n|col|public.mira_switches.key",
+                "n|col|public.mira_switches.until",
+                "n|col|public.mira_switches.enabled",
+                "n|col|public.mira_switches.skill_resume_at"
+            ]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_switches",
+                "name": "skill_resume_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_switches",
+                "name": "mira_switches_skill_resume",
+                "value": "(\"key\" like 'skill:%' and \"until\" is null and (not \"enabled\" or \"skill_resume_at\" is null)) or (\"key\" not like 'skill:%' and \"skill_resume_at\" is null)",
+                "entityType": "checks"
+            }
+        }
+    ]
+}

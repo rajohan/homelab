@@ -16,6 +16,9 @@ skill never enables an integration, expands a tool set or approves an external a
 Activation and timed resumption require a fresh, ready executor with the same
 catalog digest. Its heartbeat binds that digest to its process identity, so an old
 executor after rollback cannot inherit a newer executor's compatibility receipt.
+Skill resume deadlines use a dedicated column while the legacy `until` stays null,
+with a database constraint enforcing that separation. Older executors cannot select
+these pauses for their generic resume loop.
 An offline or mismatched executor leaves preview available but activation disabled.
 Deploy the dashboard and executor from the same reviewed release.
 

@@ -2260,7 +2260,7 @@ function skillSummary(): MiraSkillSummary {
             enabled: false,
             version: 7,
             reason: "Paused for review",
-            until: null,
+            until: "2026-11-01T09:00:00.000Z",
         },
     };
 }
@@ -2301,7 +2301,7 @@ test("skill preview is available while paused and enabling sends the displayed c
     const cleanup = fixture(<MiraSkills />, false, query);
     try {
         const user = userEvent.setup();
-        expect(screen.getByText("Paused for review")).toBeInTheDocument();
+        expect(screen.getByText(/Paused for review.*Resumes/)).toBeInTheDocument();
         await user.click(screen.getByRole("button", { name: "View" }));
         expect(
             screen.getByRole("heading", { name: "Review task progress" })
@@ -2332,6 +2332,7 @@ test("skill preview is available while paused and enabling sends the displayed c
                             enabled: true,
                             version: 8,
                             reason: null,
+                            until: null,
                         },
                     },
                 ]
