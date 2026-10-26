@@ -15,11 +15,12 @@ import {
 } from "@homelab/ui";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Clock, Pause, Pencil, Play, Plus, Trash2 } from "lucide-react";
+import { Clock, Code2, Pause, Pencil, Play, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { api } from "../api/client";
 import { AutomationEditor } from "../features/mira/AutomationEditor";
+import { ImprovementPermission } from "../features/mira/ImprovementPermission";
 import { MiraDisableDialog } from "../features/mira/MiraDisableDialog";
 import { MiraIntegrations } from "../features/mira/MiraIntegrations";
 import { MiraRunHistory } from "../features/mira/MiraRunHistory";
@@ -35,6 +36,7 @@ export function MiraAutomations() {
     const [editing, setEditing] = useState<MiraAutomation | "new">();
     const [paused, setPaused] = useState<{ control: MiraSwitch; title: string }>();
     const [deleting, setDeleting] = useState<MiraAutomation>();
+    const [coding, setCoding] = useState<MiraAutomation>();
     const query = useInfiniteQuery({
         queryKey: ["operations", "mira", "automations"],
         initialPageParam: undefined as string | undefined,
@@ -170,6 +172,17 @@ export function MiraAutomations() {
                                                 icon: Pencil,
                                                 onSelect: () => setEditing(automation),
                                             },
+                                            ...(automation.kind === "improvement"
+                                                ? [
+                                                      {
+                                                          id: "coding",
+                                                          label: "Code permissions",
+                                                          icon: Code2,
+                                                          onSelect: () =>
+                                                              setCoding(automation),
+                                                      },
+                                                  ]
+                                                : []),
                                             ...(control
                                                 ? [
                                                       {
@@ -268,6 +281,12 @@ export function MiraAutomations() {
             )}
             {paused && (
                 <MiraDisableDialog {...paused} onClose={() => setPaused(undefined)} />
+            )}
+            {coding && (
+                <ImprovementPermission
+                    automation={coding}
+                    onClose={() => setCoding(undefined)}
+                />
             )}
             {deleting && (
                 <ConfirmDialog

@@ -33,6 +33,7 @@ import { DaytonaDetails } from "./DaytonaDetails";
 import { DaytonaEditor } from "./DaytonaEditor";
 import { DaytonaJobs } from "./DaytonaJobs";
 import { DaytonaRecovery } from "./DaytonaRecovery";
+import { ImprovementPermission } from "./ImprovementPermission";
 import { MailEditor } from "./MailEditor";
 import { MailReview } from "./MailReview";
 import { MiraRunTable } from "./MiraRunTable";
@@ -2038,5 +2039,202 @@ test("code history uses a bounded list and opens shared proposal review", async 
         );
     } finally {
         cleanup();
+    }
+});
+
+test("automatic coding permission displays its scope and sends the exact reviewed versions", async () => {
+    const automation = {
+        id: "11111111-1111-4111-8111-111111111111",
+        title: "Dashboard improvement",
+        kind: "improvement" as const,
+        prompt: "Inspect frontend work.",
+        schedule: { kind: "interval" as const, intervalSeconds: 3600 },
+        budgetSeconds: 900,
+        delivery: "reports" as const,
+        version: 4,
+        nextRunAt: null,
+    };
+    const query = new QueryClient({
+        defaultOptions: { queries: { enabled: false, retry: false } },
+    });
+    query.setQueryData(["operations", "mira", "improvement-grant", automation.id], {
+        automationId: automation.id,
+        version: 2,
+        enabled: false,
+        current: true,
+        available: true,
+    });
+    const requested: unknown[] = [];
+    let closed = 0;
+    const request = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+            (_target: Parameters<typeof fetch>[0], init?: RequestInit) => {
+                if (typeof init?.body !== "string")
+                    throw new Error("Expected permission mutation.");
+                requested.push(
+                    (JSON.parse(init.body) as { "0": { json: unknown } })["0"].json
+                );
+                return Promise.resolve(
+                    Response.json([{ result: { data: serialize({}) } }])
+                );
+            },
+            { preconnect: fetch.preconnect }
+        )
+    );
+    const cleanup = fixture(
+        <ImprovementPermission
+            automation={automation}
+            onClose={() => {
+                closed++;
+            }}
+        />,
+        false,
+        query
+    );
+    try {
+        expect(screen.getByText(/credits or billing/)).toBeInTheDocument();
+        expect(screen.getByText(/At most two attempts/)).toBeInTheDocument();
+        await userEvent
+            .setup()
+            .click(screen.getByRole("button", { name: "Allow code changes" }));
+        await waitFor(() => expect(closed).toBe(1));
+        expect(requested).toEqual([
+            {
+                automationId: automation.id,
+                automationVersion: 4,
+                version: 2,
+                enabled: true,
+                policyVersion: 1,
+            },
+        ]);
+    } finally {
+        cleanup();
+        request.mockRestore();
+    }
+});
+
+test("stale coding permission can be revoked while unavailable integrations prevent renewal", async () => {
+    const automation = {
+        id: "11111111-1111-4111-8111-111111111111",
+        title: "Dashboard improvement",
+        kind: "improvement" as const,
+        prompt: "Inspect frontend work.",
+        schedule: { kind: "interval" as const, intervalSeconds: 3600 },
+        budgetSeconds: 900,
+        delivery: "reports" as const,
+        version: 4,
+        nextRunAt: null,
+    };
+    const query = new QueryClient({
+        defaultOptions: { queries: { enabled: false, retry: false } },
+    });
+    query.setQueryData(["operations", "mira", "improvement-grant", automation.id], {
+        automationId: automation.id,
+        version: 2,
+        enabled: true,
+        current: false,
+        available: false,
+    });
+    const requested: unknown[] = [];
+    const request = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+            (_target: Parameters<typeof fetch>[0], init?: RequestInit) => {
+                if (typeof init?.body !== "string")
+                    throw new Error("Expected permission mutation.");
+                requested.push(
+                    (JSON.parse(init.body) as { "0": { json: unknown } })["0"].json
+                );
+                return Promise.resolve(
+                    Response.json([{ result: { data: serialize({}) } }])
+                );
+            },
+            { preconnect: fetch.preconnect }
+        )
+    );
+    const cleanup = fixture(
+        <ImprovementPermission automation={automation} onClose={() => {}} />,
+        false,
+        query
+    );
+    try {
+        expect(screen.getByRole("button", { name: "Renew permission" })).toBeDisabled();
+        await userEvent
+            .setup()
+            .click(screen.getByRole("button", { name: "Revoke permission" }));
+        await waitFor(() => expect(requested).toHaveLength(1));
+        expect(requested[0]).toMatchObject({ enabled: false, version: 2 });
+    } finally {
+        cleanup();
+        request.mockRestore();
+    }
+});
+
+test("blocked automatic attempt requires a review note and submits only its exact identity", async () => {
+    const automation = {
+        id: "11111111-1111-4111-8111-111111111111",
+        title: "Dashboard improvement",
+        kind: "improvement" as const,
+        prompt: "Inspect frontend work.",
+        schedule: { kind: "interval" as const, intervalSeconds: 3600 },
+        budgetSeconds: 900,
+        delivery: "reports" as const,
+        version: 4,
+        nextRunAt: null,
+    };
+    const query = new QueryClient({
+        defaultOptions: { queries: { enabled: false, retry: false } },
+    });
+    query.setQueryData(["operations", "mira", "improvement-grant", automation.id], {
+        automationId: automation.id,
+        version: 2,
+        enabled: true,
+        current: false,
+        available: false,
+        blocked: {
+            id: "22222222-2222-4222-8222-222222222222",
+            canClose: true,
+            reason: "Review the existing attempt first.",
+        },
+    });
+    const requested: unknown[] = [];
+    const request = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+            (_target: Parameters<typeof fetch>[0], init?: RequestInit) => {
+                if (typeof init?.body !== "string")
+                    throw new Error("Expected permission mutation.");
+                requested.push(
+                    (JSON.parse(init.body) as { "0": { json: unknown } })["0"].json
+                );
+                return Promise.resolve(
+                    Response.json([{ result: { data: serialize({}) } }])
+                );
+            },
+            { preconnect: fetch.preconnect }
+        )
+    );
+    const cleanup = fixture(
+        <ImprovementPermission automation={automation} onClose={() => {}} />,
+        false,
+        query
+    );
+    try {
+        const user = userEvent.setup();
+        expect(
+            screen.getByRole("button", { name: "Close reviewed attempt" })
+        ).toBeDisabled();
+        await user.type(
+            screen.getByLabelText("Review note"),
+            "Inspected the recorded GitHub outcome."
+        );
+        await user.click(screen.getByRole("button", { name: "Close reviewed attempt" }));
+        await waitFor(() => expect(requested).toHaveLength(1));
+        expect(requested[0]).toEqual({
+            id: "22222222-2222-4222-8222-222222222222",
+            reviewed: true,
+            reason: "Inspected the recorded GitHub outcome.",
+        });
+    } finally {
+        cleanup();
+        request.mockRestore();
     }
 });

@@ -6,7 +6,8 @@
         "./data/*": "./src/server/data/*.ts",
         "./files/*": "./src/server/files/*.ts",
         "./runtime/*": "./src/server/runtime/*.ts",
-        "./integrations/*": "./src/server/integrations/*.ts"
+        "./integrations/*": "./src/server/integrations/*.ts",
+        "./improvement/*": "./src/server/improvement/*.ts"
     },
     "dependencies": {
         "@daytona/api-client": "0.226.1",

@@ -30,7 +30,7 @@ const presets: {
         kind: "improvement",
         schedule: { kind: "cron", expression: "30 9,18 * * *" },
         budget: 900,
-        prompt: "Review Homelab tasks and existing PRs. Choose at most one worthwhile bounded dashboard improvement. Use the qualified isolated runner, pinned Bun, shared design and components, and Mira's verified GitHub identity. Run the required checks and open at most one small PR. Never merge, deploy, restart hosts, access secrets or incur new spending. If the required tools or authority are unavailable, record the blocker honestly. Save an improvement report.",
+        prompt: "Review Homelab tasks, existing PRs and mira_improvement_status. Choose at most one worthwhile frontend improvement within the explicit operator coding permission. Read current main, applicable AGENTS.md and existing shared components through the GitHub tools. Use mira_improvement_submit for one bounded edit plan; the server runs the fixed isolated check and opens a draft PR only on success. Submission is queued work, not a completed check or PR. Preserve the existing design and pinned Bun. Never merge, deploy, restart hosts, access secrets or spend outside the explicit coding permission. If authority or qualified tools are unavailable, record the blocker honestly in an improvement report. The server records the submitted workflow outcome separately.",
     },
     {
         title: "Heartbeat",

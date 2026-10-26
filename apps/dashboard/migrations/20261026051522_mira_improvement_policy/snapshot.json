@@ -1,0 +1,880 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "80ec042a-674e-4b5c-861f-19a11ce32a75",
+    "prevIds": ["9b09d7d8-83a1-41a9-905a-bc72fb04e978"],
+    "footprints": [
+        {
+            "statementType": "create_table",
+            "statementTarget": ["table", "public", "mira_improvement_grants"],
+            "writes": [
+                "s|tbl|public.mira_improvement_grants",
+                "n|tbl|public.mira_improvement_grants",
+                "e|tbl|public.mira_improvement_grants",
+                "n|rel|public.mira_improvement_grants",
+                "n|type|public.mira_improvement_grants",
+                "n|rel|public.mira_improvement_grants_pkey"
+            ],
+            "reads": ["n|sch|public"]
+        },
+        {
+            "statementType": "create_table",
+            "statementTarget": ["table", "public", "mira_improvements"],
+            "writes": [
+                "s|tbl|public.mira_improvements",
+                "n|tbl|public.mira_improvements",
+                "e|tbl|public.mira_improvements",
+                "n|rel|public.mira_improvements",
+                "n|type|public.mira_improvements",
+                "n|rel|public.mira_improvements_pkey",
+                "n|rel|public.mira_improvements_run_id_key"
+            ],
+            "reads": ["n|sch|public"]
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": [
+                "index",
+                "public",
+                "mira_improvements",
+                "mira_improvements_queue"
+            ],
+            "writes": [
+                "s|idx|public.mira_improvements_queue",
+                "n|idx|public.mira_improvements_queue",
+                "e|idx|public.mira_improvements_queue",
+                "n|rel|public.mira_improvements_queue"
+            ],
+            "reads": [
+                "n|tbl|public.mira_improvements",
+                "n|sch|public",
+                "n|col|public.mira_improvements.state",
+                "n|col|public.mira_improvements.id"
+            ]
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": [
+                "index",
+                "public",
+                "mira_improvements",
+                "mira_improvements_owner"
+            ],
+            "writes": [
+                "s|idx|public.mira_improvements_owner",
+                "n|idx|public.mira_improvements_owner",
+                "e|idx|public.mira_improvements_owner",
+                "n|rel|public.mira_improvements_owner"
+            ],
+            "reads": [
+                "n|tbl|public.mira_improvements",
+                "n|sch|public",
+                "n|col|public.mira_improvements.owner",
+                "n|col|public.mira_improvements.id"
+            ]
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": [
+                "index",
+                "public",
+                "mira_improvements",
+                "mira_improvements_one_active"
+            ],
+            "writes": [
+                "s|idx|public.mira_improvements_one_active",
+                "n|idx|public.mira_improvements_one_active",
+                "e|idx|public.mira_improvements_one_active",
+                "n|rel|public.mira_improvements_one_active"
+            ],
+            "reads": ["n|tbl|public.mira_improvements", "n|sch|public"]
+        },
+        {
+            "statementType": "create_fk",
+            "statementTarget": ["table", "public", "mira_improvement_grants"],
+            "writes": [
+                "s|fk|public.mira_improvement_grants.mira_improvement_grants_automation_id_mira_automations_id_fkey",
+                "n|fk|public.mira_improvement_grants.mira_improvement_grants_automation_id_mira_automations_id_fkey",
+                "e|fk|public.mira_improvement_grants.mira_improvement_grants_automation_id_mira_automations_id_fkey",
+                "n|con|public.mira_improvement_grants.mira_improvement_grants_automation_id_mira_automations_id_fkey"
+            ],
+            "reads": [
+                "n|tbl|public.mira_improvement_grants",
+                "n|sch|public",
+                "n|tbl|public.mira_automations",
+                "n|sch|public",
+                "n|col|public.mira_improvement_grants.automation_id",
+                "n|col|public.mira_automations.id",
+                "e|uniqueness|public.mira_automations.id"
+            ]
+        },
+        {
+            "statementType": "create_fk",
+            "statementTarget": ["table", "public", "mira_improvements"],
+            "writes": [
+                "s|fk|public.mira_improvements.mira_improvements_run_id_mira_runs_id_fkey",
+                "n|fk|public.mira_improvements.mira_improvements_run_id_mira_runs_id_fkey",
+                "e|fk|public.mira_improvements.mira_improvements_run_id_mira_runs_id_fkey",
+                "n|con|public.mira_improvements.mira_improvements_run_id_mira_runs_id_fkey"
+            ],
+            "reads": [
+                "n|tbl|public.mira_improvements",
+                "n|sch|public",
+                "n|tbl|public.mira_runs",
+                "n|sch|public",
+                "n|col|public.mira_improvements.run_id",
+                "n|col|public.mira_runs.id",
+                "e|uniqueness|public.mira_runs.id"
+            ]
+        },
+        {
+            "statementType": "create_fk",
+            "statementTarget": ["table", "public", "mira_improvements"],
+            "writes": [
+                "s|fk|public.mira_improvements.mira_improvements_conversation_id_mira_conversations_id_fkey",
+                "n|fk|public.mira_improvements.mira_improvements_conversation_id_mira_conversations_id_fkey",
+                "e|fk|public.mira_improvements.mira_improvements_conversation_id_mira_conversations_id_fkey",
+                "n|con|public.mira_improvements.mira_improvements_conversation_id_mira_conversations_id_fkey"
+            ],
+            "reads": [
+                "n|tbl|public.mira_improvements",
+                "n|sch|public",
+                "n|tbl|public.mira_conversations",
+                "n|sch|public",
+                "n|col|public.mira_improvements.conversation_id",
+                "n|col|public.mira_conversations.id",
+                "e|uniqueness|public.mira_conversations.id"
+            ]
+        },
+        {
+            "statementType": "create_fk",
+            "statementTarget": ["table", "public", "mira_improvements"],
+            "writes": [
+                "s|fk|public.mira_improvements.mira_improvements_automation_id_mira_automations_id_fkey",
+                "n|fk|public.mira_improvements.mira_improvements_automation_id_mira_automations_id_fkey",
+                "e|fk|public.mira_improvements.mira_improvements_automation_id_mira_automations_id_fkey",
+                "n|con|public.mira_improvements.mira_improvements_automation_id_mira_automations_id_fkey"
+            ],
+            "reads": [
+                "n|tbl|public.mira_improvements",
+                "n|sch|public",
+                "n|tbl|public.mira_automations",
+                "n|sch|public",
+                "n|col|public.mira_improvements.automation_id",
+                "n|col|public.mira_automations.id",
+                "e|uniqueness|public.mira_automations.id"
+            ]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "name": "mira_improvement_grants",
+                "isRlsEnabled": false,
+                "entityType": "tables"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "name": "mira_improvements",
+                "isRlsEnabled": false,
+                "entityType": "tables"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvement_grants",
+                "name": "automation_id",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvement_grants",
+                "name": "owner",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvement_grants",
+                "name": "enabled",
+                "type": "boolean",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "false",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvement_grants",
+                "name": "version",
+                "type": "integer",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "1",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvement_grants",
+                "name": "automation_version",
+                "type": "integer",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvement_grants",
+                "name": "binding_hash",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvement_grants",
+                "name": "approved_by",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvement_grants",
+                "name": "updated_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "now()",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvements",
+                "name": "id",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvements",
+                "name": "owner",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvements",
+                "name": "run_id",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvements",
+                "name": "conversation_id",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvements",
+                "name": "automation_id",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvements",
+                "name": "grant_version",
+                "type": "integer",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvements",
+                "name": "binding_hash",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvements",
+                "name": "automation_control",
+                "type": "integer",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvements",
+                "name": "autonomy_control",
+                "type": "integer",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvements",
+                "name": "policy_version",
+                "type": "integer",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvements",
+                "name": "daytona_control",
+                "type": "integer",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvements",
+                "name": "github_control",
+                "type": "integer",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvements",
+                "name": "state",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "'queued'",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvements",
+                "name": "content",
+                "type": "jsonb",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvements",
+                "name": "content_hash",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvements",
+                "name": "cloud_hash",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvements",
+                "name": "publication_hash",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvements",
+                "name": "lease_token",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvements",
+                "name": "lease_expires_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvements",
+                "name": "message",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvements",
+                "name": "report_id",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvements",
+                "name": "created_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "now()",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvements",
+                "name": "updated_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "now()",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvements",
+                "name": "mira_improvements_queue",
+                "nameExplicit": true,
+                "columns": [
+                    {
+                        "value": "state",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    },
+                    {
+                        "value": "id",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    }
+                ],
+                "isUnique": false,
+                "where": null,
+                "with": "",
+                "method": "btree",
+                "concurrently": false,
+                "entityType": "indexes"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvements",
+                "name": "mira_improvements_owner",
+                "nameExplicit": true,
+                "columns": [
+                    {
+                        "value": "owner",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    },
+                    {
+                        "value": "id",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    }
+                ],
+                "isUnique": false,
+                "where": null,
+                "with": "",
+                "method": "btree",
+                "concurrently": false,
+                "entityType": "indexes"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvements",
+                "name": "mira_improvements_one_active",
+                "nameExplicit": true,
+                "columns": [
+                    {
+                        "value": "(true)",
+                        "isExpression": true,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    }
+                ],
+                "isUnique": true,
+                "where": "\"state\" IN ('queued','checking','publishing')",
+                "with": "",
+                "method": "btree",
+                "concurrently": false,
+                "entityType": "indexes"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvement_grants",
+                "name": "mira_improvement_grants_automation_id_mira_automations_id_fkey",
+                "nameExplicit": false,
+                "columns": ["automation_id"],
+                "schemaTo": "public",
+                "tableTo": "mira_automations",
+                "columnsTo": ["id"],
+                "onUpdate": "NO ACTION",
+                "onDelete": "NO ACTION",
+                "entityType": "fks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvements",
+                "name": "mira_improvements_run_id_mira_runs_id_fkey",
+                "nameExplicit": false,
+                "columns": ["run_id"],
+                "schemaTo": "public",
+                "tableTo": "mira_runs",
+                "columnsTo": ["id"],
+                "onUpdate": "NO ACTION",
+                "onDelete": "NO ACTION",
+                "entityType": "fks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvements",
+                "name": "mira_improvements_conversation_id_mira_conversations_id_fkey",
+                "nameExplicit": false,
+                "columns": ["conversation_id"],
+                "schemaTo": "public",
+                "tableTo": "mira_conversations",
+                "columnsTo": ["id"],
+                "onUpdate": "NO ACTION",
+                "onDelete": "NO ACTION",
+                "entityType": "fks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvements",
+                "name": "mira_improvements_automation_id_mira_automations_id_fkey",
+                "nameExplicit": false,
+                "columns": ["automation_id"],
+                "schemaTo": "public",
+                "tableTo": "mira_automations",
+                "columnsTo": ["id"],
+                "onUpdate": "NO ACTION",
+                "onDelete": "NO ACTION",
+                "entityType": "fks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvement_grants",
+                "name": "mira_improvement_grants_pkey",
+                "columns": ["automation_id"],
+                "nameExplicit": false,
+                "entityType": "pks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvements",
+                "name": "mira_improvements_pkey",
+                "columns": ["id"],
+                "nameExplicit": false,
+                "entityType": "pks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvements",
+                "name": "mira_improvements_run_id_key",
+                "nameExplicit": false,
+                "columns": ["run_id"],
+                "nullsNotDistinct": false,
+                "entityType": "uniques"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_improvements",
+                "name": "mira_improvements_state",
+                "value": "\"state\" IN ('queued','checking','publishing','published','failed','cancelled','needs_attention')",
+                "entityType": "checks"
+            }
+        }
+    ]
+}

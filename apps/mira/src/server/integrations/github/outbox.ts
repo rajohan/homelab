@@ -3,6 +3,7 @@ import type { SQL } from "bun";
 import { codePermission, miraCodeHash, readMiraCode } from "../../data/code";
 import { readCodeSource } from "../../data/codeSource";
 import { MiraFailure } from "../../data/context";
+import { improvementJobAllowed } from "../../improvement/policy";
 import { githubBindingHash, type GitHubConfiguration } from "./configuration";
 import { GitHubPublisher } from "./publisher";
 
@@ -38,7 +39,11 @@ export async function reconcileMiraCode(
             const permission = matches
                 ? await codePermission(query, configuration)
                 : null;
-            if (!row.fresh || permission !== row.control)
+            if (
+                !row.fresh ||
+                permission !== row.control ||
+                !(await improvementJobAllowed(query, candidate.id, "publication"))
+            )
                 await query`UPDATE mira_code_publications SET state='draft',approved_version=NULL,approved_by=NULL,approved_at=NULL,control_version=NULL,message=${review},version=version+1,updated_at=now() WHERE id=${candidate.id}`;
         });
 }
@@ -74,6 +79,8 @@ export async function dispatchMiraCode(
             { id: string }[]
         >`SELECT id FROM mira_code_publications WHERE owner=${configuration.owner} AND binding_hash=${githubBindingHash(configuration)} AND state='queued' AND control_version=${permission} AND approved_at>clock_timestamp()-interval '15 minutes' ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED`;
         if (!candidate) return null;
+        if (!(await improvementJobAllowed(query, candidate.id, "publication")))
+            return null;
         const row = await readMiraCode(query, context.owner, candidate.id);
         let bytes: Uint8Array;
         try {
@@ -112,6 +119,7 @@ export async function dispatchMiraCode(
             >`SELECT id FROM mira_code_publications WHERE id=${claim.row.id} AND owner=${context.owner} AND state='publishing' AND attempt_token=${claim.token} AND content_hash=${claim.row.contentHash} AND binding_hash=${githubBindingHash(configuration)} AND approved_at>clock_timestamp()-interval '15 minutes' FOR UPDATE`;
             if (
                 !live ||
+                !(await improvementJobAllowed(query, claim.row.id, "publication")) ||
                 (await codePermission(query, configuration)) !== claim.permission
             )
                 throw new MiraFailure("FORBIDDEN", "Code publication consent changed.");

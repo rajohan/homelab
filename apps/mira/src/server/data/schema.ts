@@ -729,3 +729,62 @@ export const miraCodePublications = pgTable(
         ),
     ]
 );
+
+export const miraImprovementGrants = pgTable("mira_improvement_grants", {
+    automationId: uuid("automation_id")
+        .primaryKey()
+        .references(() => miraAutomations.id),
+    owner: text().notNull(),
+    enabled: boolean().notNull().default(false),
+    version: integer().notNull().default(1),
+    automationVersion: integer("automation_version").notNull(),
+    bindingHash: text("binding_hash"),
+    approvedBy: text("approved_by").notNull(),
+    updatedAt: time("updated_at").notNull().defaultNow(),
+});
+export const miraImprovements = pgTable(
+    "mira_improvements",
+    {
+        id: uuid().primaryKey(),
+        owner: text().notNull(),
+        runId: uuid("run_id")
+            .notNull()
+            .unique()
+            .references(() => miraRuns.id),
+        conversationId: uuid("conversation_id")
+            .notNull()
+            .references(() => miraConversations.id),
+        automationId: uuid("automation_id")
+            .notNull()
+            .references(() => miraAutomations.id),
+        grantVersion: integer("grant_version").notNull(),
+        bindingHash: text("binding_hash").notNull(),
+        automationControl: integer("automation_control").notNull(),
+        autonomyControl: integer("autonomy_control").notNull(),
+        policyVersion: integer("policy_version").notNull(),
+        daytonaControl: integer("daytona_control").notNull(),
+        githubControl: integer("github_control").notNull(),
+        state: text().notNull().default("queued"),
+        content: jsonb().notNull(),
+        contentHash: text("content_hash").notNull(),
+        cloudHash: text("cloud_hash"),
+        publicationHash: text("publication_hash"),
+        leaseToken: uuid("lease_token"),
+        leaseExpiresAt: time("lease_expires_at"),
+        message: text(),
+        reportId: uuid("report_id"),
+        createdAt: time("created_at").notNull().defaultNow(),
+        updatedAt: time("updated_at").notNull().defaultNow(),
+    },
+    (t) => [
+        index("mira_improvements_queue").on(t.state, t.id),
+        index("mira_improvements_owner").on(t.owner, t.id),
+        uniqueIndex("mira_improvements_one_active")
+            .on(sql`(true)`)
+            .where(sql`${t.state} IN ('queued','checking','publishing')`),
+        check(
+            "mira_improvements_state",
+            sql`${t.state} IN ('queued','checking','publishing','published','failed','cancelled','needs_attention')`
+        ),
+    ]
+);
