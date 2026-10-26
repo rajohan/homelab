@@ -149,8 +149,17 @@ export async function requestMiraComputerAccess(
                 "The selected run is no longer available for computer access."
             );
         const id = Bun.randomUUIDv7();
-        await query`INSERT INTO mira_computer_access(id,owner,computer_id,computer_version,connection_id,run_id,run_lease,controls,mode,expires_at,created_at)
-            VALUES(${id},${context.owner},${request.computerId},${request.computerVersion},${computer.connectionId},${request.runId},${run.lease},${JSON.stringify(run.controls)}::text::jsonb,${request.mode},${run.expiresAt},clock_timestamp())`;
+        const [inserted] = await query<{ id: string }[]>`
+            WITH timing AS MATERIALIZED (SELECT clock_timestamp() AS at)
+            INSERT INTO mira_computer_access(id,owner,computer_id,computer_version,connection_id,run_id,run_lease,controls,mode,expires_at,created_at)
+            SELECT ${id},${context.owner},${request.computerId},${request.computerVersion},${computer.connectionId},${request.runId},${run.lease},${JSON.stringify(run.controls)}::text::jsonb,${request.mode},
+                least(${run.expiresAt}::timestamptz,timing.at+interval '5 minutes'),timing.at
+            FROM timing WHERE ${run.expiresAt}::timestamptz>timing.at RETURNING id`;
+        if (!inserted)
+            throw new MiraFailure(
+                "PRECONDITION_FAILED",
+                "Computer access expired before it could be requested."
+            );
         await auditMira(query, context, "computer.access_requested", id);
         return summary((await readAccess(query, context.owner, id))!);
     });

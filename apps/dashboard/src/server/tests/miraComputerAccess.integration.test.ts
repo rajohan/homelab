@@ -571,3 +571,33 @@ test("requesting access refuses an ended or foreign run and races safely with de
         await f.close();
     }
 });
+
+test("a deadline elapsed between validation and insertion returns a public precondition without a partial grant", async () => {
+    for (const expires of ["run", "credential"]) {
+        const f = await fixture();
+        try {
+            // Delay inside PostgreSQL after the earlier eligibility reads, before INSERT evaluates its timestamps.
+            await f.client`CREATE SEQUENCE synthetic_access_insert_attempt`;
+            await f.client`CREATE FUNCTION synthetic_access_insert_delay() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM nextval('synthetic_access_insert_attempt'); PERFORM pg_sleep(1.25); RETURN NULL; END; $$`;
+            await f.client`CREATE TRIGGER synthetic_access_insert_delay BEFORE INSERT ON mira_computer_access FOR EACH STATEMENT EXECUTE FUNCTION synthetic_access_insert_delay()`;
+            await (expires === "run"
+                ? f.client`UPDATE mira_runs SET started_at=clock_timestamp()-budget_seconds*interval '1 second'+interval '1 second' WHERE id=${f.run.id}`
+                : f.client`UPDATE mira_computers SET expires_at=clock_timestamp()+interval '1 second' WHERE id=${f.pair.id}`);
+            await rejects(f.api.computers.access.request(f.request), {
+                code: "PRECONDITION_FAILED",
+                message: "Computer access expired before it could be requested.",
+            });
+            const [attempt] = await f.client<
+                { is_called: boolean }[]
+            >`SELECT is_called FROM synthetic_access_insert_attempt`;
+            expect(attempt!.is_called).toBe(true);
+            expect(await f.api.computers.access.list()).toEqual([]);
+            const audit = await f.client<
+                { id: string }[]
+            >`SELECT id FROM mira_audit WHERE action='computer.access_requested'`;
+            expect(audit).toHaveLength(0);
+        } finally {
+            await f.close();
+        }
+    }
+}, 10_000);
