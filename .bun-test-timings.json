@@ -77,6 +77,8 @@
     "apps/mira/src/server/visualQualification.test.ts": 9,
     "apps/mira/src/server/computer/native.test.ts": 14,
     "apps/mira/src/server/computer/policy.test.ts": 1,
-    "apps/mira/src/server/computer/session.test.ts": 6
+    "apps/mira/src/server/computer/session.test.ts": 6,
+    "apps/mira/src/server/computer/process.test.ts": 11229,
+    "apps/mira/src/server/computer/child.test.ts": 41
   }
 }

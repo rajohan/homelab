@@ -1,3 +1,4 @@
+import { computerChildEnvironment } from "../computer/process";
 import { agentMailReadConfiguration } from "../integrations/agentmail/configuration";
 import { daytonaExecutionConfiguration } from "../integrations/daytona/configuration";
 import { githubConfiguration } from "../integrations/github/configuration";
@@ -59,4 +60,12 @@ export function sandboxSmokeEnvironment(): Record<string, string> {
         PATH: process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin",
         HOME: "/nonexistent",
     };
+}
+
+/**
+ * Read the interactive host environment for a supervised native computer child.
+ * @returns Only explicit OS and display variables; no model or provider credentials.
+ */
+export function computerEnvironment(): Record<string, string> {
+    return computerChildEnvironment(process.env);
 }
