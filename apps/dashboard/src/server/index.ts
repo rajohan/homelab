@@ -17,6 +17,7 @@ import {
 } from "./http/responses";
 import { createDashboardAuthentication } from "./identity/authentication";
 import { agentMailReceiverHeartbeat, agentMailWebhookReceiver } from "./mira/agentmail";
+import { miraComputerReceiver } from "./mira/computerReceiver";
 import { miraFileRequest } from "./mira/files";
 import { OperationFailure } from "./operations/errors";
 import { createOperationsRuntime } from "./operations/runtime";
@@ -43,12 +44,20 @@ export function startDashboardServer(options: DashboardServerOptions = {}) {
         ? createOperationsRuntime(operationalConfiguration)
         : undefined;
 
+    const receiveComputer = miraComputerReceiver(
+        authentication ? operations?.client : undefined
+    );
     const receiveAgentMail = agentMailWebhookReceiver(operations);
     const stopAgentMailHeartbeat = agentMailReceiverHeartbeat(operations);
 
     async function api(incoming: Request): Promise<Response> {
         try {
             const incomingPath = new URL(incoming.url).pathname;
+            if (
+                incomingPath === "/api/mira/computers" ||
+                incomingPath.startsWith("/api/mira/computers/")
+            )
+                return await receiveComputer(incoming);
             if (incomingPath === "/api/mira/hooks/agentmail")
                 return await receiveAgentMail(incoming);
             if (

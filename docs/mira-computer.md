@@ -22,6 +22,16 @@ Both ends enforce five-minute total and one-minute idle limits. Parent pipe loss
 
 The child receives only explicitly selected OS/display variables. Provider tokens, database credentials, GitHub credentials, preload flags and other environment variables are omitted, and Bun dotenv loading is disabled. Display variables necessarily convey local desktop access. This is process supervision and driver scoping, **not an OS sandbox**: it does not remove the user's filesystem or network permissions. The current source entrypoint is qualified only in the disposable image; packaging, signed pairing, OS readiness checks and production activation remain separate work.
 
+## Computer pairing foundation
+
+Computer enrollment belongs to the signed-in Homelab operator. Creating or revoking a pairing requires the existing recent human/MFA verification, and machine principals cannot call these management procedures. A ticket expires after ten minutes and can be consumed exactly once. Only its SHA-256 verifier is stored. Successful enrollment replaces it with a distinct, computer-only credential that expires after thirty days; a lost enrollment response requires a new ticket. No credential or verifier is returned by list APIs or copied into audit records.
+
+The companion initiates outbound HTTPS requests to `/api/mira/computers/enroll`, `/connect` and `/heartbeat`. Credentials belong only in the Authorization header, never URLs, browser cookies, logs or model context. The machine endpoint rejects browser Origin/Cookie headers and accepts only bounded JSON bodies with a five-second read deadline and eight concurrent receivers. Public routing must terminate TLS; the future companion must enforce HTTPS and refuse redirects.
+
+A connection has a server-issued generation, fifteen-second heartbeat cadence and forty-five-second lease. A new connection invalidates the previous generation; stale, duplicate or expired heartbeats cannot restore it. Revocation atomically removes both credential verifiers and the connection. Ticket creation is serialized per owner, with at most twenty live enrollments/computers and twenty tickets per hour. Metadata lists contain only the current owner's fifty most relevant records.
+
+**Pairing and a fresh heartbeat do not authorize input or prove the desktop is ready.** Every machine receipt explicitly reports `controlAllowed: false`. No model tools, window selection, screenshot or input endpoints are registered by this foundation. Companion distribution, the pairing UI, authenticated run grants, local stop/takeover, OS readiness, process-tree ownership and update qualification remain required before activation. Installation/platform/version fields are self-reported metadata, not a trust attestation.
+
 ## Repeatable qualification
 
 Run `bun run test:computer` on a Docker-capable development host. The command builds the repository's fixture image and runs it with no network, no host desktop/device mounts, no capabilities, no elevated privileges and a read-only filesystem with bounded temporary storage. The SDK remains an ordinary repository dependency, covered by lockfile and dependency updates; the disposable image is not a new deployed service.
