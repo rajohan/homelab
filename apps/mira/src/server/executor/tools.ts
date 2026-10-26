@@ -36,7 +36,11 @@ import type { AgentMailReadConfiguration } from "../integrations/agentmail/confi
 import { createAgentMailTools } from "../integrations/agentmail/tools";
 import type { DaytonaBinding } from "../integrations/daytona/configuration";
 import { createDaytonaTools } from "../integrations/daytona/tools";
-import type { GitHubBinding } from "../integrations/github/configuration";
+import type {
+    GitHubBinding,
+    GitHubConfiguration,
+} from "../integrations/github/configuration";
+import { createGitHubReadTools } from "../integrations/github/readTools";
 import { createGitHubTools } from "../integrations/github/tools";
 import type { HereNowReadConfiguration } from "../integrations/herenow/configuration";
 import { createHereNowTools } from "../integrations/herenow/tools";
@@ -73,7 +77,7 @@ const object = (properties: Record<string, unknown>, required: string[] = []) =>
  * @param agentMail - Optional provisioned inbox for checked mail reads and local drafts; sending requires separate human approval.
  * @param hereNow - Optional scoped website metadata settings; credentials stay in the executor.
  * @param moltbook - Optional social read settings, retained only by the service.
- * @param github - Nonsecret GitHub mapping for local code proposals, never publishing credentials.
+ * @param github - Optional GitHub mapping and dedicated read credential, retained only in the service closure.
  * @param daytona - Nonsecret cloud job mapping; model tools cannot execute or approve.
  * @returns The fixed tool declarations for this conversation and their checked handlers.
  */
@@ -85,7 +89,7 @@ export function createMiraTools(
     moltbook?: MoltbookReadConfiguration,
     hereNow?: HereNowReadConfiguration,
     daytona?: DaytonaBinding,
-    github?: GitHubBinding
+    github?: GitHubBinding | GitHubConfiguration
 ): RuntimeTool[] {
     const context: MiraContext = {
         client,
@@ -437,6 +441,11 @@ export function createMiraTools(
         ...createDaytonaTools(client, run, daytona),
         ...createHereNowTools(client, run, hereNow),
         ...createGitHubTools(client, run, github),
+        ...createGitHubReadTools(
+            client,
+            run,
+            github && "token" in github ? github : undefined
+        ),
     ];
     return definitions.map(
         ({

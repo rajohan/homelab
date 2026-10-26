@@ -294,6 +294,7 @@ test("pilot configuration separates secrets, validates absolute paths and omits 
         PATH: "runtime",
         OPENAI_API_KEY: "secret",
         GH_TOKEN: "secret",
+        HOMELAB_MIRA_GITHUB_TOKEN: "dedicated-mira-secret",
         CODEX_HOME: "other",
     });
     expect(environment).toEqual({
