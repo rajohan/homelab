@@ -197,8 +197,10 @@ export async function dispatchMiraImprovement(
                 );
             else if (!publication || ["draft", "cancelled"].includes(publication.state))
                 await finish(
-                    authorized ? "failed" : "cancelled",
-                    "Publication did not start or its approval expired. Review the recorded code proposal."
+                    publication?.state === "cancelled" || !authorized
+                        ? "cancelled"
+                        : "failed",
+                    "Publication stopped before completion. Review the recorded code proposal."
                 );
             return true;
         }
@@ -219,6 +221,16 @@ export async function dispatchMiraImprovement(
                     cloud.cleanup === "pending")
             )
                 return true;
+            if (
+                cloud?.state === "cancelled" ||
+                (cloud?.state === "completed" && cloud.cancelled)
+            ) {
+                await finish(
+                    "cancelled",
+                    "The cloud check was cancelled. No PR was queued."
+                );
+                return true;
+            }
             if (!authorized) {
                 await finish(
                     cloud?.state === "needs_attention" ? "needs_attention" : "cancelled",

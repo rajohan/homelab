@@ -8,7 +8,7 @@ import { capabilities } from "@homelab/contracts/operations";
 import { publishDaytonaBinding } from "@homelab/mira/data/daytona";
 import { saveMiraFile, deleteMiraFile } from "@homelab/mira/data/files";
 import { publishGitHubBinding } from "@homelab/mira/data/github";
-import { claimMiraRun } from "@homelab/mira/data/queue";
+import { claimMiraRun, reconcileMiraRuns } from "@homelab/mira/data/queue";
 import {
     improvementJobAllowed,
     resolveImprovement,
@@ -802,3 +802,72 @@ test("silent automation delivery retains durable outcome reports without a notif
         await f.close();
     }
 });
+
+for (const state of ["failed", "interrupted", "needs_attention"] as const)
+    test(`accepted improvements survive the originating model turn becoming ${state}`, async () => {
+        const f = await fixture();
+        try {
+            await f.grant(true);
+            const { run, submit } = await f.start(),
+                result = await submit(),
+                id = result.result!.id,
+                provider = f.provider(id);
+            if (state === "needs_attention") {
+                await f.client`UPDATE mira_runs SET lease_expires_at=now()-interval '1 minute' WHERE id=${run.id}`;
+                expect(await reconcileMiraRuns(f.client)).toBe(1);
+            } else await f.client`UPDATE mira_runs SET state=${state} WHERE id=${run.id}`;
+            expect(await improvementJobAllowed(f.client, id)).toBe(true);
+            await f.dispatch(provider.request);
+            expect(await f.state(id)).toMatchObject({ state: "checking" });
+            await f.completed(id);
+            await f.dispatch(provider.request);
+            expect(await f.state(id)).toMatchObject({ state: "publishing" });
+            await dispatchMiraCode(
+                f.client,
+                github,
+                signal,
+                f.directory,
+                provider.request
+            );
+            await f.dispatch(provider.request);
+            expect(await f.state(id)).toMatchObject({ state: "published" });
+            expect(await f.api.code.read({ id })).toMatchObject({
+                state: "published",
+                number: 123,
+            });
+        } finally {
+            await f.close();
+        }
+    });
+
+for (const stage of ["cloud", "publication"] as const)
+    test(`operator cancellation of the ${stage} job remains quiet`, async () => {
+        const f = await fixture();
+        try {
+            await f.grant(true);
+            const { submit } = await f.start(),
+                result = await submit(),
+                id = result.result!.id,
+                provider = f.provider(id);
+            await f.dispatch(provider.request);
+            if (stage === "cloud") {
+                const job = await f.api.daytona.read({ id });
+                await f.api.daytona.cancel({ id, version: job.version });
+            } else {
+                await f.completed(id);
+                await f.dispatch(provider.request);
+                const proposal = await f.api.code.read({ id });
+                await f.api.code.cancel({ id, version: proposal.version });
+            }
+            await f.dispatch(provider.request);
+            expect(await f.state(id)).toMatchObject({ state: "cancelled" });
+            expect(
+                await f.client`SELECT id FROM dashboard_notifications WHERE source_key=${`improvement:${id}`}`
+            ).toHaveLength(0);
+            expect(provider.calls.some((call) => call.init.method === "POST")).toBe(
+                false
+            );
+        } finally {
+            await f.close();
+        }
+    });
