@@ -1,5 +1,6 @@
 import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { CuaDriver, SessionPermissionMode } from "@trycua/cua-driver";
 import { Effect } from "effect";
@@ -7,7 +8,9 @@ import * as v from "valibot";
 
 import { openNativeComputerWindow } from "../computer/native";
 import { computerWindowManifest } from "../computer/policy";
+import { openComputerProcess } from "../computer/process";
 import { ComputerWindowSession } from "../computer/session";
+import { computerEnvironment } from "../config/environment";
 
 const point = v.object({ x: v.number(), y: v.number() });
 const stateSchema = v.object({
@@ -121,7 +124,12 @@ export async function qualifyComputerFixture() {
     } finally {
         await wrong.close();
     }
-    const port = await openNativeComputerWindow(grant);
+    const port = await openComputerProcess(grant, {
+        entrypoint: fileURLToPath(new URL("../computer/child.ts", import.meta.url)),
+        cwd: process.cwd(),
+        environment: computerEnvironment(),
+        signal: AbortSignal.timeout(30_000),
+    });
     const session = new ComputerWindowSession(port, () => Promise.resolve());
     const signal = AbortSignal.timeout(30_000);
     try {
@@ -169,6 +177,7 @@ export async function qualifyComputerFixture() {
             deniedScope: true,
             replayDenied: true,
             stopped: true,
+            supervised: true,
         };
     } finally {
         await session.close();
