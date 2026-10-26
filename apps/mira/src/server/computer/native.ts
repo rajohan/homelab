@@ -127,6 +127,8 @@ export async function openNativeComputerWindow(
             },
             click: async (x, y, signal) => {
                 ensureOpen();
+                if (grant.mode === "view")
+                    throw new Error("Computer access is view-only.");
                 signal.throwIfAborted();
                 const result = await native.click(
                     {
@@ -143,6 +145,8 @@ export async function openNativeComputerWindow(
             },
             type: async (text, signal) => {
                 ensureOpen();
+                if (grant.mode === "view")
+                    throw new Error("Computer access is view-only.");
                 signal.throwIfAborted();
                 // 0.37's typed TypeTextInput omits delivery_mode. Use the official wire
                 // shape for this fixed tool only; neither tool names nor targets are model inputs.

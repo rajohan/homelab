@@ -2,6 +2,7 @@ import {
     miraComputerAccessAcceptSchema,
     miraComputerAccessConnectionSchema,
     miraComputerAccessRequestSchema,
+    miraComputerAccessPermitSchema,
     miraComputerAccessStopSchema,
     type MiraComputerAccessSummary,
 } from "@homelab/contracts/miraComputers";
@@ -22,6 +23,7 @@ interface AccessRow {
     targetId: string | null;
     runLease: string;
     expiresAt: Date;
+    consentExpiresAt: Date;
     expired: boolean;
     available: boolean;
     validForMs: number;
@@ -46,6 +48,7 @@ async function readAccess(
     const [row] = await query<AccessRow[]>`
         SELECT g.id,g.owner,g.computer_id AS "computerId",g.run_id AS "runId",g.mode,g.state,
             g.connection_id AS "connectionId",g.target_id AS "targetId",g.run_lease AS "runLease",g.expires_at AS "expiresAt",
+            least(g.expires_at,g.created_at+interval '1 minute') AS "consentExpiresAt",
             g.expires_at<=clock_timestamp() AS expired,
             (g.state IN ('pending','active') AND g.expires_at>clock_timestamp()
              AND (g.state<>'pending' OR g.created_at>clock_timestamp()-interval '1 minute')
@@ -227,7 +230,14 @@ export async function pendingMiraComputerAccess(
         const row = candidate
             ? await readAccess(query, computer.owner, candidate.id)
             : undefined;
-        return { request: row?.available ? summary(row) : null };
+        return {
+            request: row?.available
+                ? {
+                      ...summary(row),
+                      consentExpiresAt: row.consentExpiresAt.toISOString(),
+                  }
+                : null,
+        };
     });
 }
 
@@ -343,6 +353,45 @@ export async function requireMiraComputerAccess(
             row.runLease !== context.run!.leaseToken ||
             row.targetId !== input.targetId ||
             (input.mode === "control" && row.mode !== "control") ||
+            row.validForMs <= 0
+        )
+            throw new MiraFailure(
+                "FORBIDDEN",
+                "Computer access is stopped, expired or no longer available."
+            );
+        return {
+            id: row.id,
+            connectionId: row.connectionId,
+            targetId: row.targetId,
+            mode: row.mode,
+            validForMs: row.validForMs,
+        };
+    });
+}
+
+/**
+ * Recheck live server authority from the paired PC before and after native work.
+ * @param client - Product database reached through the private machine listener.
+ * @param token - Device credential for the current connection, never a run credential.
+ * @param input - Exact accepted session, immutable target and requested scope.
+ * @returns A bounded dispatch ceiling; the PC also enforces local consent and OS readiness.
+ */
+export async function permitMiraComputerAccessLocally(
+    client: SQL,
+    token: string,
+    input: unknown
+) {
+    const request = v.parse(miraComputerAccessPermitSchema, input);
+    return client.begin(async (query) => {
+        const computer = await device(query, token, request.connectionId);
+        const row = await readAccess(query, computer.owner, request.id);
+        if (
+            !row?.available ||
+            row.state !== "active" ||
+            row.computerId !== computer.id ||
+            row.connectionId !== request.connectionId ||
+            row.targetId !== request.targetId ||
+            (request.mode === "control" && row.mode !== "control") ||
             row.validForMs <= 0
         )
             throw new MiraFailure(

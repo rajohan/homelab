@@ -1,6 +1,7 @@
 import {
     acceptMiraComputerAccess,
     pendingMiraComputerAccess,
+    permitMiraComputerAccessLocally,
     stopMiraComputerAccessLocally,
 } from "@homelab/mira/data/computerAccess";
 import {
@@ -67,6 +68,7 @@ export function miraComputerReceiver(client?: SQL) {
                 "/api/mira/computers/access/pending",
                 "/api/mira/computers/access/accept",
                 "/api/mira/computers/access/stop",
+                "/api/mira/computers/access/permit",
             ].includes(url.pathname) ||
             url.search
         )
@@ -97,6 +99,12 @@ export function miraComputerReceiver(client?: SQL) {
                     try: async () => {
                         if (url.pathname.endsWith("/access/pending"))
                             return await pendingMiraComputerAccess(client, token, input);
+                        if (url.pathname.endsWith("/access/permit"))
+                            return await permitMiraComputerAccessLocally(
+                                client,
+                                token,
+                                input
+                            );
                         if (url.pathname.endsWith("/access/accept"))
                             return await acceptMiraComputerAccess(client, token, input);
                         if (url.pathname.endsWith("/access/stop")) {

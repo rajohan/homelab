@@ -1,4 +1,10 @@
-import { miraComputerEnrollmentSchema } from "@homelab/contracts/miraComputers";
+import {
+    miraComputerEnrollmentSchema,
+    miraComputerAccessAcceptSchema,
+    miraComputerAccessPermitSchema,
+    type MiraComputerAccessSummary,
+    type MiraComputerConsentRequest,
+} from "@homelab/contracts/miraComputers";
 import * as v from "valibot";
 
 import { readComputerCredential } from "./credentials";
@@ -20,6 +26,24 @@ const heartbeat = v.strictObject({
     leaseSeconds: v.literal(45),
     controlAllowed: v.literal(false),
 });
+const accessSummary = v.strictObject({
+    id: uuid,
+    computerId: uuid,
+    runId: uuid,
+    mode: v.picklist(["view", "control"]),
+    state: v.picklist(["pending", "active"]),
+    expiresAt: v.pipe(v.string(), v.isoTimestamp()),
+});
+const consentRequest = v.strictObject({
+    ...accessSummary.entries,
+    state: v.literal("pending"),
+    consentExpiresAt: v.pipe(v.string(), v.isoTimestamp()),
+});
+const permit = v.strictObject({
+    ...miraComputerAccessPermitSchema.entries,
+    validForMs: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(5000)),
+});
+export type ComputerAccessPermit = v.InferOutput<typeof permit>;
 export type ComputerEnrollment = v.InferOutput<typeof enrollment>;
 export type ComputerFetch = (url: URL, init: RequestInit) => Promise<Response>;
 
@@ -79,7 +103,7 @@ export function fetchComputer(url: URL, init: RequestInit): Promise<Response> {
     return fetch(url, { ...init, tls: { rejectUnauthorized: true }, proxy: false });
 }
 
-/** Outbound pairing and presence transport; it has no screen or input methods. */
+/** Outbound pairing, presence and consent transport; it never receives native targets or input commands. */
 export class ComputerCompanion {
     readonly origin: string;
     private readonly request: ComputerFetch;
@@ -173,8 +197,127 @@ export class ComputerCompanion {
             throw new ComputerConnectionError(false);
     }
 
+    /**
+     * Read the one pending local consent request for this connection.
+     * @param token - OS-vault device credential.
+     * @param connectionId - Exact current generation.
+     * @param signal - Local cancellation, including connection retirement.
+     * @returns Metadata only; a request never enables screen or input access.
+     */
+    async pendingAccess(
+        token: string,
+        connectionId: string,
+        signal: AbortSignal
+    ): Promise<MiraComputerConsentRequest | null> {
+        const device = readComputerCredential(token, "device");
+        if (!device || !v.is(uuid, connectionId))
+            throw new ComputerConnectionError(false);
+        const result = v.safeParse(
+            v.strictObject({ request: v.nullable(consentRequest) }),
+            await this.send("access/pending", token, { connectionId }, signal)
+        );
+        if (!result.success) throw new ComputerConnectionError(false);
+        const request = result.output.request;
+        if (
+            request &&
+            (request.computerId !== device.id ||
+                request.state !== "pending" ||
+                Date.parse(request.consentExpiresAt) <= Date.now() ||
+                Date.parse(request.consentExpiresAt) > Date.parse(request.expiresAt) ||
+                Date.parse(request.expiresAt) <= Date.now())
+        )
+            throw new ComputerConnectionError(false);
+        return request;
+    }
+
+    /**
+     * Accept one request after the PC's local user has selected an immutable target.
+     * @param token - OS-vault credential; no executable, PID or window title is sent.
+     * @param input - Exact request/generation and a newly generated opaque target ID.
+     * @param signal - Local cancellation; acceptance is never automatically retried.
+     * @returns The active receipt; uncertain delivery requires stop and new consent.
+     */
+    async acceptAccess(
+        token: string,
+        input: v.InferInput<typeof miraComputerAccessAcceptSchema>,
+        signal: AbortSignal
+    ): Promise<MiraComputerAccessSummary> {
+        const device = readComputerCredential(token, "device");
+        if (!device) throw new ComputerConnectionError(false);
+        const request = v.parse(miraComputerAccessAcceptSchema, input);
+        const result = v.safeParse(
+            accessSummary,
+            await this.send("access/accept", token, request, signal)
+        );
+        if (
+            !result.success ||
+            result.output.id !== request.id ||
+            result.output.computerId !== device.id ||
+            result.output.state !== "active" ||
+            Date.parse(result.output.expiresAt) <= Date.now()
+        )
+            throw new ComputerConnectionError(false);
+        return result.output;
+    }
+
+    /**
+     * Revalidate the current consent without renewing its absolute lifetime.
+     * @param token - Device credential, scoped to the fixed private origin.
+     * @param input - Exact immutable session binding and required action scope.
+     * @param signal - Local stop; callers measure freshness from request start.
+     * @returns A maximum five-second dispatch ceiling, never an independent bearer capability.
+     */
+    async permitAccess(
+        token: string,
+        input: v.InferInput<typeof miraComputerAccessPermitSchema>,
+        signal: AbortSignal
+    ): Promise<ComputerAccessPermit> {
+        if (!readComputerCredential(token, "device"))
+            throw new ComputerConnectionError(false);
+        const request = v.parse(miraComputerAccessPermitSchema, input);
+        const result = v.safeParse(
+            permit,
+            await this.send("access/permit", token, request, signal)
+        );
+        if (
+            !result.success ||
+            result.output.id !== request.id ||
+            result.output.connectionId !== request.connectionId ||
+            result.output.targetId !== request.targetId ||
+            (request.mode === "control" && result.output.mode !== "control")
+        )
+            throw new ComputerConnectionError(false);
+        return result.output;
+    }
+
+    /**
+     * Record local rejection or stop after the native controller has already been retired.
+     * @param token - Device credential; the old generation need not still be live.
+     * @param id - Exact consent request to stop, with no effect on other computers.
+     * @param signal - Bounded cleanup; failure never restores local authority.
+     * @returns Confirmation of an idempotent server stop.
+     */
+    async stopAccess(token: string, id: string, signal: AbortSignal): Promise<void> {
+        if (!readComputerCredential(token, "device") || !v.is(uuid, id))
+            throw new ComputerConnectionError(false);
+        if (
+            !v.is(
+                v.strictObject({ stopped: v.literal(true) }),
+                await this.send("access/stop", token, { id }, signal)
+            )
+        )
+            throw new ComputerConnectionError(false);
+    }
+
     private async send(
-        route: "enroll" | "connect" | "heartbeat",
+        route:
+            | "enroll"
+            | "connect"
+            | "heartbeat"
+            | "access/pending"
+            | "access/accept"
+            | "access/permit"
+            | "access/stop",
         token: string,
         body: unknown,
         stopped: AbortSignal
