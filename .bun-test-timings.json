@@ -91,6 +91,7 @@
     "apps/mira/src/server/computer/localConsentHost.test.ts": 71,
     "apps/mira/src/server/runtime/rpcCleanup.test.ts": 2200,
     "scripts/buildWindowsWorker.test.ts": 10,
-    "apps/mira/src/server/computer/workerCli.test.ts": 10
+    "apps/mira/src/server/computer/workerCli.test.ts": 10,
+    "apps/mira/src/server/computer/companionLifecycle.test.ts": 20
   }
 }

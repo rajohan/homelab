@@ -42,7 +42,7 @@ jobs:
       - name: Qualify packaged worker and native process-tree ownership
         run: bun run test:computer:windows-worker
       - name: Verify private consent process lifecycle on Windows
-        run: bun test apps/mira/src/server/computer/consentProcess.test.ts apps/mira/src/server/computer/localConsentHost.test.ts apps/mira/src/server/computer/companionConsent.test.ts apps/mira/src/server/runtime/rpcCleanup.test.ts
+        run: bun test apps/mira/src/server/computer/companion.test.ts apps/mira/src/server/computer/consentProcess.test.ts apps/mira/src/server/computer/localConsentHost.test.ts apps/mira/src/server/computer/companionConsent.test.ts apps/mira/src/server/computer/companionLifecycle.test.ts apps/mira/src/server/runtime/rpcCleanup.test.ts
 
   verify:
     # Preserve the required check name and fail closed on skipped/failed/cancelled tests.

@@ -250,3 +250,36 @@ coverage.
 This qualifies packaged startup and process ownership, not interactive Windows
 capture/input, lock/sleep transitions, installer signing, release distribution,
 private routing or the live PC connection. The presence CLI remains unchanged.
+
+## Connection-owned consent lifecycle
+
+`runComputerPresence` can now own a local connection task alongside heartbeat
+renewal. A slow consent prompt does not block heartbeat. Each connection gets a
+new permanent stop signal; heartbeat failure, connection-work failure or local
+shutdown aborts that generation and waits for both tasks to finish. Only then may
+a temporary outage reconnect after the existing delay. Unexpected task completion
+or unconfirmed cleanup is terminal. Cleanup failures remain visible even during
+local shutdown, and a task that has not completed cleanup blocks replacement.
+
+`runComputerConsentLoop` supplies the sequential consent lifecycle for that task.
+It creates a local host, checks pending access, and invokes accepted-session work
+only after the existing controller has obtained local consent, server acceptance,
+fresh permits and native readiness. Closing a local window or declining a request
+retires that attempt, including an in-flight pending/accept/permit request.
+Cancellation is tied to its original signal; an unrelated failure after a signal
+was aborted is not treated as cancellation. Accepted-session work must finish
+its own teardown, and an unexpected teardown failure blocks replacement. Every attempt is fully cleaned up before another host can
+be created. It retains claimed request IDs for the entire generation, including
+failed/declined attempts whose stop acknowledgement was lost, so polling cannot
+reopen the same prompt. The bounded ID set never evicts old requests; exhausting
+it requires operator action. A new connection invalidates old server grants and
+does not resume a previous controller or input operation.
+
+Tests combine the actual companion transport/controller with synthetic local
+hosts to cover heartbeat during prompts, late selection, network loss, declined
+request replay, active local stop, blocked cleanup and startup failures. Windows
+CI runs the same lifecycle tests. No native input occurs in these tests.
+
+The CLI still supplies no connection task and remains presence-only. Command
+transport, user-visible Chat controls, interactive Windows qualification and the
+final installed companion composition are not activated by this lifecycle module.

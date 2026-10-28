@@ -56,8 +56,12 @@ export class ComputerConsentController {
         signal: AbortSignal;
         host: ComputerConsentHost;
         now?: () => number;
+        /** Claim one request within this connection; a previously retired ID must never prompt again. */
+        claimRequest?: (id: string) => boolean;
     };
     private readonly abort = new AbortController();
+    /** Permanent retirement of this attempt; callers must still await close for cleanup. */
+    readonly signal = this.abort.signal;
     private readonly now: () => number;
     private readonly stopListener: () => void;
     private request?: MiraComputerConsentRequest;
@@ -106,7 +110,8 @@ export class ComputerConsentController {
                 this.abort.signal
             );
             this.assertLive();
-            if (!request) return false;
+            if (!request || this.options.claimRequest?.(request.id) === false)
+                return false;
             this.attempted = true;
             this.request = Object.freeze({ ...request });
             const remaining = Math.min(
