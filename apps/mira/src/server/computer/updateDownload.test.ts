@@ -329,3 +329,27 @@ test("post-download revocation, staged file changes and consumer failures leave 
         await f.close();
     }
 });
+
+test("consumers receive only the validity remaining after confirmation and staged verification", async () => {
+    const f = await fixture();
+    let calls = 0;
+    try {
+        await withComputerUpdate(
+            {
+                ...f.options,
+                getUpdate: async () => {
+                    if (++calls === 2)
+                        await new Promise((resolve) => setTimeout(resolve, 25));
+                    return candidate;
+                },
+            },
+            (_file, update) => {
+                expect(update.validForMs).toBeGreaterThan(0);
+                expect(update.validForMs).toBeLessThan(candidate.validForMs - 20);
+                return Promise.resolve();
+            }
+        );
+    } finally {
+        await f.close();
+    }
+});

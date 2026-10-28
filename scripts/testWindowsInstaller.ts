@@ -13,6 +13,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { buildComputerInstaller } from "./buildComputerInstaller";
+import { buildWindowsDesktop } from "./buildWindowsDesktop";
 import {
     computerReleaseNames,
     hashComputerFile,
@@ -107,6 +108,10 @@ export async function testWindowsInstaller(
                 },
             },
         });
+        const updateHelper = await buildWindowsDesktop(
+            path.join(root, "update-helper"),
+            true
+        );
         const result = execFileSync(
             powershell,
             [
@@ -125,6 +130,8 @@ export async function testWindowsInstaller(
                 nextVersion,
                 "-Workspace",
                 root,
+                "-UpdateHelper",
+                updateHelper.checks!,
             ],
             {
                 windowsHide: true,

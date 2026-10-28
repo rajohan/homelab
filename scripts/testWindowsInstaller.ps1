@@ -3,7 +3,8 @@ param(
     [Parameter(Mandatory=$true)][string]$Upgrade,
     [Parameter(Mandatory=$true)][string]$Manifest,
     [Parameter(Mandatory=$true)][string]$UpgradeVersion,
-    [Parameter(Mandatory=$true)][string]$Workspace
+    [Parameter(Mandatory=$true)][string]$Workspace,
+    [Parameter(Mandatory=$true)][string]$UpdateHelper
 )
 $ErrorActionPreference = 'Stop'
 # Real installation belongs only on an ephemeral hosted runner, never a developer's PC.
@@ -45,6 +46,31 @@ function Run-Setup([string]$Executable, [bool]$Success, [string]$Name) {
     if (!$Success) {
         Require ((Get-Content -LiteralPath $log -Raw) -match 'Exit Mira|modified files|unexpected files|linked') 'Expected a specific safe refusal.'
     }
+}
+function Run-NativeUpgrade {
+    $info = New-Object Diagnostics.ProcessStartInfo
+    $info.FileName = $UpdateHelper
+    $info.Arguments = '--qualify-update "' + $Workspace + '"'
+    $info.UseShellExecute = $false
+    $info.CreateNoWindow = $true
+    $info.RedirectStandardInput = $true
+    $info.RedirectStandardOutput = $true
+    $info.RedirectStandardError = $true
+    $child = [Diagnostics.Process]::Start($info)
+    try {
+        $output = $child.StandardOutput.ReadToEndAsync()
+        $errors = $child.StandardError.ReadToEndAsync()
+        $receipt = @{ repository='demo/homelab'; version=$UpgradeVersion; revision=('a' * 40); size=[int](Get-Item -LiteralPath $Upgrade).Length; sha256=(File-Digest $Upgrade); validForMs=300000 }
+        $header = [Text.Encoding]::ASCII.GetBytes(($receipt | ConvertTo-Json -Compress) + "`n")
+        $child.StandardInput.BaseStream.Write($header, 0, $header.Length)
+        $inputFile = [IO.File]::OpenRead($Upgrade)
+        try { $inputFile.CopyTo($child.StandardInput.BaseStream) } finally { $inputFile.Dispose() }
+        $child.StandardInput.Close()
+        Require ($child.WaitForExit(120000)) 'Native updater did not finish.'
+        Require ($child.ExitCode -eq 0) ('Native update failed: ' + $errors.Result)
+        Require ($output.Result -match 'Native update installation completed.') 'Native update confirmation is missing.'
+        Require ((Get-ChildItem -LiteralPath $Workspace -Directory -Filter 'mira-update-*').Count -eq 0) 'Native update left staging files.'
+    } finally { $child.Dispose() }
 }
 function Check-Payload([string]$Version) {
     $directory = Join-Path $root ('versions/' + $Version)
@@ -109,7 +135,7 @@ try {
     [IO.File]::WriteAllText($extra, 'fixture')
     Run-Setup $Setup $false 'extra'
     Remove-Item -LiteralPath $extra
-    Run-Setup $Upgrade $true 'upgrade'
+    Run-NativeUpgrade
     Check-Payload $UpgradeVersion
     Require (Test-Path -LiteralPath $changed) 'Upgrade rewrote the old version in place.'
     $preserved = Join-Path $state 'qualification-preferences.txt'
