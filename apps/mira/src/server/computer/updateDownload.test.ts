@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { rejects } from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -278,7 +278,7 @@ test("cancellation and evidence deadlines cancel stalled streams and never dispa
 test("post-download revocation, staged file changes and consumer failures leave no executable behind", async () => {
     const f = await fixture();
     try {
-        for (const mode of ["revoke", "alter", "consumer"]) {
+        for (const mode of ["revoke", "alter", "replace", "consumer"]) {
             let calls = 0,
                 uses = 0;
             await rejects(
@@ -288,6 +288,23 @@ test("post-download revocation, staged file changes and consumer failures leave 
                         getUpdate: async () => {
                             if (++calls === 2) {
                                 if (mode === "revoke") throw new Error("Pairing revoked");
+                                if (mode === "replace") {
+                                    const entries = await readdir(f.directory);
+                                    const file = path.join(
+                                        f.directory,
+                                        entries[0]!,
+                                        "setup.exe"
+                                    );
+                                    await rename(
+                                        file,
+                                        path.join(
+                                            f.directory,
+                                            entries[0]!,
+                                            "original.exe"
+                                        )
+                                    );
+                                    await writeFile(file, bytes);
+                                }
                                 if (mode === "alter") {
                                     const entries = await readdir(f.directory);
                                     await writeFile(

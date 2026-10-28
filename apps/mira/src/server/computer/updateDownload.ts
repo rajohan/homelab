@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { lstat, mkdtemp, open, rm } from "node:fs/promises";
+import { lstat, mkdtemp, open, rm, type FileHandle } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -34,7 +34,7 @@ function sameRelease(before: MiraComputerUpdate, after: MiraComputerUpdate): boo
 
 async function receive(
     update: MiraComputerUpdate,
-    file: string,
+    output: FileHandle,
     signal: AbortSignal,
     request: ComputerFetch
 ) {
@@ -88,26 +88,21 @@ async function receive(
             throw new Error("The update size does not match the tested release.");
         reader = response.body.getReader();
         signal.throwIfAborted();
-        const output = await open(file, "wx", 0o600);
         const hash = createHash("sha256");
         let size = 0;
-        try {
-            for (;;) {
-                const next = await reader.read();
-                signal.throwIfAborted();
-                if (next.done) break;
-                size += next.value.byteLength;
-                if (size > update.size)
-                    throw new Error("The update exceeds its tested size.");
-                hash.update(next.value);
-                await output.writeFile(next.value);
-            }
-            if (size !== update.size || hash.digest("hex") !== update.sha256)
-                throw new Error("The update does not match the tested release.");
-            await output.sync();
-        } finally {
-            await output.close();
+        for (;;) {
+            const next = await reader.read();
+            signal.throwIfAborted();
+            if (next.done) break;
+            size += next.value.byteLength;
+            if (size > update.size)
+                throw new Error("The update exceeds its tested size.");
+            hash.update(next.value);
+            await output.writeFile(next.value);
         }
+        if (size !== update.size || hash.digest("hex") !== update.sha256)
+            throw new Error("The update does not match the tested release.");
+        await output.sync();
     } finally {
         signal.removeEventListener("abort", cancel);
         if (reader) {
@@ -117,28 +112,38 @@ async function receive(
     }
 }
 
-async function verifyFile(file: string, update: MiraComputerUpdate, signal: AbortSignal) {
-    const metadata = await lstat(file);
-    if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size !== update.size)
+async function verifyFile(
+    input: FileHandle,
+    file: string,
+    update: MiraComputerUpdate,
+    signal: AbortSignal
+) {
+    // Read the exact file exclusively created for this operation; never reopen a checked pathname.
+    const metadata = await input.stat();
+    if (!metadata.isFile() || metadata.size !== update.size)
         throw new Error("The staged update changed.");
-    const input = await open(file, "r");
     const hash = createHash("sha256");
     const buffer = Buffer.alloc(1024 * 1024);
     let size = 0;
-    try {
-        for (;;) {
-            signal.throwIfAborted();
-            const result = await input.read(buffer);
-            if (!result.bytesRead) break;
-            size += result.bytesRead;
-            if (size > update.size) throw new Error("The staged update changed.");
-            hash.update(buffer.subarray(0, result.bytesRead));
-        }
-        if (size !== update.size || hash.digest("hex") !== update.sha256)
-            throw new Error("The staged update changed.");
-    } finally {
-        await input.close();
+    for (;;) {
+        signal.throwIfAborted();
+        const result = await input.read(buffer, 0, buffer.length, size);
+        if (!result.bytesRead) break;
+        size += result.bytesRead;
+        if (size > update.size) throw new Error("The staged update changed.");
+        hash.update(buffer.subarray(0, result.bytesRead));
     }
+    if (size !== update.size || hash.digest("hex") !== update.sha256)
+        throw new Error("The staged update changed.");
+    const named = await lstat(file);
+    if (
+        !named.isFile() ||
+        named.isSymbolicLink() ||
+        named.dev !== metadata.dev ||
+        named.ino !== metadata.ino ||
+        named.size !== update.size
+    )
+        throw new Error("The staged update changed.");
 }
 
 /**
@@ -161,6 +166,7 @@ export async function withComputerUpdate<T>(
     const signal = AbortSignal.any([options.signal, deadline.signal]);
     let timer = setTimeout(() => deadline.abort(), 300_000);
     let directory: string | undefined;
+    let staged: FileHandle | undefined;
     try {
         signal.throwIfAborted();
         const started = performance.now();
@@ -179,13 +185,14 @@ export async function withComputerUpdate<T>(
             throw new Error("An absolute temporary directory is required.");
         directory = await mkdtemp(path.join(parent, "mira-computer-update-"));
         const file = path.join(directory, "setup.exe");
-        await receive(update, file, signal, options.request ?? fetchComputer);
+        staged = await open(file, "wx+", 0o600);
+        await receive(update, staged, signal, options.request ?? fetchComputer);
         const confirmationStarted = performance.now();
         const confirmation = v.parse(
             miraComputerUpdateSchema,
             await options.getUpdate(signal)
         );
-        await verifyFile(file, update, signal);
+        await verifyFile(staged, file, update, signal);
         signal.throwIfAborted();
         if (
             !sameRelease(update, confirmation) ||
@@ -200,6 +207,10 @@ export async function withComputerUpdate<T>(
     } finally {
         clearTimeout(timer);
         deadline.abort();
-        if (directory) await rm(directory, { recursive: true, force: true });
+        try {
+            await staged?.close();
+        } finally {
+            if (directory) await rm(directory, { recursive: true, force: true });
+        }
     }
 }
