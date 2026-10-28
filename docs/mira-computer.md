@@ -493,3 +493,28 @@ connection refreshes the self-reported version; this is inventory information, n
 attestation or permission to control the computer. Legacy connections without a
 version clear the old enrollment version rather than misleadingly retaining it.
 Release downloads do not add a listener, change private routing or grant input access.
+
+### Authenticated Windows update transport
+
+The private machine listener exposes `POST /api/mira/computers/update` only to a
+live paired device credential. It returns the existing worker's fresh verified
+Windows release identity, hash and size, with at most five minutes of validity.
+It does not return an arbitrary download URL, accept browser credentials, create a
+connection generation or authorize computer control. The public dashboard returns
+404 for this route, as for other computer machine endpoints.
+
+`ComputerCompanion.update` reads that receipt from the pinned private HTTPS origin.
+`withComputerUpdate` accepts only a newer stable version, derives the official
+GitHub asset URL, follows at most three redirects to the fixed GitHub storage
+hosts, and never sends pairing or GitHub credentials to those hosts. The download
+is bounded by its declared size (maximum 512 MiB), freshness and a five-minute
+ceiling. It verifies SHA-256 while streaming and again from the staged file, then
+requires the same release to be authorized by the private server after download.
+Revocation, stale or changed evidence, unexpected redirects and incomplete/changed
+bytes prevent the local consumer from receiving an installer.
+
+Each operation owns a unique temporary directory. The trusted consumer must wait
+for all uses of the file to stop; completion, cancellation and errors remove the
+staging directory. The download deadline is not allowed to terminate an installer
+mid-write. This transport does not launch installers or expose a model tool. Native
+update UI, installation handoff and rollback qualification remain subsequent work.

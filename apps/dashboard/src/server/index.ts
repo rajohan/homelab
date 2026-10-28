@@ -241,7 +241,10 @@ export function startDashboardServer(options: DashboardServerOptions = {}) {
                 ...computerBinding,
                 development: false,
                 maxRequestBodySize: 2048,
-                fetch: miraComputerReceiver(operations.client),
+                fetch: miraComputerReceiver(
+                    operations.client,
+                    operations.releaseRepository
+                ),
             });
         }
     } catch (error) {

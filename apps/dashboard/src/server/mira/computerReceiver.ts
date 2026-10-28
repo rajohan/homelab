@@ -18,6 +18,8 @@ import type { SQL } from "bun";
 import { Effect } from "effect";
 import * as v from "valibot";
 
+import { computerUpdate } from "./computerUpdate";
+
 const response = (status: number, data?: unknown) =>
     Response.json(data ?? { error: "Computer request was refused." }, {
         status,
@@ -60,9 +62,10 @@ async function body(request: Request, maximumBytes: number): Promise<unknown> {
 /**
  * Accept bounded private device traffic without admitting browser credentials or public command producers.
  * @param client - Explicit database, supplied only when dashboard identity and operations are configured.
+ * @param repository - Optional deployment-owned release source for authenticated client updates.
  * @returns A bounded machine-only receiver; its credential can never access tRPC or automation APIs.
  */
-export function miraComputerReceiver(client?: SQL) {
+export function miraComputerReceiver(client?: SQL, repository?: string) {
     let active = 0;
     return async (request: Request): Promise<Response> => {
         if (!client) return response(503);
@@ -71,6 +74,7 @@ export function miraComputerReceiver(client?: SQL) {
             ![
                 "/api/mira/computers/enroll",
                 "/api/mira/computers/connect",
+                "/api/mira/computers/update",
                 "/api/mira/computers/heartbeat",
                 "/api/mira/computers/access/pending",
                 "/api/mira/computers/access/accept",
@@ -109,6 +113,10 @@ export function miraComputerReceiver(client?: SQL) {
             const result = await Effect.runPromise(
                 Effect.tryPromise({
                     try: async () => {
+                        if (url.pathname.endsWith("/update")) {
+                            v.parse(v.strictObject({}), input);
+                            return await computerUpdate(client, repository, token);
+                        }
                         if (url.pathname.endsWith("/commands/claim"))
                             return await claimMiraComputerCommand(client, token, input);
                         if (url.pathname.endsWith("/commands/finish"))

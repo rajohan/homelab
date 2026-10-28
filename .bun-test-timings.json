@@ -97,6 +97,7 @@
     "apps/mira/src/server/computer/companionParent.test.ts": 20,
     "apps/mira/src/server/computer/companionCommands.test.ts": 100,
     "apps/mira/src/server/computer/companionWork.test.ts": 32,
-    "scripts/computerRelease.test.ts": 40
+    "scripts/computerRelease.test.ts": 40,
+    "apps/mira/src/server/computer/updateDownload.test.ts": 150
   }
 }

@@ -303,3 +303,42 @@ test("every authenticated connection reports the compiled client version", async
     await client.connect(credential, signal());
     expect(bodies).toEqual([{ version }, { version }]);
 });
+
+test("update metadata comes only from the paired private origin and rejects malformed release evidence", async () => {
+    const update = {
+        repository: "demo/homelab",
+        version: "0.11.0",
+        revision: "a".repeat(40),
+        size: 10,
+        sha256: "b".repeat(64),
+        validForMs: 300_000,
+    };
+    for (const value of [{ update }, { update: null }]) {
+        const client = new ComputerCompanion(
+            "https://private.example.test",
+            (url, init) => {
+                expect(url.href).toBe(
+                    "https://private.example.test/api/mira/computers/update"
+                );
+                expect(new Headers(init.headers).get("authorization")).toBe(
+                    `Bearer ${credential}`
+                );
+                expect(init.body).toBe("{}");
+                return Promise.resolve(Response.json(value));
+            }
+        );
+        expect(await client.update(credential, signal())).toEqual(value.update);
+        await rejects(client.update(ticket, signal()), ComputerConnectionError);
+    }
+    for (const body of [
+        { update: { ...update, url: "https://unsafe.invalid" } },
+        { update: { ...update, validForMs: 300_001 } },
+        { update: { ...update, sha256: "invalid" } },
+        { update, controlAllowed: true },
+    ]) {
+        const client = new ComputerCompanion("https://private.example.test", () =>
+            Promise.resolve(Response.json(body))
+        );
+        await rejects(client.update(credential, signal()), ComputerConnectionError);
+    }
+});
