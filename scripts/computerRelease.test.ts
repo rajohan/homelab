@@ -55,6 +55,14 @@ test("release metadata binds stable version, source, platform, bounded archive a
         { credential: "forbidden" },
         { archive: { ...release.archive, name: "../test.zip" } },
         { archive: { ...release.archive, size: 0 } },
+        { installer: { name: "wrong.exe", size: 10, sha256: "a".repeat(64) } },
+        {
+            installer: {
+                name: computerReleaseNames(release.version).installer,
+                size: 0,
+                sha256: "a".repeat(64),
+            },
+        },
         { archive: { ...release.archive, sha256: "no" } },
         { archive: { ...release.archive, size: 513 * 1024 * 1024 } },
         { files: release.files.slice(1) },
@@ -63,6 +71,12 @@ test("release metadata binds stable version, source, platform, bounded archive a
         { files: release.files.map((file) => ({ ...file, size: 0 })) },
     ])
         expect(() => readComputerRelease({ ...release, ...changed })).toThrow();
+    const installer = {
+        name: computerReleaseNames(release.version).installer,
+        size: 100,
+        sha256: "c".repeat(64),
+    };
+    expect(readComputerRelease({ ...release, installer }).installer).toEqual(installer);
 });
 
 test("manifest rejects Windows aliases, traversal, streams, reserved names and file-directory conflicts", () => {

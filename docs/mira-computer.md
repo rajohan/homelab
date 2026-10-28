@@ -430,3 +430,42 @@ unresponsive children, nested process ownership, manager death and malformed
 output. CI also checks the actual extracted desktop executable and its
 missing-sibling refusal. These checks do not capture or control a real desktop;
 interactive Windows acceptance and private Meshnet routing remain required.
+
+## Per-user Windows installer
+
+Stable releases also attach `mira-computer-<version>-windows-x64-setup.exe`, built
+from the same verified payload as the ZIP. It installs into the current user's
+`%LOCALAPPDATA%\Programs\Homelab\MiraComputer`, creates a Start-menu shortcut and
+registers a normal per-user uninstaller. It does not request elevation, enroll a
+computer, start a connection or enable startup. The installer uses the shared
+Homelab icon and the standard dark Inno Setup wizard.
+
+Exit Mira from its tray menu and stop command-line clients before installation,
+upgrade or uninstall. The desktop and packaged CLI hold a shared installation
+lease; maintenance holds an exclusive handle to the same per-user file throughout
+its work. CLI cancellation retains its lease until controller cleanup completes.
+The installer neither force-closes processes nor schedules replacements on reboot.
+New versions use separate payload directories. Reinstalling the same version
+accepts only byte-identical existing files; altered files or unexpected additions
+require uninstalling first. Program directories cannot be linked or network paths.
+Uninstall removes the logged program files and shortcuts, while retaining user
+preferences and the OS-vault pairing. Use Forget pairing and Settings > Computers
+
+> Revoke when retiring a computer.
+
+The compiler version, official release URL, SHA-256 and Authenticode publisher are
+pinned in `deploy/computer/inno.json`. `scripts/setupInno.ps1` verifies the download
+and extracts it in portable mode into a new caller-owned directory. Compiler
+updates require a reviewed pin change and the same Windows qualification; Inno is
+a build dependency, not an installed Mira runtime dependency.
+
+CI builds the setup executable from the already qualified extracted archive, then
+uses a disposable GitHub-hosted Windows runner to test fresh installation, repair,
+busy upgrade/uninstall refusal, changed/extra file rejection, versioned upgrade,
+shortcut targeting and uninstall without deleting user state. Only the tested
+setup executable and matching manifest digest join the release assets. These
+installation tests refuse to run on developer PCs. The setup asset is currently
+unsigned; a matching manifest hash verifies bytes, not publisher authenticity.
+Download it only from the authenticated Homelab GitHub release. Automated update
+selection/authentication, dashboard downloads and live private-network acceptance
+remain separate delivery work.

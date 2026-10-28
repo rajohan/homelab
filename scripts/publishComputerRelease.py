@@ -22,8 +22,8 @@ def qualified_assets(directory, tag, revision):
     if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag) or not re.fullmatch(r"[a-f0-9]{40}", revision):
         raise ValueError("Invalid release identity")
     stem = f"mira-computer-{tag[1:]}-windows-x64"
-    archive, manifest = directory / (stem + ".zip"), directory / (stem + ".json")
-    if directory.is_symlink() or sorted(item.name for item in directory.iterdir()) != sorted([archive.name, manifest.name]):
+    archive, manifest, installer = directory / (stem + ".zip"), directory / (stem + ".json"), directory / (stem + "-setup.exe")
+    if directory.is_symlink() or sorted(item.name for item in directory.iterdir()) != sorted([archive.name, manifest.name, installer.name]):
         raise ValueError("Unexpected computer release assets")
     file_digest(manifest)
     if manifest.stat().st_size > 2 * 1024 * 1024:
@@ -33,7 +33,9 @@ def qualified_assets(directory, tag, revision):
         raise ValueError("Computer release identity mismatch")
     if metadata.get("archive") != {"name": archive.name, "size": archive.stat().st_size, "sha256": file_digest(archive)}:
         raise ValueError("Computer release digest mismatch")
-    return archive, manifest
+    if metadata.get("installer") != {"name": installer.name, "size": installer.stat().st_size, "sha256": file_digest(installer)}:
+        raise ValueError("Computer installer digest mismatch")
+    return archive, manifest, installer
 
 
 def publish(directory, tag, revision):

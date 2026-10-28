@@ -18,6 +18,7 @@ internal static class DesktopTests
     {
         try
         {
+            if (args.Length == 2 && args[0] == "--lease") return InstallationProtocol.Run(args[1]);
             if (args.Length == 2 && args[0] == "--parent")
             {
                 using (var session = new DesktopSession(args[1], "run", Origin, null)) session.Run(delegate { }).GetAwaiter().GetResult();
@@ -47,6 +48,7 @@ internal static class DesktopTests
             if (args.Length != 0) return 1;
             string root = AppDomain.CurrentDomain.BaseDirectory;
             Settings(root);
+            Installation(root);
             Arguments(root);
             Pairing(root);
             foreach (string mode in new[] { "eof", "hang", "parent-death" }) Lifecycle(root, mode);
@@ -107,6 +109,37 @@ internal static class DesktopTests
         {
             foreach (string value in arguments) Require(reader.ReadLine() == Convert.ToBase64String(Encoding.UTF8.GetBytes(value)));
             Require(child.StopAndConfirm());
+        }
+    }
+    private static void Installation(string root)
+    {
+        string directory = Path.Combine(root, "lease-test");
+        using (var first = InstallationLease.Open(directory, false))
+        using (var second = InstallationLease.Open(directory, false))
+            Reject(delegate { using (var maintenance = InstallationLease.Open(directory, true)) { } });
+        using (var maintenance = InstallationLease.Open(directory, true))
+            Reject(delegate { using (var reader = InstallationLease.Open(directory, false)) { } });
+        using (var maintenance = InstallationLease.Open(directory, true)) Require(maintenance.CanWrite);
+        foreach (bool malformed in new[] { false, true })
+        {
+            var start = new ProcessStartInfo(Application.ExecutablePath, "--lease \"" + directory + "\"");
+            start.UseShellExecute = false; start.CreateNoWindow = true;
+            start.RedirectStandardInput = true; start.RedirectStandardOutput = true; start.RedirectStandardError = true;
+            using (var child = Process.Start(start))
+            {
+                try
+                {
+                    child.StandardInput.WriteLine("{\"id\":1,\"method\":\"initialize\",\"params\":{}}"); child.StandardInput.Flush();
+                    var response = child.StandardOutput.ReadLineAsync();
+                    Require(response.Wait(5000) && response.Result.Contains("\"protocol\":1"));
+                    Reject(delegate { using (var maintenance = InstallationLease.Open(directory, true)) { } });
+                    if (malformed) { child.StandardInput.Write("x"); child.StandardInput.Flush(); }
+                    else child.StandardInput.Close();
+                    Require(child.WaitForExit(5000)); Require(child.ExitCode == (malformed ? 1 : 0));
+                    using (var maintenance = InstallationLease.Open(directory, true)) Require(maintenance.CanWrite);
+                }
+                finally { if (!child.HasExited) child.Kill(); child.WaitForExit(3000); }
+            }
         }
     }
     private static string Fixture(string root, string mode)
