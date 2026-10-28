@@ -17,8 +17,9 @@ $programs = [Environment]::GetFolderPath('Programs')
 $root = Join-Path $local 'Programs/Homelab/MiraComputer'
 $state = Join-Path $local 'Homelab/MiraComputer'
 $shortcut = Join-Path $programs 'Homelab/Mira.lnk'
+$startup = Join-Path ([Environment]::GetFolderPath('Startup')) 'Homelab Mira.lnk'
 $registry = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{52017324-6EBD-4BE6-A1EC-833EBDB364F7}_is1'
-foreach ($entry in @($root, $state, $shortcut, $registry)) {
+foreach ($entry in @($root, $state, $shortcut, $startup, $registry)) {
     if (Test-Path -LiteralPath $entry) { throw 'Runner already has Mira state; refusing to modify it.' }
 }
 $count = 0
@@ -35,12 +36,14 @@ function File-Digest([string]$File) {
     try { return ([BitConverter]::ToString($hash.ComputeHash($stream))).Replace('-', '').ToLowerInvariant() }
     finally { $hash.Dispose(); $stream.Dispose() }
 }
-function Run-Setup([string]$Executable, [bool]$Success, [string]$Name) {
+function Run-Setup([string]$Executable, [bool]$Success, [string]$Name, [string]$Tasks) {
     $log = Join-Path $Workspace ($Name + '.log')
     # Inno's uninstaller hands cleanup to a descendant. -Wait waits the whole
     # process tree; Process.WaitForExit only waits the initial executable.
     # The caller bounds the complete qualification process to five minutes.
-    $child = Start-Process -FilePath $Executable -ArgumentList @('/CURRENTUSER', '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', ('/LOG="' + $log + '"')) -WindowStyle Hidden -Wait -PassThru
+    $arguments = @('/CURRENTUSER', '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', ('/LOG="' + $log + '"'))
+    if ($PSBoundParameters.ContainsKey('Tasks')) { $arguments += ('/TASKS="' + $Tasks + '"') }
+    $child = Start-Process -FilePath $Executable -ArgumentList $arguments -WindowStyle Hidden -Wait -PassThru
     Write-Output ("Installer step: " + $Name + ', exit ' + $child.ExitCode)
     Require (($child.ExitCode -eq 0) -eq $Success) ("Unexpected installer outcome for " + $Name + ': ' + $child.ExitCode)
     if (!$Success) {
@@ -85,6 +88,15 @@ function Check-Payload([string]$Version) {
     $check = Start-Process -FilePath (Join-Path $directory 'mira-computer-desktop.exe') -ArgumentList '--check-package' -WindowStyle Hidden -PassThru -Wait
     Require ($check.ExitCode -eq 0) 'Installed package check failed.'
 }
+function Check-Startup([string]$Version) {
+    Require (Test-Path -LiteralPath $startup) 'Missing opted-in startup shortcut.'
+    $shell = New-Object -ComObject WScript.Shell
+    try {
+        $entry = $shell.CreateShortcut($startup)
+        Require ($entry.TargetPath -eq [IO.Path]::GetFullPath((Join-Path $root ('versions/' + $Version + '/mira-computer-desktop.exe')))) 'Startup points to a different version.'
+        Require ($entry.Arguments -eq '--startup') 'Startup has unexpected arguments.'
+    } finally { [Runtime.InteropServices.Marshal]::ReleaseComObject($shell) | Out-Null }
+}
 function Open-Lease {
     $info = New-Object Diagnostics.ProcessStartInfo
     $info.FileName = Join-Path $root ('versions/' + $metadata.version + '/mira-computer-desktop.exe')
@@ -114,8 +126,9 @@ function Close-Lease {
 try {
     Run-Setup $Setup $true 'fresh'
     Check-Payload $metadata.version
+    Require (!(Test-Path -LiteralPath $startup)) 'Fresh installation enabled startup without opting in.'
     Require (Test-Path -LiteralPath $registry) 'Missing user-scoped uninstall entry.'
-    # Installation must not enroll, connect, add startup entries or create credentials.
+    # Fresh installation must not enroll, connect, enable startup or create credentials.
     Require (!(Test-Path -LiteralPath (Join-Path $state 'server.txt'))) 'Installer created connection preferences.'
     $lease = Open-Lease
     Run-Setup $Upgrade $false 'busy-upgrade'
@@ -135,15 +148,24 @@ try {
     [IO.File]::WriteAllText($extra, 'fixture')
     Run-Setup $Setup $false 'extra'
     Remove-Item -LiteralPath $extra
-    Run-NativeUpgrade
-    Check-Payload $UpgradeVersion
-    Require (Test-Path -LiteralPath $changed) 'Upgrade rewrote the old version in place.'
+    Run-Setup $Setup $true 'enable-startup' 'startup'
+    Check-Startup $metadata.version
     $preserved = Join-Path $state 'qualification-preferences.txt'
     [IO.File]::WriteAllText($preserved, 'synthetic preference')
+    Run-NativeUpgrade
+    Check-Payload $UpgradeVersion
+    Check-Startup $UpgradeVersion
+    Require ([IO.File]::ReadAllText($preserved) -eq 'synthetic preference') 'Upgrade deleted user preferences.'
+    Run-Setup $Upgrade $true 'disable-startup' ''
+    Require (!(Test-Path -LiteralPath $startup)) 'Disabling startup left the shortcut behind.'
+    Run-Setup $Upgrade $true 'reenable-startup' 'startup'
+    Check-Startup $UpgradeVersion
+    Require (Test-Path -LiteralPath $changed) 'Upgrade rewrote the old version in place.'
     Run-Setup (Join-Path $root 'unins000.exe') $true 'uninstall'
     Require (!(Test-Path -LiteralPath $root)) 'Uninstaller left program files.'
     Require (!(Test-Path -LiteralPath $shortcut)) 'Uninstaller left its shortcut.'
     Require (!(Test-Path -LiteralPath $registry)) 'Uninstaller left its registration.'
+    Require (!(Test-Path -LiteralPath $startup)) 'Uninstaller left startup enabled.'
     Require ([IO.File]::ReadAllText($preserved) -eq 'synthetic preference') 'Uninstaller deleted user state.'
     Write-Output ("Windows installer qualification passed: " + $count + ' assertions')
 } finally {

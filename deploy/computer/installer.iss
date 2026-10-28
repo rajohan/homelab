@@ -26,13 +26,20 @@ RestartApplications=no
 UninstallLogging=yes
 DisableWelcomePage=no
 UsePreviousAppDir=no
-UsePreviousTasks=no
+UsePreviousTasks=yes
+
+[Tasks]
+Name: "startup"; Description: "Start Mira in the tray and connect when I sign in"; Flags: unchecked
 
 [Files]
 #include "@FILES@"
 
 [Icons]
 Name: "{userprograms}\Homelab\Mira"; Filename: "{app}\versions\{#Version}\mira-computer-desktop.exe"; WorkingDir: "{app}\versions\{#Version}"
+Name: "{userstartup}\Homelab Mira"; Filename: "{app}\versions\{#Version}\mira-computer-desktop.exe"; Parameters: "--startup"; WorkingDir: "{app}\versions\{#Version}"; Tasks: startup
+
+[InstallDelete]
+Type: files; Name: "{userstartup}\Homelab Mira.lnk"; Tasks: not startup
 
 [Code]
 var

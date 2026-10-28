@@ -58,6 +58,7 @@ internal static class DesktopTests
             Settings(root);
             Installation(root);
             DesktopUpdateTests.Run(root, Require);
+            Startup(root);
             Arguments(root);
             Pairing(root);
             foreach (string mode in new[] { "eof", "hang", "parent-death" }) Lifecycle(root, mode);
@@ -83,6 +84,40 @@ internal static class DesktopTests
             return 1;
         }
     }
+    private static void Startup(string root)
+    {
+        string package = Path.Combine(root, "startup-fixture");
+        string settings = Path.Combine(root, "startup-settings");
+        Directory.CreateDirectory(package);
+        File.Copy(Path.Combine(root, "fixture", "mira-computer.exe"), Path.Combine(package, "mira-computer.exe"));
+        File.WriteAllText(Path.Combine(package, "mode.txt"), "eof");
+        var start = typeof(DesktopForm).GetMethod("StartSavedConnection", BindingFlags.Instance | BindingFlags.NonPublic);
+        var stop = typeof(DesktopForm).GetMethod("Stop", BindingFlags.Instance | BindingFlags.NonPublic);
+        var label = typeof(DesktopForm).GetField("status", BindingFlags.Instance | BindingFlags.NonPublic);
+        // No form is shown and no tray icon is registered. Only the owned fake companion is started.
+        using (var form = new DesktopForm(package, settings, null, true)) {
+            Require(!form.ShowInTaskbar && form.WindowState == FormWindowState.Minimized);
+            Require(((Task)start.Invoke(form, null)).IsCompleted);
+            Require(!File.Exists(Path.Combine(package, "parent.pid")));
+        }
+        DesktopSettings.Save(settings, Origin);
+        using (var form = new DesktopForm(package, settings, null, true)) {
+            IntPtr unused = form.Handle;
+            var task = (Task)start.Invoke(form, null);
+            var clock = Stopwatch.StartNew();
+            while (((Label)label.GetValue(form)).Text != "Connected" && !task.IsCompleted && clock.ElapsedMilliseconds < 5000) {
+                Application.DoEvents(); Thread.Sleep(10);
+            }
+            Require(((Label)label.GetValue(form)).Text == "Connected");
+            Require(File.Exists(Path.Combine(package, "parent.pid")));
+            stop.Invoke(form, null);
+            clock.Restart();
+            while (!task.IsCompleted && clock.ElapsedMilliseconds < 6000) { Application.DoEvents(); Thread.Sleep(10); }
+            Require(task.IsCompleted && !task.IsFaulted);
+            Require(((Label)label.GetValue(form)).Text == "Disconnected");
+        }
+    }
+
     private static void Settings(string root)
     {
         Require(DesktopSettings.Origin("https://MIRA.example.test:443/") == Origin);

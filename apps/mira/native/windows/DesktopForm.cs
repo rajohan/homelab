@@ -24,6 +24,9 @@ internal sealed class DesktopForm : Form
         : this(packageDirectory, settingsDirectory, null) { }
 
     internal DesktopForm(string packageDirectory, string settingsDirectory, Action<bool> installation)
+        : this(packageDirectory, settingsDirectory, installation, false) { }
+
+    internal DesktopForm(string packageDirectory, string settingsDirectory, Action<bool> installation, bool startup)
     {
         maintenance = installation;
         package = packageDirectory; settings = settingsDirectory;
@@ -79,7 +82,14 @@ internal sealed class DesktopForm : Form
             string description = "Mira · " + status.Text;
             tray.Text = description.Length > 63 ? description.Substring(0, 63) : description;
         };
-        Shown += delegate { tray.Visible = true; };
+        if (startup) { WindowState = FormWindowState.Minimized; ShowInTaskbar = false; }
+        Shown += async delegate {
+            tray.Visible = true;
+            if (startup) {
+                Hide();
+                await StartSavedConnection();
+            }
+        };
         Resize += delegate
         {
             if (WindowState == FormWindowState.Minimized && tray.Visible)
@@ -109,6 +119,11 @@ internal sealed class DesktopForm : Form
         SystemEvents.SessionSwitch += SessionChanged;
         SystemEvents.PowerModeChanged += PowerChanged;
         UpdateActions();
+    }
+
+    private Task StartSavedConnection()
+    {
+        return String.IsNullOrEmpty(server.Text) ? Task.FromResult(0) : Start("run");
     }
 
     private void ConfigureField(TextBox field)

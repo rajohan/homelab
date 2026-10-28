@@ -56,7 +56,7 @@ Build the entrypoint with Bun 1.4.4: `bun run build:computer linux-x64` or `bun 
 
 On the PC, run `mira-computer pair https://computer.home.example.test`. Paste the ticket into the hidden prompt, never into command arguments, environment variables or a file. Enrollment is sent once; an uncertain response requires revoking the ticket and creating another. The credential is stored in the current user's OS vault using [Bun's credential API](https://bun.sh/docs/runtime/secrets), with Windows `persist: local`, no unrestricted keychain access and no plaintext fallback. A failed save requires revocation in Settings. The vault key is bound to the canonical origin, so another server cannot receive that credential.
 
-`mira-computer run <origin>` connects and reports presence until Ctrl+C. Temporary outages reconnect after thirty seconds; credential/generation rejection stops instead of fighting another companion. `mira-computer forget <origin>` deletes the local key only; revoke in Settings to end already running connections. Windows additionally waits for per-run requests and local approval before the bounded screen/input protocol can execute. No background installation, autostart or provider credentials are enabled.
+`mira-computer run <origin>` connects and reports presence until Ctrl+C. Temporary outages reconnect after thirty seconds; credential/generation rejection stops instead of fighting another companion. `mira-computer forget <origin>` deletes the local key only; revoke in Settings to end already running connections. Windows additionally waits for per-run requests and local approval before the bounded screen/input protocol can execute. No background installation or provider credentials are enabled by the CLI. Optional startup is configured by the installer below.
 
 The compiled presence executable was run on Windows x64 with `--version` and `--help`. `apps/mira/src/server/testing/computerVault.ts` separately qualified the real Windows vault using one random synthetic origin and confirmed removal afterward. This does not qualify native Windows input, lock detection or the live Meshnet route. The builder uses the pinned Bun CLI: its Windows output was exercised directly, rather than inferring executable readiness from a successful cross-compilation.
 
@@ -131,9 +131,9 @@ reaped, then attempts a bounded server stop. Server unavailability cannot restor
 local access. The caller must await cleanup before creating another controller;
 failed cleanup must block replacement.
 
-The installed Windows CLI instantiates this lifecycle. Installer, authenticated
-release distribution, autostart, updater and interactive Windows qualification
-remain required before production activation.
+The installed Windows CLI instantiates this lifecycle. Installer, verified release
+downloads, updates and optional startup are described below. Interactive Windows
+and private routing qualification remain required before production activation.
 
 ## Windows local consent host
 
@@ -191,8 +191,9 @@ the actual consent transport/controller and a fake native input port; they do no
 control the test runner desktop.
 
 The installed Windows CLI composes this host with the packaged supervisor below.
-Windows input/lock transition acceptance, installer, download distribution,
-autostart and the companion updater remain required before production activation.
+Windows input/lock transition acceptance and private routing qualification remain
+required before production activation. Installation, updates and startup use the
+qualified package and per-user installer described below.
 
 ## Packaged Windows worker
 
@@ -390,8 +391,8 @@ Homelab release; these executables are not Authenticode-signed. The build-time Z
 round-trip only reads its own fresh output and is not an untrusted archive
 installer.
 
-The per-user installer and Settings download flow are described below. Automated
-updates/rollback, interactive Windows acceptance and private routing qualification
+The per-user installer and Settings download flow are described below. Rollback,
+interactive Windows acceptance and private routing qualification
 remain separate work before PC activation. No installation, autostart entry, pairing, credential
 or network configuration is changed by building or publishing an archive.
 
@@ -412,8 +413,8 @@ and offers Open Mira, Stop connection and Exit. Double-click restores the window
 Closing the window or choosing Exit stops the connection before exiting.
 Session changes, suspension and resume also stop the connection; reconnecting
 requires the operator to select Connect again. Every Chat request still requires
-separate local window approval. There is no autostart, PC listener or new public
-route.
+separate local window approval. Optional startup at sign-in uses the installer task
+below; there is no PC listener or new public route.
 
 The manager owns the companion and its descendants in a Windows Job Object.
 It first closes the private input pipe to request the existing controller's
@@ -436,7 +437,8 @@ Stable releases also attach `mira-computer-<version>-windows-x64-setup.exe`, bui
 from the same verified payload as the ZIP. It installs into the current user's
 `%LOCALAPPDATA%\Programs\Homelab\MiraComputer`, creates a Start-menu shortcut and
 registers a normal per-user uninstaller. It does not request elevation, enroll a
-computer, start a connection or enable startup. The installer uses the shared
+computer or start a connection during installation. Startup at sign-in is an
+explicit, initially unchecked task. The installer uses the shared
 Homelab icon and the standard dark Inno Setup wizard.
 
 Exit Mira from its tray menu and stop command-line clients before installation,
@@ -543,3 +545,17 @@ new work in the old launcher; let setup finish before reopening Mira.
 The hosted Windows qualification performs an actual upgrade through this native
 copy/verification/installer path. Local tests use harmless fixture executables,
 including broken pipes, incorrect bytes, cancellation and installer descendants.
+
+### Optional startup at sign-in
+
+The per-user installer offers **Start Mira in the tray and connect when I sign in**,
+unchecked on a new installation. Opting in adds only the current user's startup
+shortcut. It starts the qualified desktop manager with `--startup`, uses the saved
+private server and OS-vault pairing, and stays in the tray. If no server is configured,
+it remains disconnected. Startup never enrolls the computer or approves a window.
+
+Automatic upgrades preserve the selected task and update the shortcut to the new
+immutable version. Run the installer again and uncheck the startup task to remove
+it; uninstall also removes the shortcut. Standard [Inno Setup task persistence](https://jrsoftware.org/ishelp/topic_setup_useprevioustasks.htm)
+keeps this choice with the per-user installation. No Windows service, elevated
+scheduled task, new listener or extra credential file is installed.
