@@ -18,6 +18,13 @@ internal static class DesktopTests
     {
         try
         {
+            if (args.Length == 2 && args[0] == "--qualify-update") {
+                using (var artifact = DesktopUpdateArtifact.Receive(Console.OpenStandardInput(), args[1], Stopwatch.StartNew())) {
+                    if (!artifact.Install()) return 1;
+                }
+                Console.WriteLine("Native update installation completed.");
+                return 0;
+            }
             if (args.Length == 2 && args[0] == "--lease") return InstallationProtocol.Run(args[1]);
             if (args.Length == 2 && args[0] == "--parent")
             {
@@ -27,8 +34,9 @@ internal static class DesktopTests
             if ((args.Length == 2 || args.Length == 3) && args[0] == "--preview")
             {
                 Application.EnableVisualStyles();
-                using (var form = new DesktopForm(AppDomain.CurrentDomain.BaseDirectory, Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "no-settings")))
+                using (var form = new DesktopForm(AppDomain.CurrentDomain.BaseDirectory, Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "no-settings"), delegate { }))
                 {
+                    ((TextBox)typeof(DesktopForm).GetField("server", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(form)).Text = "https://mira.example.test";
                     if (args.Length == 3) form.Width = Math.Max(520, Math.Min(1000, int.Parse(args[2])));
                     // Materialize only this owned test form's controls; never show a window or tray icon.
                     var create = typeof(Control).GetMethod("CreateControl", BindingFlags.Instance | BindingFlags.NonPublic, null, new[] { typeof(bool) }, null);
@@ -49,6 +57,7 @@ internal static class DesktopTests
             string root = AppDomain.CurrentDomain.BaseDirectory;
             Settings(root);
             Installation(root);
+            DesktopUpdateTests.Run(root, Require);
             Arguments(root);
             Pairing(root);
             foreach (string mode in new[] { "eof", "hang", "parent-death" }) Lifecycle(root, mode);

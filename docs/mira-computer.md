@@ -485,7 +485,7 @@ The button is an ordinary official GitHub release download; it does not verify t
 browser's downloaded bytes or install software. Windows x64 on Windows 10 or later
 is required. Run the per-user installer and then pair the computer. For a manual
 upgrade, exit Mira, run the newer installer and reopen Mira; pairing is retained.
-Automatic authenticated updates/rollback remain separate work.
+The Windows app also offers the authenticated update flow below. Recovery to a retained older installation remains a manual operation.
 
 A paired Windows computer with a lower stable version shows **Update available**.
 Unknown, prerelease or newer local versions are not called outdated. Each authenticated
@@ -517,4 +517,29 @@ Each operation owns a unique temporary directory. The trusted consumer must wait
 for all uses of the file to stop; completion, cancellation and errors remove the
 staging directory. The download deadline is not allowed to terminate an installer
 mid-write. This transport does not launch installers or expose a model tool. Native
-update UI, installation handoff and rollback qualification remain subsequent work.
+update UI and installation handoff are described below; rollback qualification remains separate work.
+
+### Updating in the Windows app
+
+Stop the connection, then select **Update app**. The launcher downloads the newer
+verified stable release using the existing private pairing. **Stop** or closing
+Mira cancels the download. No update creates a connection or approves a window.
+
+The companion transfers a bounded metadata line and exact installer bytes over
+its private launcher pipe, never a credential, URL or local path. The launcher
+verifies its own copy and keeps a native read handle that denies modification
+and deletion. It requires clean download-process exit and unexpired evidence
+before releasing its installation lease. Other running Mira command-line clients
+still prevent installation.
+
+After setup starts, Stop/close cannot terminate it mid-write. A separate installer
+job waits for all descendants, with no kill-on-owner-close policy; ordinary
+connection and download workers retain their existing kill-on-close protection.
+The per-user installer keeps pairing and preferences. After successful completion,
+Mira asks you to reopen it from the updated Start-menu shortcut. It does not
+silently reconnect or grant input access. An unconfirmed installer outcome blocks
+new work in the old launcher; let setup finish before reopening Mira.
+
+The hosted Windows qualification performs an actual upgrade through this native
+copy/verification/installer path. Local tests use harmless fixture executables,
+including broken pipes, incorrect bytes, cancellation and installer descendants.

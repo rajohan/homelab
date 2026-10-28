@@ -30,6 +30,8 @@ export async function buildWindowsDesktop(directory: string, tests = false) {
         "WorkerJob.cs",
         "DesktopSettings.cs",
         "DesktopSession.cs",
+        "DesktopUpdateArtifact.cs",
+        "DesktopUpdateSession.cs",
         "InstallationLease.cs",
         "InstallationProtocol.cs",
         "ConsentProtocol.cs",
@@ -61,7 +63,11 @@ export async function buildWindowsDesktop(directory: string, tests = false) {
     compile(desktop, [...shared, "DesktopProgram.cs"], true);
     const checks = tests ? path.join(directory, "desktop-tests.exe") : undefined;
     if (checks) {
-        compile(checks, [...shared, "tests/DesktopTests.cs"]);
+        compile(checks, [
+            ...shared,
+            "tests/DesktopTests.cs",
+            "tests/DesktopUpdateTests.cs",
+        ]);
         const fixture = path.join(directory, "fixture");
         await mkdir(fixture);
         compile(path.join(fixture, "mira-computer.exe"), [

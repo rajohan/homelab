@@ -16,22 +16,28 @@ internal static class DesktopProgram
         {
             if (check) { DesktopSettings.PackageDirectory(Application.ExecutablePath); return 0; }
             if (leaseOnly) return InstallationProtocol.Run(InstallationLease.DirectoryPath);
-            using (var lease = InstallationLease.Open(InstallationLease.DirectoryPath, false))
-            using (var identity = WindowsIdentity.GetCurrent())
+            FileStream lease = InstallationLease.Open(InstallationLease.DirectoryPath, false);
+            try
             {
-                string directory = DesktopSettings.PackageDirectory(Application.ExecutablePath);
-                if (!Environment.UserInteractive || new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator))
-                    throw new InvalidOperationException("Start Mira in your normal Windows session without administrator privileges.");
-                bool created;
-                using (var instance = new Mutex(true, @"Global\Homelab.Mira.Computer.Desktop." + identity.User.Value, out created))
+                using (var identity = WindowsIdentity.GetCurrent())
                 {
-                    if (!created) { MessageBox.Show("Mira is already running for this Windows account.", "Mira"); return 1; }
-                    Application.EnableVisualStyles();
-                    Application.SetCompatibleTextRenderingDefault(false);
-                    string settings = InstallationLease.DirectoryPath;
-                    using (var form = new DesktopForm(directory, settings)) Application.Run(form);
+                    string directory = DesktopSettings.PackageDirectory(Application.ExecutablePath);
+                    if (!Environment.UserInteractive || new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator))
+                        throw new InvalidOperationException("Start Mira in your normal Windows session without administrator privileges.");
+                    bool created;
+                    using (var instance = new Mutex(true, @"Global\Homelab.Mira.Computer.Desktop." + identity.User.Value, out created))
+                    {
+                        if (!created) { MessageBox.Show("Mira is already running for this Windows account.", "Mira"); return 1; }
+                        Application.EnableVisualStyles();
+                        Application.SetCompatibleTextRenderingDefault(false);
+                        string settings = InstallationLease.DirectoryPath;
+                        using (var form = new DesktopForm(directory, settings, delegate(bool release) {
+                            if (release) { if (lease != null) lease.Dispose(); lease = null; }
+                            else if (lease == null) lease = InstallationLease.Open(settings, false);
+                        })) Application.Run(form);
+                    }
                 }
-            }
+            } finally { if (lease != null) lease.Dispose(); }
             return 0;
         }
         catch

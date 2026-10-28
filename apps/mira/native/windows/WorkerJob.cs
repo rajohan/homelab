@@ -12,6 +12,8 @@ internal sealed class WorkerJob : IDisposable
 {
     private IntPtr job;
     private IntPtr process;
+    private readonly bool terminateOnClose;
+    private bool resumed;
     internal Stream Input;
     internal Stream Output;
     internal Stream Error;
@@ -21,7 +23,17 @@ internal sealed class WorkerJob : IDisposable
 
     // Callers select the fixed sibling executable and locally validated arguments, never a shell.
     internal WorkerJob(string executable, string directory, string[] arguments)
+        : this(executable, directory, arguments, true) { }
+
+    // The installer has crossed the local update boundary and must finish even if the UI exits.
+    internal static WorkerJob StartInstaller(string executable, string directory, string[] arguments)
     {
+        return new WorkerJob(executable, directory, arguments, false);
+    }
+
+    private WorkerJob(string executable, string directory, string[] arguments, bool terminate)
+    {
+        terminateOnClose = terminate;
         IntPtr stdinRead = IntPtr.Zero, stdinWrite = IntPtr.Zero;
         IntPtr stdoutRead = IntPtr.Zero, stdoutWrite = IntPtr.Zero;
         IntPtr stderrRead = IntPtr.Zero, stderrWrite = IntPtr.Zero;
@@ -33,7 +45,7 @@ internal sealed class WorkerJob : IDisposable
             job = CreateJobObject(IntPtr.Zero, null);
             Require(job != IntPtr.Zero);
             ExtendedLimit limit = new ExtendedLimit();
-            limit.Basic.LimitFlags = 0x2000; // JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, no breakaway.
+            limit.Basic.LimitFlags = terminate ? 0x2000U : 0U; // Ordinary workers die with the owner; committed installers finish. No breakaway.
             Require(SetInformationJobObject(job, 9, ref limit, (uint)Marshal.SizeOf(typeof(ExtendedLimit))));
             Pipe(out stdinRead, out stdinWrite, false);
             Pipe(out stdoutRead, out stdoutWrite, true);
@@ -76,6 +88,7 @@ internal sealed class WorkerJob : IDisposable
             Output = Stream(ref stdoutRead, FileAccess.Read);
             Error = Stream(ref stderrRead, FileAccess.Read);
             Require(ResumeThread(child.Thread) == 1);
+            resumed = true;
         }
         catch
         {
@@ -121,6 +134,7 @@ internal sealed class WorkerJob : IDisposable
 
     internal bool StopAndConfirm()
     {
+        if (!terminateOnClose) return false;
         if (job == IntPtr.Zero) return true;
         if (!TerminateJobObject(job, 1)) return false;
         Stopwatch wait = Stopwatch.StartNew();
@@ -135,10 +149,34 @@ internal sealed class WorkerJob : IDisposable
         return false;
     }
 
+    internal bool FinishInstaller()
+    {
+        if (terminateOnClose || !resumed) throw new InvalidOperationException();
+        Input.Dispose();
+        var stdout = new Thread(delegate() { Drain(Output); });
+        var stderr = new Thread(delegate() { Drain(Error); });
+        stdout.IsBackground = stderr.IsBackground = true;
+        stdout.Start(); stderr.Start();
+        for (;;) {
+            Accounting accounting;
+            Require(QueryInformationJobObject(job, 1, out accounting, (uint)Marshal.SizeOf(typeof(Accounting)), IntPtr.Zero));
+            if (accounting.ActiveProcesses == 0) break;
+            Thread.Sleep(50);
+        }
+        bool clean = stdout.Join(1500) & stderr.Join(1500);
+        return clean && Exited && ExitCode == 0;
+    }
+    private static void Drain(Stream input)
+    {
+        try { var buffer = new byte[4096]; while (input.Read(buffer, 0, buffer.Length) > 0) { } }
+        catch (IOException) { }
+        catch (ObjectDisposedException) { }
+    }
+
     public void Dispose()
     {
         // Keep kill-on-close as a fallback even if explicit termination or accounting fails.
-        if (job != IntPtr.Zero) TerminateJobObject(job, 1);
+        if (job != IntPtr.Zero && (terminateOnClose || !resumed)) TerminateJobObject(job, 1);
         Close(ref job);
         Close(ref process);
         if (Input != null) Input.Dispose();

@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
+using System.Security.Cryptography;
 using System.Threading;
 
 // A standalone fake companion. It never reads credentials, accesses a network, or captures input.
@@ -16,6 +17,16 @@ internal static class DesktopFixture
     }
     private static int Main(string[] args)
     {
+        if (args.Length > 0 && (args[0] == "finish-root" || args[0] == "/CURRENTUSER")) {
+            string next = args[0] == "finish-root" ? "finish-child" : "finish-child-no-file";
+            using (Process.Start(new ProcessStartInfo(Process.GetCurrentProcess().MainModule.FileName, next) { UseShellExecute = false, CreateNoWindow = true })) { }
+            return 0;
+        }
+        if (args.Length == 1 && (args[0] == "finish-child" || args[0] == "finish-child-no-file")) {
+            Thread.Sleep(400);
+            if (args[0] == "finish-child") File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "installer-finished.txt"), "finished");
+            return 0;
+        }
         if (args.Length == 1 && args[0] == "descendant")
         {
             PublishPid("descendant.pid");
@@ -29,6 +40,21 @@ internal static class DesktopFixture
         string directory = AppDomain.CurrentDomain.BaseDirectory;
         string mode = File.ReadAllText(Path.Combine(directory, "mode.txt"));
         if (args.Length < 2 || args[1] != "https://mira.example.test") return 2;
+        if (args[0] == "download-update") {
+            if (args.Length != 3 || args[2] != "--supervised") return 9;
+            if (mode == "update-hang") { Console.In.ReadToEnd(); return 1; }
+            var bytes = new byte[150000]; new Random(17).NextBytes(bytes);
+            string hash;
+            using (var sha = SHA256.Create()) hash = BitConverter.ToString(sha.ComputeHash(bytes)).Replace("-", "").ToLowerInvariant();
+            if (mode == "update-hash") hash = new string('b', 64);
+            Console.Write("{\"repository\":\"demo/homelab\",\"version\":\"0.11.0\",\"revision\":\"" + new string('a', 40) + "\",\"size\":" + bytes.Length + ",\"sha256\":\"" + hash + "\",\"validForMs\":60000}\n");
+            Console.Out.Flush();
+            var output = Console.OpenStandardOutput();
+            output.Write(bytes, 0, mode == "update-short" ? 10 : bytes.Length);
+            if (mode == "update-extra") output.WriteByte(17);
+            output.Flush();
+            return mode == "update-failure" ? 1 : 0;
+        }
         if (mode == "pair")
         {
             if (args.Length != 2 || args[0] != "pair") return 3;

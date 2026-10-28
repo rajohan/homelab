@@ -10,6 +10,8 @@ import { ComputerCredentialStore } from "./companionStore";
 import { computerConnectionWork } from "./companionWork";
 import { openComputerInstallationLease } from "./installationLease";
 import { installedComputerHost, readComputerPackage } from "./installedComputer";
+import { withComputerUpdate } from "./updateDownload";
+import { writeComputerUpdate } from "./updatePipe";
 
 function print(message: string) {
     process.stdout.write(message + "\n");
@@ -42,10 +44,15 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<void
         return;
     }
     const [command, suppliedOrigin, mode] = args;
-    const supervised = command === "run" && mode === "--supervised" && args.length === 3;
+    const supervised =
+        (command === "run" || command === "download-update") &&
+        mode === "--supervised" &&
+        args.length === 3;
     if (
         (args.length !== 2 && !supervised) ||
-        !["pair", "run", "forget"].includes(command ?? "") ||
+        !["pair", "run", "forget", "download-update"].includes(command ?? "") ||
+        (command === "download-update" &&
+            (!supervised || process.platform !== "win32")) ||
         !suppliedOrigin
     )
         throw new Error(
@@ -127,6 +134,19 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<void
                 throw new Error(
                     "Pair this server first using a code from Settings > Computers."
                 );
+            if (command === "download-update") {
+                await withComputerUpdate(
+                    {
+                        installedVersion: version,
+                        getUpdate: (signal) =>
+                            companion.update(existing.credential, signal),
+                        signal: stopped.signal,
+                    },
+                    (file, update, signal) =>
+                        writeComputerUpdate(file, update, process.stdout, signal)
+                );
+                return;
+            }
             await runComputerPresence({
                 companion,
                 credential: existing.credential,

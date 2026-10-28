@@ -10,15 +10,22 @@ internal sealed class DesktopForm : Form
     private readonly TextBox server = new TextBox();
     private readonly TextBox code = new TextBox();
     private readonly Label status = new Label();
-    private readonly Button connect = new DesktopButton(), pair = new DesktopButton(), forget = new DesktopButton(), stop = new DesktopButton();
+    private readonly Button connect = new DesktopButton(), pair = new DesktopButton(), forget = new DesktopButton(), stop = new DesktopButton(), update = new DesktopButton();
     private readonly NotifyIcon tray = new NotifyIcon();
     private readonly ContextMenuStrip trayMenu = new ContextMenuStrip();
     private readonly ToolStripMenuItem trayStop = new ToolStripMenuItem("Stop connection");
     private DesktopSession session;
+    private DesktopUpdateSession download;
+    private readonly Action<bool> maintenance;
+    private bool installing;
     private bool closing, blocked, stopping;
 
     internal DesktopForm(string packageDirectory, string settingsDirectory)
+        : this(packageDirectory, settingsDirectory, null) { }
+
+    internal DesktopForm(string packageDirectory, string settingsDirectory, Action<bool> installation)
     {
+        maintenance = installation;
         package = packageDirectory; settings = settingsDirectory;
         Text = "Mira · Computer connection";
         Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
@@ -55,8 +62,8 @@ internal sealed class DesktopForm : Form
         status.AutoSize = true; status.Text = "Disconnected"; status.Margin = new Padding(0, 4, 0, 14);
         layout.Controls.Add(status);
         var actions = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, WrapContents = true, Margin = new Padding(0) };
-        ConfigureButton(connect, "Connect"); ConfigureButton(stop, "Stop");
-        actions.Controls.Add(connect); actions.Controls.Add(stop); layout.Controls.Add(actions);
+        ConfigureButton(connect, "Connect"); ConfigureButton(stop, "Stop"); ConfigureButton(update, "Update app");
+        actions.Controls.Add(connect); actions.Controls.Add(stop); actions.Controls.Add(update); layout.Controls.Add(actions);
         Controls.Add(layout);
         tray.Icon = Icon;
         tray.Text = "Mira · Disconnected";
@@ -93,9 +100,11 @@ internal sealed class DesktopForm : Form
                 await Start("forget");
         };
         stop.Click += delegate { Stop(); };
+        update.Click += async delegate { await UpdateApp(); };
         FormClosing += delegate(object sender, FormClosingEventArgs args)
         {
-            if (session != null) { args.Cancel = true; closing = true; Stop(); }
+            if (installing) { args.Cancel = true; status.Text = "Installing update… Wait for setup to finish."; }
+            else if (session != null || download != null) { args.Cancel = true; closing = true; Stop(); }
         };
         SystemEvents.SessionSwitch += SessionChanged;
         SystemEvents.PowerModeChanged += PowerChanged;
@@ -115,17 +124,18 @@ internal sealed class DesktopForm : Form
     }
     private void UpdateActions()
     {
-        bool idle = session == null && !blocked;
+        bool idle = session == null && download == null && !blocked && !installing && !closing;
         bool valid;
         try { DesktopSettings.Origin(server.Text); valid = true; } catch { valid = false; }
         server.Enabled = code.Enabled = idle;
         pair.Enabled = idle && valid && code.Text.Length > 0;
         connect.Enabled = forget.Enabled = idle && valid;
-        stop.Enabled = trayStop.Enabled = session != null && !stopping;
+        update.Enabled = idle && valid && maintenance != null;
+        stop.Enabled = trayStop.Enabled = (session != null || download != null) && !stopping && !installing;
     }
     private async Task Start(string operation)
     {
-        if (session != null || blocked || closing) return;
+        if (session != null || download != null || installing || blocked || closing) return;
         DesktopSession current = null;
         try
         {
@@ -171,13 +181,65 @@ internal sealed class DesktopForm : Form
             if (closing) Close();
         }
     }
+    private async Task UpdateApp()
+    {
+        if (session != null || download != null || installing || blocked || closing || maintenance == null) return;
+        DesktopUpdateSession current = null;
+        DesktopUpdateArtifact artifact = null;
+        bool released = false, completed = false;
+        try {
+            string origin = DesktopSettings.Origin(server.Text);
+            DesktopSettings.Save(settings, origin);
+            code.Clear();
+            current = new DesktopUpdateSession(package, origin, settings);
+            download = current; stopping = false;
+            status.Text = "Checking and downloading update…";
+            UpdateActions();
+            var result = await current.Run();
+            artifact = result.Artifact;
+            blocked = !result.Clean;
+            if (blocked) { status.Text = "Update cleanup could not be confirmed. Close Mira before trying again."; return; }
+            if (closing || stopping) { status.Text = "Update cancelled."; return; }
+            if (artifact == null) { status.Text = "No verified update was downloaded. Check the server and pairing, or try again later."; return; }
+            artifact.RequireFresh();
+            installing = true;
+            status.Text = "Installing Mira " + artifact.Version + "…";
+            UpdateActions();
+            maintenance(true); released = true;
+            bool success = await Task.Run((Func<bool>)artifact.Install);
+            completed = true;
+            if (success) {
+                MessageBox.Show(this, "Mira was updated. Open Mira again from the Start menu; your pairing is kept.", "Update installed", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                closing = true;
+            } else status.Text = "Setup did not complete. Close other Mira clients and try again.";
+        }
+        catch {
+            blocked = true;
+            status.Text = "The update could not be confirmed. Let any setup finish, then reopen Mira from Start.";
+        }
+        finally {
+            installing = false;
+            if (released && completed && !closing) {
+                try { maintenance(false); } catch { blocked = true; }
+            }
+            if (artifact != null) {
+                try { artifact.Dispose(); } catch { blocked = true; }
+            }
+            if (current != null) current.Dispose();
+            download = null; stopping = false;
+            UpdateActions();
+            if (closing) Close();
+        }
+    }
+
     private void Stop()
     {
-        if (session == null) return;
+        if (installing || (session == null && download == null)) return;
         status.Text = "Stopping…";
         stopping = true;
         UpdateActions();
-        session.Stop();
+        if (session != null) session.Stop();
+        if (download != null) download.Stop();
     }
     private void RestoreWindow()
     {
@@ -202,6 +264,7 @@ internal sealed class DesktopForm : Form
             SystemEvents.SessionSwitch -= SessionChanged;
             SystemEvents.PowerModeChanged -= PowerChanged;
             if (session != null) session.Stop();
+            if (download != null) download.Stop();
             tray.Visible = false;
             tray.Dispose();
             trayMenu.Dispose();
