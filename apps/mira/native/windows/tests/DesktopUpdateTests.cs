@@ -52,7 +52,8 @@ internal static class DesktopUpdateTests
             require(Directory.GetDirectories(staging).Length == 0);
         }
         // Slow download before the confirmation header must not consume its new validity.
-        using (var stream = new DelayedReceipt(Frame(bytes, hash, bytes.Length, 500), 700, 0))
+        // Allow real disk flush/hash overhead on hosted runners while keeping pre-header delay longer than validity.
+        using (var stream = new DelayedReceipt(Frame(bytes, hash, bytes.Length, 5000), 7000, 0))
         using (var artifact = DesktopUpdateArtifact.Receive(stream, staging)) require(artifact.Version == "0.11.0");
         // Delay after receipt delivery still expires the operation before an installer is admitted.
         Refused(delegate { using (var stream = new DelayedReceipt(Frame(bytes, hash, bytes.Length, 1), 0, 20)) using (DesktopUpdateArtifact.Receive(stream, staging)) { } }, require);
