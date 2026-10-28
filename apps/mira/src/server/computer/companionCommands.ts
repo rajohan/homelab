@@ -8,6 +8,14 @@ import {
 } from "./companion";
 import type { ComputerConsentController } from "./companionConsent";
 
+/** A retryable polling outage raised only when no native operation was admitted by that claim. */
+export class ComputerPollingOutage extends ComputerConnectionError {
+    /** Create a content-free retry signal; the command loop still awaits controller cleanup before rejection. */
+    constructor() {
+        super(true);
+    }
+}
+
 /**
  * Deliver sequential one-time commands only inside an already accepted local controller.
  * @param options - Fixed private transport, credential and consented controller; no host factory or retry hook.
@@ -32,11 +40,13 @@ export async function runComputerCommandLoop(options: {
         const binding = options.controller.commandBinding();
         while (!signal.aborted) {
             const started = now();
-            const command = await options.companion.claimCommand(
-                options.credential,
-                binding,
-                signal
-            );
+            const command = await options.companion
+                .claimCommand(options.credential, binding, signal)
+                .catch((error: unknown) => {
+                    if (error instanceof ComputerConnectionError && error.retryable)
+                        throw new ComputerPollingOutage();
+                    throw error;
+                });
             signal.throwIfAborted();
             if (!command) {
                 await wait(500, signal);

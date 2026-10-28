@@ -1,6 +1,6 @@
 # Mira computer driver
 
-The computer foundation uses the unmodified, pinned `@trycua/cua-driver` 0.37.0 SDK with Bun 1.4.4. It provides a single-window adapter, a supervised private child process and a reproducible native X11 qualification. It is not registered as a Chat tool or deployed on a user's desktop yet.
+The computer foundation uses the unmodified, pinned `@trycua/cua-driver` 0.37.0 SDK with Bun 1.4.4. It provides a single-window adapter, a supervised private child process and a reproducible native X11 qualification. Chat tools, per-run access controls and the installed Windows composition are implemented. Production PC activation still requires interactive qualification, private routing and release delivery.
 
 ## Authority and observations
 
@@ -20,7 +20,7 @@ The interactive host selects the packaged child entrypoint and working directory
 
 Both ends enforce five-minute total and one-minute idle limits. Parent pipe loss aborts admitted work; the child has its own two-second forced-exit fallback for stuck native cleanup. The parent waits for actual process exit before removing its private temporary directory, including any native capability manifest. Parent-enforced termination is independent of the child event loop; the child's parent-loss fallback still requires that loop to run. The packaged Windows supervisor described below additionally owns and confirms cleanup of the complete worker process tree; other platforms still need equivalent ownership before desktop activation. Native diagnostic output is drained without retaining it. Protocol failures return generic errors; possibly delivered input remains unknown.
 
-The child receives only explicitly selected OS/display variables. Provider tokens, database credentials, GitHub credentials, preload flags and other environment variables are omitted, and Bun dotenv loading is disabled. Display variables necessarily convey local desktop access. This is process supervision and driver scoping, **not an OS sandbox**: it does not remove the user's filesystem or network permissions. The native child source entrypoint is qualified only in the disposable image; packaging it into the presence companion, OS readiness checks and production activation remain separate work.
+The child receives only explicitly selected OS/display variables. Provider tokens, database credentials, GitHub credentials, preload flags and other environment variables are omitted, and Bun dotenv loading is disabled. Display variables necessarily convey local desktop access. This is process supervision and driver scoping, **not an OS sandbox**: it does not remove the user's filesystem or network permissions. The packaged Windows supervisor and independent consent/readiness host are described below. Production activation remains separate from building and testing the package.
 
 ## Computer pairing foundation
 
@@ -30,7 +30,7 @@ The companion initiates outbound HTTPS requests to `/api/mira/computers/enroll`,
 
 A connection has a server-issued generation, fifteen-second heartbeat cadence and forty-five-second lease. A new connection invalidates the previous generation; stale, duplicate or expired heartbeats cannot restore it. Revocation atomically removes both credential verifiers and the connection. Ticket creation is serialized per owner, with at most twenty live enrollments/computers and twenty tickets per hour. Metadata lists contain only the current owner's fifty most relevant records.
 
-**Pairing and a fresh heartbeat do not authorize input or prove the desktop is ready.** Every machine receipt explicitly reports `controlAllowed: false`. No model tools, window selection, screenshot or input endpoints are registered by this foundation. Companion release distribution, authenticated run grants, local stop/takeover, OS readiness, process-tree ownership and update qualification remain required before control activation. Installation/platform/version fields are self-reported metadata, not a trust attestation.
+**Pairing and a fresh heartbeat do not authorize input or prove the desktop is ready.** Every machine receipt explicitly reports `controlAllowed: false`. The separate per-run grant, local consent and command queue described below are required for screen/input access. Release distribution, interactive qualification and update qualification remain required before production activation. Installation/platform/version fields are self-reported metadata, not a trust attestation.
 
 ## Repeatable qualification
 
@@ -40,7 +40,7 @@ The image starts Xvfb, Openbox and a synthetic Tk window, waiting for the displa
 
 Unit tests also run real synthetic child processes to verify hung initialization, hung input, cancellation, parent EOF, forced termination, process reaping, temporary cleanup, environment filtering and disabled dotenv loading. Protocol tests reject privilege-widening requests and suppress late results after pipe loss. Other tests cover scope validation, stale/superseded/cross-session observations, out-of-bounds input, overlapping calls, host revocation, cancellation, unknown results, malformed frames, native cleanup and exact fixed-tool request mapping.
 
-Passing this fixture qualifies Linux X11 with explicit foreground input. It does not qualify Windows, Wayland, browser origin handling, background keyboard input, OS lock detection or production computer access. Remaining delivery work includes a packaged companion, outbound pairing, session grants, stop/takeover/revoke controls, Windows/browser acceptance and updater integration for the deployed companion artifact.
+Passing this fixture qualifies Linux X11 with explicit foreground input. It does not qualify Windows, Wayland, browser origin handling, background keyboard input, OS lock detection or production computer access. Remaining delivery work includes interactive Windows/browser acceptance, installation, release distribution and updater integration for the deployed companion artifact.
 
 Upstream references: [SDK](https://cua.ai/docs/cua-driver/guides/use-the-sdk), [permission manifests](https://cua.ai/docs/cua-driver/guides/permissions), [platform limits](https://cua.ai/docs/cua-driver/concepts/platform-support).
 
@@ -52,11 +52,11 @@ For this homelab, computer traffic must use the existing NordVPN Meshnet route. 
 
 Settings > Computers creates a ten-minute, single-use pairing code, lists presence and revokes pairings after recent human verification. Connected means that the server received a fresh heartbeat; it does not claim screen readiness. Revoked/expired pairings remain identifiable. Closing the code dialog clears its transient UI state.
 
-Build with Bun 1.4.4: `bun run build:computer linux-x64` or `bun run build:computer windows-x64`. Artifacts are under `apps/mira/dist/computer/<platform>/`. These presence-only executables contain their Bun runtime and disable automatic dotenv, bunfig, package.json and tsconfig loading. Native input is not included. Release publication and updater qualification remain separate work.
+Build the entrypoint with Bun 1.4.4: `bun run build:computer linux-x64` or `bun run build:computer windows-x64`. Artifacts are under `apps/mira/dist/computer/<platform>/`. The executable contains its Bun runtime and disables automatic dotenv, bunfig, package.json and tsconfig loading. Windows `run` requires the complete package built with `build:computer:windows`, described below. Release publication and updater qualification remain separate work.
 
 On the PC, run `mira-computer pair https://computer.home.example.test`. Paste the ticket into the hidden prompt, never into command arguments, environment variables or a file. Enrollment is sent once; an uncertain response requires revoking the ticket and creating another. The credential is stored in the current user's OS vault using [Bun's credential API](https://bun.sh/docs/runtime/secrets), with Windows `persist: local`, no unrestricted keychain access and no plaintext fallback. A failed save requires revocation in Settings. The vault key is bound to the canonical origin, so another server cannot receive that credential.
 
-`mira-computer run <origin>` connects and reports presence until Ctrl+C. Temporary outages reconnect after thirty seconds; credential/generation rejection stops instead of fighting another companion. `mira-computer forget <origin>` deletes the local key only; revoke in Settings to end already running connections. No background installation, autostart, provider credentials or remote command execution is enabled.
+`mira-computer run <origin>` connects and reports presence until Ctrl+C. Temporary outages reconnect after thirty seconds; credential/generation rejection stops instead of fighting another companion. `mira-computer forget <origin>` deletes the local key only; revoke in Settings to end already running connections. Windows additionally waits for per-run requests and local approval before the bounded screen/input protocol can execute. No background installation, autostart or provider credentials are enabled.
 
 The compiled presence executable was run on Windows x64 with `--version` and `--help`. `apps/mira/src/server/testing/computerVault.ts` separately qualified the real Windows vault using one random synthetic origin and confirmed removal afterward. This does not qualify native Windows input, lock detection or the live Meshnet route. The builder uses the pinned Bun CLI: its Windows output was exercised directly, rather than inferring executable readiness from a successful cross-compilation.
 
@@ -65,8 +65,8 @@ The compiled presence executable was run on Windows x64 with `--version` and `--
 The server now stores a separate, short-lived permission for one running job and
 one paired computer. `mira.computers.access.request` requires fresh human MFA and
 an exact displayed computer version. A request is only pending consent: the
-presence-only companion does not consume it or enable native control yet. Chat
-controls and the local consent UI will use this protocol in a later slice.
+installed Windows companion must obtain a separate local approval before accepting
+it. Chat controls and the local consent UI use the same protocol.
 
 The permission captures the current worker lease, computer connection generation,
 view-only/input scope, automation definition and relevant pause-control versions.
@@ -78,7 +78,7 @@ limited to twenty per account per hour, including stopped requests.
 The private machine listener exposes `access/pending`, `access/accept` and
 `access/stop`. Acceptance is single-use and binds an opaque, locally generated
 window selection ID. The executable, PID, window handle and screenshots are not
-part of this protocol. A future companion must obtain explicit local consent,
+part of this protocol. The installed companion must obtain explicit local consent,
 keep that ID mapped to the immutable host-selected target, retire any previous
 local controller before accepting a new session, and enforce OS
 readiness before opening the native driver. These endpoints alone cannot read
@@ -131,9 +131,9 @@ reaped, then attempts a bounded server stop. Server unavailability cannot restor
 local access. The caller must await cleanup before creating another controller;
 failed cleanup must block replacement.
 
-The presence-only CLI still does not instantiate the consent lifecycle. Per-run command delivery,
-Chat controls, installer, signed release distribution, autostart and updater
-qualification remain required before enabling screen/input on the user's PC.
+The installed Windows CLI instantiates this lifecycle. Installer, authenticated
+release distribution, autostart, updater and interactive Windows qualification
+remain required before production activation.
 
 ## Windows local consent host
 
@@ -190,8 +190,7 @@ unknown and is never retried. Synthetic tests exercise the real child pipe with
 the actual consent transport/controller and a fake native input port; they do not
 control the test runner desktop.
 
-This composition is not yet enabled in the presence CLI. The Windows driver factory can now use the packaged supervisor below. Per-run
-command transport, Chat controls,
+The installed Windows CLI composes this host with the packaged supervisor below.
 Windows input/lock transition acceptance, installer, download distribution,
 autostart and the companion updater remain required before production activation.
 
@@ -249,7 +248,7 @@ coverage.
 
 This qualifies packaged startup and process ownership, not interactive Windows
 capture/input, lock/sleep transitions, installer signing, release distribution,
-private routing or the live PC connection. The presence CLI remains unchanged.
+private routing or the live PC connection.
 
 ## Connection-owned consent lifecycle
 
@@ -280,13 +279,13 @@ hosts to cover heartbeat during prompts, late selection, network loss, declined
 request replay, active local stop, blocked cleanup and startup failures. Windows
 CI runs the same lifecycle tests. No native input occurs in these tests.
 
-The CLI still supplies no connection task and remains presence-only. Command
-transport, user-visible Chat controls, interactive Windows qualification and the
-final installed companion composition are not activated by this lifecycle module.
+The installed Windows CLI supplies the connection task described below. Other
+platforms remain presence-only. Interactive Windows qualification and private
+routing are still required before production activation.
 
 ## Companion command transport
 
-The command client is implemented separately from activation. The installed presence CLI still does not start consent, capture or input. The private server queue and one-time dispatch are implemented; executor tools are implemented, while Chat access controls and final companion composition remain required before enabling it.
+The installed Windows CLI connects this command client to local consent and the private server queue. Each request still requires a live manual Chat run and a separate local window approval; pairing alone cannot start capture or input.
 
 An accepted controller exposes only its access ID, connection generation and opaque target ID. The outbound client claims one command, validates every binding and admits only observation, click or literal text. A command has at most ten seconds, measured conservatively from the start of its claim request. Local consent, OS readiness, one-use observations and the short server permits continue to gate every native operation.
 
@@ -314,7 +313,7 @@ Observation returns validated inline image content plus generated observation ID
 
 The executor polls for at most fifteen seconds without holding a transaction open. Cancellation, uncertain delivery, lost consumption, invalid results or receipt-finalization failure stop the exact grant and erase outstanding command content. Final disclosure locks the same account controls and live run, checks the consumed command deadline and current access, and commits receipt success before releasing the result. A human stop that wins that fence discards the image. Repeated call IDs remain blocked across recreated tool routers.
 
-Integration tests use a disposable database and synthetic frames to qualify this complete producer/consumer/result path, including cancellation before/after dispatch, stopped access after consumption and failed final receipt commits. They do not capture or control a real desktop. The installed presence CLI still does not activate capture/input. Chat access controls, final companion composition and private-session qualification are required before live activation.
+Integration tests use a disposable database and synthetic frames to qualify this complete producer/consumer/result path, including cancellation before/after dispatch, stopped access after consumption and failed final receipt commits. They do not capture or control a real desktop. The installed Windows CLI composes these tools with local approval. Private-session and interactive Windows qualification remain required before live activation.
 
 ## Chat access controls
 
@@ -324,4 +323,40 @@ The model can use `mira_computer_wait` to read its own run's readiness or wait a
 
 The status strip and dialog offer Stop access without requiring another verification. Failed or old status reads show unavailable status while retaining an existing stop action. Device selections pin the displayed version, and switching runs clears the selection. Dialogs use the shared bounded, scrollable modal; narrow layouts stack full-width actions.
 
-The disposable Mira preview includes a synthetic waiting conversation for layout review. Its computer metadata never connects to a real companion. The installed Windows client's composition, release packaging and live interactive qualification remain separate delivery work.
+The disposable Mira preview includes a synthetic waiting conversation for layout review. Its computer metadata never connects to a real companion. The installed Windows composition is described below. Release distribution and live interactive qualification remain separate delivery work.
+
+## Installed Windows composition
+
+`bun run build:computer:windows C:\absolute\build-root` builds the companion,
+consent window, worker supervisor and unchanged locked native dependencies together
+in `build-root/windows-x64`. That subdirectory must be absent or empty. Existing
+packages are never replaced. The build does not install, start, pair or update a PC.
+The standalone `build:computer windows-x64` command builds only the entrypoint and
+is insufficient for Windows `run`.
+
+The installed `mira-computer.exe run https://private.example.test` validates all
+four fixed sibling executables before reading the OS vault or connecting. Renamed,
+missing, directory, linked and network-share executable paths are refused. Windows
+volume checks reject mapped remote drives as well as UNC paths; ordinary case
+variations and 8.3 spelling are canonicalized without allowing linked paths. Native
+processes use the package directory and a filtered OS environment, independent of
+the current working directory. Package integrity and authenticated distribution
+remain release requirements; this does not protect against another process that
+can rewrite the same user's installed files.
+
+Each presence generation runs the existing consent loop and then the sequential
+command loop. No native process starts while the client merely waits for a Chat
+request. A request opens the local consent window, which requires an explicit
+selection and Allow. Only successful local consent, server acceptance and current
+readiness permits can start the supervised worker. View-only consent cannot send
+input. Ctrl+C, local Stop, expiry or network loss retire the generation and join
+native cleanup before replacement; uncertain input is never replayed. Unconfirmed
+cleanup is terminal. A temporary command-polling outage may reconnect only after
+confirmed cleanup; failed input/result delivery remains terminal. No PC listener
+or public endpoint is added.
+
+The Windows qualification builds the complete package and verifies its compiled
+help/version and missing-sibling refusal from an unrelated working directory.
+Cross-platform synthetic tests exercise the actual connection-work composition,
+including heartbeat during consent, refusal, serial image/input transport, network
+loss and cleanup failure. These tests do not grant access to the operator's desktop.

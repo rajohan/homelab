@@ -3,6 +3,8 @@ import { ComputerCompanion, computerOrigin } from "./companion";
 import { readComputerTicket } from "./companionInput";
 import { runComputerPresence } from "./companionPresence";
 import { ComputerCredentialStore } from "./companionStore";
+import { computerConnectionWork } from "./companionWork";
+import { installedComputerHost } from "./installedComputer";
 
 function print(message: string) {
     process.stdout.write(message + "\n");
@@ -16,13 +18,14 @@ Usage: mira-computer <pair|run|forget> https://dashboard.example.com
        mira-computer --version
 
 Pair reads a private, single-use code from Settings > Computers.
-Run keeps the connection open until Ctrl+C. It does not allow screen or input access.
+Run keeps the connection open until Ctrl+C. Windows waits for a Chat request and
+local approval of one window. Other platforms support presence only.
 Forget removes the local credential. Revoke in Settings to disconnect existing clients.`;
 
 /**
  * Run the packaged outbound companion with explicit arguments and the current user's OS vault.
  * @param args - Command and HTTPS origin; credentials are never accepted as arguments.
- * @returns Completion after pairing, forgetting or the operator stops presence.
+ * @returns Completion after pairing, forgetting or the operator stops the connection and local resources are reaped.
  */
 export async function main(args: string[] = process.argv.slice(2)): Promise<void> {
     if (args.length === 1 && args[0] === "--version") {
@@ -51,6 +54,10 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<void
         );
         return;
     }
+    const createHost =
+        command === "run" && process.platform === "win32"
+            ? await installedComputerHost(origin, process.execPath)
+            : undefined;
     const existing = await store.read();
     const stopped = new AbortController();
     const stop = () => stopped.abort();
@@ -96,6 +103,15 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<void
                 companion,
                 credential: existing.credential,
                 expiresAt: existing.expiresAt,
+                ...(createHost
+                    ? {
+                          connectionWork: computerConnectionWork({
+                              companion,
+                              credential: existing.credential,
+                              createHost,
+                          }),
+                      }
+                    : {}),
                 signal: stopped.signal,
                 status: (state) =>
                     print(

@@ -110,15 +110,15 @@ export async function openWindowsComputerProcess(
 ): Promise<ComputerWindowPort> {
     if (process.platform !== "win32" || process.arch !== "x64")
         throw new Error("The packaged computer worker requires Windows x64.");
-    if (
-        !path.isAbsolute(options.directory) ||
-        (await realpath(options.directory)) !== options.directory
-    )
+    const canonical = path.isAbsolute(options.directory)
+        ? await realpath(options.directory)
+        : null;
+    if (!canonical || canonical.toLowerCase() !== options.directory.toLowerCase())
         throw new Error("The worker package directory must be canonical and absolute.");
     for (const name of ["mira-computer-worker-host.exe", "mira-computer-worker.exe"]) {
         const file = path.join(options.directory, name);
         const metadata = await lstat(file);
-        if (!metadata.isFile() || (await realpath(file)) !== file)
+        if (!metadata.isFile() || metadata.isSymbolicLink())
             throw new Error(
                 "The worker package must contain ordinary local executables."
             );

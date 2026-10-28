@@ -1,18 +1,22 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { version } from "../../../../../package.json";
+import { readComputerPackage } from "../computer/installedComputer";
 import { computerDriverVersion } from "../computer/policy";
 import { openWindowsComputerProcess } from "../computer/process";
 import { computerEnvironment } from "../config/environment";
 
-const [directory, root, ...extra] = process.argv.slice(2);
+const [directory, root, pathChecks, ...extra] = process.argv.slice(2);
 if (
     !directory ||
     !root ||
+    !pathChecks ||
     extra.length > 0 ||
     !path.isAbsolute(directory) ||
-    !path.isAbsolute(root)
+    !path.isAbsolute(root) ||
+    !path.isAbsolute(pathChecks)
 )
     throw new Error(
         "Windows worker qualification requires owned absolute test directories."
@@ -35,6 +39,50 @@ const options = {
     maxBuffer: 64 * 1024,
     encoding: "utf8" as const,
 };
+const companion = path.join(directory, "mira-computer.exe");
+if (
+    (await readComputerPackage(companion)) !== directory ||
+    (await readComputerPackage(companion.toUpperCase())) !== directory
+)
+    throw new Error("Installed package directory changed.");
+const shortExecutable = execFileSync(
+    pathChecks,
+    ["--short-path", companion],
+    options
+).trim();
+if ((await readComputerPackage(shortExecutable)) !== directory)
+    throw new Error("The installed package did not canonicalize its Windows short path.");
+if (execFileSync(companion, ["--version"], options).trim() !== version)
+    throw new Error("Packaged companion version differs from the repository.");
+if (
+    !execFileSync(companion, ["--help"], options).includes("local approval of one window")
+)
+    throw new Error("Packaged companion help is missing local consent.");
+for (const name of [
+    "mira-computer-consent.exe",
+    "mira-computer-worker-host.exe",
+    "mira-computer-worker.exe",
+]) {
+    const file = path.join(directory, name);
+    await rename(file, file + ".missing");
+    try {
+        const result = spawnSync(
+            companion,
+            ["run", "https://unpaired-fixture.example.test"],
+            options
+        );
+        if (
+            result.status !== 1 ||
+            !result.stderr.includes("ENOENT") ||
+            !result.stderr.includes(name)
+        )
+            throw new Error(
+                "An incomplete companion did not fail package validation before pairing."
+            );
+    } finally {
+        await rename(file + ".missing", file);
+    }
+}
 const runtime = JSON.parse(execFileSync(worker, ["--check-runtime"], options)) as unknown;
 if (
     JSON.stringify(runtime) !==
