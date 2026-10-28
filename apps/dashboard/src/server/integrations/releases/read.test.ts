@@ -27,6 +27,9 @@ function fixture(
         redirect?: string;
         artifacts?: unknown[];
         attempt?: number;
+        windows?: unknown;
+        windowsAssets?: unknown[];
+        windowsEvidence?: unknown[];
     } = {}
 ) {
     const requests: { url: string; authorization: string | null }[] = [];
@@ -44,8 +47,14 @@ function fixture(
                 tag_name: "v0.8.0",
                 draft: false,
                 prerelease: false,
-                assets: [{ id: 42, name: "container-images.json" }],
+                assets: [
+                    { id: 42, name: "container-images.json" },
+                    ...(options.windowsAssets ?? []),
+                ],
             });
+        if (url.endsWith("/releases/assets/43")) return Response.json(options.windows);
+        if (url.includes("name=computer-manifest-"))
+            return Response.json({ artifacts: options.windowsEvidence ?? [] });
         if (url.endsWith("/releases/assets/42"))
             return new Response(null, {
                 status: 302,
@@ -249,4 +258,110 @@ test("verification requires unexpired evidence from the exact workflow run and a
     );
     expect(result.verified).toBe(true);
     expect(client.requests.at(-1)?.url).toContain("name=release-manifest-2.json");
+});
+
+const windows = {
+    schemaVersion: 1,
+    version: "0.8.0",
+    revision,
+    platform: "windows-x64",
+    installer: {
+        name: "mira-computer-0.8.0-windows-x64-setup.exe",
+        size: 123,
+        sha256: "e".repeat(64),
+    },
+};
+const windowsAssets = [
+    { id: 43, name: "mira-computer-0.8.0-windows-x64.json" },
+    {
+        id: 44,
+        name: windows.installer.name,
+        size: 123,
+        state: "uploaded",
+        digest: `sha256:${windows.installer.sha256}`,
+    },
+];
+const windowsEvidence = [
+    {
+        ...evidence,
+        name: "computer-manifest-1.json",
+        digest: `sha256:${new Bun.CryptoHasher("sha256").update(JSON.stringify(windows)).digest("hex")}`,
+    },
+];
+
+test("Windows downloads require the exact tested manifest, current workflow attempt and matching uploaded installer", async () => {
+    const result = await readHomelabRelease(
+        "demo/homelab",
+        "synthetic-token",
+        AbortSignal.timeout(1000),
+        fixture({ windows, windowsAssets, windowsEvidence }).request
+    );
+    expect(result.computer).toEqual({
+        version: "0.8.0",
+        revision,
+        size: 123,
+        sha256: windows.installer.sha256,
+        url: "https://github.com/demo/homelab/releases/download/v0.8.0/mira-computer-0.8.0-windows-x64-setup.exe",
+    });
+    for (const options of [
+        { windowsAssets: [] },
+        { windowsAssets: [windowsAssets[0]] },
+        { windowsAssets: [...windowsAssets, windowsAssets[1]] },
+        { windowsAssets: [windowsAssets[0], { ...windowsAssets[1], size: 124 }] },
+        { windowsAssets: [windowsAssets[0], { ...windowsAssets[1], state: "starter" }] },
+        {
+            windowsAssets: [
+                windowsAssets[0],
+                { ...windowsAssets[1], digest: "sha256:" + "f".repeat(64) },
+            ],
+        },
+        { windows: { ...windows, version: "0.8.1" } },
+        { windows: { ...windows, revision: "c".repeat(40) } },
+        { windows: { ...windows, platform: "linux-x64" } },
+        { windows: { ...windows, schemaVersion: 2 } },
+        {
+            windows: {
+                ...windows,
+                installer: { ...windows.installer, name: "unsafe.exe" },
+            },
+        },
+        { windows: { ...windows, files: [] } }, // Changed raw bytes, even if the projection is unchanged.
+        { windowsEvidence: [] },
+        { windowsEvidence: [{ ...windowsEvidence[0], expired: true }] },
+        {
+            windowsEvidence: [
+                { ...windowsEvidence[0], name: "computer-manifest-2.json" },
+            ],
+        },
+        {
+            windowsEvidence: [
+                { ...windowsEvidence[0], workflow_run: { id: 99, head_sha: revision } },
+            ],
+        },
+        {
+            windowsEvidence: [
+                {
+                    ...windowsEvidence[0],
+                    workflow_run: { id: 100, head_sha: "b".repeat(40) },
+                },
+            ],
+        },
+    ]) {
+        const unavailable = await readHomelabRelease(
+            "demo/homelab",
+            undefined,
+            AbortSignal.timeout(1000),
+            fixture({ windows, windowsAssets, windowsEvidence, ...options }).request
+        );
+        expect(unavailable.verified).toBe(true);
+        expect(unavailable.computer).toBeNull();
+    }
+    const failed = await readHomelabRelease(
+        "demo/homelab",
+        undefined,
+        AbortSignal.timeout(1000),
+        fixture({ windows, windowsAssets, windowsEvidence, conclusion: "failure" })
+            .request
+    );
+    expect(failed.computer).toBeNull();
 });

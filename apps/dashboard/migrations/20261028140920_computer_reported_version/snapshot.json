@@ -1,0 +1,41 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "ff457814-e4cd-4276-8831-ae579c713617",
+    "prevIds": ["c7044be2-6b84-49d8-a553-68b1092bb962"],
+    "footprints": [
+        {
+            "statementType": "alter_check",
+            "statementTarget": ["table", "public", "mira_computers"],
+            "writes": ["s|ck|public.mira_computers.mira_computers_credential_state"],
+            "reads": [
+                "n|tbl|public.mira_computers",
+                "n|sch|public",
+                "n|col|public.mira_computers.state",
+                "n|col|public.mira_computers.pair_digest",
+                "n|col|public.mira_computers.credential_digest",
+                "n|col|public.mira_computers.paired_at",
+                "n|col|public.mira_computers.installation_id",
+                "n|col|public.mira_computers.platform",
+                "e|col|public.mira_computers.state",
+                "e|col|public.mira_computers.pair_digest",
+                "e|col|public.mira_computers.credential_digest",
+                "e|col|public.mira_computers.paired_at",
+                "e|col|public.mira_computers.installation_id",
+                "e|col|public.mira_computers.platform",
+                "e|col|public.mira_computers.companion_version"
+            ],
+            "sqlHash": "f2cb3055bcfa8ac0"
+        }
+    ],
+    "deltas": [
+        {
+            "op": "alter",
+            "key": "checks\u0000[\"public\",\"mira_computers\",\"mira_computers_credential_state\"]",
+            "set": {
+                "value": "\n        (\"state\"='pending' AND \"pair_digest\" IS NOT NULL AND \"credential_digest\" IS NULL AND \"paired_at\" IS NULL) OR\n        (\"state\"='paired' AND \"pair_digest\" IS NULL AND \"credential_digest\" IS NOT NULL AND \"paired_at\" IS NOT NULL AND \"installation_id\" IS NOT NULL AND \"platform\" IS NOT NULL) OR\n        (\"state\"='revoked' AND \"pair_digest\" IS NULL AND \"credential_digest\" IS NULL)"
+            }
+        }
+    ]
+}

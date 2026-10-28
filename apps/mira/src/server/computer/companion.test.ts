@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { rejects } from "node:assert/strict";
 import { PassThrough } from "node:stream";
 
+import { version } from "../../../../../package.json";
 import {
     ComputerCompanion,
     ComputerConnectionError,
@@ -286,4 +287,19 @@ test("presence renews increasing sequences, reconnects outages and stops on gene
         }),
         /expired/
     );
+});
+
+test("every authenticated connection reports the compiled client version", async () => {
+    const bodies: unknown[] = [];
+    const client = new ComputerCompanion("https://private.example.test", (url, init) => {
+        expect(url.pathname).toBe("/api/mira/computers/connect");
+        expect(new Headers(init.headers).get("authorization")).toBe(
+            `Bearer ${credential}`
+        );
+        bodies.push(JSON.parse(typeof init.body === "string" ? init.body : "null"));
+        return Promise.resolve(Response.json(connected()));
+    });
+    await client.connect(credential, signal());
+    await client.connect(credential, signal());
+    expect(bodies).toEqual([{ version }, { version }]);
 });

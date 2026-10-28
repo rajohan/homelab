@@ -1,5 +1,6 @@
 import {
     miraComputerEnrollmentSchema,
+    miraComputerConnectionSchema,
     miraComputerHeartbeatSchema,
     miraComputerPairSchema,
     type MiraComputerSummary,
@@ -143,16 +144,22 @@ export async function enrollMiraComputer(client: SQL, token: string, input: unkn
  * Start a new connection generation, invalidating heartbeats from any earlier connection.
  * @param client - Shared application database.
  * @param token - Computer-only bearer; it grants neither browser APIs nor input authority.
+ * @param input - Optional current client version; legacy clients leave the reported version unknown.
  * @returns A short-lived generation and heartbeat cadence; no input commands are issued.
  */
-export async function connectMiraComputer(client: SQL, token: string) {
+export async function connectMiraComputer(
+    client: SQL,
+    token: string,
+    input: unknown = {}
+) {
+    const metadata = v.parse(miraComputerConnectionSchema, input);
     const presented = readComputerCredential(token, "device");
     if (!presented)
         throw new MiraFailure("FORBIDDEN", "Computer credential is invalid or expired.");
     const connectionId = crypto.randomUUID();
     await client.begin(async (query) => {
         const device = await requireComputerDevice(query, token);
-        await query`UPDATE mira_computers SET connection_id=${connectionId},sequence=0,last_seen_at=clock_timestamp(),connection_expires_at=clock_timestamp()+interval '45 seconds' WHERE id=${device.id}`;
+        await query`UPDATE mira_computers SET companion_version=${metadata.version ?? null},connection_id=${connectionId},sequence=0,last_seen_at=clock_timestamp(),connection_expires_at=clock_timestamp()+interval '45 seconds' WHERE id=${device.id}`;
         await retireComputerDeviceCommands(query, device.owner, device.id);
     });
     return {

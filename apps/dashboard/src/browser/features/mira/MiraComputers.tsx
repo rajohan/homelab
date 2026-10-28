@@ -1,6 +1,7 @@
 import type { MiraComputerSummary } from "@homelab/contracts/miraComputers";
 import {
     Badge,
+    buttonStyles,
     Button,
     Card,
     ConfirmDialog,
@@ -9,7 +10,7 @@ import {
     SectionHeader,
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
-import { Monitor, Plus, Unplug } from "lucide-react";
+import { Download, Monitor, Plus, Unplug } from "lucide-react";
 import { useState } from "react";
 
 import { api } from "../../api/client";
@@ -29,6 +30,19 @@ export function MiraComputers() {
         refetchInterval: 15_000,
         retry: false,
     });
+    const release = useQuery({
+        queryKey: ["operations", "mira", "computer-download"],
+        queryFn: ({ signal }) => api.mira.computers.download.query(undefined, { signal }),
+        refetchInterval: 60_000,
+        retry: false,
+    });
+    const download =
+        !release.isError &&
+        release.data?.expiresAt &&
+        Date.parse(release.data.expiresAt) >
+            Math.max(query.dataUpdatedAt, release.dataUpdatedAt)
+            ? release.data.download
+            : null;
     const revoke = useOperation((computer: MiraComputerSummary, signal) =>
         api.mira.computers.revoke.mutate(
             { id: computer.id, version: computer.version },
@@ -36,18 +50,47 @@ export function MiraComputers() {
         )
     );
     return (
-        <Card className="space-y-4">
-            <SectionHeader
-                title="Computers"
-                icon={Monitor}
-                description="Manage the computers connected to your account."
-                actions={
-                    <Button size="sm" onClick={() => setPairing(true)}>
+        <Card className="@container/computers space-y-4">
+            <div className="grid gap-3 @min-[48rem]/computers:grid-cols-[minmax(0,1fr)_auto] @min-[48rem]/computers:items-center">
+                <SectionHeader
+                    title="Computers"
+                    icon={Monitor}
+                    description="Manage the computers connected to your account."
+                />
+                <div className="grid gap-2 @min-[48rem]/computers:grid-cols-2">
+                    {download && (
+                        <a
+                            href={download.url}
+                            className={buttonStyles({
+                                variant: "secondary",
+                                size: "sm",
+                                fullWidth: true,
+                            })}
+                            onClick={(event) => {
+                                if (
+                                    Date.parse(release.data?.expiresAt ?? "") <=
+                                    Date.now()
+                                ) {
+                                    event.preventDefault();
+                                    void release.refetch();
+                                }
+                            }}
+                        >
+                            <Download size={16} aria-hidden="true" />
+                            Download Windows
+                        </a>
+                    )}
+                    <Button size="sm" fullWidth onClick={() => setPairing(true)}>
                         <Plus size={16} aria-hidden="true" />
                         Pair computer
                     </Button>
-                }
-            />
+                </div>
+            </div>
+            <p className="text-sm text-primary-400">
+                {download
+                    ? `Windows 10 or later · x64 · Version ${download.version}. Install Mira, then pair this computer.`
+                    : "Windows download is unavailable until a tested release has been checked."}
+            </p>
             {query.isPending && <LoadingState label="Loading computers…" />}
             {query.error && (
                 <div className="space-y-3">
@@ -74,7 +117,24 @@ export function MiraComputers() {
                                 <SectionHeader
                                     title={computer.label}
                                     icon={Monitor}
-                                    badge={<Badge>{status}</Badge>}
+                                    badge={
+                                        <div className="flex flex-wrap gap-2">
+                                            <Badge>{status}</Badge>
+                                            {download &&
+                                                computer.state === "paired" &&
+                                                Date.parse(computer.expiresAt) >
+                                                    query.dataUpdatedAt &&
+                                                computer.platform === "win32" &&
+                                                olderComputerVersion(
+                                                    computer.companionVersion,
+                                                    download.version
+                                                ) && (
+                                                    <Badge tone="warning">
+                                                        Update available
+                                                    </Badge>
+                                                )}
+                                        </div>
+                                    }
                                     description={
                                         computer.platform
                                             ? `${platformLabel(computer.platform)} · ${computer.companionVersion ?? "Unknown version"}`
@@ -132,4 +192,14 @@ function computerStatus(computer: MiraComputerSummary, checkedAt: number): strin
 function platformLabel(platform: string): string {
     if (platform === "win32") return "Windows";
     return platform === "darwin" ? "macOS" : "Linux";
+}
+
+function olderComputerVersion(installed: string | null, available: string): boolean {
+    if (!installed || !/^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(installed)) return false;
+    const current = installed.split(".").map(Number);
+    const latest = available.split(".").map(Number);
+    for (let index = 0; index < 3; index++) {
+        if (current[index] !== latest[index]) return current[index]! < latest[index]!;
+    }
+    return false;
 }

@@ -70,6 +70,7 @@ export async function main(port = 3330): Promise<void> {
     const operations = {
         ...database,
         registry: createJobRegistry([]),
+        releaseRepository: "demo/homelab",
         miraFilesDirectory: directory,
         agentMailHook: previewMail,
         hereNowBinding: previewHereNow,
@@ -91,6 +92,7 @@ export async function main(port = 3330): Promise<void> {
     try {
         await migrateDashboard(database);
         await installMiraPresets(context);
+        await database.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES ('homelab.release',${JSON.stringify({ repository: "demo/homelab", verified: true, computer: { version: "0.11.0", revision: "a".repeat(40), size: 123, sha256: "b".repeat(64), url: "https://github.com/demo/homelab/releases/download/v0.11.0/mira-computer-0.11.0-windows-x64-setup.exe" } })}::text::jsonb,now())`;
         for (const [label, online] of [
             ["Windows desktop", true],
             ["Laptop", false],
@@ -101,7 +103,10 @@ export async function main(port = 3330): Promise<void> {
                 platform: "win32",
                 version: "0.10.0",
             });
-            if (online) await connectMiraComputer(database.client, device.credential);
+            if (online)
+                await connectMiraComputer(database.client, device.credential, {
+                    version: "0.10.0",
+                });
         }
         await createMiraComputerPairing(context, { label: "New computer" });
         await provisionTestAgentMail(database.client, previewMail);

@@ -830,7 +830,7 @@ export const miraComputers = pgTable(
             "mira_computers_credential_state",
             sql`
         (${t.state}='pending' AND ${t.pairDigest} IS NOT NULL AND ${t.credentialDigest} IS NULL AND ${t.pairedAt} IS NULL) OR
-        (${t.state}='paired' AND ${t.pairDigest} IS NULL AND ${t.credentialDigest} IS NOT NULL AND ${t.pairedAt} IS NOT NULL AND ${t.installationId} IS NOT NULL AND ${t.platform} IS NOT NULL AND ${t.companionVersion} IS NOT NULL) OR
+        (${t.state}='paired' AND ${t.pairDigest} IS NULL AND ${t.credentialDigest} IS NOT NULL AND ${t.pairedAt} IS NOT NULL AND ${t.installationId} IS NOT NULL AND ${t.platform} IS NOT NULL) OR
         (${t.state}='revoked' AND ${t.pairDigest} IS NULL AND ${t.credentialDigest} IS NULL)`
         ),
         check(

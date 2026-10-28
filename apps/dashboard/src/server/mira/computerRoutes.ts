@@ -18,6 +18,7 @@ import {
 import { MiraFailure, type MiraContext } from "@homelab/mira/data/context";
 
 import { runOperation, trpc } from "../api/trpc";
+import { releaseSnapshot } from "../integrations/releases/snapshot";
 import {
     authorizeAutomationAdministration,
     authorizedOperations,
@@ -70,6 +71,25 @@ export const miraComputerRouter = trpc.router({
                 execute(ctx, false, (mira) => stopMiraComputerAccess(mira, input))
             ),
     }),
+    download: trpc.procedure.query(({ ctx }) =>
+        execute(ctx, false, async (mira) => {
+            const snapshot = await releaseSnapshot(
+                mira.client,
+                ctx.operations?.releaseRepository
+            );
+            return {
+                download:
+                    snapshot?.fresh && snapshot.value.verified
+                        ? (snapshot.value.computer ?? null)
+                        : null,
+                expiresAt: snapshot?.fresh
+                    ? new Date(
+                          Date.parse(snapshot.capturedAt) + 20 * 60_000
+                      ).toISOString()
+                    : null,
+            };
+        })
+    ),
     list: trpc.procedure.query(({ ctx }) => execute(ctx, false, listMiraComputers)),
     pair: trpc.procedure
         .input(miraComputerPairSchema)

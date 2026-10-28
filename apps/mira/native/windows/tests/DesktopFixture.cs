@@ -7,11 +7,18 @@ using System.Threading;
 // A standalone fake companion. It never reads credentials, accesses a network, or captures input.
 internal static class DesktopFixture
 {
+    private static void PublishPid(string name)
+    {
+        string file = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, name);
+        // Readers must never see a PID file while its exclusive writer is still open.
+        File.WriteAllText(file + ".tmp", Process.GetCurrentProcess().Id.ToString());
+        File.Move(file + ".tmp", file);
+    }
     private static int Main(string[] args)
     {
         if (args.Length == 1 && args[0] == "descendant")
         {
-            File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "descendant.pid"), Process.GetCurrentProcess().Id.ToString());
+            PublishPid("descendant.pid");
             Thread.Sleep(30000); return 0;
         }
         if (args.Length > 0 && args[0] == "echo")
@@ -36,7 +43,7 @@ internal static class DesktopFixture
         using (var descendant = new WorkerJob(Process.GetCurrentProcess().MainModule.FileName, directory, new[] { "descendant" }))
         {
             // The descendant identifies itself through a second dedicated fixture mode.
-            File.WriteAllText(Path.Combine(directory, "parent.pid"), Process.GetCurrentProcess().Id.ToString());
+            PublishPid("parent.pid");
             Console.WriteLine("Connected. Press Ctrl+C to stop.");
             Console.Out.Flush();
             if (mode == "hang") Thread.Sleep(30000);
