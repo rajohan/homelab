@@ -26,10 +26,19 @@ function Require([bool]$Condition, [string]$Message) {
     $script:count++
     if (!$Condition) { throw $Message }
 }
+function File-Digest([string]$File) {
+    # Windows PowerShell can inherit PowerShell 7's module path on hosted runners.
+    # Use the platform crypto API without depending on an autoloaded hash cmdlet.
+    $stream = [IO.File]::OpenRead($File)
+    $hash = [Security.Cryptography.SHA256]::Create()
+    try { return ([BitConverter]::ToString($hash.ComputeHash($stream))).Replace('-', '').ToLowerInvariant() }
+    finally { $hash.Dispose(); $stream.Dispose() }
+}
 function Run-Setup([string]$Executable, [bool]$Success, [string]$Name) {
     $log = Join-Path $Workspace ($Name + '.log')
     $child = Start-Process -FilePath $Executable -ArgumentList @('/CURRENTUSER', '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', ('/LOG="' + $log + '"')) -WindowStyle Hidden -PassThru
     if (!$child.WaitForExit(120000)) { $child.Kill(); throw 'Installer exceeded its deadline.' }
+    Write-Output ("Installer step: " + $Name + ', exit ' + $child.ExitCode)
     Require (($child.ExitCode -eq 0) -eq $Success) ("Unexpected installer outcome for " + $Name + ': ' + $child.ExitCode)
     if (!$Success) {
         Require ((Get-Content -LiteralPath $log -Raw) -match 'Exit Mira|modified files|unexpected files|linked') 'Expected a specific safe refusal.'
@@ -39,7 +48,7 @@ function Check-Payload([string]$Version) {
     $directory = Join-Path $root ('versions/' + $Version)
     foreach ($file in $metadata.files) {
         $installed = Join-Path $directory $file.path
-        Require ((Get-FileHash -LiteralPath $installed -Algorithm SHA256).Hash.ToLowerInvariant() -eq $file.sha256) 'Installed file mismatch.'
+        Require ((File-Digest $installed) -eq $file.sha256) 'Installed file mismatch.'
     }
     Require ((Get-ChildItem -LiteralPath $directory -File -Recurse).Count -eq $metadata.files.Count) 'Unexpected installed files.'
     $shell = New-Object -ComObject WScript.Shell

@@ -148,6 +148,7 @@ begin
     CheckTree(ExpandConstant('{app}'), '', False);
     Result := True;
   except
+    Log(GetExceptionMessage);
     if not UninstallSilent then MsgBox(GetExceptionMessage, mbError, MB_OK);
     ReleaseMaintenance;
   end;
