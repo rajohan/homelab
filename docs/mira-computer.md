@@ -390,10 +390,9 @@ Homelab release; these executables are not Authenticode-signed. The build-time Z
 round-trip only reads its own fresh output and is not an untrusted archive
 installer.
 
-This adds release delivery, not automatic installation. The Settings download
-flow, installer, credential-preserving updates/rollback,
-interactive Windows acceptance and private routing qualification remain separate
-work before PC activation. No installation, autostart entry, pairing, credential
+The per-user installer and Settings download flow are described below. Automated
+updates/rollback, interactive Windows acceptance and private routing qualification
+remain separate work before PC activation. No installation, autostart entry, pairing, credential
 or network configuration is changed by building or publishing an archive.
 
 ## Windows connection window and system tray
@@ -467,5 +466,30 @@ setup executable and matching manifest digest join the release assets. These
 installation tests refuse to run on developer PCs. The setup asset is currently
 unsigned; a matching manifest hash verifies bytes, not publisher authenticity.
 Download it only from the authenticated Homelab GitHub release. Automated update
-selection/authentication, dashboard downloads and live private-network acceptance
+selection/authentication and live private-network acceptance
 remain separate delivery work.
+
+### Windows downloads in Settings
+
+The existing `homelab.release` worker check also reads the Windows installer metadata.
+It requires the stable tag and commit already verified for the container release, a
+successful `container-images.yml` release workflow, and an unexpired raw Windows
+manifest artifact from that exact workflow attempt. The installer name, size and
+GitHub-reported digest must match that manifest. Legacy releases and incomplete or
+changed Windows assets leave downloads unavailable without invalidating container
+reporting.
+
+Settings → Computers offers **Download Windows** only while that snapshot is fresh
+(20 minutes), belongs to the configured repository, and no newer check has failed.
+The button is an ordinary official GitHub release download; it does not verify the
+browser's downloaded bytes or install software. Windows x64 on Windows 10 or later
+is required. Run the per-user installer and then pair the computer. For a manual
+upgrade, exit Mira, run the newer installer and reopen Mira; pairing is retained.
+Automatic authenticated updates/rollback remain separate work.
+
+A paired Windows computer with a lower stable version shows **Update available**.
+Unknown, prerelease or newer local versions are not called outdated. Each authenticated
+connection refreshes the self-reported version; this is inventory information, not
+attestation or permission to control the computer. Legacy connections without a
+version clear the old enrollment version rather than misleadingly retaining it.
+Release downloads do not add a listener, change private routing or grant input access.

@@ -131,8 +131,7 @@ export function miraComputerReceiver(client?: SQL) {
                             return await enrollMiraComputer(client, token, input);
                         if (url.pathname.endsWith("/heartbeat"))
                             return await heartbeatMiraComputer(client, token, input);
-                        v.parse(v.strictObject({}), input);
-                        return await connectMiraComputer(client, token);
+                        return await connectMiraComputer(client, token, input);
                     },
                     catch: (error: unknown) => error,
                 }).pipe(Effect.result)

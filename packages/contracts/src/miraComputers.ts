@@ -22,6 +22,9 @@ export const miraComputerEnrollmentSchema = v.strictObject({
         v.regex(/^\d{1,4}\.\d{1,4}\.\d{1,4}(?:-[a-zA-Z0-9.-]{1,40})?$/)
     ),
 });
+export const miraComputerConnectionSchema = v.strictObject({
+    version: v.optional(miraComputerEnrollmentSchema.entries.version),
+});
 export const miraComputerHeartbeatSchema = v.strictObject({
     connectionId: v.pipe(v.string(), v.uuid()),
     sequence: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(2_147_483_647)),

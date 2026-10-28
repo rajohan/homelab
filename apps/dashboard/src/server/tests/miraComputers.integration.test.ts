@@ -467,3 +467,89 @@ test("machine presence is isolated from the public dashboard and both listeners 
     await rejects(fetch(privateOrigin));
     await rejects(fetch(publicOrigin));
 });
+
+test("reconnection refreshes the authenticated client version without changing pairing or granting input", async () => {
+    const f = await fixture();
+    try {
+        const { device, pair } = await f.enroll();
+        expect(
+            await connectMiraComputer(f.client, device.credential, { version: "0.11.0" })
+        ).toMatchObject({ controlAllowed: false });
+        expect(await f.api.list()).toMatchObject([
+            { id: pair.id, version: 2, companionVersion: "0.11.0", connected: true },
+        ]);
+        await rejects(
+            connectMiraComputer(f.client, device.credential, { version: "invalid" })
+        );
+        const observed1 = await f.api.list();
+        expect(observed1[0]?.companionVersion).toBe("0.11.0");
+        await connectMiraComputer(f.client, device.credential);
+        const observed2 = await f.api.list();
+        expect(observed2[0]?.companionVersion).toBeNull();
+        await f.api.revoke({ id: pair.id, version: 2 });
+        await rejects(
+            connectMiraComputer(f.client, device.credential, { version: "0.12.0" }),
+            /invalid or expired/
+        );
+        const observed3 = await f.api.list();
+        expect(observed3[0]?.companionVersion).toBeNull();
+    } finally {
+        await f.close();
+    }
+});
+
+test("Windows downloads require human access and fresh evidence for the configured repository", async () => {
+    const f = await fixture();
+    const caller = (
+        repository: string | undefined,
+        kind: "human" | "automation" = "human"
+    ) =>
+        appRouter.createCaller({
+            operations: {
+                ...f,
+                ...(repository ? { releaseRepository: repository } : {}),
+            },
+            principal: { kind, id: "operator", capabilities },
+        }).mira.computers;
+    const computer = {
+        version: "0.10.0",
+        revision: "a".repeat(40),
+        size: 123,
+        sha256: "e".repeat(64),
+        url: "https://github.com/demo/homelab/releases/download/v0.10.0/mira-computer-0.10.0-windows-x64-setup.exe",
+    };
+    const value = { repository: "demo/homelab", verified: true, computer };
+    const save = async (data: unknown, seconds = 0) => {
+        await f.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES ('homelab.release',${JSON.stringify(data)}::text::jsonb,now()+${seconds}::int*interval '1 second') ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,captured_at=EXCLUDED.captured_at`;
+    };
+    try {
+        await rejects(
+            caller("demo/homelab", "automation").download(),
+            /signed-in operator/
+        );
+        const observed4 = await caller("demo/homelab").download();
+        expect(observed4.download).toBeNull();
+        await save(value);
+        const observed5 = await caller("demo/homelab").download();
+        expect(observed5.download).toEqual(computer);
+        const observed6 = await caller(undefined).download();
+        expect(observed6.download).toBeNull();
+        const observed7 = await caller("different/repo").download();
+        expect(observed7.download).toBeNull();
+        await save(value, -1201);
+        const observed8 = await caller("demo/homelab").download();
+        expect(observed8.download).toBeNull();
+        await save({ ...value, verified: false });
+        const observed9 = await caller("demo/homelab").download();
+        expect(observed9.download).toBeNull();
+        await save({ repository: "demo/homelab", verified: true });
+        const observed10 = await caller("demo/homelab").download();
+        expect(observed10.download).toBeNull();
+        await save(value);
+        await f.client`INSERT INTO job_runs(id,action,label,resource_class,state,payload,fingerprint,idempotency_key,requested_by,attempt_limit,retry_safe,timeout_ms,resource_keys) VALUES (${Bun.randomUUIDv7()},'homelab.release','Release check','light','failed','{}','synthetic',${Bun.randomUUIDv7()},'synthetic',1,false,1000,ARRAY[]::text[])`;
+        const observed11 = await caller("demo/homelab").download();
+        expect(observed11.download).toBeNull();
+    } finally {
+        await f.close();
+    }
+});

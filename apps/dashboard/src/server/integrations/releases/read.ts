@@ -1,12 +1,15 @@
 import * as v from "valibot";
 
-import { readBoundedBytes, readBoundedJson } from "../http/readJson";
+import { readBoundedJson } from "../http/readJson";
+import { readReleaseAsset } from "./asset";
+import { readComputerDownload } from "./computer";
 
 const repositorySchema = v.pipe(
     v.string(),
     v.regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/)
 );
 const sha = v.pipe(v.string(), v.regex(/^[a-f0-9]{40}$/));
+const assetDigest = v.optional(v.nullable(v.string()));
 const releaseSchema = v.object({
     tag_name: v.pipe(v.string(), v.regex(/^v\d+\.\d+\.\d+$/)),
     draft: v.literal(false),
@@ -16,6 +19,9 @@ const releaseSchema = v.object({
             v.object({
                 id: v.pipe(v.number(), v.integer(), v.minValue(1)),
                 name: v.string(),
+                state: v.optional(v.string()),
+                size: v.optional(v.number()),
+                digest: assetDigest,
             })
         ),
         v.maxLength(100)
@@ -98,37 +104,14 @@ export async function readHomelabRelease(
     );
     if (assets.length !== 1)
         throw new Error("Published release has no complete image manifest yet");
-    let response = await request(`${base}/releases/assets/${assets[0]!.id}`, {
-        headers: { ...headers, Accept: "application/octet-stream" },
+    const bytes = await readReleaseAsset(
+        base,
+        assets[0]!.id,
+        headers,
         signal,
-        redirect: "manual",
-    });
-    for (
-        let redirects = 0;
-        response.status >= 300 && response.status < 400;
-        redirects += 1
-    ) {
-        const destination = new URL(response.headers.get("location") ?? "", base);
-        await response.body?.cancel();
-        if (
-            redirects >= 3 ||
-            destination.protocol !== "https:" ||
-            destination.port ||
-            destination.username ||
-            destination.password ||
-            ![
-                "release-assets.githubusercontent.com",
-                "objects.githubusercontent.com",
-            ].includes(destination.hostname)
-        )
-            throw new Error("Unexpected release asset redirect");
-        response = await request(destination.href, {
-            signal,
-            redirect: "manual",
-            headers: { Accept: "application/json" },
-        });
-    }
-    const bytes = await readBoundedBytes(response, 16_384);
+        request,
+        16_384
+    );
     const digest = `sha256:${new Bun.CryptoHasher("sha256").update(bytes).digest("hex")}`;
     const manifest = v.parse(
         manifestSchema,
@@ -200,7 +183,23 @@ export async function readHomelabRelease(
         );
         verified = matches.length === 1;
     }
+    const computer =
+        verified && build
+            ? await readComputerDownload({
+                  repository,
+                  version: manifest.version,
+                  revision: manifest.revision,
+                  assets: release.assets,
+                  build,
+                  base,
+                  headers,
+                  read,
+                  request,
+                  signal,
+              })
+            : null;
     return {
+        computer,
         repository,
         version: manifest.version,
         revision: manifest.revision,

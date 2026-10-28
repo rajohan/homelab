@@ -13,6 +13,7 @@ import {
 } from "@homelab/contracts/miraComputers";
 import * as v from "valibot";
 
+import { version } from "../../../../../package.json";
 import { computerCommandResult, type ComputerCommandResult } from "./commandResult";
 import { readComputerCredential } from "./credentials";
 
@@ -206,7 +207,7 @@ export class ComputerCompanion {
             throw new ComputerConnectionError(false);
         const result = v.safeParse(
             connection,
-            await this.send("connect", token, {}, signal)
+            await this.send("connect", token, { version }, signal)
         );
         if (!result.success) throw new ComputerConnectionError(false);
         return result.output;

@@ -10,11 +10,15 @@ import { serialize } from "superjson";
 import { IdentityClientContext } from "../../identity/IdentityClientContext";
 import { MiraComputers } from "./MiraComputers";
 
-function fixture(rows: MiraComputerSummary[]) {
+function fixture(rows: MiraComputerSummary[], release?: unknown) {
     const query = new QueryClient({
         defaultOptions: { queries: { enabled: false, retry: false } },
     });
     query.setQueryData(["operations", "mira", "computers"], rows);
+    query.setQueryData(
+        ["operations", "mira", "computer-download"],
+        release ?? { download: null, expiresAt: null }
+    );
     const identity = new IdentityClient();
     const view = render(
         <QueryClientProvider client={query}>
@@ -166,5 +170,55 @@ test("revoke sends the displayed version and keeps a failed confirmation open", 
     } finally {
         cleanup();
         request.mockRestore();
+    }
+});
+
+test("Windows download uses the shared button and only older stable Windows clients show an update", () => {
+    const release = {
+        download: {
+            version: "0.10.1",
+            url: "https://github.com/demo/homelab/releases/download/v0.10.1/mira-computer-0.10.1-windows-x64-setup.exe",
+        },
+        expiresAt: new Date(Date.now() + 600_000).toISOString(),
+    };
+    const cleanup = fixture(
+        [
+            { ...computer("paired"), label: "Older", companionVersion: "0.9.9" },
+            { ...computer("paired"), label: "Current", companionVersion: "0.10.1" },
+            { ...computer("paired"), label: "Newer", companionVersion: "0.11.0" },
+            { ...computer("paired"), label: "Preview", companionVersion: "0.10.0-rc.1" },
+            { ...computer("paired"), label: "Unknown", companionVersion: null },
+            { ...computer("paired"), label: "Linux", platform: "linux" },
+            computer("revoked"),
+            computer("pending"),
+        ],
+        release
+    );
+    try {
+        const link = screen.getByRole("link", { name: "Download Windows" });
+        expect(link).toHaveAttribute("href", release.download.url);
+        expect(link.className).toContain("inline-flex");
+        expect(screen.getAllByText("Update available")).toHaveLength(1);
+        expect(screen.getByText("Older").closest("section")).toContainElement(
+            screen.getByText("Update available")
+        );
+    } finally {
+        cleanup();
+    }
+});
+
+test("expired Windows release evidence hides the download action", () => {
+    const cleanup = fixture([], {
+        download: { version: "0.10.1", url: "https://github.com/demo/homelab" },
+        expiresAt: "2000-01-01T00:00:00.000Z",
+    });
+    try {
+        expect(
+            screen.queryByRole("link", { name: "Download Windows" })
+        ).not.toBeInTheDocument();
+        expect(screen.getByText(/Windows download is unavailable/)).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Pair computer" })).toBeEnabled();
+    } finally {
+        cleanup();
     }
 });
