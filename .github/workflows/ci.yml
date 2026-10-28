@@ -40,9 +40,18 @@ jobs:
       - name: Compile native consent host and qualify protocol and readiness rules
         run: bun run test:computer:windows
       - name: Qualify packaged worker and native process-tree ownership
-        run: bun run test:computer:windows-worker
+        run: bun run test:computer:windows-worker "${{ runner.temp }}/computer-release"
+      - name: Transfer only the qualified Windows release archive
+        if: github.event_name == 'release'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tested-windows-computer
+          path: ${{ runner.temp }}/computer-release/*
+          retention-days: 2
+          compression-level: 0
+          if-no-files-found: error
       - name: Verify private consent process lifecycle on Windows
-        run: bun test apps/mira/src/server/computer/companion.test.ts apps/mira/src/server/computer/consentProcess.test.ts apps/mira/src/server/computer/localConsentHost.test.ts apps/mira/src/server/computer/companionConsent.test.ts apps/mira/src/server/computer/companionLifecycle.test.ts apps/mira/src/server/computer/companionCommands.test.ts apps/mira/src/server/computer/companionWork.test.ts apps/mira/src/server/runtime/rpcCleanup.test.ts
+        run: bun test scripts/computerRelease.test.ts apps/mira/src/server/computer/companion.test.ts apps/mira/src/server/computer/consentProcess.test.ts apps/mira/src/server/computer/localConsentHost.test.ts apps/mira/src/server/computer/companionConsent.test.ts apps/mira/src/server/computer/companionLifecycle.test.ts apps/mira/src/server/computer/companionCommands.test.ts apps/mira/src/server/computer/companionWork.test.ts apps/mira/src/server/runtime/rpcCleanup.test.ts
 
   verify:
     # Preserve the required check name and fail closed on skipped/failed/cancelled tests.
