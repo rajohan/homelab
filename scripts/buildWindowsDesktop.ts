@@ -67,3 +67,12 @@ export async function buildWindowsDesktop(directory: string, tests = false) {
     }
     return { desktop, checks };
 }
+
+if (import.meta.main) {
+    if (process.argv.length !== 2)
+        throw new Error("No desktop build arguments are supported.");
+    const output = fileURLToPath(
+        new URL("../apps/mira/dist/windows-desktop", import.meta.url)
+    );
+    console.info(await buildWindowsDesktop(output));
+}
