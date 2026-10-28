@@ -1,4 +1,4 @@
-import type { SQL } from "bun";
+import type { SQL, TransactionSQL } from "bun";
 
 import type { readHomelabRelease } from "./read";
 
@@ -8,7 +8,10 @@ import type { readHomelabRelease } from "./read";
  * @param repository - Deployment-owned repository or undefined when disabled.
  * @returns Stored evidence with a freshness flag, or null for absent or different configuration.
  */
-export async function releaseSnapshot(client: SQL, repository: string | undefined) {
+export async function releaseSnapshot(
+    client: SQL | TransactionSQL,
+    repository: string | undefined
+) {
     if (!repository) return null;
     const [snapshot] = await client<
         {

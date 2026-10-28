@@ -11,6 +11,7 @@ import {
     type MiraComputerAccessSummary,
     type MiraComputerConsentRequest,
 } from "@homelab/contracts/miraComputers";
+import { miraComputerUpdateReceiptSchema } from "@homelab/contracts/miraComputerUpdates";
 import * as v from "valibot";
 
 import { version } from "../../../../../package.json";
@@ -424,10 +425,28 @@ export class ComputerCompanion {
             throw new ComputerConnectionError(false);
     }
 
+    /**
+     * Request passive update evidence using only this private server's paired credential.
+     * @param token - OS-vault device credential; never sent to the public asset host.
+     * @param signal - Human cancellation and update deadline.
+     * @returns A bounded lifetime candidate, or null when no fresh verified release is available.
+     */
+    async update(token: string, signal: AbortSignal) {
+        if (!readComputerCredential(token, "device"))
+            throw new ComputerConnectionError(false);
+        const result = v.safeParse(
+            miraComputerUpdateReceiptSchema,
+            await this.send("update", token, {}, signal)
+        );
+        if (!result.success) throw new ComputerConnectionError(false);
+        return result.output.update;
+    }
+
     private async send(
         route:
             | "enroll"
             | "connect"
+            | "update"
             | "heartbeat"
             | "access/pending"
             | "access/accept"

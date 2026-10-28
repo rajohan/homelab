@@ -456,6 +456,10 @@ test("machine presence is isolated from the public dashboard and both listeners 
     };
     try {
         await status(fetch(publicOrigin + "/api/mira/computers/enroll", init), 404);
+        await status(
+            fetch(publicOrigin + "/api/mira/computers/update", { ...init, body: "{}" }),
+            404
+        );
         await status(fetch(privateOrigin + "/api/trpc/system.status"), 404);
         await status(fetch(privateOrigin + "/"), 404);
         await status(fetch(privateOrigin + "/api/mira/computers/enroll", init), 200);
@@ -550,6 +554,93 @@ test("Windows downloads require human access and fresh evidence for the configur
         const observed11 = await caller("demo/homelab").download();
         expect(observed11.download).toBeNull();
     } finally {
+        await f.close();
+    }
+});
+
+test("private update lookup requires a live paired credential and fresh repository-bound evidence without control authority", async () => {
+    const f = await fixture();
+    const server = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        fetch: miraComputerReceiver(f.client, "demo/homelab"),
+    });
+    const { pair, device } = await f.enroll();
+    const post = (token: string, input: unknown = {}, extra?: Record<string, string>) =>
+        fetch(new URL("api/mira/computers/update", server.url), {
+            method: "POST",
+            headers: {
+                "content-type": "application/json",
+                authorization: `Bearer ${token}`,
+                ...extra,
+            },
+            body: JSON.stringify(input),
+        });
+    const candidate = {
+        version: "0.11.0",
+        revision: "a".repeat(40),
+        size: 100,
+        sha256: "b".repeat(64),
+        url: "https://ignored.invalid/untrusted.exe",
+    };
+    const save = async (value: unknown, age = 0) => {
+        await f.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES ('homelab.release',${JSON.stringify(value)}::text::jsonb,now()-${age}::int*interval '1 second') ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,captured_at=EXCLUDED.captured_at`;
+    };
+    try {
+        await save({ repository: "demo/homelab", verified: true, computer: candidate });
+        await status(post(pair.token), 403);
+        await status(
+            post(device.credential, {}, { origin: "https://example.test" }),
+            403
+        );
+        await status(post(device.credential, {}, { cookie: "session=synthetic" }), 403);
+        await status(
+            post(device.credential, { url: "https://another.invalid/installer" }),
+            400
+        );
+        const response = await post(device.credential);
+        expect(response.status).toBe(200);
+        expect(response.headers.get("cache-control")).toBe("no-store");
+        const result = (await response.json()) as {
+            update: { repository: string; version: string; validForMs: number };
+        };
+        expect(result.update).toMatchObject({
+            repository: "demo/homelab",
+            version: "0.11.0",
+        });
+        expect(result.update.validForMs).toBeGreaterThan(0);
+        expect(result.update.validForMs).toBeLessThanOrEqual(300_000);
+        expect(JSON.stringify(result)).not.toContain("url");
+        expect(JSON.stringify(result)).not.toContain(device.credential);
+        expect(await f.api.list()).toMatchObject([
+            { id: pair.id, version: 2, connected: false },
+        ]);
+        for (const value of [
+            { repository: "other/repo", verified: true, computer: candidate },
+            { repository: "demo/homelab", verified: false, computer: candidate },
+            {
+                repository: "demo/homelab",
+                verified: true,
+                computer: { ...candidate, sha256: "invalid" },
+            },
+            { repository: "demo/homelab", verified: true },
+        ]) {
+            await save(value);
+            const unavailable = await post(device.credential);
+            expect(await unavailable.json()).toEqual({ update: null });
+        }
+        await save(
+            { repository: "demo/homelab", verified: true, computer: candidate },
+            1201
+        );
+        const stale = await post(device.credential);
+        expect(await stale.json()).toEqual({ update: null });
+        await f.client`UPDATE mira_computers SET expires_at=clock_timestamp()-interval '1 second' WHERE id=${pair.id}`;
+        await status(post(device.credential), 403);
+        await f.api.revoke({ id: pair.id, version: 2 });
+        await status(post(device.credential), 403);
+    } finally {
+        await server.stop(true);
         await f.close();
     }
 });
