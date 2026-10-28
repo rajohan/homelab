@@ -20,6 +20,9 @@ import * as v from "valibot";
 
 import { computerUpdate } from "./computerUpdate";
 
+/** Maximum serialized screenshot completion accepted by the private HTTP listener. */
+export const computerRequestMaximumBytes = 3 * 1024 * 1024;
+
 const response = (status: number, data?: unknown) =>
     Response.json(data ?? { error: "Computer request was refused." }, {
         status,
@@ -104,7 +107,9 @@ export function miraComputerReceiver(client?: SQL, repository?: string) {
             try {
                 input = await body(
                     request,
-                    url.pathname.endsWith("/commands/finish") ? 3 * 1024 * 1024 : 2048
+                    url.pathname.endsWith("/commands/finish")
+                        ? computerRequestMaximumBytes
+                        : 2048
                 );
             } catch {
                 return response(400);
