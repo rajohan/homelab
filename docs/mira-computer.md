@@ -286,12 +286,24 @@ final installed companion composition are not activated by this lifecycle module
 
 ## Companion command transport
 
-The command client is implemented separately from activation. The installed presence CLI still does not start consent, capture or input. Server command routes, durable one-time dispatch, tool receipts and the final composition remain required before enabling it.
+The command client is implemented separately from activation. The installed presence CLI still does not start consent, capture or input. The private server queue and one-time dispatch are implemented; executor tool wiring and final companion composition remain required before enabling it.
 
 An accepted controller exposes only its access ID, connection generation and opaque target ID. The outbound client claims one command, validates every binding and admits only observation, click or literal text. A command has at most ten seconds, measured conservatively from the start of its claim request. Local consent, OS readiness, one-use observations and the short server permits continue to gate every native operation.
 
-Commands run sequentially. The client retains every seen command ID for the session, with a hard ceiling of 1,024 and no eviction. Duplicate IDs, stale claims, malformed responses and uncertain acknowledgements retire the session. No claim, input or result request is automatically retried. The future server must also atomically claim each durable command once; this local replay fence does not replace that guarantee.
+Commands run sequentially. The client retains every seen command ID for the session, with a hard ceiling of 1,024 and no eviction. Duplicate IDs, stale claims, malformed responses and uncertain acknowledgements retire the session. No claim, input or result request is automatically retried. The server also claims each durable command once; this local replay fence supplements the database guarantee.
 
 Only command claims admit up to 32 KiB of response JSON for escaped literal text; other response limits stay at 4 KiB. Result uploads admit up to 3 MiB, while ordinary request bodies stay at 2 KiB. An observation must contain one inline PNG/JPEG, pass the shared runtime image limits and match its declared dimensions. Completion uploads omit the original input text. No screenshot, input text or native target is logged by this transport.
 
 Local stop or an operation timeout cancels outstanding work. Late captures are discarded. The loop awaits controller cleanup before settling; unconfirmed cleanup remains terminal. A lost input acknowledgement must be reconciled as unknown by the server, never inferred as failure or replayed. The protocol is private machine traffic and adds no PC listener or public dashboard route.
+
+## Durable private command queue
+
+The producer requires a live executor lease and a committed `running` receipt for `mira_computer_observe` or `mira_computer_input`. The receipt ID becomes the immutable command ID. The server selects the active consented target for that run; model arguments cannot supply an owner, lease, connection, native window or executable. Only trusted server code can enqueue; no browser or machine endpoint produces commands yet.
+
+`commands/claim` and `commands/finish` are available only on the separately configured private computer listener. Device credentials, exact access/generation/target binding, account controls, worker leases and tool receipt state are rechecked. A claim atomically removes its stored input payload, and cannot be repeated. Completion is accepted once. Authorized consumption returns the result once and clears it in the same transaction. A lost claim, acknowledgement or consumption is never replayed.
+
+Commands expire after at most fifteen seconds from admission and at most ten seconds from claim. Expired queued work is refused; expired or revoked dispatched work becomes unknown. Both clear content and retire that access. Human/local stop, reconnect, device revocation and conversation deletion erase outstanding content immediately. Periodic resource cleanup handles expiry, worker loss and pauses even while the model provider is unavailable. Expiry also denies fresh PC permits before cleanup runs; the existing local permit and operation deadlines remain mandatory.
+
+Storage is bounded to one outstanding command per access, eight per account and thirty-two globally, with at most thirty-two commands over a single access lifetime. If cleanup stops, admission fails at capacity. Replay tombstones contain no input or image payload. Observation results reuse the runtime image validation and dimension checks. Only completion uploads admit up to 3 MiB; other private request bodies keep the 2 KiB limit and all requests retain the concurrency/deadline bounds. No command data is copied to audit logs.
+
+This slice adds no Chat tool, UI change, installed-companion activation or live route configuration. The next step is to connect these server-owned receipts to the executor's existing replay/uncertain-outcome handling and its structured image result path, then qualify the composed private session before activation.

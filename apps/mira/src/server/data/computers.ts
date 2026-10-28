@@ -8,6 +8,8 @@ import type { SQL } from "bun";
 import * as v from "valibot";
 
 import { issueComputerCredential, readComputerCredential } from "../computer/credentials";
+import { lockComputerOwner, requireComputerDevice } from "./computerAuthority";
+import { retireComputerDeviceCommands } from "./computerCommands";
 import { auditMira, MiraFailure, miraTransaction, type MiraContext } from "./context";
 
 /**
@@ -83,6 +85,7 @@ export async function revokeMiraComputer(
     input: { id: string; version: number }
 ): Promise<void> {
     await miraTransaction(context, async (query) => {
+        await lockComputerOwner(query, context.owner);
         const rows = await query<{ id: string }[]>`
             UPDATE mira_computers SET state='revoked',version=version+1,pair_digest=NULL,credential_digest=NULL,connection_id=NULL,connection_expires_at=NULL
             WHERE id=${input.id} AND owner=${context.owner} AND version=${input.version} AND state<>'revoked' RETURNING id`;
@@ -91,6 +94,7 @@ export async function revokeMiraComputer(
                 "CONFLICT",
                 "Computer changed or is no longer available. Refresh before retrying."
             );
+        await retireComputerDeviceCommands(query, context.owner, input.id);
         await auditMira(query, context, "computer.revoked", input.id);
     });
 }
@@ -146,11 +150,11 @@ export async function connectMiraComputer(client: SQL, token: string) {
     if (!presented)
         throw new MiraFailure("FORBIDDEN", "Computer credential is invalid or expired.");
     const connectionId = crypto.randomUUID();
-    const rows = await client<{ id: string }[]>`
-        UPDATE mira_computers SET connection_id=${connectionId},sequence=0,last_seen_at=clock_timestamp(),connection_expires_at=clock_timestamp()+interval '45 seconds'
-        WHERE id=${presented.id} AND state='paired' AND credential_digest=${presented.digest} AND expires_at>clock_timestamp() RETURNING id`;
-    if (!rows[0])
-        throw new MiraFailure("FORBIDDEN", "Computer credential is invalid or expired.");
+    await client.begin(async (query) => {
+        const device = await requireComputerDevice(query, token);
+        await query`UPDATE mira_computers SET connection_id=${connectionId},sequence=0,last_seen_at=clock_timestamp(),connection_expires_at=clock_timestamp()+interval '45 seconds' WHERE id=${device.id}`;
+        await retireComputerDeviceCommands(query, device.owner, device.id);
+    });
     return {
         connectionId,
         heartbeatSeconds: 15,

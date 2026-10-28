@@ -5,6 +5,10 @@ import {
     stopMiraComputerAccessLocally,
 } from "@homelab/mira/data/computerAccess";
 import {
+    claimMiraComputerCommand,
+    finishMiraComputerCommand,
+} from "@homelab/mira/data/computerCommands";
+import {
     connectMiraComputer,
     enrollMiraComputer,
     heartbeatMiraComputer,
@@ -20,8 +24,8 @@ const response = (status: number, data?: unknown) =>
         headers: { "cache-control": "no-store", "x-content-type-options": "nosniff" },
     });
 
-async function body(request: Request): Promise<unknown> {
-    if (!request.body || Number(request.headers.get("content-length")) > 2048)
+async function body(request: Request, maximumBytes: number): Promise<unknown> {
+    if (!request.body || Number(request.headers.get("content-length")) > maximumBytes)
         throw new Error("Invalid body.");
     const reader = request.body.getReader();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -37,7 +41,10 @@ async function body(request: Request): Promise<unknown> {
             const next = await Promise.race([reader.read(), deadline]);
             if (next.done) break;
             const chunk: unknown = next.value;
-            if (!(chunk instanceof Uint8Array) || bytes.length + chunk.length > 2048) {
+            if (
+                !(chunk instanceof Uint8Array) ||
+                bytes.length + chunk.length > maximumBytes
+            ) {
                 await reader.cancel();
                 throw new Error("Body limit.");
             }
@@ -51,7 +58,7 @@ async function body(request: Request): Promise<unknown> {
 }
 
 /**
- * Accept private enrollment, presence and consent traffic without admitting browser credentials or input commands.
+ * Accept bounded private device traffic without admitting browser credentials or public command producers.
  * @param client - Explicit database, supplied only when dashboard identity and operations are configured.
  * @returns A bounded machine-only receiver; its credential can never access tRPC or automation APIs.
  */
@@ -69,6 +76,8 @@ export function miraComputerReceiver(client?: SQL) {
                 "/api/mira/computers/access/accept",
                 "/api/mira/computers/access/stop",
                 "/api/mira/computers/access/permit",
+                "/api/mira/computers/commands/claim",
+                "/api/mira/computers/commands/finish",
             ].includes(url.pathname) ||
             url.search
         )
@@ -89,7 +98,10 @@ export function miraComputerReceiver(client?: SQL) {
         try {
             let input: unknown;
             try {
-                input = await body(request);
+                input = await body(
+                    request,
+                    url.pathname.endsWith("/commands/finish") ? 3 * 1024 * 1024 : 2048
+                );
             } catch {
                 return response(400);
             }
@@ -97,6 +109,10 @@ export function miraComputerReceiver(client?: SQL) {
             const result = await Effect.runPromise(
                 Effect.tryPromise({
                     try: async () => {
+                        if (url.pathname.endsWith("/commands/claim"))
+                            return await claimMiraComputerCommand(client, token, input);
+                        if (url.pathname.endsWith("/commands/finish"))
+                            return await finishMiraComputerCommand(client, token, input);
                         if (url.pathname.endsWith("/access/pending"))
                             return await pendingMiraComputerAccess(client, token, input);
                         if (url.pathname.endsWith("/access/permit"))
