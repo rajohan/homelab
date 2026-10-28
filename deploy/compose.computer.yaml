@@ -1,0 +1,19 @@
+# Optional machine receiver behind a separately qualified private TLS proxy on this host.
+# Choose an unused bridge subnet and a fixed dashboard address within it before activation.
+services:
+  dashboard:
+    environment:
+      HOMELAB_MIRA_COMPUTER_HOST: ${HOMELAB_MIRA_COMPUTER_HOST:?Set the dashboard's private bridge IPv4 address}
+      HOMELAB_MIRA_COMPUTER_PORT: "3113"
+    networks:
+      default:
+        ipv4_address: ${HOMELAB_MIRA_COMPUTER_HOST:?Set the dashboard's private bridge IPv4 address}
+    ports:
+      - "127.0.0.1:3113:3113"
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${HOMELAB_MIRA_COMPUTER_SUBNET:?Set an unused private bridge IPv4 subnet}
+          ip_range: ${HOMELAB_MIRA_COMPUTER_DYNAMIC_RANGE:?Set a dynamic pool excluding the dashboard address}

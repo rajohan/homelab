@@ -8,6 +8,12 @@ The only destination is the public `rajohan/homelab` repository (numeric ID `137
 
 Runtime configuration accepts only a dedicated `HOMELAB_MIRA_GITHUB_TOKEN` and explicit `HOMELAB_MIRA_GITHUB_OWNER` through a supplied settings object. It does not discover CLI sessions, `GH_TOKEN`, `GITHUB_TOKEN`, a host checkout or credentials in a model/sandbox. The binding fingerprint excludes the token so rotation does not silently change the account, repository or operator mapping. A future deployment must provision repository-scoped Contents and Pull requests write permissions for Mira; workflow changes may require separate provider permissions. The adapter never grants permissions or falls back to another account.
 
+The optional `deploy/compose.mira.yaml` overlay forwards the Homelab operator ID to
+both dashboard and executor. Only the executor receives the dedicated GitHub token;
+auth, dashboard and infrastructure workers do not. Leaving both values unset keeps
+the integration unavailable. Provisioning and verifying Mira's scoped credential
+remains a deployment step, separate from merging the overlay.
+
 ## Repository context for chat and automations
 
 The same provisioned integration offers four passive tools: `mira_github_work` reads current main and open PRs; `mira_github_pull_request` reads one PR description and changed paths; `mira_github_tree` lists source paths; and `mira_github_file` reads a selected complete UTF-8 file. This gives improvement planning access to existing work and actual source before a separately approved cloud check. The read tools do not grant write authority. Separately, [automatic frontend improvements](mira-improvements.md) can queue fixed checks and draft publication under an explicit per-automation operator grant; merge and deployment remain outside that policy.

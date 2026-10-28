@@ -37,7 +37,7 @@ not the reserved light infrastructure worker.
 | Chat and files             | Owned conversations, streaming, cancellation, search/archive/delete, bounded uploads and editable memory                     | Implemented; synthetic preview and live text/PDF/image qualification passed                                                                                |
 | Tasks                      | Four-column drag-and-drop board, keyboard controls, search/filters, versioned edits, progress and conversation links         | Board, product tools and [explicit task execution](mira-tasks.md) implemented; resource-context actions pending                                            |
 | Automations and Reports    | Durable scheduler, heartbeat, reasoned individual/global pause, run history, report snapshots and deduplicated notifications | Core implemented; migrated presets installed paused; live qualification and activation pending                                                             |
-| Computer control           | Dedicated browser, required Windows pairing, scoped controls, preview, local stop and takeover                               | Driver candidate identified; companion and host acceptance pending                                                                                         |
+| Computer control           | Dedicated browser, required Windows pairing, scoped controls, preview, local stop and takeover                               | Windows companion, installer, updates and private receiver implemented; live Windows, browser and private-route acceptance pending                         |
 | Voice                      | Shared conversation context, provider qualification and explicit billing limits                                              | Pending; no paid voice budget enabled                                                                                                                      |
 | Migration and integrations | Validated legacy imports, AgentMail, Daytona, here.now and Moltbook adapters                                                 | AgentMail delivery/attachments, here.now publication, Moltbook participation and reviewed Daytona jobs implemented; live qualification and cutover pending |
 | Self-update                | Exact verified releases, independent deployment runner, receipts, health checks and compatible recovery                      | Mira image/release packaging implemented; replacement runner and automatic policy pending                                                                  |
@@ -99,10 +99,13 @@ isolated synthetic preview before production deployment.
   delivery use the separately reviewed [AgentMail](mira-agentmail.md) and
   [here.now](mira-herenow.md) outboxes; model tools only prepare their drafts. The dashboard-improvement preset remains paused until its bounded
   execution adapter is delivered and qualified.
-- An optional `deploy/compose.mira.yaml` overlay builds/runs the separate Mira image.
+- An optional `deploy/compose.mira.yaml` overlay runs the separately built Mira image.
   The pinned native runtime is bundled in that image; its updates follow reviewed
   Homelab releases. Auth continues to build and run independently. Release metadata
   accepts existing two-image releases and new releases that include Mira.
+  The separate `deploy/compose.computer.yaml` overlay enables the machine receiver
+  behind a same-host private TLS proxy; it is not part of the public dashboard route.
+  See the [deployment configuration](../deploy/README.md#optional-mira-and-private-computer-receiver).
 
 Verification includes static checks, unit/component tests, real HTTP/database
 integration tests, all three application builds, built-process smoke checks and

@@ -48,6 +48,12 @@ Upstream references: [SDK](https://cua.ai/docs/cua-driver/guides/use-the-sdk), [
 
 The main dashboard listener always returns 404 for machine computer endpoints. The separate listener is disabled by default. Explicit `HOMELAB_MIRA_COMPUTER_HOST` and `HOMELAB_MIRA_COMPUTER_PORT` opt in with an exact loopback, RFC1918 or Meshnet CGNAT IPv4 address; public addresses and wildcard binds are rejected. Identity and operations configuration are required. The private listener serves only the bounded machine protocol, never browser sessions or tRPC. It stops with the dashboard.
 
+For Docker, the optional `deploy/compose.computer.yaml` overlay supplies a fixed
+private bridge address and loopback-only host port. The normal dashboard port never
+proxies machine requests. A same-host private TLS proxy provides the PC-facing
+Meshnet route; see [deployment configuration and qualification](../deploy/README.md#optional-mira-and-private-computer-receiver).
+The overlay itself does not configure DNS, TLS or firewall policy.
+
 For this homelab, computer traffic must use the existing NordVPN Meshnet route. Keep the dedicated TLS hostname on private DNS/routing, permit only the intended Meshnet peers or their existing routed LAN path, and expose no public reverse-proxy router or port forward. Binding a private address alone does not prove Meshnet isolation: qualify firewall rules, DNS, IPv6 and any proxy forwarding before activation. Loss of Meshnet must interrupt the companion, without a public fallback. The companion opens no listener on the PC. No network policy or production service is changed by building this PR.
 
 Settings > Computers creates a ten-minute, single-use pairing code, lists presence and revokes pairings after recent human verification. Connected means that the server received a fresh heartbeat; it does not claim screen readiness. Revoked/expired pairings remain identifiable. Closing the code dialog clears its transient UI state.
