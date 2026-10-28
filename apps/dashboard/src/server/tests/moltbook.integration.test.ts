@@ -16,10 +16,10 @@ import { MoltbookReader } from "@homelab/mira/integrations/moltbook/reader";
 import { createMoltbookTools } from "@homelab/mira/integrations/moltbook/tools";
 import type { SQL } from "bun";
 
-import { createMiraTools } from "../../../../mira/src/server/executor/tools";
 import { appRouter } from "../api/router";
 import { parseOperationsConfiguration } from "../config/operations";
 import { agentMailReceiverHeartbeat } from "../mira/agentmail";
+import { createMiraTextTestTools as createMiraTools } from "../testing/miraTools";
 import { operationFixture } from "../testing/operations";
 
 const binding = { owner: "operator", agentName: "Mira" };

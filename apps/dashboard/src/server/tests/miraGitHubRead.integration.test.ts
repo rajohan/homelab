@@ -6,11 +6,11 @@ import { publishGitHubBinding } from "@homelab/mira/data/github";
 import { claimMiraRun } from "@homelab/mira/data/queue";
 import { githubBindingHash } from "@homelab/mira/integrations/github/configuration";
 
-import { createMiraTools } from "../../../../mira/src/server/executor/tools";
 import { createGitHubReadTools } from "../../../../mira/src/server/integrations/github/readTools";
 import { base, configuration } from "../../../../mira/src/server/testing/github";
 import { githubReadProvider } from "../../../../mira/src/server/testing/githubRead";
 import { appRouter } from "../api/router";
+import { createMiraTextTestTools as createMiraTools } from "../testing/miraTools";
 import { operationFixture } from "../testing/operations";
 
 const signal = new AbortController().signal;

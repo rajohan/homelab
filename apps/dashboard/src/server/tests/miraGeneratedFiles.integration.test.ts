@@ -12,8 +12,8 @@ import { claimMiraRun, finishMiraRun } from "@homelab/mira/data/queue";
 import { hereNowBindingHash } from "@homelab/mira/integrations/herenow/configuration";
 
 import * as generated from "../../../../mira/src/server/executor/generatedFiles";
-import { createMiraTools } from "../../../../mira/src/server/executor/tools";
 import { appRouter } from "../api/router";
+import { createMiraTextTestTools as createMiraTools } from "../testing/miraTools";
 import { operationFixture } from "../testing/operations";
 
 const hereNow = {

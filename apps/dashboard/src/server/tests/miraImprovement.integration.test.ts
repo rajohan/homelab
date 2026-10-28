@@ -20,7 +20,6 @@ import { dispatchMiraDaytona } from "@homelab/mira/integrations/daytona/jobs";
 import { githubBindingHash } from "@homelab/mira/integrations/github/configuration";
 import { dispatchMiraCode } from "@homelab/mira/integrations/github/outbox";
 
-import { createMiraTools } from "../../../../mira/src/server/executor/tools";
 import {
     base,
     configuration as github,
@@ -28,6 +27,7 @@ import {
 } from "../../../../mira/src/server/testing/github";
 import { githubReadProvider } from "../../../../mira/src/server/testing/githubRead";
 import { appRouter } from "../api/router";
+import { createMiraTextTestTools as createMiraTools } from "../testing/miraTools";
 import { operationFixture } from "../testing/operations";
 
 const signal = new AbortController().signal;

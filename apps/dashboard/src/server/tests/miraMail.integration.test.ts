@@ -19,7 +19,6 @@ import type { TransactionSQL } from "bun";
 import { migrate } from "drizzle-orm/bun-sql/migrator";
 
 import { createTestDatabase } from "../../../../../tests/database";
-import { createMiraTools } from "../../../../mira/src/server/executor/tools";
 import { appRouter } from "../api/router";
 import { connectDashboardDatabase } from "../database/connection";
 import {
@@ -28,6 +27,7 @@ import {
     assertDashboardSchema,
 } from "../database/migrations";
 import { provisionTestAgentMail } from "../testing/agentmail";
+import { createMiraTextTestTools as createMiraTools } from "../testing/miraTools";
 import { operationFixture } from "../testing/operations";
 
 const content = {

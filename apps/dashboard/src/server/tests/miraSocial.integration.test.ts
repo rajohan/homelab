@@ -12,8 +12,8 @@ import {
     reconcileMiraSocial,
 } from "@homelab/mira/integrations/moltbook/outbox";
 
-import { createMiraTools } from "../../../../mira/src/server/executor/tools";
 import { appRouter } from "../api/router";
+import { createMiraTextTestTools as createMiraTools } from "../testing/miraTools";
 import { operationFixture } from "../testing/operations";
 
 const binding = { owner: "operator", agentName: "SyntheticMira" };

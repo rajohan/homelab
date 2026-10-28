@@ -347,3 +347,70 @@ export async function takeMiraComputerCommand(
         return { state: "completed" as const, result };
     });
 }
+
+/**
+ * Retire the exact command's grant after cancellation, lost result or finalization failure.
+ * @param context - Original run/lease; retirement is still allowed after that lease expires.
+ * @param id - Server-reserved receipt, never a model-selected access ID.
+ * @returns Completion after content is erased and further native permits are denied.
+ */
+export async function abandonMiraComputerCommand(
+    context: MiraContext,
+    id: string
+): Promise<void> {
+    if (!context.run) throw new Error("Computer retirement requires its original run.");
+    v.parse(idSchema, id);
+    await context.client.begin(async (query) => {
+        await lockComputerOwner(query, context.owner);
+        const [row] = await query<{ accessId: string }[]>`SELECT access_id AS "accessId"
+            FROM mira_computer_commands WHERE id=${id} AND owner=${context.owner}
+            AND run_id=${context.run!.id} AND run_lease=${context.run!.leaseToken}`;
+        if (!row) return;
+        await query`UPDATE mira_computer_access SET state='stopped',stopped_at=clock_timestamp()
+            WHERE id=${row.accessId} AND owner=${context.owner} AND state<>'stopped'`;
+        await retireComputerCommands(query, context.owner, row.accessId);
+    });
+}
+
+/**
+ * Fence result disclosure against human stop, control changes and run/receipt retirement.
+ * @param context - Exact original executor run and lease.
+ * @param id - Consumed command and reserved tool receipt identity.
+ * @param signal - Current run cancellation, checked before committing success.
+ * @returns Completion only while this result's grant is still authorized.
+ */
+export async function finalizeMiraComputerCommand(
+    context: MiraContext,
+    id: string,
+    signal: AbortSignal
+): Promise<void> {
+    v.parse(idSchema, id);
+    await context.client.begin(async (query) => {
+        await lockComputerOwner(query, context.owner);
+        await liveRun(query, context);
+        // Receipt retirement can wait independently of the account lock. Recheck time after it.
+        await query`SELECT id FROM mira_tool_receipts WHERE id=${id} AND run_id=${context.run!.id} FOR UPDATE`;
+        await liveRun(query, context);
+        const [row] = await query<
+            { accessId: string }[]
+        >`SELECT access_id AS "accessId" FROM mira_computer_commands
+            WHERE id=${id} AND owner=${context.owner} AND run_id=${context.run!.id}
+            AND run_lease=${context.run!.leaseToken} AND state='consumed' AND expires_at>clock_timestamp()`;
+        const access = row
+            ? await readComputerAccess(query, context.owner, row.accessId)
+            : undefined;
+        if (
+            !access?.available ||
+            access.state !== "active" ||
+            access.runLease !== context.run!.leaseToken
+        )
+            throw new Error("Computer result lost its authority before delivery.");
+        signal.throwIfAborted();
+        const rows = await query<
+            { id: string }[]
+        >`UPDATE mira_tool_receipts SET state='succeeded',finished_at=clock_timestamp()
+            WHERE id=${id} AND run_id=${context.run!.id} AND state='running' RETURNING id`;
+        if (rows.length !== 1) throw new Error("Computer result lost its tool receipt.");
+        signal.throwIfAborted();
+    });
+}

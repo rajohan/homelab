@@ -27,7 +27,6 @@ import {
 import { migrate } from "drizzle-orm/bun-sql/migrator";
 
 import { createTestDatabase } from "../../../../../tests/database";
-import { createMiraTools } from "../../../../mira/src/server/executor/tools";
 import { appRouter } from "../api/router";
 import { connectDashboardDatabase } from "../database/connection";
 import {
@@ -37,6 +36,7 @@ import {
 } from "../database/migrations";
 import { startDashboardServer } from "../index";
 import { provisionTestAgentMail } from "../testing/agentmail";
+import { createMiraTextTestTools as createMiraTools } from "../testing/miraTools";
 import { operationFixture } from "../testing/operations";
 
 test("public AgentMail hook requires Svix, commits once, preserves owner and respects independent pause", async () => {

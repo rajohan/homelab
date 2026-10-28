@@ -7,8 +7,8 @@ import { claimMiraRun } from "@homelab/mira/data/queue";
 import { miraSkillCatalogHash } from "@homelab/mira/skills/catalog";
 import * as v from "valibot";
 
-import { createMiraTools } from "../../../../mira/src/server/executor/tools";
 import { appRouter } from "../api/router";
+import { createMiraTextTestTools as createMiraTools } from "../testing/miraTools";
 import { operationFixture } from "../testing/operations";
 
 const signal = new AbortController().signal;
