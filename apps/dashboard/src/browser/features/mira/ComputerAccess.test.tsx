@@ -185,19 +185,19 @@ test("a changed PC version clears the selection and ended, automatic or text-onl
     );
     try {
         const user = userEvent.setup();
-        await user.click(screen.getByRole("button", { name: /^Computer Computer$/ }));
+        const choice = screen.getByRole("button", { name: /^Computer Computer$/ });
+        const request = screen.getByRole("button", { name: "Request access" });
+        await user.click(choice);
         await user.click(screen.getByRole("option", { name: "Desktop" }));
-        expect(screen.getByRole("button", { name: "Request access" })).toBeEnabled();
+        expect(request).toBeEnabled();
         act(() => {
             f.query.setQueryData(computersKey, [{ ...pc, version: 3 }]);
         });
         await waitFor(() =>
-            expect(screen.getByRole("button", { name: "Request access" })).toBeDisabled()
+            expect(choice).toHaveTextContent("Choose a connected computer")
         );
-        expect(
-            screen.getByRole("button", { name: /^Computer Computer$/ })
-        ).toHaveTextContent("Choose a connected computer");
-        await user.click(screen.getByRole("button", { name: /^Computer Computer$/ }));
+        expect(request).toBeDisabled();
+        await user.click(choice);
         await user.click(screen.getByRole("option", { name: "Desktop" }));
         f.rerender(
             <ComputerAccessDialog

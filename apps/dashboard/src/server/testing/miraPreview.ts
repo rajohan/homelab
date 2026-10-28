@@ -412,7 +412,7 @@ export async function main(port = 3330): Promise<void> {
                 attachmentIds: [],
             })
         );
-        const computerRun = await claimMiraRun(database.client, worker, "foreground");
+        const computerRun = await claimMiraRun(database.client, worker, "general");
         if (!computerRun)
             throw new Error("Computer preview could not claim its synthetic run.");
         await database.client`UPDATE mira_runs SET budget_seconds=3600 WHERE id=${computerRun.id}`;
