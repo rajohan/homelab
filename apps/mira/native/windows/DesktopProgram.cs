@@ -10,8 +10,9 @@ internal static class DesktopProgram
     private static int Main(string[] args)
     {
         bool check = args.Length == 1 && args[0] == "--check-package";
+        bool startup = args.Length == 1 && args[0] == "--startup";
         bool leaseOnly = args.Length == 1 && args[0] == "--installation-lease";
-        if ((!check && !leaseOnly && args.Length != 0) || !Environment.Is64BitProcess || Environment.OSVersion.Version.Major < 10) return 1;
+        if ((!check && !leaseOnly && !startup && args.Length != 0) || !Environment.Is64BitProcess || Environment.OSVersion.Version.Major < 10) return 1;
         try
         {
             if (check) { DesktopSettings.PackageDirectory(Application.ExecutablePath); return 0; }
@@ -27,14 +28,14 @@ internal static class DesktopProgram
                     bool created;
                     using (var instance = new Mutex(true, @"Global\Homelab.Mira.Computer.Desktop." + identity.User.Value, out created))
                     {
-                        if (!created) { MessageBox.Show("Mira is already running for this Windows account.", "Mira"); return 1; }
+                        if (!created) { if (!startup) MessageBox.Show("Mira is already running for this Windows account.", "Mira"); return 1; }
                         Application.EnableVisualStyles();
                         Application.SetCompatibleTextRenderingDefault(false);
                         string settings = InstallationLease.DirectoryPath;
                         using (var form = new DesktopForm(directory, settings, delegate(bool release) {
                             if (release) { if (lease != null) lease.Dispose(); lease = null; }
                             else if (lease == null) lease = InstallationLease.Open(settings, false);
-                        })) Application.Run(form);
+                        }, startup)) Application.Run(form);
                     }
                 }
             } finally { if (lease != null) lease.Dispose(); }
@@ -42,7 +43,7 @@ internal static class DesktopProgram
         }
         catch
         {
-            if (!check && !leaseOnly) MessageBox.Show("Mira could not start. Wait for any installation to finish, then use the complete local package in your normal Windows session without administrator privileges.", "Mira", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            if (!check && !leaseOnly && !startup) MessageBox.Show("Mira could not start. Wait for any installation to finish, then use the complete local package in your normal Windows session without administrator privileges.", "Mira", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 1;
         }
     }
