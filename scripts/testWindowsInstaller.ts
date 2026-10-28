@@ -152,7 +152,7 @@ export async function testWindowsInstaller(
         );
         console.info(result.trim());
     } finally {
-        await rm(root, { recursive: true, force: true });
+        await rm(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
     }
 }
 

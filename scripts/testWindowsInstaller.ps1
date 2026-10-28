@@ -36,8 +36,10 @@ function File-Digest([string]$File) {
 }
 function Run-Setup([string]$Executable, [bool]$Success, [string]$Name) {
     $log = Join-Path $Workspace ($Name + '.log')
-    $child = Start-Process -FilePath $Executable -ArgumentList @('/CURRENTUSER', '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', ('/LOG="' + $log + '"')) -WindowStyle Hidden -PassThru
-    if (!$child.WaitForExit(120000)) { $child.Kill(); throw 'Installer exceeded its deadline.' }
+    # Inno's uninstaller hands cleanup to a descendant. -Wait waits the whole
+    # process tree; Process.WaitForExit only waits the initial executable.
+    # The caller bounds the complete qualification process to five minutes.
+    $child = Start-Process -FilePath $Executable -ArgumentList @('/CURRENTUSER', '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', ('/LOG="' + $log + '"')) -WindowStyle Hidden -Wait -PassThru
     Write-Output ("Installer step: " + $Name + ', exit ' + $child.ExitCode)
     Require (($child.ExitCode -eq 0) -eq $Success) ("Unexpected installer outcome for " + $Name + ': ' + $child.ExitCode)
     if (!$Success) {
