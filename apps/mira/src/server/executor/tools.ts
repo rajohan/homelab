@@ -48,8 +48,11 @@ import { createHereNowTools } from "../integrations/herenow/tools";
 import type { MoltbookReadConfiguration } from "../integrations/moltbook/configuration";
 import { createMoltbookTools } from "../integrations/moltbook/tools";
 import type { RuntimeTool } from "../runtime/protocol";
+import { runtimeContentItems, type RuntimeToolResult } from "../runtime/toolResult";
 import { createMiraSkillTools } from "../skills/tools";
+import { createMiraComputerTools } from "./computerTools";
 import { saveGeneratedMiraFile } from "./generatedFiles";
+import type { MiraToolContext, MiraToolDefinition } from "./toolDefinition";
 
 const improvementContextTools = new Set([
     "mira_skills_list",
@@ -114,7 +117,7 @@ export function createMiraTools(
     hereNow?: HereNowReadConfiguration,
     daytona?: DaytonaBinding,
     github?: GitHubBinding | GitHubConfiguration
-): RuntimeTool[] {
+): RuntimeTool<RuntimeToolResult>[] {
     const context: MiraContext = {
         client,
         owner: run.owner,
@@ -122,17 +125,8 @@ export function createMiraTools(
         run: { id: run.id, leaseToken: run.leaseToken },
     };
     let uncertain = false;
-    const definitions: (Omit<RuntimeTool, "execute"> & {
-        automatic: boolean;
-        transactional?: boolean;
-        commitsIndependently?: boolean;
-        confirmation?: boolean;
-        action: (
-            input: unknown,
-            signal: AbortSignal,
-            context: MiraContext
-        ) => Promise<unknown>;
-    })[] = [
+    const definitions: MiraToolDefinition[] = [
+        ...createMiraComputerTools(),
         {
             name: "mira_file_create",
             description:
@@ -480,6 +474,9 @@ export function createMiraTools(
             transactional,
             commitsIndependently,
             confirmation,
+            structuredOutput,
+            finalize,
+            onFailure,
             ...definition
         }) => ({
             ...definition,
@@ -525,6 +522,7 @@ export function createMiraTools(
                         message:
                             "This action was already attempted or the run no longer owns its lease. It was not replayed.",
                     });
+                const scoped: MiraToolContext = { ...context, receiptId: receipt };
                 let actionCompleted = false;
                 try {
                     const invoke = async (query?: TransactionSQL) => {
@@ -573,27 +571,42 @@ export function createMiraTools(
                         const result = await action(
                             input,
                             signal,
-                            query ? { ...context, transaction: query } : context
+                            query ? { ...scoped, transaction: query } : scoped
                         );
                         actionCompleted = true;
                         signal.throwIfAborted();
-                        const connection = query ?? client;
-                        const saved = await connection<
-                            { id: string }[]
-                        >`UPDATE mira_tool_receipts SET state='succeeded', finished_at=now() WHERE id=${receipt} AND state='running' AND EXISTS (SELECT 1 FROM mira_runs WHERE id=${run.id} AND state='running' AND NOT cancel_requested AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp()) RETURNING id`;
-                        if (!saved[0])
-                            throw new MiraFailure(
-                                "CONFLICT",
-                                "The action lost its execution lease and was rolled back."
-                            );
-                        return JSON.stringify({ ok: true, result });
+                        // Validate image content before committing success, never stringify it as JSON text.
+                        const output = structuredOutput
+                            ? (result as RuntimeToolResult)
+                            : JSON.stringify({ ok: true, result });
+                        if (structuredOutput) runtimeContentItems(output);
+                        if (finalize) await finalize(scoped, signal);
+                        else {
+                            const connection = query ?? client;
+                            const saved = await connection<
+                                { id: string }[]
+                            >`UPDATE mira_tool_receipts SET state='succeeded', finished_at=now() WHERE id=${receipt} AND state='running' AND EXISTS (SELECT 1 FROM mira_runs WHERE id=${run.id} AND state='running' AND NOT cancel_requested AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp()) RETURNING id`;
+                            if (!saved[0])
+                                throw new MiraFailure(
+                                    "CONFLICT",
+                                    "The action lost its execution lease and was rolled back."
+                                );
+                        }
+                        return output;
                     };
                     return transactional
                         ? await client.begin((query) => invoke(query))
                         : await invoke();
                 } catch (error) {
-                    // Independent file commits cannot roll back with the later receipt fence.
+                    let cleanupFailed = false;
+                    try {
+                        await onFailure?.(scoped);
+                    } catch {
+                        cleanupFailed = true;
+                    }
+                    // Independently committed work cannot roll back with the later receipt fence.
                     const known =
+                        !cleanupFailed &&
                         !(commitsIndependently && actionCompleted) &&
                         (error instanceof MiraFailure || error instanceof v.ValiError);
                     uncertain = !known;

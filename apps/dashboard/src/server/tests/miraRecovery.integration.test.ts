@@ -38,13 +38,13 @@ import {
     runMiraExecutor,
     type MiraHealth,
 } from "../../../../mira/src/server/executor/runtime";
-import { createMiraTools } from "../../../../mira/src/server/executor/tools";
 import {
     executeMiraTurn,
     miraInstructionsHash,
 } from "../../../../mira/src/server/executor/turn";
 import { CodexRuntime } from "../../../../mira/src/server/runtime/codexRuntime";
 import { appRouter } from "../api/router";
+import { createMiraTextTestTools as createMiraTools } from "../testing/miraTools";
 import { operationFixture } from "../testing/operations";
 
 test("Mira file recovery retries pending writes and purges only durable expired or deleted records", async () => {

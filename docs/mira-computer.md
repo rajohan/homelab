@@ -286,7 +286,7 @@ final installed companion composition are not activated by this lifecycle module
 
 ## Companion command transport
 
-The command client is implemented separately from activation. The installed presence CLI still does not start consent, capture or input. The private server queue and one-time dispatch are implemented; executor tool wiring and final companion composition remain required before enabling it.
+The command client is implemented separately from activation. The installed presence CLI still does not start consent, capture or input. The private server queue and one-time dispatch are implemented; executor tools are implemented, while Chat access controls and final companion composition remain required before enabling it.
 
 An accepted controller exposes only its access ID, connection generation and opaque target ID. The outbound client claims one command, validates every binding and admits only observation, click or literal text. A command has at most ten seconds, measured conservatively from the start of its claim request. Local consent, OS readiness, one-use observations and the short server permits continue to gate every native operation.
 
@@ -306,4 +306,12 @@ Commands expire after at most fifteen seconds from admission and at most ten sec
 
 Storage is bounded to one outstanding command per access, eight per account and thirty-two globally, with at most thirty-two commands over a single access lifetime. If cleanup stops, admission fails at capacity. Replay tombstones contain no input or image payload. Observation results reuse the runtime image validation and dimension checks. Only completion uploads admit up to 3 MiB; other private request bodies keep the 2 KiB limit and all requests retain the concurrency/deadline bounds. No command data is copied to audit logs.
 
-This slice adds no Chat tool, UI change, installed-companion activation or live route configuration. The next step is to connect these server-owned receipts to the executor's existing replay/uncertain-outcome handling and its structured image result path, then qualify the composed private session before activation.
+## Executor visual tools
+
+Manual runs expose `mira_computer_observe` and `mira_computer_input` through the ordinary durable tool receipt router. The committed receipt ID is passed only in trusted service context. Model arguments cannot choose a computer, grant, owner, lease or window, request access or accept local consent. Automated runs cannot use either tool. There is no model-owned shell or general desktop API.
+
+Observation returns validated inline image content plus generated observation ID and native pixel dimensions, rather than base64 inside JSON text. The runtime image helper displays that content. Screen content is untrusted data. Input requires a fresh one-use observation and preserves confirmed, partial, unverified and refused outcomes. Unknown delivery is never retried or described as a rollback.
+
+The executor polls for at most fifteen seconds without holding a transaction open. Cancellation, uncertain delivery, lost consumption, invalid results or receipt-finalization failure stop the exact grant and erase outstanding command content. Final disclosure locks the same account controls and live run, checks the consumed command deadline and current access, and commits receipt success before releasing the result. A human stop that wins that fence discards the image. Repeated call IDs remain blocked across recreated tool routers.
+
+Integration tests use a disposable database and synthetic frames to qualify this complete producer/consumer/result path, including cancellation before/after dispatch, stopped access after consumption and failed final receipt commits. They do not capture or control a real desktop. The installed presence CLI still does not activate capture/input. Chat access controls, final companion composition and private-session qualification are required before live activation.

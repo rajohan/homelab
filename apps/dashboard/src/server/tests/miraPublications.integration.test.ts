@@ -19,9 +19,9 @@ import {
     reconcileMiraPublications,
 } from "@homelab/mira/integrations/herenow/outbox";
 
-import { createMiraTools } from "../../../../mira/src/server/executor/tools";
 import { publicationProvider } from "../../../../mira/src/server/testing/herenow";
 import { appRouter } from "../api/router";
+import { createMiraTextTestTools as createMiraTools } from "../testing/miraTools";
 import { operationFixture } from "../testing/operations";
 
 const binding = { owner: "operator", accountId: "11111111-1111-4111-8111-111111111111" };

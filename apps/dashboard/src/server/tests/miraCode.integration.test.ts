@@ -17,7 +17,6 @@ import {
     inspectMiraCodeAttempt,
 } from "@homelab/mira/integrations/github/outbox";
 
-import { createMiraTools } from "../../../../mira/src/server/executor/tools";
 import { daytonaEditContent } from "../../../../mira/src/server/sandbox/profile";
 import {
     bytes,
@@ -26,6 +25,7 @@ import {
     githubProvider,
 } from "../../../../mira/src/server/testing/github";
 import { appRouter } from "../api/router";
+import { createMiraTextTestTools as createMiraTools } from "../testing/miraTools";
 import { operationFixture } from "../testing/operations";
 
 const binding = { owner: configuration.owner },
