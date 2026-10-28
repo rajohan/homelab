@@ -315,3 +315,13 @@ Observation returns validated inline image content plus generated observation ID
 The executor polls for at most fifteen seconds without holding a transaction open. Cancellation, uncertain delivery, lost consumption, invalid results or receipt-finalization failure stop the exact grant and erase outstanding command content. Final disclosure locks the same account controls and live run, checks the consumed command deadline and current access, and commits receipt success before releasing the result. A human stop that wins that fence discards the image. Repeated call IDs remain blocked across recreated tool routers.
 
 Integration tests use a disposable database and synthetic frames to qualify this complete producer/consumer/result path, including cancellation before/after dispatch, stopped access after consumption and failed final receipt commits. They do not capture or control a real desktop. The installed presence CLI still does not activate capture/input. Chat access controls, final companion composition and private-session qualification are required before live activation.
+
+## Chat access controls
+
+Chat exposes Computer access from the composer and conversation menu. During a running manual request, the operator selects a connected PC and View only (the default) or Control. The existing human verification flow protects the request. The paired companion must separately ask the operator to select and allow one local window. Chat cannot perform that local approval.
+
+The model can use `mira_computer_wait` to read its own run's readiness or wait at most 60 seconds while the operator decides. This tool is read-only, unavailable to automations and incapable of requesting, approving or renewing access. Cancellation ends the wait without recording an uncertain input action. All observation/input commands still enforce the independent server and local authority checks.
+
+The status strip and dialog offer Stop access without requiring another verification. Failed or old status reads show unavailable status while retaining an existing stop action. Device selections pin the displayed version, and switching runs clears the selection. Dialogs use the shared bounded, scrollable modal; narrow layouts stack full-width actions.
+
+The disposable Mira preview includes a synthetic waiting conversation for layout review. Its computer metadata never connects to a real companion. The installed Windows client's composition, release packaging and live interactive qualification remain separate delivery work.

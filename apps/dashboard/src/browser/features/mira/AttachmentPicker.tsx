@@ -73,7 +73,7 @@ export function AttachmentPicker({
         }
     });
     return (
-        <div className="flex min-w-0 flex-col gap-2">
+        <div className="@container/attachment-picker flex min-w-0 flex-col gap-2">
             <input
                 ref={input}
                 type="file"
@@ -94,7 +94,7 @@ export function AttachmentPicker({
             <div
                 className={
                     compact
-                        ? "order-last -mx-2 flex min-w-0 items-center gap-1 border-t border-primary-700 px-2 pt-2"
+                        ? "order-last -mx-2 flex min-w-0 flex-wrap items-center gap-1 border-t border-primary-700 px-2 pt-2"
                         : "flex flex-col gap-2 min-[30rem]:flex-row"
                 }
             >
@@ -137,7 +137,13 @@ export function AttachmentPicker({
                     ))}
                 {controls}
                 {actions && (
-                    <div className="ml-auto flex shrink-0 items-center gap-2">
+                    <div
+                        className={
+                            compact
+                                ? "ml-auto flex w-full shrink-0 items-center gap-2 @min-[18rem]/attachment-picker:w-auto [&>button]:flex-1 @min-[18rem]/attachment-picker:[&>button]:flex-none"
+                                : "ml-auto flex shrink-0 items-center gap-2"
+                        }
+                    >
                         {actions}
                     </div>
                 )}

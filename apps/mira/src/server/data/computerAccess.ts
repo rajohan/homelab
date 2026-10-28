@@ -124,15 +124,18 @@ export async function requestMiraComputerAccess(
 /**
  * Read recent owned access requests with effective expiry and cancellation state.
  * @param context - Signed-in operator, never a machine or model.
+ * @param runId - Optional exact run filter for conversation controls.
  * @returns At most fifty summaries without run lease tokens, device secrets or window details.
  */
 export async function listMiraComputerAccess(
-    context: MiraContext
+    context: MiraContext,
+    runId?: string
 ): Promise<MiraComputerAccessSummary[]> {
     human(context);
+    if (runId) v.parse(v.pipe(v.string(), v.uuid()), runId);
     const rows = await context.client<
         { id: string }[]
-    >`SELECT id FROM mira_computer_access WHERE owner=${context.owner} ORDER BY created_at DESC,id DESC LIMIT 50`;
+    >`SELECT id FROM mira_computer_access WHERE owner=${context.owner} AND (${runId ?? null}::uuid IS NULL OR run_id=${runId ?? null}::uuid) ORDER BY created_at DESC,id DESC LIMIT 50`;
     const result: MiraComputerAccessSummary[] = [];
     for (const item of rows) {
         const row = await readAccess(context.client, context.owner, item.id);

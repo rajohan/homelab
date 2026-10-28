@@ -11,6 +11,7 @@ import {
     takeMiraComputerCommand,
 } from "@homelab/mira/data/computerCommands";
 import { connectMiraComputer, enrollMiraComputer } from "@homelab/mira/data/computers";
+import { readMiraComputerReadiness } from "@homelab/mira/data/computerWait";
 import { claimMiraRun } from "@homelab/mira/data/queue";
 
 import { createMiraTools } from "../../../../mira/src/server/executor/tools";
@@ -130,7 +131,7 @@ function text(result: RuntimeToolResult) {
         ok: boolean;
         retryable?: boolean;
         message?: string;
-        result?: { effect: string };
+        result?: { effect?: string; state?: string; mode?: string };
     };
 }
 const frame = () => ({
@@ -483,6 +484,181 @@ test("computer finalization rechecks deadlines after waiting for the receipt loc
             { state: string }[]
         >`SELECT state FROM mira_tool_receipts WHERE id=${id}`;
         expect(receipt!.state).toBe("running");
+    } finally {
+        await f.close();
+    }
+});
+
+test("computer wait returns only scoped readiness and never creates authority", async () => {
+    const f = await fixture("view");
+    try {
+        const output = text(await f.invoke("mira_computer_wait", { waitSeconds: 0 }));
+        expect(output).toEqual({ ok: true, result: { state: "ready", mode: "view" } });
+        expect(await f.client`SELECT id FROM mira_computer_commands`).toHaveLength(0);
+        expect(await f.client`SELECT id FROM mira_computer_access`).toHaveLength(1);
+        expect(
+            text(await f.invoke("mira_computer_wait", { computerId: f.binding.targetId }))
+        ).toMatchObject({ ok: false });
+        const automatic = createMiraTools(f.client, {
+            ...f.run,
+            automationId: crypto.randomUUID(),
+        });
+        expect(
+            text(await f.invoke("mira_computer_wait", {}, crypto.randomUUID(), automatic))
+        ).toMatchObject({ ok: false });
+    } finally {
+        await f.close();
+    }
+});
+
+test("computer wait keeps a manual run available until local approval but cannot accept for the PC", async () => {
+    const f = await fixture("control", false);
+    try {
+        const pending = f.invoke("mira_computer_wait", { waitSeconds: 1 });
+        await Bun.sleep(40);
+        const [before] = await f.client<
+            { state: string }[]
+        >`SELECT state FROM mira_computer_access WHERE id=${f.binding.accessId}`;
+        expect(before!.state).toBe("pending");
+        await acceptMiraComputerAccess(f.client, f.device.credential, {
+            id: f.binding.accessId,
+            connectionId: f.binding.connectionId,
+            targetId: f.binding.targetId,
+        });
+        expect(text(await pending)).toEqual({
+            ok: true,
+            result: { state: "ready", mode: "control" },
+        });
+        expect(await f.client`SELECT id FROM mira_computer_access`).toHaveLength(1);
+        expect(await f.client`SELECT id FROM mira_computer_commands`).toHaveLength(0);
+    } finally {
+        await f.close();
+    }
+});
+
+test("computer wait distinguishes timeout, no request, offline and stopped without requesting again", async () => {
+    const f = await fixture("view", false);
+    try {
+        expect(text(await f.invoke("mira_computer_wait", { waitSeconds: 1 }))).toEqual({
+            ok: true,
+            result: { state: "pending" },
+        });
+        await f.api.computers.access.stop({ id: f.binding.accessId });
+        expect(text(await f.invoke("mira_computer_wait", {}))).toEqual({
+            ok: true,
+            result: { state: "stopped" },
+        });
+        await f.client`DELETE FROM mira_computer_access WHERE id=${f.binding.accessId}`;
+        expect(text(await f.invoke("mira_computer_wait", { waitSeconds: 0 }))).toEqual({
+            ok: true,
+            result: { state: "waiting" },
+        });
+        await f.client`UPDATE mira_computers SET connection_expires_at=clock_timestamp()-interval '1 second'`;
+        expect(text(await f.invoke("mira_computer_wait", {}))).toEqual({
+            ok: true,
+            result: { state: "offline" },
+        });
+        expect(await f.client`SELECT id FROM mira_computer_access`).toHaveLength(0);
+    } finally {
+        await f.close();
+    }
+});
+
+test("computer wait observes human stop and cancellation without manufacturing an unknown input action", async () => {
+    for (const abort of [false, true]) {
+        const f = await fixture("view", false);
+        try {
+            const waiting = f.invoke("mira_computer_wait", {});
+            // Wait for the real receipt before interrupting this waiting action.
+            for (let attempt = 0; attempt < 100; attempt++) {
+                const rows = await f.client<
+                    { id: string }[]
+                >`SELECT id FROM mira_tool_receipts WHERE tool='mira_computer_wait'`;
+                if (rows.length > 0) break;
+                await Bun.sleep(10);
+            }
+            await Bun.sleep(20);
+            if (abort) f.controller.abort(new Error("synthetic cancellation"));
+            else await f.api.computers.access.stop({ id: f.binding.accessId });
+            const result = text(await waiting);
+            expect(result).toMatchObject(
+                abort
+                    ? { ok: false, retryable: true }
+                    : { ok: true, result: { state: "stopped" } }
+            );
+            expect(await f.client`SELECT id FROM mira_computer_commands`).toHaveLength(0);
+            expect(
+                await f.client`SELECT id FROM mira_tool_receipts WHERE state='unknown'`
+            ).toHaveLength(0);
+        } finally {
+            await f.close();
+        }
+    }
+});
+
+test("computer access lists are scoped to the requested owned run", async () => {
+    const f = await fixture();
+    try {
+        expect(await f.api.computers.access.list({ runId: f.run.id })).toHaveLength(1);
+        expect(
+            await f.api.computers.access.list({ runId: crypto.randomUUID() })
+        ).toHaveLength(0);
+        const other = appRouter.createCaller({
+            operations: f,
+            principal: { kind: "human", id: "other", capabilities },
+        }).mira;
+        expect(await other.computers.access.list({ runId: f.run.id })).toHaveLength(0);
+        expect(await f.api.computers.access.list()).toHaveLength(1);
+        const replaced = createMiraTools(f.client, {
+            ...f.run,
+            leaseToken: crypto.randomUUID(),
+        });
+        expect(
+            text(await f.invoke("mira_computer_wait", {}, crypto.randomUUID(), replaced))
+        ).toMatchObject({ ok: false });
+        await f.api.runs.cancel({ id: f.run.id });
+        expect(text(await f.invoke("mira_computer_wait", {}))).toMatchObject({
+            ok: false,
+        });
+    } finally {
+        await f.close();
+    }
+});
+
+test("read-only computer readiness refuses replaced leases, automatic runs, paused autonomy and canceled runs", async () => {
+    const f = await fixture();
+    try {
+        await rejects(
+            readMiraComputerReadiness({
+                client: f.client,
+                owner: f.run.owner,
+                actor: "synthetic",
+            }),
+            /manual run/
+        );
+        expect(
+            await readMiraComputerReadiness({ ...f.worker, owner: "another-owner" })
+        ).toEqual({ state: "unavailable" });
+        expect(
+            await readMiraComputerReadiness({
+                ...f.worker,
+                run: { id: f.run.id, leaseToken: crypto.randomUUID() },
+            })
+        ).toEqual({ state: "unavailable" });
+        await f.client`UPDATE mira_runs SET cancel_requested=true WHERE id=${f.run.id}`;
+        expect(await readMiraComputerReadiness(f.worker)).toEqual({
+            state: "unavailable",
+        });
+        await f.client`UPDATE mira_runs SET cancel_requested=false WHERE id=${f.run.id}`;
+        await f.client`INSERT INTO mira_switches (owner,key,enabled,reason) VALUES (${f.run.owner},'autonomy',false,'Synthetic pause') ON CONFLICT (owner,key) DO UPDATE SET enabled=false`;
+        expect(await readMiraComputerReadiness(f.worker)).toEqual({
+            state: "unavailable",
+        });
+        for (const waitSeconds of [-1, 61, 0.5])
+            expect(
+                text(await f.invoke("mira_computer_wait", { waitSeconds }))
+            ).toMatchObject({ ok: false });
+        expect(await f.client`SELECT id FROM mira_computer_commands`).toHaveLength(0);
     } finally {
         await f.close();
     }

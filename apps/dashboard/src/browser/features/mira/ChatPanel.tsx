@@ -22,6 +22,7 @@ import {
     Files,
     Mail,
     MessageSquare,
+    Monitor,
     Pencil,
     Trash2,
 } from "lucide-react";
@@ -34,6 +35,8 @@ import { ChatComposer } from "./ChatComposer";
 import { readChatDisplay, saveChatDisplay } from "./chatDisplay";
 import { ChatSettings } from "./ChatSettings";
 import { ChatTranscript } from "./ChatTranscript";
+import { ComputerAccessDialog } from "./ComputerAccessDialog";
+import { ComputerAccessPanel } from "./ComputerAccessPanel";
 import { FileLibrary } from "./FileLibrary";
 import { ProposedChanges } from "./ProposedChanges";
 
@@ -64,7 +67,7 @@ export function ChatPanel({
     const [attachments, setAttachments] = useState<MiraAttachment[]>([]);
     const [uploading, setUploading] = useState(false);
     const [selectingFile, setSelectingFile] = useState(false);
-    const [dialog, setDialog] = useState<"rename" | "delete" | "settings">();
+    const [dialog, setDialog] = useState<"rename" | "delete" | "settings" | "computer">();
     const [before, setBefore] = useState<string>();
     const request = useRef<{ text: string; id: string } | null>(null);
     const navigate = useNavigate();
@@ -142,6 +145,18 @@ export function ChatPanel({
             </Card>
         );
     const { conversation, messages, run } = query.data;
+    const selectedModel =
+        catalog.data?.models.find(
+            (model) =>
+                model.model ===
+                (conversation.settings?.model ?? catalog.data?.defaultModel)
+        ) ??
+        (conversation.settings?.model
+            ? undefined
+            : catalog.data?.models.find((model) => model.isDefault));
+    const supportsImages = Boolean(
+        catalog.data?.fresh && selectedModel?.inputModalities.includes("image")
+    );
     return (
         <Card className="flex min-h-0 min-w-0 flex-col overflow-hidden p-0 sm:p-0">
             <header className="shrink-0 border-b border-primary-700 px-4 py-3">
@@ -155,6 +170,12 @@ export function ChatPanel({
                             label="Conversation actions"
                             disabled={change.isPending || rename.isPending}
                             actions={[
+                                {
+                                    id: "computer",
+                                    label: "Computer access",
+                                    icon: Monitor,
+                                    onSelect: () => setDialog("computer"),
+                                },
                                 {
                                     id: "code",
                                     label: "Code changes",
@@ -269,6 +290,18 @@ export function ChatPanel({
                     {run.message}
                 </p>
             )}
+            <ComputerAccessPanel
+                run={run}
+                waiting={
+                    run?.state === "running" &&
+                    !run.cancelRequested &&
+                    (query.data.tools ?? []).some(
+                        (tool) =>
+                            tool.tool === "mira_computer_wait" && tool.state === "running"
+                    )
+                }
+                onManage={() => setDialog("computer")}
+            />
             {!conversation.archivedAt && (
                 <ChatComposer
                     text={text}
@@ -287,6 +320,7 @@ export function ChatPanel({
                     onSend={() => send.mutate(undefined)}
                     onBrowse={() => setSelectingFile(true)}
                     onSettings={() => setDialog("settings")}
+                    onComputer={() => setDialog("computer")}
                 />
             )}
             {selectingFile && (
@@ -301,6 +335,14 @@ export function ChatPanel({
                         );
                         setSelectingFile(false);
                     }}
+                />
+            )}
+            {dialog === "computer" && (
+                <ComputerAccessDialog
+                    key={run?.id ?? "no-run"}
+                    run={run}
+                    supportsImages={supportsImages}
+                    onClose={() => setDialog(undefined)}
                 />
             )}
             {dialog === "settings" && (
