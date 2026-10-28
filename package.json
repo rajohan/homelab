@@ -53,7 +53,8 @@
         "build:computer:windows-host": "bun --no-env-file scripts/buildWindowsConsent.ts",
         "test:computer:windows": "bun --no-env-file scripts/testWindowsConsent.ts",
         "build:computer:windows-worker": "bun --no-env-file scripts/buildWindowsWorker.ts",
-        "test:computer:windows-worker": "bun --no-env-file scripts/testWindowsWorker.ts"
+        "test:computer:windows-worker": "bun --no-env-file scripts/testWindowsWorker.ts",
+        "build:computer:windows": "bun --no-env-file scripts/buildWindowsComputer.ts"
     },
     "devDependencies": {
         "@happy-dom/global-registrator": "21.0.4",

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { buildWindowsWorker } from "./buildWindowsWorker";
+import { buildWindowsComputer } from "./buildWindowsComputer";
 import { buildWindowsWorkerHost } from "./buildWindowsWorkerHost";
 
 /**
@@ -30,8 +30,7 @@ export async function testWindowsWorker(): Promise<void> {
         });
         if (!result.includes("23 assertions passed"))
             throw new Error("Worker ownership qualification failed.");
-        const directory = path.join(root, "package");
-        await buildWindowsWorker(directory);
+        const { directory } = await buildWindowsComputer(path.join(root, "package"));
         const sourceRoot = await realpath(fileURLToPath(new URL("..", import.meta.url)));
         execFileSync(
             process.execPath,

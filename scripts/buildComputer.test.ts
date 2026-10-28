@@ -38,7 +38,7 @@ test("compiled companion runs independently and ignores ambient bunfig preload a
             expect(err).toBe("");
             expect(out).toContain(version);
             if (argument === "--help")
-                expect(out).toContain("does not allow screen or input access");
+                expect(out).toContain("local approval of one window");
         }
     } finally {
         await rm(directory, { recursive: true, force: true });

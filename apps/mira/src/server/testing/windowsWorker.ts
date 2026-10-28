@@ -1,7 +1,9 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { version } from "../../../../../package.json";
+import { readComputerPackage } from "../computer/installedComputer";
 import { computerDriverVersion } from "../computer/policy";
 import { openWindowsComputerProcess } from "../computer/process";
 import { computerEnvironment } from "../config/environment";
@@ -35,6 +37,40 @@ const options = {
     maxBuffer: 64 * 1024,
     encoding: "utf8" as const,
 };
+const companion = path.join(directory, "mira-computer.exe");
+if ((await readComputerPackage(companion)) !== directory)
+    throw new Error("Installed package directory changed.");
+if (execFileSync(companion, ["--version"], options).trim() !== version)
+    throw new Error("Packaged companion version differs from the repository.");
+if (
+    !execFileSync(companion, ["--help"], options).includes("local approval of one window")
+)
+    throw new Error("Packaged companion help is missing local consent.");
+for (const name of [
+    "mira-computer-consent.exe",
+    "mira-computer-worker-host.exe",
+    "mira-computer-worker.exe",
+]) {
+    const file = path.join(directory, name);
+    await rename(file, file + ".missing");
+    try {
+        const result = spawnSync(
+            companion,
+            ["run", "https://unpaired-fixture.example.test"],
+            options
+        );
+        if (
+            result.status !== 1 ||
+            !result.stderr.includes("ENOENT") ||
+            !result.stderr.includes(name)
+        )
+            throw new Error(
+                "An incomplete companion did not fail package validation before pairing."
+            );
+    } finally {
+        await rename(file + ".missing", file);
+    }
+}
 const runtime = JSON.parse(execFileSync(worker, ["--check-runtime"], options)) as unknown;
 if (
     JSON.stringify(runtime) !==

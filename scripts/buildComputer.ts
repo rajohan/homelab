@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
- * Build the presence-only companion as a self-contained executable with ambient config loading disabled.
+ * Build the companion entrypoint as a self-contained executable with ambient config loading disabled.
  * @param platform - Host Linux x64 or cross-compiled Windows x64; other targets await qualification.
  * @param outputRoot - Optional isolated build directory for qualification; never cleaned by this builder.
  * @returns The executable path; distribution remains tied to the Homelab release process.
@@ -35,7 +35,13 @@ export async function buildComputer(
             `--outfile=${outfile}`,
             path.join(root, "apps/mira/src/server/computer/companionCli.ts"),
         ],
-        { cwd: root, stdout: "ignore", stderr: "inherit", timeout: 120_000 }
+        {
+            cwd: root,
+            stdout: "ignore",
+            stderr: "inherit",
+            timeout: 120_000,
+            windowsHide: true,
+        }
     );
     if ((await build.exited) !== 0) throw new Error("Computer companion build failed.");
     return outfile;
