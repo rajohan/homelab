@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import * as v from "valibot";
 
+import { openNativeComputerWindow } from "../computer/native";
 import { openWindowsComputerProcess } from "../computer/process";
 import { ComputerWindowSession } from "../computer/session";
 import {
@@ -112,7 +113,27 @@ export async function qualifyWindowsInput(directory: string, root: string) {
             options
         );
         try {
-            const frame = await view.observe(signal);
+            const frame = await view.observe(signal).catch(async (error: unknown) => {
+                // Diagnose only this already-validated synthetic window; never print pixels or trees.
+                const direct = await openNativeComputerWindow({ ...grant, mode: "view" });
+                try {
+                    await direct.observe(signal);
+                    process.stdout.write(
+                        "Direct synthetic-window capture passed; packaged capture failed.\n"
+                    );
+                } catch (error) {
+                    process.stdout.write(
+                        "Direct synthetic-window diagnostic: " +
+                            (error instanceof Error
+                                ? error.message.slice(0, 1000)
+                                : "Unknown capture error") +
+                            "\n"
+                    );
+                } finally {
+                    await direct.close();
+                }
+                throw error;
+            });
             if (frame.width !== state.width || frame.height !== state.height)
                 throw new Error("The captured frame does not match the fixture window.");
             await denied(() => view.click(state.button.x, state.button.y, signal));
