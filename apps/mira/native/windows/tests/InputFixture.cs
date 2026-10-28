@@ -48,6 +48,8 @@ internal sealed class InputFixture : Form
         return new
         {
             pid = Process.GetCurrentProcess().Id,
+            session = Process.GetCurrentProcess().SessionId,
+            interactive = Environment.UserInteractive,
             executable = Process.GetCurrentProcess().MainModule.FileName,
             windowId = Handle.ToInt64().ToString(CultureInfo.InvariantCulture),
             title = Text, text = entry.Text, count = count,

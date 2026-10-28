@@ -17,6 +17,8 @@ import { RpcProcess } from "../runtime/rpcProcess";
 const point = v.strictObject({ x: v.number(), y: v.number() });
 const stateSchema = v.strictObject({
     pid: v.pipe(v.number(), v.integer(), v.minValue(1)),
+    session: v.number(),
+    interactive: v.boolean(),
     executable: v.string(),
     windowId: v.pipe(v.string(), v.regex(/^[1-9][0-9]*$/)),
     title: v.literal("Mira isolated Windows input fixture"),
@@ -95,6 +97,12 @@ export async function qualifyWindowsInput(directory: string, root: string) {
     const signal = AbortSignal.timeout(50_000);
     try {
         const state = await readState();
+        process.stdout.write(
+            JSON.stringify({
+                fixtureSession: state.session,
+                interactive: state.interactive,
+            }) + "\n"
+        );
         const grant = {
             executable: await realpath(executable),
             pid: state.pid,
@@ -115,7 +123,51 @@ export async function qualifyWindowsInput(directory: string, root: string) {
         try {
             const frame = await view.observe(signal).catch(async (error: unknown) => {
                 // Diagnose only this already-validated synthetic window; never print pixels or trees.
-                const direct = await openNativeComputerWindow({ ...grant, mode: "view" });
+                const direct = await openNativeComputerWindow(
+                    { ...grant, mode: "view" },
+                    async () => {
+                        const sdk = await import("@trycua/cua-driver");
+                        const CuaDriver = new Proxy(sdk.CuaDriver, {
+                            get(target, key, receiver) {
+                                if (key !== "createConfigured")
+                                    return Reflect.get(target, key, receiver) as unknown;
+                                return (
+                                    ...args: Parameters<typeof target.createConfigured>
+                                ) => {
+                                    const driver = target.createConfigured(...args);
+                                    const read = driver.getWindowState.bind(driver);
+                                    driver.getWindowState = async (
+                                        ...inputs: Parameters<typeof read>
+                                    ) => {
+                                        const value = await read(...inputs);
+                                        process.stdout.write(
+                                            JSON.stringify({
+                                                fixtureCapture: true,
+                                                pidMatches: value.pid === grant.pid,
+                                                windowMatches:
+                                                    value.windowId ===
+                                                    BigInt(grant.windowId),
+                                                snapshot: Boolean(value.snapshotId),
+                                                valid: value.screenshotFrameValid,
+                                                images: value.images.length,
+                                                width: value.screenshotWidth,
+                                                height: value.screenshotHeight,
+                                                degraded: value.degraded,
+                                                reason: value.degradedReason?.slice(
+                                                    0,
+                                                    500
+                                                ),
+                                            }) + "\n"
+                                        );
+                                        return value;
+                                    };
+                                    return driver;
+                                };
+                            },
+                        });
+                        return { ...sdk, CuaDriver };
+                    }
+                );
                 try {
                     await direct.observe(signal);
                     process.stdout.write(
