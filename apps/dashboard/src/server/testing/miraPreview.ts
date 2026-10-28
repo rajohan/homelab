@@ -416,11 +416,27 @@ export async function main(port = 3330): Promise<void> {
         if (!computerRun)
             throw new Error("Computer preview could not claim its synthetic run.");
         await database.client`UPDATE mira_runs SET budget_seconds=3600 WHERE id=${computerRun.id}`;
+        const computerReceipt = crypto.randomUUID();
         await database.client`INSERT INTO mira_tool_receipts (id,run_id,call_id,tool,input_hash,state)
-            VALUES (${crypto.randomUUID()},${computerRun.id},'synthetic-computer-wait','mira_computer_wait',${"a".repeat(64)},'running')`;
+            VALUES (${computerReceipt},${computerRun.id},'synthetic-computer-wait','mira_computer_wait',${"a".repeat(64)},'running')`;
         const pump = async () => {
             // Only this disposable preview lease is kept alive; no executor or native host is connected.
-            await database.client`UPDATE mira_runs SET lease_expires_at=now()+interval '45 seconds' WHERE id=${computerRun.id} AND state='running' AND NOT cancel_requested`;
+            const [showcase] = await database.client<
+                { cancelRequested: boolean; expired: boolean }[]
+            >`
+                SELECT cancel_requested AS "cancelRequested", started_at+budget_seconds*interval '1 second'<=clock_timestamp() AS expired
+                FROM mira_runs WHERE id=${computerRun.id} AND state='running' AND lease_token=${computerRun.leaseToken}`;
+            if (showcase?.cancelRequested || showcase?.expired) {
+                await database.client`UPDATE mira_tool_receipts SET state='failed',message='Synthetic wait ended without a computer action.',finished_at=now()
+                    WHERE id=${computerReceipt} AND state='running'`;
+                await finishMiraRun(database.client, computerRun, {
+                    state: showcase.cancelRequested ? "interrupted" : "completed",
+                    text: "The synthetic computer preview stopped. No real computer was connected.",
+                    message: null,
+                });
+            } else if (showcase) {
+                await database.client`UPDATE mira_runs SET lease_expires_at=now()+interval '45 seconds' WHERE id=${computerRun.id} AND state='running' AND NOT cancel_requested`;
+            }
 
             await database.client`UPDATE mira_computers SET last_seen_at=now(),connection_expires_at=now()+interval '45 seconds' WHERE owner=${context.owner} AND label='Windows desktop' AND state='paired'`;
             await database.client`INSERT INTO mira_runtime_status (id, worker_id, version, model, ready, message, heartbeat_at, skill_catalog_hash, skill_catalog_worker_id) VALUES (1, ${worker}, 'preview', 'synthetic-visual', true, 'Interactive preview only. No production or provider connection.', now(), ${miraSkillCatalogHash}, ${worker}) ON CONFLICT (id) DO UPDATE SET worker_id = EXCLUDED.worker_id, heartbeat_at = now(), skill_catalog_hash = EXCLUDED.skill_catalog_hash, skill_catalog_worker_id = EXCLUDED.skill_catalog_worker_id`;

@@ -42,7 +42,7 @@ export function ComputerAccessDialog({
         refetchInterval: 5000,
         retry: false,
     });
-    const accessQuery = useComputerAccess(run?.id);
+    const accessQuery = useComputerAccess(run);
     const access = accessQuery.data?.[0];
     const request = useOperation(
         (input: v.InferOutput<typeof miraComputerAccessRequestSchema>, signal) =>

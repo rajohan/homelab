@@ -62,12 +62,13 @@ function fixture(
     pcs: MiraComputerSummary[],
     grants: MiraComputerAccessSummary[],
     content: ReactNode,
-    age = 0
+    age = 0,
+    reads = false
 ) {
     const query = new QueryClient({
         defaultOptions: {
             queries: {
-                enabled: false,
+                enabled: reads,
                 retry: false,
                 staleTime: Infinity,
                 refetchOnMount: false,
@@ -310,4 +311,52 @@ test("readiness labels preserve expiry, stop, unavailable and selected scope", (
         expect(computerAccessLabel({ ...access, state }, current, true)).toBe(
             state[0]!.toUpperCase() + state.slice(1)
         );
+});
+
+test("inactive conversations stop access polling after the last live request is gone", async () => {
+    const current = run();
+    let reads = 0;
+    const request = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+            (url: Parameters<typeof fetch>[0]) => {
+                if (
+                    typeof url !== "string" ||
+                    !url.includes("mira.computers.access.list")
+                )
+                    throw new Error("Unexpected synthetic read");
+                reads++;
+                return Promise.resolve(
+                    Response.json([{ result: { data: serialize([]) } }])
+                );
+            },
+            { preconnect: fetch.preconnect }
+        )
+    );
+    const f = fixture(
+        current,
+        [],
+        [],
+        <ComputerAccessPanel run={current} waiting onManage={() => {}} />,
+        0,
+        true
+    );
+    try {
+        await waitFor(() => expect(reads).toBeGreaterThan(0), { timeout: 2000 });
+        f.rerender(
+            <ComputerAccessPanel
+                run={{ ...current, state: "completed" }}
+                waiting={false}
+                onManage={() => {}}
+            />
+        );
+        const before = reads;
+        await Bun.sleep(1200);
+        expect(reads).toBe(before);
+        expect(
+            screen.queryByRole("region", { name: "Computer access status" })
+        ).not.toBeInTheDocument();
+    } finally {
+        f.close();
+        request.mockRestore();
+    }
 });

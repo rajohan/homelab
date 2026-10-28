@@ -294,6 +294,7 @@ export function ChatPanel({
                 run={run}
                 waiting={
                     run?.state === "running" &&
+                    !run.cancelRequested &&
                     (query.data.tools ?? []).some(
                         (tool) =>
                             tool.tool === "mira_computer_wait" && tool.state === "running"

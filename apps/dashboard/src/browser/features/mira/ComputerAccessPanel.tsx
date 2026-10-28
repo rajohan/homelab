@@ -19,7 +19,7 @@ export function ComputerAccessPanel({
     readonly waiting: boolean;
     readonly onManage: () => void;
 }) {
-    const query = useComputerAccess(run?.id);
+    const query = useComputerAccess(run);
     const access = query.data?.[0];
     const stop = useOperation((id: string, signal) =>
         api.mira.computers.access.stop.mutate({ id }, { signal })
