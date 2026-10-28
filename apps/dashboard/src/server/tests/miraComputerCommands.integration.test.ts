@@ -601,3 +601,69 @@ test("deleting a stopped conversation scrubs any stranded command content", asyn
         await f.close();
     }
 });
+
+test("replacing an unavailable access immediately retires its outstanding content", async () => {
+    const f = await session(await operationFixture());
+    try {
+        const queued = await f.enqueue();
+        await f.claim();
+        await f.finish(queued.id, image());
+        await f.client`UPDATE mira_tool_receipts SET state='unknown' WHERE id=${queued.id}`;
+        const next = await f.api.computers.access.request({
+            computerId: f.pair.id,
+            computerVersion: 2,
+            runId: f.run.id,
+            mode: "control",
+        });
+        expect(next.id).not.toBe(f.binding.accessId);
+        expect(next.state).toBe("pending");
+        expect(await row(f, queued.id)).toEqual({
+            state: "unknown",
+            payload: null,
+            result: null,
+        });
+    } finally {
+        await f.close();
+    }
+});
+
+test("repeated stops scrub already-stopped access only for its owner and selected computer", async () => {
+    for (const actor of ["human", "local", "other"]) {
+        const f = await session(await operationFixture());
+        try {
+            const queued = await f.enqueue(input());
+            // Simulate a stale-access path that stopped the grant before command cleanup ran.
+            await f.client`UPDATE mira_computer_access SET state='stopped',stopped_at=clock_timestamp() WHERE id=${f.binding.accessId}`;
+            if (actor === "human")
+                await f.api.computers.access.stop({ id: f.binding.accessId });
+            if (actor === "local")
+                await stopMiraComputerAccessLocally(f.client, f.device.credential, {
+                    id: f.binding.accessId,
+                });
+            if (actor === "other") {
+                const other = await session(f);
+                await stopMiraComputerAccessLocally(f.client, other.device.credential, {
+                    id: f.binding.accessId,
+                });
+                expect(await row(f, queued.id)).toMatchObject({
+                    state: "queued",
+                    payload: { action: "type", text: "private synthetic text" },
+                });
+                await f.api.computers.access.stop({ id: f.binding.accessId });
+            }
+            expect(await row(f, queued.id)).toEqual({
+                state: "refused",
+                payload: null,
+                result: null,
+            });
+            await f.api.computers.access.stop({ id: f.binding.accessId });
+            expect(await row(f, queued.id)).toEqual({
+                state: "refused",
+                payload: null,
+                result: null,
+            });
+        } finally {
+            await f.close();
+        }
+    }
+});

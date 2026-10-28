@@ -70,8 +70,10 @@ export async function requestMiraComputerAccess(
         >`SELECT id FROM mira_computer_access WHERE owner=${context.owner} AND state IN ('pending','active')`;
         for (const item of previous) {
             const current = await readAccess(query, context.owner, item.id);
-            if (!current?.available)
+            if (!current?.available) {
+                await retireComputerCommands(query, context.owner, item.id);
                 await query`UPDATE mira_computer_access SET state='stopped',stopped_at=clock_timestamp() WHERE id=${item.id}`;
+            }
         }
         const [limits] = await query<{ busy: boolean; recent: number }[]>`
             SELECT coalesce(bool_or(state IN ('pending','active') AND (computer_id=${request.computerId} OR run_id=${request.runId})),false) AS busy,
@@ -214,14 +216,17 @@ async function stop(
     id: string,
     computerId?: string
 ) {
+    const [owned] = await query<
+        { id: string }[]
+    >`SELECT id FROM mira_computer_access WHERE id=${id} AND owner=${context.owner}
+        AND (${computerId ?? null}::uuid IS NULL OR computer_id=${computerId ?? null}) FOR UPDATE`;
+    if (!owned) return;
     const [row] = await query<
         { id: string }[]
     >`UPDATE mira_computer_access SET state='stopped',stopped_at=clock_timestamp()
         WHERE id=${id} AND owner=${context.owner} AND state<>'stopped' AND (${computerId ?? null}::uuid IS NULL OR computer_id=${computerId ?? null}) RETURNING id`;
-    if (row) {
-        await retireComputerCommands(query, context.owner, id);
-        await auditMira(query, context, "computer.access_stopped", id);
-    }
+    await retireComputerCommands(query, context.owner, id);
+    if (row) await auditMira(query, context, "computer.access_stopped", id);
 }
 /**
  * Stop one owned session idempotently without requiring a new MFA challenge.
