@@ -24,7 +24,7 @@ internal sealed class DesktopUpdateArtifact : IDisposable
         directory = owned; file = Path.Combine(owned, "setup.exe"); Version = version; clock = started; validForMs = validity;
     }
 
-    internal static DesktopUpdateArtifact Receive(Stream input, string parent, Stopwatch clock)
+    internal static DesktopUpdateArtifact Receive(Stream input, string parent)
     {
         var line = new StringBuilder();
         for (;;) {
@@ -33,6 +33,8 @@ internal sealed class DesktopUpdateArtifact : IDisposable
             if (value < 32 || value > 126 || line.Length >= 1024) throw new InvalidDataException();
             line.Append((char)value);
         }
+        // The receipt follows the completed network download. Its remaining lifetime starts here.
+        var clock = Stopwatch.StartNew();
         var data = ConsentProtocol.Object(line.ToString());
         ConsentProtocol.Keys(data, "repository", "version", "revision", "size", "sha256", "validForMs");
         string version = ConsentProtocol.Text(data, "version", 14);

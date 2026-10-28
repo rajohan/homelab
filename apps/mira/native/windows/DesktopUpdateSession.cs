@@ -45,7 +45,7 @@ internal sealed class DesktopUpdateSession : IDisposable
             Stream stdout = child.Output, stderr = child.Error;
             output = new Thread(delegate() {
                 try {
-                    var received = DesktopUpdateArtifact.Receive(stdout, staging, clock);
+                    var received = DesktopUpdateArtifact.Receive(stdout, staging);
                     lock (receipt) {
                         if (accepting) offered = received;
                         else received.Dispose();

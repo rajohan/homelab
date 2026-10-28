@@ -19,7 +19,7 @@ internal static class DesktopTests
         try
         {
             if (args.Length == 2 && args[0] == "--qualify-update") {
-                using (var artifact = DesktopUpdateArtifact.Receive(Console.OpenStandardInput(), args[1], Stopwatch.StartNew())) {
+                using (var artifact = DesktopUpdateArtifact.Receive(Console.OpenStandardInput(), args[1])) {
                     if (!artifact.Install()) return 1;
                 }
                 Console.WriteLine("Native update installation completed.");

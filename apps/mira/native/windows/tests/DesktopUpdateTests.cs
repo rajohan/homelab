@@ -26,13 +26,20 @@ internal static class DesktopUpdateTests
         try { action(); } catch (InvalidDataException) { rejected = true; } catch (IOException) { rejected = true; } catch (InvalidOperationException) { rejected = true; }
         require(rejected);
     }
+    private sealed class DelayedReceipt : MemoryStream
+    {
+        private int before, after;
+        internal DelayedReceipt(byte[] bytes, int beforeHeader, int afterHeader) : base(bytes) { before = beforeHeader; after = afterHeader; }
+        public override int ReadByte() { if (before > 0) { Thread.Sleep(before); before = 0; } return base.ReadByte(); }
+        public override int Read(byte[] buffer, int offset, int count) { if (after > 0) { Thread.Sleep(after); after = 0; } return base.Read(buffer, offset, count); }
+    }
     internal static void Run(string root, Action<bool> require)
     {
         string staging = Path.Combine(root, "update-staging"); Directory.CreateDirectory(staging);
         byte[] bytes = new byte[150000]; new Random(17).NextBytes(bytes);
         string hash = Digest(bytes);
         using (var stream = new MemoryStream(Frame(bytes, hash, bytes.Length, 60000)))
-        using (var artifact = DesktopUpdateArtifact.Receive(stream, staging, Stopwatch.StartNew())) {
+        using (var artifact = DesktopUpdateArtifact.Receive(stream, staging)) {
             require(artifact.Version == "0.11.0");
             string file = Path.Combine(Directory.GetDirectories(staging)[0], "setup.exe");
             require(Digest(File.ReadAllBytes(file)) == hash);
@@ -41,11 +48,14 @@ internal static class DesktopUpdateTests
         }
         require(Directory.GetDirectories(staging).Length == 0);
         foreach (var frame in new[] { Frame(bytes, new string('b', 64), bytes.Length, 60000), Frame(bytes, hash, bytes.Length + 1, 60000), Frame(bytes, hash, bytes.Length - 1, 60000), Frame(bytes, hash, bytes.Length, 0), Encoding.ASCII.GetBytes(new string('x', 1025)) }) {
-            Refused(delegate { using (var stream = new MemoryStream(frame)) using (DesktopUpdateArtifact.Receive(stream, staging, Stopwatch.StartNew())) { } }, require);
+            Refused(delegate { using (var stream = new MemoryStream(frame)) using (DesktopUpdateArtifact.Receive(stream, staging)) { } }, require);
             require(Directory.GetDirectories(staging).Length == 0);
         }
-        var expired = Stopwatch.StartNew(); Thread.Sleep(10);
-        Refused(delegate { using (var stream = new MemoryStream(Frame(bytes, hash, bytes.Length, 1))) using (DesktopUpdateArtifact.Receive(stream, staging, expired)) { } }, require);
+        // Slow download before the confirmation header must not consume its new validity.
+        using (var stream = new DelayedReceipt(Frame(bytes, hash, bytes.Length, 500), 700, 0))
+        using (var artifact = DesktopUpdateArtifact.Receive(stream, staging)) require(artifact.Version == "0.11.0");
+        // Delay after receipt delivery still expires the operation before an installer is admitted.
+        Refused(delegate { using (var stream = new DelayedReceipt(Frame(bytes, hash, bytes.Length, 1), 0, 20)) using (DesktopUpdateArtifact.Receive(stream, staging)) { } }, require);
         string fixture = Path.Combine(root, "fixture");
         foreach (string mode in new[] { "update-ok", "update-hash", "update-short", "update-extra", "update-failure", "update-hang" }) {
             File.WriteAllText(Path.Combine(fixture, "mode.txt"), mode);
@@ -63,7 +73,7 @@ internal static class DesktopUpdateTests
         // This is an owned harmless executable mimicking setup; no real installation or desktop input.
         byte[] setup = File.ReadAllBytes(Path.Combine(fixture, "mira-computer.exe"));
         using (var stream = new MemoryStream(Frame(setup, Digest(setup), setup.Length, 60000)))
-        using (var artifact = DesktopUpdateArtifact.Receive(stream, staging, Stopwatch.StartNew())) {
+        using (var artifact = DesktopUpdateArtifact.Receive(stream, staging)) {
             var elapsed = Stopwatch.StartNew();
             require(artifact.Install());
             require(elapsed.ElapsedMilliseconds >= 300); // Wait for the descendant after its bootstrap exits.

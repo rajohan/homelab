@@ -24,6 +24,7 @@ export async function writeComputerUpdate(
     signal: AbortSignal
 ): Promise<void> {
     signal.throwIfAborted();
+    const started = performance.now();
     const update = v.parse(miraComputerUpdateSchema, metadata);
     async function* content() {
         const input = await open(file, "r");
@@ -31,7 +32,11 @@ export async function writeComputerUpdate(
             const stat = await input.stat();
             if (!stat.isFile() || stat.size !== update.size)
                 throw new Error("The update transfer changed.");
-            yield Buffer.from(JSON.stringify(update) + "\n");
+            const validForMs = Math.floor(
+                update.validForMs - (performance.now() - started)
+            );
+            if (validForMs <= 0) throw new Error("The update transfer expired.");
+            yield Buffer.from(JSON.stringify({ ...update, validForMs }) + "\n");
             const buffer = Buffer.alloc(64 * 1024);
             const hash = createHash("sha256");
             let size = 0;

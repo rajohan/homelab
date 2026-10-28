@@ -194,16 +194,16 @@ export async function withComputerUpdate<T>(
         );
         await verifyFile(staged, file, update, signal);
         signal.throwIfAborted();
-        if (
-            !sameRelease(update, confirmation) ||
-            performance.now() - confirmationStarted >= confirmation.validForMs
-        )
+        const validForMs = Math.floor(
+            confirmation.validForMs - (performance.now() - confirmationStarted)
+        );
+        if (!sameRelease(update, confirmation) || validForMs <= 0)
             throw new Error(
                 "The authorized update changed or expired. Check again before updating."
             );
         // The consumer owns installation lifetime; the download's deadline must not terminate an installer mid-write.
         clearTimeout(timer);
-        return await consume(file, confirmation, options.signal);
+        return await consume(file, { ...confirmation, validForMs }, options.signal);
     } finally {
         clearTimeout(timer);
         deadline.abort();

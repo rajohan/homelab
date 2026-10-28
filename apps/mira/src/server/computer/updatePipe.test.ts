@@ -45,9 +45,10 @@ test("private update pipe preserves framing and bytes through slow backpressure 
         await writeComputerUpdate(f.file, f.update, output, new AbortController().signal);
         const result = Buffer.concat(chunks);
         const end = result.indexOf(10);
-        expect(JSON.parse(result.subarray(0, end).toString()) as unknown).toEqual(
-            f.update
-        );
+        const receipt = JSON.parse(result.subarray(0, end).toString()) as typeof f.update;
+        expect({ ...receipt, validForMs: f.update.validForMs }).toEqual(f.update);
+        expect(receipt.validForMs).toBeGreaterThan(0);
+        expect(receipt.validForMs).toBeLessThanOrEqual(f.update.validForMs);
         expect(result.subarray(end + 1)).toEqual(f.bytes);
         expect(result.toString()).not.toContain(f.file);
         expect(output.writableEnded).toBe(false);
