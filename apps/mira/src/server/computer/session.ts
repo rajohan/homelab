@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
 
+import {
+    miraComputerInputSchema,
+    miraComputerEffectSchema,
+} from "@homelab/contracts/miraComputerCommands";
 import * as v from "valibot";
 
 import { runtimeContentItems, type RuntimeToolResult } from "../runtime/toolResult";
@@ -19,24 +23,6 @@ export interface ComputerWindowPort {
     type: (text: string, signal: AbortSignal) => Promise<ComputerActionResult>;
     close: () => Promise<void>;
 }
-const observationId = v.pipe(v.string(), v.uuid());
-const commandSchema = v.variant("action", [
-    v.strictObject({
-        action: v.literal("click"),
-        observationId,
-        x: v.pipe(v.number(), v.finite(), v.integer(), v.minValue(0)),
-        y: v.pipe(v.number(), v.finite(), v.integer(), v.minValue(0)),
-    }),
-    v.strictObject({
-        action: v.literal("type"),
-        observationId,
-        text: v.pipe(v.string(), v.minLength(1), v.maxLength(4096)),
-    }),
-]);
-const resultSchema = v.strictObject({
-    effect: v.picklist(["confirmed", "partial", "unverified", "refused", "unknown"]),
-});
-
 /** A single host-selected window; authorization and desktop readiness come from the host. */
 export class ComputerWindowSession {
     private readonly abort = new AbortController();
@@ -123,7 +109,7 @@ export class ComputerWindowSession {
      * @returns Only an explicit driver outcome, never inferred success from a resolved promise.
      */
     async act(input: unknown, signal: AbortSignal): Promise<ComputerActionResult> {
-        const command = v.parse(commandSchema, input);
+        const command = v.parse(miraComputerInputSchema, input);
         this.enter();
         const observed = this.observation;
         this.observation = undefined;
@@ -148,7 +134,7 @@ export class ComputerWindowSession {
                 throw new Error("Computer input is outside the observed window.");
             dispatched = true;
             const result = v.parse(
-                resultSchema,
+                miraComputerEffectSchema,
                 await (command.action === "click"
                     ? this.port.click(command.x, command.y, combined)
                     : this.port.type(command.text, combined))

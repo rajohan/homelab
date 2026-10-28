@@ -1,4 +1,10 @@
 import {
+    miraComputerCommandBindingSchema,
+    miraComputerCommandSchema,
+    type MiraComputerCommandBinding,
+    type MiraComputerCommand,
+} from "@homelab/contracts/miraComputerCommands";
+import {
     miraComputerEnrollmentSchema,
     miraComputerAccessAcceptSchema,
     miraComputerAccessPermitSchema,
@@ -7,6 +13,7 @@ import {
 } from "@homelab/contracts/miraComputers";
 import * as v from "valibot";
 
+import { computerCommandResult, type ComputerCommandResult } from "./commandResult";
 import { readComputerCredential } from "./credentials";
 
 const uuid = v.pipe(v.string(), v.uuid());
@@ -142,7 +149,7 @@ export function fetchComputer(url: URL, init: RequestInit): Promise<Response> {
     return fetch(url, { ...init, tls: { rejectUnauthorized: true }, proxy: false });
 }
 
-/** Outbound pairing, presence and consent transport; it never receives native targets or input commands. */
+/** Outbound private machine transport; native window identities and credentials stay local. */
 export class ComputerCompanion {
     readonly origin: string;
     private readonly request: ComputerFetch;
@@ -348,6 +355,74 @@ export class ComputerCompanion {
             throw new ComputerConnectionError(false);
     }
 
+    /**
+     * Claim at most one operation once for an already accepted local session.
+     * @param token - Computer-only OS-vault credential.
+     * @param input - Exact immutable accepted access, generation and opaque target.
+     * @param signal - Session cancellation; neither claims nor uncertain deliveries are retried.
+     * @returns A bounded command or null. Callers measure its deadline from request start.
+     */
+    async claimCommand(
+        token: string,
+        input: MiraComputerCommandBinding,
+        signal: AbortSignal
+    ): Promise<MiraComputerCommand | null> {
+        if (!readComputerCredential(token, "device"))
+            throw new ComputerConnectionError(false);
+        const binding = v.parse(miraComputerCommandBindingSchema, input);
+        const result = v.safeParse(
+            v.strictObject({ command: v.nullable(miraComputerCommandSchema) }),
+            await this.send("commands/claim", token, binding, signal)
+        );
+        if (!result.success) throw new ComputerConnectionError(false);
+        const command = result.output.command;
+        if (
+            command &&
+            (command.accessId !== binding.accessId ||
+                command.connectionId !== binding.connectionId ||
+                command.targetId !== binding.targetId)
+        )
+            throw new ComputerConnectionError(false);
+        return command;
+    }
+
+    /**
+     * Submit one validated result without retrying a lost acknowledgement.
+     * @param token - Computer-only credential for the fixed private origin.
+     * @param input - The original claimed command, never replacement routing metadata.
+     * @param result - One bounded inline frame or an explicit native input outcome.
+     * @param signal - Original operation deadline and local retirement.
+     * @returns Completion only for the same command's validated acknowledgement.
+     */
+    async finishCommand(
+        token: string,
+        input: MiraComputerCommand,
+        result: ComputerCommandResult,
+        signal: AbortSignal
+    ): Promise<void> {
+        if (!readComputerCredential(token, "device"))
+            throw new ComputerConnectionError(false);
+        const command = v.parse(miraComputerCommandSchema, input);
+        const validated = computerCommandResult(command.operation.action, result);
+        const receipt = v.safeParse(
+            v.strictObject({ commandId: uuid, accepted: v.literal(true) }),
+            await this.send(
+                "commands/finish",
+                token,
+                {
+                    accessId: command.accessId,
+                    connectionId: command.connectionId,
+                    targetId: command.targetId,
+                    commandId: command.commandId,
+                    result: validated,
+                },
+                signal
+            )
+        );
+        if (!receipt.success || receipt.output.commandId !== command.commandId)
+            throw new ComputerConnectionError(false);
+    }
+
     private async send(
         route:
             | "enroll"
@@ -356,11 +431,18 @@ export class ComputerCompanion {
             | "access/pending"
             | "access/accept"
             | "access/permit"
-            | "access/stop",
+            | "access/stop"
+            | "commands/claim"
+            | "commands/finish",
         token: string,
         body: unknown,
         stopped: AbortSignal
     ): Promise<unknown> {
+        const encoded = JSON.stringify(body);
+        const maximumRequestBytes = route === "commands/finish" ? 3 * 1024 * 1024 : 2048;
+        if (Buffer.byteLength(encoded) > maximumRequestBytes)
+            throw new ComputerConnectionError(false);
+        const maximumResponseBytes = route === "commands/claim" ? 32 * 1024 : 4096;
         const deadline = new AbortController();
         const timer = setTimeout(() => deadline.abort(), 10_000);
         const signal = AbortSignal.any([stopped, deadline.signal]);
@@ -388,7 +470,7 @@ export class ComputerCompanion {
                         authorization: `Bearer ${token}`,
                         "content-type": "application/json",
                     },
-                    body: JSON.stringify(body),
+                    body: encoded,
                     signal,
                 }
             );
@@ -415,10 +497,12 @@ export class ComputerCompanion {
                 signal.throwIfAborted();
                 if (next.done) break;
                 size += next.value.length;
-                if (size > 4096) throw new ComputerConnectionError(false);
+                if (size > maximumResponseBytes) throw new ComputerConnectionError(false);
                 chunks.push(next.value);
             }
-            return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
+            return JSON.parse(
+                new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks))
+            ) as unknown;
         } catch (error) {
             if (stopped.aborted) throw new ComputerRequestCancelledError(stopped);
             if (error instanceof ComputerConnectionError) throw error;

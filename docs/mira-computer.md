@@ -283,3 +283,15 @@ CI runs the same lifecycle tests. No native input occurs in these tests.
 The CLI still supplies no connection task and remains presence-only. Command
 transport, user-visible Chat controls, interactive Windows qualification and the
 final installed companion composition are not activated by this lifecycle module.
+
+## Companion command transport
+
+The command client is implemented separately from activation. The installed presence CLI still does not start consent, capture or input. Server command routes, durable one-time dispatch, tool receipts and the final composition remain required before enabling it.
+
+An accepted controller exposes only its access ID, connection generation and opaque target ID. The outbound client claims one command, validates every binding and admits only observation, click or literal text. A command has at most ten seconds, measured conservatively from the start of its claim request. Local consent, OS readiness, one-use observations and the short server permits continue to gate every native operation.
+
+Commands run sequentially. The client retains every seen command ID for the session, with a hard ceiling of 1,024 and no eviction. Duplicate IDs, stale claims, malformed responses and uncertain acknowledgements retire the session. No claim, input or result request is automatically retried. The future server must also atomically claim each durable command once; this local replay fence does not replace that guarantee.
+
+Only command claims admit up to 32 KiB of response JSON for escaped literal text; other response limits stay at 4 KiB. Result uploads admit up to 3 MiB, while ordinary request bodies stay at 2 KiB. An observation must contain one inline PNG/JPEG, pass the shared runtime image limits and match its declared dimensions. Completion uploads omit the original input text. No screenshot, input text or native target is logged by this transport.
+
+Local stop or an operation timeout cancels outstanding work. Late captures are discarded. The loop awaits controller cleanup before settling; unconfirmed cleanup remains terminal. A lost input acknowledgement must be reconciled as unknown by the server, never inferred as failure or replayed. The protocol is private machine traffic and adds no PC listener or public dashboard route.
