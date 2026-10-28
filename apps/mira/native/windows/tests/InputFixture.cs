@@ -54,6 +54,9 @@ internal sealed class InputFixture : Form
         if (DwmGetWindowAttribute(Handle, 9, out bounds, Marshal.SizeOf(typeof(RectangleBounds))) != 0 ||
             bounds.Right <= bounds.Left || bounds.Bottom <= bounds.Top)
             throw new InvalidOperationException("Fixture capture bounds are unavailable.");
+        // The pinned 0.37 native GDI capture removes a one-pixel inset inside
+        // DWMWA_EXTENDED_FRAME_BOUNDS. Return points in that screenshot space.
+        bounds.Left++; bounds.Top++; bounds.Right--; bounds.Bottom--;
         Point entryPoint = entry.PointToScreen(new Point(entry.Width / 2, entry.Height / 2));
         Point buttonPoint = button.PointToScreen(new Point(button.Width / 2, button.Height / 2));
         return new
