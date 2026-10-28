@@ -22,7 +22,8 @@
         "./miraCode": "./src/miraCode.ts",
         "./miraImprovement": "./src/miraImprovement.ts",
         "./miraSkills": "./src/miraSkills.ts",
-        "./miraComputers": "./src/miraComputers.ts"
+        "./miraComputers": "./src/miraComputers.ts",
+        "./miraComputerCommands": "./src/miraComputerCommands.ts"
     },
     "dependencies": {
         "valibot": "1.5.0"

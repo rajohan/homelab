@@ -190,6 +190,19 @@ export class ComputerConsentController {
     }
 
     /**
+     * Read only the opaque transport binding after consent and native startup succeed.
+     * @returns Frozen access/generation/target identifiers; no PID, path or window title.
+     */
+    commandBinding() {
+        this.active();
+        return Object.freeze({
+            accessId: this.request!.id,
+            connectionId: this.options.connectionId,
+            targetId: this.targetId!,
+        });
+    }
+
+    /**
      * Read the consented window with live gates before and after capture.
      * @param signal - Cancellation of this one operation; interruption retires local authority.
      * @returns A bounded frame with a fresh, single-use observation identity.
