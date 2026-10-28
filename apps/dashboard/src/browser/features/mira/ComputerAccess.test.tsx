@@ -157,8 +157,7 @@ test("computer request defaults to view and submits the displayed PC version onl
             },
         });
         expect(screen.getByRole("dialog")).toBeInTheDocument();
-        await act(async () => {
-            await Promise.resolve();
+        act(() => {
             f.query.setQueryData(accessKey(current.id), [
                 { ...grant(current, pc), state: "pending" },
             ]);
@@ -189,8 +188,7 @@ test("a changed PC version clears the selection and ended, automatic or text-onl
         await user.click(screen.getByRole("button", { name: /^Computer Computer$/ }));
         await user.click(screen.getByRole("option", { name: "Desktop" }));
         expect(screen.getByRole("button", { name: "Request access" })).toBeEnabled();
-        await act(async () => {
-            await Promise.resolve();
+        act(() => {
             f.query.setQueryData(computersKey, [{ ...pc, version: 3 }]);
         });
         await waitFor(() =>
@@ -242,8 +240,7 @@ test("stale or failed reads never advertise control but preserve the exact direc
     try {
         expect(screen.getByText("Status unavailable")).toBeInTheDocument();
         const cached = f.query.getQueryCache().find({ queryKey: accessKey(current.id) });
-        await act(async () => {
-            await Promise.resolve();
+        act(() => {
             cached!.setState({
                 error: new Error("Synthetic status unavailable"),
                 status: "error",

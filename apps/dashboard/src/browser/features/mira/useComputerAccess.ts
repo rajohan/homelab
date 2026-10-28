@@ -22,7 +22,7 @@ export function useComputerAccess(runId: string | undefined) {
             runId
                 ? api.mira.computers.access.list.query({ runId }, { signal })
                 : Promise.resolve([]),
-        enabled: Boolean(runId),
+        ...(runId ? {} : { enabled: false }),
         refetchInterval: 1000,
         retry: false,
     });
