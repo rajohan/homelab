@@ -20,6 +20,7 @@ import { claimMiraRun } from "@homelab/mira/data/queue";
 
 import { createVisualChallenge } from "../../../../mira/src/server/testing/visualChallenge";
 import { appRouter } from "../api/router";
+import { startDashboardServer } from "../index";
 import { miraComputerReceiver } from "../mira/computerReceiver";
 import { operationFixture } from "../testing/operations";
 
@@ -414,13 +415,31 @@ test("invalid or unknown native results never turn into confirmed completions", 
 
 test("private HTTP routes keep image budgets isolated and refuse browser credentials", async () => {
     const f = await session(await operationFixture());
-    const server = Bun.serve({
+    const server = startDashboardServer({
         hostname: "127.0.0.1",
         port: 0,
-        fetch: miraComputerReceiver(f.client),
+        development: false,
+        computerBinding: { hostname: "127.0.0.1", port: 0 },
+        authentication: {
+            issuer: "https://identity.example.invalid",
+            origin: "https://dashboard.example.invalid",
+            clientId: "synthetic",
+            clientSecret: "synthetic",
+            tokenEndpointAuthMethod: "client_secret_post",
+            sessionKey: new Uint8Array(32),
+            development: false,
+        },
+        operations: {
+            databaseUrl: f.url,
+            metricsUrl: undefined,
+            metricsToken: undefined,
+            concurrency: 3,
+            retentionDays: 30,
+        },
     });
+    const privateOrigin = `http://127.0.0.1:${server.computerPort}`;
     const post = (route: string, body: unknown, headers: Record<string, string> = {}) =>
-        fetch(new URL(`/api/mira/computers/${route}`, server.url), {
+        fetch(new URL(`/api/mira/computers/${route}`, privateOrigin), {
             method: "POST",
             headers: {
                 authorization: `Bearer ${f.device.credential}`,
@@ -448,15 +467,31 @@ test("private HTTP routes keep image budgets isolated and refuse browser credent
         const result = image();
         result.content[0]!.data = Buffer.concat([
             Buffer.from(result.content[0]!.data, "base64"),
-            Buffer.alloc(8192),
+            Buffer.alloc(1024 * 1024),
         ]).toString("base64");
         const body = { ...f.binding, commandId: queued.id, result };
         expect(await post("access/permit", body)).toMatchObject({ status: 400 });
+        // Exercise the handler limit directly; the production listener also caps transport.
         expect(
-            await post("commands/finish", {
-                ...body,
-                padding: "x".repeat(3 * 1024 * 1024),
-            })
+            await miraComputerReceiver(f.client)(
+                new Request(
+                    new URL(
+                        "/api/mira/computers/commands/finish",
+                        privateOrigin
+                    ).toString(),
+                    {
+                        method: "POST",
+                        headers: {
+                            authorization: `Bearer ${f.device.credential}`,
+                            "content-type": "application/json",
+                        },
+                        body: JSON.stringify({
+                            ...body,
+                            padding: "x".repeat(3 * 1024 * 1024),
+                        }),
+                    }
+                )
+            )
         ).toMatchObject({ status: 400 });
         const finished = await post("commands/finish", body);
         expect(finished.status).toBe(200);

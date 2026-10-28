@@ -19,7 +19,10 @@ import {
 } from "./http/responses";
 import { createDashboardAuthentication } from "./identity/authentication";
 import { agentMailReceiverHeartbeat, agentMailWebhookReceiver } from "./mira/agentmail";
-import { miraComputerReceiver } from "./mira/computerReceiver";
+import {
+    computerRequestMaximumBytes,
+    miraComputerReceiver,
+} from "./mira/computerReceiver";
 import { miraFileRequest } from "./mira/files";
 import { OperationFailure } from "./operations/errors";
 import { createOperationsRuntime } from "./operations/runtime";
@@ -240,7 +243,7 @@ export function startDashboardServer(options: DashboardServerOptions = {}) {
             computerServer = Bun.serve({
                 ...computerBinding,
                 development: false,
-                maxRequestBodySize: 2048,
+                maxRequestBodySize: computerRequestMaximumBytes,
                 fetch: miraComputerReceiver(
                     operations.client,
                     operations.releaseRepository

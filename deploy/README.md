@@ -66,10 +66,45 @@ headers intact so the receiver can reject them. The PC uses outbound HTTPS and
 opens no listener. Host administrators and containers on this bridge remain inside
 the host trust boundary; the overlay is not tenant isolation.
 
+The reviewed [nginx example](nginx/computer.conf.example) provides the same-host
+private TLS boundary. Include it in nginx's `http` context after replacing all
+placeholders: one exact private IPv4 address/port, the private DNS hostname, its
+verified certificate/key paths, and the approved peer address or CIDR. Additional
+peers require explicit entries in the `geo` block. Choose a port with no competing
+wildcard listener; do not add IPv6, HTTP redirects, a public vhost or an Edge proxy
+without separately qualifying that route. The certificate must cover the selected
+hostname and be trusted by Windows. Use the existing certificate renewal owner;
+nginx package updates remain part of the host's normal package updater.
+
+The peer gate uses nginx's [original socket address](https://nginx.org/en/docs/http/ngx_http_realip_module.html#var_realip_remote_addr),
+so inherited real-IP settings and forged forwarding headers cannot admit another
+peer. It requires nginx's HTTP real-IP and SSL modules. This example expects a
+direct PC connection through Meshnet or its approved routed LAN path, not another
+HTTP proxy or a shared NAT gateway that hides peer identity. The TLS SNI and HTTP
+host must both match the private name. Only machine protocol paths reach the
+loopback receiver. Browser headers remain intact, access logging is disabled,
+early data and proxy retries are disabled, and the 3 MiB limit accommodates command
+results. The private Bun listener uses the same 3 MiB ceiling; the receiver still
+limits control routes to 2 KiB. Request/response
+buffering and caching are disabled; do not override these in inherited includes.
+
+Before activation, review the rendered configuration and `nginx -T` output locally
+without exposing certificate keys or real credentials. Verify routing, peer source
+addresses, firewall rules, private DNS, public IPv4/IPv6 refusal and loss of the
+Meshnet route from the actual Windows PC. A passing loopback fixture does not prove
+that a production firewall or DNS zone is private. Provisioning and reload are
+separate operator actions; the example and tests do not modify live nginx or DNS.
+
 `HOMELAB_SMOKE_IMAGE_PREFIX=<local-image-prefix> bun run test:mira-deployment`
 qualifies the rendered overlays and actual dashboard image with disposable data.
 It verifies GitHub credential placement, default-off configuration, loopback ports,
 public endpoint refusal, private protocol boundaries, recreation and disabling.
+It also builds the pinned test-only nginx image and exercises the actual example
+against that receiver with a temporary TLS certificate: trusted/untrusted TLS,
+allowed/denied peers, forged forwarding headers, SNI/Host mismatches, browser
+headers and payload limits. Only loopback test listeners are used, and no real
+certificate or device credential is required. This test image is never published;
+Dependabot tracks its Docker pin as `ci(deps)` without triggering an app release.
 The container-image workflow runs it before saving images for publication. This
 does not qualify production TLS, firewall rules or the Windows PC; those need the
 separate [computer acceptance checks](../docs/mira-computer.md).

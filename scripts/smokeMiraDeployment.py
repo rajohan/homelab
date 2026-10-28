@@ -11,6 +11,8 @@ import urllib.error
 import urllib.request
 import uuid
 
+from testing.computerProxy import qualify_computer_proxy
+
 
 ROOT = Path(__file__).resolve().parents[1]
 ENVIRONMENT = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": "/nonexistent"}
@@ -160,6 +162,7 @@ def main():
                 request(ports[3113], "/api/mira/computers/connect", "POST", {"Origin": "https://dashboard.example.test"}, 403)
                 request(ports[3113], "/api/trpc")
                 request(ports[3113], "/")
+            qualify_computer_proxy(command, ROOT, directory, owner, ports[3113])
             for key in ["HOMELAB_MIRA_COMPUTER_HOST", "HOMELAB_MIRA_COMPUTER_PORT"]:
                 dashboard["environment"].pop(key)
             dashboard["ports"] = [port for port in dashboard["ports"] if port["target"] != 3113]
