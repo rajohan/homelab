@@ -69,3 +69,14 @@ export function sandboxSmokeEnvironment(): Record<string, string> {
 export function computerEnvironment(): Record<string, string> {
     return computerChildEnvironment(process.env);
 }
+
+/**
+ * Identify the disposable hosted Windows qualification job; these markers are not a security attestation.
+ * @returns Whether both GitHub Actions and its hosted-runner marker are explicitly present.
+ */
+export function hostedComputerQualificationEnvironment(): boolean {
+    return (
+        process.env.GITHUB_ACTIONS === "true" &&
+        process.env.RUNNER_ENVIRONMENT === "github-hosted"
+    );
+}
