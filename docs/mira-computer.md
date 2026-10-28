@@ -593,3 +593,35 @@ immutable version. Run the installer again and uncheck the startup task to remov
 it; uninstall also removes the shortcut. Standard [Inno Setup task persistence](https://jrsoftware.org/ishelp/topic_setup_useprevioustasks.htm)
 keeps this choice with the per-user installation. No Windows service, elevated
 scheduled task, new listener or extra credential file is installed.
+
+## Window-only capture qualification candidate
+
+The pinned Windows driver's `get_window_state` capture path can fall back to a
+screen-region copy and does not return the underlying occlusion flag. The hosted
+input fixture proves ordinary window capture and input, but does not establish
+isolation when that fallback encounters an overlapping window. Production Windows
+activation remains gated on resolving this capture boundary.
+
+`bun run test:computer:windows-capture` qualifies a separate, undistributed native
+candidate using Windows Graphics Capture `CreateForWindow` and a free-threaded
+frame pool. It uses the installed Windows SDK and Visual C++ compiler; it adds no
+package download and does not patch the SDK. It never creates a desktop/monitor
+capture item and has no screen-region or GDI fallback. Missing capture support,
+changed process identity, minimized/closed targets, changed dimensions, excessive
+frames and capture timeouts fail without exporting pixels.
+
+The hosted test creates its own cyan target and magenta cover. It independently
+confirms the cover is physically above the target, then decodes the returned PNG
+with Windows' image decoder to verify target pixels both before and after overlap.
+It also checks malformed identities, process creation time, minimization and closure.
+No screen images are printed, uploaded or retained. C++ CodeQL analysis covers the
+candidate in addition to the existing C# and TypeScript checks.
+
+This is qualification code, not a deployed capture provider. It is not packaged in
+the Windows installer and is not reachable from Chat or the companion. Production
+integration still needs the existing local-consent monitor, bounded process
+supervision, coordinate mapping, cancellation and release inventory checks. A
+command-line window ID or a hosted-runner environment marker is not user consent.
+
+Microsoft API references: [CreateForWindow](https://learn.microsoft.com/en-us/windows/win32/api/windows.graphics.capture.interop/nf-windows-graphics-capture-interop-igraphicscaptureiteminterop-createforwindow)
+and [CreateFreeThreaded](https://learn.microsoft.com/en-us/uwp/api/windows.graphics.capture.direct3d11captureframepool.createfreethreaded).

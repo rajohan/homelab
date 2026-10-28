@@ -57,7 +57,8 @@
         "test:computer:windows-desktop": "bun --no-env-file scripts/testWindowsDesktop.ts",
         "build:computer:windows-worker": "bun --no-env-file scripts/buildWindowsWorker.ts",
         "test:computer:windows-worker": "bun --no-env-file scripts/testWindowsWorker.ts",
-        "build:computer:windows": "bun --no-env-file scripts/buildWindowsComputer.ts"
+        "build:computer:windows": "bun --no-env-file scripts/buildWindowsComputer.ts",
+        "test:computer:windows-capture": "bun --no-env-file scripts/testWindowsCapture.ts"
     },
     "devDependencies": {
         "@happy-dom/global-registrator": "21.0.4",
