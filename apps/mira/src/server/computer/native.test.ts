@@ -25,7 +25,7 @@ async function fixture() {
         pid: 123,
         windowId: 456n,
         snapshotId: "s1",
-        screenshotFrameValid: true,
+        screenshotFrameValid: true as boolean | undefined,
         screenshotWidth: 390,
         screenshotHeight: 110,
         windowTitle: "Synthetic",
@@ -141,6 +141,27 @@ test("native adapter pins permission mode, exact window, fixed text tool and lit
     await assert.rejects(driver.observe(signal()), /closed/);
     await assert.rejects(driver.click(0, 0, signal()), /closed/);
     await assert.rejects(driver.type("x", signal()), /closed/);
+});
+
+test("native capture accepts omitted validity only on Windows and still checks the actual image", async () => {
+    const f = await fixture();
+    f.frame.screenshotFrameValid = undefined;
+    const driver = await f.open();
+    try {
+        if (process.platform === "win32") {
+            const frame = await driver.observe(signal());
+            expect(frame.width).toBe(390);
+            f.frame.screenshotWidth = 800;
+            await assert.rejects(driver.observe(signal()), /dimensions/);
+            f.frame.screenshotWidth = 390;
+            f.frame.images = [];
+            await assert.rejects(driver.observe(signal()), /selected window frame/);
+        } else {
+            await assert.rejects(driver.observe(signal()), /selected window frame/);
+        }
+    } finally {
+        await driver.close();
+    }
 });
 
 test("native refusals and incomplete effects never become confirmed success", async () => {

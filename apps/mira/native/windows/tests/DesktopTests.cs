@@ -80,7 +80,7 @@ internal static class DesktopTests
         }
         catch (Exception error)
         {
-            Console.Error.WriteLine("Windows desktop qualification failed after " + checks + ": " + error.GetType().Name);
+            Console.Error.WriteLine("Windows desktop qualification failed after " + checks + ": " + error.GetType().Name + ": " + error.Message);
             return 1;
         }
     }
