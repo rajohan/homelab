@@ -67,8 +67,6 @@ export async function openNativeComputerWindow(
                         pid: grant.pid,
                         windowId: BigInt(grant.windowId),
                         includeScreenshot: true,
-                        // Compact responses may omit the validity metadata required below.
-                        fullOutput: true,
                         includeAccessibilityTree: true,
                         maxImageDimension: 0,
                         maxElements: 200,
@@ -84,7 +82,11 @@ export async function openNativeComputerWindow(
                     frame.pid !== grant.pid ||
                     frame.windowId !== BigInt(grant.windowId) ||
                     !frame.snapshotId ||
-                    !frame.screenshotFrameValid ||
+                    // 0.37 Windows omits this optional flag even for successful capture.
+                    // Explicitly invalid frames and missing flags elsewhere still fail.
+                    frame.screenshotFrameValid === false ||
+                    (process.platform !== "win32" &&
+                        frame.screenshotFrameValid !== true) ||
                     frame.images.length !== 1
                 )
                     throw new Error(

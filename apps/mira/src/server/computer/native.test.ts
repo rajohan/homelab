@@ -143,23 +143,22 @@ test("native adapter pins permission mode, exact window, fixed text tool and lit
     await assert.rejects(driver.type("x", signal()), /closed/);
 });
 
-test("native capture requests complete validity metadata instead of the compact response", async () => {
+test("native capture accepts omitted validity only on Windows and still checks the actual image", async () => {
     const f = await fixture();
-    f.native.getWindowState = (input: unknown) =>
-        Promise.resolve({
-            ...f.frame,
-            screenshotFrameValid:
-                input &&
-                typeof input === "object" &&
-                "fullOutput" in input &&
-                input.fullOutput === true
-                    ? true
-                    : undefined,
-        });
+    f.frame.screenshotFrameValid = undefined;
     const driver = await f.open();
     try {
-        const frame = await driver.observe(signal());
-        expect(frame.width).toBe(390);
+        if (process.platform === "win32") {
+            const frame = await driver.observe(signal());
+            expect(frame.width).toBe(390);
+            f.frame.screenshotWidth = 800;
+            await assert.rejects(driver.observe(signal()), /dimensions/);
+            f.frame.screenshotWidth = 390;
+            f.frame.images = [];
+            await assert.rejects(driver.observe(signal()), /selected window frame/);
+        } else {
+            await assert.rejects(driver.observe(signal()), /selected window frame/);
+        }
     } finally {
         await driver.close();
     }

@@ -143,6 +143,13 @@ and private routing qualification remain required before production activation.
 
 ## Hosted Windows native qualification
 
+The pinned 0.37 Windows backend omits the optional `screenshotFrameValid` field,
+including with full output. The adapter accepts that omission only on Windows;
+an explicit `false` is always rejected. It still requires the selected PID/window,
+a snapshot, exactly one bounded PNG/JPEG image, and decoded image dimensions that
+match the reported size. Other platforms continue to require a positive validity
+flag. See the [pinned Windows capture response](https://github.com/trycua/cua/blob/cua-driver-rs-v0.37.0/libs/cua-driver/rust/crates/platform-windows/src/tools/impl_.rs#L1748-L1779).
+
 The Windows release job now drives a separate synthetic WinForms window through
 its extracted, pinned worker package. It checks a real window image, literal text
 and a counter increment against state read independently from the fixture. It also
