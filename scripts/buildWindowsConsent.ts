@@ -28,6 +28,7 @@ export async function buildWindowsConsent(outputRoot?: string, tests = false) {
     const common = [
         "/nologo",
         "/platform:x64",
+        `/win32icon:${path.join(root, "packages/ui/src/assets/rajohan.ico")}`,
         "/warnaserror+",
         "/optimize+",
         `/win32manifest:${path.join(source, "app.manifest")}`,

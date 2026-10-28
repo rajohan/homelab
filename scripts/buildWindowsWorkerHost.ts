@@ -25,6 +25,7 @@ export async function buildWindowsWorkerHost(outputRoot?: string, tests = false)
     const common = [
         "/nologo",
         "/platform:x64",
+        `/win32icon:${path.join(root, "packages/ui/src/assets/rajohan.ico")}`,
         "/warnaserror+",
         "/optimize+",
         "/target:exe",
