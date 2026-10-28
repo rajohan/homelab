@@ -11,6 +11,7 @@
         "mira:qualify-visual": "bun --no-env-file apps/mira/src/server/cli/qualifyVisual.ts",
         "mira:qualify": "bun --no-env-file apps/mira/src/server/cli/qualify.ts",
         "mira:qualify-product": "bun --no-env-file apps/dashboard/src/server/testing/miraQualification.ts",
+        "mira:qualify-container": "bun --no-env-file apps/dashboard/src/server/testing/miraContainerQualification.ts",
         "dev:mira": "bun --no-env-file apps/mira/src/server/index.ts",
         "start:mira": "NODE_ENV=production bun --cwd apps/mira/dist --no-env-file index.js",
         "dev:worker": "bun --no-env-file apps/dashboard/src/worker/worker.ts",
