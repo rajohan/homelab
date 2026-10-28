@@ -21,6 +21,7 @@ import { computerConnectionWork } from "./companionWork";
 import { issueComputerCredential } from "./credentials";
 import { installedComputerHost, readComputerPackage } from "./installedComputer";
 import type { ComputerWindowGrant } from "./policy";
+import { assertLocalWindowsComputerDrive } from "./windowsDrive";
 
 async function until(check: () => boolean) {
     for (let i = 0; i < 1000; i++) {
@@ -48,6 +49,8 @@ function fixture() {
     const received: Record<string, unknown>[] = [];
     const behavior = {
         offline: false,
+        claimOffline: false,
+        finishOffline: false,
         failCleanup: false,
         holdCleanup: Promise.resolve(),
     };
@@ -74,6 +77,8 @@ function fixture() {
             result = { ...summary, state: "active" };
         } else if (route === "permit") result = { ...body, validForMs: 5000 };
         else if (route === "claim") {
+            if (behavior.claimOffline)
+                return Promise.resolve(new Response(null, { status: 503 }));
             claims++;
             if (claims > 2) return Promise.resolve(Response.json({ command: null }));
             result = {
@@ -95,6 +100,8 @@ function fixture() {
             };
         } else if (route === "finish") {
             received.push(body);
+            if (behavior.finishOffline && received.length === 2)
+                return Promise.resolve(new Response(null, { status: 503 }));
             result = { commandId: body.commandId, accepted: true };
         } else if (route === "stop") result = { stopped: true };
         else throw new Error("Unexpected fixture request.");
@@ -256,6 +263,73 @@ test("installed command teardown blocks reconnect until confirmed and failed cle
     }
 });
 
+test("temporary command polling reconnects only after cleanup while failed input acknowledgement stays terminal", async () => {
+    for (const phase of ["poll", "finish"] as const) {
+        const f = fixture();
+        f.behavior.claimOffline = phase === "poll";
+        f.behavior.finishOffline = phase === "finish";
+        const cleanup = Promise.withResolvers<void>();
+        f.behavior.holdCleanup = cleanup.promise;
+        f.allow();
+        const outcome = f.run().then(
+            () => null,
+            (error: unknown) => error
+        );
+        try {
+            await until(() => f.events.includes("driver-closing"));
+            expect(f.events).not.toContain("retry");
+            cleanup.resolve();
+            const result = await outcome;
+            if (phase === "poll") {
+                expect(result).toBeNull();
+                expect(f.events.indexOf("retry")).toBeGreaterThan(
+                    f.events.indexOf("driver-closed")
+                );
+                expect(f.events).not.toContain("input");
+            } else {
+                expect(result).toBeInstanceOf(RuntimeCleanupError);
+                expect(f.events).not.toContain("retry");
+                expect(f.events.filter((event) => event === "input")).toHaveLength(1);
+            }
+        } finally {
+            f.stop.abort();
+            cleanup.resolve();
+            await outcome;
+        }
+    }
+});
+
+test("Windows package policy rejects mapped remote, unknown and UNC roots without accepting a path spelling as local evidence", async () => {
+    for (const type of [0, 1, 4, 7, Number.NaN])
+        await rejects(
+            assertLocalWindowsComputerDrive(
+                String.raw`Z:\package\mira-computer.exe`,
+                () => Promise.resolve(type)
+            )
+        );
+    for (const type of [2, 3, 5, 6])
+        await assertLocalWindowsComputerDrive(
+            String.raw`c:\package\MIRA-C~1.EXE`,
+            (root) => {
+                expect(root).toBe("c:" + path.win32.sep);
+                return Promise.resolve(type);
+            }
+        );
+    for (const file of [String.raw`\\host\share\mira-computer.exe`, "relative.exe"])
+        await rejects(
+            assertLocalWindowsComputerDrive(file, () =>
+                Promise.reject(new Error("Must not probe UNC or relative paths"))
+            ),
+            /local Windows drive/
+        );
+    await rejects(
+        assertLocalWindowsComputerDrive(String.raw`C:\mira-computer.exe`, () =>
+            Promise.reject(new Error("Probe failed"))
+        ),
+        /Probe failed/
+    );
+});
+
 test("the installed factory accepts only a complete canonical package and creates no native process before a request", async () => {
     const root = await realpath(
         await mkdtemp(path.join(tmpdir(), "mira-installed-test-"))
@@ -276,6 +350,8 @@ test("the installed factory accepts only a complete canonical package and create
         for (const name of names)
             await writeFile(path.join(root, name), "synthetic non-executable fixture");
         expect(await readComputerPackage(executable)).toBe(root);
+        if (process.platform === "win32")
+            expect(await readComputerPackage(executable.toUpperCase())).toBe(root);
         const create = await installedComputerHost(
             "https://private.example.test",
             executable
@@ -316,4 +392,4 @@ test("the installed factory accepts only a complete canonical package and create
     } finally {
         await rm(root, { recursive: true, force: true });
     }
-});
+}, 30_000);

@@ -40,7 +40,7 @@ The image starts Xvfb, Openbox and a synthetic Tk window, waiting for the displa
 
 Unit tests also run real synthetic child processes to verify hung initialization, hung input, cancellation, parent EOF, forced termination, process reaping, temporary cleanup, environment filtering and disabled dotenv loading. Protocol tests reject privilege-widening requests and suppress late results after pipe loss. Other tests cover scope validation, stale/superseded/cross-session observations, out-of-bounds input, overlapping calls, host revocation, cancellation, unknown results, malformed frames, native cleanup and exact fixed-tool request mapping.
 
-Passing this fixture qualifies Linux X11 with explicit foreground input. It does not qualify Windows, Wayland, browser origin handling, background keyboard input, OS lock detection or production computer access. Remaining delivery work includes a packaged companion, outbound pairing, session grants, stop/takeover/revoke controls, Windows/browser acceptance and updater integration for the deployed companion artifact.
+Passing this fixture qualifies Linux X11 with explicit foreground input. It does not qualify Windows, Wayland, browser origin handling, background keyboard input, OS lock detection or production computer access. Remaining delivery work includes interactive Windows/browser acceptance, installation, release distribution and updater integration for the deployed companion artifact.
 
 Upstream references: [SDK](https://cua.ai/docs/cua-driver/guides/use-the-sdk), [permission manifests](https://cua.ai/docs/cua-driver/guides/permissions), [platform limits](https://cua.ai/docs/cua-driver/concepts/platform-support).
 
@@ -336,7 +336,9 @@ is insufficient for Windows `run`.
 
 The installed `mira-computer.exe run https://private.example.test` validates all
 four fixed sibling executables before reading the OS vault or connecting. Renamed,
-missing, directory, symlink and network-share executable paths are refused. Native
+missing, directory, linked and network-share executable paths are refused. Windows
+volume checks reject mapped remote drives as well as UNC paths; ordinary case
+variations and 8.3 spelling are canonicalized without allowing linked paths. Native
 processes use the package directory and a filtered OS environment, independent of
 the current working directory. Package integrity and authenticated distribution
 remain release requirements; this does not protect against another process that
@@ -349,7 +351,9 @@ selection and Allow. Only successful local consent, server acceptance and curren
 readiness permits can start the supervised worker. View-only consent cannot send
 input. Ctrl+C, local Stop, expiry or network loss retire the generation and join
 native cleanup before replacement; uncertain input is never replayed. Unconfirmed
-cleanup is terminal. No PC listener or public endpoint is added.
+cleanup is terminal. A temporary command-polling outage may reconnect only after
+confirmed cleanup; failed input/result delivery remains terminal. No PC listener
+or public endpoint is added.
 
 The Windows qualification builds the complete package and verifies its compiled
 help/version and missing-sibling refusal from an unrelated working directory.

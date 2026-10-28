@@ -38,8 +38,26 @@ const options = {
     encoding: "utf8" as const,
 };
 const companion = path.join(directory, "mira-computer.exe");
-if ((await readComputerPackage(companion)) !== directory)
+if (
+    (await readComputerPackage(companion)) !== directory ||
+    (await readComputerPackage(companion.toUpperCase())) !== directory
+)
     throw new Error("Installed package directory changed.");
+const system = environment.SystemRoot ?? environment.SYSTEMROOT;
+if (!system) throw new Error("Windows SystemRoot is required for qualification.");
+const shortExecutable = execFileSync(
+    path.join(system, "System32/WindowsPowerShell/v1.0/powershell.exe"),
+    [
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "$files = New-Object -ComObject Scripting.FileSystemObject; [Console]::Write($files.GetFile($env:MIRA_COMPUTER_TEST_EXECUTABLE).ShortPath)",
+    ],
+    { ...options, env: { ...environment, MIRA_COMPUTER_TEST_EXECUTABLE: companion } }
+).trim();
+if ((await readComputerPackage(shortExecutable)) !== directory)
+    throw new Error("The installed package did not canonicalize its Windows short path.");
 if (execFileSync(companion, ["--version"], options).trim() !== version)
     throw new Error("Packaged companion version differs from the repository.");
 if (

@@ -6,6 +6,7 @@ import { computerOrigin } from "./companion";
 import type { ComputerConsentHost } from "./companionConsent";
 import { ComputerLocalConsentHost } from "./localConsentHost";
 import { openWindowsComputerProcess } from "./process";
+import { assertLocalWindowsComputerDrive } from "./windowsDrive";
 
 /**
  * Validate the fixed sibling executables before an installed companion connects.
@@ -13,16 +14,29 @@ import { openWindowsComputerProcess } from "./process";
  * @returns The canonical local package directory; links, missing files and renamed clients are refused.
  */
 export async function readComputerPackage(executable: string): Promise<string> {
+    if (!path.isAbsolute(executable) || executable.startsWith(String.raw`\\`))
+        throw new Error(
+            "Run the installed Windows companion from its complete local package."
+        );
+    if (process.platform === "win32") await assertLocalWindowsComputerDrive(executable);
+    // Inspect the supplied path as well as its canonical form: casing and 8.3 spelling
+    // are valid on Windows, but a reparse/symlink anywhere in the path is not.
+    for (let entry = executable; ; entry = path.dirname(entry)) {
+        const metadata = await lstat(entry);
+        if (metadata.isSymbolicLink())
+            throw new Error("The computer package cannot use linked paths.");
+        if (path.dirname(entry) === entry) break;
+    }
+    const canonical = await realpath(executable);
+    const basename = path.basename(canonical);
     if (
-        !path.isAbsolute(executable) ||
-        executable.startsWith(String.raw`\\`) ||
-        path.basename(executable) !== "mira-computer.exe" ||
-        (await realpath(executable)) !== executable
+        (process.platform === "win32" ? basename.toLowerCase() : basename) !==
+        "mira-computer.exe"
     )
         throw new Error(
             "Run the installed Windows companion from its complete local package."
         );
-    const directory = path.dirname(executable);
+    const directory = path.dirname(canonical);
     for (const name of [
         "mira-computer.exe",
         "mira-computer-consent.exe",
@@ -31,7 +45,7 @@ export async function readComputerPackage(executable: string): Promise<string> {
     ]) {
         const file = path.join(directory, name);
         const metadata = await lstat(file);
-        if (!metadata.isFile() || (await realpath(file)) !== file)
+        if (!metadata.isFile() || metadata.isSymbolicLink())
             throw new Error("The computer package requires ordinary local executables.");
     }
     return directory;
