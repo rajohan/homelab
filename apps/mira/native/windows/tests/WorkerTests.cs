@@ -1,12 +1,24 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
 
 internal static class WorkerTests
 {
     private static int checks;
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern uint GetShortPathName(string longPath, StringBuilder shortPath, uint length);
     private static int Main(string[] args)
     {
+        if (args.Length == 2 && args[0] == "--short-path" && Path.IsPathRooted(args[1]))
+        {
+            var output = new StringBuilder(32768);
+            uint length = GetShortPathName(args[1], output, (uint)output.Capacity);
+            if (length == 0 || length >= output.Capacity) return 1;
+            Console.Write(output.ToString());
+            return 0;
+        }
         if (args.Length != 1 || !Path.IsPathRooted(args[0])) return 1;
         try
         {

@@ -39,6 +39,7 @@ export async function testWindowsWorker(): Promise<void> {
                 path.join(sourceRoot, "apps/mira/src/server/testing/windowsWorker.ts"),
                 directory,
                 root,
+                tests.checks!,
             ],
             {
                 cwd: sourceRoot,

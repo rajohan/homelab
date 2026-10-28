@@ -8,13 +8,15 @@ import { computerDriverVersion } from "../computer/policy";
 import { openWindowsComputerProcess } from "../computer/process";
 import { computerEnvironment } from "../config/environment";
 
-const [directory, root, ...extra] = process.argv.slice(2);
+const [directory, root, pathChecks, ...extra] = process.argv.slice(2);
 if (
     !directory ||
     !root ||
+    !pathChecks ||
     extra.length > 0 ||
     !path.isAbsolute(directory) ||
-    !path.isAbsolute(root)
+    !path.isAbsolute(root) ||
+    !path.isAbsolute(pathChecks)
 )
     throw new Error(
         "Windows worker qualification requires owned absolute test directories."
@@ -43,18 +45,10 @@ if (
     (await readComputerPackage(companion.toUpperCase())) !== directory
 )
     throw new Error("Installed package directory changed.");
-const system = environment.SystemRoot ?? environment.SYSTEMROOT;
-if (!system) throw new Error("Windows SystemRoot is required for qualification.");
 const shortExecutable = execFileSync(
-    path.join(system, "System32/WindowsPowerShell/v1.0/powershell.exe"),
-    [
-        "-NoLogo",
-        "-NoProfile",
-        "-NonInteractive",
-        "-Command",
-        "$files = New-Object -ComObject Scripting.FileSystemObject; [Console]::Write($files.GetFile($env:MIRA_COMPUTER_TEST_EXECUTABLE).ShortPath)",
-    ],
-    { ...options, env: { ...environment, MIRA_COMPUTER_TEST_EXECUTABLE: companion } }
+    pathChecks,
+    ["--short-path", companion],
+    options
 ).trim();
 if ((await readComputerPackage(shortExecutable)) !== directory)
     throw new Error("The installed package did not canonicalize its Windows short path.");
