@@ -1,6 +1,7 @@
 import { version } from "../../../../../package.json";
 import { ComputerCompanion, computerOrigin } from "./companion";
 import { readComputerTicket } from "./companionInput";
+import { watchComputerParent } from "./companionParent";
 import { runComputerPresence } from "./companionPresence";
 import { ComputerCredentialStore } from "./companionStore";
 import { computerConnectionWork } from "./companionWork";
@@ -36,9 +37,10 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<void
         print(usage);
         return;
     }
-    const [command, suppliedOrigin] = args;
+    const [command, suppliedOrigin, mode] = args;
+    const supervised = command === "run" && mode === "--supervised" && args.length === 3;
     if (
-        args.length !== 2 ||
+        (args.length !== 2 && !supervised) ||
         !["pair", "run", "forget"].includes(command ?? "") ||
         !suppliedOrigin
     )
@@ -46,6 +48,10 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<void
             "Use --help for companion commands. Never pass a pairing code as an argument."
         );
     const origin = computerOrigin(suppliedOrigin);
+    if (supervised && process.stdin.isTTY)
+        throw new Error(
+            "A supervised connection requires the Windows launcher's private input pipe."
+        );
     const store = new ComputerCredentialStore(origin);
     if (command === "forget") {
         await store.forget();
@@ -54,16 +60,21 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<void
         );
         return;
     }
-    const createHost =
-        command === "run" && process.platform === "win32"
-            ? await installedComputerHost(origin, process.execPath)
-            : undefined;
-    const existing = await store.read();
     const stopped = new AbortController();
     const stop = () => stopped.abort();
+    const detachParent = supervised
+        ? watchComputerParent(process.stdin, stop)
+        : undefined;
     process.once("SIGINT", stop);
     process.once("SIGTERM", stop);
     try {
+        stopped.signal.throwIfAborted();
+        const createHost =
+            command === "run" && process.platform === "win32"
+                ? await installedComputerHost(origin, process.execPath)
+                : undefined;
+        const existing = await store.read();
+        stopped.signal.throwIfAborted();
         const companion = new ComputerCompanion(origin);
         if (command === "pair") {
             if (existing)
@@ -126,6 +137,7 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<void
         }
     } finally {
         stopped.abort();
+        detachParent?.();
         process.off("SIGINT", stop);
         process.off("SIGTERM", stop);
     }

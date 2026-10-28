@@ -27,7 +27,7 @@ const releaseSchema = v.strictObject({
     bun: versionSchema,
     driver: versionSchema,
     archive: v.strictObject({ name: v.string(), size: sizeSchema, sha256: digestSchema }),
-    files: v.pipe(v.array(fileSchema), v.minLength(4), v.maxLength(2048)),
+    files: v.pipe(v.array(fileSchema), v.minLength(5), v.maxLength(2048)),
 });
 
 export type ComputerReleaseFile = v.InferOutput<typeof fileSchema>;
@@ -93,6 +93,7 @@ export function readComputerRelease(input: unknown): ComputerRelease {
     if (
         total > maximumBytes ||
         ![
+            "mira-computer-desktop.exe",
             "mira-computer.exe",
             "mira-computer-consent.exe",
             "mira-computer-worker-host.exe",

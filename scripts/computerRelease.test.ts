@@ -15,6 +15,7 @@ import {
 } from "./computerRelease";
 
 const entrypoints = [
+    "mira-computer-desktop.exe",
     "mira-computer.exe",
     "mira-computer-consent.exe",
     "mira-computer-worker-host.exe",

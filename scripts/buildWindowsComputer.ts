@@ -2,6 +2,7 @@ import path from "node:path";
 
 import { buildComputer } from "./buildComputer";
 import { buildWindowsConsent } from "./buildWindowsConsent";
+import { buildWindowsDesktop } from "./buildWindowsDesktop";
 import { buildWindowsWorker } from "./buildWindowsWorker";
 
 /**
@@ -16,7 +17,8 @@ export async function buildWindowsComputer(outputRoot: string) {
     const worker = await buildWindowsWorker(directory);
     const { host: consent } = await buildWindowsConsent(directory);
     const companion = await buildComputer("windows-x64", outputRoot);
-    return { directory, companion, consent, ...worker };
+    const { desktop } = await buildWindowsDesktop(directory);
+    return { directory, companion, consent, desktop, ...worker };
 }
 
 if (import.meta.main) {

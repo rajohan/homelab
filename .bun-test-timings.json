@@ -93,6 +93,7 @@
     "scripts/buildWindowsWorker.test.ts": 10,
     "apps/mira/src/server/computer/workerCli.test.ts": 10,
     "apps/mira/src/server/computer/companionLifecycle.test.ts": 20,
+    "apps/mira/src/server/computer/companionParent.test.ts": 20,
     "apps/mira/src/server/computer/companionCommands.test.ts": 100,
     "apps/mira/src/server/computer/companionWork.test.ts": 32,
     "scripts/computerRelease.test.ts": 40
