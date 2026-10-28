@@ -67,6 +67,8 @@ export async function openNativeComputerWindow(
                         pid: grant.pid,
                         windowId: BigInt(grant.windowId),
                         includeScreenshot: true,
+                        // Compact responses may omit the validity metadata required below.
+                        fullOutput: true,
                         includeAccessibilityTree: true,
                         maxImageDimension: 0,
                         maxElements: 200,

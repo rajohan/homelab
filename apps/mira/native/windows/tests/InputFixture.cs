@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Globalization;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
@@ -16,6 +17,10 @@ internal sealed class InputFixture : Form
     private readonly Button button = new Button();
     private readonly Label counter = new Label();
     private int count;
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RectangleBounds { internal int Left, Top, Right, Bottom; }
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmGetWindowAttribute(IntPtr window, int attribute, out RectangleBounds bounds, int size);
 
     private InputFixture()
     {
@@ -45,17 +50,21 @@ internal sealed class InputFixture : Form
 
     private object State()
     {
+        RectangleBounds bounds;
+        if (DwmGetWindowAttribute(Handle, 9, out bounds, Marshal.SizeOf(typeof(RectangleBounds))) != 0 ||
+            bounds.Right <= bounds.Left || bounds.Bottom <= bounds.Top)
+            throw new InvalidOperationException("Fixture capture bounds are unavailable.");
+        Point entryPoint = entry.PointToScreen(new Point(entry.Width / 2, entry.Height / 2));
+        Point buttonPoint = button.PointToScreen(new Point(button.Width / 2, button.Height / 2));
         return new
         {
             pid = Process.GetCurrentProcess().Id,
-            session = Process.GetCurrentProcess().SessionId,
-            interactive = Environment.UserInteractive,
             executable = Process.GetCurrentProcess().MainModule.FileName,
             windowId = Handle.ToInt64().ToString(CultureInfo.InvariantCulture),
             title = Text, text = entry.Text, count = count,
-            width = Width, height = Height,
-            entry = new { x = entry.Left + entry.Width / 2, y = entry.Top + entry.Height / 2 },
-            button = new { x = button.Left + button.Width / 2, y = button.Top + button.Height / 2 }
+            width = bounds.Right - bounds.Left, height = bounds.Bottom - bounds.Top,
+            entry = new { x = entryPoint.X - bounds.Left, y = entryPoint.Y - bounds.Top },
+            button = new { x = buttonPoint.X - bounds.Left, y = buttonPoint.Y - bounds.Top }
         };
     }
 
