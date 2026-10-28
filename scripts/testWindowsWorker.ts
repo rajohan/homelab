@@ -9,9 +9,9 @@ import { buildWindowsWorkerHost } from "./buildWindowsWorkerHost";
 import { hashComputerFile, verifyComputerPackage } from "./computerRelease";
 
 /**
- * Qualify real Windows process ownership and packaged SDK loading without capture or input.
+ * Qualify Windows process ownership and SDK loading, plus native input on disposable hosted runners.
  * @param exportDirectory - Optional empty absolute directory receiving only successfully qualified release files.
- * @returns Completion after child/grandchild exit tests, native metadata and actual port startup/close.
+ * @returns Completion after process cleanup, package validation and any required hosted native qualification.
  */
 export async function testWindowsWorker(exportDirectory?: string): Promise<void> {
     if (exportDirectory) {
@@ -63,6 +63,25 @@ export async function testWindowsWorker(exportDirectory?: string): Promise<void>
                 stdio: "pipe",
             }
         );
+        if (process.env.GITHUB_ACTIONS === "true") {
+            const receipt = execFileSync(
+                process.execPath,
+                [
+                    "--no-env-file",
+                    path.join(sourceRoot, "apps/mira/src/server/testing/windowsInput.ts"),
+                    release.directory,
+                    root,
+                ],
+                {
+                    cwd: sourceRoot,
+                    windowsHide: true,
+                    timeout: 90_000,
+                    maxBuffer: 64 * 1024,
+                    encoding: "utf8",
+                }
+            );
+            console.info(receipt.trim());
+        }
         await verifyComputerPackage(release.directory, release.metadata);
         const digest = await hashComputerFile(release.archive);
         if (
