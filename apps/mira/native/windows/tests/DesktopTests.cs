@@ -90,7 +90,8 @@ internal static class DesktopTests
         string package = Path.Combine(root, "package-test"); Directory.CreateDirectory(package);
         string executable = Path.Combine(package, "mira-computer-desktop.exe");
         foreach (string name in new[] { "mira-computer-desktop.exe", "mira-computer.exe", "mira-computer-consent.exe", "mira-computer-worker-host.exe", "mira-computer-worker.exe" }) File.WriteAllText(Path.Combine(package, name), "fixture");
-        Require(DesktopSettings.PackageDirectory(executable) == package);
+        // CI may supply an 8.3 TEMP path; .NET expands it when canonicalizing the package.
+        Require(string.Equals(DesktopSettings.PackageDirectory(executable), Path.GetFullPath(package), StringComparison.OrdinalIgnoreCase));
         File.Delete(Path.Combine(package, "mira-computer-worker.exe"));
         Reject(delegate { DesktopSettings.PackageDirectory(executable); });
         Reject(delegate { DesktopSettings.PackageDirectory("mira-computer-desktop.exe"); });
