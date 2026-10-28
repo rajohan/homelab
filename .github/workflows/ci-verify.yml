@@ -46,6 +46,8 @@ jobs:
         run: bun run test:integration:coverage
       - name: Test native resource collection with synthetic cgroups
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s deploy/monitoring -p 'test_*.py'
+      - name: Verify immutable Windows release publication
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p 'test_computer_release.py'
       - name: Verify real Docker lifecycle and namespace-aware Compose updates
         run: bun run test:docker
       - name: Verify isolated native computer input and permission boundaries

@@ -1,17 +1,26 @@
 import { execFileSync } from "node:child_process";
-import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { buildWindowsComputer } from "./buildWindowsComputer";
+import { buildComputerDistribution } from "./buildComputerDistribution";
 import { buildWindowsWorkerHost } from "./buildWindowsWorkerHost";
+import { hashComputerFile, verifyComputerPackage } from "./computerRelease";
 
 /**
  * Qualify real Windows process ownership and packaged SDK loading without capture or input.
+ * @param exportDirectory - Optional empty absolute directory receiving only successfully qualified release files.
  * @returns Completion after child/grandchild exit tests, native metadata and actual port startup/close.
  */
-export async function testWindowsWorker(): Promise<void> {
+export async function testWindowsWorker(exportDirectory?: string): Promise<void> {
+    if (exportDirectory) {
+        if (!path.isAbsolute(exportDirectory))
+            throw new Error("Release export must be absolute.");
+        await mkdir(exportDirectory, { recursive: true });
+        const exported = await readdir(exportDirectory);
+        if (exported.length > 0) throw new Error("Release export must be empty.");
+    }
     const root = await realpath(
         await mkdtemp(path.join(tmpdir(), "mira-windows-worker-"))
     );
@@ -30,14 +39,19 @@ export async function testWindowsWorker(): Promise<void> {
         });
         if (!result.includes("23 assertions passed"))
             throw new Error("Worker ownership qualification failed.");
-        const { directory } = await buildWindowsComputer(path.join(root, "package"));
         const sourceRoot = await realpath(fileURLToPath(new URL("..", import.meta.url)));
+        const revision = execFileSync("git", ["rev-parse", "HEAD"], {
+            cwd: sourceRoot,
+            encoding: "utf8",
+            windowsHide: true,
+        }).trim();
+        const release = await buildComputerDistribution(root, revision);
         execFileSync(
             process.execPath,
             [
                 "--no-env-file",
                 path.join(sourceRoot, "apps/mira/src/server/testing/windowsWorker.ts"),
-                directory,
+                release.directory,
                 root,
                 tests.checks!,
             ],
@@ -49,12 +63,31 @@ export async function testWindowsWorker(): Promise<void> {
                 stdio: "pipe",
             }
         );
+        await verifyComputerPackage(release.directory, release.metadata);
+        const digest = await hashComputerFile(release.archive);
+        if (
+            digest.sha256 !== release.metadata.archive.sha256 ||
+            digest.size !== release.metadata.archive.size
+        )
+            throw new Error("Qualified archive changed.");
+        if (exportDirectory) {
+            for (const file of [release.archive, release.manifest])
+                await cp(file, path.join(exportDirectory, path.basename(file)), {
+                    force: false,
+                    errorOnExist: true,
+                });
+        }
         console.info(result.trim());
         console.info(
-            "Packaged Windows worker: SDK metadata, both N-API addons, isolated startup, confirmed cleanup and missing-library refusals passed."
+            "Windows release ZIP: exact inventory, extracted companion, SDK metadata, both N-API addons, isolated startup, confirmed cleanup and missing-library refusals passed."
         );
     } finally {
         await rm(root, { recursive: true, force: true });
     }
 }
-if (import.meta.main) await testWindowsWorker();
+if (import.meta.main) {
+    const [directory, ...extra] = process.argv.slice(2);
+    if (extra.length > 0)
+        throw new Error("Provide at most one absolute release export directory.");
+    await testWindowsWorker(directory);
+}

@@ -360,3 +360,38 @@ help/version and missing-sibling refusal from an unrelated working directory.
 Cross-platform synthetic tests exercise the actual connection-work composition,
 including heartbeat during consent, refusal, serial image/input transport, network
 loss and cleanup failure. These tests do not grant access to the operator's desktop.
+
+## Qualified Windows release archive
+
+`bun run test:computer:windows-worker [absolute-export-directory]` builds the
+complete Windows x64 package with the pinned Bun and SDK, inventories its files,
+creates a ZIP with the operating system's .NET compression library, and extracts
+that freshly built archive into an isolated directory. Native qualification runs
+against the extracted executables and libraries, including startup/cleanup and
+missing-library refusal. The original and extracted trees must have exactly the
+same paths, lengths and SHA-256 hashes. Export occurs only after qualification
+succeeds. No real window is captured or controlled by this test.
+
+Stable Homelab releases attach `mira-computer-<version>-windows-x64.zip` and the
+matching `.json` manifest. The existing release workflow reuses the Windows
+artifact from its successful CI invocation; it does not rebuild the published
+package. Publication additionally waits for source-version/ancestry validation
+and the release image tests. PRs have no release-write permission. Retries accept
+identical existing assets and refuse to replace different bytes. A failed partial
+upload is not a complete distribution: both assets and the exact archive hash
+must match before use.
+
+The bounded manifest records the source revision, Homelab/Bun/driver versions,
+platform, archive digest and complete file inventory. It rejects Windows path
+aliases, traversal, reserved names, duplicate/conflicting paths, missing entrypoints
+and oversized packages. The file inventory is integrity evidence, not a digital
+signature or publisher authentication. Obtain artifacts only from the verified
+Homelab release; these executables are not Authenticode-signed. The build-time ZIP
+round-trip only reads its own fresh output and is not an untrusted archive
+installer.
+
+This adds release delivery, not automatic installation. The Settings download
+flow, installer, startup/stop surface, credential-preserving updates/rollback,
+interactive Windows acceptance and private routing qualification remain separate
+work before PC activation. No installation, autostart entry, pairing, credential
+or network configuration is changed by building or publishing an archive.
