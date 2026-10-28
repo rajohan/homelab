@@ -34,6 +34,7 @@ export async function buildWindowsWorker(outputRoot: string) {
             "build",
             "--compile",
             "--target=bun-windows-x64",
+            "--windows-icon=" + path.join(root, "packages/ui/src/assets/rajohan.ico"),
             "--no-compile-autoload-dotenv",
             "--no-compile-autoload-bunfig",
             "--no-compile-autoload-tsconfig",

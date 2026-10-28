@@ -79,6 +79,7 @@ namespace Homelab.Mira.Computer
             destroyedHook = SetWinEventHook(0x8001, 0x8001, IntPtr.Zero, destroyedCallback, 0, 0, 2);
             if (destroyedHook == IntPtr.Zero) throw new InvalidOperationException("Window lifetime monitoring is unavailable.");
             Text = "Mira · Computer access";
+            Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
             Font = new Font("Segoe UI", 10);
             BackColor = Color.FromArgb(15, 23, 42);
             ForeColor = Color.FromArgb(226, 232, 240);

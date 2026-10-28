@@ -28,6 +28,12 @@ export async function buildComputer(
             "build",
             "--compile",
             `--target=bun-${platform}`,
+            ...(platform === "windows-x64"
+                ? [
+                      "--windows-icon=" +
+                          path.join(root, "packages/ui/src/assets/rajohan.ico"),
+                  ]
+                : []),
             "--no-compile-autoload-dotenv",
             "--no-compile-autoload-bunfig",
             "--no-compile-autoload-tsconfig",
