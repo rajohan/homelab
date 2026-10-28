@@ -12,7 +12,7 @@ import { validatePilot } from "../runtime/validatePilot";
 import { syntheticPdf } from "./document";
 
 /**
- * Verify the actual Mira artifact includes its pinned native runtime and isolated PDF parser.
+ * Verify the actual Mira artifact includes executable native runtimes and an isolated PDF parser.
  * @returns Completion without login, credentials, network access or paid model requests.
  */
 export async function main(): Promise<void> {
@@ -40,6 +40,34 @@ export async function main(): Promise<void> {
             version.stdout.toString().trim(),
             `codex-cli ${information.dependencies["@openai/codex"]}`
         );
+        const host = Bun.spawn(
+            [
+                path.join(
+                    path.dirname(command),
+                    `codex-code-mode-host${process.platform === "win32" ? ".exe" : ""}`
+                ),
+                "--help",
+            ],
+            {
+                env: pilotEnvironment(config, {}),
+                cwd: workspace,
+                stdin: "ignore",
+                stdout: "pipe",
+                stderr: "ignore",
+            }
+        );
+        const deadline = setTimeout(() => host.kill("SIGKILL"), 10_000);
+        try {
+            const [code, output] = await Promise.all([
+                host.exited,
+                new Response(host.stdout).text(),
+            ]);
+            assert.equal(code, 0, "The packaged code-mode host could not execute.");
+            assert.match(output, /Usage: codex-code-mode-host/);
+            assert.match(output, /grpc\+stdio:\/\//);
+        } finally {
+            clearTimeout(deadline);
+        }
         runtime = await CodexRuntime.connect({
             command,
             args: pilotArguments(),

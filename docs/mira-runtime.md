@@ -193,3 +193,55 @@ Protocol reference: [Codex App Server](https://learn.chatgpt.com/docs/app-server
 The pinned Codex 0.164.0 generated `DynamicToolCallResponse` schema includes
 `inputImage` with `imageUrl`; generated schema support alone is not a successful
 live visual qualification.
+
+## Packaged executor qualification
+
+Mira's image includes both `codex` and its sibling `codex-code-mode-host` from
+the same pinned native package. Code mode is required for the registered product
+tools. A successful sign-in, model catalog or text response does not prove that
+those tools work. The credential-free artifact smoke test executes both binaries;
+the container-image workflow runs it before publication.
+
+To qualify the actual service, use a Linux Docker host as UID 1000 with local
+`postgres:18` and the exact Mira image built from the current checkout:
+
+```sh
+bun run mira:qualify-container homelab-release/mira:tested /absolute/dedicated-mira-codex-home
+# Optionally select an explicitly available model for this synthetic qualification:
+bun run mira:qualify-container homelab-release/mira:tested /absolute/dedicated-mira-codex-home gpt-6-luna
+```
+
+This is an operator-invoked live test that consumes ChatGPT plan usage, not an
+ordinary CI check. Use only Mira's separately approved profile, with other users of
+that profile stopped. Never use an OpenClaw or desktop login directory. The test
+mounts that profile read/write so the native runtime owns refresh and history; it
+does not read or print credentials. Its optional model choice affects only the
+synthetic configuration and never changes production preferences or silently falls
+back to another model.
+
+The harness resolves both local images to immutable IDs without pulling. It starts
+an isolated Docker network, a dedicated PostgreSQL database with persistent test
+storage, and the real executor entry point with the production resource/security
+restrictions. Only the synthetic database has a loopback host port. No integration
+tokens or production database are supplied. The fixture sends text, PDF and PNG
+attachments through the durable queue and requires a successful `mira_tasks_list`
+receipt. It then stops and removes the executor, queues a continuation while no
+executor exists, and verifies a new worker resumes the same provider thread with
+the earlier marker. Finally it requires recorded provider-history deletion and a
+clean zero-exit service shutdown before removing its fixtures.
+
+On failure or interruption, shutdown is attempted and synthetic fixtures are
+retained. The printed directory contains `retained.json` with exact resource IDs
+and whether shutdown was confirmed. Inspect those resources only. Before deleting
+them, cancel any active synthetic run, delete its conversation through the product
+conversation service, and run the original executor against the retained synthetic
+database until all `provider_thread` references are cleared. The profile itself is
+never removed. A failed assertion is not a successful qualification, and retained
+history must not be hidden by dropping its database.
+
+On 2026-10-28 the actual hardened image passed this live service qualification
+with the separately approved Mira profile and the advertised `gpt-6-luna` model:
+text/PDF/image input, recorded product tool, queued-while-stopped continuation,
+same provider thread under a new worker, provider-history deletion and graceful
+shutdown. The credential-free smoke also rejected an image missing the code-mode
+host. This does not qualify production cutover or Windows computer control.

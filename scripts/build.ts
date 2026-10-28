@@ -117,13 +117,17 @@ export async function main(): Promise<void> {
             const nativeRoot = path.dirname(
                 Bun.resolveSync(`@openai/codex-${platform}/package.json`, codexRoot)
             );
-            const executable = process.platform === "win32" ? "codex.exe" : "codex";
+            const extension = process.platform === "win32" ? ".exe" : "";
             const destination = path.join(outputDirectory, "runtime");
             await mkdir(destination);
-            await cp(
-                path.join(nativeRoot, "vendor", triple, "bin", executable),
-                path.join(destination, executable)
-            );
+            // Code mode discovers its host beside the native Codex executable.
+            for (const binary of ["codex", "codex-code-mode-host"]) {
+                const executable = binary + extension;
+                await cp(
+                    path.join(nativeRoot, "vendor", triple, "bin", executable),
+                    path.join(destination, executable)
+                );
+            }
         }
         console.info(
             `Built ${app}: ${result.outputs.length} artifacts in apps/${app}/dist.`
