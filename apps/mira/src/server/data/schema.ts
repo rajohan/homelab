@@ -882,3 +882,58 @@ export const miraComputerAccess = pgTable(
         ),
     ]
 );
+
+export const miraComputerCommands = pgTable(
+    "mira_computer_commands",
+    {
+        id: uuid()
+            .primaryKey()
+            .references(() => miraToolReceipts.id),
+        owner: text().notNull(),
+        accessId: uuid("access_id")
+            .notNull()
+            .references(() => miraComputerAccess.id),
+        runId: uuid("run_id")
+            .notNull()
+            .references(() => miraRuns.id),
+        runLease: uuid("run_lease").notNull(),
+        connectionId: uuid("connection_id").notNull(),
+        targetId: uuid("target_id").notNull(),
+        action: text().notNull(),
+        state: text().notNull().default("queued"),
+        payload: jsonb(),
+        result: jsonb(),
+        createdAt: time("created_at").notNull().defaultNow(),
+        expiresAt: time("expires_at").notNull(),
+        claimedAt: time("claimed_at"),
+        finishedAt: time("finished_at"),
+    },
+    (t) => [
+        index("mira_computer_commands_owner").on(t.owner, t.state),
+        index("mira_computer_commands_access").on(t.accessId),
+        index("mira_computer_commands_cleanup").on(t.state, t.expiresAt),
+        uniqueIndex("mira_computer_commands_active")
+            .on(t.accessId)
+            .where(sql`${t.state} IN ('queued','claimed','completed')`),
+        check(
+            "mira_computer_commands_action",
+            sql`${t.action} IN ('observe','click','type')`
+        ),
+        check(
+            "mira_computer_commands_state",
+            sql`${t.state} IN ('queued','claimed','completed','consumed','refused','unknown')`
+        ),
+        check(
+            "mira_computer_commands_duration",
+            sql`${t.expiresAt}>${t.createdAt} AND ${t.expiresAt}<=${t.createdAt}+interval '15 seconds'`
+        ),
+        check(
+            "mira_computer_commands_payload",
+            sql`(${t.state}='queued' AND ${t.payload} IS NOT NULL AND ${t.result} IS NULL) OR (${t.state}='claimed' AND ${t.payload} IS NULL AND ${t.result} IS NULL) OR (${t.state}='completed' AND ${t.payload} IS NULL AND ${t.result} IS NOT NULL) OR (${t.state} IN ('consumed','refused','unknown') AND ${t.payload} IS NULL AND ${t.result} IS NULL)`
+        ),
+        check(
+            "mira_computer_commands_size",
+            sql`(${t.payload} IS NULL OR octet_length(${t.payload}::text)<=32768) AND (${t.result} IS NULL OR octet_length(${t.result}::text)<=3145728)`
+        ),
+    ]
+);

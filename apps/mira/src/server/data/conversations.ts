@@ -9,6 +9,7 @@ import type {
 import type * as v from "valibot";
 
 import { miraQueueAvailable } from "./capacity";
+import { retireComputerCommands } from "./computerCommands";
 import {
     auditMira,
     lockMiraProposals,
@@ -344,6 +345,11 @@ export async function changeConversation(
             );
         await query`UPDATE mira_conversations SET archived_at = ${input.action === "archive" ? new Date() : null}, deleted_at = ${input.action === "delete" ? new Date() : null}, title = CASE WHEN ${input.action === "delete"} THEN 'Deleted conversation' ELSE title END, version = version + 1, updated_at = now() WHERE id = ${input.id}`;
         if (input.action === "delete") {
+            const computerAccess = await query<
+                { id: string }[]
+            >`SELECT id FROM mira_computer_access WHERE owner=${context.owner} AND run_id IN (SELECT id FROM mira_runs WHERE conversation_id=${input.id} AND owner=${context.owner})`;
+            for (const access of computerAccess)
+                await retireComputerCommands(query, context.owner, access.id);
             await query`UPDATE mira_improvements SET content='{}'::jsonb,content_hash='',message=NULL WHERE owner=${context.owner} AND conversation_id=${input.id}`;
             await query`UPDATE mira_code_publications SET content=jsonb_set(jsonb_set(content,'{title}','"chore: deleted proposal"'::jsonb),'{body}','"Conversation deleted."'::jsonb),content_hash='',message=NULL,inspection_requested=false,inspection_token=NULL,observation=NULL,state=CASE WHEN state='draft' THEN 'cancelled' ELSE state END,version=version+1,updated_at=now() WHERE owner=${context.owner} AND conversation_id=${input.id}`;
             await query`UPDATE mira_daytona_jobs SET content='{"title":"Deleted job","command":"true","inputs":[],"outputs":[]}'::jsonb,content_hash='',stdout='',stderr='',output='',files='[]'::jsonb,message=NULL,state=CASE WHEN state='draft' THEN 'cancelled' ELSE state END,version=version+1 WHERE owner=${context.owner} AND conversation_id=${input.id}`;
