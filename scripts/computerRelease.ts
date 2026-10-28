@@ -27,6 +27,9 @@ const releaseSchema = v.strictObject({
     bun: versionSchema,
     driver: versionSchema,
     archive: v.strictObject({ name: v.string(), size: sizeSchema, sha256: digestSchema }),
+    installer: v.optional(
+        v.strictObject({ name: v.string(), size: sizeSchema, sha256: digestSchema })
+    ),
     files: v.pipe(v.array(fileSchema), v.minLength(5), v.maxLength(2048)),
 });
 
@@ -41,7 +44,11 @@ export type ComputerRelease = v.InferOutput<typeof releaseSchema>;
 export function computerReleaseNames(version: string) {
     v.parse(versionSchema, version);
     const stem = `mira-computer-${version}-windows-x64`;
-    return { archive: `${stem}.zip`, manifest: `${stem}.json` };
+    return {
+        archive: `${stem}.zip`,
+        manifest: `${stem}.json`,
+        installer: `${stem}-setup.exe`,
+    };
 }
 
 function assertRelativeFile(name: string) {
@@ -74,6 +81,12 @@ export function readComputerRelease(input: unknown): ComputerRelease {
     )
         throw new Error("Invalid Windows archive identity.");
     const names = new Set<string>();
+    if (
+        release.installer &&
+        (release.installer.name !== computerReleaseNames(release.version).installer ||
+            release.installer.size === 0)
+    )
+        throw new Error("Invalid Windows installer identity.");
     let total = 0;
     for (const file of release.files) {
         assertRelativeFile(file.path);

@@ -87,6 +87,7 @@
     "packages/contracts/src/miraComputers.test.ts": 5,
     "apps/mira/src/server/computer/companionConsent.test.ts": 251,
     "apps/mira/src/server/computer/consentProcess.test.ts": 8170,
+    "apps/mira/src/server/computer/installationLease.test.ts": 500,
     "scripts/buildWindowsConsent.test.ts": 6,
     "apps/mira/src/server/computer/localConsentHost.test.ts": 71,
     "apps/mira/src/server/runtime/rpcCleanup.test.ts": 2200,

@@ -344,6 +344,7 @@ test("the installed factory accepts only a complete canonical package and create
         "mira-computer.exe",
         "mira-computer-consent.exe",
         "mira-computer-worker-host.exe",
+        "mira-computer-desktop.exe",
         "mira-computer-worker.exe",
     ];
     try {

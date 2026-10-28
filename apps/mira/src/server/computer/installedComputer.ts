@@ -38,6 +38,7 @@ export async function readComputerPackage(executable: string): Promise<string> {
         );
     const directory = path.dirname(canonical);
     for (const name of [
+        "mira-computer-desktop.exe",
         "mira-computer.exe",
         "mira-computer-consent.exe",
         "mira-computer-worker-host.exe",

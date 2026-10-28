@@ -1,11 +1,15 @@
+import path from "node:path";
+
 import { version } from "../../../../../package.json";
+import { computerEnvironment } from "../config/environment";
 import { ComputerCompanion, computerOrigin } from "./companion";
 import { readComputerTicket } from "./companionInput";
 import { watchComputerParent } from "./companionParent";
 import { runComputerPresence } from "./companionPresence";
 import { ComputerCredentialStore } from "./companionStore";
 import { computerConnectionWork } from "./companionWork";
-import { installedComputerHost } from "./installedComputer";
+import { openComputerInstallationLease } from "./installationLease";
+import { installedComputerHost, readComputerPackage } from "./installedComputer";
 
 function print(message: string) {
     process.stdout.write(message + "\n");
@@ -53,13 +57,6 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<void
             "A supervised connection requires the Windows launcher's private input pipe."
         );
     const store = new ComputerCredentialStore(origin);
-    if (command === "forget") {
-        await store.forget();
-        print(
-            "Local pairing removed. Revoke the computer in Settings to end existing connections."
-        );
-        return;
-    }
     const stopped = new AbortController();
     const stop = () => stopped.abort();
     const detachParent = supervised
@@ -67,8 +64,28 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<void
         : undefined;
     process.once("SIGINT", stop);
     process.once("SIGTERM", stop);
+    let lease: Awaited<ReturnType<typeof openComputerInstallationLease>> | undefined;
     try {
         stopped.signal.throwIfAborted();
+        if (process.platform === "win32") {
+            const directory = await readComputerPackage(process.execPath);
+            lease = await openComputerInstallationLease({
+                command: path.join(directory, "mira-computer-desktop.exe"),
+                args: ["--installation-lease"],
+                cwd: directory,
+                environment: computerEnvironment(),
+            });
+            lease.signal.addEventListener("abort", stop, { once: true });
+            if (lease.signal.aborted) stop();
+            stopped.signal.throwIfAborted();
+        }
+        if (command === "forget") {
+            await store.forget();
+            print(
+                "Local pairing removed. Revoke the computer in Settings to end existing connections."
+            );
+            return;
+        }
         const createHost =
             command === "run" && process.platform === "win32"
                 ? await installedComputerHost(origin, process.execPath)
@@ -140,6 +157,8 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<void
         detachParent?.();
         process.off("SIGINT", stop);
         process.off("SIGTERM", stop);
+        lease?.signal.removeEventListener("abort", stop);
+        await lease?.close();
     }
 }
 

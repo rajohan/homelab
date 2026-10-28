@@ -30,6 +30,9 @@ export async function buildWindowsDesktop(directory: string, tests = false) {
         "WorkerJob.cs",
         "DesktopSettings.cs",
         "DesktopSession.cs",
+        "InstallationLease.cs",
+        "InstallationProtocol.cs",
+        "ConsentProtocol.cs",
         "DesktopButton.cs",
         "DesktopForm.cs",
     ];
@@ -42,6 +45,7 @@ export async function buildWindowsDesktop(directory: string, tests = false) {
         `/win32icon:${path.join(root, "packages/ui/src/assets/rajohan.ico")}`,
         "/reference:System.Windows.Forms.dll",
         "/reference:System.Drawing.dll",
+        "/reference:System.Web.Extensions.dll",
     ];
     const compile = (file: string, sources: string[], gui = false) =>
         execFileSync(

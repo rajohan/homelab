@@ -43,7 +43,11 @@ jobs:
         run: bun run test:computer:windows-desktop
       - name: Qualify packaged worker and native process-tree ownership
         run: bun run test:computer:windows-worker "${{ runner.temp }}/computer-release"
-      - name: Transfer only the qualified Windows release archive
+      - name: Set up the pinned portable installer compiler
+        run: ./scripts/setupInno.ps1 -Destination "${{ runner.temp }}/mira-inno"
+      - name: Qualify per-user Windows installation and upgrades
+        run: bun --no-env-file scripts/testWindowsInstaller.ts "${{ runner.temp }}/computer-release" "${{ runner.temp }}/mira-inno/portable/ISCC.exe"
+      - name: Transfer only the qualified Windows release assets
         if: github.event_name == 'release'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -53,7 +57,7 @@ jobs:
           compression-level: 0
           if-no-files-found: error
       - name: Verify private consent process lifecycle on Windows
-        run: bun test scripts/computerRelease.test.ts apps/mira/src/server/computer/companion.test.ts apps/mira/src/server/computer/companionParent.test.ts apps/mira/src/server/computer/consentProcess.test.ts apps/mira/src/server/computer/localConsentHost.test.ts apps/mira/src/server/computer/companionConsent.test.ts apps/mira/src/server/computer/companionLifecycle.test.ts apps/mira/src/server/computer/companionCommands.test.ts apps/mira/src/server/computer/companionWork.test.ts apps/mira/src/server/runtime/rpcCleanup.test.ts
+        run: bun test scripts/computerRelease.test.ts apps/mira/src/server/computer/companion.test.ts apps/mira/src/server/computer/companionParent.test.ts apps/mira/src/server/computer/installationLease.test.ts apps/mira/src/server/computer/consentProcess.test.ts apps/mira/src/server/computer/localConsentHost.test.ts apps/mira/src/server/computer/companionConsent.test.ts apps/mira/src/server/computer/companionLifecycle.test.ts apps/mira/src/server/computer/companionCommands.test.ts apps/mira/src/server/computer/companionWork.test.ts apps/mira/src/server/runtime/rpcCleanup.test.ts
 
   verify:
     # Preserve the required check name and fail closed on skipped/failed/cancelled tests.
