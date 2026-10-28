@@ -53,6 +53,7 @@ export const miraComputerAccessAcceptSchema = v.strictObject({
     targetId: id,
 });
 export const miraComputerAccessStopSchema = v.strictObject({ id });
+export const miraComputerAccessListSchema = v.optional(v.strictObject({ runId: id }));
 export interface MiraComputerAccessSummary {
     id: string;
     computerId: string;

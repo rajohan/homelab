@@ -1,5 +1,6 @@
 import {
     miraComputerAccessRequestSchema,
+    miraComputerAccessListSchema,
     miraComputerAccessStopSchema,
     miraComputerPairSchema,
 } from "@homelab/contracts/miraComputers";
@@ -53,9 +54,11 @@ function execute<T>(
 
 export const miraComputerRouter = trpc.router({
     access: trpc.router({
-        list: trpc.procedure.query(({ ctx }) =>
-            execute(ctx, false, listMiraComputerAccess)
-        ),
+        list: trpc.procedure
+            .input(miraComputerAccessListSchema)
+            .query(({ ctx, input }) =>
+                execute(ctx, false, (mira) => listMiraComputerAccess(mira, input?.runId))
+            ),
         request: trpc.procedure
             .input(miraComputerAccessRequestSchema)
             .mutation(({ ctx, input }) =>

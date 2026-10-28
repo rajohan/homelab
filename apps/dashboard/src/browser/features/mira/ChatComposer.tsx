@@ -1,6 +1,6 @@
 import type { MiraAttachment } from "@homelab/contracts/mira";
 import { Button, Textarea, IconButton } from "@homelab/ui";
-import { Send, Square, Settings2 } from "lucide-react";
+import { Send, Square, Settings2, Monitor } from "lucide-react";
 
 import { AttachmentPicker } from "./AttachmentPicker";
 
@@ -23,6 +23,7 @@ export function ChatComposer({
     onSend,
     onBrowse,
     onSettings,
+    onComputer,
 }: {
     readonly text: string;
     readonly onText: (value: string) => void;
@@ -37,6 +38,7 @@ export function ChatComposer({
     readonly onStop: () => void;
     readonly onSend: () => void;
     readonly onBrowse: () => void;
+    readonly onComputer?: (() => void) | undefined;
     readonly onSettings?: (() => void) | undefined;
 }) {
     const canSend = Boolean(text.trim()) && !active && !uploading && !sending;
@@ -78,14 +80,23 @@ export function ChatComposer({
                     onBrowse={onBrowse}
                     disabled={sending || active}
                     controls={
-                        onSettings && (
-                            <IconButton
-                                icon={Settings2}
-                                label="Chat settings"
-                                disabled={sending || active}
-                                onClick={onSettings}
-                            />
-                        )
+                        <>
+                            {onComputer && (
+                                <IconButton
+                                    icon={Monitor}
+                                    label="Computer access"
+                                    onClick={onComputer}
+                                />
+                            )}
+                            {onSettings && (
+                                <IconButton
+                                    icon={Settings2}
+                                    label="Chat settings"
+                                    disabled={sending || active}
+                                    onClick={onSettings}
+                                />
+                            )}
+                        </>
                     }
                     actions={
                         active ? (

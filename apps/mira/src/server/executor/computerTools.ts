@@ -9,6 +9,7 @@ import {
     finalizeMiraComputerCommand,
     takeMiraComputerCommand,
 } from "../data/computerCommands";
+import { createMiraComputerWaitTool } from "./computerWait";
 import type { MiraToolContext, MiraToolDefinition } from "./toolDefinition";
 
 async function command(
@@ -52,6 +53,7 @@ export function createMiraComputerTools(): MiraToolDefinition[] {
             abandonMiraComputerCommand(context, context.receiptId),
     };
     return [
+        createMiraComputerWaitTool(),
         {
             ...lifecycle,
             name: "mira_computer_observe",
