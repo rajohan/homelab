@@ -17,6 +17,10 @@ internal sealed class WorkerJob : IDisposable
     internal Stream Error;
 
     internal WorkerJob(string executable, string directory)
+        : this(executable, directory, new string[0]) { }
+
+    // Callers select the fixed sibling executable and locally validated arguments, never a shell.
+    internal WorkerJob(string executable, string directory, string[] arguments)
     {
         IntPtr stdinRead = IntPtr.Zero, stdinWrite = IntPtr.Zero;
         IntPtr stdoutRead = IntPtr.Zero, stdoutWrite = IntPtr.Zero;
@@ -59,7 +63,9 @@ internal sealed class WorkerJob : IDisposable
             startup.Startup.Output = stdoutWrite;
             startup.Startup.Error = stderrWrite;
             startup.Attributes = attributes;
-            Require(CreateProcess(executable, new StringBuilder("\"" + executable + "\""),
+            var command = new StringBuilder(Quote(executable));
+            foreach (string argument in arguments) command.Append(' ').Append(Quote(argument));
+            Require(CreateProcess(executable, command,
                 IntPtr.Zero, IntPtr.Zero, true, 0x08080404, environment, directory,
                 ref startup, out child)); // NO_WINDOW | EXTENDED_STARTUPINFO | UNICODE_ENVIRONMENT | SUSPENDED
             process = child.Process;
@@ -92,6 +98,26 @@ internal sealed class WorkerJob : IDisposable
     }
 
     internal bool Exited { get { return WaitForSingleObject(process, 0) == 0; } }
+
+    internal uint ExitCode
+    {
+        get { uint code = 0; Require(Exited && GetExitCodeProcess(process, out code)); return code; }
+    }
+
+    private static string Quote(string value)
+    {
+        if (value == null || value.Length > 32767 || value.IndexOf('\0') >= 0) throw new ArgumentException();
+        var quoted = new StringBuilder("\"");
+        int slashes = 0;
+        foreach (char character in value)
+        {
+            if (character == '\\') { slashes++; continue; }
+            quoted.Append('\\', character == '"' ? slashes * 2 + 1 : slashes);
+            quoted.Append(character);
+            slashes = 0;
+        }
+        return quoted.Append('\\', slashes * 2).Append('"').ToString();
+    }
 
     internal bool StopAndConfirm()
     {
@@ -225,6 +251,8 @@ internal sealed class WorkerJob : IDisposable
     private static extern uint ResumeThread(IntPtr thread);
     [DllImport("kernel32.dll")]
     private static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
+    [DllImport("kernel32.dll")]
+    private static extern bool GetExitCodeProcess(IntPtr handle, out uint code);
     [DllImport("kernel32.dll")]
     private static extern bool CloseHandle(IntPtr handle);
 }

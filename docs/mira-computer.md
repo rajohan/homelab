@@ -327,7 +327,7 @@ The disposable Mira preview includes a synthetic waiting conversation for layout
 
 ## Installed Windows composition
 
-`bun run build:computer:windows C:\absolute\build-root` builds the companion,
+`bun run build:computer:windows C:\absolute\build-root` builds the desktop manager, companion,
 consent window, worker supervisor and unchanged locked native dependencies together
 in `build-root/windows-x64`. That subdirectory must be absent or empty. Existing
 packages are never replaced. The build does not install, start, pair or update a PC.
@@ -391,7 +391,42 @@ round-trip only reads its own fresh output and is not an untrusted archive
 installer.
 
 This adds release delivery, not automatic installation. The Settings download
-flow, installer, startup/stop surface, credential-preserving updates/rollback,
+flow, installer, credential-preserving updates/rollback,
 interactive Windows acceptance and private routing qualification remain separate
 work before PC activation. No installation, autostart entry, pairing, credential
 or network configuration is changed by building or publishing an archive.
+
+## Windows connection window and system tray
+
+Open `mira-computer-desktop.exe` from the complete local package in a normal,
+non-administrator Windows session. Enter the private HTTPS server address and the
+single-use pairing code from Settings > Computers, then select Pair computer.
+The code is hidden, sent through a private pipe and never stored in preferences
+or command arguments. Credentials remain in the existing Windows vault. Only
+the server address is saved in `%LOCALAPPDATA%\Homelab\MiraComputer\server.txt`.
+Pairing does not automatically connect or grant window access.
+
+Connect starts the companion; Stop ends the connection and any owned native
+processes. Minimizing hides the window in the system tray without disconnecting.
+The tray uses the shared Homelab icon, shows connection status in its tooltip,
+and offers Open Mira, Stop connection and Exit. Double-click restores the window.
+Closing the window or choosing Exit stops the connection before exiting.
+Session changes, suspension and resume also stop the connection; reconnecting
+requires the operator to select Connect again. Every Chat request still requires
+separate local window approval. There is no autostart, PC listener or new public
+route.
+
+The manager owns the companion and its descendants in a Windows Job Object.
+It first closes the private input pipe to request the existing controller's
+graceful cleanup, then enforces bounded process-tree termination. If the manager
+crashes, kill-on-close retires the same tree. Cleanup that cannot be confirmed
+blocks another connection in that manager. One manager is allowed per Windows
+account. Remove pairing deletes the local vault entry; use Settings to revoke
+server access too. A failed or cancelled pairing must be revoked before retrying.
+
+`bun run test:computer:windows-desktop` builds native isolated fixtures and checks
+argument quoting, private pairing input, settings validation, graceful stop,
+unresponsive children, nested process ownership, manager death and malformed
+output. CI also checks the actual extracted desktop executable and its
+missing-sibling refusal. These checks do not capture or control a real desktop;
+interactive Windows acceptance and private Meshnet routing remain required.

@@ -40,6 +40,8 @@ const options = {
     encoding: "utf8" as const,
 };
 const companion = path.join(directory, "mira-computer.exe");
+const desktop = path.join(directory, "mira-computer-desktop.exe");
+execFileSync(desktop, ["--check-package"], options);
 if (
     (await readComputerPackage(companion)) !== directory ||
     (await readComputerPackage(companion.toUpperCase())) !== directory
@@ -66,6 +68,8 @@ for (const name of [
     const file = path.join(directory, name);
     await rename(file, file + ".missing");
     try {
+        if (spawnSync(desktop, ["--check-package"], options).status !== 1)
+            throw new Error("The desktop manager accepted an incomplete package.");
         const result = spawnSync(
             companion,
             ["run", "https://unpaired-fixture.example.test"],
