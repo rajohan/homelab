@@ -29,6 +29,51 @@ creates it automatically. Dashboard-only builds and starts do not require that f
 Deploy them separately on Main and Edge using the existing approved private network pattern.
 No Docker daemon, development package installation or source tree is needed inside either app.
 
+## Optional Mira and private computer receiver
+
+Add `compose.mira.yaml` to the dashboard/worker deployment to supply Mira's tested
+image, dedicated runtime profile and shared files. It forwards the nonsecret
+`HOMELAB_MIRA_GITHUB_OWNER` to dashboard and executor, and the dedicated
+`HOMELAB_MIRA_GITHUB_TOKEN` only to the executor. The owner is the Homelab operator
+ID, not a GitHub login. The adapter separately verifies `mira-2026`. Unset values
+leave the integration unavailable; this overlay never discovers CLI credentials.
+
+The computer receiver remains disabled unless `compose.computer.yaml` is also
+selected. It binds to a fixed private **container** address and publishes only
+`127.0.0.1:3113` on the Docker host. Do not use the host's Meshnet address as the
+container bind address. Choose an unused bridge subnet and a dynamic allocation
+pool that excludes the fixed dashboard address. Illustrative values, to replace
+after checking existing host, VPN and Docker routes:
+
+```dotenv
+HOMELAB_MIRA_COMPUTER_SUBNET=172.30.113.0/24
+HOMELAB_MIRA_COMPUTER_DYNAMIC_RANGE=172.30.113.128/25
+HOMELAB_MIRA_COMPUTER_HOST=172.30.113.2
+```
+
+The separate dynamic pool prevents a worker or another service started first from
+taking the dashboard address. Changing the default network's IPAM requires planned
+network recreation; do not apply this overlay blindly to a running installation.
+Use Docker Engine 28 or newer for the documented [loopback publication boundary](https://docs.docker.com/engine/network/port-publishing/).
+The address and pool use standard [Compose IPAM](https://docs.docker.com/reference/compose-file/networks/#ipam).
+
+A separately configured TLS proxy **on the same host** must forward the private
+computer hostname to `http://127.0.0.1:3113`. Its listener, DNS and firewall must be
+restricted to the approved Meshnet peers or their routed LAN path, including IPv6.
+Do not add this upstream to the public dashboard router, publish `3113` on a
+wildcard address or configure a public fallback. Keep browser `Origin`/`Cookie`
+headers intact so the receiver can reject them. The PC uses outbound HTTPS and
+opens no listener. Host administrators and containers on this bridge remain inside
+the host trust boundary; the overlay is not tenant isolation.
+
+`HOMELAB_SMOKE_IMAGE_PREFIX=<local-image-prefix> bun run test:mira-deployment`
+qualifies the rendered overlays and actual dashboard image with disposable data.
+It verifies GitHub credential placement, default-off configuration, loopback ports,
+public endpoint refusal, private protocol boundaries, recreation and disabling.
+The container-image workflow runs it before saving images for publication. This
+does not qualify production TLS, firewall rules or the Windows PC; those need the
+separate [computer acceptance checks](../docs/mira-computer.md).
+
 ## Built artifact
 
 Each application's complete `dist` directory is its runtime artifact. Start from that directory

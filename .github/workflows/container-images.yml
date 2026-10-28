@@ -122,6 +122,8 @@ jobs:
           cache-to: type=gha,mode=max,scope=mira
       - name: Test all actual images and the complete OIDC flow
         run: bun run test:smoke
+      - name: Verify private Mira deployment and receiver isolation
+        run: bun run test:mira-deployment
       - name: Save only the tested release images
         if: github.event_name == 'release'
         run: docker save --output images.tar homelab-release/auth:tested homelab-release/dashboard:tested homelab-release/mira:tested
