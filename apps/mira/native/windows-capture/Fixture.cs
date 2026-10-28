@@ -14,6 +14,8 @@ internal static class CaptureFixture
     private static extern bool GetProcessTimes(IntPtr process, out long created, out long exited, out long kernel, out long user);
     [DllImport("user32.dll")]
     private static extern IntPtr WindowFromPoint(Point point);
+    [DllImport("user32.dll")]
+    private static extern bool IsWindow(IntPtr window);
     [DllImport("dwmapi.dll")]
     private static extern int DwmFlush();
 
@@ -31,8 +33,11 @@ internal static class CaptureFixture
         using (var cover = new Form { Text = "Mira independent overlay", BackColor = Color.Magenta,
             StartPosition = FormStartPosition.Manual, FormBorderStyle = FormBorderStyle.None,
             ShowInTaskbar = false, TopMost = true })
+        using (var dispatcher = new Control())
+        using (var context = new ApplicationContext())
         using (var deadline = new System.Threading.Timer(delegate { Environment.Exit(1); }, null, 60000, Timeout.Infinite))
         {
+            if (dispatcher.Handle == IntPtr.Zero) return 1;
             target.Shown += delegate
             {
                 var input = new Thread(delegate()
@@ -52,7 +57,7 @@ internal static class CaptureFixture
                                 string method = ConsentProtocol.Text(request, "method", 12);
                                 var parameters = ConsentProtocol.Parameters(request);
                                 object result = null;
-                                target.Invoke((Action)delegate
+                                dispatcher.Invoke((Action)delegate
                                 {
                                     if (method == "state")
                                     {
@@ -79,6 +84,20 @@ internal static class CaptureFixture
                                         cover.Hide(); target.WindowState = FormWindowState.Minimized;
                                         result = new { minimized = true };
                                     }
+                                    else if (method == "close")
+                                    {
+                                        ConsentProtocol.Keys(parameters);
+                                        IntPtr window = target.Handle;
+                                        target.Close();
+                                        if (IsWindow(window)) throw new InvalidOperationException("The owned target is still open.");
+                                        result = new { closed = true };
+                                    }
+                                    else if (method == "alive")
+                                    {
+                                        ConsentProtocol.Keys(parameters);
+                                        using (var process = Process.GetCurrentProcess())
+                                            result = new { pid = process.Id };
+                                    }
                                     else if (method == "image")
                                     {
                                         ConsentProtocol.Keys(parameters, "png");
@@ -103,12 +122,13 @@ internal static class CaptureFixture
                         }
                     }
                     catch (Exception) { Environment.ExitCode = 1; }
-                    finally { try { target.BeginInvoke((Action)target.Close); } catch (InvalidOperationException) { } }
+                    finally { try { dispatcher.BeginInvoke((Action)context.ExitThread); } catch (InvalidOperationException) { } }
                 });
                 input.IsBackground = true;
                 input.Start();
             };
-            Application.Run(target);
+            target.Show();
+            Application.Run(context);
         }
         return Environment.ExitCode;
     }

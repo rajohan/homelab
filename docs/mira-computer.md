@@ -614,6 +614,8 @@ The hosted test creates its own cyan target and magenta cover. It independently
 confirms the cover is physically above the target, then decodes the returned PNG
 with Windows' image decoder to verify target pixels both before and after overlap.
 It also checks malformed identities, process creation time, minimization and closure.
+The closed-window case destroys the target while keeping its process and message
+loop alive, then confirms that the same process still responds after capture refuses.
 No screen images are printed, uploaded or retained. C++ CodeQL analysis covers the
 candidate in addition to the existing C# and TypeScript checks.
 

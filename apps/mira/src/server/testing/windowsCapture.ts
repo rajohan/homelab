@@ -12,7 +12,7 @@ import { RpcProcess } from "../runtime/rpcProcess";
 /**
  * Qualify native window-only capture using only owned synthetic windows in a hosted VM.
  * @param directory - Caller-owned build directory containing the fixed capture and fixture executables.
- * @returns Completion after independent pixel checks, capture refusals and fixture shutdown.
+ * @returns A content-free receipt after pixel checks, capture refusals and fixture shutdown.
  */
 export async function qualifyWindowsCapture(directory: string) {
     if (
@@ -118,8 +118,15 @@ export async function qualifyWindowsCapture(directory: string) {
             await fixture.request("minimize", {})
         );
         denied(args);
-        await fixture.close();
+        v.parse(
+            v.strictObject({ closed: v.literal(true) }),
+            await fixture.request("close", {})
+        );
         denied(args);
+        v.parse(
+            v.strictObject({ pid: v.literal(state.pid) }),
+            await fixture.request("alive", {})
+        );
         return {
             windowOnly: true,
             occluded: true,
