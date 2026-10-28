@@ -1,0 +1,126 @@
+using System;
+using System.Diagnostics;
+using System.Drawing;
+using System.Globalization;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading;
+using System.Windows.Forms;
+using Homelab.Mira.Computer;
+
+// Only the disposable hosted qualification runs this fixture. Its pipe can read
+// state or close the form; all text/counter changes must come from native input.
+internal sealed class InputFixture : Form
+{
+    private readonly TextBox entry = new TextBox();
+    private readonly Button button = new Button();
+    private readonly Label counter = new Label();
+    private int count;
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RectangleBounds { internal int Left, Top, Right, Bottom; }
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmGetWindowAttribute(IntPtr window, int attribute, out RectangleBounds bounds, int size);
+
+    private InputFixture()
+    {
+        Text = "Mira isolated Windows input fixture";
+        FormBorderStyle = FormBorderStyle.None;
+        StartPosition = FormStartPosition.Manual;
+        Location = new Point(100, 100);
+        ClientSize = new Size(480, 240);
+        AutoScaleMode = AutoScaleMode.None;
+        BackColor = Color.FromArgb(20, 35, 60);
+        Controls.Add(new Label { Text = Text, ForeColor = Color.White, Location = new Point(24, 20), Size = new Size(430, 30) });
+        entry.Location = new Point(24, 75);
+        entry.Size = new Size(400, 28);
+        entry.MaxLength = 100;
+        button.Text = "Increment fixture";
+        button.Location = new Point(24, 130);
+        button.Size = new Size(200, 40);
+        counter.Text = "Count: 0";
+        counter.ForeColor = Color.White;
+        counter.Location = new Point(250, 140);
+        counter.Size = new Size(150, 25);
+        button.Click += delegate { count++; counter.Text = "Count: " + count; };
+        Controls.Add(entry);
+        Controls.Add(button);
+        Controls.Add(counter);
+    }
+
+    private object State()
+    {
+        RectangleBounds bounds;
+        if (DwmGetWindowAttribute(Handle, 9, out bounds, Marshal.SizeOf(typeof(RectangleBounds))) != 0 ||
+            bounds.Right <= bounds.Left || bounds.Bottom <= bounds.Top)
+            throw new InvalidOperationException("Fixture capture bounds are unavailable.");
+        // The pinned 0.37 native GDI capture removes a one-pixel inset inside
+        // DWMWA_EXTENDED_FRAME_BOUNDS. Return points in that screenshot space.
+        bounds.Left++; bounds.Top++; bounds.Right--; bounds.Bottom--;
+        Point entryPoint = entry.PointToScreen(new Point(entry.Width / 2, entry.Height / 2));
+        Point buttonPoint = button.PointToScreen(new Point(button.Width / 2, button.Height / 2));
+        return new
+        {
+            pid = Process.GetCurrentProcess().Id,
+            executable = Process.GetCurrentProcess().MainModule.FileName,
+            windowId = Handle.ToInt64().ToString(CultureInfo.InvariantCulture),
+            title = Text, text = entry.Text, count = count,
+            width = bounds.Right - bounds.Left, height = bounds.Bottom - bounds.Top,
+            entry = new { x = entryPoint.X - bounds.Left, y = entryPoint.Y - bounds.Top },
+            button = new { x = buttonPoint.X - bounds.Left, y = buttonPoint.Y - bounds.Top }
+        };
+    }
+
+    private void ReadRequests()
+    {
+        try
+        {
+            using (var input = new StreamReader(Console.OpenStandardInput(), new UTF8Encoding(false, true), false, 1024))
+            {
+                int previous = 0;
+                for (;;)
+                {
+                    string line = ConsentProtocol.ReadLine(input);
+                    if (line == null) break;
+                    var message = ConsentProtocol.Object(line);
+                    ConsentProtocol.Keys(message, "id", "method", "params");
+                    int id = ConsentProtocol.Id(message, previous);
+                    previous = id;
+                    ConsentProtocol.Keys(ConsentProtocol.Parameters(message));
+                    string method = ConsentProtocol.Text(message, "method", 5);
+                    if (method != "state") break;
+                    object state = Invoke(new Func<object>(State));
+                    ConsentProtocol.Write(new { id = id, result = state });
+                }
+            }
+        }
+        catch (Exception) { /* Invalid input and parent loss close this fixture. */ }
+        finally
+        {
+            try { BeginInvoke(new Action(Close)); }
+            catch (InvalidOperationException) { }
+        }
+    }
+
+    [STAThread]
+    private static int Main(string[] args)
+    {
+        if (args.Length != 0 || !Console.IsInputRedirected || !Console.IsOutputRedirected ||
+            Environment.GetEnvironmentVariable("GITHUB_ACTIONS") != "true" ||
+            Environment.GetEnvironmentVariable("RUNNER_ENVIRONMENT") != "github-hosted") return 2;
+        Console.SetOut(new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false), 1024) { AutoFlush = true });
+        Application.EnableVisualStyles();
+        Application.SetCompatibleTextRenderingDefault(false);
+        using (var deadline = new System.Threading.Timer(delegate { Environment.Exit(1); }, null, 60000, Timeout.Infinite))
+        using (var form = new InputFixture())
+        {
+            form.Shown += delegate
+            {
+                var input = new Thread(form.ReadRequests) { IsBackground = true };
+                input.Start();
+            };
+            Application.Run(form);
+        }
+        return 0;
+    }
+}
