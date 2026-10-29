@@ -6,6 +6,7 @@ import type * as NativeSdk from "@trycua/cua-driver";
 
 import { createVisualChallenge } from "../testing/visualChallenge";
 import { openNativeComputerWindow } from "./native";
+import { openWindowsCapture, windowsCaptureMaximumPngBytes } from "./windowsCapture";
 
 async function fixture() {
     const executable = await realpath(process.execPath);
@@ -335,4 +336,43 @@ test("Windows view refuses SDK pixels, invalid geometry and missing capture with
         /capture missing/
     );
     expect(missing.shuts()).toBe(1);
+});
+
+function paddedPng(length: number) {
+    const original = Buffer.from(createVisualChallenge().data, "base64");
+    const chunk = Buffer.alloc(length - original.length, 0x61);
+    chunk.writeUInt32BE(chunk.length - 12, 0);
+    chunk.write("tEXt", 4, "ascii");
+    chunk.write("padding\0", 8, "ascii");
+    chunk.writeUInt32BE(Bun.hash.crc32(chunk.subarray(4, -4)), chunk.length - 4);
+    return Buffer.concat([original.subarray(0, -12), chunk, original.subarray(-12)]);
+}
+
+test("largest accepted PNG plus near-limit escaped tree fits both private transport envelopes", async () => {
+    const f = await fixture();
+    f.grant.mode = "view";
+    f.frame.images = [];
+    f.frame.treeMarkdown = "\u0001".repeat(42 * 1024);
+    f.frame.windowTitle = "\u0001".repeat(512);
+    let bytes = paddedPng(windowsCaptureMaximumPngBytes);
+    const capture = await openWindowsCapture({ ...f.grant, startedAt: "123" }, () =>
+        Promise.resolve(bytes)
+    );
+    const driver = await openNativeComputerWindow(
+        f.grant,
+        () => Promise.resolve(f.sdk),
+        () => Promise.resolve(capture)
+    );
+    try {
+        const observation = await driver.observe(signal());
+        const text = observation.content.content.find((item) => item.type === "text");
+        expect(text?.type === "text" ? text.text.length : 0).toBeGreaterThan(260_000);
+        const body = JSON.stringify({ id: 1, result: observation });
+        // This is stricter than the 4 MiB worker RPC and leaves 16 KiB for machine binding metadata.
+        expect(Buffer.byteLength(body)).toBeLessThan(3 * 1024 * 1024 - 16 * 1024);
+        bytes = paddedPng(windowsCaptureMaximumPngBytes + 1);
+        await assert.rejects(driver.observe(signal()), /unavailable/);
+    } finally {
+        await driver.close();
+    }
 });

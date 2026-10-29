@@ -603,15 +603,20 @@ session, refuses minimized or closed targets, and uses only Windows Graphics
 Capture `CreateForWindow`. It has no desktop, screen-region or GDI fallback.
 The SDK supplies the selected window's accessibility tree with screenshots disabled.
 
-The helper uses physical DWM frame bounds with a one-pixel inset, matching the
-existing window coordinate convention. Changed bounds, unsupported capture, timeouts,
+The helper crops invisible resize margins from known whole-window WGC surfaces
+to physical DWM frame bounds with a one-pixel inset, matching the existing window
+coordinate convention. Unknown origins are refused. Raw PNGs are capped at 1792
+KiB so Base64 plus the worst-case escaped accessibility tree fits both private
+transport envelopes. Changed bounds, unsupported capture, timeouts,
 excessive frames and invalid or incomplete PNGs fail without exporting pixels. A
 missing helper fails package validation before pairing. The helper inherits the
 worker's Windows process job; Stop aborts a pending capture and cleanup waits for
 its exit. View-only policy and the adapter both refuse input.
 
 The hosted qualification covers the independent cyan target behind a magenta cover,
-including the extracted package's complete view-only worker path. It independently
+including the extracted package's complete view-only worker path. Fixed and
+resizable windows use independently measured frame bounds and colored markers
+to check the exact crop origin. It independently
 decodes the PNG and verifies that a closed target is refused while its owner stays
 alive. Existing Windows input, installer, package inventory and process-ownership
 tests remain required. No screenshots are logged, uploaded or retained.

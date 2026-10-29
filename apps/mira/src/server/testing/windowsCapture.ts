@@ -16,9 +16,14 @@ import { RpcProcess } from "../runtime/rpcProcess";
  * Qualify native window-only capture using only owned synthetic windows in a hosted VM.
  * @param directory - Caller-owned build directory containing the fixed capture and fixture executables.
  * @param workerDirectory - Optional inventory-verified package to qualify through the full worker.
+ * @param resizable - Exercise a thick-frame window including its invisible resize margins.
  * @returns A content-free receipt after pixel checks, capture refusals and fixture shutdown.
  */
-export async function qualifyWindowsCapture(directory: string, workerDirectory?: string) {
+export async function qualifyWindowsCapture(
+    directory: string,
+    workerDirectory?: string,
+    resizable = false
+) {
     if (
         process.platform !== "win32" ||
         !hostedComputerQualificationEnvironment() ||
@@ -32,7 +37,7 @@ export async function qualifyWindowsCapture(directory: string, workerDirectory?:
     const environment = computerEnvironment();
     const fixture = new RpcProcess({
         command: executable,
-        args: [],
+        args: resizable ? ["--resizable"] : [],
         cwd: directory,
         env: {
             ...environment,
@@ -156,6 +161,7 @@ export async function qualifyWindowsCapture(directory: string, workerDirectory?:
             minimizedDenied: true,
             closedDenied: true,
             packaged: Boolean(worker),
+            resizable,
         };
     } finally {
         try {
@@ -170,7 +176,10 @@ if (import.meta.main) {
     const [directory, workerDirectory, ...extra] = process.argv.slice(2);
     if (!directory || extra.length > 0)
         throw new Error("Provide one owned build directory.");
-    process.stdout.write(
-        JSON.stringify(await qualifyWindowsCapture(directory, workerDirectory)) + "\n"
-    );
+    for (const resizable of [false, true])
+        process.stdout.write(
+            JSON.stringify(
+                await qualifyWindowsCapture(directory, workerDirectory, resizable)
+            ) + "\n"
+        );
 }

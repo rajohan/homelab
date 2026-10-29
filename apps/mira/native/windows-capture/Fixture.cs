@@ -10,6 +10,10 @@ using Homelab.Mira.Computer;
 
 internal static class CaptureFixture
 {
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Bounds { internal int Left, Top, Right, Bottom; }
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmGetWindowAttribute(IntPtr window, int attribute, out Bounds bounds, int size);
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool GetProcessTimes(IntPtr process, out long created, out long exited, out long kernel, out long user);
     [DllImport("user32.dll")]
@@ -22,14 +26,14 @@ internal static class CaptureFixture
     [STAThread]
     private static int Main(string[] args)
     {
-        if (args.Length != 0 || Environment.GetEnvironmentVariable("GITHUB_ACTIONS") != "true" ||
+        if (args.Length > 1 || (args.Length == 1 && args[0] != "--resizable") || Environment.GetEnvironmentVariable("GITHUB_ACTIONS") != "true" ||
             Environment.GetEnvironmentVariable("RUNNER_ENVIRONMENT") != "github-hosted" ||
             !Console.IsInputRedirected || !Console.IsOutputRedirected) return 2;
         Console.SetOut(new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false)) { AutoFlush = true });
         Application.EnableVisualStyles();
         using (var target = new Form { Text = "Mira window capture target", BackColor = Color.Cyan,
             ClientSize = new Size(400, 240), StartPosition = FormStartPosition.Manual,
-            Location = new Point(100, 100), FormBorderStyle = FormBorderStyle.FixedSingle })
+            Location = new Point(100, 100), FormBorderStyle = args.Length == 1 ? FormBorderStyle.Sizable : FormBorderStyle.FixedSingle })
         using (var cover = new Form { Text = "Mira independent overlay", BackColor = Color.Magenta,
             StartPosition = FormStartPosition.Manual, FormBorderStyle = FormBorderStyle.None,
             ShowInTaskbar = false, TopMost = true })
@@ -38,6 +42,12 @@ internal static class CaptureFixture
         using (var deadline = new System.Threading.Timer(delegate { Environment.Exit(1); }, null, 60000, Timeout.Infinite))
         {
             if (dispatcher.Handle == IntPtr.Zero) return 1;
+            target.Paint += delegate(object sender, PaintEventArgs paint)
+            {
+                paint.Graphics.FillRectangle(Brushes.Red, 12, 12, 3, 3);
+                paint.Graphics.FillRectangle(Brushes.Lime, target.ClientSize.Width - 15, target.ClientSize.Height - 15, 3, 3);
+                paint.Graphics.FillRectangle(Brushes.Blue, 12, target.ClientSize.Height - 15, 3, 3);
+            };
             target.Shown += delegate
             {
                 var input = new Thread(delegate()
@@ -105,7 +115,19 @@ internal static class CaptureFixture
                                         using (var stream = new MemoryStream(bytes))
                                         using (var image = new Bitmap(stream))
                                         {
-                                            if (image.Width < 400 || image.Height < 240 || image.Width > 450 || image.Height > 300) throw new InvalidOperationException();
+                                            Bounds bounds;
+                                            if (DwmGetWindowAttribute(target.Handle, 9, out bounds, Marshal.SizeOf(typeof(Bounds))) != 0 ||
+                                                image.Width != bounds.Right - bounds.Left - 2 || image.Height != bounds.Bottom - bounds.Top - 2)
+                                                throw new InvalidOperationException("Capture does not match independently measured frame bounds.");
+                                            Point[] points = { new Point(13, 13), new Point(target.ClientSize.Width - 14, target.ClientSize.Height - 14), new Point(13, target.ClientSize.Height - 14) };
+                                            Color[] colors = { Color.Red, Color.Lime, Color.Blue };
+                                            for (int i = 0; i < points.Length; i++)
+                                            {
+                                                Point screen = target.PointToScreen(points[i]);
+                                                Color pixel = image.GetPixel(screen.X - bounds.Left - 1, screen.Y - bounds.Top - 1);
+                                                if (pixel.R != colors[i].R || pixel.G != colors[i].G || pixel.B != colors[i].B)
+                                                    throw new InvalidOperationException("Capture crop shifted independently positioned fixture markers.");
+                                            }
                                             foreach (int x in new[] { image.Width / 3, image.Width / 2, 2 * image.Width / 3 })
                                                 foreach (int y in new[] { image.Height / 3, image.Height / 2, 2 * image.Height / 3 })
                                                 {

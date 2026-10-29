@@ -18,6 +18,9 @@ export interface WindowsCapturePort {
     /** Abort and reap any pending helper before releasing this port. */
     close: () => Promise<void>;
 }
+// Reserve space for Base64 and nested JSON escaping of the bounded tree in the 3 MiB machine API.
+export const windowsCaptureMaximumPngBytes = 1792 * 1024;
+
 type CaptureRunner = (args: string[], signal: AbortSignal) => Promise<Buffer>;
 
 /**
@@ -52,7 +55,7 @@ export async function openWindowsCapture(
                 combined.throwIfAborted();
                 if (
                     !Buffer.isBuffer(bytes) ||
-                    bytes.length > 3 * 1024 * 1024 ||
+                    bytes.length > windowsCaptureMaximumPngBytes ||
                     bytes.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a" ||
                     bytes.subarray(-8).toString("hex") !== "49454e44ae426082"
                 )
@@ -127,7 +130,7 @@ export function createCaptureRunner(options: {
                     windowsHide: true,
                     encoding: "buffer",
                     timeout: 4500,
-                    maxBuffer: 3 * 1024 * 1024,
+                    maxBuffer: windowsCaptureMaximumPngBytes,
                     killSignal: "SIGKILL",
                     signal,
                 },

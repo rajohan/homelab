@@ -25,7 +25,8 @@ using namespace winrt::Windows::Graphics::DirectX::Direct3D11;
 
 namespace {
 constexpr uint64_t maximumPixels = 8 * 1024 * 1024;
-constexpr uint64_t maximumPng = 3 * 1024 * 1024;
+// Base64 and escaped accessibility text must fit the 3 MiB transport envelope.
+constexpr uint64_t maximumPng = 1792 * 1024;
 
 uint64_t number(const wchar_t* value) {
     size_t length = wcslen(value);
@@ -112,11 +113,27 @@ std::vector<BYTE> capture(HWND window, DWORD pid, uint64_t started, HANDLE proce
     check_hresult(factory->CreateForWindow(window, guid_of<GraphicsCaptureItem>(), put_abi(item)));
     auto size = item.Size();
     checkSize(size.Width, size.Height);
-    RECT bounds{};
+    RECT bounds{}, outer{};
     check_hresult(DwmGetWindowAttribute(window, DWMWA_EXTENDED_FRAME_BOUNDS, &bounds, sizeof(bounds)));
-    if (size.Width <= 2 || size.Height <= 2 ||
-        size.Width != bounds.right - bounds.left || size.Height != bounds.bottom - bounds.top)
-        throw std::runtime_error("Capture does not match physical window bounds");
+    if (!GetWindowRect(window, &outer)) throw std::runtime_error("Window bounds are unavailable");
+    const int64_t frameWidth = int64_t(bounds.right) - bounds.left;
+    const int64_t frameHeight = int64_t(bounds.bottom) - bounds.top;
+    // WGC may include invisible resize margins. Accept only an independently
+    // identified whole-window or DWM surface, then crop to the visible frame.
+    const bool whole = size.Width == int64_t(outer.right) - outer.left &&
+        size.Height == int64_t(outer.bottom) - outer.top;
+    const bool visible = size.Width == frameWidth && size.Height == frameHeight;
+    if ((!whole && !visible) || (whole && visible &&
+        (outer.left != bounds.left || outer.top != bounds.top)))
+        throw std::runtime_error("Unknown window capture origin");
+    const int64_t originX = whole ? outer.left : bounds.left;
+    const int64_t originY = whole ? outer.top : bounds.top;
+    const int64_t offsetX = int64_t(bounds.left) - originX + 1;
+    const int64_t offsetY = int64_t(bounds.top) - originY + 1;
+    if (frameWidth <= 2 || frameHeight <= 2 || offsetX < 0 || offsetY < 0 ||
+        offsetX + frameWidth - 2 > size.Width || offsetY + frameHeight - 2 > size.Height)
+        throw std::runtime_error("Visible frame is outside the capture surface");
+    const UINT width = static_cast<UINT>(frameWidth - 2), height = static_cast<UINT>(frameHeight - 2);
 
     com_ptr<ID3D11Device> device;
     com_ptr<ID3D11DeviceContext> context;
@@ -164,7 +181,6 @@ std::vector<BYTE> capture(HWND window, DWORD pid, uint64_t started, HANDLE proce
     check_hresult(device->CreateTexture2D(&description, nullptr, staging.put()));
     context->CopyResource(staging.get(), texture.get());
     // Match the pinned SDK input origin: physical DWM bounds with a one-pixel inset.
-    const UINT width = static_cast<UINT>(size.Width - 2), height = static_cast<UINT>(size.Height - 2);
     const size_t stride = static_cast<size_t>(width) * 4;
     std::vector<BYTE> pixels(stride * height);
     D3D11_MAPPED_SUBRESOURCE mapped{};
@@ -175,7 +191,7 @@ std::vector<BYTE> capture(HWND window, DWORD pid, uint64_t started, HANDLE proce
     }
     for (UINT y = 0; y < height; ++y)
         memcpy(pixels.data() + static_cast<size_t>(y) * stride,
-            static_cast<const BYTE*>(mapped.pData) + static_cast<size_t>(y + 1) * mapped.RowPitch + 4, stride);
+            static_cast<const BYTE*>(mapped.pData) + (static_cast<size_t>(y) + static_cast<size_t>(offsetY)) * mapped.RowPitch + static_cast<size_t>(offsetX) * 4, stride);
     context->Unmap(staging.get(), 0);
     frame.Close();
     session.Close();
@@ -183,9 +199,11 @@ std::vector<BYTE> capture(HWND window, DWORD pid, uint64_t started, HANDLE proce
     checkTarget(window, pid, started, process);
     if (item.Size().Width != size.Width || item.Size().Height != size.Height)
         throw std::runtime_error("Window resized during capture");
-    RECT after{};
+    RECT after{}, outerAfter{};
     check_hresult(DwmGetWindowAttribute(window, DWMWA_EXTENDED_FRAME_BOUNDS, &after, sizeof(after)));
-    if (after.left != bounds.left || after.top != bounds.top || after.right != bounds.right || after.bottom != bounds.bottom)
+    if (!GetWindowRect(window, &outerAfter) ||
+        outerAfter.left != outer.left || outerAfter.top != outer.top || outerAfter.right != outer.right || outerAfter.bottom != outer.bottom ||
+        after.left != bounds.left || after.top != bounds.top || after.right != bounds.right || after.bottom != bounds.bottom)
         throw std::runtime_error("Window moved during capture");
     return png(pixels, width, height);
 }

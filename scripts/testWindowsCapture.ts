@@ -65,7 +65,7 @@ export async function testWindowsCapture(workerDirectory?: string): Promise<void
             {
                 cwd: root,
                 windowsHide: true,
-                timeout: 45_000,
+                timeout: 75_000,
                 maxBuffer: 64 * 1024,
                 encoding: "utf8",
             }
