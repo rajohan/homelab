@@ -92,6 +92,7 @@ async function ciWorkflow() {
                 }),
                 verify: workflowJob,
                 windows: workflowJob,
+                browser: workflowJob,
                 "windows-consent-acceptance": workflowJob,
                 coverage: workflowJob,
             }),
@@ -113,7 +114,12 @@ test("PR execution cannot share a runner or secrets with authenticated coverage 
     expect(workflow.source).not.toMatch(
         /secrets\.|github\.token|codecov\/codecov-action/
     );
-    expect(verify.needs).toEqual(["checks", "windows", "windows-consent-acceptance"]);
+    expect(verify.needs).toEqual([
+        "checks",
+        "windows",
+        "windows-consent-acceptance",
+        "browser",
+    ]);
     for (const job of [
         workflow.jobs.windows,
         workflow.jobs["windows-consent-acceptance"],
@@ -130,16 +136,30 @@ test("PR execution cannot share a runner or secrets with authenticated coverage 
             ]
         ).toBe(false);
     }
+    const browser = workflow.jobs.browser;
+    expect(browser["runs-on"]).toBe("ubuntu-latest");
+    expect(browser.permissions).toEqual({ contents: "read" });
+    expect(browser.secrets).toBeUndefined();
+    expect(JSON.stringify(browser)).not.toMatch(
+        /secrets\.|github\.token|codecov\/codecov-action/
+    );
+    expect(
+        browser.steps.find((step) => step.uses?.startsWith("actions/checkout@"))?.with?.[
+            "persist-credentials"
+        ]
+    ).toBe(false);
+    expect(browser.steps.at(-1)?.run).toBe("bun run test:browser");
     expect(verify.if).toBe("always()");
     expect(verify.steps).toEqual([
         {
             name: "Require successful source verification",
             env: {
+                BROWSER_RESULT: "${{ needs.browser.result }}",
                 CHECK_RESULT: "${{ needs.checks.result }}",
                 WINDOWS_RESULT: "${{ needs.windows.result }}",
                 CONSENT_RESULT: "${{ needs.windows-consent-acceptance.result }}",
             },
-            run: 'test "$CHECK_RESULT" = success && test "$WINDOWS_RESULT" = success && test "$CONSENT_RESULT" = success',
+            run: 'test "$BROWSER_RESULT" = success && test "$CHECK_RESULT" = success && test "$WINDOWS_RESULT" = success && test "$CONSENT_RESULT" = success',
         },
     ]);
     expect(coverage.needs).toBe("verify");

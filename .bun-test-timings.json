@@ -100,6 +100,7 @@
     "scripts/computerRelease.test.ts": 40,
     "apps/mira/src/server/computer/updateDownload.test.ts": 150,
     "apps/mira/src/server/computer/updatePipe.test.ts": 80,
-    "apps/mira/src/server/computer/windowsCapture.test.ts": 4599
+    "apps/mira/src/server/computer/windowsCapture.test.ts": 4599,
+    "apps/mira/src/server/browsing/native.test.ts": 24
   }
 }
