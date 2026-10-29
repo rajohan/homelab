@@ -1,23 +1,34 @@
 import { randomUUID } from "node:crypto";
-import { lstat, realpath } from "node:fs/promises";
-import path from "node:path";
 
 import * as v from "valibot";
 
-import { browserDockerRequest, type BrowserDockerRequest } from "./docker";
+import type { BrowserDockerRequest } from "./docker";
+import { browserEngine } from "./engine";
 
 const imageId = v.pipe(v.string(), v.regex(/^sha256:[a-f0-9]{64}$/));
 const containerId = v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/));
-const configuration = v.strictObject({
-    socketPath: v.pipe(v.string(), v.minLength(1), v.maxLength(4096)),
-    imageId,
-});
-const inspection = v.object({
-    Id: containerId,
-    Image: imageId,
-    Config: v.object({ Labels: v.record(v.string(), v.string()) }),
-});
 const ownerLabel = "io.homelab.mira.browser-owner";
+
+/** Verified evidence from this controller's actual local Docker lifecycle. */
+export type BrowserContainerProof =
+    | { kind: "not-created" }
+    | { kind: "removed" | "absent"; containerId: string };
+
+/** Trusted database journal; unavailable or replaced ownership must fail closed. */
+export interface BrowserContainerJournal {
+    /** Durable, host-reserved UUID used for the exact Docker name and owner label. */
+    owner: string;
+    /** Commit create intent before any request can reach Docker. */
+    creating: () => Promise<void>;
+    /** Record the settled immutable ID before attachment or startup. */
+    created: (id: string) => Promise<void>;
+    /** Verify current controller and human authority immediately before startup. */
+    starting: () => Promise<void>;
+    /** Revoke execution and obtain cleanup authority before removing the container. */
+    cleaning: () => Promise<void>;
+    /** Release durable capacity only after actual verified cleanup. */
+    cleaned: (proof: BrowserContainerProof) => Promise<void>;
+}
 
 /** A container whose absence could not be proved; replacement must wait for reconciliation. */
 export class BrowserContainerCleanupError extends Error {
@@ -81,25 +92,19 @@ export function browserContainerSpec(image: string, owner: string) {
  * @param input - Trusted local Unix socket and preinstalled immutable browser image ID.
  * @param signal - Permanent host cancellation, including during creation.
  * @param transport - Synthetic replacement for lifecycle tests; never model-selected.
+ * @param journal - Optional trusted durable lifecycle; its UUID is fixed before creation.
  * @returns One start-only lease. Close proves container absence or rejects permanently.
  */
 export async function prepareBrowserContainer(
     input: unknown,
     signal: AbortSignal,
-    transport?: BrowserDockerRequest
+    transport?: BrowserDockerRequest,
+    journal?: BrowserContainerJournal
 ) {
     signal.throwIfAborted();
-    const config = v.parse(configuration, input);
-    const metadata = path.isAbsolute(config.socketPath)
-        ? await lstat(config.socketPath)
-        : null;
-    if (
-        !metadata?.isSocket() ||
-        (await realpath(config.socketPath)) !== config.socketPath
-    )
-        throw new Error("The browser host requires a canonical local Docker socket.");
-    const call = transport ?? browserDockerRequest(config.socketPath);
-    const owner = randomUUID();
+    const engine = await browserEngine(input, transport);
+    const { config, call } = engine;
+    const owner = v.parse(v.pipe(v.string(), v.uuid()), journal?.owner ?? randomUUID());
     const name = `mira-browser-${owner}`;
     let id: string | undefined;
     let creationIssued = false;
@@ -109,31 +114,21 @@ export async function prepareBrowserContainer(
     let closing: Promise<void> | undefined;
     let active = Promise.resolve();
     const controller = new AbortController();
-    const inspect = async (reference: string) => {
-        const response = await call("GET", `/containers/${reference}/json`);
-        if (response.status === 404) return null;
-        if (response.status !== 200)
-            throw new Error("Browser container inspection failed.");
-        const found = v.parse(inspection, response.body);
-        if (
-            found.Config.Labels[ownerLabel] !== owner ||
-            found.Image !== config.imageId ||
-            (id && found.Id !== id)
-        )
-            throw new Error("The browser container ownership does not match.");
-        return found.Id;
-    };
-    const remove = async () => {
-        if (!creationIssued) return;
+    const inspect = (reference: string) => engine.inspect(reference, owner, id);
+    const remove = async (): Promise<BrowserContainerProof> => {
+        if (!creationIssued) return { kind: "not-created" };
         const found = await inspect(id ?? name);
         if (!found) {
-            if (!creationSettled) throw new BrowserContainerCleanupError(name);
-            return;
+            // Durable recovery cannot free an uncertain create with no returned ID.
+            if (!creationSettled || (journal && !id))
+                throw new BrowserContainerCleanupError(name);
+            return id ? { kind: "absent", containerId: id } : { kind: "not-created" };
         }
         const response = await call("DELETE", `/containers/${found}?force=1&v=1`);
         if (![204, 404].includes(response.status))
             throw new BrowserContainerCleanupError(name);
         if (await inspect(found)) throw new BrowserContainerCleanupError(name);
+        return { kind: "removed", containerId: found };
     };
     const close = () => {
         stopped = true;
@@ -143,7 +138,9 @@ export async function prepareBrowserContainer(
             // A pending create/start must settle before absence can prove cleanup.
             await active.catch(() => {});
             try {
-                await remove();
+                await journal?.cleaning();
+                const proof = await remove();
+                await journal?.cleaned(proof);
             } catch {
                 throw new BrowserContainerCleanupError(name);
             }
@@ -156,6 +153,10 @@ export async function prepareBrowserContainer(
     signal.addEventListener("abort", onAbort, { once: true });
     const create = async () => {
         signal.throwIfAborted();
+        await journal?.creating();
+        // Once intent is committed, settle this single create even if cancellation
+        // arrived during the journal write. The container stays stopped; close
+        // waits for this request and removes it before releasing capacity.
         creationIssued = true;
         const response = await call(
             "POST",
@@ -172,6 +173,7 @@ export async function prepareBrowserContainer(
         }
         id = v.parse(v.object({ Id: containerId }), response.body).Id;
         creationSettled = true;
+        await journal?.created(id);
         if ((await inspect(id)) !== id)
             throw new Error("The browser container disappeared during creation.");
         signal.throwIfAborted();
@@ -198,6 +200,9 @@ export async function prepareBrowserContainer(
                 signal.throwIfAborted();
                 if ((await inspect(id!)) !== id)
                     throw new Error("The browser container is no longer available.");
+                signal.throwIfAborted();
+                if (stopped) throw new Error("The browser container is stopped.");
+                await journal?.starting();
                 signal.throwIfAborted();
                 if (stopped) throw new Error("The browser container is stopped.");
                 const response = await call("POST", `/containers/${id}/start`);

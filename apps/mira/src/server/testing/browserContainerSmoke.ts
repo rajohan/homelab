@@ -10,6 +10,7 @@ import * as v from "valibot";
 
 import { openBrowserConnection } from "../browsing/connection";
 import { prepareBrowserContainer } from "../browsing/container";
+import { reconcileBrowserContainer } from "../browsing/reconciliation";
 import { runtimeContentItems } from "../runtime/toolResult";
 
 const execute = promisify(execFile);
@@ -115,7 +116,33 @@ export async function qualifyBrowserContainer() {
                     String(pid)
                 );
                 if (cancel) owner.abort();
+                else {
+                    // A restarted host has the durable owner/name even if the
+                    // original create response never reached its database.
+                    const proof = await reconcileBrowserContainer(
+                        { socketPath: socket, imageId: image },
+                        {
+                            id: lease.name.slice("mira-browser-".length),
+                            phase: "creating",
+                            containerId: null,
+                        },
+                        () => Promise.resolve()
+                    );
+                    assert.deepEqual(proof, { kind: "removed", containerId: lease.id });
+                }
                 await lease.close();
+                assert.deepEqual(
+                    await reconcileBrowserContainer(
+                        { socketPath: socket, imageId: image },
+                        {
+                            id: lease.name.slice("mira-browser-".length),
+                            phase: "created",
+                            containerId: lease.id,
+                        },
+                        () => Promise.resolve()
+                    ),
+                    { kind: "absent", containerId: lease.id }
+                );
                 await eventually(async () => {
                     for (const [hostPid, before] of fingerprints) {
                         const after = await fingerprint(hostPid);
@@ -200,6 +227,9 @@ export async function qualifyBrowserContainer() {
             );
         }
         return {
+            durableRecovery: true,
+            unknownCreateRemoved: true,
+            knownAbsence: true,
             privateStdio: true,
             tabFrames: true,
             cancelledRequestRemoved: true,

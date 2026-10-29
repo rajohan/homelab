@@ -9,8 +9,10 @@ import {
     BrowserContainerCleanupError,
     browserContainerSpec,
     prepareBrowserContainer,
+    type BrowserContainerJournal,
 } from "./container";
 import type { BrowserDockerRequest, BrowserDockerResponse } from "./docker";
+import { reconcileBrowserContainer } from "./reconciliation";
 
 const image = `sha256:${"b".repeat(64)}`;
 const id = "a".repeat(64);
@@ -330,6 +332,267 @@ test("documented creation rejections remain actionable without claiming an uncer
                     : real(method, route, body);
             await assert.rejects(f.open(), /could not be created/);
             expect(f.state.removes).toBe(0);
+        } finally {
+            await f.cleanup();
+        }
+    }
+});
+
+function journal(events: string[]): BrowserContainerJournal {
+    return {
+        owner: crypto.randomUUID(),
+        creating: () => {
+            events.push("creating");
+            return Promise.resolve();
+        },
+        created: (id) => {
+            events.push(`created:${id}`);
+            return Promise.resolve();
+        },
+        starting: () => {
+            events.push("starting");
+            return Promise.resolve();
+        },
+        cleaning: () => {
+            events.push("cleaning");
+            return Promise.resolve();
+        },
+        cleaned: (proof) => {
+            events.push(`cleaned:${proof.kind}`);
+            return Promise.resolve();
+        },
+    };
+}
+
+test("durable identity and journal writes precede Docker creation, startup and capacity release", async () => {
+    const f = await fixture(),
+        events: string[] = [],
+        log = journal(events);
+    const original = f.transport.request;
+    const transport: BrowserDockerRequest = async (...args) => {
+        events.push(args[0] + ":" + args[1]);
+        return original(...args);
+    };
+    try {
+        const lease = await prepareBrowserContainer(
+            f.config,
+            f.controller.signal,
+            transport,
+            log
+        );
+        expect(lease.name).toBe(`mira-browser-${log.owner}`);
+        expect(f.state.label).toBe(log.owner);
+        await lease.start();
+        await lease.close();
+        expect(events).toEqual([
+            "creating",
+            `POST:/containers/create?name=${lease.name}`,
+            `created:${id}`,
+            `GET:/containers/${id}/json`,
+            `GET:/containers/${id}/json`,
+            "starting",
+            `POST:/containers/${id}/start`,
+            "cleaning",
+            `GET:/containers/${id}/json`,
+            `DELETE:/containers/${id}?force=1&v=1`,
+            `GET:/containers/${id}/json`,
+            "cleaned:removed",
+        ]);
+    } finally {
+        await f.cleanup();
+    }
+});
+
+test("cancellation during durable create intent settles only a stopped container and then removes it", async () => {
+    const f = await fixture(),
+        events: string[] = [],
+        log = journal(events);
+    const entered = Promise.withResolvers<void>(),
+        resume = Promise.withResolvers<void>();
+    log.creating = async () => {
+        entered.resolve();
+        await resume.promise;
+    };
+    try {
+        const opening = prepareBrowserContainer(
+            f.config,
+            f.controller.signal,
+            f.transport.request,
+            log
+        );
+        const failed = assert.rejects(opening);
+        await entered.promise;
+        f.controller.abort();
+        expect(f.calls).toHaveLength(0);
+        resume.resolve();
+        await failed;
+        expect(f.state.removes).toBe(1);
+        expect(f.calls.some((c) => c.route.endsWith("/start"))).toBe(false);
+        expect(events.at(-1)).toBe("cleaned:removed");
+    } finally {
+        resume.resolve();
+        await f.cleanup();
+    }
+});
+
+test("journal failures never start a container or release an unproved lifetime", async () => {
+    for (const stage of [
+        "creating",
+        "created",
+        "starting",
+        "cleaning",
+        "cleaned",
+    ] as const) {
+        const f = await fixture(),
+            events: string[] = [],
+            log = journal(events);
+        log[stage] = () => Promise.reject(new Error("Synthetic controller replacement"));
+        try {
+            if (stage === "creating" || stage === "created") {
+                await assert.rejects(
+                    prepareBrowserContainer(
+                        f.config,
+                        f.controller.signal,
+                        f.transport.request,
+                        log
+                    )
+                );
+                expect(f.calls.some((c) => c.route.endsWith("/start"))).toBe(false);
+                if (stage === "creating") expect(f.calls).toHaveLength(0);
+            } else {
+                const lease = await prepareBrowserContainer(
+                    f.config,
+                    f.controller.signal,
+                    f.transport.request,
+                    log
+                );
+                if (stage === "starting") {
+                    await assert.rejects(lease.start());
+                    expect(f.calls.some((c) => c.route.endsWith("/start"))).toBe(false);
+                } else {
+                    await assert.rejects(lease.close(), BrowserContainerCleanupError);
+                    const count = f.calls.length;
+                    await assert.rejects(lease.close(), BrowserContainerCleanupError);
+                    expect(f.calls).toHaveLength(count);
+                    if (stage === "cleaning") expect(f.state.removes).toBe(0);
+                }
+            }
+        } finally {
+            await f.cleanup();
+        }
+    }
+});
+
+test("reconciliation removes only the original verified lifetime and never creates or starts", async () => {
+    for (const phase of ["reserved", "creating", "created"] as const) {
+        const f = await fixture(),
+            owner = crypto.randomUUID();
+        let checks = 0;
+        f.state.label = owner;
+        f.state.exists = phase !== "reserved";
+        try {
+            const proof = await reconcileBrowserContainer(
+                f.config,
+                {
+                    id: owner,
+                    phase,
+                    containerId: phase === "created" ? id : null,
+                },
+                () => {
+                    checks++;
+                    return Promise.resolve();
+                },
+                f.transport.request
+            );
+            expect(proof).toEqual(
+                phase === "reserved"
+                    ? { kind: "not-created" }
+                    : { kind: "removed", containerId: id }
+            );
+            expect(checks).toBe(phase === "reserved" ? 1 : 3);
+            expect(f.calls.some((c) => c.method === "POST")).toBe(false);
+            expect(f.state.exists).toBe(false);
+        } finally {
+            await f.cleanup();
+        }
+    }
+});
+
+test("unknown create absence cannot release capacity while an exact known ID can", async () => {
+    const f = await fixture(),
+        owner = crypto.randomUUID();
+    try {
+        await assert.rejects(
+            reconcileBrowserContainer(
+                f.config,
+                { id: owner, phase: "creating", containerId: null },
+                async () => {},
+                f.transport.request
+            ),
+            BrowserContainerCleanupError
+        );
+        expect(
+            await reconcileBrowserContainer(
+                f.config,
+                { id: owner, phase: "created", containerId: id },
+                async () => {},
+                f.transport.request
+            )
+        ).toEqual({ kind: "absent", containerId: id });
+        for (const record of [
+            { id: owner, phase: "reserved", containerId: id },
+            { id: owner, phase: "created", containerId: null },
+        ])
+            await assert.rejects(
+                reconcileBrowserContainer(
+                    f.config,
+                    record,
+                    async () => {},
+                    f.transport.request
+                )
+            );
+    } finally {
+        await f.cleanup();
+    }
+});
+
+test("recovery rejects foreign ownership and rechecks controller authority before deletion", async () => {
+    for (const fault of [
+        "owner",
+        "image",
+        "id",
+        "controller",
+        "removal",
+        "survives",
+    ] as const) {
+        const f = await fixture(),
+            owner = crypto.randomUUID();
+        f.state.label = owner;
+        f.state.exists = true;
+        if (fault === "owner") f.state.label = crypto.randomUUID();
+        if (fault === "image") f.state.image = `sha256:${"c".repeat(64)}`;
+        if (fault === "id") f.state.id = "c".repeat(64);
+        let checks = 0;
+        const original = f.transport.request;
+        const transport: BrowserDockerRequest = (method, route, body) =>
+            method === "DELETE" && ["removal", "survives"].includes(fault)
+                ? Promise.resolve({ status: fault === "removal" ? 503 : 204, body: null })
+                : original(method, route, body);
+        try {
+            await assert.rejects(
+                reconcileBrowserContainer(
+                    f.config,
+                    { id: owner, phase: "created", containerId: id },
+                    () => {
+                        if (++checks === 2 && fault === "controller")
+                            return Promise.reject(new Error("Replaced controller"));
+                        return Promise.resolve();
+                    },
+                    transport
+                )
+            );
+            expect(f.state.removes).toBe(0);
+            expect(f.state.exists).toBe(true);
         } finally {
             await f.cleanup();
         }
