@@ -640,3 +640,23 @@ activation remain required before deployment. No local SDK patch is used.
 The new helper requires Windows 10 version 2004 or later for cursor-free capture.
 Microsoft API references: [CreateForWindow](https://learn.microsoft.com/en-us/windows/win32/api/windows.graphics.capture.interop/nf-windows-graphics-capture-interop-igraphicscaptureiteminterop-createforwindow)
 and [CreateFreeThreaded](https://learn.microsoft.com/en-us/uwp/api/windows.graphics.capture.direct3d11captureframepool.createfreethreaded).
+
+## Hosted Windows consent interruption acceptance
+
+`bun run test:computer:windows-acceptance` refuses developer PCs and runs only on
+a disposable GitHub-hosted Windows runner. It builds the actual consent binary
+and a separate, non-distributed acceptance harness. Windows UI Automation selects
+only the harness-owned fixture in the consent window, verifies that foreground
+control needs the unchecked checkbox, and checks the selected process/window
+identity against the fixture's independent pipe. It does not capture pixels.
+
+The test proves local Stop, parent pipe loss and target exit each produce one
+terminal stop receipt followed by native process exit. Its final case invokes
+[LockWorkStation](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-lockworkstation),
+waits for independent desktop refusal and the consent host's stop receipt, and
+requires a new consent host to refuse initialization while locked. Merely accepting
+the asynchronous lock request is not considered proof. The runner remains locked;
+this step must follow all desktop-dependent tests. No unlock or user credential
+is attempted. Sleep/resume, reconnect and operator-PC acceptance remain separate
+from this lock qualification. Existing transport cancellation tests still cover
+late results and unknown input after connection loss.

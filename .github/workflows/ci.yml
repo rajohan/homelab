@@ -61,6 +61,10 @@ jobs:
       - name: Verify private consent process lifecycle on Windows
         run: bun test apps/mira/src/server/computer/native.test.ts apps/mira/src/server/computer/windowsCapture.test.ts scripts/computerRelease.test.ts apps/mira/src/server/computer/companion.test.ts apps/mira/src/server/computer/updateDownload.test.ts apps/mira/src/server/computer/updatePipe.test.ts apps/mira/src/server/computer/companionParent.test.ts apps/mira/src/server/computer/installationLease.test.ts apps/mira/src/server/computer/consentProcess.test.ts apps/mira/src/server/computer/localConsentHost.test.ts apps/mira/src/server/computer/companionConsent.test.ts apps/mira/src/server/computer/companionLifecycle.test.ts apps/mira/src/server/computer/companionCommands.test.ts apps/mira/src/server/computer/companionWork.test.ts apps/mira/src/server/runtime/rpcCleanup.test.ts
 
+      # Lock the disposable runner only after every other desktop-dependent test.
+      - name: Qualify native consent interruption and locked-session refusal
+        run: bun run test:computer:windows-acceptance
+
   verify:
     # Preserve the required check name and fail closed on skipped/failed/cancelled tests.
     needs: [checks, windows]

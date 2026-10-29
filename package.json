@@ -54,6 +54,7 @@
         "build:computer": "bun --no-env-file scripts/buildComputer.ts",
         "build:computer:windows-host": "bun --no-env-file scripts/buildWindowsConsent.ts",
         "test:computer:windows": "bun --no-env-file scripts/testWindowsConsent.ts",
+        "test:computer:windows-acceptance": "bun --no-env-file scripts/testWindowsConsentAcceptance.ts",
         "test:computer:windows-desktop": "bun --no-env-file scripts/testWindowsDesktop.ts",
         "build:computer:windows-worker": "bun --no-env-file scripts/buildWindowsWorker.ts",
         "test:computer:windows-worker": "bun --no-env-file scripts/testWindowsWorker.ts",
