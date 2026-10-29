@@ -19,6 +19,7 @@ internal static class ConsentAcceptance
     private static extern bool LockWorkStation();
     private static readonly JavaScriptSerializer Json = new JavaScriptSerializer();
     private static string stage = "startup";
+    private static string detail = "startup";
 
     private sealed class Child : IDisposable
     {
@@ -115,26 +116,34 @@ internal static class ConsentAcceptance
     }
     private static AutomationElement Approve(Child host, Dictionary<string, object> target)
     {
+        detail = "prompt handle";
         Wait(delegate { host.Process.Refresh(); return host.Process.MainWindowHandle != IntPtr.Zero; });
         var window = AutomationElement.FromHandle(host.Process.MainWindowHandle);
         Require(window.Current.ProcessId == host.Process.Id);
+        detail = "approval button";
         var allow = Find(window, ControlType.Button, "Allow control");
         Require(!allow.Current.IsEnabled);
+        detail = "fixture list item";
         var item = Find(window, ControlType.ListItem, (string)target["title"]);
+        detail = "fixture selection";
         ((SelectionItemPattern)item.GetCurrentPattern(SelectionItemPattern.Pattern)).Select();
         Require(!allow.Current.IsEnabled); // Selecting a window alone cannot grant foreground input.
+        detail = "foreground checkbox";
         var checkbox = Find(window, ControlType.CheckBox, "Allow Mira to bring this window forward while clicking or typing.");
         var toggle = (TogglePattern)checkbox.GetCurrentPattern(TogglePattern.Pattern);
         Require(toggle.Current.ToggleState == ToggleState.Off);
+        detail = "foreground approval";
         toggle.Toggle();
         Wait(delegate { return allow.Current.IsEnabled; });
         ((InvokePattern)allow.GetCurrentPattern(InvokePattern.Pattern)).Invoke();
+        detail = "selection receipt";
         var selection = host.Read();
         Require((string)selection["method"] == "consent/selected");
         var selected = Object(Object(selection, "params"), "target");
         foreach (string field in new[] { "pid", "windowId", "startedAt" }) Require(selected[field].Equals(target[field]));
         Require(String.Equals((string)selected["executable"], (string)target["executable"], StringComparison.OrdinalIgnoreCase));
         Require((string)selected["delivery"] == "foreground");
+        detail = "readiness receipt";
         host.Send(new { id = 2, method = "check", @params = new { } });
         var check = host.Read();
         Require((int)check["id"] == 2 && (bool)Object(check, "result")["ready"]);
@@ -142,9 +151,11 @@ internal static class ConsentAcceptance
     }
     private static void Stopped(Child host)
     {
+        detail = "stop receipt";
         var message = host.Read();
         Require((string)message["method"] == "consent/stopped");
         Require(Object(message, "params").Count == 0);
+        detail = "stopped process exit";
         host.Exited();
         Require(host.Process.StandardOutput.ReadToEnd() == "");
     }
@@ -160,6 +171,7 @@ internal static class ConsentAcceptance
             Initialize(host);
             var window = Approve(host, target);
             var transition = Stopwatch.StartNew();
+            detail = "transition dispatch";
             if (reason == "local-stop")
                 ((InvokePattern)Find(window, ControlType.Button, "Stop access").GetCurrentPattern(InvokePattern.Pattern)).Invoke();
             else if (reason == "parent-loss") host.Process.StandardInput.Close();
@@ -201,7 +213,7 @@ internal static class ConsentAcceptance
         }
         catch (Exception error)
         {
-            Console.Error.WriteLine("Windows consent acceptance failed at " + stage + " (" + error.GetType().Name + ").");
+            Console.Error.WriteLine("Windows consent acceptance failed at " + stage + " / " + detail + " (" + error.GetType().Name + ").");
             return 1;
         }
     }

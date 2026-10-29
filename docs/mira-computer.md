@@ -656,7 +656,7 @@ terminal stop receipt followed by native process exit. Its final case invokes
 waits for independent desktop refusal and the consent host's stop receipt, and
 requires a new consent host to refuse initialization while locked. Merely accepting
 the asynchronous lock request is not considered proof. The runner remains locked;
-this step must follow all desktop-dependent tests. No unlock or user credential
+this test owns a separate CI job and runs lock last. No unlock or user credential
 is attempted. Sleep/resume, reconnect and operator-PC acceptance remain separate
 from this lock qualification. Existing transport cancellation tests still cover
 late results and unknown input after connection loss.
