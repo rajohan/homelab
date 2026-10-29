@@ -1,0 +1,457 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "b0a09542-d50c-4ec4-922b-6218ce5bcc7e",
+    "prevIds": ["70294b82-a8d9-4989-823f-cef2ee826358"],
+    "footprints": [
+        {
+            "statementType": "create_table",
+            "statementTarget": ["table", "public", "mira_browser_processes"],
+            "writes": [
+                "s|tbl|public.mira_browser_processes",
+                "n|tbl|public.mira_browser_processes",
+                "e|tbl|public.mira_browser_processes",
+                "n|rel|public.mira_browser_processes",
+                "n|type|public.mira_browser_processes",
+                "n|rel|public.mira_browser_processes_pkey"
+            ],
+            "reads": ["n|sch|public"]
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": [
+                "index",
+                "public",
+                "mira_browser_processes",
+                "mira_browser_process_access"
+            ],
+            "writes": [
+                "s|idx|public.mira_browser_process_access",
+                "n|idx|public.mira_browser_process_access",
+                "e|idx|public.mira_browser_process_access",
+                "n|rel|public.mira_browser_process_access"
+            ],
+            "reads": [
+                "n|tbl|public.mira_browser_processes",
+                "n|sch|public",
+                "n|col|public.mira_browser_processes.access_id"
+            ]
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": [
+                "index",
+                "public",
+                "mira_browser_processes",
+                "mira_browser_process_container"
+            ],
+            "writes": [
+                "s|idx|public.mira_browser_process_container",
+                "n|idx|public.mira_browser_process_container",
+                "e|idx|public.mira_browser_process_container",
+                "n|rel|public.mira_browser_process_container"
+            ],
+            "reads": [
+                "n|tbl|public.mira_browser_processes",
+                "n|sch|public",
+                "n|col|public.mira_browser_processes.host_id",
+                "n|col|public.mira_browser_processes.container_id"
+            ]
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": [
+                "index",
+                "public",
+                "mira_browser_processes",
+                "mira_browser_process_recovery"
+            ],
+            "writes": [
+                "s|idx|public.mira_browser_process_recovery",
+                "n|idx|public.mira_browser_process_recovery",
+                "e|idx|public.mira_browser_process_recovery",
+                "n|rel|public.mira_browser_process_recovery"
+            ],
+            "reads": [
+                "n|tbl|public.mira_browser_processes",
+                "n|sch|public",
+                "n|col|public.mira_browser_processes.host_id",
+                "n|col|public.mira_browser_processes.state",
+                "n|col|public.mira_browser_processes.lease_expires_at"
+            ]
+        },
+        {
+            "statementType": "create_fk",
+            "statementTarget": ["table", "public", "mira_browser_processes"],
+            "writes": [
+                "s|fk|public.mira_browser_processes.mira_browser_processes_access_id_mira_browser_access_id_fkey",
+                "n|fk|public.mira_browser_processes.mira_browser_processes_access_id_mira_browser_access_id_fkey",
+                "e|fk|public.mira_browser_processes.mira_browser_processes_access_id_mira_browser_access_id_fkey",
+                "n|con|public.mira_browser_processes.mira_browser_processes_access_id_mira_browser_access_id_fkey"
+            ],
+            "reads": [
+                "n|tbl|public.mira_browser_processes",
+                "n|sch|public",
+                "n|tbl|public.mira_browser_access",
+                "n|sch|public",
+                "n|col|public.mira_browser_processes.access_id",
+                "n|col|public.mira_browser_access.id",
+                "e|uniqueness|public.mira_browser_access.id"
+            ]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "name": "mira_browser_processes",
+                "isRlsEnabled": false,
+                "entityType": "tables"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_browser_processes",
+                "name": "id",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_browser_processes",
+                "name": "access_id",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_browser_processes",
+                "name": "host_id",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_browser_processes",
+                "name": "image_id",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_browser_processes",
+                "name": "lease_token",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_browser_processes",
+                "name": "lease_expires_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_browser_processes",
+                "name": "phase",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "'reserved'",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_browser_processes",
+                "name": "state",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "'active'",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_browser_processes",
+                "name": "container_id",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_browser_processes",
+                "name": "cleanup_evidence",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_browser_processes",
+                "name": "created_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "now()",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_browser_processes",
+                "name": "removed_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_browser_processes",
+                "name": "mira_browser_process_access",
+                "nameExplicit": true,
+                "columns": [
+                    {
+                        "value": "access_id",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    }
+                ],
+                "isUnique": true,
+                "where": null,
+                "with": "",
+                "method": "btree",
+                "concurrently": false,
+                "entityType": "indexes"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_browser_processes",
+                "name": "mira_browser_process_container",
+                "nameExplicit": true,
+                "columns": [
+                    {
+                        "value": "host_id",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    },
+                    {
+                        "value": "container_id",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    }
+                ],
+                "isUnique": true,
+                "where": null,
+                "with": "",
+                "method": "btree",
+                "concurrently": false,
+                "entityType": "indexes"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_browser_processes",
+                "name": "mira_browser_process_recovery",
+                "nameExplicit": true,
+                "columns": [
+                    {
+                        "value": "host_id",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    },
+                    {
+                        "value": "state",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    },
+                    {
+                        "value": "lease_expires_at",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    }
+                ],
+                "isUnique": false,
+                "where": null,
+                "with": "",
+                "method": "btree",
+                "concurrently": false,
+                "entityType": "indexes"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_browser_processes",
+                "name": "mira_browser_processes_access_id_mira_browser_access_id_fkey",
+                "nameExplicit": false,
+                "columns": ["access_id"],
+                "schemaTo": "public",
+                "tableTo": "mira_browser_access",
+                "columnsTo": ["id"],
+                "onUpdate": "NO ACTION",
+                "onDelete": "NO ACTION",
+                "entityType": "fks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_browser_processes",
+                "name": "mira_browser_processes_pkey",
+                "columns": ["id"],
+                "nameExplicit": false,
+                "entityType": "pks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_browser_processes",
+                "name": "mira_browser_process_image",
+                "value": "\"image_id\" ~ '^sha256:[a-f0-9]{64}$'",
+                "entityType": "checks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_browser_processes",
+                "name": "mira_browser_process_phase",
+                "value": "(\"phase\" IN ('reserved','creating') AND \"container_id\" IS NULL) OR (\"phase\"='created' AND \"container_id\" IS NOT NULL AND \"container_id\" ~ '^[a-f0-9]{64}$')",
+                "entityType": "checks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_browser_processes",
+                "name": "mira_browser_process_state",
+                "value": "(\"state\" IN ('active','cleanup') AND \"removed_at\" IS NULL AND \"cleanup_evidence\" IS NULL) OR (\"state\"='removed' AND \"removed_at\" IS NOT NULL AND \"cleanup_evidence\" IS NOT NULL AND ((\"phase\"='reserved' AND \"cleanup_evidence\"='not-created') OR (\"phase\"='created' AND \"cleanup_evidence\" IN ('removed','absent'))))",
+                "entityType": "checks"
+            }
+        }
+    ]
+}

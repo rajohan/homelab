@@ -9,7 +9,13 @@ import type { TransactionSQL } from "bun";
 import * as v from "valibot";
 
 import { browserWorkerGrant } from "../browsing/wire";
-import { auditMira, MiraFailure, type MiraContext, type MiraQuery } from "./context";
+import {
+    auditMira,
+    MiraFailure,
+    miraTransaction,
+    type MiraContext,
+    type MiraQuery,
+} from "./context";
 
 type Policy = Pick<
     ReturnType<typeof browserWorkerGrant>,
@@ -266,7 +272,7 @@ export async function requireMiraBrowserAccess(
     );
     if (!context.run)
         throw new MiraFailure("FORBIDDEN", "Browser execution requires an active run.");
-    return context.client.begin(async (query) => {
+    return miraTransaction(context, async (query) => {
         await lockOwner(query, context.owner);
         const row = await readAccess(query, context.owner, input.id);
         if (
@@ -308,8 +314,16 @@ export async function closeMiraBrowserAccess(
             "FORBIDDEN",
             "Browser cleanup requires its original host claim."
         );
-    await context.client.begin(async (query) => {
+    await miraTransaction(context, async (query) => {
         await lockOwner(query, context.owner);
+        const live = await query<
+            { id: string }[]
+        >`SELECT p.id FROM mira_browser_processes p JOIN mira_browser_access g ON g.id=p.access_id WHERE p.access_id=${input.id} AND p.state<>'removed' AND g.owner=${context.owner} AND g.run_id=${context.run!.id} AND g.run_lease=${context.run!.leaseToken} AND g.host_token=${input.hostToken}`;
+        if (live.length > 0)
+            throw new MiraFailure(
+                "PRECONDITION_FAILED",
+                "Browser process cleanup must be confirmed first."
+            );
         const [row] = await query<
             { id: string }[]
         >`UPDATE mira_browser_access SET state='closed',closed_at=clock_timestamp(),policy=NULL
