@@ -12,5 +12,6 @@ export CUA_E2E_BROWSER_NO_SANDBOX=1
 case "${1:-smoke}" in
     smoke) exec bun --no-env-file /source/apps/mira/src/server/testing/browserSmoke.ts ;;
     containment) exec bun --no-env-file /source/apps/mira/src/server/testing/browserContainerFixture.ts ;;
+    protocol) exec bun --no-env-file /source/apps/mira/src/server/testing/browserWorkerFixture.ts ;;
     *) exit 2 ;;
 esac

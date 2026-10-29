@@ -15,23 +15,8 @@ import {
     preparedSchema,
     windowsSchema,
 } from "./protocol";
+import { browserActionSchema } from "./wire";
 
-const observationId = v.pipe(v.string(), v.uuid());
-const ref = v.pipe(v.string(), v.regex(/^p[0-9]{1,16}:[0-9]{1,6}$/));
-const inputSchema = v.variant("action", [
-    v.strictObject({ action: v.literal("click"), observationId, ref }),
-    v.strictObject({
-        action: v.literal("type"),
-        observationId,
-        ref,
-        text: v.pipe(
-            v.string(),
-            v.maxLength(4000),
-            v.check((text) => text.isWellFormed() && !text.includes("\0"))
-        ),
-        replace: v.boolean(),
-    }),
-]);
 const navigationSchema = v.object({
     status: v.literal("ok"),
     target_id: v.string(),
@@ -283,7 +268,7 @@ export async function openNativeBrowser(
                 run(operation, async () => {
                     const previous = observed;
                     observed = undefined;
-                    const action = v.parse(inputSchema, command);
+                    const action = v.parse(browserActionSchema, command);
                     if (grant.mode === "view")
                         throw new Error("Browser access is view-only.");
                     if (

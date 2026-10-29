@@ -95,9 +95,14 @@ class BrowserConnection {
      * Send one bounded host-owned request. This transport never retries, reconnects or dispatches tools.
      * @param body - Private worker payload, validated by the operation-specific caller and worker.
      * @param operation - Cancellation of this operation retires the entire lifetime.
+     * @param timeoutMs - Trusted host deadline; the first handshake may use sixty seconds, later calls at most thirty.
      * @returns An untrusted reply only for this request ID; the caller must validate its result schema.
      */
-    request(body: unknown, operation: AbortSignal): Promise<unknown> {
+    request(
+        body: unknown,
+        operation: AbortSignal,
+        timeoutMs = this.timeoutMs
+    ): Promise<unknown> {
         if (this.failure)
             return this.closing!.then(() => {
                 throw this.failure!;
@@ -105,6 +110,9 @@ class BrowserConnection {
         if (this.pending)
             return Promise.reject(new Error("The browser connection is busy."));
         operation.throwIfAborted();
+        const maximum = this.nextId === 1 ? 60_000 : 30_000;
+        if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > maximum)
+            throw new Error("Invalid browser operation deadline.");
         const id = this.nextId++;
         const line = JSON.stringify({ id, body }) + "\n";
         if (Buffer.byteLength(line) > 64 * 1024 || this.stream.writableLength > 64 * 1024)
@@ -113,7 +121,7 @@ class BrowserConnection {
         return new Promise((resolve, reject) => {
             const onAbort = () => this.retire();
             const cancel = () => operation.removeEventListener("abort", onAbort);
-            const timer = setTimeout(this.disconnected, this.timeoutMs);
+            const timer = setTimeout(this.disconnected, timeoutMs);
             this.pending = { id, resolve, reject, cancel, timer };
             operation.addEventListener("abort", onAbort, { once: true });
             if (operation.aborted) this.retire();

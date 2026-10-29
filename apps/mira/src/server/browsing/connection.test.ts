@@ -324,3 +324,33 @@ test("a reply cannot complete before its declared Docker frame has arrived", asy
     await failed;
     await f.connection.close();
 });
+
+test("only the initial handshake can extend the transport deadline to sixty seconds", async () => {
+    const f = await fixture({ timeout: 10 });
+    try {
+        for (const timeout of [0, 60_001, 0.5, Number.NaN])
+            expect(() => f.connection.request({}, f.owner.signal, timeout)).toThrow(
+                /deadline/
+            );
+        const startup = f.connection.request(
+            { method: "initialize" },
+            f.owner.signal,
+            60_000
+        );
+        await Bun.sleep(30);
+        expect(f.connection.signal.aborted).toBe(false);
+        f.reply({ ready: true });
+        expect(await startup).toEqual({ ready: true });
+        expect(() => f.connection.request({}, f.owner.signal, 60_000)).toThrow(
+            /deadline/
+        );
+        expect(f.writes).toHaveLength(1);
+        const ordinary = assert.rejects(
+            f.connection.request({}, f.owner.signal),
+            /Do not replay/
+        );
+        await ordinary;
+    } finally {
+        await f.connection.close();
+    }
+});
