@@ -646,12 +646,14 @@ and [CreateFreeThreaded](https://learn.microsoft.com/en-us/uwp/api/windows.graph
 `bun run test:computer:windows-acceptance` refuses developer PCs and runs only on
 a disposable GitHub-hosted Windows runner. It builds the actual consent binary
 and a separate, non-distributed acceptance harness. GitHub's hosted Windows account
-is elevated with UAC disabled, so the harness first launches itself with a restricted
-normal-user SAFER token at medium integrity, and verifies that it and its fixture
-are not elevated. A test-only helper
-grants the current user SID GUI access to that disposable runner's window station
-and desktop, then restores both original DACLs after the child exits. It changes no
-account or UAC policy. The production elevated-window refusal remains intact.
+is elevated with UAC disabled, so the harness creates one random local standard test
+account and verifies its non-elevated token before starting any acceptance. Its
+random password stays only in memory and is never passed to children or logs. The
+account receives read/execute access only to the owned test package, a writable
+scratch directory and temporary GUI access on the disposable runner. Both original
+desktop DACLs are restored and the account is removed after the child exits. The
+harness does not load a user profile or change UAC policy. The production
+administrator-window refusal remains intact.
 Windows UI Automation selects
 only the harness-owned fixture in the consent window, verifies that foreground
 control needs the unchecked checkbox, and checks the selected process/window

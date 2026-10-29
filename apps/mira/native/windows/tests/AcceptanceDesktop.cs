@@ -5,7 +5,7 @@ using System.Security.Principal;
 using Homelab.Mira.Computer;
 
 // Disposable CI only: the administrator-only hosted desktop must permit the
-// current user SID after token reduction. Restore both original DACLs on exit.
+// isolated test account SID after token reduction. Restore both original DACLs on exit.
 internal sealed class AcceptanceDesktop : IDisposable
 {
     private readonly IntPtr station;
@@ -23,15 +23,13 @@ internal sealed class AcceptanceDesktop : IDisposable
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool SetUserObjectSecurity(IntPtr handle, ref uint information, byte[] descriptor);
 
-    internal AcceptanceDesktop()
+    internal AcceptanceDesktop(SecurityIdentifier user)
     {
         if (Environment.GetEnvironmentVariable("GITHUB_ACTIONS") != "true" ||
             Environment.GetEnvironmentVariable("RUNNER_ENVIRONMENT") != "github-hosted")
             throw new InvalidOperationException("Desktop acceptance requires disposable hosted Windows.");
         NativeWindows.ReadyDesktop();
-        SecurityIdentifier user;
-        using (var identity = WindowsIdentity.GetCurrent()) user = identity.User;
-        if (user == null) throw new InvalidOperationException("Hosted user identity is unavailable.");
+        if (user == null) throw new InvalidOperationException("The isolated account identity is unavailable.");
         station = GetProcessWindowStation();
         desktop = OpenInputDesktop(0, false, 0x60001); // READ_CONTROL | WRITE_DAC | READOBJECTS
         if (station == IntPtr.Zero || desktop == IntPtr.Zero) throw new InvalidOperationException("Hosted desktop is unavailable.");
