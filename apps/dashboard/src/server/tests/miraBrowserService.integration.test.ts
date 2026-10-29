@@ -18,7 +18,11 @@ import {
 } from "@homelab/mira/data/browserService";
 
 import { createMiraTools } from "../../../../mira/src/server/executor/tools";
-import type { RuntimeToolResult } from "../../../../mira/src/server/runtime/toolResult";
+import {
+    runtimeContentItems,
+    maximumToolTextBytes,
+    type RuntimeToolResult,
+} from "../../../../mira/src/server/runtime/toolResult";
 import { browserHostFixture } from "../testing/miraBrowserHost";
 
 async function fixture(mode: "view" | "control" = "control") {
@@ -36,6 +40,7 @@ async function fixture(mode: "view" | "control" = "control") {
     return {
         ...f,
         health,
+        tools,
         toolLifetime,
         hostLifetime,
         grant: () => f.api.browser.request({ ...f.request, mode }),
@@ -416,3 +421,104 @@ test("startup rolls back grant consumption if durable process reservation cannot
         await f.close();
     }
 });
+
+test("cancelling a read-only browser wait records a known failure without fencing later tools", async () => {
+    const f = await fixture();
+    try {
+        const waiting = f.invoke("mira_browser_wait", { waitSeconds: 60 });
+        await until(async () => {
+            const [row] = await f.client<
+                { state: string }[]
+            >`SELECT state FROM mira_tool_receipts WHERE tool='mira_browser_wait'`;
+            return row?.state === "running";
+        });
+        await Bun.sleep(30);
+        f.toolLifetime.abort();
+        expect(text(await waiting)).toMatchObject({ ok: false, retryable: true });
+        const [row] = await f.client<
+            { state: string }[]
+        >`SELECT state FROM mira_tool_receipts WHERE tool='mira_browser_wait'`;
+        expect(row?.state).toBe("failed");
+        const output = await f.tools
+            .find((tool) => tool.name === "mira_browser_wait")!
+            .execute({ waitSeconds: 0 }, new AbortController().signal, {
+                callId: crypto.randomUUID(),
+                threadId: "synthetic",
+                turnId: "synthetic",
+            });
+        expect(text(output)).toMatchObject({ ok: true, result: { state: "waiting" } });
+        expect(f.engine.events).toHaveLength(0);
+    } finally {
+        await f.close();
+    }
+});
+
+test("replacing a stale pending grant scrubs queued private input atomically without a cleanup service", async () => {
+    const f = await fixture();
+    try {
+        const previous = await f.grant();
+        const id = await reserve(f, "mira_browser_input");
+        await enqueueMiraBrowserCommand(f.worker, id, {
+            method: "act",
+            input: {
+                action: "type",
+                observationId: crypto.randomUUID(),
+                ref: "p1:1",
+                text: "Synthetic private text",
+                replace: true,
+            },
+        });
+        await f.client`UPDATE mira_switches SET version=version+1 WHERE owner=${f.context.owner} AND key='computer:browser'`;
+        const replacement = await f.grant();
+        expect(replacement.id).not.toBe(previous.id);
+        const [command] = await f.client<
+            { state: string; payload: unknown; result: unknown }[]
+        >`SELECT state,payload,result FROM mira_browser_commands WHERE id=${id}`;
+        expect(command).toEqual({ state: "refused", payload: null, result: null });
+        const grants = await f.api.browser.list({ runId: f.run.id });
+        expect(grants.find((grant) => grant.id === previous.id)?.state).toBe("closed");
+        expect(f.engine.events).toHaveLength(0);
+    } finally {
+        await f.close();
+    }
+});
+
+for (const character of ["界", "\u0001", '"']) {
+    test(`large browser metadata is bounded before consumption for ${JSON.stringify(character)}`, async () => {
+        const f = await fixture();
+        try {
+            await f.grant();
+            f.engine.observationText = character;
+            f.engine.paddedImage = character === '"';
+            void f.start();
+            const output = await f.invoke("mira_browser_observe", {});
+            const metadata = frame(output);
+            expect(metadata).toMatchObject({ complete: false });
+            expect(metadata.refs.length).toBeGreaterThan(0);
+            const content = runtimeContentItems(output);
+            expect(content[0]?.type).toBe("inputText");
+            if (content[0]?.type === "inputText")
+                expect(Buffer.byteLength(content[0].text)).toBeLessThanOrEqual(
+                    maximumToolTextBytes
+                );
+            const [row] = await f.client<
+                { state: string; result: unknown; receipt: string }[]
+            >`
+                SELECT c.state,c.result,t.state AS receipt FROM mira_browser_commands c JOIN mira_tool_receipts t ON t.id=c.id`;
+            expect(row).toEqual({
+                state: "consumed",
+                result: null,
+                receipt: "succeeded",
+            });
+            expect(await readMiraBrowserReadiness(f.worker)).toMatchObject({
+                state: "ready",
+            });
+            f.engine.observationText = "";
+            expect(frame(await f.invoke("mira_browser_observe", {}))).toMatchObject({
+                complete: true,
+            });
+        } finally {
+            await f.close();
+        }
+    });
+}

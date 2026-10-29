@@ -137,7 +137,7 @@ export async function requestMiraBrowserAccess(
         for (const item of previous) {
             const row = await readBrowserAccess(query, context.owner, item.id);
             if (!row?.available)
-                await query`UPDATE mira_browser_access SET state='closed',closed_at=clock_timestamp(),policy=NULL WHERE id=${item.id} AND state='pending'`;
+                await retireBrowserCommands(query, context.owner, item.id);
         }
         const [limits] = await query<{ busy: boolean; recent: number }[]>`
             SELECT coalesce(bool_or(state<>'closed'),false) AS busy,count(*) FILTER(WHERE created_at>clock_timestamp()-interval '1 hour')::int AS recent

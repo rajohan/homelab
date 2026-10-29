@@ -75,6 +75,8 @@ export async function browserHostFixture(enabled = true) {
         exists: false,
         failCreate: false,
         holdInput: false,
+        observationText: "",
+        paddedImage: false,
         rejectCreate: null as number | null,
         replaceCleanupAfterDelete: false,
         failDelete: false,
@@ -173,16 +175,25 @@ export async function browserHostFixture(enabled = true) {
                         observationId: crypto.randomUUID(),
                         url: "https://example.test/start",
                         title: "Synthetic page",
-                        outline: "Untrusted synthetic page",
+                        outline: engine.observationText
+                            ? engine.observationText.repeat(64 * 1024)
+                            : "Untrusted synthetic page",
                         complete: true,
-                        refs: [
-                            {
-                                ref: "p1:1",
-                                role: "button",
-                                label: "Synthetic action",
-                                actions: ["click", "type"],
-                            },
-                        ],
+                        refs: engine.observationText
+                            ? Array.from({ length: 300 }, (_, index) => ({
+                                  ref: `p1:${index + 1}`,
+                                  role: engine.observationText.repeat(64),
+                                  label: engine.observationText.repeat(256),
+                                  actions: ["click", "type"],
+                              }))
+                            : [
+                                  {
+                                      ref: "p1:1",
+                                      role: "button",
+                                      label: "Synthetic action",
+                                      actions: ["click", "type"],
+                                  },
+                              ],
                         width: 64,
                         height: 64,
                         content: {
@@ -190,9 +201,16 @@ export async function browserHostFixture(enabled = true) {
                                 {
                                     type: "image",
                                     mediaType: "image/png",
-                                    data: Buffer.from(syntheticRedImage()).toString(
-                                        "base64"
-                                    ),
+                                    data: (engine.paddedImage
+                                        ? Buffer.concat([
+                                              syntheticRedImage(),
+                                              Buffer.alloc(
+                                                  2 * 1024 * 1024 -
+                                                      syntheticRedImage().length
+                                              ),
+                                          ])
+                                        : Buffer.from(syntheticRedImage())
+                                    ).toString("base64"),
                                 },
                             ],
                         },
