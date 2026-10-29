@@ -50,6 +50,7 @@
         "apps/mira/src/server/computer/companion.integration.test.ts": 163,
         "apps/dashboard/src/server/tests/miraComputerAccess.integration.test.ts": 7225,
         "apps/dashboard/src/server/tests/miraComputerCommands.integration.test.ts": 5000,
-        "apps/dashboard/src/server/tests/miraComputerTools.integration.test.ts": 3813
+        "apps/dashboard/src/server/tests/miraComputerTools.integration.test.ts": 3813,
+        "apps/dashboard/src/server/tests/miraComputerReconnect.integration.test.ts": 9986
     }
 }
