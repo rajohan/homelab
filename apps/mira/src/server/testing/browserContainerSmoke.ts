@@ -8,7 +8,9 @@ import { promisify } from "node:util";
 import { Effect } from "effect";
 import * as v from "valibot";
 
+import { openBrowserConnection } from "../browsing/connection";
 import { prepareBrowserContainer } from "../browsing/container";
+import { runtimeContentItems } from "../runtime/toolResult";
 
 const execute = promisify(execFile);
 async function fingerprint(pid: string) {
@@ -134,7 +136,74 @@ export async function qualifyBrowserContainer() {
                 await lease.close();
             }
         }
+        for (const cancel of [false, true]) {
+            const owner = new AbortController();
+            let selected = "";
+            const connection = await openBrowserConnection(
+                { socketPath: socket, imageId: image },
+                owner.signal,
+                {
+                    prepare: async (config, signal) => {
+                        const lease = await prepareBrowserContainer(config, signal);
+                        selected = lease.id;
+                        return lease;
+                    },
+                }
+            );
+            try {
+                for (let index = 0; index < 2; index++) {
+                    const frame = v.parse(
+                        v.object({
+                            title: v.literal("Containment fixture"),
+                            width: v.pipe(v.number(), v.minValue(1)),
+                            content: v.unknown(),
+                        }),
+                        await connection.request({ operation: "observe" }, owner.signal)
+                    );
+                    const items = runtimeContentItems(frame.content);
+                    assert.equal(items.length, 1);
+                    assert.equal(items[0]!.type, "inputImage");
+                }
+                if (cancel) {
+                    const operation = new AbortController();
+                    const pending = assert.rejects(
+                        connection.request({ operation: "hang" }, operation.signal),
+                        /Do not replay/
+                    );
+                    await eventually(async () => {
+                        try {
+                            const text = await docker(
+                                "exec",
+                                selected,
+                                "cat",
+                                "/tmp/mira-browser-transport-hang.json"
+                            );
+                            return (
+                                v.parse(
+                                    v.strictObject({ id: v.literal(3) }),
+                                    JSON.parse(text)
+                                ).id === 3
+                            );
+                        } catch {
+                            return false;
+                        }
+                    });
+                    operation.abort();
+                    await pending;
+                }
+            } finally {
+                await connection.close();
+            }
+            await assert.rejects(docker("inspect", selected));
+            await assert.rejects(
+                connection.request({ operation: "observe" }, owner.signal)
+            );
+        }
         return {
+            privateStdio: true,
+            tabFrames: true,
+            cancelledRequestRemoved: true,
+            noReplay: true,
             platform: "linux-docker",
             realChromium: true,
             driverFrozen: true,
