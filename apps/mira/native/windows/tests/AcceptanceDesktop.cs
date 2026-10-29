@@ -5,7 +5,7 @@ using System.Security.Principal;
 using Homelab.Mira.Computer;
 
 // Disposable CI only: the administrator-only hosted desktop must permit the
-// current logon SID after token reduction. Restore both original DACLs on exit.
+// current user SID after token reduction. Restore both original DACLs on exit.
 internal sealed class AcceptanceDesktop : IDisposable
 {
     private readonly IntPtr station;
@@ -29,18 +29,9 @@ internal sealed class AcceptanceDesktop : IDisposable
             Environment.GetEnvironmentVariable("RUNNER_ENVIRONMENT") != "github-hosted")
             throw new InvalidOperationException("Desktop acceptance requires disposable hosted Windows.");
         NativeWindows.ReadyDesktop();
-        SecurityIdentifier logon = null;
-        using (var identity = WindowsIdentity.GetCurrent())
-            foreach (IdentityReference group in identity.Groups)
-            {
-                var sid = group as SecurityIdentifier;
-                if (sid != null && sid.Value.StartsWith("S-1-5-5-", StringComparison.Ordinal))
-                {
-                    if (logon != null) throw new InvalidOperationException("Ambiguous hosted logon identity.");
-                    logon = sid;
-                }
-            }
-        if (logon == null) throw new InvalidOperationException("Hosted logon identity is unavailable.");
+        SecurityIdentifier user;
+        using (var identity = WindowsIdentity.GetCurrent()) user = identity.User;
+        if (user == null) throw new InvalidOperationException("Hosted user identity is unavailable.");
         station = GetProcessWindowStation();
         desktop = OpenInputDesktop(0, false, 0x60001); // READ_CONTROL | WRITE_DAC | READOBJECTS
         if (station == IntPtr.Zero || desktop == IntPtr.Zero) throw new InvalidOperationException("Hosted desktop is unavailable.");
@@ -48,8 +39,8 @@ internal sealed class AcceptanceDesktop : IDisposable
         {
             stationOriginal = Read(station);
             desktopOriginal = Read(desktop);
-            Grant(station, stationOriginal, logon, 0x37F);
-            Grant(desktop, desktopOriginal, logon, 0x1FF);
+            Grant(station, stationOriginal, user, 0x37F);
+            Grant(desktop, desktopOriginal, user, 0x1FF);
         }
         catch { Dispose(); throw; }
     }
