@@ -134,6 +134,7 @@ function fixture() {
                         },
                     });
                 },
+                clickElement: () => Promise.resolve({ effect: "refused" as const }),
                 click: () => Promise.reject(new Error("Unexpected fixture click")),
                 type: (text) => {
                     expect(text).toBe("synthetic input");

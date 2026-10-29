@@ -24,7 +24,7 @@ export type ComputerActionResult = {
 export interface ComputerWindowPort {
     observe: (signal: AbortSignal) => Promise<ComputerObservation>;
     click: (x: number, y: number, signal: AbortSignal) => Promise<ComputerActionResult>;
-    clickElement?: (token: string, signal: AbortSignal) => Promise<ComputerActionResult>;
+    clickElement: (token: string, signal: AbortSignal) => Promise<ComputerActionResult>;
     type: (text: string, signal: AbortSignal) => Promise<ComputerActionResult>;
     close: () => Promise<void>;
 }
@@ -151,7 +151,7 @@ export class ComputerWindowSession {
                 throw new Error("Use an observed element token for this window.");
             if (
                 command.action === "click_element" &&
-                (!observed.elements.has(command.elementToken) || !this.port.clickElement)
+                !observed.elements.has(command.elementToken)
             )
                 throw new Error("Computer element was not in the current observation.");
             dispatched = true;
@@ -159,7 +159,7 @@ export class ComputerWindowSession {
             if (command.action === "click")
                 delivery = this.port.click(command.x, command.y, combined);
             else if (command.action === "click_element")
-                delivery = this.port.clickElement!(command.elementToken, combined);
+                delivery = this.port.clickElement(command.elementToken, combined);
             else delivery = this.port.type(command.text, combined);
             const result = v.parse(miraComputerEffectSchema, await delivery);
             await this.check(combined);

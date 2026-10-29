@@ -78,6 +78,7 @@ function fixture(mode: "control" | "view" = "control") {
                 content: { content: result.content },
             });
         },
+        clickElement: () => Promise.resolve({ effect: "refused" as const }),
         click: () => {
             events.push("click");
             return Promise.resolve({ effect: "confirmed" });

@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import * as v from "valibot";
 
+import { ComputerLocalConsentHost } from "../computer/localConsentHost";
 import { openWindowsComputerProcess } from "../computer/process";
 import { ComputerWindowSession } from "../computer/session";
 import {
@@ -134,15 +135,52 @@ export async function qualifyWindowsInput(directory: string, root: string) {
         } finally {
             await wrong.close();
         }
-        const port = await openWindowsComputerProcess(
-            { ...grant, mode: "control" },
-            options
+        // Exercise the production wrapper with a test-only consent surface for this owned fixture.
+        const host = new ComputerLocalConsentHost(
+            {
+                command: executable,
+                args: [],
+                cwd: root,
+                environment,
+                origin: "https://fixture.example.test",
+            },
+            (target, stopped) =>
+                openWindowsComputerProcess(target, { ...options, signal: stopped }),
+            ({ signal: stopped }) =>
+                Promise.resolve({
+                    target: { ...grant, mode: "control" as const },
+                    signal: stopped,
+                    assertReady: async () => {
+                        signal.throwIfAborted();
+                        fixture.signal.throwIfAborted();
+                        const current = await readState();
+                        if (
+                            current.pid !== grant.pid ||
+                            current.windowId !== grant.windowId ||
+                            current.startedAt !== grant.startedAt
+                        )
+                            throw new Error("Fixture identity changed.");
+                    },
+                    close: () => Promise.resolve(),
+                })
         );
-        const session = new ComputerWindowSession(port, () => {
-            signal.throwIfAborted();
-            fixture.signal.throwIfAborted();
-            return Promise.resolve();
-        });
+        const target = await host.select(
+            {
+                id: crypto.randomUUID(),
+                computerId: crypto.randomUUID(),
+                runId: crypto.randomUUID(),
+                state: "pending",
+                mode: "control",
+                consentExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+                expiresAt: new Date(Date.now() + 120_000).toISOString(),
+            },
+            signal
+        );
+        if (!target) throw new Error("Fixture selection failed.");
+        const port = await host.open(target, signal);
+        const session = new ComputerWindowSession(port, () =>
+            host.assertReady(target, signal)
+        );
         try {
             let frame = await session.observe(signal);
             const token = (label: string) => {
@@ -223,7 +261,11 @@ export async function qualifyWindowsInput(directory: string, root: string) {
                 stopped: true,
             };
         } finally {
-            await session.close();
+            try {
+                await session.close();
+            } finally {
+                await host.close();
+            }
         }
     } finally {
         await fixture.close();

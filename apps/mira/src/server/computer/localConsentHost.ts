@@ -157,6 +157,8 @@ export class ComputerLocalConsentHost implements ComputerConsentHost {
                         observe: (signal: AbortSignal) => port.observe(signal),
                         click: (x: number, y: number, signal: AbortSignal) =>
                             port.click(x, y, signal),
+                        clickElement: (token: string, signal: AbortSignal) =>
+                            port.clickElement(token, signal),
                         type: (text: string, signal: AbortSignal) =>
                             port.type(text, signal),
                         close: () =>

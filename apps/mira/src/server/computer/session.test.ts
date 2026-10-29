@@ -25,6 +25,7 @@ function fixture() {
                     ],
                 },
             }),
+        clickElement: () => Promise.resolve({ effect: "refused" as const }),
         click: () => {
             actions.push("click");
             return Promise.resolve({ effect: "unverified" });
@@ -263,19 +264,18 @@ test("element input requires current membership and is consumed once", async () 
     await f.session.close();
 });
 
-test("expired, foreign, missing and unavailable elements never dispatch", async () => {
+test("expired, foreign and missing elements never dispatch", async () => {
     for (const mode of [
         "expired",
         "foreign",
         "missing",
-        "unavailable",
+
         "coordinates",
         "revoked",
     ]) {
         const f = elementFixture();
         const frame = await f.session.observe(signal());
         if (mode === "expired") f.advance(10_001);
-        if (mode === "unavailable") delete f.port.clickElement;
         if (mode === "revoked") f.revoke();
         await assert.rejects(
             f.session.act(

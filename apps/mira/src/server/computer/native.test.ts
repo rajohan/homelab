@@ -415,12 +415,12 @@ test("Windows control uses only its captured image and observed SDK element toke
         ]);
         const before = f.calls.length;
         expect(await driver.click(1, 1, signal())).toEqual({ effect: "refused" });
-        expect(await driver.clickElement!("s00000001:1", signal())).toEqual({
+        expect(await driver.clickElement("s00000001:1", signal())).toEqual({
             effect: "refused",
         });
         expect(f.calls).toHaveLength(before);
         await driver.observe(signal());
-        expect(await driver.clickElement!("s00000001:1", signal())).toEqual({
+        expect(await driver.clickElement("s00000001:1", signal())).toEqual({
             effect: "unverified",
         });
         expect(f.calls.at(-1)).toMatchObject({
@@ -428,19 +428,19 @@ test("Windows control uses only its captured image and observed SDK element toke
             position: { value: { elementToken: "s00000001:1" } },
             deliveryMode: 0,
         });
-        expect(await driver.clickElement!("s00000001:1", signal())).toEqual({
+        expect(await driver.clickElement("s00000001:1", signal())).toEqual({
             effect: "refused",
         });
         await driver.observe(signal());
-        expect(await driver.clickElement!("s00000002:1", signal())).toEqual({
+        expect(await driver.clickElement("s00000002:1", signal())).toEqual({
             effect: "refused",
         });
-        expect(await driver.clickElement!("s00000001:1", signal())).toEqual({
+        expect(await driver.clickElement("s00000001:1", signal())).toEqual({
             effect: "refused",
         });
         await driver.observe(signal());
         await driver.type("literal", signal());
-        expect(await driver.clickElement!("s00000001:1", signal())).toEqual({
+        expect(await driver.clickElement("s00000001:1", signal())).toEqual({
             effect: "refused",
         });
     } finally {
@@ -489,7 +489,7 @@ test("Windows targets exclude disabled, foreign and degraded elements and reject
         f.frame.degraded = false;
         f.frame.elements.push(f.frame.elements[0]!);
         await assert.rejects(driver.observe(signal()));
-        expect(await driver.clickElement!("s00000001:1", signal())).toEqual({
+        expect(await driver.clickElement("s00000001:1", signal())).toEqual({
             effect: "refused",
         });
     } finally {

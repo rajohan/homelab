@@ -106,8 +106,6 @@ export function serveComputerChild(
                         v.strictObject({ elementToken: miraComputerElementTokenSchema }),
                         request.params
                     );
-                    if (!port.clickElement)
-                        throw new Error("Element input is unavailable.");
                     result = await port.clickElement(
                         command.elementToken,
                         controller.signal
