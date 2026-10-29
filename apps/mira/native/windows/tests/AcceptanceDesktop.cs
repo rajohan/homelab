@@ -37,8 +37,8 @@ internal sealed class AcceptanceDesktop : IDisposable
         {
             stationOriginal = Read(station);
             desktopOriginal = Read(desktop);
-            Grant(station, stationOriginal, user, 0x37F);
-            Grant(desktop, desktopOriginal, user, 0x1FF);
+            Grant(station, stationOriginal, user, 0xF037F); // WINSTA_ALL_ACCESS, including standard object rights.
+            Grant(desktop, desktopOriginal, user, 0xF01FF); // DESKTOP_ALL_ACCESS for this one disposable test identity.
         }
         catch { Dispose(); throw; }
     }
