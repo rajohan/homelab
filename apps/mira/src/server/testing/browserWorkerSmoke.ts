@@ -14,9 +14,14 @@ import { openBrowserWorker } from "../browsing/process";
 
 /**
  * Exercise the fixed protocol through actual Docker pipes, native Chromium and independent site events.
+ * @param image - Trusted local image tag to qualify; pinned to its ID before starting.
+ * @param packaged - Start the synthetic site separately in the unchanged runtime image.
  * @returns A receipt after input, navigation, view-only and stale-reference checks remove every container.
  */
-export async function qualifyBrowserWorker() {
+export async function qualifyBrowserWorker(
+    image = "homelab-browser-worker-test:local",
+    packaged = false
+) {
     if (process.platform !== "linux")
         throw new Error("Use the Linux qualification host.");
     const socket = await realpath("/var/run/docker.sock");
@@ -35,13 +40,7 @@ export async function qualifyBrowserWorker() {
         return result.stdout.trim();
     };
     try {
-        const imageId = await docker(
-            "image",
-            "inspect",
-            "homelab-browser-worker-test:local",
-            "--format",
-            "{{.Id}}"
-        );
+        const imageId = await docker("image", "inspect", image, "--format", "{{.Id}}");
         for (const mode of ["control", "view", "origin"] as const) {
             const owner = new AbortController();
             let selected = "";
@@ -58,7 +57,47 @@ export async function qualifyBrowserWorker() {
                         prepare: async (input, abort) => {
                             const lease = await prepareBrowserContainer(input, abort);
                             selected = lease.id;
-                            return lease;
+                            if (!packaged) return lease;
+                            return {
+                                ...lease,
+                                start: async () => {
+                                    await lease.start();
+                                    const site = await Bun.file(
+                                        new URL("browserSiteFixture.ts", import.meta.url)
+                                    ).text();
+                                    await docker(
+                                        "exec",
+                                        "--detach",
+                                        selected,
+                                        "bun",
+                                        "--no-env-file",
+                                        "-e",
+                                        site.replace(
+                                            "if (import.meta.main) browserSiteFixture();",
+                                            "browserSiteFixture();"
+                                        )
+                                    );
+                                    const deadline = performance.now() + 5000;
+                                    while (performance.now() < deadline) {
+                                        try {
+                                            await docker(
+                                                "exec",
+                                                selected,
+                                                "bun",
+                                                "--no-env-file",
+                                                "-e",
+                                                "const response=await fetch('http://127.0.0.1:4173/');if(!response.ok)process.exit(1)"
+                                            );
+                                            return;
+                                        } catch {
+                                            await Bun.sleep(25);
+                                        }
+                                    }
+                                    throw new Error(
+                                        "The independent browser fixture did not start."
+                                    );
+                                },
+                            };
                         },
                     })
             );
@@ -178,7 +217,7 @@ export async function qualifyBrowserWorker() {
 if (import.meta.main) {
     const result = await Effect.runPromise(
         Effect.tryPromise({
-            try: qualifyBrowserWorker,
+            try: () => qualifyBrowserWorker(),
             catch: (cause) =>
                 new Error("Browser worker qualification failed.", { cause }),
         })
