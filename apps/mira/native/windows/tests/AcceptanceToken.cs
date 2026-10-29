@@ -41,7 +41,13 @@ internal static class AcceptanceToken
     [DllImport("advapi32.dll", SetLastError = true)]
     private static extern bool GetTokenInformation(IntPtr token, int kind, out int value, uint length, out uint returned);
     [DllImport("advapi32.dll", SetLastError = true)]
-    private static extern bool CreateRestrictedToken(IntPtr token, uint flags, uint disabledCount, ref SidAttributes disabled, uint privilegesCount, IntPtr privileges, uint restrictedCount, IntPtr restricted, out IntPtr result);
+    private static extern bool SaferCreateLevel(uint scope, uint level, uint flags, out IntPtr handle, IntPtr reserved);
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern bool SaferComputeTokenFromLevel(IntPtr level, IntPtr token, out IntPtr result, uint flags, IntPtr reserved);
+    [DllImport("advapi32.dll")]
+    private static extern bool SaferCloseLevel(IntPtr level);
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern bool SetTokenInformation(IntPtr token, int kind, ref SidAttributes value, uint length);
     [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern bool CreateProcessAsUser(IntPtr token, string executable, StringBuilder command, IntPtr processSecurity, IntPtr threadSecurity, bool inherit, uint flags, IntPtr environment, string directory, ref Startup startup, out Child child);
 
@@ -60,20 +66,22 @@ internal static class AcceptanceToken
     }
     internal static int Run(string[] paths)
     {
-        IntPtr original = IntPtr.Zero, reduced = IntPtr.Zero, adminSid = IntPtr.Zero;
+        IntPtr original = IntPtr.Zero, reduced = IntPtr.Zero, integritySid = IntPtr.Zero, level = IntPtr.Zero;
         var startup = new Startup { Size = Marshal.SizeOf(typeof(Startup)), Desktop = @"winsta0\default", Flags = 0x100 };
         var child = new Child();
         using (var desktop = new AcceptanceDesktop())
         try
         {
             Require(OpenProcessToken(GetCurrentProcess(), 0xF01FF, out original));
-            var administrators = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
-            var bytes = new byte[administrators.BinaryLength];
-            administrators.GetBinaryForm(bytes, 0);
-            adminSid = Marshal.AllocHGlobal(bytes.Length);
-            Marshal.Copy(bytes, 0, adminSid, bytes.Length);
-            var disabled = new SidAttributes { Sid = adminSid, Attributes = 0 };
-            Require(CreateRestrictedToken(original, 1, 1, ref disabled, 0, IntPtr.Zero, 0, IntPtr.Zero, out reduced)); // DISABLE_MAX_PRIVILEGE; Administrators becomes deny-only.
+            Require(SaferCreateLevel(2, 0x20000, 1, out level, IntPtr.Zero)); // SAFER_LEVELID_NORMALUSER
+            Require(SaferComputeTokenFromLevel(level, original, out reduced, 0, IntPtr.Zero));
+            var medium = new SecurityIdentifier("S-1-16-8192");
+            var bytes = new byte[medium.BinaryLength];
+            medium.GetBinaryForm(bytes, 0);
+            integritySid = Marshal.AllocHGlobal(bytes.Length);
+            Marshal.Copy(bytes, 0, integritySid, bytes.Length);
+            var label = new SidAttributes { Sid = integritySid, Attributes = 0x20 }; // SE_GROUP_INTEGRITY
+            Require(SetTokenInformation(reduced, 25, ref label, (uint)(Marshal.SizeOf(typeof(SidAttributes)) + bytes.Length)));
             int elevated;
             uint returned;
             Require(GetTokenInformation(reduced, 20, out elevated, 4, out returned) && returned == 4);
@@ -98,7 +106,8 @@ internal static class AcceptanceToken
         }
         finally
         {
-            if (adminSid != IntPtr.Zero) Marshal.FreeHGlobal(adminSid);
+            if (integritySid != IntPtr.Zero) Marshal.FreeHGlobal(integritySid);
+            if (level != IntPtr.Zero) SaferCloseLevel(level);
             foreach (IntPtr handle in new[] { child.Thread, child.Process, startup.Input, startup.Output, startup.Error, reduced, original })
                 if (handle != IntPtr.Zero) CloseHandle(handle);
         }

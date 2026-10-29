@@ -647,8 +647,8 @@ and [CreateFreeThreaded](https://learn.microsoft.com/en-us/uwp/api/windows.graph
 a disposable GitHub-hosted Windows runner. It builds the actual consent binary
 and a separate, non-distributed acceptance harness. GitHub's hosted Windows account
 is elevated with UAC disabled, so the harness first launches itself with a restricted
-token with administrative group membership disabled and privileges removed, and
-verifies that it and its fixture are not elevated. A test-only helper
+normal-user SAFER token at medium integrity, and verifies that it and its fixture
+are not elevated. A test-only helper
 grants the current user SID GUI access to that disposable runner's window station
 and desktop, then restores both original DACLs after the child exits. It changes no
 account or UAC policy. The production elevated-window refusal remains intact.
