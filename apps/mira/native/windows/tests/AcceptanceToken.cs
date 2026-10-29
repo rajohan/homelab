@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Security.Principal;
 
 // Test-only launcher for GitHub's elevated Windows runner. It reduces only its
 // child token. A separately scoped test helper restores the hosted desktop ACLs.
@@ -17,6 +18,8 @@ internal static class AcceptanceToken
         internal short Show, ReservedSize;
         internal IntPtr ReservedBytes, Input, Output, Error;
     }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SidAttributes { internal IntPtr Sid; internal uint Attributes; }
     [StructLayout(LayoutKind.Sequential)]
     private struct Child { internal IntPtr Process, Thread; internal uint Id, ThreadId; }
     [DllImport("kernel32.dll")]
@@ -38,7 +41,7 @@ internal static class AcceptanceToken
     [DllImport("advapi32.dll", SetLastError = true)]
     private static extern bool GetTokenInformation(IntPtr token, int kind, out int value, uint length, out uint returned);
     [DllImport("advapi32.dll", SetLastError = true)]
-    private static extern bool CreateRestrictedToken(IntPtr token, uint flags, uint disabledCount, IntPtr disabled, uint privilegesCount, IntPtr privileges, uint restrictedCount, IntPtr restricted, out IntPtr result);
+    private static extern bool CreateRestrictedToken(IntPtr token, uint flags, uint disabledCount, ref SidAttributes disabled, uint privilegesCount, IntPtr privileges, uint restrictedCount, IntPtr restricted, out IntPtr result);
     [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern bool CreateProcessAsUser(IntPtr token, string executable, StringBuilder command, IntPtr processSecurity, IntPtr threadSecurity, bool inherit, uint flags, IntPtr environment, string directory, ref Startup startup, out Child child);
 
@@ -57,14 +60,24 @@ internal static class AcceptanceToken
     }
     internal static int Run(string[] paths)
     {
-        IntPtr original = IntPtr.Zero, reduced = IntPtr.Zero;
+        IntPtr original = IntPtr.Zero, reduced = IntPtr.Zero, adminSid = IntPtr.Zero;
         var startup = new Startup { Size = Marshal.SizeOf(typeof(Startup)), Desktop = @"winsta0\default", Flags = 0x100 };
         var child = new Child();
         using (var desktop = new AcceptanceDesktop())
         try
         {
             Require(OpenProcessToken(GetCurrentProcess(), 0xF01FF, out original));
-            Require(CreateRestrictedToken(original, 5, 0, IntPtr.Zero, 0, IntPtr.Zero, 0, IntPtr.Zero, out reduced)); // DISABLE_MAX_PRIVILEGE | LUA_TOKEN
+            var administrators = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+            var bytes = new byte[administrators.BinaryLength];
+            administrators.GetBinaryForm(bytes, 0);
+            adminSid = Marshal.AllocHGlobal(bytes.Length);
+            Marshal.Copy(bytes, 0, adminSid, bytes.Length);
+            var disabled = new SidAttributes { Sid = adminSid, Attributes = 0 };
+            Require(CreateRestrictedToken(original, 1, 1, ref disabled, 0, IntPtr.Zero, 0, IntPtr.Zero, out reduced)); // DISABLE_MAX_PRIVILEGE; Administrators becomes deny-only.
+            int elevated;
+            uint returned;
+            Require(GetTokenInformation(reduced, 20, out elevated, 4, out returned) && returned == 4);
+            if (elevated != 0) throw new InvalidOperationException("Reduced acceptance token is still elevated.");
             foreach (string path in paths)
                 if (!Path.IsPathRooted(path) || path.IndexOf('"') >= 0) throw new InvalidOperationException("Invalid owned test path.");
             string executable = Process.GetCurrentProcess().MainModule.FileName;
@@ -85,6 +98,7 @@ internal static class AcceptanceToken
         }
         finally
         {
+            if (adminSid != IntPtr.Zero) Marshal.FreeHGlobal(adminSid);
             foreach (IntPtr handle in new[] { child.Thread, child.Process, startup.Input, startup.Output, startup.Error, reduced, original })
                 if (handle != IntPtr.Zero) CloseHandle(handle);
         }
