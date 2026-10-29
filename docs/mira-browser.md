@@ -40,3 +40,13 @@ The transport caps each response at 256 KiB and each request at ten seconds. It 
 `bun run test:browser` also runs the actual container lifecycle test. It observes real Chromium inside the fixture, freezes only that fixture's driver using SIGSTOP, and verifies that explicit close and owner cancellation each remove the container and every recorded process. This verifies forced-stop containment, not merely graceful native shutdown. Unit tests cover cancellation during create/start, identity substitution, failed removal and refused replacement; a real Unix HTTP fixture covers response limits and deadlines. The hard lifetime is checked in the fixed launch specification; the suite does not wait five minutes to test expiry.
 
 The Docker fields follow the [Docker Engine API v1.45 reference](https://docs.docker.com/reference/api/engine/version/v1.45/). Container lifecycle control remains isolated qualification code until the browser worker, owner/run authorization and egress policy are integrated.
+
+## Private container transport
+
+`openBrowserConnection` attaches stdin/stdout through the host's canonical Unix Docker socket **before** starting the owned container. It does not publish a port or mount the Engine socket into the browser. The trusted host selects the installed immutable image; worker payloads cannot select containers, commands, mounts or networking.
+
+Docker's non-TTY frames and the inner JSONL envelope are validated separately. Requests are limited to 64 KiB, replies to 4 MiB, and only one request may be in flight. A reply must match its request ID. UTF-8 errors, unexpected output, EOF, cancellation and deadlines permanently retire the connection. There is no retry or reconnect; a lost response can mean input already happened. Pending requests settle only after container removal is confirmed, and failed cleanup stays visible to subsequent close/request calls. A replacement requires successful cleanup or explicit host reconciliation.
+
+The offline qualification sends two actual Chromium tab snapshots through this transport, then cancels a request that the fixture received but deliberately never answers. It verifies container removal and refusal of subsequent requests. Existing frozen-driver descendant cleanup tests remain in place.
+
+This is the private transport foundation, not an activated Chat tool or a general RPC endpoint. Its returned results are untrusted until an operation-specific caller validates them. The test image still runs a synthetic holding worker; the fixed production worker protocol, packaged runtime, owner/run grants and network egress policy remain separate work.

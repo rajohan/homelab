@@ -1,3 +1,5 @@
+import * as v from "valibot";
+
 import { openNativeBrowser } from "../browsing/native";
 
 /**
@@ -17,16 +19,12 @@ async function holdBrowserFixture() {
             ),
     });
     const owner = new AbortController();
-    const stopped = Promise.withResolvers<void>();
     process.stdin.once("end", () => {
         owner.abort();
-        stopped.resolve();
     });
     process.stdin.once("error", () => {
         owner.abort();
-        stopped.resolve();
     });
-    process.stdin.resume();
     const browser = await openNativeBrowser(
         {
             executable: "/usr/lib/chromium/chromium",
@@ -44,7 +42,33 @@ async function holdBrowserFixture() {
             "/tmp/mira-browser-container-ready.json",
             JSON.stringify({ pid: process.pid, image: true })
         );
-        await stopped.promise;
+        let buffer = Buffer.alloc(0);
+        for await (const chunk of process.stdin) {
+            buffer = Buffer.concat([buffer, Buffer.from(chunk)]);
+            if (buffer.length > 64 * 1024) throw new Error("Fixture request too large.");
+            const end = buffer.indexOf(10);
+            if (end === -1) continue;
+            if (end !== buffer.length - 1)
+                throw new Error("Unexpected fixture requests.");
+            const request = v.parse(
+                v.strictObject({
+                    id: v.pipe(v.number(), v.integer(), v.minValue(1)),
+                    body: v.strictObject({ operation: v.picklist(["observe", "hang"]) }),
+                }),
+                JSON.parse(buffer.toString("utf8"))
+            );
+            buffer = Buffer.alloc(0);
+            if (request.body.operation === "hang") {
+                await Bun.write(
+                    "/tmp/mira-browser-transport-hang.json",
+                    JSON.stringify({ id: request.id })
+                );
+                // Deliberately never answer. Only the host's container boundary can finish this fixture.
+                await new Promise<void>(() => {});
+            }
+            const result = await browser.observe(owner.signal);
+            process.stdout.write(JSON.stringify({ id: request.id, result }) + "\n");
+        }
     } finally {
         await browser.close();
         await server.stop(true);
