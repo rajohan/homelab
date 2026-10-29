@@ -75,6 +75,7 @@ export async function openBrowserWorker(
         )
     );
     return {
+        signal: connection.signal,
         observe: (operation: AbortSignal) =>
             run(operation, async () => {
                 observed = undefined;

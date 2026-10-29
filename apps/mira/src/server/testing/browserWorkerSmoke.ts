@@ -11,6 +11,7 @@ import * as v from "valibot";
 import { openBrowserConnection } from "../browsing/connection";
 import { prepareBrowserContainer } from "../browsing/container";
 import { openBrowserWorker } from "../browsing/process";
+import { openBrowserSession } from "../browsing/session";
 
 /**
  * Exercise the fixed protocol through actual Docker pipes, native Chromium and independent site events.
@@ -41,65 +42,89 @@ export async function qualifyBrowserWorker(
     };
     try {
         const imageId = await docker("image", "inspect", image, "--format", "{{.Id}}");
-        for (const mode of ["control", "view", "origin"] as const) {
+        for (const mode of ["control", "view", "origin", "revocation"] as const) {
             const owner = new AbortController();
             let selected = "";
-            const browser = await openBrowserWorker(
-                { socketPath: socket, imageId },
-                {
-                    origins: ["http://127.0.0.1:4173"],
-                    initialUrl: "http://127.0.0.1:4173/",
-                    mode: mode === "view" ? "view" : "control",
-                },
-                owner.signal,
-                (config, signal) =>
-                    openBrowserConnection(config, signal, {
-                        prepare: async (input, abort) => {
-                            const lease = await prepareBrowserContainer(input, abort);
-                            selected = lease.id;
-                            if (!packaged) return lease;
-                            return {
-                                ...lease,
-                                start: async () => {
-                                    await lease.start();
-                                    const site = await Bun.file(
-                                        new URL("browserSiteFixture.ts", import.meta.url)
-                                    ).text();
-                                    await docker(
-                                        "exec",
-                                        "--detach",
-                                        selected,
-                                        "bun",
-                                        "--no-env-file",
-                                        "-e",
-                                        site.replace(
-                                            "if (import.meta.main) browserSiteFixture();",
-                                            "browserSiteFixture();"
-                                        )
+            let revoked = false,
+                released = false;
+            const browser = await openBrowserSession(
+                (sessionSignal) =>
+                    openBrowserWorker(
+                        { socketPath: socket, imageId },
+                        {
+                            origins: ["http://127.0.0.1:4173"],
+                            initialUrl: "http://127.0.0.1:4173/",
+                            mode: mode === "view" ? "view" : "control",
+                        },
+                        sessionSignal,
+                        (config, signal) =>
+                            openBrowserConnection(config, signal, {
+                                prepare: async (input, abort) => {
+                                    const lease = await prepareBrowserContainer(
+                                        input,
+                                        abort
                                     );
-                                    const deadline = performance.now() + 5000;
-                                    while (performance.now() < deadline) {
-                                        try {
+                                    selected = lease.id;
+                                    if (!packaged) return lease;
+                                    return {
+                                        ...lease,
+                                        start: async () => {
+                                            await lease.start();
+                                            const site = await Bun.file(
+                                                new URL(
+                                                    "browserSiteFixture.ts",
+                                                    import.meta.url
+                                                )
+                                            ).text();
                                             await docker(
                                                 "exec",
+                                                "--detach",
                                                 selected,
                                                 "bun",
                                                 "--no-env-file",
                                                 "-e",
-                                                "const response=await fetch('http://127.0.0.1:4173/');if(!response.ok)process.exit(1)"
+                                                site.replace(
+                                                    "if (import.meta.main) browserSiteFixture();",
+                                                    "browserSiteFixture();"
+                                                )
                                             );
-                                            return;
-                                        } catch {
-                                            await Bun.sleep(25);
-                                        }
-                                    }
-                                    throw new Error(
-                                        "The independent browser fixture did not start."
-                                    );
+                                            const deadline = performance.now() + 5000;
+                                            while (performance.now() < deadline) {
+                                                try {
+                                                    await docker(
+                                                        "exec",
+                                                        selected,
+                                                        "bun",
+                                                        "--no-env-file",
+                                                        "-e",
+                                                        "const response=await fetch('http://127.0.0.1:4173/');if(!response.ok)process.exit(1)"
+                                                    );
+                                                    return;
+                                                } catch {
+                                                    await Bun.sleep(25);
+                                                }
+                                            }
+                                            throw new Error(
+                                                "The independent browser fixture did not start."
+                                            );
+                                        },
+                                    };
                                 },
-                            };
-                        },
-                    })
+                            })
+                    ),
+                {
+                    check: (scope) => {
+                        if (revoked || (mode === "view" && scope === "control"))
+                            throw new Error("Synthetic permission revoked.");
+                        return Promise.resolve({ validForMs: 5000 });
+                    },
+                    release: async () => {
+                        assert.ok(selected);
+                        await assert.rejects(docker("inspect", selected));
+                        released = true;
+                    },
+                },
+                owner.signal
             );
             const events = async (text: string, count: number) => {
                 const deadline = performance.now() + 5000;
@@ -133,7 +158,12 @@ export async function qualifyBrowserWorker(
                 let frame = await browser.observe(owner.signal);
                 assert.equal(frame.title, "Worker fixture");
                 assert.ok(frame.content.content[0]!.data.length > 100);
-                if (mode === "origin") {
+                if (mode === "revocation") {
+                    revoked = true;
+                    await browser.closed;
+                    assert.equal(browser.signal.aborted, true);
+                    await assert.rejects(browser.observe(owner.signal));
+                } else if (mode === "origin") {
                     await assert.rejects(
                         browser.navigate("http://127.0.0.1:4174/", owner.signal)
                     );
@@ -196,10 +226,13 @@ export async function qualifyBrowserWorker(
             } finally {
                 await browser.close();
             }
+            assert.equal(released, true);
             await assert.rejects(docker("inspect", selected));
         }
         return {
             fixedProtocol: true,
+            supervisedRevocation: true,
+            releaseAfterRemoval: true,
             realTabImages: true,
             trustedType: true,
             trustedClick: true,
