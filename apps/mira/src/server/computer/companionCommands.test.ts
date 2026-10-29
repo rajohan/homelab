@@ -576,7 +576,7 @@ test("remote observation targets stay bounded, structured and distinct from raw 
         [{ ...valid.elements[0], token: "1" }],
         [{ ...valid.elements[0], token: "s00000001:" + "1".repeat(33) }],
         [{ ...valid.elements[0], role: "x".repeat(65) }],
-        [{ ...valid.elements[0], label: "x".repeat(257) }],
+        [{ ...valid.elements[0], label: "x".repeat(129) }],
         [{ ...valid.elements[0], pid: 999 }],
         [...valid.elements, ...valid.elements],
         Array.from({ length: 201 }, (_, i) => ({

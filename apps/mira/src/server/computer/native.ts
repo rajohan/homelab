@@ -152,7 +152,7 @@ export async function openNativeComputerWindow(
                         targets.push({
                             token: item.elementToken,
                             role: item.role.slice(0, 64),
-                            label: (item.label ?? "").slice(0, 256),
+                            label: (item.label ?? "").slice(0, 128),
                         });
                     }
                     v.parse(miraComputerElementsSchema, targets);

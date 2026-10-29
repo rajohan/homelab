@@ -179,13 +179,26 @@ test("computer observation uses the real receipt router and structured runtime i
         const pending = f.invoke("mira_computer_observe", {}, callId);
         const command = await f.claim();
         expect(command.operation).toEqual({ action: "observe" });
-        const result = frame();
+        const result = {
+            ...frame(),
+            coordinateInput: false,
+            elements: Array.from({ length: 200 }, (_, index) => ({
+                token: `s00000001:${index}`,
+                role: "\u0001".repeat(64),
+                label: "\u0001".repeat(128),
+            })),
+        };
         expect(await f.finish(command.commandId, result)).toMatchObject({
             accepted: true,
         });
         const output = await pending;
         const items = runtimeContentItems(output);
         expect(items).toHaveLength(2);
+        const metadata = JSON.parse(
+            items[0]!.type === "inputText" ? items[0]!.text : "{}"
+        ) as { result: { elements: unknown; coordinateInput: boolean } };
+        expect(metadata.result.elements).toEqual(result.elements);
+        expect(metadata.result.coordinateInput).toBe(false);
         expect(items[0]!.type).toBe("inputText");
         expect(items[0]).toMatchObject({
             text: expect.stringContaining(result.observationId) as unknown,

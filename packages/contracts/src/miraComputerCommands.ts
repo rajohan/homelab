@@ -16,7 +16,7 @@ export const miraComputerElementsSchema = v.pipe(
         v.strictObject({
             token: miraComputerElementTokenSchema,
             role: v.pipe(v.string(), v.maxLength(64)),
-            label: v.pipe(v.string(), v.maxLength(256)),
+            label: v.pipe(v.string(), v.maxLength(128)),
         })
     ),
     v.maxLength(200),

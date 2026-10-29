@@ -506,7 +506,7 @@ test("maximum PNG and escaped element labels fit the machine transport after tre
         elementToken: `s00000001:${index}`,
         enabled: true,
         role: "\u0001".repeat(64),
-        label: "\u0001".repeat(256),
+        label: "\u0001".repeat(128),
     }));
     const capture = await openWindowsCapture({ ...f.grant, startedAt: "123" }, () =>
         Promise.resolve(paddedPng(windowsCaptureMaximumPngBytes))
