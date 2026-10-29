@@ -26,7 +26,7 @@ internal static class DesktopSettings
             drive.DriveType != DriveType.Ram && drive.DriveType != DriveType.CDRom) throw new InvalidDataException();
         for (var parent = new DirectoryInfo(directory); parent != null; parent = parent.Parent)
             if ((parent.Attributes & FileAttributes.ReparsePoint) != 0) throw new InvalidDataException();
-        foreach (string name in new[] { "mira-computer-desktop.exe", "mira-computer.exe", "mira-computer-consent.exe", "mira-computer-worker-host.exe", "mira-computer-worker.exe" })
+        foreach (string name in new[] { "mira-computer-desktop.exe", "mira-computer.exe", "mira-computer-consent.exe", "mira-computer-worker-host.exe", "mira-computer-worker.exe", "mira-window-capture.exe" })
         {
             string file = Path.Combine(directory, name);
             if (!File.Exists(file) || (File.GetAttributes(file) & (FileAttributes.ReparsePoint | FileAttributes.Directory)) != 0)

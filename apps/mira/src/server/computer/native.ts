@@ -12,16 +12,21 @@ import {
     computerWindowManifest,
 } from "./policy";
 import type { ComputerActionResult, ComputerWindowPort } from "./session";
+import { openWindowsCapture, type WindowsCapturePort } from "./windowsCapture";
 
 /**
  * Open the pinned native SDK with a fixed application ceiling and exact window adapter.
  * @param input - Host-approved canonical executable, PID/window and explicit delivery mode.
  * @param loadSdk - Native-module loader, replaceable by a synthetic driver in unit tests.
+ * @param openCapture - Fixed Windows capture factory; synthetic substitution is only for tests.
  * @returns An exclusive port. The caller must close it and enforce interactive desktop readiness.
  */
 export async function openNativeComputerWindow(
     input: unknown,
-    loadSdk: () => Promise<typeof NativeSdk> = () => import("@trycua/cua-driver")
+    loadSdk: () => Promise<typeof NativeSdk> = () => import("@trycua/cua-driver"),
+    openCapture:
+        | ((input: unknown) => Promise<WindowsCapturePort>)
+        | null = process.platform === "win32" ? openWindowsCapture : null
 ): Promise<ComputerWindowPort> {
     const grant = computerWindowGrant(input);
     if ((await realpath(grant.executable)) !== grant.executable)
@@ -30,6 +35,7 @@ export async function openNativeComputerWindow(
     const directory = await mkdtemp(path.join(os.tmpdir(), "homelab-computer-"));
     const manifest = path.join(directory, "capabilities.json");
     let driver: ReturnType<typeof sdk.CuaDriver.createConfigured> | undefined;
+    let capture: WindowsCapturePort | undefined;
     try {
         await writeFile(manifest, JSON.stringify(computerWindowManifest(grant)), {
             mode: 0o600,
@@ -49,6 +55,7 @@ export async function openNativeComputerWindow(
         const metadata = await native.metadata();
         if (metadata.driverVersion !== computerDriverVersion || !metadata.embedded)
             throw new Error("Unexpected computer driver version or execution mode.");
+        capture = grant.mode === "view" ? await openCapture?.(grant) : undefined;
         const target = new sdk.ActionTarget.Window({
             pid: grant.pid,
             windowId: BigInt(grant.windowId),
@@ -66,7 +73,7 @@ export async function openNativeComputerWindow(
                     {
                         pid: grant.pid,
                         windowId: BigInt(grant.windowId),
-                        includeScreenshot: true,
+                        includeScreenshot: !capture,
                         includeAccessibilityTree: true,
                         maxImageDimension: 0,
                         maxElements: 200,
@@ -82,17 +89,22 @@ export async function openNativeComputerWindow(
                     frame.pid !== grant.pid ||
                     frame.windowId !== BigInt(grant.windowId) ||
                     !frame.snapshotId ||
-                    // 0.37 Windows omits this optional flag even for successful capture.
-                    // Explicitly invalid frames and missing flags elsewhere still fail.
-                    frame.screenshotFrameValid === false ||
-                    (process.platform !== "win32" &&
-                        frame.screenshotFrameValid !== true) ||
-                    frame.images.length !== 1
+                    (capture
+                        ? frame.images.length > 0
+                        : frame.screenshotFrameValid === false ||
+                          (process.platform !== "win32" &&
+                              frame.screenshotFrameValid !== true) ||
+                          frame.images.length !== 1)
                 )
                     throw new Error(
                         "Computer driver did not return the selected window frame."
                     );
-                const image = frame.images[0]!;
+                const captured = await capture?.read(signal);
+                signal.throwIfAborted();
+                ensureOpen();
+                const image = captured
+                    ? { mimeType: "image/png", dataBase64: captured.dataBase64 }
+                    : frame.images[0]!;
                 if (image.mimeType !== "image/png" && image.mimeType !== "image/jpeg")
                     throw new Error("Unsupported computer frame format.");
                 const content: Exclude<RuntimeToolResult, string> = {
@@ -118,8 +130,8 @@ export async function openNativeComputerWindow(
                 runtimeContentItems(content);
                 const dimensions = imageSize(Buffer.from(image.dataBase64, "base64"));
                 if (
-                    dimensions.width !== frame.screenshotWidth ||
-                    dimensions.height !== frame.screenshotHeight
+                    dimensions.width !== (captured?.width ?? frame.screenshotWidth) ||
+                    dimensions.height !== (captured?.height ?? frame.screenshotHeight)
                 )
                     throw new Error("Computer frame dimensions do not match the image.");
                 return {
@@ -178,7 +190,12 @@ export async function openNativeComputerWindow(
                 closed = true;
                 closing ??= (async () => {
                     try {
-                        await native.shutdown();
+                        const captureClosing = capture?.close();
+                        try {
+                            await native.shutdown();
+                        } finally {
+                            await captureClosing;
+                        }
                     } finally {
                         if (sdk.CuaDriver.instanceOf(native)) native.uniffiDestroy();
                         await rm(directory, { recursive: true, force: true });
@@ -191,7 +208,12 @@ export async function openNativeComputerWindow(
         try {
             if (driver) {
                 try {
-                    await driver.shutdown();
+                    const captureClosing = capture?.close();
+                    try {
+                        await driver.shutdown();
+                    } finally {
+                        await captureClosing;
+                    }
                 } finally {
                     if (sdk.CuaDriver.instanceOf(driver)) driver.uniffiDestroy();
                 }

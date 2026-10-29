@@ -8,9 +8,10 @@ import { buildWindowsCapture } from "./buildWindowsCapture";
 
 /**
  * Prove target-only capture under an independently verified overlapping window in a disposable VM.
+ * @param workerDirectory - Optional already qualified package to verify through the real worker.
  * @returns Completion after actual PNG validation, identity/minimize refusals and fixture cleanup.
  */
-export async function testWindowsCapture(): Promise<void> {
+export async function testWindowsCapture(workerDirectory?: string): Promise<void> {
     if (
         process.platform !== "win32" ||
         process.env.GITHUB_ACTIONS !== "true" ||
@@ -59,6 +60,7 @@ export async function testWindowsCapture(): Promise<void> {
                 "--no-env-file",
                 path.join(root, "apps/mira/src/server/testing/windowsCapture.ts"),
                 directory,
+                ...(workerDirectory ? [workerDirectory] : []),
             ],
             {
                 cwd: root,
@@ -74,7 +76,8 @@ export async function testWindowsCapture(): Promise<void> {
     }
 }
 if (import.meta.main) {
-    if (process.argv.length !== 2)
-        throw new Error("Window capture qualification takes no arguments.");
-    await testWindowsCapture();
+    const [directory, ...extra] = process.argv.slice(2);
+    if (extra.length > 0 || (directory && !path.isAbsolute(directory)))
+        throw new Error("Provide at most one absolute qualified package directory.");
+    await testWindowsCapture(directory);
 }

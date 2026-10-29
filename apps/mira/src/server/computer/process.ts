@@ -115,7 +115,11 @@ export async function openWindowsComputerProcess(
         : null;
     if (!canonical || canonical.toLowerCase() !== options.directory.toLowerCase())
         throw new Error("The worker package directory must be canonical and absolute.");
-    for (const name of ["mira-computer-worker-host.exe", "mira-computer-worker.exe"]) {
+    for (const name of [
+        "mira-computer-worker-host.exe",
+        "mira-computer-worker.exe",
+        "mira-window-capture.exe",
+    ]) {
         const file = path.join(options.directory, name);
         const metadata = await lstat(file);
         if (!metadata.isFile() || metadata.isSymbolicLink())

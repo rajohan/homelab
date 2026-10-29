@@ -1,8 +1,11 @@
 import { spawnSync } from "node:child_process";
+import { realpath } from "node:fs/promises";
 import path from "node:path";
 
 import * as v from "valibot";
 
+import { openWindowsComputerProcess } from "../computer/process";
+import type { ComputerWindowPort } from "../computer/session";
 import {
     computerEnvironment,
     hostedComputerQualificationEnvironment,
@@ -12,9 +15,10 @@ import { RpcProcess } from "../runtime/rpcProcess";
 /**
  * Qualify native window-only capture using only owned synthetic windows in a hosted VM.
  * @param directory - Caller-owned build directory containing the fixed capture and fixture executables.
+ * @param workerDirectory - Optional inventory-verified package to qualify through the full worker.
  * @returns A content-free receipt after pixel checks, capture refusals and fixture shutdown.
  */
-export async function qualifyWindowsCapture(directory: string) {
+export async function qualifyWindowsCapture(directory: string, workerDirectory?: string) {
     if (
         process.platform !== "win32" ||
         !hostedComputerQualificationEnvironment() ||
@@ -43,6 +47,8 @@ export async function qualifyWindowsCapture(directory: string) {
         onRequest: () =>
             Promise.reject(new Error("The capture fixture cannot request tools.")),
     });
+    let worker: ComputerWindowPort | undefined;
+    const signal = AbortSignal.timeout(30_000);
     try {
         const state = v.parse(
             v.strictObject({
@@ -53,6 +59,18 @@ export async function qualifyWindowsCapture(directory: string) {
             await fixture.request("state", {})
         );
         const args = [String(state.pid), state.windowId, state.started];
+        if (workerDirectory)
+            worker = await openWindowsComputerProcess(
+                {
+                    executable: await realpath(executable),
+                    pid: state.pid,
+                    windowId: state.windowId,
+                    startedAt: state.started,
+                    delivery: "foreground",
+                    mode: "view",
+                },
+                { directory: workerDirectory, environment, signal }
+            );
         const invoke = (arguments_: string[]) =>
             spawnSync(capture, arguments_, {
                 cwd: directory,
@@ -91,7 +109,11 @@ export async function qualifyWindowsCapture(directory: string) {
                 throw new Error("Capture refusal did not exit cleanly without pixels.");
         };
         const validate = async () => {
-            const image = take();
+            const frame = await worker?.observe(signal);
+            const item = frame?.content.content.find((value) => value.type === "image");
+            const image = worker
+                ? Buffer.from(item?.type === "image" ? item.data : "", "base64")
+                : take();
             if (
                 image.length > 4500 ||
                 image.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a"
@@ -133,15 +155,22 @@ export async function qualifyWindowsCapture(directory: string) {
             identityDenied: true,
             minimizedDenied: true,
             closedDenied: true,
+            packaged: Boolean(worker),
         };
     } finally {
-        await fixture.close();
+        try {
+            await worker?.close();
+        } finally {
+            await fixture.close();
+        }
     }
 }
 
 if (import.meta.main) {
-    const [directory, ...extra] = process.argv.slice(2);
+    const [directory, workerDirectory, ...extra] = process.argv.slice(2);
     if (!directory || extra.length > 0)
         throw new Error("Provide one owned build directory.");
-    process.stdout.write(JSON.stringify(await qualifyWindowsCapture(directory)) + "\n");
+    process.stdout.write(
+        JSON.stringify(await qualifyWindowsCapture(directory, workerDirectory)) + "\n"
+    );
 }

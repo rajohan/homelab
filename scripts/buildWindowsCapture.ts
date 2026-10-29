@@ -67,6 +67,7 @@ export async function buildWindowsCapture(directory: string): Promise<string> {
             "/NXCOMPAT",
             "/HIGHENTROPYVA",
             "d3d11.lib",
+            "dwmapi.lib",
             "dxgi.lib",
             "windowsapp.lib",
             "windowscodecs.lib",

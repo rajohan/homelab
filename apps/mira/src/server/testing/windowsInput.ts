@@ -17,6 +17,7 @@ const point = v.strictObject({ x: v.number(), y: v.number() });
 const stateSchema = v.strictObject({
     pid: v.pipe(v.number(), v.integer(), v.minValue(1)),
     executable: v.string(),
+    startedAt: v.pipe(v.string(), v.regex(/^[1-9][0-9]*$/)),
     windowId: v.pipe(v.string(), v.regex(/^[1-9][0-9]*$/)),
     title: v.literal("Mira isolated Windows input fixture"),
     text: v.string(),
@@ -98,6 +99,7 @@ export async function qualifyWindowsInput(directory: string, root: string) {
             executable: await realpath(executable),
             pid: state.pid,
             windowId: state.windowId,
+            startedAt: state.startedAt,
             delivery: "foreground" as const,
         };
         if (

@@ -111,6 +111,7 @@ export function readComputerRelease(input: unknown): ComputerRelease {
             "mira-computer-consent.exe",
             "mira-computer-worker-host.exe",
             "mira-computer-worker.exe",
+            "mira-window-capture.exe",
         ].every((name) =>
             release.files.some((file) => file.path === name && file.size > 0)
         )

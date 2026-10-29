@@ -86,9 +86,10 @@ async function fixture() {
     return {
         grant,
         native,
+        sdk,
         frame,
         calls,
-        open: () => openNativeComputerWindow(grant, () => Promise.resolve(sdk)),
+        open: () => openNativeComputerWindow(grant, () => Promise.resolve(sdk), null),
         manifest: () => manifest,
         shuts: () => shuts,
         destroys: () => destroys,
@@ -143,7 +144,7 @@ test("native adapter pins permission mode, exact window, fixed text tool and lit
     await assert.rejects(driver.type("x", signal()), /closed/);
 });
 
-test("native capture accepts omitted validity only on Windows and still checks the actual image", async () => {
+test("legacy SDK capture accepts omitted validity only on Windows", async () => {
     const f = await fixture();
     f.frame.screenshotFrameValid = undefined;
     const driver = await f.open();
@@ -151,14 +152,7 @@ test("native capture accepts omitted validity only on Windows and still checks t
         if (process.platform === "win32") {
             const frame = await driver.observe(signal());
             expect(frame.width).toBe(390);
-            f.frame.screenshotWidth = 800;
-            await assert.rejects(driver.observe(signal()), /dimensions/);
-            f.frame.screenshotWidth = 390;
-            f.frame.images = [];
-            await assert.rejects(driver.observe(signal()), /selected window frame/);
-        } else {
-            await assert.rejects(driver.observe(signal()), /selected window frame/);
-        }
+        } else await assert.rejects(driver.observe(signal()), /selected window frame/);
     } finally {
         await driver.close();
     }
@@ -259,4 +253,86 @@ test("view-only native policy omits input tools and the adapter refuses them bef
     } finally {
         await driver.close();
     }
+});
+
+test("Windows view adapter uses only window-only images and never dispatches input", async () => {
+    const f = await fixture();
+    f.grant.mode = "view";
+    f.frame.images = [];
+    f.frame.screenshotFrameValid = undefined;
+    let reads = 0,
+        closes = 0;
+    const capture = {
+        read: () => {
+            reads++;
+            return Promise.resolve({
+                width: 390,
+                height: 110,
+                dataBase64: createVisualChallenge().data,
+            });
+        },
+        close: () => {
+            closes++;
+            return Promise.resolve();
+        },
+    };
+    const driver = await openNativeComputerWindow(
+        f.grant,
+        () => Promise.resolve(f.sdk),
+        () => Promise.resolve(capture)
+    );
+    const frame = await driver.observe(signal());
+    expect(frame.width).toBe(390);
+    expect(f.calls[1]).toMatchObject({
+        includeScreenshot: false,
+        includeAccessibilityTree: true,
+    });
+    const before = f.calls.length;
+    await assert.rejects(driver.click(15, 25, signal()), /view-only/);
+    await assert.rejects(driver.type("not sent", signal()), /view-only/);
+    expect(f.calls).toHaveLength(before);
+    expect(reads).toBe(1);
+    await driver.close();
+    expect(closes).toBe(1);
+});
+
+test("Windows view refuses SDK pixels, invalid geometry and missing capture without fallback", async () => {
+    const f = await fixture();
+    f.grant.mode = "view";
+    let width = 390;
+    let reads = 0;
+    const capture = {
+        read: () => {
+            reads++;
+            return Promise.resolve({
+                width,
+                height: 110,
+                dataBase64: createVisualChallenge().data,
+            });
+        },
+        close: () => Promise.resolve(),
+    };
+    const driver = await openNativeComputerWindow(
+        f.grant,
+        () => Promise.resolve(f.sdk),
+        () => Promise.resolve(capture)
+    );
+    await assert.rejects(driver.observe(signal()), /selected window frame/);
+    expect(reads).toBe(0);
+    f.frame.images = [];
+    await driver.observe(signal());
+    width = 391;
+    await assert.rejects(driver.observe(signal()), /dimensions/);
+    await driver.close();
+    const missing = await fixture();
+    missing.grant.mode = "view";
+    await assert.rejects(
+        openNativeComputerWindow(
+            missing.grant,
+            () => Promise.resolve(missing.sdk),
+            () => Promise.reject(new Error("capture missing"))
+        ),
+        /capture missing/
+    );
+    expect(missing.shuts()).toBe(1);
 });

@@ -217,6 +217,7 @@ export class ComputerLocalConsentHost implements ComputerConsentHost {
             parsed.executable !== this.target.executable ||
             parsed.pid !== this.target.pid ||
             parsed.windowId !== this.target.windowId ||
+            parsed.startedAt !== this.target.startedAt ||
             parsed.delivery !== this.target.delivery ||
             parsed.mode !== this.target.mode
         )

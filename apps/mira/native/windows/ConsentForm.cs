@@ -235,7 +235,7 @@ namespace Homelab.Mira.Computer
                     ConsentProtocol.Write(new
                     {
                         method = "consent/selected",
-                        @params = new { target = new { executable = choice.Executable, pid = choice.ProcessId, windowId = choice.Handle.ToInt64().ToString(CultureInfo.InvariantCulture), delivery = "foreground" } }
+                        @params = new { target = new { executable = choice.Executable, pid = choice.ProcessId, windowId = choice.Handle.ToInt64().ToString(CultureInfo.InvariantCulture), startedAt = choice.StartedAt.ToString(CultureInfo.InvariantCulture), delivery = "foreground" } }
                     });
                     Interlocked.Exchange(ref lastCheck, (long)clock.Elapsed.TotalMilliseconds);
                     Volatile.Write(ref announced, true);

@@ -346,6 +346,7 @@ test("the installed factory accepts only a complete canonical package and create
         "mira-computer-worker-host.exe",
         "mira-computer-desktop.exe",
         "mira-computer-worker.exe",
+        "mira-window-capture.exe",
     ];
     try {
         for (const name of names)

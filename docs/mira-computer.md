@@ -594,36 +594,36 @@ it; uninstall also removes the shortcut. Standard [Inno Setup task persistence](
 keeps this choice with the per-user installation. No Windows service, elevated
 scheduled task, new listener or extra credential file is installed.
 
-## Window-only capture qualification candidate
+## Windows view-only capture
 
-The pinned Windows driver's `get_window_state` capture path can fall back to a
-screen-region copy and does not return the underlying occlusion flag. The hosted
-input fixture proves ordinary window capture and input, but does not establish
-isolation when that fallback encounters an overlapping window. Production Windows
-activation remains gated on resolving this capture boundary.
+Windows view-only sessions use the packaged `mira-window-capture.exe`. The local
+consent host supplies the selected process creation time alongside the immutable
+executable, PID and HWND. Each capture rechecks that identity and the interactive
+session, refuses minimized or closed targets, and uses only Windows Graphics
+Capture `CreateForWindow`. It has no desktop, screen-region or GDI fallback.
+The SDK supplies the selected window's accessibility tree with screenshots disabled.
 
-`bun run test:computer:windows-capture` qualifies a separate, undistributed native
-candidate using Windows Graphics Capture `CreateForWindow` and a free-threaded
-frame pool. It uses the installed Windows SDK and Visual C++ compiler; it adds no
-package download and does not patch the SDK. It never creates a desktop/monitor
-capture item and has no screen-region or GDI fallback. Missing capture support,
-changed process identity, minimized/closed targets, changed dimensions, excessive
-frames and capture timeouts fail without exporting pixels.
+The helper uses physical DWM frame bounds with a one-pixel inset, matching the
+existing window coordinate convention. Changed bounds, unsupported capture, timeouts,
+excessive frames and invalid or incomplete PNGs fail without exporting pixels. A
+missing helper fails package validation before pairing. The helper inherits the
+worker's Windows process job; Stop aborts a pending capture and cleanup waits for
+its exit. View-only policy and the adapter both refuse input.
 
-The hosted test creates its own cyan target and magenta cover. It independently
-confirms the cover is physically above the target, then decodes the returned PNG
-with Windows' image decoder to verify target pixels both before and after overlap.
-It also checks malformed identities, process creation time, minimization and closure.
-The closed-window case destroys the target while keeping its process and message
-loop alive, then confirms that the same process still responds after capture refuses.
-No screen images are printed, uploaded or retained. C++ CodeQL analysis covers the
-candidate in addition to the existing C# and TypeScript checks.
+The hosted qualification covers the independent cyan target behind a magenta cover,
+including the extracted package's complete view-only worker path. It independently
+decodes the PNG and verifies that a closed target is refused while its owner stays
+alive. Existing Windows input, installer, package inventory and process-ownership
+tests remain required. No screenshots are logged, uploaded or retained.
 
-This is qualification code, not a deployed capture provider. It is not packaged in
-the Windows installer and is not reachable from Chat or the companion. Production
-integration still needs the existing local-consent monitor, bounded process
-supervision, coordinate mapping, cancellation and release inventory checks. A
-command-line window ID or a hosted-runner environment marker is not user consent.
+Control mode remains on the pinned SDK and is not yet qualified for private-PC
+activation. Its coordinate input requires its own screenshot context, and its
+capture path can fall back to screen-region pixels. Neither private wire fields
+nor a local SDK patch are used to bypass that contract. A supported control-mode
+capture/input integration, lock/browser acceptance and private-network activation
+remain required before deployment. The SDK 0.38.0 source still has this capture
+boundary; its dependency update is separate qualification work.
 
+The new helper requires Windows 10 version 2004 or later for cursor-free capture.
 Microsoft API references: [CreateForWindow](https://learn.microsoft.com/en-us/windows/win32/api/windows.graphics.capture.interop/nf-windows-graphics-capture-interop-igraphicscaptureiteminterop-createforwindow)
 and [CreateFreeThreaded](https://learn.microsoft.com/en-us/uwp/api/windows.graphics.capture.direct3d11captureframepool.createfreethreaded).
