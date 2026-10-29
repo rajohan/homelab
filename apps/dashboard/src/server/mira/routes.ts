@@ -157,6 +157,7 @@ import { runOperation, trpc } from "../api/trpc";
 import { authorizedOperations } from "../operations/authorization";
 import type { OperationsContext } from "../operations/context";
 import { OperationFailure } from "../operations/errors";
+import { miraBrowserRouter } from "./browserRoutes";
 import { miraComputerRouter } from "./computerRoutes";
 
 function execute<T>(
@@ -187,6 +188,7 @@ function execute<T>(
 const record = v.strictObject({ id: idSchema });
 export const miraRouter = trpc.router({
     computers: miraComputerRouter,
+    browser: miraBrowserRouter,
     daytona: trpc.router({
         recovery: trpc.procedure
             .input(record)
