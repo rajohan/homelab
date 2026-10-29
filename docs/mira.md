@@ -237,3 +237,11 @@ The control-plane adapter, bounded command/file toolbox, durable queue and dashb
 ### Reviewed Daytona cloud jobs
 
 Cloud jobs are available from Chat and Jobs with local drafts, exact operator review, durable execution phases, bounded logs, selected file transfers and independently confirmed cleanup. The model can propose a command and read recorded results, but cannot approve cloud spending. Daytona has its own pause control; cleanup remains active while paused. See [Daytona qualification](mira-daytona.md) for admission limits, explicit environment settings and the required live qualification before activation.
+
+### Browser host supervision
+
+The private `openMiraBrowserSession` binding consumes an owned manual-run grant and snapshots its owner and executor lease. The returned port contains no private host token. It checks authority before and after every operation, polls while starting or idle, and expires the last permit independently when a database check stalls. Query time consumes the permit; no reply can renew expired or permanently cancelled access. Commands are serial and uncertain input is never replayed.
+
+A native disconnect, human stop, revoked run or expired permit cancels the whole browser lifetime. Cleanup waits for container removal before closing the durable grant. A failed factory that never returned a cleanup-capable port, failed container removal, or failed database release keeps the slot reserved for reconciliation. Automatic retirement exposes a `closed` promise so the trusted host can retain and report that failure.
+
+This binding is not a deployed host daemon or a model-facing tool. Durable process reconciliation, global capacity, command transport and network egress enforcement remain required before live activation. No Docker socket is given to the Mira agent or browser container. Existing native qualification now checks automatic revocation against actual Chromium and independently proves the container is absent before the claim-release callback runs.

@@ -105,6 +105,7 @@
     "apps/mira/src/server/browsing/container.test.ts": 15,
     "apps/mira/src/server/browsing/connection.test.ts": 112,
     "apps/mira/src/server/browsing/worker.test.ts": 2055,
-    "scripts/buildBrowser.test.ts": 150
+    "scripts/buildBrowser.test.ts": 150,
+    "apps/mira/src/server/browsing/session.test.ts": 291
   }
 }
