@@ -8,6 +8,7 @@ import type {
 } from "@homelab/contracts/mira";
 import type * as v from "valibot";
 
+import { retireBrowserCommands } from "./browserRetirement";
 import { miraQueueAvailable } from "./capacity";
 import { retireComputerCommands } from "./computerCommands";
 import {
@@ -349,6 +350,11 @@ export async function changeConversation(
                 closed_at=CASE WHEN state='pending' THEN clock_timestamp() ELSE NULL END
                 WHERE owner=${context.owner} AND state IN ('pending','active')
                     AND run_id IN (SELECT id FROM mira_runs WHERE conversation_id=${input.id} AND owner=${context.owner})`;
+            const browserAccess = await query<
+                { id: string }[]
+            >`SELECT id FROM mira_browser_access WHERE owner=${context.owner} AND run_id IN (SELECT id FROM mira_runs WHERE conversation_id=${input.id} AND owner=${context.owner})`;
+            for (const access of browserAccess)
+                await retireBrowserCommands(query, context.owner, access.id);
             const computerAccess = await query<
                 { id: string }[]
             >`SELECT id FROM mira_computer_access WHERE owner=${context.owner} AND run_id IN (SELECT id FROM mira_runs WHERE conversation_id=${input.id} AND owner=${context.owner})`;

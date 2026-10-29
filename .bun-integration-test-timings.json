@@ -56,6 +56,7 @@
         "apps/mira/src/server/browsing/attach.integration.test.ts": 47,
         "apps/dashboard/src/server/tests/miraBrowserAccess.integration.test.ts": 4790,
         "apps/dashboard/src/server/tests/miraBrowserHost.integration.test.ts": 4000,
-        "apps/dashboard/src/server/tests/miraBrowserProcesses.integration.test.ts": 2000
+        "apps/dashboard/src/server/tests/miraBrowserProcesses.integration.test.ts": 2000,
+        "apps/dashboard/src/server/tests/miraBrowserService.integration.test.ts": 5000
     }
 }

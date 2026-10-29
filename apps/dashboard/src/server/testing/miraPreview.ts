@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { capabilities } from "@homelab/contracts/operations";
 import { installMiraPresets } from "@homelab/mira/data/automationActions";
+import { setMiraEnabled } from "@homelab/mira/data/automations";
 import { saveMiraCode } from "@homelab/mira/data/code";
 import {
     createMiraComputerPairing,
@@ -92,6 +93,13 @@ export async function main(port = 3330): Promise<void> {
     try {
         await migrateDashboard(database);
         await installMiraPresets(context);
+        await setMiraEnabled(context, {
+            key: "computer:browser",
+            version: 1,
+            enabled: true,
+            reason: null,
+            until: null,
+        });
         await database.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES ('homelab.release',${JSON.stringify({ repository: "demo/homelab", verified: true, computer: { version: "0.11.0", revision: "a".repeat(40), size: 123, sha256: "b".repeat(64), url: "https://github.com/demo/homelab/releases/download/v0.11.0/mira-computer-0.11.0-windows-x64-setup.exe" } })}::text::jsonb,now())`;
         for (const [label, online] of [
             ["Windows desktop", true],
@@ -407,7 +415,7 @@ export async function main(port = 3330): Promise<void> {
         );
         const computerChat = await createConversation(
             context,
-            "Preview · Computer access"
+            "Preview · Computer and browser access"
         );
         await database.client.begin((query) =>
             enqueueTurn(query, context, {
@@ -424,6 +432,8 @@ export async function main(port = 3330): Promise<void> {
         const computerReceipt = crypto.randomUUID();
         await database.client`INSERT INTO mira_tool_receipts (id,run_id,call_id,tool,input_hash,state)
             VALUES (${computerReceipt},${computerRun.id},'synthetic-computer-wait','mira_computer_wait',${"a".repeat(64)},'running')`;
+        const browserReceipt = crypto.randomUUID();
+        await database.client`INSERT INTO mira_tool_receipts (id,run_id,call_id,tool,input_hash,state) VALUES (${browserReceipt},${computerRun.id},'synthetic-browser-wait','mira_browser_wait',${"b".repeat(64)},'running')`;
         const pump = async () => {
             // Only this disposable preview lease is kept alive; no executor or native host is connected.
             const [showcase] = await database.client<
@@ -433,7 +443,7 @@ export async function main(port = 3330): Promise<void> {
                 FROM mira_runs WHERE id=${computerRun.id} AND state='running' AND lease_token=${computerRun.leaseToken}`;
             if (showcase?.cancelRequested || showcase?.expired) {
                 await database.client`UPDATE mira_tool_receipts SET state='failed',message='Synthetic wait ended without a computer action.',finished_at=now()
-                    WHERE id=${computerReceipt} AND state='running'`;
+                    WHERE id IN (${computerReceipt},${browserReceipt}) AND state='running'`;
                 await finishMiraRun(database.client, computerRun, {
                     state: showcase.cancelRequested ? "interrupted" : "completed",
                     text: "The synthetic computer preview stopped. No real computer was connected.",

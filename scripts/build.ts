@@ -57,6 +57,9 @@ export async function main(): Promise<void> {
                           ),
                       ]),
                 ...additionalEntries,
+                ...(app === "mira"
+                    ? [path.resolve(applicationRoot, "src/server/browsing/hostCli.ts")]
+                    : []),
             ],
             outdir: outputDirectory,
             // SPA deep links must load the same assets as the site root.

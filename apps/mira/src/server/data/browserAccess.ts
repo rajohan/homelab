@@ -9,6 +9,7 @@ import type { TransactionSQL } from "bun";
 import * as v from "valibot";
 
 import { browserWorkerGrant } from "../browsing/wire";
+import { retireBrowserCommands } from "./browserRetirement";
 import {
     auditMira,
     MiraFailure,
@@ -40,7 +41,13 @@ function human(context: MiraContext) {
             "Browser access requires a signed-in operator."
         );
 }
-async function lockOwner(query: TransactionSQL, owner: string) {
+/**
+ * Serialize browser controls with the account's other human grants.
+ * @param query - Owning transaction.
+ * @param owner - Verified account identity.
+ * @returns Completion once concurrent grant changes are excluded.
+ */
+export async function lockBrowserOwner(query: TransactionSQL, owner: string) {
     await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${owner}`},0))`;
 }
 function summary(row: AccessRow): MiraBrowserAccessSummary {
@@ -57,7 +64,14 @@ function summary(row: AccessRow): MiraBrowserAccessSummary {
         initialUrl: row.policy?.initialUrl ?? null,
     };
 }
-async function readAccess(
+/**
+ * Read private grant authority for trusted host and command boundaries.
+ * @param query - Product connection or transaction holding the owner lock for mutations.
+ * @param owner - Verified account.
+ * @param id - Exact grant identity.
+ * @returns Current authority, including private host identity; never expose this through an API.
+ */
+export async function readBrowserAccess(
     query: MiraQuery,
     owner: string,
     id: string
@@ -116,12 +130,12 @@ export async function requestMiraBrowserAccess(
         );
     }
     return context.client.begin(async (query) => {
-        await lockOwner(query, context.owner);
+        await lockBrowserOwner(query, context.owner);
         const previous = await query<
             { id: string }[]
         >`SELECT id FROM mira_browser_access WHERE owner=${context.owner} AND state='pending'`;
         for (const item of previous) {
-            const row = await readAccess(query, context.owner, item.id);
+            const row = await readBrowserAccess(query, context.owner, item.id);
             if (!row?.available)
                 await query`UPDATE mira_browser_access SET state='closed',closed_at=clock_timestamp(),policy=NULL WHERE id=${item.id} AND state='pending'`;
         }
@@ -166,7 +180,7 @@ export async function requestMiraBrowserAccess(
                 "The browser job expired before access could be granted."
             );
         await auditMira(query, context, "browser.access_requested", id);
-        return summary((await readAccess(query, context.owner, id))!);
+        return summary((await readBrowserAccess(query, context.owner, id))!);
     });
 }
 
@@ -187,7 +201,7 @@ export async function listMiraBrowserAccess(
     >`SELECT id FROM mira_browser_access WHERE owner=${context.owner} AND (${runId ?? null}::uuid IS NULL OR run_id=${runId ?? null}::uuid) ORDER BY created_at DESC,id DESC LIMIT 50`;
     const result: MiraBrowserAccessSummary[] = [];
     for (const item of rows) {
-        const row = await readAccess(context.client, context.owner, item.id);
+        const row = await readBrowserAccess(context.client, context.owner, item.id);
         if (row) result.push(summary(row));
     }
     return result;
@@ -206,13 +220,16 @@ export async function stopMiraBrowserAccess(
     human(context);
     const { id } = v.parse(miraBrowserAccessStopSchema, input);
     await context.client.begin(async (query) => {
-        await lockOwner(query, context.owner);
+        await lockBrowserOwner(query, context.owner);
         const [row] = await query<
             { id: string }[]
         >`UPDATE mira_browser_access SET state=CASE WHEN state='pending' THEN 'closed' ELSE 'stopping' END,
             closed_at=CASE WHEN state='pending' THEN clock_timestamp() ELSE NULL END,policy=NULL
             WHERE id=${id} AND owner=${context.owner} AND state IN ('pending','active') RETURNING id`;
-        if (row) await auditMira(query, context, "browser.access_stopped", id);
+        if (row) {
+            await retireBrowserCommands(query, context.owner, id);
+            await auditMira(query, context, "browser.access_stopped", id);
+        }
     });
 }
 
@@ -226,9 +243,9 @@ export async function claimMiraBrowserAccess(context: MiraContext, id: string) {
     v.parse(v.pipe(v.string(), v.uuid()), id);
     if (!context.run)
         throw new MiraFailure("FORBIDDEN", "Browser execution requires an active run.");
-    return context.client.begin(async (query) => {
-        await lockOwner(query, context.owner);
-        const row = await readAccess(query, context.owner, id);
+    return miraTransaction(context, async (query) => {
+        await lockBrowserOwner(query, context.owner);
+        const row = await readBrowserAccess(query, context.owner, id);
         if (
             !row?.available ||
             row.state !== "pending" ||
@@ -273,8 +290,8 @@ export async function requireMiraBrowserAccess(
     if (!context.run)
         throw new MiraFailure("FORBIDDEN", "Browser execution requires an active run.");
     return miraTransaction(context, async (query) => {
-        await lockOwner(query, context.owner);
-        const row = await readAccess(query, context.owner, input.id);
+        await lockBrowserOwner(query, context.owner);
+        const row = await readBrowserAccess(query, context.owner, input.id);
         if (
             !row?.available ||
             row.state !== "active" ||
@@ -315,7 +332,7 @@ export async function closeMiraBrowserAccess(
             "Browser cleanup requires its original host claim."
         );
     await miraTransaction(context, async (query) => {
-        await lockOwner(query, context.owner);
+        await lockBrowserOwner(query, context.owner);
         const live = await query<
             { id: string }[]
         >`SELECT p.id FROM mira_browser_processes p JOIN mira_browser_access g ON g.id=p.access_id WHERE p.access_id=${input.id} AND p.state<>'removed' AND g.owner=${context.owner} AND g.run_id=${context.run!.id} AND g.run_lease=${context.run!.leaseToken} AND g.host_token=${input.hostToken}`;

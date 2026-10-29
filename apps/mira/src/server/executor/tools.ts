@@ -50,6 +50,7 @@ import { createMoltbookTools } from "../integrations/moltbook/tools";
 import type { RuntimeTool } from "../runtime/protocol";
 import { runtimeContentItems, type RuntimeToolResult } from "../runtime/toolResult";
 import { createMiraSkillTools } from "../skills/tools";
+import { createMiraBrowserTools } from "./browserTools";
 import { createMiraComputerTools } from "./computerTools";
 import { saveGeneratedMiraFile } from "./generatedFiles";
 import type { MiraToolContext, MiraToolDefinition } from "./toolDefinition";
@@ -127,6 +128,7 @@ export function createMiraTools(
     let uncertain = false;
     const definitions: MiraToolDefinition[] = [
         ...createMiraComputerTools(),
+        ...createMiraBrowserTools(),
         {
             name: "mira_file_create",
             description:

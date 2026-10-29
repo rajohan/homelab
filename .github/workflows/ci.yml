@@ -103,6 +103,9 @@ jobs:
       - name: Qualify isolated browser images, input and origin boundaries
         run: bun run test:browser
 
+      - name: Qualify the built browser host and Chat command queue
+        run: bun run test:browser:service
+
       - name: Build the standalone browser runtime
         env:
           SOURCE_SHA: ${{ github.sha }}
