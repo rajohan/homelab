@@ -977,3 +977,37 @@ export const miraBrowserAccess = pgTable(
         ),
     ]
 );
+
+export const miraBrowserProcesses = pgTable(
+    "mira_browser_processes",
+    {
+        id: uuid().primaryKey(),
+        accessId: uuid("access_id")
+            .notNull()
+            .references(() => miraBrowserAccess.id),
+        hostId: uuid("host_id").notNull(),
+        imageId: text("image_id").notNull(),
+        leaseToken: uuid("lease_token").notNull(),
+        leaseExpiresAt: time("lease_expires_at").notNull(),
+        phase: text().notNull().default("reserved"),
+        state: text().notNull().default("active"),
+        containerId: text("container_id"),
+        cleanupEvidence: text("cleanup_evidence"),
+        createdAt: time("created_at").notNull().defaultNow(),
+        removedAt: time("removed_at"),
+    },
+    (t) => [
+        uniqueIndex("mira_browser_process_access").on(t.accessId),
+        uniqueIndex("mira_browser_process_container").on(t.hostId, t.containerId),
+        index("mira_browser_process_recovery").on(t.hostId, t.state, t.leaseExpiresAt),
+        check("mira_browser_process_image", sql`${t.imageId} ~ '^sha256:[a-f0-9]{64}$'`),
+        check(
+            "mira_browser_process_phase",
+            sql`(${t.phase} IN ('reserved','creating') AND ${t.containerId} IS NULL) OR (${t.phase}='created' AND ${t.containerId} IS NOT NULL AND ${t.containerId} ~ '^[a-f0-9]{64}$')`
+        ),
+        check(
+            "mira_browser_process_state",
+            sql`(${t.state} IN ('active','cleanup') AND ${t.removedAt} IS NULL AND ${t.cleanupEvidence} IS NULL) OR (${t.state}='removed' AND ${t.removedAt} IS NOT NULL AND ${t.cleanupEvidence} IS NOT NULL AND ((${t.phase}='reserved' AND ${t.cleanupEvidence}='not-created') OR (${t.phase}='created' AND ${t.cleanupEvidence} IN ('removed','absent'))))`
+        ),
+    ]
+);

@@ -245,3 +245,13 @@ The private `openMiraBrowserSession` binding consumes an owned manual-run grant 
 A native disconnect, human stop, revoked run or expired permit cancels the whole browser lifetime. Cleanup waits for container removal before closing the durable grant. A failed factory that never returned a cleanup-capable port, failed container removal, or failed database release keeps the slot reserved for reconciliation. Automatic retirement exposes a `closed` promise so the trusted host can retain and report that failure.
 
 This binding is not a deployed host daemon or a model-facing tool. Durable process reconciliation, global capacity, command transport and network egress enforcement remain required before live activation. No Docker socket is given to the Mira agent or browser container. Existing native qualification now checks automatic revocation against actual Chromium and independently proves the container is absent before the claim-release callback runs.
+
+### Durable browser process registry
+
+The private registry reserves at most two unfinished browser processes across all hosts. Each claimed human grant can create only one process record. The record fixes a random container name/owner identity, persistent host ID and immutable image ID before any Docker mutation. A private controller lease lasts fifteen seconds; creation and renewal also require the original live browser grant. These database leases do not independently authorize browser input.
+
+A host must commit `creating` before issuing its single create request and record the returned immutable container ID afterward. Restart recovery only takes expired records for the configured local host, rotates the controller token and permanently switches the grant to cleanup. Expired or replaced controllers cannot resume creation. The original controller can still request cleanup after its run expires until recovery replaces it.
+
+Cleanup releases the process slot and human grant atomically. A never-dispatched reservation can close without a container. A known returned container can close after verified removal or verified absence of that exact ID. An uncertain create cannot close merely because inspection returned not found: it requires an ownership-verified container removal. Failed or unconfirmed cleanup retains capacity. The existing grant cleanup helper rejects bypassing an unfinished registry record.
+
+This is the durable database boundary. The Docker adapter must still bind its owner label and generated name to this record and provide the verified cleanup evidence. Host startup reconciliation, the service loop, command transport, egress and activation remain separate work; the registry is not exposed through human or model APIs.
