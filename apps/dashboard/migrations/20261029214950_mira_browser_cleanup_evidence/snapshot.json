@@ -1,0 +1,58 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "25fc2cca-4438-4d81-b54e-800b2546d6a8",
+    "prevIds": ["b0a09542-d50c-4ec4-922b-6218ce5bcc7e"],
+    "footprints": [
+        {
+            "statementType": "alter_check",
+            "statementTarget": ["table", "public", "mira_browser_processes"],
+            "writes": ["s|ck|public.mira_browser_processes.mira_browser_process_phase"],
+            "reads": [
+                "n|tbl|public.mira_browser_processes",
+                "n|sch|public",
+                "n|col|public.mira_browser_processes.phase",
+                "n|col|public.mira_browser_processes.container_id",
+                "n|col|public.mira_browser_processes.state",
+                "e|col|public.mira_browser_processes.phase",
+                "e|col|public.mira_browser_processes.container_id"
+            ],
+            "sqlHash": "8bc7ab22f024485f"
+        },
+        {
+            "statementType": "alter_check",
+            "statementTarget": ["table", "public", "mira_browser_processes"],
+            "writes": ["s|ck|public.mira_browser_processes.mira_browser_process_state"],
+            "reads": [
+                "n|tbl|public.mira_browser_processes",
+                "n|sch|public",
+                "n|col|public.mira_browser_processes.state",
+                "n|col|public.mira_browser_processes.removed_at",
+                "n|col|public.mira_browser_processes.cleanup_evidence",
+                "n|col|public.mira_browser_processes.phase",
+                "e|col|public.mira_browser_processes.state",
+                "e|col|public.mira_browser_processes.removed_at",
+                "e|col|public.mira_browser_processes.cleanup_evidence",
+                "e|col|public.mira_browser_processes.phase"
+            ],
+            "sqlHash": "e256357fb138ea18"
+        }
+    ],
+    "deltas": [
+        {
+            "op": "alter",
+            "key": "checks\u0000[\"public\",\"mira_browser_processes\",\"mira_browser_process_phase\"]",
+            "set": {
+                "value": "(\"phase\" IN ('reserved','creating','rejected') AND \"container_id\" IS NULL AND (\"phase\"<>'rejected' OR \"state\"<>'active')) OR (\"phase\"='created' AND \"container_id\" IS NOT NULL AND \"container_id\" ~ '^[a-f0-9]{64}$')"
+            }
+        },
+        {
+            "op": "alter",
+            "key": "checks\u0000[\"public\",\"mira_browser_processes\",\"mira_browser_process_state\"]",
+            "set": {
+                "value": "(\"state\" IN ('active','cleanup') AND \"removed_at\" IS NULL AND \"cleanup_evidence\" IS NULL) OR (\"state\"='removed' AND \"removed_at\" IS NOT NULL AND \"cleanup_evidence\" IS NOT NULL AND ((\"phase\"='reserved' AND \"cleanup_evidence\"='not-created') OR (\"phase\"='rejected' AND \"cleanup_evidence\"='rejected') OR (\"phase\"='created' AND \"cleanup_evidence\" IN ('removed','absent'))))"
+            }
+        }
+    ]
+}

@@ -45,6 +45,8 @@ export async function qualifyBrowserWorker(
         for (const mode of ["control", "view", "origin", "revocation"] as const) {
             const owner = new AbortController();
             let selected = "";
+            const processId = crypto.randomUUID();
+            const journalEvents: string[] = [];
             let revoked = false,
                 released = false;
             const browser = await openBrowserSession(
@@ -62,8 +64,59 @@ export async function qualifyBrowserWorker(
                                 prepare: async (input, abort) => {
                                     const lease = await prepareBrowserContainer(
                                         input,
-                                        abort
+                                        abort,
+                                        undefined,
+                                        {
+                                            owner: processId,
+                                            creating: () => {
+                                                journalEvents.push("creating");
+                                                return Promise.resolve();
+                                            },
+                                            created: (id) => {
+                                                selected = id;
+                                                journalEvents.push("created");
+                                                return Promise.resolve();
+                                            },
+                                            rejected: () =>
+                                                Promise.reject(
+                                                    new Error(
+                                                        "Fixture creation must succeed."
+                                                    )
+                                                ),
+                                            discovered: (id) => {
+                                                assert.equal(id, selected);
+                                                journalEvents.push("discovered");
+                                                return Promise.resolve();
+                                            },
+                                            starting: () => {
+                                                journalEvents.push("starting");
+                                                return Promise.resolve();
+                                            },
+                                            cleaning: () => {
+                                                journalEvents.push("cleaning");
+                                                return Promise.resolve();
+                                            },
+                                            cleaned: async (proof) => {
+                                                assert.notEqual(
+                                                    proof.kind,
+                                                    "not-created"
+                                                );
+                                                if (
+                                                    proof.kind === "removed" ||
+                                                    proof.kind === "absent"
+                                                )
+                                                    assert.equal(
+                                                        proof.containerId,
+                                                        selected
+                                                    );
+                                                await assert.rejects(
+                                                    docker("inspect", selected)
+                                                );
+                                                journalEvents.push("cleaned");
+                                            },
+                                        }
                                     );
+                                    assert.equal(lease.name, `mira-browser-${processId}`);
                                     selected = lease.id;
                                     if (!packaged) return lease;
                                     return {
@@ -121,6 +174,16 @@ export async function qualifyBrowserWorker(
                     release: async () => {
                         assert.ok(selected);
                         await assert.rejects(docker("inspect", selected));
+                        // AutoRemove can win the race with explicit removal. A known
+                        // absent ID needs no new discovery, but every actual DELETE does.
+                        assert.deepEqual(
+                            journalEvents.filter((event) => event !== "discovered"),
+                            ["creating", "created", "starting", "cleaning", "cleaned"]
+                        );
+                        assert.ok(
+                            journalEvents.filter((event) => event === "discovered")
+                                .length <= 1
+                        );
                         released = true;
                     },
                 },
@@ -230,6 +293,7 @@ export async function qualifyBrowserWorker(
             await assert.rejects(docker("inspect", selected));
         }
         return {
+            durableJournal: true,
             fixedProtocol: true,
             supervisedRevocation: true,
             releaseAfterRemoval: true,

@@ -13,6 +13,7 @@ import {
     claimMiraBrowserProcessRecovery,
     confirmMiraBrowserProcessCleanup,
     renewMiraBrowserProcess,
+    recordMiraBrowserProcessCleanup,
     reserveMiraBrowserProcess,
 } from "@homelab/mira/data/browserProcesses";
 import { claimMiraRun } from "@homelab/mira/data/queue";
@@ -246,6 +247,16 @@ test("unknown creation plus absence cannot free capacity or close the grant", as
             }),
             /cleanup must be confirmed/
         );
+        await rejects(
+            confirmMiraBrowserProcessCleanup(f.client, p.claim, {
+                kind: "removed",
+                containerId,
+            })
+        );
+        await recordMiraBrowserProcessCleanup(f.client, p.claim, {
+            kind: "discovered",
+            containerId,
+        });
         await confirmMiraBrowserProcessCleanup(f.client, p.claim, {
             kind: "removed",
             containerId,
@@ -440,6 +451,78 @@ test("a blocked owner heartbeat does not block a different owner", async () => {
         await blocking;
         await first;
         await second;
+        await f.close();
+    }
+});
+
+test("cleanup discovery and settled rejection require the current controller and persist before final proof", async () => {
+    const f = await fixture();
+    try {
+        const g = await f.grant("operator"),
+            p = await reserveMiraBrowserProcess(f.client, g.input);
+        await advanceMiraBrowserProcess(f.client, p.claim, { phase: "creating" });
+        await rejects(
+            recordMiraBrowserProcessCleanup(f.client, p.claim, {
+                kind: "rejected",
+                status: 404,
+            })
+        );
+        await beginMiraBrowserProcessCleanup(f.client, p.claim);
+        await rejects(
+            recordMiraBrowserProcessCleanup(f.client, p.claim, {
+                kind: "rejected",
+                status: 503,
+            })
+        );
+        expect(
+            await recordMiraBrowserProcessCleanup(f.client, p.claim, {
+                kind: "rejected",
+                status: 404,
+            })
+        ).toMatchObject({ phase: "rejected", containerId: null });
+        await rejects(
+            confirmMiraBrowserProcessCleanup(f.client, p.claim, {
+                kind: "absent",
+                containerId,
+            })
+        );
+        await f.client`UPDATE mira_browser_processes SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE id=${p.id}`;
+        await rejects(
+            recordMiraBrowserProcessCleanup(f.client, p.claim, {
+                kind: "discovered",
+                containerId,
+            })
+        );
+        const recovered = await claimMiraBrowserProcessRecovery(f.client, f.hostId);
+        expect(recovered?.phase).toBe("rejected");
+        await rejects(
+            recordMiraBrowserProcessCleanup(f.client, p.claim, {
+                kind: "discovered",
+                containerId,
+            })
+        );
+        await recordMiraBrowserProcessCleanup(f.client, recovered!.claim, {
+            kind: "discovered",
+            containerId,
+        });
+        await rejects(
+            recordMiraBrowserProcessCleanup(f.client, recovered!.claim, {
+                kind: "discovered",
+                containerId: "c".repeat(64),
+            })
+        );
+        await rejects(
+            recordMiraBrowserProcessCleanup(f.client, recovered!.claim, {
+                kind: "rejected",
+                status: 400,
+            })
+        );
+        await confirmMiraBrowserProcessCleanup(f.client, recovered!.claim, {
+            kind: "absent",
+            containerId,
+        });
+        expect(await g.api.browser.list()).toMatchObject([{ state: "closed" }]);
+    } finally {
         await f.close();
     }
 });
