@@ -174,14 +174,16 @@ export async function qualifyBrowserWorker(
                     release: async () => {
                         assert.ok(selected);
                         await assert.rejects(docker("inspect", selected));
-                        assert.deepEqual(journalEvents, [
-                            "creating",
-                            "created",
-                            "starting",
-                            "cleaning",
-                            "discovered",
-                            "cleaned",
-                        ]);
+                        // AutoRemove can win the race with explicit removal. A known
+                        // absent ID needs no new discovery, but every actual DELETE does.
+                        assert.deepEqual(
+                            journalEvents.filter((event) => event !== "discovered"),
+                            ["creating", "created", "starting", "cleaning", "cleaned"]
+                        );
+                        assert.ok(
+                            journalEvents.filter((event) => event === "discovered")
+                                .length <= 1
+                        );
                         released = true;
                     },
                 },
