@@ -68,6 +68,7 @@ export async function testWindowsConsentAcceptance() {
                 path.join(source, "NativeWindows.cs"),
                 path.join(source, "tests/ConsentAcceptance.cs"),
                 path.join(source, "tests/AcceptanceToken.cs"),
+                path.join(source, "tests/AcceptanceDesktop.cs"),
             ],
         ])
             execFileSync(compiler, args, {

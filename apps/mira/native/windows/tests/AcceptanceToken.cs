@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 
 // Test-only launcher for GitHub's elevated Windows runner. It reduces only its
-// child token, never the machine's UAC policy, accounts, desktop ACLs or services.
+// child token. A separately scoped test helper restores the hosted desktop ACLs.
 internal static class AcceptanceToken
 {
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
@@ -60,6 +60,7 @@ internal static class AcceptanceToken
         IntPtr original = IntPtr.Zero, reduced = IntPtr.Zero;
         var startup = new Startup { Size = Marshal.SizeOf(typeof(Startup)), Desktop = @"winsta0\default", Flags = 0x100 };
         var child = new Child();
+        using (var desktop = new AcceptanceDesktop())
         try
         {
             Require(OpenProcessToken(GetCurrentProcess(), 0xF01FF, out original));
