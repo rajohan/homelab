@@ -79,7 +79,8 @@ internal static class AcceptanceToken
             }
             uint code;
             Require(GetExitCodeProcess(child.Process, out code));
-            return checked((int)code);
+            if (code > 255) throw new InvalidOperationException("Restricted process exited with native status 0x" + code.ToString("X8") + ".");
+            return (int)code;
         }
         finally
         {

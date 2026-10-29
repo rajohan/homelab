@@ -229,7 +229,7 @@ internal static class ConsentAcceptance
         }
         catch (Exception error)
         {
-            Console.Error.WriteLine("Windows consent acceptance failed at " + stage + " / " + detail + " (" + error.GetType().Name + ").");
+            Console.Error.WriteLine("Windows consent acceptance failed at " + stage + " / " + detail + " (" + error.GetType().Name + "): " + error.Message);
             return 1;
         }
     }
