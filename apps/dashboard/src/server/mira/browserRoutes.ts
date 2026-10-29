@@ -1,0 +1,64 @@
+import {
+    miraBrowserAccessListSchema,
+    miraBrowserAccessRequestSchema,
+    miraBrowserAccessStopSchema,
+} from "@homelab/contracts/miraBrowser";
+import {
+    listMiraBrowserAccess,
+    requestMiraBrowserAccess,
+    stopMiraBrowserAccess,
+} from "@homelab/mira/data/browserAccess";
+import { MiraFailure, type MiraContext } from "@homelab/mira/data/context";
+
+import { runOperation, trpc } from "../api/trpc";
+import {
+    authorizeAutomationAdministration,
+    authorizedOperations,
+} from "../operations/authorization";
+import type { OperationsContext } from "../operations/context";
+import { OperationFailure } from "../operations/errors";
+
+function execute<T>(
+    context: OperationsContext,
+    mutation: boolean,
+    operation: (mira: MiraContext) => Promise<T>
+) {
+    return runOperation(async () => {
+        const { operations, principal } = authorizedOperations(context, "jobs:read");
+        if (principal.kind !== "human")
+            throw new OperationFailure(
+                "FORBIDDEN",
+                "Browser access requires a signed-in operator."
+            );
+        if (mutation) await authorizeAutomationAdministration(context);
+        try {
+            return await operation({
+                client: operations.client,
+                owner: principal.id,
+                actor: `human:${principal.id}`,
+            });
+        } catch (error) {
+            if (error instanceof MiraFailure)
+                throw new OperationFailure(error.code, error.message);
+            throw error;
+        }
+    });
+}
+
+export const miraBrowserRouter = trpc.router({
+    list: trpc.procedure
+        .input(miraBrowserAccessListSchema)
+        .query(({ ctx, input }) =>
+            execute(ctx, false, (mira) => listMiraBrowserAccess(mira, input?.runId))
+        ),
+    request: trpc.procedure
+        .input(miraBrowserAccessRequestSchema)
+        .mutation(({ ctx, input }) =>
+            execute(ctx, true, (mira) => requestMiraBrowserAccess(mira, input))
+        ),
+    stop: trpc.procedure
+        .input(miraBrowserAccessStopSchema)
+        .mutation(({ ctx, input }) =>
+            execute(ctx, false, (mira) => stopMiraBrowserAccess(mira, input))
+        ),
+});

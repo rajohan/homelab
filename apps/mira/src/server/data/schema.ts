@@ -937,3 +937,43 @@ export const miraComputerCommands = pgTable(
         ),
     ]
 );
+
+export const miraBrowserAccess = pgTable(
+    "mira_browser_access",
+    {
+        id: uuid().primaryKey(),
+        owner: text().notNull(),
+        runId: uuid("run_id")
+            .notNull()
+            .references(() => miraRuns.id),
+        runLease: uuid("run_lease").notNull(),
+        controls: jsonb().notNull(),
+        mode: text().notNull(),
+        policy: jsonb(),
+        state: text().notNull().default("pending"),
+        hostToken: uuid("host_token"),
+        claimedAt: time("claimed_at"),
+        closedAt: time("closed_at"),
+        expiresAt: time("expires_at").notNull(),
+        createdAt: time("created_at").notNull().defaultNow(),
+    },
+    (t) => [
+        index("mira_browser_access_history").on(t.owner, t.createdAt, t.id),
+        uniqueIndex("mira_browser_access_owner")
+            .on(t.owner)
+            .where(sql`${t.state}<>'closed'`),
+        check("mira_browser_access_mode", sql`${t.mode} IN ('view','control')`),
+        check(
+            "mira_browser_access_state",
+            sql`(${t.state}='pending' AND ${t.hostToken} IS NULL AND ${t.claimedAt} IS NULL AND ${t.closedAt} IS NULL AND ${t.policy} IS NOT NULL) OR (${t.state}='active' AND ${t.hostToken} IS NOT NULL AND ${t.claimedAt} IS NOT NULL AND ${t.closedAt} IS NULL AND ${t.policy} IS NOT NULL) OR (${t.state}='stopping' AND ${t.hostToken} IS NOT NULL AND ${t.claimedAt} IS NOT NULL AND ${t.closedAt} IS NULL AND ${t.policy} IS NULL) OR (${t.state}='closed' AND ${t.closedAt} IS NOT NULL AND ${t.policy} IS NULL)`
+        ),
+        check(
+            "mira_browser_access_duration",
+            sql`${t.expiresAt}>${t.createdAt} AND ${t.expiresAt}<=${t.createdAt}+interval '5 minutes'`
+        ),
+        check(
+            "mira_browser_access_policy_size",
+            sql`${t.policy} IS NULL OR octet_length(${t.policy}::text)<=131072`
+        ),
+    ]
+);

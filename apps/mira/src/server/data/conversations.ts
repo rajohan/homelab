@@ -345,6 +345,10 @@ export async function changeConversation(
             );
         await query`UPDATE mira_conversations SET archived_at = ${input.action === "archive" ? new Date() : null}, deleted_at = ${input.action === "delete" ? new Date() : null}, title = CASE WHEN ${input.action === "delete"} THEN 'Deleted conversation' ELSE title END, version = version + 1, updated_at = now() WHERE id = ${input.id}`;
         if (input.action === "delete") {
+            await query`UPDATE mira_browser_access SET policy=NULL,state=CASE WHEN state='pending' THEN 'closed' ELSE 'stopping' END,
+                closed_at=CASE WHEN state='pending' THEN clock_timestamp() ELSE NULL END
+                WHERE owner=${context.owner} AND state IN ('pending','active')
+                    AND run_id IN (SELECT id FROM mira_runs WHERE conversation_id=${input.id} AND owner=${context.owner})`;
             const computerAccess = await query<
                 { id: string }[]
             >`SELECT id FROM mira_computer_access WHERE owner=${context.owner} AND run_id IN (SELECT id FROM mira_runs WHERE conversation_id=${input.id} AND owner=${context.owner})`;

@@ -53,6 +53,7 @@
         "apps/dashboard/src/server/tests/miraComputerTools.integration.test.ts": 3813,
         "apps/dashboard/src/server/tests/miraComputerReconnect.integration.test.ts": 9986,
         "apps/mira/src/server/browsing/docker.integration.test.ts": 121,
-        "apps/mira/src/server/browsing/attach.integration.test.ts": 47
+        "apps/mira/src/server/browsing/attach.integration.test.ts": 47,
+        "apps/dashboard/src/server/tests/miraBrowserAccess.integration.test.ts": 4790
     }
 }
