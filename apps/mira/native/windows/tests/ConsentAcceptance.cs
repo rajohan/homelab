@@ -177,6 +177,9 @@ internal static class ConsentAcceptance
             fixture.Send(new { id = 1, method = "state", @params = new { } });
             var target = Object(fixture.Read(), "result");
             Require((int)target["pid"] == fixture.Process.Id);
+            detail = "fixture native eligibility";
+            var identity = NativeWindows.Identity(new IntPtr(Int64.Parse((string)target["windowId"], CultureInfo.InvariantCulture)));
+            Require(identity.ProcessId == fixture.Process.Id);
             Initialize(host);
             var window = Approve(host, target);
             var transition = Stopwatch.StartNew();
@@ -204,11 +207,15 @@ internal static class ConsentAcceptance
     [MTAThread]
     private static int Main(string[] args)
     {
-        if (args.Length != 2 || Environment.GetEnvironmentVariable("GITHUB_ACTIONS") != "true" ||
+        if ((args.Length != 2 && args.Length != 3) || Environment.GetEnvironmentVariable("GITHUB_ACTIONS") != "true" ||
             Environment.GetEnvironmentVariable("RUNNER_ENVIRONMENT") != "github-hosted" ||
             Environment.GetEnvironmentVariable("RUNNER_OS") != "Windows") return 2;
         try
         {
+            // Hosted Windows starts elevated with UAC disabled. Exercise the real
+            // non-elevated policy instead of weakening the production window filter.
+            if (args.Length == 2) return AcceptanceToken.Run(args);
+            Require(args[2] == "--restricted" && AcceptanceToken.IsUnelevated());
             foreach (string reason in new[] { "local-stop", "parent-loss", "target-exit", "lock" }) Run(args[0], args[1], reason);
             stage = "locked-startup";
             using (var host = new Child(args[0]))

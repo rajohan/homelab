@@ -67,6 +67,7 @@ export async function testWindowsConsentAcceptance() {
                 `/reference:${path.join(framework, "WPF/WindowsBase.dll")}`,
                 path.join(source, "NativeWindows.cs"),
                 path.join(source, "tests/ConsentAcceptance.cs"),
+                path.join(source, "tests/AcceptanceToken.cs"),
             ],
         ])
             execFileSync(compiler, args, {

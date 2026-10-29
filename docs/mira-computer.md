@@ -645,7 +645,11 @@ and [CreateFreeThreaded](https://learn.microsoft.com/en-us/uwp/api/windows.graph
 
 `bun run test:computer:windows-acceptance` refuses developer PCs and runs only on
 a disposable GitHub-hosted Windows runner. It builds the actual consent binary
-and a separate, non-distributed acceptance harness. Windows UI Automation selects
+and a separate, non-distributed acceptance harness. GitHub's hosted Windows account
+is elevated with UAC disabled, so the harness first launches itself with a restricted
+LUA token and verifies that it and its fixture are not elevated. It changes no account,
+UAC policy or desktop ACL. The production elevated-window refusal remains intact.
+Windows UI Automation selects
 only the harness-owned fixture in the consent window, verifies that foreground
 control needs the unchecked checkbox, and checks the selected process/window
 identity against the fixture's independent pipe. It does not capture pixels.
