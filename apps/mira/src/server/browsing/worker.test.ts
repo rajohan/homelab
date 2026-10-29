@@ -531,3 +531,44 @@ test("worker requests forced exit without declaring hung native cleanup successf
         await done;
     }
 });
+
+test("failed initialization never reports successful worker cleanup without a port", async () => {
+    const input = new PassThrough(),
+        output = new PassThrough();
+    const done = serveBrowserWorker(
+        input,
+        output,
+        () => Promise.reject(new Error("native initialization cleanup failed")),
+        () => {
+            throw new Error("unexpected forced exit");
+        }
+    );
+    const rejected = assert.rejects(done, /cleanup did not complete/);
+    input.write(
+        JSON.stringify({ id: 1, body: { method: "initialize", params: grant } }) + "\n"
+    );
+    await rejected;
+    expect(output.destroyed).toBe(true);
+});
+
+test("host assigns the aggregate deadline only to initialization", async () => {
+    const deadlines: (number | undefined)[] = [];
+    const port = await openBrowserWorker({}, grant, new AbortController().signal, () =>
+        Promise.resolve({
+            signal: new AbortController().signal,
+            request: (body: unknown, _signal: AbortSignal, timeout?: number) => {
+                deadlines.push(timeout);
+                const command = v.parse(v.object({ method: v.string() }), body);
+                return Promise.resolve(
+                    command.method === "initialize"
+                        ? { version: 1, driver: "0.37.0" }
+                        : frame()
+                );
+            },
+            close: () => Promise.resolve(),
+        })
+    );
+    await port.observe(new AbortController().signal);
+    await port.close();
+    expect(deadlines).toEqual([60_000, undefined]);
+});

@@ -67,7 +67,11 @@ export async function openBrowserWorker(
                 version: v.literal(1),
                 driver: v.literal(computerDriverVersion),
             }),
-            await connection.request({ method: "initialize", params: grant }, owner)
+            await connection.request(
+                { method: "initialize", params: grant },
+                owner,
+                60_000
+            )
         )
     );
     return {

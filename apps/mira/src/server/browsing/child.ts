@@ -36,6 +36,7 @@ export function serveBrowserWorker(
         stopped = false,
         initialized = false,
         lastId = 0;
+    let initializationFailed = false;
     let port: Awaited<ReturnType<typeof open>> | undefined;
     let grant: ReturnType<typeof browserWorkerGrant> | undefined;
     const lifetime = setTimeout(() => stop(), 300_000);
@@ -56,6 +57,8 @@ export function serveBrowserWorker(
             .then(async () => {
                 try {
                     await port?.close();
+                    if (initializationFailed)
+                        throw new Error("Initialization did not confirm cleanup.");
                     done.resolve();
                     return true;
                 } catch {
@@ -84,10 +87,17 @@ export function serveBrowserWorker(
             if (initialized) throw new Error("Browser worker already initialized.");
             initialized = true;
             grant = browserWorkerGrant(command.params);
-            port = await open(
-                { ...grant, executable: browserWorkerExecutable },
-                owner.signal
-            );
+            try {
+                port = await open(
+                    { ...grant, executable: browserWorkerExecutable },
+                    owner.signal
+                );
+            } catch (error) {
+                // No port exists to retry/confirm cleanup. Even a startup cancellation
+                // must not turn an unknown native cleanup outcome into worker success.
+                initializationFailed = true;
+                throw error;
+            }
             result = { version: 1, driver: computerDriverVersion };
         } else {
             if (!port || !grant) throw new Error("Browser worker is not initialized.");
