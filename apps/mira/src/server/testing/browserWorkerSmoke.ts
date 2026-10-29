@@ -77,6 +77,17 @@ export async function qualifyBrowserWorker(
                                                 journalEvents.push("created");
                                                 return Promise.resolve();
                                             },
+                                            rejected: () =>
+                                                Promise.reject(
+                                                    new Error(
+                                                        "Fixture creation must succeed."
+                                                    )
+                                                ),
+                                            discovered: (id) => {
+                                                assert.equal(id, selected);
+                                                journalEvents.push("discovered");
+                                                return Promise.resolve();
+                                            },
                                             starting: () => {
                                                 journalEvents.push("starting");
                                                 return Promise.resolve();
@@ -90,7 +101,10 @@ export async function qualifyBrowserWorker(
                                                     proof.kind,
                                                     "not-created"
                                                 );
-                                                if (proof.kind !== "not-created")
+                                                if (
+                                                    proof.kind === "removed" ||
+                                                    proof.kind === "absent"
+                                                )
                                                     assert.equal(
                                                         proof.containerId,
                                                         selected
@@ -165,6 +179,7 @@ export async function qualifyBrowserWorker(
                             "created",
                             "starting",
                             "cleaning",
+                            "discovered",
                             "cleaned",
                         ]);
                         released = true;

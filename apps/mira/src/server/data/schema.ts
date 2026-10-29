@@ -1003,11 +1003,11 @@ export const miraBrowserProcesses = pgTable(
         check("mira_browser_process_image", sql`${t.imageId} ~ '^sha256:[a-f0-9]{64}$'`),
         check(
             "mira_browser_process_phase",
-            sql`(${t.phase} IN ('reserved','creating') AND ${t.containerId} IS NULL) OR (${t.phase}='created' AND ${t.containerId} IS NOT NULL AND ${t.containerId} ~ '^[a-f0-9]{64}$')`
+            sql`(${t.phase} IN ('reserved','creating','rejected') AND ${t.containerId} IS NULL AND (${t.phase}<>'rejected' OR ${t.state}<>'active')) OR (${t.phase}='created' AND ${t.containerId} IS NOT NULL AND ${t.containerId} ~ '^[a-f0-9]{64}$')`
         ),
         check(
             "mira_browser_process_state",
-            sql`(${t.state} IN ('active','cleanup') AND ${t.removedAt} IS NULL AND ${t.cleanupEvidence} IS NULL) OR (${t.state}='removed' AND ${t.removedAt} IS NOT NULL AND ${t.cleanupEvidence} IS NOT NULL AND ((${t.phase}='reserved' AND ${t.cleanupEvidence}='not-created') OR (${t.phase}='created' AND ${t.cleanupEvidence} IN ('removed','absent'))))`
+            sql`(${t.state} IN ('active','cleanup') AND ${t.removedAt} IS NULL AND ${t.cleanupEvidence} IS NULL) OR (${t.state}='removed' AND ${t.removedAt} IS NOT NULL AND ${t.cleanupEvidence} IS NOT NULL AND ((${t.phase}='reserved' AND ${t.cleanupEvidence}='not-created') OR (${t.phase}='rejected' AND ${t.cleanupEvidence}='rejected') OR (${t.phase}='created' AND ${t.cleanupEvidence} IN ('removed','absent'))))`
         ),
     ]
 );

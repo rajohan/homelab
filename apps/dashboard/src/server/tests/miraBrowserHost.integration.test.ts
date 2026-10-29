@@ -73,6 +73,8 @@ async function fixture(enabled = true) {
         image: `sha256:${"a".repeat(64)}`,
         exists: false,
         failCreate: false,
+        rejectCreate: null as number | null,
+        replaceCleanupAfterDelete: false,
         failDelete: false,
         events: [] as string[],
     };
@@ -100,8 +102,8 @@ async function fixture(enabled = true) {
                 expect(route).toBe(
                     `/containers/create?name=mira-browser-${engine.label}`
                 );
-                engine.exists = !engine.failCreate;
-                status = engine.failCreate ? 503 : 201;
+                engine.exists = !engine.failCreate && engine.rejectCreate === null;
+                status = engine.rejectCreate ?? (engine.failCreate ? 503 : 201);
                 body = { Id: engine.id };
             } else if (route.endsWith("/json")) {
                 status = engine.exists ? 200 : 404;
@@ -128,6 +130,9 @@ async function fixture(enabled = true) {
                 status = engine.failDelete ? 503 : 204;
                 if (!engine.failDelete) {
                     engine.exists = false;
+                    if (engine.replaceCleanupAfterDelete) {
+                        await f.client`UPDATE mira_browser_processes SET lease_token=${crypto.randomUUID()},lease_expires_at=clock_timestamp()+interval '15 seconds' WHERE id=${engine.label}`;
+                    }
                     for (const stream of streams) stream.destroy();
                 }
             } else throw new Error("Unexpected fixture Docker request.");
@@ -501,6 +506,69 @@ test("an expired replaced controller cannot operate or close a recovered lifetim
         expect(await f.client`SELECT state FROM mira_browser_processes`).toEqual([
             { state: "removed" },
         ]);
+    } finally {
+        owner.abort();
+        await f.close();
+    }
+});
+
+test("settled Docker create rejection closes durable capacity without disabling later sessions", async () => {
+    const f = await fixture(),
+        owner = new AbortController();
+    try {
+        for (const status of [400, 404, 409]) {
+            const grant = await f.api.browser.request(f.request);
+            f.engine.rejectCreate = status;
+            await rejects(
+                openMiraBrowserSession(f.worker, grant.id, f.config, owner.signal)
+            );
+            expect(
+                await f.client`SELECT state,phase,cleanup_evidence FROM mira_browser_processes WHERE access_id=${grant.id}`
+            ).toEqual([
+                { state: "removed", phase: "rejected", cleanup_evidence: "rejected" },
+            ]);
+        }
+        f.engine.rejectCreate = null;
+        const grant = await f.api.browser.request(f.request);
+        const session = await openMiraBrowserSession(
+            f.worker,
+            grant.id,
+            f.config,
+            owner.signal
+        );
+        await session.close();
+        expect(f.engine.exists).toBe(false);
+    } finally {
+        owner.abort();
+        await f.close();
+    }
+});
+
+test("an ID discovered during unknown-create recovery survives a failure after actual deletion", async () => {
+    const f = await fixture(),
+        owner = new AbortController();
+    try {
+        const grant = await f.api.browser.request(f.request);
+        f.engine.failCreate = true;
+        await rejects(openMiraBrowserSession(f.worker, grant.id, f.config, owner.signal));
+        f.engine.exists = true;
+        f.engine.replaceCleanupAfterDelete = true;
+        await f.client`UPDATE mira_browser_processes SET lease_expires_at=clock_timestamp()-interval '1 second'`;
+        expect(await recoverMiraBrowserProcesses(f.client, f.config)).toEqual({
+            recovered: 0,
+            unresolved: 1,
+        });
+        expect(f.engine.exists).toBe(false);
+        expect(
+            await f.client`SELECT phase,state,container_id FROM mira_browser_processes`
+        ).toEqual([{ phase: "created", state: "cleanup", container_id: f.engine.id }]);
+        await f.client`UPDATE mira_browser_processes SET lease_expires_at=clock_timestamp()-interval '1 second'`;
+        expect(await recoverMiraBrowserProcesses(f.client, f.config)).toEqual({
+            recovered: 1,
+            unresolved: 0,
+        });
+        expect(await f.api.browser.list()).toMatchObject([{ state: "closed" }]);
+        expect(f.engine.events.filter((e) => e.startsWith("DELETE:"))).toHaveLength(1);
     } finally {
         owner.abort();
         await f.close();

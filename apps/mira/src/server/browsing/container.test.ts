@@ -349,6 +349,11 @@ function journal(events: string[]): BrowserContainerJournal {
             events.push(`created:${id}`);
             return Promise.resolve();
         },
+        rejected: () => Promise.resolve(),
+        discovered: () => {
+            events.push("discovered");
+            return Promise.resolve();
+        },
         starting: () => {
             events.push("starting");
             return Promise.resolve();
@@ -394,6 +399,7 @@ test("durable identity and journal writes precede Docker creation, startup and c
             `POST:/containers/${id}/start`,
             "cleaning",
             `GET:/containers/${id}/json`,
+            "discovered",
             `DELETE:/containers/${id}?force=1&v=1`,
             `GET:/containers/${id}/json`,
             "cleaned:removed",
@@ -502,6 +508,7 @@ test("reconciliation removes only the original verified lifetime and never creat
                     checks++;
                     return Promise.resolve();
                 },
+                () => Promise.resolve(),
                 f.transport.request
             );
             expect(proof).toEqual(
@@ -509,7 +516,7 @@ test("reconciliation removes only the original verified lifetime and never creat
                     ? { kind: "not-created" }
                     : { kind: "removed", containerId: id }
             );
-            expect(checks).toBe(phase === "reserved" ? 1 : 3);
+            expect(checks).toBe(phase === "reserved" ? 1 : 4);
             expect(f.calls.some((c) => c.method === "POST")).toBe(false);
             expect(f.state.exists).toBe(false);
         } finally {
@@ -527,6 +534,7 @@ test("unknown create absence cannot release capacity while an exact known ID can
                 f.config,
                 { id: owner, phase: "creating", containerId: null },
                 async () => {},
+                () => Promise.resolve(),
                 f.transport.request
             ),
             BrowserContainerCleanupError
@@ -536,6 +544,7 @@ test("unknown create absence cannot release capacity while an exact known ID can
                 f.config,
                 { id: owner, phase: "created", containerId: id },
                 async () => {},
+                () => Promise.resolve(),
                 f.transport.request
             )
         ).toEqual({ kind: "absent", containerId: id });
@@ -548,6 +557,7 @@ test("unknown create absence cannot release capacity while an exact known ID can
                     f.config,
                     record,
                     async () => {},
+                    () => Promise.resolve(),
                     f.transport.request
                 )
             );
@@ -588,6 +598,7 @@ test("recovery rejects foreign ownership and rechecks controller authority befor
                             return Promise.reject(new Error("Replaced controller"));
                         return Promise.resolve();
                     },
+                    () => Promise.resolve(),
                     transport
                 )
             );

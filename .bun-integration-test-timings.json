@@ -55,7 +55,7 @@
         "apps/mira/src/server/browsing/docker.integration.test.ts": 121,
         "apps/mira/src/server/browsing/attach.integration.test.ts": 47,
         "apps/dashboard/src/server/tests/miraBrowserAccess.integration.test.ts": 4790,
-        "apps/dashboard/src/server/tests/miraBrowserHost.integration.test.ts": 3480,
-        "apps/dashboard/src/server/tests/miraBrowserProcesses.integration.test.ts": 1820
+        "apps/dashboard/src/server/tests/miraBrowserHost.integration.test.ts": 4000,
+        "apps/dashboard/src/server/tests/miraBrowserProcesses.integration.test.ts": 2000
     }
 }

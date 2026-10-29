@@ -13,7 +13,7 @@ type Authority = v.InferOutput<typeof authority>;
 interface ProcessRow extends Authority {
     accessId: string;
     imageId: string;
-    phase: "reserved" | "creating" | "created";
+    phase: "reserved" | "creating" | "created" | "rejected";
     state: "active" | "cleanup" | "removed";
     containerId: string | null;
     leaseExpiresAt: Date;
@@ -236,6 +236,45 @@ export async function claimMiraBrowserProcessRecovery(client: SQL, hostId: strin
 }
 
 /**
+ * Persist settled creation rejection or an ownership-verified ID before destructive cleanup.
+ * @param client - Trusted local host database connection.
+ * @param claim - Current private cleanup lease; replacement and expiry fence this write.
+ * @param input - An actual settled Engine rejection, or the verified immutable ID found by inspection.
+ * @returns Durable recovery identity; interruption after deletion can then prove known absence.
+ */
+export async function recordMiraBrowserProcessCleanup(
+    client: SQL,
+    claim: unknown,
+    input: unknown
+) {
+    const evidence = v.parse(
+        v.variant("kind", [
+            v.strictObject({
+                kind: v.literal("rejected"),
+                status: v.picklist([400, 404, 409]),
+            }),
+            v.strictObject({ kind: v.literal("discovered"), containerId }),
+        ]),
+        input
+    );
+    return owned(client, claim, async (query, row) => {
+        if (row.state !== "cleanup" || !row.current) throw failure();
+        if (evidence.kind === "rejected") {
+            if (!["creating", "rejected"].includes(row.phase)) throw failure();
+        } else if (
+            row.phase === "reserved" ||
+            (row.containerId && row.containerId !== evidence.containerId)
+        )
+            throw failure();
+        const updated = await query<
+            { id: string }[]
+        >`UPDATE mira_browser_processes SET phase=${evidence.kind === "rejected" ? "rejected" : "created"},container_id=${evidence.kind === "rejected" ? null : evidence.containerId},lease_expires_at=clock_timestamp()+interval '15 seconds' WHERE id=${row.id} AND lease_expires_at>clock_timestamp() RETURNING id`;
+        if (updated.length === 0) throw failure();
+        return result((await read(query, row.id))!);
+    });
+}
+
+/**
  * Release capacity and the original grant only after trusted Docker reconciliation proved cleanup.
  * @param client - Trusted host database connection.
  * @param claim - Current cleanup controller lease for this exact local engine.
@@ -250,6 +289,7 @@ export async function confirmMiraBrowserProcessCleanup(
     const proof = v.parse(
         v.variant("kind", [
             v.strictObject({ kind: v.literal("not-created") }),
+            v.strictObject({ kind: v.literal("rejected") }),
             v.strictObject({ kind: v.literal("removed"), containerId }),
             v.strictObject({ kind: v.literal("absent"), containerId }),
         ]),
@@ -258,17 +298,15 @@ export async function confirmMiraBrowserProcessCleanup(
     await owned(client, claim, async (query, row) => {
         if (row.state === "removed") return;
         if (row.state !== "cleanup" || !row.current) throw failure();
-        if (
-            proof.kind === "not-created"
-                ? row.phase !== "reserved"
-                : row.phase === "reserved" ||
-                  (row.phase === "creating" && proof.kind !== "removed") ||
-                  (row.phase === "created" && proof.containerId !== row.containerId)
-        )
+        if (proof.kind === "not-created") {
+            if (row.phase !== "reserved") throw failure();
+        } else if (proof.kind === "rejected") {
+            if (row.phase !== "rejected") throw failure();
+        } else if (row.phase !== "created" || proof.containerId !== row.containerId)
             throw failure();
         const updated = await query<
             { id: string }[]
-        >`UPDATE mira_browser_processes SET state='removed',phase=${proof.kind === "not-created" ? "reserved" : "created"},container_id=${proof.kind === "not-created" ? null : proof.containerId},cleanup_evidence=${proof.kind},removed_at=clock_timestamp() WHERE id=${row.id} AND lease_expires_at>clock_timestamp() RETURNING id`;
+        >`UPDATE mira_browser_processes SET state='removed',cleanup_evidence=${proof.kind},removed_at=clock_timestamp() WHERE id=${row.id} AND lease_expires_at>clock_timestamp() RETURNING id`;
         if (updated.length === 0) throw failure();
         await closeMiraBrowserAccess(context(client, query, row), {
             id: row.accessId,

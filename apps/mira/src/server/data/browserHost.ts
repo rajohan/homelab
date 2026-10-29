@@ -21,6 +21,7 @@ import {
     claimMiraBrowserProcessRecovery,
     confirmMiraBrowserProcessCleanup,
     renewMiraBrowserProcess,
+    recordMiraBrowserProcessCleanup,
     reserveMiraBrowserProcess,
 } from "./browserProcesses";
 import type { MiraContext } from "./context";
@@ -52,6 +53,12 @@ async function cleanup(
         { id: record.id, phase: record.phase, containerId: record.containerId },
         async () => {
             await beginMiraBrowserProcessCleanup(client, claim);
+        },
+        async (containerId) => {
+            await recordMiraBrowserProcessCleanup(client, claim, {
+                kind: "discovered",
+                containerId,
+            });
         }
     );
     await confirmMiraBrowserProcessCleanup(client, claim, proof);
@@ -138,6 +145,20 @@ export async function openMiraBrowserSession(
         created: async (containerId) => {
             await advanceMiraBrowserProcess(host.client, claim, {
                 phase: "created",
+                containerId,
+            });
+        },
+        rejected: async (status) => {
+            await beginMiraBrowserProcessCleanup(host.client, claim);
+            await recordMiraBrowserProcessCleanup(host.client, claim, {
+                kind: "rejected",
+                status,
+            });
+        },
+        discovered: async (containerId) => {
+            await beginMiraBrowserProcessCleanup(host.client, claim);
+            await recordMiraBrowserProcessCleanup(host.client, claim, {
+                kind: "discovered",
                 containerId,
             });
         },

@@ -126,6 +126,7 @@ export async function qualifyBrowserContainer() {
                             phase: "creating",
                             containerId: null,
                         },
+                        () => Promise.resolve(),
                         () => Promise.resolve()
                     );
                     assert.deepEqual(proof, { kind: "removed", containerId: lease.id });
@@ -139,6 +140,7 @@ export async function qualifyBrowserContainer() {
                             phase: "created",
                             containerId: lease.id,
                         },
+                        () => Promise.resolve(),
                         () => Promise.resolve()
                     ),
                     { kind: "absent", containerId: lease.id }

@@ -11,7 +11,7 @@ const ownerLabel = "io.homelab.mira.browser-owner";
 
 /** Verified evidence from this controller's actual local Docker lifecycle. */
 export type BrowserContainerProof =
-    | { kind: "not-created" }
+    | { kind: "not-created" | "rejected" }
     | { kind: "removed" | "absent"; containerId: string };
 
 /** Trusted database journal; unavailable or replaced ownership must fail closed. */
@@ -22,6 +22,10 @@ export interface BrowserContainerJournal {
     creating: () => Promise<void>;
     /** Record the settled immutable ID before attachment or startup. */
     created: (id: string) => Promise<void>;
+    /** Persist a settled Engine rejection so later absence can release the slot. */
+    rejected: (status: 400 | 404 | 409) => Promise<void>;
+    /** Persist a verified discovered ID before removal can make it unobservable. */
+    discovered: (id: string) => Promise<void>;
     /** Verify current controller and human authority immediately before startup. */
     starting: () => Promise<void>;
     /** Revoke execution and obtain cleanup authority before removing the container. */
@@ -120,10 +124,12 @@ export async function prepareBrowserContainer(
         const found = await inspect(id ?? name);
         if (!found) {
             // Durable recovery cannot free an uncertain create with no returned ID.
-            if (!creationSettled || (journal && !id))
-                throw new BrowserContainerCleanupError(name);
-            return id ? { kind: "absent", containerId: id } : { kind: "not-created" };
+            if (!creationSettled) throw new BrowserContainerCleanupError(name);
+            return id
+                ? { kind: "absent", containerId: id }
+                : { kind: journal ? "rejected" : "not-created" };
         }
+        await journal?.discovered(found);
         const response = await call("DELETE", `/containers/${found}?force=1&v=1`);
         if (![204, 404].includes(response.status))
             throw new BrowserContainerCleanupError(name);
@@ -169,6 +175,12 @@ export async function prepareBrowserContainer(
             // These documented rejections settle creation; a transport error or 5xx
             // can still leave an uncertain result and requires reconciliation.
             creationSettled = [400, 404, 409].includes(response.status);
+            if (
+                response.status === 400 ||
+                response.status === 404 ||
+                response.status === 409
+            )
+                await journal?.rejected(response.status);
             throw new Error("The browser container could not be created.");
         }
         id = v.parse(v.object({ Id: containerId }), response.body).Id;
