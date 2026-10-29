@@ -85,7 +85,7 @@ jobs:
   browser:
     name: Isolated browser
     runs-on: ubuntu-latest
-    timeout-minutes: 7
+    timeout-minutes: 12
     permissions:
       contents: read
     steps:
@@ -93,6 +93,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
@@ -101,6 +102,38 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Qualify isolated browser images, input and origin boundaries
         run: bun run test:browser
+
+      - name: Build the standalone browser runtime
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          version="$(bun -e 'console.log((await Bun.file("package.json").json()).version)')"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          if [[ "$EVENT_NAME" == release ]]; then
+            [[ "$RELEASE_TAG" == "v$version" ]]
+            git merge-base --is-ancestor HEAD origin/main
+          fi
+          docker build --provenance=false -f deploy/browser/Dockerfile -t homelab-browser/runtime:tested \
+            --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
+            --label "org.opencontainers.image.revision=$SOURCE_SHA" \
+            --label "org.opencontainers.image.version=$version" .
+      - name: Qualify the unchanged browser runtime image
+        run: bun run test:browser:image homelab-browser/runtime:tested
+      - name: Save only the qualified browser image
+        if: github.event_name == 'release'
+        run: docker save --output browser-images.tar homelab-browser/runtime:tested
+      - name: Transfer the qualified browser image to the release publisher
+        if: github.event_name == 'release'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tested-browser-image
+          path: browser-images.tar
+          retention-days: 2
+          compression-level: 0
+          if-no-files-found: error
 
   verify:
     # Preserve the required check name and fail closed on skipped/failed/cancelled tests.

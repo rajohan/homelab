@@ -19,7 +19,7 @@
     "apps/dashboard/src/server/integrations/updates/receipts.test.ts": 8,
     "apps/auth/src/browser/navigation/signInDestination.test.ts": 7,
     "packages/ui/src/components/Virtualizer/VirtualListStore.test.ts": 6,
-    "tests/buildPipeline.test.ts": 6,
+    "tests/buildPipeline.test.ts": 244,
     "apps/auth/src/server/testing/developmentTotp.test.ts": 5,
     "apps/dashboard/src/server/integrations/metrics/inventory.test.ts": 5,
     "apps/mira/src/server/qualification.test.ts": 5,
@@ -104,6 +104,7 @@
     "apps/mira/src/server/browsing/native.test.ts": 24,
     "apps/mira/src/server/browsing/container.test.ts": 15,
     "apps/mira/src/server/browsing/connection.test.ts": 112,
-    "apps/mira/src/server/browsing/worker.test.ts": 2055
+    "apps/mira/src/server/browsing/worker.test.ts": 2055,
+    "scripts/buildBrowser.test.ts": 150
   }
 }

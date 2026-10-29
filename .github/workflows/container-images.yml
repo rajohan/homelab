@@ -254,3 +254,82 @@ jobs:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           GH_REPO: ${{ github.repository }}
         run: gh release upload "$RELEASE_TAG" container-images.json --clobber
+
+  publish-browser:
+    if: github.event_name == 'release' && !github.event.release.prerelease
+    needs: [release-checks, build-and-test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - name: Download the tested images from this run
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tested-browser-image
+      - name: Authenticate to this repository's container registry
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish exact tested images and record immutable references
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          REPOSITORY: ${{ github.repository }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          version="${RELEASE_TAG#v}"
+          repository="${REPOSITORY,,}"
+          docker load --input browser-images.tar
+          for app in mira-browser; do
+            local_image="homelab-browser/runtime:tested"
+            image="ghcr.io/$repository/$app:$version"
+            [[ "$(docker inspect --format '{{.Config.User}}' "$local_image")" == bun ]]
+            [[ "$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$local_image")" == "$SOURCE_SHA" ]]
+            [[ "$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$local_image")" == "$version" ]]
+            # Image IDs differ between classic and containerd stores; hash the saved config.
+            config_file="$(tar -xOf browser-images.tar manifest.json | jq -er --arg tag "$local_image" '.[] | select(.RepoTags | index($tag)) | .Config')"
+            config_digest="sha256:$(tar -xOf browser-images.tar "$config_file" | sha256sum | cut -d ' ' -f 1)"
+            if docker manifest inspect "$image" > existing-manifest.json 2> registry-error.log; then
+              # A retry can reuse the exact same image, never replace a published version.
+              [[ "$(jq -r '.config.digest' existing-manifest.json)" == "$config_digest" ]]
+            else
+              grep -Eq 'manifest unknown|no such manifest|NAME_UNKNOWN' registry-error.log || { echo "Cannot verify registry state safely."; exit 1; }
+              docker tag "$local_image" "$image"
+              docker push "$image"
+            fi
+            docker manifest inspect "$image" > manifest.json
+            [[ "$(jq -r '.config.digest' manifest.json)" == "$config_digest" ]]
+            # Pull obtains the registry's digest without rebuilding the tested image.
+            docker pull "$image"
+            digest="$(docker image inspect "$image" | jq -r --arg prefix "ghcr.io/$repository/$app@sha256:" '.[0].RepoDigests[] | select(startswith($prefix))')"
+            [[ "$digest" == "ghcr.io/$repository/$app@sha256:"* ]]
+            jq -n --arg app "$app" --arg tag "$image" --arg reference "$image@${digest##*@}" '{app:$app, tag:$tag, reference:$reference}' > "$app-image.json"
+          done
+          jq -s --arg version "$version" --arg revision "$SOURCE_SHA" '{version:$version, revision:$revision, platform:"linux/amd64", images:.}' mira-browser-image.json > browser-image.json
+          cp browser-image.json "browser-manifest-$GITHUB_RUN_ATTEMPT.json"
+          {
+            echo '## Published browser runtime image'
+            echo ''
+            jq -r '.images[] | "- \(.app): \(.reference)"' browser-image.json
+            echo ''
+            echo 'Publication does not activate browser access, deploy or restart a service.'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Retain exact manifest evidence for this workflow attempt
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: browser-manifest-${{ github.run_attempt }}.json
+          # v7 direct uploads use the filename as the artifact name; `name` is ignored.
+          archive: false
+          retention-days: 90
+          if-no-files-found: error
+      - name: Attach deployment references to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release upload "$RELEASE_TAG" browser-image.json --clobber

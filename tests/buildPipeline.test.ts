@@ -57,6 +57,7 @@ test("the native React Compiler emits memoization for browser components", async
 
 const workflowStep = v.object({
     name: v.string(),
+    if: v.optional(v.string()),
     uses: v.optional(v.string()),
     run: v.optional(v.string()),
     env: v.optional(v.record(v.string(), v.string())),
@@ -148,7 +149,24 @@ test("PR execution cannot share a runner or secrets with authenticated coverage 
             "persist-credentials"
         ]
     ).toBe(false);
-    expect(browser.steps.at(-1)?.run).toBe("bun run test:browser");
+    expect(browser.steps.some((step) => step.run === "bun run test:browser")).toBe(true);
+    const runtimeTest = browser.steps.findIndex(
+        (step) => step.run === "bun run test:browser:image homelab-browser/runtime:tested"
+    );
+    const save = browser.steps.findIndex(
+        (step) =>
+            step.run ===
+            "docker save --output browser-images.tar homelab-browser/runtime:tested"
+    );
+    const transfer = browser.steps.findIndex(
+        (step) => step.with?.name === "tested-browser-image"
+    );
+    expect(runtimeTest).toBeGreaterThan(0);
+    expect(save).toBeGreaterThan(runtimeTest);
+    expect(transfer).toBeGreaterThan(save);
+    expect(browser.steps[save]?.if).toBe("github.event_name == 'release'");
+    expect(browser.steps[transfer]?.if).toBe("github.event_name == 'release'");
+    expect(browser.steps[transfer]?.with?.path).toBe("browser-images.tar");
     expect(verify.if).toBe("always()");
     expect(verify.steps).toEqual([
         {
