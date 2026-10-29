@@ -702,3 +702,54 @@ test("repeated stops scrub already-stopped access only for its owner and selecte
         }
     }
 });
+
+test("element observations and input survive the durable queue with one-use content and scope", async () => {
+    const f = await session(await operationFixture());
+    try {
+        const observation = {
+            ...image(),
+            coordinateInput: false,
+            elements: [
+                { token: "s00000001:2", role: "button", label: "Synthetic button" },
+            ],
+        };
+        const read = await f.enqueue();
+        await f.claim();
+        expect(await f.finish(read.id, observation)).toEqual({
+            commandId: read.id,
+            accepted: true,
+        });
+        expect(await takeMiraComputerCommand(f.worker, read.id)).toEqual({
+            state: "completed",
+            result: observation,
+        });
+        const operation = {
+            action: "click_element",
+            observationId: observation.observationId,
+            elementToken: observation.elements[0]!.token,
+        };
+        const queued = await f.enqueue(operation);
+        expect(await f.claim()).toMatchObject({
+            command: { commandId: queued.id, operation },
+        });
+        expect(await row(f, queued.id)).toEqual({
+            state: "claimed",
+            payload: null,
+            result: null,
+        });
+        await f.finish(queued.id, { effect: "unverified" });
+        expect(await takeMiraComputerCommand(f.worker, queued.id)).toEqual({
+            state: "completed",
+            result: { effect: "unverified" },
+        });
+        expect(await takeMiraComputerCommand(f.worker, queued.id)).toEqual({
+            state: "consumed",
+        });
+        await rejects(f.enqueue({ ...operation, elementToken: "1" }));
+        await rejects(f.enqueue({ ...operation, windowId: "999" }));
+        const viewer = await session(f, "viewer", "view");
+        await rejects(viewer.enqueue(operation), /unavailable/);
+    } finally {
+        await f.close();
+    }
+});

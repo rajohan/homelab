@@ -35,6 +35,7 @@ internal sealed class InputFixture : Form
         AutoScaleMode = AutoScaleMode.None;
         BackColor = Color.FromArgb(20, 35, 60);
         Controls.Add(new Label { Text = Text, ForeColor = Color.White, Location = new Point(24, 20), Size = new Size(430, 30) });
+        entry.AccessibleName = "Fixture entry";
         entry.Location = new Point(24, 75);
         entry.Size = new Size(400, 28);
         entry.MaxLength = 100;

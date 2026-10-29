@@ -29,7 +29,7 @@ interface CommandRow {
     accessId: string;
     connectionId: string;
     targetId: string;
-    action: "observe" | "click" | "type";
+    action: "observe" | "click" | "click_element" | "type";
     state: State;
     result: unknown;
 }

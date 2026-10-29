@@ -1,0 +1,32 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "2d01da31-98c5-4c32-9633-589d53de3937",
+    "prevIds": ["ff457814-e4cd-4276-8831-ae579c713617"],
+    "footprints": [
+        {
+            "statementType": "alter_check",
+            "statementTarget": ["table", "public", "mira_computer_commands"],
+            "writes": [
+                "s|ck|public.mira_computer_commands.mira_computer_commands_action"
+            ],
+            "reads": [
+                "n|tbl|public.mira_computer_commands",
+                "n|sch|public",
+                "n|col|public.mira_computer_commands.action",
+                "e|col|public.mira_computer_commands.action"
+            ],
+            "sqlHash": "01af477ce366937e"
+        }
+    ],
+    "deltas": [
+        {
+            "op": "alter",
+            "key": "checks\u0000[\"public\",\"mira_computer_commands\",\"mira_computer_commands_action\"]",
+            "set": {
+                "value": "\"action\" IN ('observe','click','click_element','type')"
+            }
+        }
+    ]
+}

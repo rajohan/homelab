@@ -2,8 +2,13 @@ import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import {
+    miraComputerElementsSchema,
+    type MiraComputerElement,
+} from "@homelab/contracts/miraComputerCommands";
 import type * as NativeSdk from "@trycua/cua-driver";
 import { imageSize } from "image-size";
+import * as v from "valibot";
 
 import { runtimeContentItems, type RuntimeToolResult } from "../runtime/toolResult";
 import {
@@ -55,11 +60,12 @@ export async function openNativeComputerWindow(
         const metadata = await native.metadata();
         if (metadata.driverVersion !== computerDriverVersion || !metadata.embedded)
             throw new Error("Unexpected computer driver version or execution mode.");
-        capture = grant.mode === "view" ? await openCapture?.(grant) : undefined;
+        capture = await openCapture?.(grant);
         const target = new sdk.ActionTarget.Window({
             pid: grant.pid,
             windowId: BigInt(grant.windowId),
         });
+        let elements = new Set<string>();
         let closed = false;
         let closing: Promise<void> | undefined;
         const ensureOpen = () => {
@@ -68,6 +74,7 @@ export async function openNativeComputerWindow(
         return {
             observe: async (signal) => {
                 ensureOpen();
+                elements.clear();
                 signal.throwIfAborted();
                 const frame = await native.getWindowState(
                     {
@@ -79,7 +86,7 @@ export async function openNativeComputerWindow(
                         maxElements: 200,
                         maxDepth: 12,
                         timeoutMs: 1000,
-                        treeFormat: "markdown",
+                        treeFormat: capture ? "elements" : "markdown",
                     },
                     { signal }
                 );
@@ -134,7 +141,25 @@ export async function openNativeComputerWindow(
                     dimensions.height !== (captured?.height ?? frame.screenshotHeight)
                 )
                     throw new Error("Computer frame dimensions do not match the image.");
+                const targets: MiraComputerElement[] = [];
+                if (capture && !frame.degraded) {
+                    for (const item of frame.elements?.slice(0, 200) ?? []) {
+                        if (
+                            item.enabled !== true ||
+                            !item.elementToken?.startsWith(`${frame.snapshotId}:`)
+                        )
+                            continue;
+                        targets.push({
+                            token: item.elementToken,
+                            role: item.role.slice(0, 64),
+                            label: (item.label ?? "").slice(0, 128),
+                        });
+                    }
+                    v.parse(miraComputerElementsSchema, targets);
+                }
+                elements = new Set(targets.map((item) => item.token));
                 return {
+                    ...(capture ? { elements: targets, coordinateInput: false } : {}),
                     snapshot: frame.snapshotId,
                     width: dimensions.width,
                     height: dimensions.height,
@@ -143,9 +168,11 @@ export async function openNativeComputerWindow(
             },
             click: async (x, y, signal) => {
                 ensureOpen();
+                elements.clear();
                 if (grant.mode === "view")
                     throw new Error("Computer access is view-only.");
                 signal.throwIfAborted();
+                if (capture) return { effect: "refused" };
                 const result = await native.click(
                     {
                         target,
@@ -159,8 +186,30 @@ export async function openNativeComputerWindow(
                 );
                 return { effect: actionEffect(result.effect) };
             },
+            clickElement: async (elementToken, signal) => {
+                ensureOpen();
+                const admitted = elements.has(elementToken);
+                elements.clear();
+                if (grant.mode === "view")
+                    throw new Error("Computer access is view-only.");
+                signal.throwIfAborted();
+                if (!admitted) return { effect: "refused" };
+                const result = await native.click(
+                    {
+                        target,
+                        position: new sdk.ClickPosition.Element({ elementToken }),
+                        deliveryMode:
+                            grant.delivery === "background"
+                                ? sdk.InputDeliveryMode.Background
+                                : sdk.InputDeliveryMode.Foreground,
+                    },
+                    { signal }
+                );
+                return { effect: actionEffect(result.effect) };
+            },
             type: async (text, signal) => {
                 ensureOpen();
+                elements.clear();
                 if (grant.mode === "view")
                     throw new Error("Computer access is view-only.");
                 signal.throwIfAborted();
@@ -188,6 +237,7 @@ export async function openNativeComputerWindow(
             },
             close: () => {
                 closed = true;
+                elements.clear();
                 closing ??= (async () => {
                     try {
                         const captureClosing = capture?.close();

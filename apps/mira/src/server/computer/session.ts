@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import {
     miraComputerInputSchema,
     miraComputerEffectSchema,
+    miraComputerObservationTargetsSchema,
+    type MiraComputerElement,
 } from "@homelab/contracts/miraComputerCommands";
 import * as v from "valibot";
 
@@ -10,6 +12,8 @@ import { runtimeContentItems, type RuntimeToolResult } from "../runtime/toolResu
 
 export interface ComputerObservation {
     snapshot: string;
+    elements?: MiraComputerElement[] | undefined;
+    coordinateInput?: boolean | undefined;
     width: number;
     height: number;
     content: Exclude<RuntimeToolResult, string>;
@@ -20,6 +24,7 @@ export type ComputerActionResult = {
 export interface ComputerWindowPort {
     observe: (signal: AbortSignal) => Promise<ComputerObservation>;
     click: (x: number, y: number, signal: AbortSignal) => Promise<ComputerActionResult>;
+    clickElement: (token: string, signal: AbortSignal) => Promise<ComputerActionResult>;
     type: (text: string, signal: AbortSignal) => Promise<ComputerActionResult>;
     close: () => Promise<void>;
 }
@@ -35,6 +40,8 @@ export class ComputerWindowSession {
               time: number;
               width: number;
               height: number;
+              elements: Set<string>;
+              coordinateInput: boolean;
           }
         | undefined;
 
@@ -84,18 +91,26 @@ export class ComputerWindowSession {
             const content = runtimeContentItems(frame.content);
             if (content.filter((item) => item.type === "inputImage").length !== 1)
                 throw new Error("Computer observation must contain one image.");
+            const targets = v.parse(miraComputerObservationTargetsSchema, {
+                elements: frame.elements,
+                coordinateInput: frame.coordinateInput,
+            });
             const id = randomUUID();
             this.observation = {
                 id,
                 time: this.now(),
                 width: frame.width,
                 height: frame.height,
+                elements: new Set(targets.elements?.map((item) => item.token)),
+                coordinateInput: targets.coordinateInput !== false,
             };
             return {
                 observationId: id,
                 width: frame.width,
                 height: frame.height,
-                ...frame.content,
+                ...targets,
+                // Export only bounded structured targets and pixels, never the driver's raw tree text.
+                content: frame.content.content.filter((item) => item.type === "image"),
             };
         } finally {
             this.busy = false;
@@ -132,13 +147,21 @@ export class ComputerWindowSession {
                 (command.x >= observed.width || command.y >= observed.height)
             )
                 throw new Error("Computer input is outside the observed window.");
+            if (command.action === "click" && !observed.coordinateInput)
+                throw new Error("Use an observed element token for this window.");
+            if (
+                command.action === "click_element" &&
+                !observed.elements.has(command.elementToken)
+            )
+                throw new Error("Computer element was not in the current observation.");
             dispatched = true;
-            const result = v.parse(
-                miraComputerEffectSchema,
-                await (command.action === "click"
-                    ? this.port.click(command.x, command.y, combined)
-                    : this.port.type(command.text, combined))
-            );
+            let delivery: Promise<ComputerActionResult>;
+            if (command.action === "click")
+                delivery = this.port.click(command.x, command.y, combined);
+            else if (command.action === "click_element")
+                delivery = this.port.clickElement(command.elementToken, combined);
+            else delivery = this.port.type(command.text, combined);
+            const result = v.parse(miraComputerEffectSchema, await delivery);
             await this.check(combined);
             if (result.effect === "unknown") await this.close();
             return result;

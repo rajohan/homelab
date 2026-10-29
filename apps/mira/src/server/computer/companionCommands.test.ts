@@ -78,6 +78,7 @@ function fixture(mode: "control" | "view" = "control") {
                 content: { content: result.content },
             });
         },
+        clickElement: () => Promise.resolve({ effect: "refused" as const }),
         click: () => {
             events.push("click");
             return Promise.resolve({ effect: "confirmed" });
@@ -563,4 +564,32 @@ test("the per-session command budget never evicts earlier replay protection", as
     expect(f.received).toHaveLength(1024);
     expect(f.events.filter((x) => x === "claim")).toHaveLength(1025);
     expect(f.events).toContain("port-close");
+});
+
+test("remote observation targets stay bounded, structured and distinct from raw instructions", () => {
+    const valid = {
+        ...frame(),
+        coordinateInput: false,
+        elements: [{ token: "s00000001:1", role: "button", label: "Untrusted label" }],
+    };
+    expect(computerCommandResult("observe", valid)).toEqual(valid);
+    for (const elements of [
+        [{ ...valid.elements[0], token: "1" }],
+        [{ ...valid.elements[0], token: "s00000001:" + "1".repeat(33) }],
+        [{ ...valid.elements[0], role: "x".repeat(65) }],
+        [{ ...valid.elements[0], label: "x".repeat(129) }],
+        [{ ...valid.elements[0], pid: 999 }],
+        [...valid.elements, ...valid.elements],
+        Array.from({ length: 201 }, (_, i) => ({
+            ...valid.elements[0],
+            token: `s00000001:${i}`,
+        })),
+    ])
+        expect(() => computerCommandResult("observe", { ...valid, elements })).toThrow();
+    expect(() =>
+        computerCommandResult("observe", { ...valid, coordinateInput: "true" })
+    ).toThrow();
+    expect(computerCommandResult("click_element", { effect: "refused" })).toEqual({
+        effect: "refused",
+    });
 });

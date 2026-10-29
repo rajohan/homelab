@@ -60,6 +60,8 @@ function fixture(mode: "view" | "control" = "control") {
         observe: () =>
             Promise.resolve({
                 snapshot: "fixture",
+                coordinateInput: false,
+                elements: [{ token: "s00000001:1", role: "button", label: "Fixture" }],
                 width: 390,
                 height: 110,
                 content: {
@@ -72,6 +74,10 @@ function fixture(mode: "view" | "control" = "control") {
                     ],
                 },
             }),
+        clickElement: () => {
+            events.push("element");
+            return Promise.resolve({ effect: "confirmed" });
+        },
         click: () => {
             events.push("click");
             return Promise.resolve({ effect: "confirmed" });
@@ -305,7 +311,7 @@ for await (const line of lines) {
 `
     );
     try {
-        for (const operation of ["idle", "capture", "input"] as const) {
+        for (const operation of ["idle", "capture", "input", "element"] as const) {
             const f = fixture();
             const entered = deferred<boolean>();
             const surfaceReady = deferred<ComputerConsentSurface>();
@@ -382,17 +388,25 @@ for await (const line of lines) {
                     };
                     pending = controller.observe(signal());
                 }
-                if (operation === "input") {
-                    f.port.type = () => {
+                if (operation === "input" || operation === "element") {
+                    const pendingInput = () => {
                         entered.resolve(true);
                         return inputFlight.promise;
                     };
+                    if (operation === "element") f.port.clickElement = pendingInput;
+                    else f.port.type = pendingInput;
                     pending = controller.act(
-                        {
-                            action: "type",
-                            observationId: observed.observationId,
-                            text: "Synthetic",
-                        },
+                        operation === "element"
+                            ? {
+                                  action: "click_element",
+                                  observationId: observed.observationId,
+                                  elementToken: "s00000001:1",
+                              }
+                            : {
+                                  action: "type",
+                                  observationId: observed.observationId,
+                                  text: "Synthetic",
+                              },
                         signal()
                     );
                 }
@@ -409,7 +423,7 @@ for await (const line of lines) {
                     content: { content: observed.content },
                 });
                 if (operation === "capture") await rejects(pending!);
-                if (operation === "input")
+                if (operation === "input" || operation === "element")
                     expect(await pending).toEqual({ effect: "unknown" });
                 await controller.close();
                 await rejects(controller.observe(signal()));
@@ -475,5 +489,48 @@ test("unconfirmed supervisor cleanup during startup remains a failure on repeate
         await rejects(f.host.close(), RuntimeCleanupError);
         await rejects(f.host.close(), RuntimeCleanupError);
         expect(f.host.signal.aborted).toBe(true);
+    }
+});
+
+test("composed consent controller forwards observed element input and preserves view-only refusal", async () => {
+    for (const mode of ["view", "control"] as const) {
+        const f = fixture(mode);
+        const { consentExpiresAt: _, ...receipt } = f.request;
+        const controller = new ComputerConsentController({
+            companion: {
+                pendingAccess: () => Promise.resolve(f.request),
+                acceptAccess: () =>
+                    Promise.resolve({ ...receipt, state: "active" as const }),
+                permitAccess: (_credential, binding) =>
+                    Promise.resolve({ ...binding, validForMs: 5000 }),
+                stopAccess: () => Promise.resolve(),
+            },
+            credential: "synthetic-unused",
+            connectionId: crypto.randomUUID(),
+            signal: f.stopped.signal,
+            host: f.host,
+        });
+        try {
+            expect(await controller.review()).toBe(true);
+            const frame = await controller.observe(signal());
+            const input = {
+                action: "click_element",
+                observationId: frame.observationId,
+                elementToken: "s00000001:1",
+            };
+            if (mode === "view") {
+                await rejects(controller.act(input, signal()), /view-only/);
+                expect(f.events).not.toContain("element");
+            } else {
+                expect(await controller.act(input, signal())).toEqual({
+                    effect: "confirmed",
+                });
+                expect(f.events.filter((event) => event === "element")).toHaveLength(1);
+                await rejects(controller.act(input, signal()), /fresh/);
+            }
+        } finally {
+            await controller.close();
+        }
+        expect(f.events.filter((event) => event === "driver-closed")).toHaveLength(1);
     }
 });

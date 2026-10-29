@@ -36,8 +36,9 @@ record();
 process.on("SIGTERM", () => {});
 const never = () => new Promise(() => {});
 const port = {
- observe: () => mode === "hang-read" ? never() : Promise.resolve(mode === "invalid" ? { filename: "/private/image.png" } : { snapshot: "synthetic", width: mode === "wrong-dimensions" ? 400 : 390, height: 110, content: { content: [{ type: "image", mediaType: "image/png", data: ${JSON.stringify(data)} }] } }),
+ observe: () => mode === "hang-read" ? never() : Promise.resolve(mode === "invalid" ? { filename: "/private/image.png" } : { snapshot: "synthetic", elements: [{ token: "s00000001:1", role: "button", label: "Synthetic button" }], coordinateInput: true, width: mode === "wrong-dimensions" ? 400 : 390, height: 110, content: { content: [{ type: "image", mediaType: "image/png", data: ${JSON.stringify(data)} }] } }),
  click: () => Promise.resolve({ effect: "unverified" }),
+ clickElement: (token) => { inputs++; record(); return Promise.resolve({ effect: token === "s00000001:1" ? "confirmed" : "refused" }); },
  type: () => { inputs++; record(); if (mode === "exit") process.exit(4); return mode === "hang-input" ? never() : Promise.resolve({ effect: "confirmed" }); },
  close: () => Promise.resolve(),
 };
@@ -125,7 +126,20 @@ test("a real child returns images and effects without loading dotenv or inheriti
                 signal()
             )
         ).toEqual({ effect: "unverified" });
+        const elementFrame = await session.observe(signal());
+        expect(elementFrame.elements?.[0]?.label).toBe("Synthetic button");
+        expect(
+            await session.act(
+                {
+                    action: "click_element",
+                    observationId: elementFrame.observationId,
+                    elementToken: "s00000001:1",
+                },
+                signal()
+            )
+        ).toEqual({ effect: "confirmed" });
         const recorded = await f.record();
+        expect(recorded.inputs).toBe(2);
         expect(recorded.unsafe).toBe(false);
         await session.close();
         await session.close();

@@ -2,6 +2,7 @@ import { lstat, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { miraComputerObservationTargetsSchema } from "@homelab/contracts/miraComputerCommands";
 import { imageSize } from "image-size";
 import * as v from "valibot";
 
@@ -23,6 +24,7 @@ const actionResult = v.strictObject({
 const dimension = v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(8192));
 const frameSchema = v.pipe(
     v.strictObject({
+        ...miraComputerObservationTargetsSchema.entries,
         snapshot: v.pipe(v.string(), v.minLength(1), v.maxLength(4096)),
         width: dimension,
         height: dimension,
@@ -266,6 +268,13 @@ async function openWorker(
         click: (x, y, signal) =>
             validated(async () =>
                 v.parse(actionResult, await request("click", { x, y }, signal))
+            ),
+        clickElement: (elementToken, signal) =>
+            validated(async () =>
+                v.parse(
+                    actionResult,
+                    await request("click_element", { elementToken }, signal)
+                )
             ),
         type: (text, signal) =>
             validated(async () =>

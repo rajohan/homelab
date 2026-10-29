@@ -111,6 +111,7 @@ function fixture() {
                 events.push("open");
                 return Promise.resolve({
                     observe: () => Promise.reject(new Error("No fixture capture")),
+                    clickElement: () => Promise.resolve({ effect: "refused" as const }),
                     click: () => Promise.reject(new Error("No fixture input")),
                     type: () => Promise.reject(new Error("No fixture input")),
                     close: () => {

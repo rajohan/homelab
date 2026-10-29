@@ -1,10 +1,14 @@
-import { miraComputerEffectSchema } from "@homelab/contracts/miraComputerCommands";
+import {
+    miraComputerEffectSchema,
+    miraComputerObservationTargetsSchema,
+} from "@homelab/contracts/miraComputerCommands";
 import { imageSize } from "image-size";
 import * as v from "valibot";
 
 import { runtimeContentItems, type RuntimeToolResult } from "../runtime/toolResult";
 
 const observation = v.strictObject({
+    ...miraComputerObservationTargetsSchema.entries,
     observationId: v.pipe(v.string(), v.uuid()),
     width: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(8192)),
     height: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(8192)),
@@ -12,12 +16,12 @@ const observation = v.strictObject({
 });
 export type ComputerCommandResult =
     | v.InferOutput<typeof miraComputerEffectSchema>
-    | {
+    | (v.InferOutput<typeof miraComputerObservationTargetsSchema> & {
           observationId: string;
           width: number;
           height: number;
           content: Exclude<RuntimeToolResult, string>["content"];
-      };
+      });
 
 /**
  * Validate a result for its original operation before sending or consuming it.
@@ -26,7 +30,7 @@ export type ComputerCommandResult =
  * @returns Bounded inline observation or explicit input outcome with no inferred success.
  */
 export function computerCommandResult(
-    action: "observe" | "click" | "type",
+    action: "observe" | "click" | "click_element" | "type",
     input: unknown
 ): ComputerCommandResult {
     if (action !== "observe") return v.parse(miraComputerEffectSchema, input);

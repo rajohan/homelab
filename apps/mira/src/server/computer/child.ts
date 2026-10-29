@@ -1,5 +1,6 @@
 import type { Readable, Writable } from "node:stream";
 
+import { miraComputerElementTokenSchema } from "@homelab/contracts/miraComputerCommands";
 import * as v from "valibot";
 
 import { openNativeComputerWindow } from "./native";
@@ -14,7 +15,7 @@ const requestSchema = v.strictObject({
         v.minValue(1),
         v.maxValue(Number.MAX_SAFE_INTEGER)
     ),
-    method: v.picklist(["initialize", "observe", "click", "type"]),
+    method: v.picklist(["initialize", "observe", "click", "click_element", "type"]),
     params: v.unknown(),
 });
 
@@ -98,6 +99,17 @@ export function serveComputerChild(
                         request.params
                     );
                     result = await port.click(command.x, command.y, controller.signal);
+                    break;
+                }
+                case "click_element": {
+                    const command = v.parse(
+                        v.strictObject({ elementToken: miraComputerElementTokenSchema }),
+                        request.params
+                    );
+                    result = await port.clickElement(
+                        command.elementToken,
+                        controller.signal
+                    );
                     break;
                 }
                 case "type": {
