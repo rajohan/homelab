@@ -90,21 +90,29 @@ export async function openBrowserSession(
     const check = async (mode: "view" | "control") => {
         signal.throwIfAborted();
         if (performance.now() >= deadline) throw stopped();
-        const started = performance.now();
-        const permit = await interrupted(access.check(mode), signal);
-        signal.throwIfAborted();
-        if (
-            !Number.isInteger(permit.validForMs) ||
-            permit.validForMs < 1 ||
-            permit.validForMs > 5000
-        )
-            throw stopped();
-        // Query/transport time consumes the permit instead of extending it on receipt.
-        const next = started + permit.validForMs;
-        if (performance.now() >= Math.min(deadline, next)) throw stopped();
-        deadline = next;
-        armExpiry();
-        signal.throwIfAborted();
+        const started = performance.now(),
+            limit = deadline;
+        // Other checks may renew the shared permit, but cannot prolong this query.
+        const pendingExpiry = setTimeout(retire, Math.max(1, limit - started));
+        pendingExpiry.unref();
+        try {
+            const permit = await interrupted(access.check(mode), signal);
+            signal.throwIfAborted();
+            if (
+                !Number.isInteger(permit.validForMs) ||
+                permit.validForMs < 1 ||
+                permit.validForMs > 5000
+            )
+                throw stopped();
+            // Query/transport time consumes the permit instead of extending it on receipt.
+            const next = started + permit.validForMs;
+            if (performance.now() >= Math.min(limit, next)) throw stopped();
+            deadline = next;
+            armExpiry();
+            signal.throwIfAborted();
+        } finally {
+            clearTimeout(pendingExpiry);
+        }
     };
     const watch = () => {
         if (signal.aborted) return;
@@ -132,8 +140,8 @@ export async function openBrowserSession(
             return open(signal);
         });
         port = await opening;
-        if (signal.aborted || port.signal.aborted) throw stopped();
         port.signal.addEventListener("abort", retire, { once: true });
+        if (signal.aborted || port.signal.aborted) throw stopped();
         await check("view");
     } catch {
         await close();

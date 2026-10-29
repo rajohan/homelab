@@ -290,3 +290,38 @@ test("overlapping commands are denied and pending input cannot be mutated", asyn
     expect(f.calls).not.toContain("observe");
     await s.close();
 });
+
+test("a disconnect while binding the native signal cannot be missed", async () => {
+    const f = fixture();
+    let reads = 0;
+    Object.defineProperty(f.port, "signal", {
+        get: () => {
+            if (++reads === 2) f.runtime.abort();
+            return f.runtime.signal;
+        },
+    });
+    await rejects(f.start(), /Browser access stopped/);
+    expect(f.calls.slice(-2)).toEqual(["close", "release"]);
+});
+
+test("successful idle checks cannot renew a hung operation check", async () => {
+    const f = fixture();
+    f.permits(120);
+    const original = f.access.check;
+    f.access.check = (mode) =>
+        mode === "control" ? new Promise(() => {}) : original(mode);
+    const session = await f.start();
+    const pending = rejects(
+        session.act({ action: "click" }, f.owner.signal),
+        /Browser access stopped/
+    );
+    try {
+        await until(() => session.signal.aborted);
+        await pending;
+        expect(f.calls.filter((x) => x === "check:view").length).toBeGreaterThan(2);
+        expect(f.calls).not.toContain("act");
+        expect(f.calls.slice(-2)).toEqual(["close", "release"]);
+    } finally {
+        await session.close();
+    }
+});
