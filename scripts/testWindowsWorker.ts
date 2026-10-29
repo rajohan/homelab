@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { buildComputerDistribution } from "./buildComputerDistribution";
 import { buildWindowsWorkerHost } from "./buildWindowsWorkerHost";
 import { hashComputerFile, verifyComputerPackage } from "./computerRelease";
+import { testWindowsCapture } from "./testWindowsCapture";
 
 /**
  * Qualify Windows process ownership and SDK loading, plus native input on disposable hosted runners.
@@ -81,6 +82,7 @@ export async function testWindowsWorker(exportDirectory?: string): Promise<void>
                 }
             );
             console.info(receipt.trim());
+            await testWindowsCapture(release.directory);
         }
         await verifyComputerPackage(release.directory, release.metadata);
         const digest = await hashComputerFile(release.archive);

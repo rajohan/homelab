@@ -43,6 +43,7 @@ export async function readComputerPackage(executable: string): Promise<string> {
         "mira-computer-consent.exe",
         "mira-computer-worker-host.exe",
         "mira-computer-worker.exe",
+        "mira-window-capture.exe",
     ]) {
         const file = path.join(directory, name);
         const metadata = await lstat(file);

@@ -185,6 +185,7 @@ test("every selected identity field is bound and cannot be widened by the contro
         { executable: path.resolve("other-window") },
         { pid: 124 },
         { windowId: "457" },
+        { startedAt: "999" },
         { delivery: "background" as const },
         { mode: "control" as const },
         { mode: undefined },

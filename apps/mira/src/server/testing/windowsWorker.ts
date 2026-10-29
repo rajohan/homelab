@@ -64,6 +64,7 @@ for (const name of [
     "mira-computer-consent.exe",
     "mira-computer-worker-host.exe",
     "mira-computer-worker.exe",
+    "mira-window-capture.exe",
 ]) {
     const file = path.join(directory, name);
     await rename(file, file + ".missing");
@@ -104,6 +105,7 @@ const port = await openWindowsComputerProcess(
         executable: worker,
         pid: 2_147_483_647,
         windowId: "1",
+        startedAt: "1",
         delivery: "background",
         mode: "view",
     },

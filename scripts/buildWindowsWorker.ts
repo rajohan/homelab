@@ -1,7 +1,9 @@
-import { cp, mkdir, readFile, readdir, realpath } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, readdir, realpath, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { buildWindowsCapture } from "./buildWindowsCapture";
 import { buildWindowsWorkerHost } from "./buildWindowsWorkerHost";
 
 /**
@@ -27,6 +29,16 @@ export async function buildWindowsWorker(outputRoot: string) {
     const entries = await readdir(outputRoot);
     if (entries.length > 0) throw new Error("Worker package output must be empty.");
     const { host } = await buildWindowsWorkerHost(outputRoot);
+    const temporary = await mkdtemp(path.join(tmpdir(), "mira-capture-build-"));
+    try {
+        const capture = await buildWindowsCapture(temporary);
+        await cp(capture, path.join(outputRoot, "mira-window-capture.exe"), {
+            force: false,
+            errorOnExist: true,
+        });
+    } finally {
+        await rm(temporary, { recursive: true, force: true });
+    }
     const worker = path.join(outputRoot, "mira-computer-worker.exe");
     const build = Bun.spawn(
         [

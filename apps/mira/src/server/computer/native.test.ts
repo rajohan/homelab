@@ -6,6 +6,7 @@ import type * as NativeSdk from "@trycua/cua-driver";
 
 import { createVisualChallenge } from "../testing/visualChallenge";
 import { openNativeComputerWindow } from "./native";
+import { openWindowsCapture, windowsCaptureMaximumPngBytes } from "./windowsCapture";
 
 async function fixture() {
     const executable = await realpath(process.execPath);
@@ -86,9 +87,10 @@ async function fixture() {
     return {
         grant,
         native,
+        sdk,
         frame,
         calls,
-        open: () => openNativeComputerWindow(grant, () => Promise.resolve(sdk)),
+        open: () => openNativeComputerWindow(grant, () => Promise.resolve(sdk), null),
         manifest: () => manifest,
         shuts: () => shuts,
         destroys: () => destroys,
@@ -143,7 +145,7 @@ test("native adapter pins permission mode, exact window, fixed text tool and lit
     await assert.rejects(driver.type("x", signal()), /closed/);
 });
 
-test("native capture accepts omitted validity only on Windows and still checks the actual image", async () => {
+test("legacy SDK capture accepts omitted validity only on Windows", async () => {
     const f = await fixture();
     f.frame.screenshotFrameValid = undefined;
     const driver = await f.open();
@@ -151,14 +153,7 @@ test("native capture accepts omitted validity only on Windows and still checks t
         if (process.platform === "win32") {
             const frame = await driver.observe(signal());
             expect(frame.width).toBe(390);
-            f.frame.screenshotWidth = 800;
-            await assert.rejects(driver.observe(signal()), /dimensions/);
-            f.frame.screenshotWidth = 390;
-            f.frame.images = [];
-            await assert.rejects(driver.observe(signal()), /selected window frame/);
-        } else {
-            await assert.rejects(driver.observe(signal()), /selected window frame/);
-        }
+        } else await assert.rejects(driver.observe(signal()), /selected window frame/);
     } finally {
         await driver.close();
     }
@@ -256,6 +251,127 @@ test("view-only native policy omits input tools and the adapter refuses them bef
         await assert.rejects(driver.click(1, 1, signal()), /view-only/);
         await assert.rejects(driver.type("Never sent", signal()), /view-only/);
         expect(f.calls).toHaveLength(before);
+    } finally {
+        await driver.close();
+    }
+});
+
+test("Windows view adapter uses only window-only images and never dispatches input", async () => {
+    const f = await fixture();
+    f.grant.mode = "view";
+    f.frame.images = [];
+    f.frame.screenshotFrameValid = undefined;
+    let reads = 0,
+        closes = 0;
+    const capture = {
+        read: () => {
+            reads++;
+            return Promise.resolve({
+                width: 390,
+                height: 110,
+                dataBase64: createVisualChallenge().data,
+            });
+        },
+        close: () => {
+            closes++;
+            return Promise.resolve();
+        },
+    };
+    const driver = await openNativeComputerWindow(
+        f.grant,
+        () => Promise.resolve(f.sdk),
+        () => Promise.resolve(capture)
+    );
+    const frame = await driver.observe(signal());
+    expect(frame.width).toBe(390);
+    expect(f.calls[1]).toMatchObject({
+        includeScreenshot: false,
+        includeAccessibilityTree: true,
+    });
+    const before = f.calls.length;
+    await assert.rejects(driver.click(15, 25, signal()), /view-only/);
+    await assert.rejects(driver.type("not sent", signal()), /view-only/);
+    expect(f.calls).toHaveLength(before);
+    expect(reads).toBe(1);
+    await driver.close();
+    expect(closes).toBe(1);
+});
+
+test("Windows view refuses SDK pixels, invalid geometry and missing capture without fallback", async () => {
+    const f = await fixture();
+    f.grant.mode = "view";
+    let width = 390;
+    let reads = 0;
+    const capture = {
+        read: () => {
+            reads++;
+            return Promise.resolve({
+                width,
+                height: 110,
+                dataBase64: createVisualChallenge().data,
+            });
+        },
+        close: () => Promise.resolve(),
+    };
+    const driver = await openNativeComputerWindow(
+        f.grant,
+        () => Promise.resolve(f.sdk),
+        () => Promise.resolve(capture)
+    );
+    await assert.rejects(driver.observe(signal()), /selected window frame/);
+    expect(reads).toBe(0);
+    f.frame.images = [];
+    await driver.observe(signal());
+    width = 391;
+    await assert.rejects(driver.observe(signal()), /dimensions/);
+    await driver.close();
+    const missing = await fixture();
+    missing.grant.mode = "view";
+    await assert.rejects(
+        openNativeComputerWindow(
+            missing.grant,
+            () => Promise.resolve(missing.sdk),
+            () => Promise.reject(new Error("capture missing"))
+        ),
+        /capture missing/
+    );
+    expect(missing.shuts()).toBe(1);
+});
+
+function paddedPng(length: number) {
+    const original = Buffer.from(createVisualChallenge().data, "base64");
+    const chunk = Buffer.alloc(length - original.length, 0x61);
+    chunk.writeUInt32BE(chunk.length - 12, 0);
+    chunk.write("tEXt", 4, "ascii");
+    chunk.write("padding\0", 8, "ascii");
+    chunk.writeUInt32BE(Bun.hash.crc32(chunk.subarray(4, -4)), chunk.length - 4);
+    return Buffer.concat([original.subarray(0, -12), chunk, original.subarray(-12)]);
+}
+
+test("largest accepted PNG plus near-limit escaped tree fits both private transport envelopes", async () => {
+    const f = await fixture();
+    f.grant.mode = "view";
+    f.frame.images = [];
+    f.frame.treeMarkdown = "\u0001".repeat(42 * 1024);
+    f.frame.windowTitle = "\u0001".repeat(512);
+    let bytes = paddedPng(windowsCaptureMaximumPngBytes);
+    const capture = await openWindowsCapture({ ...f.grant, startedAt: "123" }, () =>
+        Promise.resolve(bytes)
+    );
+    const driver = await openNativeComputerWindow(
+        f.grant,
+        () => Promise.resolve(f.sdk),
+        () => Promise.resolve(capture)
+    );
+    try {
+        const observation = await driver.observe(signal());
+        const text = observation.content.content.find((item) => item.type === "text");
+        expect(text?.type === "text" ? text.text.length : 0).toBeGreaterThan(260_000);
+        const body = JSON.stringify({ id: 1, result: observation });
+        // This is stricter than the 4 MiB worker RPC and leaves 16 KiB for machine binding metadata.
+        expect(Buffer.byteLength(body)).toBeLessThan(3 * 1024 * 1024 - 16 * 1024);
+        bytes = paddedPng(windowsCaptureMaximumPngBytes + 1);
+        await assert.rejects(driver.observe(signal()), /unavailable/);
     } finally {
         await driver.close();
     }

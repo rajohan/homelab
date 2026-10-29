@@ -22,6 +22,9 @@ internal sealed class InputFixture : Form
     [DllImport("dwmapi.dll")]
     private static extern int DwmGetWindowAttribute(IntPtr window, int attribute, out RectangleBounds bounds, int size);
 
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GetProcessTimes(IntPtr process, out long created, out long exited, out long kernel, out long user);
+
     private InputFixture()
     {
         Text = "Mira isolated Windows input fixture";
@@ -54,13 +57,17 @@ internal sealed class InputFixture : Form
         if (DwmGetWindowAttribute(Handle, 9, out bounds, Marshal.SizeOf(typeof(RectangleBounds))) != 0 ||
             bounds.Right <= bounds.Left || bounds.Bottom <= bounds.Top)
             throw new InvalidOperationException("Fixture capture bounds are unavailable.");
-        // The pinned 0.37 native GDI capture removes a one-pixel inset inside
-        // DWMWA_EXTENDED_FRAME_BOUNDS. Return points in that screenshot space.
+        // Window-only capture and the pinned SDK input origin use physical DWM
+        // bounds with a one-pixel inset. Return independently measured points.
         bounds.Left++; bounds.Top++; bounds.Right--; bounds.Bottom--;
         Point entryPoint = entry.PointToScreen(new Point(entry.Width / 2, entry.Height / 2));
         Point buttonPoint = button.PointToScreen(new Point(button.Width / 2, button.Height / 2));
+        long created, exited, kernel, user;
+        using (var process = Process.GetCurrentProcess())
+            if (!GetProcessTimes(process.Handle, out created, out exited, out kernel, out user)) throw new InvalidOperationException();
         return new
         {
+            startedAt = created.ToString(CultureInfo.InvariantCulture),
             pid = Process.GetCurrentProcess().Id,
             executable = Process.GetCurrentProcess().MainModule.FileName,
             windowId = Handle.ToInt64().ToString(CultureInfo.InvariantCulture),

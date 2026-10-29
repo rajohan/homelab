@@ -7,6 +7,7 @@ const grantSchema = v.strictObject({
     executable: v.pipe(v.string(), v.minLength(1), v.maxLength(4096)),
     pid: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(2_147_483_647)),
     windowId: v.pipe(v.string(), v.regex(/^[1-9][0-9]{0,19}$/)),
+    startedAt: v.optional(v.pipe(v.string(), v.regex(/^[1-9][0-9]{0,19}$/))),
     delivery: v.picklist(["background", "foreground"]),
     mode: v.optional(v.picklist(["view", "control"])),
 });

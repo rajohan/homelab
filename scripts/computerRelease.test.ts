@@ -20,6 +20,7 @@ const entrypoints = [
     "mira-computer-consent.exe",
     "mira-computer-worker-host.exe",
     "mira-computer-worker.exe",
+    "mira-window-capture.exe",
 ];
 function manifest(
     files = entrypoints.map((name) => ({ path: name, size: 1, sha256: "a".repeat(64) }))
