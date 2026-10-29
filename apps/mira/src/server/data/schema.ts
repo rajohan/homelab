@@ -917,7 +917,7 @@ export const miraComputerCommands = pgTable(
             .where(sql`${t.state} IN ('queued','claimed','completed')`),
         check(
             "mira_computer_commands_action",
-            sql`${t.action} IN ('observe','click','type')`
+            sql`${t.action} IN ('observe','click','click_element','type')`
         ),
         check(
             "mira_computer_commands_state",

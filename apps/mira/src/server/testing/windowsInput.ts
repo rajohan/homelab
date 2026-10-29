@@ -134,7 +134,10 @@ export async function qualifyWindowsInput(directory: string, root: string) {
         } finally {
             await wrong.close();
         }
-        const port = await openWindowsComputerProcess(grant, options);
+        const port = await openWindowsComputerProcess(
+            { ...grant, mode: "control" },
+            options
+        );
         const session = new ComputerWindowSession(port, () => {
             signal.throwIfAborted();
             fixture.signal.throwIfAborted();
@@ -142,9 +145,45 @@ export async function qualifyWindowsInput(directory: string, root: string) {
         });
         try {
             let frame = await session.observe(signal);
+            const token = (label: string) => {
+                const candidates =
+                    frame.elements?.filter((item) => item.label === label) ?? [];
+                if (frame.coordinateInput !== false || candidates.length !== 1)
+                    throw new Error(
+                        "Expected one observed fixture element and no coordinate input."
+                    );
+                return candidates[0]!.token;
+            };
+            const firstToken = token("Fixture entry");
+            await denied(() =>
+                session.act(
+                    {
+                        action: "click",
+                        observationId: frame.observationId,
+                        ...state.entry,
+                    },
+                    signal
+                )
+            );
+            frame = await session.observe(signal);
+            await denied(() =>
+                session.act(
+                    {
+                        action: "click_element",
+                        observationId: frame.observationId,
+                        elementToken: firstToken,
+                    },
+                    signal
+                )
+            );
+            frame = await session.observe(signal);
             const original = frame.content.find((item) => item.type === "image")!.data;
             await session.act(
-                { action: "click", observationId: frame.observationId, ...state.entry },
+                {
+                    action: "click_element",
+                    observationId: frame.observationId,
+                    elementToken: token("Fixture entry"),
+                },
                 signal
             );
             frame = await session.observe(signal);
@@ -155,7 +194,11 @@ export async function qualifyWindowsInput(directory: string, root: string) {
             await denied(() => session.act(input, signal));
             frame = await session.observe(signal);
             await session.act(
-                { action: "click", observationId: frame.observationId, ...state.button },
+                {
+                    action: "click_element",
+                    observationId: frame.observationId,
+                    elementToken: token("Increment fixture"),
+                },
                 signal
             );
             await eventually((current) => current.text === text && current.count === 1);
@@ -171,6 +214,9 @@ export async function qualifyWindowsInput(directory: string, root: string) {
                 image: true,
                 text: true,
                 click: true,
+                elementInput: true,
+                staleElementDenied: true,
+                coordinateInputDenied: true,
                 viewOnly: true,
                 scopeDenied: true,
                 replayDenied: true,

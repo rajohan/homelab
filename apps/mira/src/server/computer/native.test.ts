@@ -5,7 +5,9 @@ import { realpath } from "node:fs/promises";
 import type * as NativeSdk from "@trycua/cua-driver";
 
 import { createVisualChallenge } from "../testing/visualChallenge";
+import { computerCommandResult } from "./commandResult";
 import { openNativeComputerWindow } from "./native";
+import { ComputerWindowSession } from "./session";
 import { openWindowsCapture, windowsCaptureMaximumPngBytes } from "./windowsCapture";
 
 async function fixture() {
@@ -25,7 +27,16 @@ async function fixture() {
     const frame = {
         pid: 123,
         windowId: 456n,
-        snapshotId: "s1",
+        snapshotId: "s00000001",
+        degraded: false,
+        elements: [
+            {
+                elementToken: "s00000001:1",
+                role: "button",
+                label: "Fixture",
+                enabled: true,
+            },
+        ],
         screenshotFrameValid: true as boolean | undefined,
         screenshotWidth: 390,
         screenshotHeight: 110,
@@ -82,7 +93,7 @@ async function fixture() {
         SessionPermissionMode: { Bounded: 1 },
         InputDeliveryMode: { Background: 0, Foreground: 1 },
         ActionTarget: { Window: Fields },
-        ClickPosition: { Coordinates: Fields },
+        ClickPosition: { Coordinates: Fields, Element: Fields },
     } as unknown as typeof NativeSdk;
     return {
         grant,
@@ -287,6 +298,7 @@ test("Windows view adapter uses only window-only images and never dispatches inp
     expect(f.calls[1]).toMatchObject({
         includeScreenshot: false,
         includeAccessibilityTree: true,
+        treeFormat: "elements",
     });
     const before = f.calls.length;
     await assert.rejects(driver.click(15, 25, signal()), /view-only/);
@@ -374,5 +386,145 @@ test("largest accepted PNG plus near-limit escaped tree fits both private transp
         await assert.rejects(driver.observe(signal()), /unavailable/);
     } finally {
         await driver.close();
+    }
+});
+
+test("Windows control uses only its captured image and observed SDK element tokens", async () => {
+    const f = await fixture();
+    f.grant.mode = "control";
+    f.frame.images = [];
+    const capture = {
+        read: () =>
+            Promise.resolve({
+                width: 390,
+                height: 110,
+                dataBase64: createVisualChallenge().data,
+            }),
+        close: () => Promise.resolve(),
+    };
+    const driver = await openNativeComputerWindow(
+        f.grant,
+        () => Promise.resolve(f.sdk),
+        () => Promise.resolve(capture)
+    );
+    try {
+        const frame = await driver.observe(signal());
+        expect(frame.coordinateInput).toBe(false);
+        expect(frame.elements).toEqual([
+            { token: "s00000001:1", role: "button", label: "Fixture" },
+        ]);
+        const before = f.calls.length;
+        expect(await driver.click(1, 1, signal())).toEqual({ effect: "refused" });
+        expect(await driver.clickElement!("s00000001:1", signal())).toEqual({
+            effect: "refused",
+        });
+        expect(f.calls).toHaveLength(before);
+        await driver.observe(signal());
+        expect(await driver.clickElement!("s00000001:1", signal())).toEqual({
+            effect: "unverified",
+        });
+        expect(f.calls.at(-1)).toMatchObject({
+            target: { value: { pid: 123, windowId: 456n } },
+            position: { value: { elementToken: "s00000001:1" } },
+            deliveryMode: 0,
+        });
+        expect(await driver.clickElement!("s00000001:1", signal())).toEqual({
+            effect: "refused",
+        });
+        await driver.observe(signal());
+        expect(await driver.clickElement!("s00000002:1", signal())).toEqual({
+            effect: "refused",
+        });
+        expect(await driver.clickElement!("s00000001:1", signal())).toEqual({
+            effect: "refused",
+        });
+        await driver.observe(signal());
+        await driver.type("literal", signal());
+        expect(await driver.clickElement!("s00000001:1", signal())).toEqual({
+            effect: "refused",
+        });
+    } finally {
+        await driver.close();
+    }
+});
+
+test("Windows targets exclude disabled, foreign and degraded elements and reject duplicate tokens", async () => {
+    const f = await fixture();
+    f.grant.mode = "control";
+    f.frame.images = [];
+    const capture = {
+        read: () =>
+            Promise.resolve({
+                width: 390,
+                height: 110,
+                dataBase64: createVisualChallenge().data,
+            }),
+        close: () => Promise.resolve(),
+    };
+    const driver = await openNativeComputerWindow(
+        f.grant,
+        () => Promise.resolve(f.sdk),
+        () => Promise.resolve(capture)
+    );
+    try {
+        f.frame.elements.push(
+            {
+                elementToken: "s00000001:2",
+                role: "button",
+                label: "Disabled",
+                enabled: false,
+            },
+            {
+                elementToken: "s00000002:3",
+                role: "button",
+                label: "Foreign",
+                enabled: true,
+            }
+        );
+        const normal = await driver.observe(signal());
+        expect(normal.elements).toHaveLength(1);
+        f.frame.degraded = true;
+        const degraded = await driver.observe(signal());
+        expect(degraded.elements).toEqual([]);
+        f.frame.degraded = false;
+        f.frame.elements.push(f.frame.elements[0]!);
+        await assert.rejects(driver.observe(signal()));
+        expect(await driver.clickElement!("s00000001:1", signal())).toEqual({
+            effect: "refused",
+        });
+    } finally {
+        await driver.close();
+    }
+});
+
+test("maximum PNG and escaped element labels fit the machine transport after tree removal", async () => {
+    const f = await fixture();
+    f.grant.mode = "control";
+    f.frame.images = [];
+    f.frame.treeMarkdown = "\u0001".repeat(42 * 1024);
+    f.frame.elements = Array.from({ length: 200 }, (_, index) => ({
+        elementToken: `s00000001:${index}`,
+        enabled: true,
+        role: "\u0001".repeat(64),
+        label: "\u0001".repeat(256),
+    }));
+    const capture = await openWindowsCapture({ ...f.grant, startedAt: "123" }, () =>
+        Promise.resolve(paddedPng(windowsCaptureMaximumPngBytes))
+    );
+    const driver = await openNativeComputerWindow(
+        f.grant,
+        () => Promise.resolve(f.sdk),
+        () => Promise.resolve(capture)
+    );
+    const session = new ComputerWindowSession(driver, () => Promise.resolve());
+    try {
+        const observation = await session.observe(signal());
+        const result = computerCommandResult("observe", observation);
+        expect(observation.elements).toHaveLength(200);
+        expect(Buffer.byteLength(JSON.stringify({ result }))).toBeLessThan(
+            3 * 1024 * 1024 - 16 * 1024
+        );
+    } finally {
+        await session.close();
     }
 });

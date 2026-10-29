@@ -42,6 +42,10 @@ function fixture() {
             calls.push(`click:${x}:${y}`);
             return Promise.resolve({ effect: "unverified" });
         },
+        clickElement: (token) => {
+            calls.push(`element:${token}`);
+            return Promise.resolve({ effect: "confirmed" });
+        },
         type: (text) => {
             calls.push(`type:${text}`);
             return Promise.resolve({ effect: "confirmed" });
@@ -84,9 +88,15 @@ test("the private child permits only one initialization and fixed native operati
     await f.send(2, "observe", {});
     await f.send(3, "click", { x: 4, y: 8 });
     await f.send(4, "type", { text: "literal text" });
+    await f.send(5, "click_element", { elementToken: "s00000001:1" });
     expect(f.opened).toEqual([grant]);
-    expect(f.calls).toEqual(["observe", "click:4:8", "type:literal text"]);
-    expect(f.replies.map((reply) => reply.id)).toEqual([1, 2, 3, 4]);
+    expect(f.calls).toEqual([
+        "observe",
+        "click:4:8",
+        "type:literal text",
+        "element:s00000001:1",
+    ]);
+    expect(f.replies.map((reply) => reply.id)).toEqual([1, 2, 3, 4, 5]);
     expect(f.replies[0]?.result).toEqual({ version: 1, driver: "0.37.0" });
     expect(f.replies[2]?.result).toEqual({ effect: "unverified" });
     f.input.end();
@@ -96,6 +106,16 @@ test("the private child permits only one initialization and fixed native operati
 
 test("invalid, repeated, overflowing and privilege-widening requests retire the child", async () => {
     for (const invalid of [
+        JSON.stringify({
+            id: 2,
+            method: "click_element",
+            params: { elementToken: "1" },
+        }) + "\n",
+        JSON.stringify({
+            id: 2,
+            method: "click_element",
+            params: { elementToken: "s00000001:1", pid: 999 },
+        }) + "\n",
         JSON.stringify({ id: 2, method: "shell", params: {} }) + "\n",
         JSON.stringify({ id: 2, method: "initialize", params: grant }) + "\n",
         JSON.stringify({ id: 1, method: "observe", params: {} }) + "\n",

@@ -230,3 +230,87 @@ test("invalid frames and remote image references never create usable observation
         await f.session.close();
     }
 });
+
+function elementFixture() {
+    const f = fixture();
+    const read = f.port.observe;
+    f.port.observe = async (s) => ({
+        ...(await read(s)),
+        coordinateInput: false,
+        elements: [
+            { token: "s00000001:1", role: "button", label: "Untrusted fixture label" },
+        ],
+    });
+    f.port.clickElement = (token) => {
+        f.actions.push(token);
+        return Promise.resolve({ effect: "confirmed" });
+    };
+    return f;
+}
+
+test("element input requires current membership and is consumed once", async () => {
+    const f = elementFixture();
+    const frame = await f.session.observe(signal());
+    expect(frame.elements?.[0]?.label).toBe("Untrusted fixture label");
+    const command = {
+        action: "click_element",
+        observationId: frame.observationId,
+        elementToken: "s00000001:1",
+    };
+    expect(await f.session.act(command, signal())).toEqual({ effect: "confirmed" });
+    await assert.rejects(f.session.act(command, signal()), /fresh/);
+    expect(f.actions).toEqual(["s00000001:1"]);
+    await f.session.close();
+});
+
+test("expired, foreign, missing and unavailable elements never dispatch", async () => {
+    for (const mode of [
+        "expired",
+        "foreign",
+        "missing",
+        "unavailable",
+        "coordinates",
+        "revoked",
+    ]) {
+        const f = elementFixture();
+        const frame = await f.session.observe(signal());
+        if (mode === "expired") f.advance(10_001);
+        if (mode === "unavailable") delete f.port.clickElement;
+        if (mode === "revoked") f.revoke();
+        await assert.rejects(
+            f.session.act(
+                mode === "coordinates"
+                    ? { action: "click", observationId: frame.observationId, x: 1, y: 1 }
+                    : {
+                          action: "click_element",
+                          observationId: frame.observationId,
+                          elementToken:
+                              mode === "foreign"
+                                  ? "s00000002:1"
+                                  : "s00000001:" + (mode === "missing" ? "9" : "1"),
+                      },
+                signal()
+            )
+        );
+        expect(f.actions).toEqual([]);
+        await f.session.close();
+    }
+});
+
+test("session exports pixels and bounded targets without raw driver tree text", async () => {
+    const f = elementFixture();
+    const read = f.port.observe;
+    f.port.observe = async (s) => {
+        const frame = await read(s);
+        frame.content.content.push({
+            type: "text",
+            text: "untrusted raw tree instructions",
+        });
+        return frame;
+    };
+    const frame = await f.session.observe(signal());
+    expect(frame.content).toHaveLength(1);
+    expect(frame.content[0]?.type).toBe("image");
+    expect(frame.elements).toHaveLength(1);
+    await f.session.close();
+});

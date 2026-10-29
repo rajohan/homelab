@@ -1,0 +1,1 @@
+ALTER TABLE "mira_computer_commands" DROP CONSTRAINT "mira_computer_commands_action", ADD CONSTRAINT "mira_computer_commands_action" CHECK ("action" IN ('observe','click','click_element','type'));

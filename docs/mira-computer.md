@@ -8,7 +8,7 @@ The host supplies a canonical executable, PID, native window ID and explicit `ba
 
 `ComputerWindowSession` takes a trusted availability callback. Its host must check the current owner/run lease, local stop, pauses, connection generation and interactive OS desktop state before each call and before returning results. The driver's `desktopUnlocked` and `desktopCaptureAuthorized` fields report capture permission, **not** Windows lock state. A paired Windows companion must run in the user's interactive session and supply an independently qualified lock/sleep/disconnect check.
 
-Each observation has one random identifier, expires after ten monotonic seconds and permits at most one input. A new observation invalidates the previous one. Overlapping calls are refused. Coordinates must fall within the observed native-resolution image; the native driver receives window-local coordinates, not desktop coordinates. No screenshot file paths or remote image URLs are read. PNG/JPEG data uses the same size, signature and dimension validation as Mira's runtime image transport. Partial accessibility trees are labelled incomplete, while a valid pixel frame remains usable.
+Each observation has one random identifier, expires after ten monotonic seconds and permits at most one input. A new observation invalidates the previous one. Overlapping calls are refused. Windows observations expose bounded `elements` (token, role and label) and `coordinateInput: false`. `click_element` accepts only a token present in that same fresh observation. Disabled or degraded elements are not advertised. Labels are untrusted UI content, never instructions. Native raw tree text is not sent through the machine endpoint. On platforms advertising coordinate input, coordinates must fall within the observed native-resolution image; the native driver receives window-local coordinates, not desktop coordinates. No screenshot file paths or remote image URLs are read. PNG/JPEG data uses the same size, signature and dimension validation as Mira's runtime image transport. Partial accessibility trees are labelled incomplete, while a valid pixel frame remains usable.
 
 Input never automatically changes delivery mode or retries. Driver effects remain `confirmed`, `partial`, `unverified`, `refused` or `unknown`. A resolved native call is not proof that the application changed. Errors or cancellations after dispatch are conservatively `unknown` and retire the session. Local stop immediately blocks new calls, aborts admitted calls and releases the native runtime. The native driver runs in a supervised child. Requests have a maximum ten-second deadline; cancellation, invalid replies or timeout retire that child and wait for exit, forcing termination after a two-second grace period. No input is automatically replayed on a replacement process.
 
@@ -16,7 +16,7 @@ The SDK's typed `TypeTextInput` currently omits `delivery_mode`. The adapter use
 
 ## Private child lifecycle
 
-The interactive host selects the packaged child entrypoint and working directory; neither is a model argument. `openComputerProcess` uses Mira's existing bounded private JSONL process transport. The child accepts only one initialization and fixed observe/click/type requests, refuses duplicate IDs and overlapping or oversized requests, and cannot call host tools. `ComputerWindowSession` remains responsible for fresh one-use observations and the host availability gate around those requests.
+The interactive host selects the packaged child entrypoint and working directory; neither is a model argument. `openComputerProcess` uses Mira's existing bounded private JSONL process transport. The child accepts only one initialization and fixed observe/click/click_element/type requests, refuses duplicate IDs and overlapping or oversized requests, and cannot call host tools. `ComputerWindowSession` remains responsible for fresh one-use observations and the host availability gate around those requests.
 
 Both ends enforce five-minute total and one-minute idle limits. Parent pipe loss aborts admitted work; the child has its own two-second forced-exit fallback for stuck native cleanup. The parent waits for actual process exit before removing its private temporary directory, including any native capability manifest. Parent-enforced termination is independent of the child event loop; the child's parent-loss fallback still requires that loop to run. The packaged Windows supervisor described below additionally owns and confirms cleanup of the complete worker process tree; other platforms still need equivalent ownership before desktop activation. Native diagnostic output is drained without retaining it. Protocol failures return generic errors; possibly delivered input remains unknown.
 
@@ -594,9 +594,9 @@ it; uninstall also removes the shortcut. Standard [Inno Setup task persistence](
 keeps this choice with the per-user installation. No Windows service, elevated
 scheduled task, new listener or extra credential file is installed.
 
-## Windows view-only capture
+## Windows window capture and element input
 
-Windows view-only sessions use the packaged `mira-window-capture.exe`. The local
+Windows view and control sessions use the packaged `mira-window-capture.exe`. The local
 consent host supplies the selected process creation time alongside the immutable
 executable, PID and HWND. Each capture rechecks that identity and the interactive
 session, refuses minimized or closed targets, and uses only Windows Graphics
@@ -621,13 +621,21 @@ decodes the PNG and verifies that a closed target is refused while its owner sta
 alive. Existing Windows input, installer, package inventory and process-ownership
 tests remain required. No screenshots are logged, uploaded or retained.
 
-Control mode remains on the pinned SDK and is not yet qualified for private-PC
-activation. Its coordinate input requires its own screenshot context, and its
-capture path can fall back to screen-region pixels. Neither private wire fields
-nor a local SDK patch are used to bypass that contract. A supported control-mode
-capture/input integration, lock/browser acceptance and private-network activation
-remain required before deployment. The SDK 0.38.0 source still has this capture
-boundary; its dependency update is separate qualification work.
+Control mode uses the same WGC-only image path and the unmodified SDK's public
+`ClickPosition.Element` interface. The private worker accepts only tokens from its
+last observed, non-degraded tree; the outer session also checks exact membership,
+the ten-second deadline and one-use observation identity. Any input consumes the
+native token set. Windows coordinate clicks are refused before SDK dispatch, with
+no fallback to the SDK's screen-region screenshot path. Custom canvas controls
+without accessibility elements are therefore not clickable yet. Literal typing
+retains the host-selected delivery mode and exact window target.
+
+The hosted Windows package qualification clicks the entry and counter using their
+actual observed tokens, independently verifies text and one increment, and refuses
+coordinate input and a token from an older observation. The durable transport
+accepts bounded role/label/token metadata while rejecting arbitrary tree text;
+labels remain untrusted content. Lock/browser acceptance and private-network
+activation remain required before deployment. No local SDK patch is used.
 
 The new helper requires Windows 10 version 2004 or later for cursor-free capture.
 Microsoft API references: [CreateForWindow](https://learn.microsoft.com/en-us/windows/win32/api/windows.graphics.capture.interop/nf-windows-graphics-capture-interop-igraphicscaptureiteminterop-createforwindow)
