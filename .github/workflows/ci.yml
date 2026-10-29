@@ -37,6 +37,8 @@ jobs:
           bun-version-file: .bun-version
       - name: Install locked dependencies
         run: bun install --frozen-lockfile
+      - name: Qualify window-only capture behind an independent overlay
+        run: bun run test:computer:windows-capture
       - name: Compile native consent host and qualify protocol and readiness rules
         run: bun run test:computer:windows
       - name: Qualify desktop connection manager
