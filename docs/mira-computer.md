@@ -669,3 +669,22 @@ this test owns a separate CI job and runs lock last. No unlock or user credentia
 is attempted. Sleep/resume, reconnect and operator-PC acceptance remain separate
 from this lock qualification. Existing transport cancellation tests still cover
 late results and unknown input after connection loss.
+
+## Private transport reconnect acceptance
+
+The PostgreSQL integration suite runs the actual companion presence, consent and
+command loops against the production machine receiver over certificate-verified
+loopback HTTPS. Only the local window host is synthetic: these checks never touch
+an operator desktop. Each case owns a disposable database and ephemeral TLS key.
+
+The receiver commits a command claim or input completion, then the test closes
+the real listening socket before returning its response. A lost claim must wait
+for local driver cleanup before reconnecting. The new generation rejects old
+heartbeats and late results, erases transient command content and requires a new
+access request plus explicit local consent before fresh input can run. An input
+whose completion acknowledgement was lost remains terminal, even when the native
+fixture and server already completed it; it must not retry the input or reconnect
+automatically. Restarting presence cannot revive that command.
+
+This qualifies the private transport and durable queue together, not Windows
+session disconnect/reconnect, suspend/resume or the deployed Meshnet route.
