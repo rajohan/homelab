@@ -11,10 +11,13 @@ subprocess.run(["docker", "run", "-d", "--rm", "--tmpfs", "/var/lib/postgresql:r
                 "-p", "127.0.0.1::5432", "-e", "POSTGRES_USER=homelab_test", "-e", "POSTGRES_PASSWORD=isolated-test-only-password",
                 "-e", "POSTGRES_DB=homelab_auth_test", "postgres:18"], check=True, stdout=subprocess.DEVNULL)
 try:
+    # The image's temporary initialization server accepts Unix sockets before the final TCP server starts.
     for _ in range(100):
-        if subprocess.run(["docker", "exec", name, "pg_isready", "-U", "homelab_test", "-d", "homelab_auth_test"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
+        if subprocess.run(["docker", "exec", name, "pg_isready", "-h", "127.0.0.1", "-U", "homelab_test", "-d", "homelab_auth_test"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
             break
         time.sleep(0.1)
+    else:
+        raise RuntimeError("Disposable database did not become ready over TCP")
     port = subprocess.check_output(["docker", "port", name, "5432/tcp"], text=True).strip().split(":")[-1]
     if not port.isdecimal():
         raise RuntimeError("Invalid disposable database port")
