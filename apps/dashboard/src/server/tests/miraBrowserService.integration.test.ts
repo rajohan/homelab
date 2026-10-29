@@ -494,7 +494,9 @@ for (const character of ["界", "\u0001", '"']) {
             const output = await f.invoke("mira_browser_observe", {});
             const metadata = frame(output);
             expect(metadata).toMatchObject({ complete: false });
-            expect(metadata.refs.length).toBeGreaterThan(0);
+            expect(metadata.refs.map((item) => item.ref)).toEqual(
+                Array.from({ length: 300 }, (_, index) => `p1:${index + 1}`)
+            );
             const content = runtimeContentItems(output);
             expect(content[0]?.type).toBe("inputText");
             if (content[0]?.type === "inputText")

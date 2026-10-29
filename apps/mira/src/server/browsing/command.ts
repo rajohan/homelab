@@ -34,7 +34,13 @@ export function browserCommandResult(
                 return frame;
             } catch (error) {
                 // The image was already validated; also budget JSON escaping in the full envelope.
-                if (frame.outline.length === 0 && frame.refs.length === 0) throw error;
+                if (
+                    frame.outline.length === 0 &&
+                    frame.refs.every(
+                        (item) => item.label.length === 0 && item.role.length === 0
+                    )
+                )
+                    throw error;
             }
             frame =
                 frame.outline.length > 0
@@ -48,7 +54,16 @@ export function browserCommandResult(
                     : {
                           ...frame,
                           complete: false,
-                          refs: frame.refs.slice(0, Math.floor(frame.refs.length / 2)),
+                          // Preserve every authorized ref and action; only descriptive text may shrink.
+                          refs: frame.refs.map((item) => ({
+                              ...item,
+                              role: item.role
+                                  .slice(0, Math.floor(item.role.length / 2))
+                                  .toWellFormed(),
+                              label: item.label
+                                  .slice(0, Math.floor(item.label.length / 2))
+                                  .toWellFormed(),
+                          })),
                       };
         }
     }
