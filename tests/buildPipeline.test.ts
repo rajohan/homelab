@@ -92,6 +92,7 @@ async function ciWorkflow() {
                 }),
                 verify: workflowJob,
                 windows: workflowJob,
+                "windows-consent-acceptance": workflowJob,
                 coverage: workflowJob,
             }),
         }),
@@ -112,18 +113,23 @@ test("PR execution cannot share a runner or secrets with authenticated coverage 
     expect(workflow.source).not.toMatch(
         /secrets\.|github\.token|codecov\/codecov-action/
     );
-    expect(verify.needs).toEqual(["checks", "windows"]);
-    expect(workflow.jobs.windows["runs-on"]).toBe("windows-latest");
-    expect(workflow.jobs.windows.permissions).toEqual({ contents: "read" });
-    expect(workflow.jobs.windows.secrets).toBeUndefined();
-    expect(JSON.stringify(workflow.jobs.windows)).not.toMatch(
-        /secrets\.|github\.token|codecov\/codecov-action/
-    );
-    expect(
-        workflow.jobs.windows.steps.find((step) =>
-            step.uses?.startsWith("actions/checkout@")
-        )?.with?.["persist-credentials"]
-    ).toBe(false);
+    expect(verify.needs).toEqual(["checks", "windows", "windows-consent-acceptance"]);
+    for (const job of [
+        workflow.jobs.windows,
+        workflow.jobs["windows-consent-acceptance"],
+    ]) {
+        expect(job["runs-on"]).toBe("windows-latest");
+        expect(job.permissions).toEqual({ contents: "read" });
+        expect(job.secrets).toBeUndefined();
+        expect(JSON.stringify(job)).not.toMatch(
+            /secrets\.|github\.token|codecov\/codecov-action/
+        );
+        expect(
+            job.steps.find((step) => step.uses?.startsWith("actions/checkout@"))?.with?.[
+                "persist-credentials"
+            ]
+        ).toBe(false);
+    }
     expect(verify.if).toBe("always()");
     expect(verify.steps).toEqual([
         {
@@ -131,8 +137,9 @@ test("PR execution cannot share a runner or secrets with authenticated coverage 
             env: {
                 CHECK_RESULT: "${{ needs.checks.result }}",
                 WINDOWS_RESULT: "${{ needs.windows.result }}",
+                CONSENT_RESULT: "${{ needs.windows-consent-acceptance.result }}",
             },
-            run: 'test "$CHECK_RESULT" = success && test "$WINDOWS_RESULT" = success',
+            run: 'test "$CHECK_RESULT" = success && test "$WINDOWS_RESULT" = success && test "$CONSENT_RESULT" = success',
         },
     ]);
     expect(coverage.needs).toBe("verify");

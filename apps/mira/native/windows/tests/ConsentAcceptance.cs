@@ -124,7 +124,16 @@ internal static class ConsentAcceptance
         var allow = Find(window, ControlType.Button, "Allow control");
         Require(!allow.Current.IsEnabled);
         detail = "fixture list item";
-        var item = Find(window, ControlType.ListItem, (string)target["title"]);
+        // Details views may expose DataItem rather than ListItem. Require the
+        // actual selection capability and exact owned fixture name instead.
+        AutomationElement item = null;
+        Wait(delegate
+        {
+            item = window.FindFirst(TreeScope.Descendants, new AndCondition(
+                new PropertyCondition(AutomationElement.IsSelectionItemPatternAvailableProperty, true),
+                new PropertyCondition(AutomationElement.NameProperty, (string)target["title"])));
+            return item != null;
+        });
         detail = "fixture selection";
         ((SelectionItemPattern)item.GetCurrentPattern(SelectionItemPattern.Pattern)).Select();
         Require(!allow.Current.IsEnabled); // Selecting a window alone cannot grant foreground input.
