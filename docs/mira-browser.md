@@ -40,6 +40,14 @@ The private Docker connection attaches before startup and validates non-TTY fram
 
 The origin ceiling limits observation and input, not subresource requests or page-driven navigation. External egress must be separately enforced before live websites are enabled. Downloads/uploads and additional tabs remain separate deployment work.
 
+## Native upload foundation
+
+The native adapter now has a private, opt-in upload operation for a trusted host that has already authorized exact attachment bytes. It requires Control with **one exact origin**, an unused observed main-document file-input ref, and a verified filename, size and SHA-256 digest. This is not exposed through the worker wire protocol, model tools, HTTP routes or Chat yet. Those boundaries still reject upload commands and upload-enabled initialization; ordinary browser sessions receive no file-reader capability. The next integration must bind the attachment, origin, run and fresh ref to explicit human approval before calling this adapter.
+
+The adapter copies and verifies at most **25 MiB total across 16 files per browser lifetime** into a private session directory in the container's existing temporary filesystem. Display filenames cannot select directories; every assignment gets its own random subdirectory, and the native manifest permits reading only that staging root. It never mounts the product file store or returns paths. Files remain until Chromium stops so websites can read a selected file later, and session cleanup removes them. Staging consumes the observation deadline; cancellation, quota failure, invalid results and uncertain delivery retire the session without replay.
+
+Assigning a file makes its bytes available to the approved website immediately, even before a form is submitted. An assignment result therefore reports unverified delivery; it does not claim that a website accepted a submission. The unchanged CUA driver revalidates the live origin and exact input node. Actual offline Chromium qualification verifies the submitted bytes and filename, delayed reading, refusal after page-driven navigation outside the approved origin, and staging removal. Unit tests cover byte/count limits, tampering, cancellation and single-use refs. Downloads and the user-facing transfer controls remain separate work.
+
 ## Saved profiles
 
 Temporary browsing remains the default. A freshly verified human can create up to four account-owned profiles in Chat's browser dialog, each with a name and an immutable list of approved origins. Selecting a profile never grants access by itself: the human still approves a running manual job, exact origins, initial URL and view/control mode. The grant's origins must be a subset of the profile's origins. Models and automation tokens cannot create, select, delete or broaden profiles. The public API returns metadata only, never cookies or storage paths.

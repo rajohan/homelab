@@ -108,6 +108,7 @@
     "scripts/buildBrowser.test.ts": 150,
     "apps/mira/src/server/browsing/session.test.ts": 291,
     "apps/mira/src/server/browsing/egress.test.ts": 3,
-    "apps/mira/src/server/browsing/savedProfile.test.ts": 59
+    "apps/mira/src/server/browsing/savedProfile.test.ts": 59,
+    "apps/mira/src/server/browsing/upload.test.ts": 91
   }
 }

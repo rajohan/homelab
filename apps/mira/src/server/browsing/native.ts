@@ -16,6 +16,11 @@ import {
     preparedSchema,
     windowsSchema,
 } from "./protocol";
+import {
+    browserUploadActionSchema,
+    createBrowserUploads,
+    type BrowserUploadFile,
+} from "./upload";
 import { browserActionSchema } from "./wire";
 
 const navigationSchema = v.object({
@@ -60,12 +65,13 @@ export async function openNativeBrowser(
     let timer: ReturnType<typeof setTimeout> | undefined;
     let driver: ReturnType<typeof sdk.CuaDriver.createConfigured> | undefined;
     let saveProfile: (() => Promise<void>) | undefined;
+    let uploads: Awaited<ReturnType<typeof createBrowserUploads>> | undefined;
     let target: { targetId: string; tabId: string; origins: string[] };
     let observed:
         | {
               id: string;
               time: number;
-              refs: Map<string, ("click" | "type")[]>;
+              refs: Map<string, ("click" | "type" | "upload")[]>;
               maxAge: number;
           }
         | undefined;
@@ -123,6 +129,7 @@ export async function openNativeBrowser(
             | "get_browser_state"
             | "browser_navigate"
             | "browser_click"
+            | "browser_set_input_files"
             | "browser_type",
         args: Record<string, unknown>,
         operation: AbortSignal
@@ -173,8 +180,9 @@ export async function openNativeBrowser(
         }
     };
     try {
+        if (grant.uploads) uploads = await createBrowserUploads(directory);
         const manifest = path.join(directory, "capabilities.json");
-        await writeFile(manifest, JSON.stringify(browserManifest(grant)), {
+        await writeFile(manifest, JSON.stringify(browserManifest(grant, uploads?.root)), {
             mode: 0o600,
         });
         check(signal);
@@ -271,7 +279,8 @@ export async function openNativeBrowser(
                             },
                             operation
                         ),
-                        target
+                        target,
+                        Boolean(uploads)
                     );
                     const id = randomUUID();
                     observed = {
@@ -286,6 +295,66 @@ export async function openNativeBrowser(
                 run(operation, async () => {
                     observed = undefined;
                     return navigate(browserUrl(url, grant.origins), operation);
+                }),
+            upload: (command: unknown, file: BrowserUploadFile, operation: AbortSignal) =>
+                run(operation, async () => {
+                    const previous = observed;
+                    observed = undefined;
+                    const action = v.parse(browserUploadActionSchema, command);
+                    if (
+                        !uploads ||
+                        !previous ||
+                        previous.id !== action.observationId ||
+                        now() - previous.time < 0 ||
+                        now() - previous.time >= previous.maxAge ||
+                        !previous.refs.get(action.ref)?.includes("upload")
+                    )
+                        throw new Error(
+                            "Browser upload requires explicit authority and a fresh file-input observation."
+                        );
+                    const destination = await uploads.stage(
+                        file,
+                        AbortSignal.any([signal, stop.signal, operation])
+                    );
+                    // Staging consumes observation lifetime too. The native driver then re-attests
+                    // the live origin and exact file node under its mutation lock.
+                    if (
+                        now() - previous.time < 0 ||
+                        now() - previous.time >= previous.maxAge
+                    )
+                        throw new Error(
+                            "Browser upload observation expired while staging."
+                        );
+                    const result = await call(
+                        "browser_set_input_files",
+                        {
+                            ...tabArgs(),
+                            ref: action.ref,
+                            files: [destination],
+                        },
+                        operation
+                    );
+                    const data = v.parse(
+                        v.object({
+                            status: v.literal("ok"),
+                            target_id: v.string(),
+                            tab_id: v.string(),
+                            ref: v.string(),
+                            frame: v.literal("main"),
+                            file_count: v.literal(1),
+                        }),
+                        browserMetadata(result)
+                    );
+                    if (
+                        result.images.length > 0 ||
+                        data.target_id !== target.targetId ||
+                        data.tab_id !== target.tabId ||
+                        data.ref !== action.ref
+                    )
+                        throw new Error(
+                            "Browser upload returned a different destination."
+                        );
+                    return { effect: "unverified" as const };
                 }),
             act: (command: unknown, operation: AbortSignal) =>
                 run(operation, async () => {

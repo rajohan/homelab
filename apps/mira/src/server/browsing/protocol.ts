@@ -112,11 +112,13 @@ export function browserMetadata(result: BrowserNativeResult): unknown {
  * Validate a tab-only frame and expose only visible main-document action references.
  * @param result - Native semantic snapshot and its inline viewport image.
  * @param target - The immutable internally selected tab and origin ceiling.
+ * @param uploads - Trusted host opt-in; ordinary observations do not advertise file input actions.
  * @returns Bounded untrusted page content with no generic native or CDP handles.
  */
 export function browserSnapshot(
     result: BrowserNativeResult,
-    target: { targetId: string; tabId: string; origins: readonly string[] }
+    target: { targetId: string; tabId: string; origins: readonly string[] },
+    uploads = false
 ) {
     const data = v.parse(snapshotSchema, browserMetadata(result));
     if (
@@ -156,8 +158,10 @@ export function browserSnapshot(
             role: item.role.slice(0, 64),
             label: (item.name ?? "").slice(0, 256),
             actions: item.actions.filter(
-                (action): action is "click" | "type" =>
-                    action === "click" || action === "type"
+                (action): action is "click" | "type" | "upload" =>
+                    action === "click" ||
+                    action === "type" ||
+                    (uploads && action === "upload")
             ),
         }))
         .filter((item) => item.actions.length > 0);

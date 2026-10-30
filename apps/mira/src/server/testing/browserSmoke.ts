@@ -4,6 +4,7 @@ import { readdir, readlink } from "node:fs/promises";
 import { Effect } from "effect";
 
 import { openNativeBrowser } from "../browsing/native";
+import { qualifyBrowserUploads } from "./browserUploadSmoke";
 
 const executable = "/usr/lib/chromium/chromium";
 async function chromiumProcesses() {
@@ -218,7 +219,10 @@ export async function qualifyBrowserFixture() {
 if (import.meta.main) {
     const result = await Effect.runPromise(
         Effect.tryPromise({
-            try: qualifyBrowserFixture,
+            try: async () => ({
+                ...(await qualifyBrowserFixture()),
+                uploads: await qualifyBrowserUploads(),
+            }),
             catch: (cause) =>
                 new Error("Isolated browser qualification failed.", { cause }),
         })
