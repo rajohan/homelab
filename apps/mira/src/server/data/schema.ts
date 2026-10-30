@@ -1011,3 +1011,61 @@ export const miraBrowserProcesses = pgTable(
         ),
     ]
 );
+
+export const miraBrowserCommands = pgTable(
+    "mira_browser_commands",
+    {
+        id: uuid()
+            .primaryKey()
+            .references(() => miraToolReceipts.id),
+        owner: text().notNull(),
+        accessId: uuid("access_id")
+            .notNull()
+            .references(() => miraBrowserAccess.id),
+        runId: uuid("run_id")
+            .notNull()
+            .references(() => miraRuns.id),
+        runLease: uuid("run_lease").notNull(),
+        processId: uuid("process_id").references(() => miraBrowserProcesses.id),
+        processToken: uuid("process_token"),
+        method: text().notNull(),
+        state: text().notNull().default("queued"),
+        payload: jsonb(),
+        result: jsonb(),
+        createdAt: time("created_at").notNull().defaultNow(),
+        expiresAt: time("expires_at").notNull(),
+        claimedAt: time("claimed_at"),
+        finishedAt: time("finished_at"),
+    },
+    (t) => [
+        index("mira_browser_commands_owner").on(t.owner, t.state),
+        index("mira_browser_commands_cleanup").on(t.state, t.expiresAt),
+        uniqueIndex("mira_browser_commands_active")
+            .on(t.accessId)
+            .where(sql`${t.state} IN ('queued','claimed','completed')`),
+        check(
+            "mira_browser_commands_method",
+            sql`${t.method} IN ('observe','navigate','act')`
+        ),
+        check(
+            "mira_browser_commands_state",
+            sql`${t.state} IN ('queued','claimed','completed','consumed','refused','unknown')`
+        ),
+        check(
+            "mira_browser_commands_duration",
+            sql`${t.expiresAt}>${t.createdAt} AND ${t.expiresAt}<=${t.createdAt}+interval '100 seconds'`
+        ),
+        check(
+            "mira_browser_commands_binding",
+            sql`(${t.processId} IS NULL AND ${t.processToken} IS NULL AND ${t.state} IN ('queued','refused','unknown')) OR (${t.processId} IS NOT NULL AND ${t.processToken} IS NOT NULL AND ${t.state}<>'queued')`
+        ),
+        check(
+            "mira_browser_commands_payload",
+            sql`(${t.state}='queued' AND ${t.payload} IS NOT NULL AND ${t.result} IS NULL) OR (${t.state}='claimed' AND ${t.payload} IS NULL AND ${t.result} IS NULL) OR (${t.state}='completed' AND ${t.payload} IS NULL AND ${t.result} IS NOT NULL) OR (${t.state} IN ('consumed','refused','unknown') AND ${t.payload} IS NULL AND ${t.result} IS NULL)`
+        ),
+        check(
+            "mira_browser_commands_size",
+            sql`(${t.payload} IS NULL OR octet_length(${t.payload}::text)<=32768) AND (${t.result} IS NULL OR octet_length(${t.result}::text)<=4194304)`
+        ),
+    ]
+);

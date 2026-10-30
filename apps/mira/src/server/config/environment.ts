@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { computerChildEnvironment } from "../computer/process";
 import { agentMailReadConfiguration } from "../integrations/agentmail/configuration";
 import { daytonaExecutionConfiguration } from "../integrations/daytona/configuration";
@@ -79,4 +81,29 @@ export function hostedComputerQualificationEnvironment(): boolean {
         process.env.GITHUB_ACTIONS === "true" &&
         process.env.RUNNER_ENVIRONMENT === "github-hosted"
     );
+}
+
+/**
+ * Read the explicitly provisioned private browser-host configuration.
+ * @returns Validated paths and health/database settings, never inherited by browser workers.
+ */
+export function browserHostEnvironment() {
+    const file = process.env.HOMELAB_MIRA_BROWSER_CONFIG;
+    const databaseUrl = process.env.HOMELAB_DASHBOARD_DATABASE_URL;
+    const port = Number(process.env.HOMELAB_MIRA_BROWSER_HEALTH_PORT ?? 3441);
+    if (
+        !file ||
+        !path.isAbsolute(file) ||
+        !databaseUrl ||
+        !Number.isInteger(port) ||
+        port < 1 ||
+        port > 65_535
+    )
+        throw new Error(
+            "Browser host configuration, database and health port are required."
+        );
+    const url = new URL(databaseUrl);
+    if (!["postgres:", "postgresql:"].includes(url.protocol) || url.pathname === "/")
+        throw new Error("A product database is required.");
+    return { file, databaseUrl, port };
 }

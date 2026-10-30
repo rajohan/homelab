@@ -10,11 +10,7 @@ import { browserEngine } from "../browsing/engine";
 import { openBrowserWorker } from "../browsing/process";
 import { reconcileBrowserContainer } from "../browsing/reconciliation";
 import { openBrowserSession } from "../browsing/session";
-import {
-    claimMiraBrowserAccess,
-    closeMiraBrowserAccess,
-    requireMiraBrowserAccess,
-} from "./browserAccess";
+import { claimMiraBrowserAccess, requireMiraBrowserAccess } from "./browserAccess";
 import {
     advanceMiraBrowserProcess,
     beginMiraBrowserProcessCleanup,
@@ -26,12 +22,12 @@ import {
 } from "./browserProcesses";
 import type { MiraContext } from "./context";
 
-const configurationSchema = v.strictObject({
+export const browserHostConfigurationSchema = v.strictObject({
     hostId: v.pipe(v.string(), v.uuid()),
     socketPath: v.pipe(v.string(), v.minLength(1), v.maxLength(4096)),
     imageId: v.pipe(v.string(), v.regex(/^sha256:[a-f0-9]{64}$/)),
 });
-type Configuration = v.InferOutput<typeof configurationSchema>;
+type Configuration = v.InferOutput<typeof browserHostConfigurationSchema>;
 type Claim = Awaited<ReturnType<typeof reserveMiraBrowserProcess>>["claim"];
 interface Dependencies {
     open?: typeof openBrowserWorker;
@@ -76,7 +72,7 @@ export async function recoverMiraBrowserProcesses(
     configuration: unknown,
     reconcile = reconcileBrowserContainer
 ) {
-    const config = v.parse(configurationSchema, configuration);
+    const config = v.parse(browserHostConfigurationSchema, configuration);
     await browserEngine({ socketPath: config.socketPath, imageId: config.imageId });
     let recovered = 0,
         unresolved = 0;
@@ -110,7 +106,7 @@ export async function openMiraBrowserSession(
     dependencies: Dependencies = {}
 ) {
     owner.throwIfAborted();
-    const config = v.parse(configurationSchema, configuration);
+    const config = v.parse(browserHostConfigurationSchema, configuration);
     const fixed = { socketPath: config.socketPath, imageId: config.imageId };
     const host: MiraContext = {
         client: context.client,
@@ -120,22 +116,24 @@ export async function openMiraBrowserSession(
     };
     await browserEngine(fixed);
     owner.throwIfAborted();
-    const access = await claimMiraBrowserAccess(host, id);
+    // Grant consumption and process reservation commit together. A host crash
+    // cannot strand an active grant without a recoverable process record.
+    const { access, record } = await host.client.begin(async (query) => {
+        await query`SELECT pg_advisory_xact_lock(hashtextextended('mira:browser:capacity',0))`;
+        const access = await claimMiraBrowserAccess({ ...host, transaction: query }, id);
+        const record = await reserveMiraBrowserProcess(
+            host.client,
+            {
+                accessId: access.id,
+                hostToken: access.hostToken,
+                hostId: config.hostId,
+                imageId: config.imageId,
+            },
+            query
+        );
+        return { access, record };
+    });
     const identity = { id: access.id, hostToken: access.hostToken };
-    let record: Awaited<ReturnType<typeof reserveMiraBrowserProcess>>;
-    try {
-        record = await reserveMiraBrowserProcess(host.client, {
-            accessId: access.id,
-            hostToken: access.hostToken,
-            hostId: config.hostId,
-            imageId: config.imageId,
-        });
-    } catch (error) {
-        // No process was dispatched. The cleanup helper refuses an uncertain
-        // reservation commit, preserving its slot for normal host recovery.
-        await closeMiraBrowserAccess(host, identity);
-        throw error;
-    }
     const { claim } = record;
     const journal: BrowserContainerJournal = {
         owner: record.id,
@@ -173,7 +171,7 @@ export async function openMiraBrowserSession(
             await confirmMiraBrowserProcessCleanup(host.client, claim, proof);
         },
     };
-    return openBrowserSession(
+    const session = await openBrowserSession(
         (signal) =>
             (dependencies.open ?? openBrowserWorker)(
                 fixed,
@@ -199,4 +197,5 @@ export async function openMiraBrowserSession(
         },
         owner
     );
+    return { ...session, claim: { ...record.claim } };
 }

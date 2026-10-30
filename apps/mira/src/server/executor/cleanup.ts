@@ -1,5 +1,6 @@
 import type { SQL } from "bun";
 
+import { cleanupMiraBrowserCommands } from "../data/browserCommands";
 import { cleanupMiraComputerCommands } from "../data/computerCommands";
 import { auditMira } from "../data/context";
 import { cleanupMiraFiles } from "../data/files";
@@ -64,6 +65,7 @@ export async function cleanupMiraResources(options: {
     const outcomes = await Promise.allSettled([
         cleanupMiraMailEvents(options.client),
         cleanupMiraComputerCommands(options.client),
+        cleanupMiraBrowserCommands(options.client),
         options.client`UPDATE mira_tool_receipts SET proposal=NULL,state='expired',message='The proposed change expired without approval.',finished_at=now() WHERE state='awaiting_approval' AND created_at <= now()-interval '24 hours'`,
         options.runtime
             ? cleanupMiraConversations(options.client, options.runtime)

@@ -2,7 +2,8 @@ import { imageSize } from "image-size";
 import * as v from "valibot";
 
 const maximumImageBytes = 2 * 1024 * 1024;
-const maximumTextBytes = 256 * 1024;
+/** Maximum aggregate UTF-8 text bytes in a single runtime tool result. */
+export const maximumToolTextBytes = 256 * 1024;
 const maximumBase64Length = 4 * Math.ceil(maximumImageBytes / 3);
 const maximumResultBytes = 3 * 1024 * 1024;
 const contentSchema = v.pipe(
@@ -10,7 +11,7 @@ const contentSchema = v.pipe(
         v.variant("type", [
             v.strictObject({
                 type: v.literal("text"),
-                text: v.pipe(v.string(), v.maxLength(maximumTextBytes)),
+                text: v.pipe(v.string(), v.maxLength(maximumToolTextBytes)),
             }),
             v.strictObject({
                 type: v.literal("image"),
@@ -50,7 +51,7 @@ export function runtimeContentItems(result: unknown): RuntimeContentItem[] {
     const items: RuntimeContentItem[] = content.map((item) => {
         if (item.type === "text") {
             textBytes += Buffer.byteLength(item.text);
-            if (textBytes > maximumTextBytes)
+            if (textBytes > maximumToolTextBytes)
                 throw new Error("Mira tool text exceeds its limit.");
             return { type: "inputText", text: item.text };
         }

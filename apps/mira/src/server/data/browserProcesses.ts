@@ -110,9 +110,14 @@ async function stopGrant(query: TransactionSQL, accessId: string) {
  * Reserve one of two global process slots before any Docker mutation is issued.
  * @param client - Trusted host database connection, never a model-facing endpoint.
  * @param input - Private claimed grant token, persistent host identity and installed immutable image ID.
+ * @param transaction - Optional trusted startup transaction already holding the global capacity lock before claiming the human grant.
  * @returns A durable random container identity and private fifteen-second controller lease.
  */
-export async function reserveMiraBrowserProcess(client: SQL, input: unknown) {
+export async function reserveMiraBrowserProcess(
+    client: SQL,
+    input: unknown,
+    transaction?: TransactionSQL
+) {
     const request = v.parse(
         v.strictObject({
             accessId: uuid,
@@ -122,7 +127,7 @@ export async function reserveMiraBrowserProcess(client: SQL, input: unknown) {
         }),
         input
     );
-    return client.begin(async (query) => {
+    const reserve = async (query: TransactionSQL) => {
         await capacity(query);
         const [grant] = await query<{ owner: string; runId: string; runLease: string }[]>`
             SELECT owner,run_id AS "runId",run_lease AS "runLease" FROM mira_browser_access WHERE id=${request.accessId} AND host_token=${request.hostToken}`;
@@ -144,7 +149,8 @@ export async function reserveMiraBrowserProcess(client: SQL, input: unknown) {
         await query`INSERT INTO mira_browser_processes(id,access_id,host_id,image_id,lease_token,lease_expires_at)
             VALUES(${id},${request.accessId},${request.hostId},${request.imageId},${token},clock_timestamp()+interval '15 seconds')`;
         return result((await read(query, id))!);
-    });
+    };
+    return transaction ? reserve(transaction) : client.begin(reserve);
 }
 
 /**
