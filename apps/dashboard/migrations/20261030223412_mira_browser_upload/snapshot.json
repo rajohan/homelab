@@ -2,21 +2,9 @@
     "type": "diff",
     "version": "9",
     "dialect": "postgres",
-    "id": "8c5a066b-b20b-4142-98f0-171200715cb4",
+    "id": "6ddd00b5-697f-4b1b-882f-9c4863081372",
     "prevIds": ["3a9a099b-d85c-4583-aac9-66fc8dc02559"],
     "footprints": [
-        {
-            "statementType": "alter_check",
-            "statementTarget": ["table", "public", "mira_browser_commands"],
-            "writes": ["s|ck|public.mira_browser_commands.mira_browser_commands_method"],
-            "reads": [
-                "n|tbl|public.mira_browser_commands",
-                "n|sch|public",
-                "n|col|public.mira_browser_commands.method",
-                "e|col|public.mira_browser_commands.method"
-            ],
-            "sqlHash": "2acd1d707c121622"
-        },
         {
             "statementType": "alter_check",
             "statementTarget": ["table", "public", "mira_browser_consoles"],
@@ -41,13 +29,6 @@
         }
     ],
     "deltas": [
-        {
-            "op": "alter",
-            "key": "checks\u0000[\"public\",\"mira_browser_commands\",\"mira_browser_commands_method\"]",
-            "set": {
-                "value": "\"method\" IN ('observe','navigate','act','upload')"
-            }
-        },
         {
             "op": "alter",
             "key": "checks\u0000[\"public\",\"mira_browser_consoles\",\"mira_browser_console_state\"]",

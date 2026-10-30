@@ -1086,7 +1086,7 @@ export const miraBrowserCommands = pgTable(
             .where(sql`${t.state} IN ('queued','claimed','completed')`),
         check(
             "mira_browser_commands_method",
-            sql`${t.method} IN ('observe','navigate','act','upload')`
+            sql`${t.method} IN ('observe','navigate','act')`
         ),
         check(
             "mira_browser_commands_state",
