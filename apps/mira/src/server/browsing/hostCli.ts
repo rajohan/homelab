@@ -15,7 +15,7 @@ import { runMiraBrowserHost, type MiraBrowserHealth } from "../data/browserServi
  * @returns Completion after owned sessions stop; only content-free failures reach stderr.
  */
 export async function main(): Promise<void> {
-    const { file, databaseUrl, port } = browserHostEnvironment();
+    const { file, databaseUrl, port, filesDirectory } = browserHostEnvironment();
     const configuration = v.parse(
         browserHostConfigurationSchema,
         await Bun.file(file).json()
@@ -88,6 +88,7 @@ export async function main(): Promise<void> {
                         configuration,
                         signal: controller.signal,
                         health,
+                        filesDirectory,
                     }),
                 catch: () => new Error("Browser host failed."),
             })

@@ -23,6 +23,7 @@ import {
     createMiraBrowserProfile,
     deleteMiraBrowserProfile,
 } from "@homelab/mira/data/browserProfiles";
+import { listMiraBrowserUploads } from "@homelab/mira/data/browserUploads";
 import { MiraFailure, type MiraContext } from "@homelab/mira/data/context";
 
 import { runOperation, trpc } from "../api/trpc";
@@ -73,6 +74,11 @@ export const miraBrowserRouter = trpc.router({
         .input(miraBrowserProfileDeleteSchema)
         .mutation(({ ctx, input }) =>
             execute(ctx, true, (mira) => deleteMiraBrowserProfile(mira, input))
+        ),
+    uploads: trpc.procedure
+        .input(miraBrowserConsoleSchema)
+        .query(({ ctx, input }) =>
+            execute(ctx, false, (mira) => listMiraBrowserUploads(mira, input))
         ),
     console: trpc.procedure
         .input(miraBrowserConsoleSchema)

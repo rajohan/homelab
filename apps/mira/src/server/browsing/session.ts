@@ -1,4 +1,5 @@
 import type { openBrowserWorker } from "./process";
+import type { BrowserUploadFile } from "./upload";
 
 type Port = Awaited<ReturnType<typeof openBrowserWorker>>;
 interface Authority {
@@ -181,6 +182,11 @@ export async function openBrowserSession(
         act: (input: unknown, operation: AbortSignal) => {
             const snapshot = structuredClone(input);
             return run("control", operation, (s) => active.act(snapshot, s));
+        },
+        upload: (input: unknown, file: BrowserUploadFile, operation: AbortSignal) => {
+            const snapshot = structuredClone(input);
+            const selected = { ...file, bytes: Uint8Array.from(file.bytes) };
+            return run("control", operation, (s) => active.upload(snapshot, selected, s));
         },
         close,
     };

@@ -45,6 +45,7 @@ def main():
                 "HOMELAB_MIRA_BROWSER_PROXY_IMAGE": "homelab-browser-proxy-test:local",
                 "HOMELAB_MIRA_IMAGE": "homelab-mira-fixture:local",
                 "HOMELAB_DOCKER_GID": "998",
+                "HOMELAB_MIRA_FILES_DIR": str(Path(directory) / "files"),
                 "HOMELAB_MIRA_BROWSER_CONFIG": str(Path(directory) / "host.json"),
                 "HOMELAB_DASHBOARD_DATABASE_URL": "postgres://fixture:fixture@database/fixture"}
             rendered = subprocess.run(["docker", "--config", directory, "compose", "-f", "deploy/compose.browser.yaml", "config", "--format", "json"], cwd=root, env=compose_environment, check=True, capture_output=True, text=True, timeout=15)
@@ -60,6 +61,10 @@ def main():
             host_service = compose["services"]["mira-browser-host"]
             assert not host_service.get("ports") and set(host_service["networks"]) == {"default"}
             assert host_service["command"] == ["bun", "--no-env-file", "hostCli.js"]
+            attachment_mount = next(volume for volume in host_service["volumes"] if volume["target"] == "/var/lib/mira/files")
+            assert attachment_mount["source"] == compose_environment["HOMELAB_MIRA_FILES_DIR"]
+            assert attachment_mount["read_only"] is True and attachment_mount["bind"]["create_host_path"] is False
+            assert host_service["environment"]["HOMELAB_MIRA_FILES_DIR"] == attachment_mount["target"]
             client = network("client")
             # Isolated gateway mode creates no host bridge address/route. This prefix exists only in the fixture namespace.
             subnet = "1.1.1.0/29"

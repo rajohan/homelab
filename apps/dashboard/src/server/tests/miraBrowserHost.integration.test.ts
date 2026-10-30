@@ -26,6 +26,7 @@ function runtime() {
                 calls.push("act");
                 return Promise.resolve({ effect: "unverified" as const });
             },
+            upload: () => Promise.resolve({ effect: "unverified" as const }),
             close: () => {
                 calls.push("close");
                 controller.abort();

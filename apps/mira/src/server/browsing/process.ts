@@ -3,6 +3,12 @@ import * as v from "valibot";
 import { computerDriverVersion } from "../computer/policy";
 import { openBrowserConnection } from "./connection";
 import { browserUrl } from "./policy";
+import {
+    browserUploadActionSchema,
+    browserUploadFileSchema,
+    type BrowserUploadFile,
+} from "./upload";
+import { browserUploadParts } from "./uploadTransfer";
 import { browserActionSchema, browserWorkerFrame, browserWorkerGrant } from "./wire";
 
 /**
@@ -137,6 +143,65 @@ export async function openBrowserWorker(
                     await connection.request({ method: "act", params: action }, operation)
                 );
             }),
+        upload: (input: unknown, file: BrowserUploadFile, operation: AbortSignal) => {
+            const action = v.parse(browserUploadActionSchema, input);
+            const selected = v.parse(browserUploadFileSchema, file);
+            const copy = { ...selected, bytes: Uint8Array.from(selected.bytes) };
+            return run(operation, async () => {
+                const previous = observed;
+                observed = undefined;
+                if (
+                    !grant.uploads ||
+                    grant.mode !== "control" ||
+                    !previous ||
+                    previous.id !== action.observationId ||
+                    now() - previous.time < 0 ||
+                    now() - previous.time >= previous.maxAge ||
+                    !previous.refs.get(action.ref)?.includes("upload") ||
+                    copy.bytes.length !== copy.size ||
+                    new Bun.CryptoHasher("sha256").update(copy.bytes).digest("hex") !==
+                        copy.sha256
+                )
+                    throw new Error(
+                        "Upload requires approved bytes and a current file input."
+                    );
+                const accepted = v.strictObject({ accepted: v.literal(true) });
+                v.parse(
+                    accepted,
+                    await connection.request(
+                        {
+                            method: "uploadBegin",
+                            params: {
+                                input: action,
+                                file: {
+                                    name: copy.name,
+                                    size: copy.size,
+                                    sha256: copy.sha256,
+                                },
+                            },
+                        },
+                        operation
+                    )
+                );
+                for (const part of browserUploadParts(copy))
+                    v.parse(
+                        accepted,
+                        await connection.request(
+                            { method: "uploadPart", params: part },
+                            operation
+                        )
+                    );
+                if (now() - previous.time >= previous.maxAge)
+                    throw new Error("Upload observation expired during transfer.");
+                return v.parse(
+                    v.strictObject({ effect: v.literal("unverified") }),
+                    await connection.request(
+                        { method: "uploadFinish", params: {} },
+                        operation
+                    )
+                );
+            });
+        },
         close,
     };
 }

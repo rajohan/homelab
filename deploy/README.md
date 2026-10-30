@@ -222,7 +222,7 @@ Squid resolves through 1.1.1.1 and 9.9.9.9 inside its own namespace. Both its ad
 Provisioning uses the standard Compose overlay, not a second setup framework:
 
 1. Pull the exact Mira image from `container-images.json` and both browser images from `browser-image.json` for the same reviewed release. Keep their immutable digest references. The release publisher publishes only images already qualified in CI.
-2. Set `HOMELAB_MIRA_BROWSER_PROXY_IMAGE`, `HOMELAB_MIRA_IMAGE`, `HOMELAB_DOCKER_GID`, `HOMELAB_DOCKER_SOCKET`, `HOMELAB_DASHBOARD_DATABASE_URL` and `HOMELAB_MIRA_BROWSER_CONFIG`. The config file is nonsecret and must exist before starting the host. Do not pass model/provider credentials to this service.
+2. Set `HOMELAB_MIRA_BROWSER_PROXY_IMAGE`, `HOMELAB_MIRA_IMAGE`, `HOMELAB_DOCKER_GID`, `HOMELAB_DOCKER_SOCKET`, `HOMELAB_DASHBOARD_DATABASE_URL`, `HOMELAB_MIRA_FILES_DIR` and `HOMELAB_MIRA_BROWSER_CONFIG`. The config file is nonsecret and must exist before starting the host. Do not pass model/provider credentials to this service.
 3. Start only `mira-browser-proxy-a` and `mira-browser-proxy-b` with Compose. Read their immutable container IDs and image IDs with `docker inspect`, and the slot network IDs with `docker network inspect`. The browser worker image ID comes from `docker image inspect` after pulling its published digest.
 4. Write the configuration below with those exact IDs and a stable host UUID. Inside the host container the canonical socket path is `/run/docker.sock`. Apply the dashboard migrations before starting `mira-browser-host`.
 5. Start the host, verify its private health check, and qualify a disposable human-granted Chat session before enabling browser access for normal use.

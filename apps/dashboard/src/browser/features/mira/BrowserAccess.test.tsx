@@ -14,6 +14,7 @@ import { BrowserAccessDialog } from "./BrowserAccessDialog";
 import { BrowserAccessPanel } from "./BrowserAccessPanel";
 import { BrowserConsoleDialog } from "./BrowserConsoleDialog";
 import { BrowserPageControls } from "./BrowserPageControls";
+import { BrowserUploadControls } from "./BrowserUploadControls";
 
 function run(): MiraRun {
     return {
@@ -491,5 +492,126 @@ test("profile creation and deletion stay explicit human actions with confirmatio
     } finally {
         f.close();
         wire.close();
+    }
+});
+
+test("attachment upload requires explicit confirmation and freezes the website, file and observation", async () => {
+    const current = run(),
+        access = grant(current),
+        f = fixture(current, [access], null);
+    const now = Date.now();
+    const file = {
+        id: crypto.randomUUID(),
+        name: "document.txt",
+        size: 1025,
+        sha256: "a".repeat(64),
+    };
+    const key = ["operations", "mira", "browser-uploads", access.id];
+    const duplicates = [
+        file,
+        { ...file, id: crypto.randomUUID(), size: 1026, sha256: "b".repeat(64) },
+        { ...file, id: crypto.randomUUID(), sha256: "c".repeat(64) },
+    ];
+    f.query.setQueryData(key, duplicates);
+    const image = {
+        ...preview(),
+        refs: [
+            {
+                ref: "p1:1",
+                role: "file",
+                label: "Upload document",
+                actions: ["upload" as const],
+            },
+        ],
+    };
+    const sent: unknown[] = [];
+    const show = (view = image, disabled = false, time = now) =>
+        f.rerender(
+            <BrowserUploadControls
+                accessId={access.id}
+                preview={view}
+                disabled={disabled}
+                now={time}
+                onCommand={(input) => sent.push(input)}
+            />
+        );
+    const user = userEvent.setup();
+    try {
+        show();
+        expect(screen.getByRole("button", { name: "Review upload" })).toBeDisabled();
+        await user.click(
+            screen.getByRole("button", { name: /^Conversation attachment/ })
+        );
+        for (const duplicate of duplicates)
+            expect(
+                screen.getByRole("option", {
+                    name: `${duplicate.name} · ${duplicate.size.toLocaleString("en-US")} bytes · ${duplicate.id}`,
+                })
+            ).toBeInTheDocument();
+        await user.click(
+            screen.getByRole("option", {
+                name: `document.txt · 1,025 bytes · ${file.id}`,
+            })
+        );
+        await user.click(screen.getByRole("button", { name: /^File input on the page/ }));
+        await user.click(screen.getByRole("option", { name: "Upload document" }));
+        await user.click(screen.getByRole("button", { name: "Review upload" }));
+        expect(sent).toEqual([]);
+        expect(
+            screen.getByRole("dialog", { name: "Upload attachment" })
+        ).toHaveTextContent(new URL(image.url).origin);
+        expect(
+            screen.getByRole("dialog", { name: "Upload attachment" })
+        ).toHaveTextContent("document.txt · 1,025 bytes");
+        expect(
+            screen.getByRole("dialog", { name: "Upload attachment" })
+        ).toHaveTextContent(file.id);
+        for (const duplicate of duplicates.slice(1))
+            expect(
+                screen.getByRole("dialog", { name: "Upload attachment" })
+            ).not.toHaveTextContent(duplicate.id);
+        act(() => {
+            f.query.setQueryData(key, [{ ...file, sha256: "d".repeat(64) }]);
+        });
+        await waitFor(() =>
+            expect(
+                screen.getByRole<HTMLButtonElement>("button", {
+                    name: "Send file to website",
+                }).disabled
+            ).toBe(true)
+        );
+        act(() => {
+            f.query.setQueryData(key, duplicates);
+        });
+        await waitFor(() =>
+            expect(
+                screen.getByRole<HTMLButtonElement>("button", {
+                    name: "Send file to website",
+                }).disabled
+            ).toBe(false)
+        );
+        show({ ...image, observationId: crypto.randomUUID() });
+        expect(
+            screen.getByRole("button", { name: "Send file to website" })
+        ).toBeDisabled();
+        await user.click(screen.getByRole("button", { name: "Cancel" }));
+        show();
+        await user.click(screen.getByRole("button", { name: "Review upload" }));
+        show(image, false, now + 11_000);
+        expect(
+            screen.getByRole("button", { name: "Send file to website" })
+        ).toBeDisabled();
+        show();
+        await user.click(screen.getByRole("button", { name: "Send file to website" }));
+        expect(sent).toEqual([
+            {
+                method: "upload",
+                input: { observationId: image.observationId, ref: "p1:1" },
+                origin: new URL(image.url).origin,
+                file,
+            },
+        ]);
+    } finally {
+        f.close();
     }
 });

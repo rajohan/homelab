@@ -55,21 +55,40 @@ export const miraBrowserTransferSchema = v.strictObject({
     epoch: id,
     controller: v.picklist(["mira", "human"]),
 });
+export const miraBrowserUploadFileSchema = v.strictObject({
+    id,
+    name: v.pipe(v.string(), v.minLength(1), v.maxLength(200)),
+    size: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(25 * 1024 * 1024)),
+    sha256: v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/)),
+});
+export type MiraBrowserUploadFile = v.InferOutput<typeof miraBrowserUploadFileSchema>;
+export const miraBrowserHumanOperationSchema = v.variant("method", [
+    v.strictObject({ method: v.literal("observe") }),
+    v.strictObject({ method: v.literal("navigate"), url: address }),
+    v.strictObject({ method: v.literal("act"), input: miraBrowserActionSchema }),
+    v.strictObject({
+        method: v.literal("upload"),
+        input: v.strictObject({ observationId: id, ref }),
+        origin: address,
+        file: miraBrowserUploadFileSchema,
+    }),
+]);
 export const miraBrowserHumanCommandSchema = v.strictObject({
     id,
     epoch: id,
     commandId: id,
-    operation: v.variant("method", [
-        v.strictObject({ method: v.literal("observe") }),
-        v.strictObject({ method: v.literal("navigate"), url: address }),
-        v.strictObject({ method: v.literal("act"), input: miraBrowserActionSchema }),
-    ]),
+    operation: miraBrowserHumanOperationSchema,
 });
 export interface MiraBrowserPreview {
     observationId: string;
     url: string;
     title: string;
-    refs: { ref: string; role: string; label: string; actions: ("click" | "type")[] }[];
+    refs: {
+        ref: string;
+        role: string;
+        label: string;
+        actions: ("click" | "type" | "upload")[];
+    }[];
     width: number;
     height: number;
     image: string;

@@ -1,6 +1,10 @@
 import { expect, test } from "bun:test";
 import { rejects } from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
+import { lockBrowserOwner } from "@homelab/mira/data/browserAccess";
 import {
     abandonMiraBrowserCommand,
     claimMiraBrowserCommand,
@@ -10,12 +14,15 @@ import {
     finishMiraBrowserCommand,
     takeMiraBrowserCommand,
 } from "@homelab/mira/data/browserCommands";
+import { saveBrowserPreview } from "@homelab/mira/data/browserConsole";
+import { claimBrowserHumanCommand } from "@homelab/mira/data/browserConsoleHost";
 import { openMiraBrowserSession } from "@homelab/mira/data/browserHost";
 import { readMiraBrowserReadiness } from "@homelab/mira/data/browserReadiness";
 import {
     runMiraBrowserHost,
     type MiraBrowserHealth,
 } from "@homelab/mira/data/browserService";
+import { saveMiraFile } from "@homelab/mira/data/files";
 
 import { createMiraTools } from "../../../../mira/src/server/executor/tools";
 import {
@@ -44,12 +51,13 @@ async function fixture(mode: "view" | "control" = "control") {
         toolLifetime,
         hostLifetime,
         grant: () => f.api.browser.request({ ...f.request, mode }),
-        start: () => {
+        start: (filesDirectory?: string) => {
             host = runMiraBrowserHost({
                 client: f.client,
                 configuration: f.config,
                 signal: hostLifetime.signal,
                 health,
+                filesDirectory,
             });
             return host;
         },
@@ -862,5 +870,195 @@ test("independent cleanup erases old previews and expires operator work without 
         }
     } finally {
         await f.close();
+    }
+});
+
+test("operator-confirmed conversation attachment crosses the private host queue once", async () => {
+    const f = await fixture();
+    const directory = await mkdtemp(path.join(os.tmpdir(), "mira-browser-upload-"));
+    try {
+        const bytes = new Uint8Array(100_003).fill(97);
+        await saveMiraFile(f.context, directory, {
+            id: crypto.randomUUID(),
+            name: "unrelated.txt",
+            bytes,
+        });
+        await saveMiraFile(
+            { ...f.context, owner: "other", actor: "human:other" },
+            directory,
+            { id: crypto.randomUUID(), name: "other-owner.txt", bytes }
+        );
+        const file = await saveMiraFile(f.context, directory, {
+            id: crypto.randomUUID(),
+            name: "fixture.txt",
+            bytes,
+        });
+        await f.client`UPDATE mira_messages SET attachment_ids=${JSON.stringify([file.id])}::text::jsonb WHERE id=${f.run.userMessageId}`;
+        const grant = await f.grant();
+        void f.start(directory);
+        await f.invoke("mira_browser_observe", {});
+        const initial = await f.api.browser.console({ id: grant.id });
+        await rejects(f.api.browser.uploads({ id: grant.id }));
+        await f.api.browser.transfer({
+            id: grant.id,
+            epoch: initial.epoch,
+            controller: "human",
+        });
+        f.engine.uploadInput = true;
+        const view = await operatorCommand(f, grant.id, { method: "observe" });
+        const choices = await f.api.browser.uploads({ id: grant.id });
+        expect(choices).toHaveLength(1);
+        const operation = {
+            method: "upload" as const,
+            origin: f.request.origins[0]!,
+            input: {
+                observationId: view.preview!.observationId,
+                ref: view.preview!.refs[0]!.ref,
+            },
+            file: choices[0]!,
+        };
+        await rejects(f.caller("other").browser.uploads({ id: grant.id }));
+        await rejects(
+            f
+                .caller("operator", "operator", "automation")
+                .browser.uploads({ id: grant.id })
+        );
+        for (const invalid of [
+            { ...operation, origin: "https://other.test" },
+            { ...operation, file: { ...operation.file, sha256: "0".repeat(64) } },
+            { ...operation, file: { ...operation.file, id: crypto.randomUUID() } },
+            { ...operation, input: { ...operation.input, ref: "p1:999" } },
+            {
+                ...operation,
+                input: { ...operation.input, observationId: crypto.randomUUID() },
+            },
+        ])
+            await rejects(
+                f.api.browser.command({
+                    id: grant.id,
+                    epoch: view.epoch,
+                    commandId: crypto.randomUUID(),
+                    operation: invalid,
+                })
+            );
+        await rejects(
+            f.caller("operator", "operator", "human", false).browser.command({
+                id: grant.id,
+                epoch: view.epoch,
+                commandId: crypto.randomUUID(),
+                operation,
+            })
+        );
+        await operatorCommand(f, grant.id, operation);
+        expect(f.engine.uploads).toEqual([
+            { name: file.name, size: bytes.length, sha256: operation.file.sha256, bytes },
+        ]);
+        await rejects(
+            f.api.browser.command({
+                id: grant.id,
+                epoch: view.epoch,
+                commandId: crypto.randomUUID(),
+                operation,
+            })
+        );
+        const [stored] = await f.client<
+            { payload: unknown; frame: unknown; state: string }[]
+        >`SELECT payload,frame,state FROM mira_browser_consoles WHERE access_id=${grant.id}`;
+        expect(stored).toEqual({ payload: null, frame: null, state: "idle" });
+        expect(
+            text(
+                await f.invoke("mira_browser_input", {
+                    action: "upload",
+                    ...operation.input,
+                })
+            ).ok
+        ).toBe(false);
+    } finally {
+        await f.close();
+        await rm(directory, { recursive: true, force: true });
+    }
+});
+
+test("claimed upload rechecks immutable confirmation before any file leaves the host", async () => {
+    const f = await fixture();
+    const directory = await mkdtemp(path.join(os.tmpdir(), "mira-browser-claim-"));
+    let session: Awaited<ReturnType<typeof openMiraBrowserSession>> | undefined;
+    try {
+        const file = await saveMiraFile(f.context, directory, {
+            id: crypto.randomUUID(),
+            name: "fixture.txt",
+            bytes: new TextEncoder().encode("approved"),
+        });
+        await f.client`UPDATE mira_messages SET attachment_ids=${JSON.stringify([file.id])}::text::jsonb WHERE id=${f.run.userMessageId}`;
+        const grant = await f.grant();
+        session = await openMiraBrowserSession(
+            f.worker,
+            grant.id,
+            f.config,
+            f.hostLifetime.signal
+        );
+        const initial = await f.api.browser.console({ id: grant.id });
+        await f.api.browser.transfer({
+            id: grant.id,
+            epoch: initial.epoch,
+            controller: "human",
+        });
+        f.engine.uploadInput = true;
+        const image = await session.observe(f.toolLifetime.signal, true);
+        await f.client.begin(async (query) => {
+            await lockBrowserOwner(query, f.context.owner);
+            await saveBrowserPreview(query, grant.id, image);
+        });
+        const current = await f.api.browser.console({ id: grant.id });
+        const choices = await f.api.browser.uploads({ id: grant.id });
+        const command = {
+            id: grant.id,
+            epoch: current.epoch,
+            commandId: crypto.randomUUID(),
+            operation: {
+                method: "upload" as const,
+                origin: f.request.origins[0]!,
+                input: { observationId: image.observationId, ref: image.refs[0]!.ref },
+                file: choices[0]!,
+            },
+        };
+        await f.client`UPDATE mira_browser_consoles SET frame_at=clock_timestamp()-interval '61 seconds' WHERE access_id=${grant.id}`;
+        await rejects(f.api.browser.command(command));
+        await f.client`UPDATE mira_browser_consoles SET frame_at=clock_timestamp() WHERE access_id=${grant.id}`;
+        await f.api.browser.command(command);
+        await f.client`UPDATE mira_attachments SET sha256=${"0".repeat(64)} WHERE id=${file.id}`;
+        await rejects(claimBrowserHumanCommand(f.client, session.claim));
+        expect(f.engine.uploads).toEqual([]);
+    } finally {
+        await session?.close();
+        await f.close();
+        await rm(directory, { recursive: true, force: true });
+    }
+});
+
+test("file selection remains unavailable for view and multi-website browser grants", async () => {
+    for (const mode of ["view", "control"] as const) {
+        const f = await fixture(mode);
+        try {
+            const grant = await f.api.browser.request({
+                ...f.request,
+                mode,
+                origins:
+                    mode === "control"
+                        ? [...f.request.origins, "https://second.test"]
+                        : f.request.origins,
+            });
+            void f.start();
+            await f.invoke("mira_browser_observe", {});
+            const state = await f.api.browser.console({ id: grant.id });
+            await f.api.browser.transfer({
+                id: grant.id,
+                epoch: state.epoch,
+                controller: "human",
+            });
+            await rejects(f.api.browser.uploads({ id: grant.id }));
+        } finally {
+            await f.close();
+        }
     }
 });

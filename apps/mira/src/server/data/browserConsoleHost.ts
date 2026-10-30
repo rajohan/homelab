@@ -1,14 +1,12 @@
+import { miraBrowserHumanOperationSchema } from "@homelab/contracts/miraBrowser";
 import type { SQL } from "bun";
 import * as v from "valibot";
 
-import {
-    browserCommandResult,
-    browserCommandSchema,
-    type BrowserCommand,
-} from "../browsing/command";
+import { browserCommandResult } from "../browsing/command";
 import { readBrowserAccess } from "./browserAccess";
 import { browserHostContext, type BrowserCommandClaim } from "./browserCommands";
 import { saveBrowserPreview } from "./browserConsole";
+import { requireBrowserUpload } from "./browserUploads";
 import { MiraFailure } from "./context";
 
 /**
@@ -32,9 +30,14 @@ export async function claimBrowserHumanCommand(client: SQL, claim: BrowserComman
             row.validForMs < 1
         )
             throw new MiraFailure("FORBIDDEN", "Browser operator authority expired.");
-        const operation = v.parse(browserCommandSchema, row.payload);
-        if (operation.method === "act" && access.mode !== "control")
+        const operation = v.parse(miraBrowserHumanOperationSchema, row.payload);
+        if (
+            (operation.method === "act" || operation.method === "upload") &&
+            access.mode !== "control"
+        )
             throw new MiraFailure("FORBIDDEN", "Browser access is view-only.");
+        if (operation.method === "upload")
+            await requireBrowserUpload(query, context.owner, accessId, operation);
         await query`UPDATE mira_browser_consoles SET state='claimed',payload=NULL WHERE access_id=${accessId}`;
         return {
             id: row.commandId,
@@ -55,7 +58,11 @@ export async function claimBrowserHumanCommand(client: SQL, claim: BrowserComman
 export async function finishBrowserHumanCommand(
     client: SQL,
     claim: BrowserCommandClaim,
-    command: { id: string; epoch: string; operation: BrowserCommand },
+    command: {
+        id: string;
+        epoch: string;
+        operation: v.InferOutput<typeof miraBrowserHumanOperationSchema>;
+    },
     result: unknown
 ): Promise<boolean> {
     return client.begin(async (query) => {
@@ -69,7 +76,7 @@ export async function finishBrowserHumanCommand(
         )
             return false;
         const parsed = browserCommandResult(
-            command.operation.method,
+            command.operation.method === "upload" ? "act" : command.operation.method,
             result,
             access.policy.origins
         );

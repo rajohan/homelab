@@ -199,7 +199,13 @@ export async function openMiraBrowserSession(
             signal.throwIfAborted();
             return (dependencies.open ?? openBrowserWorker)(
                 { ...fixed, ...(profile ? { profile: { id: profile.id } } : {}) },
-                access.policy,
+                {
+                    ...access.policy,
+                    ...(access.policy.mode === "control" &&
+                    access.policy.origins.length === 1
+                        ? { uploads: true }
+                        : {}),
+                },
                 signal,
                 (input, lifetime) =>
                     openBrowserConnection(input, lifetime, {
