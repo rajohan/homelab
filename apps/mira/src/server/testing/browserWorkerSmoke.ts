@@ -11,6 +11,7 @@ import * as v from "valibot";
 import { openBrowserConnection } from "../browsing/connection";
 import { prepareBrowserContainer } from "../browsing/container";
 import { openBrowserWorker } from "../browsing/process";
+import { browserProfileSnapshotBytes } from "../browsing/profile";
 import { openBrowserSession } from "../browsing/session";
 
 /**
@@ -40,9 +41,27 @@ export async function qualifyBrowserWorker(
         );
         return result.stdout.trim();
     };
+    const profile = { id: crypto.randomUUID() };
+    let snapshot: string | null = null;
+    let checkpoints = 0;
     try {
         const imageId = await docker("image", "inspect", image, "--format", "{{.Id}}");
-        for (const mode of ["control", "view", "origin", "revocation"] as const) {
+        for (const mode of [
+            "control",
+            "view",
+            "origin",
+            "revocation",
+            "save",
+            "restore",
+            "fresh",
+        ] as const) {
+            let startPath = "",
+                expectedTitle = "Worker fixture";
+            if (mode === "save") startPath = "profile/save";
+            if (mode === "restore" || mode === "fresh") startPath = "profile/check";
+            if (mode === "save" || mode === "restore")
+                expectedTitle = "Saved profile restored";
+            if (mode === "fresh") expectedTitle = "Fresh profile";
             const owner = new AbortController();
             let selected = "";
             const processId = crypto.randomUUID();
@@ -52,15 +71,38 @@ export async function qualifyBrowserWorker(
             const browser = await openBrowserSession(
                 (sessionSignal) =>
                     openBrowserWorker(
-                        { socketPath: socket, imageId },
+                        {
+                            socketPath: socket,
+                            imageId,
+                            ...(["save", "restore"].includes(mode) ? { profile } : {}),
+                        },
                         {
                             origins: ["http://127.0.0.1:4173"],
-                            initialUrl: "http://127.0.0.1:4173/",
+                            initialUrl: `http://127.0.0.1:4173/${startPath}`,
                             mode: mode === "view" ? "view" : "control",
                         },
                         sessionSignal,
                         (config, signal) =>
                             openBrowserConnection(config, signal, {
+                                ...(["save", "restore"].includes(mode)
+                                    ? {
+                                          profile: {
+                                              snapshot,
+                                              save: (value: string) => {
+                                                  assert.ok(
+                                                      value.length <=
+                                                          browserProfileSnapshotBytes
+                                                  );
+                                                  assert.ok(
+                                                      journalEvents.includes("cleaning")
+                                                  );
+                                                  snapshot = value;
+                                                  checkpoints++;
+                                                  return Promise.resolve();
+                                              },
+                                          },
+                                      }
+                                    : {}),
                                 prepare: async (input, abort) => {
                                     const lease = await prepareBrowserContainer(
                                         input,
@@ -118,11 +160,32 @@ export async function qualifyBrowserWorker(
                                     );
                                     assert.equal(lease.name, `mira-browser-${processId}`);
                                     selected = lease.id;
-                                    if (!packaged) return lease;
                                     return {
                                         ...lease,
                                         start: async () => {
                                             await lease.start();
+                                            if (mode === "save") {
+                                                await docker(
+                                                    "exec",
+                                                    selected,
+                                                    "bun",
+                                                    "--no-env-file",
+                                                    "-e",
+                                                    `
+                                                    const fs=require('node:fs');
+                                                    const root='/var/lib/mira-browser-profile';
+                                                    const stat=fs.statfsSync(root);
+                                                    if(stat.bsize*stat.blocks!==64*1024*1024) throw Error('Expected hard 64 MiB tmpfs');
+                                                    const file=root+'/quota-probe';const fd=fs.openSync(file,'wx',0o600);
+                                                    let limited=false;
+                                                    try { const block=Buffer.alloc(1024*1024,1);for(let i=0;i<65;i++)fs.writeSync(fd,block); }
+                                                    catch(e) { if(e.code!=='ENOSPC')throw e;limited=true; }
+                                                    finally {fs.closeSync(fd);fs.unlinkSync(file);}
+                                                    if(!limited)throw Error('Profile quota was not enforced');
+                                                `
+                                                );
+                                            }
+                                            if (!packaged) return;
                                             const site = await Bun.file(
                                                 new URL(
                                                     "browserSiteFixture.ts",
@@ -219,9 +282,11 @@ export async function qualifyBrowserWorker(
             };
             try {
                 let frame = await browser.observe(owner.signal);
-                assert.equal(frame.title, "Worker fixture");
+                assert.equal(frame.title, expectedTitle);
                 assert.ok(frame.content.content[0]!.data.length > 100);
-                if (mode === "revocation") {
+                if (["save", "restore", "fresh"].includes(mode)) {
+                    // The next iteration starts a separate browser/container and site process.
+                } else if (mode === "revocation") {
                     revoked = true;
                     await browser.closed;
                     assert.equal(browser.signal.aborted, true);
@@ -289,6 +354,13 @@ export async function qualifyBrowserWorker(
             } finally {
                 await browser.close();
             }
+            if (mode === "save")
+                assert.equal(
+                    checkpoints,
+                    1,
+                    "The first saved snapshot must complete before removal"
+                );
+            if (mode === "restore") assert.equal(checkpoints, 2);
             assert.equal(released, true);
             await assert.rejects(docker("inspect", selected));
         }
@@ -305,6 +377,10 @@ export async function qualifyBrowserWorker(
             staleRefsDenied: true,
             foreignOriginDenied: true,
             containersRemoved: true,
+            savedProfileRestored: true,
+            hardProfileQuota: true,
+            privateBoundedSnapshots: true,
+            temporaryProfileIsolated: true,
         };
     } finally {
         await rm(temporary, { recursive: true, force: true });

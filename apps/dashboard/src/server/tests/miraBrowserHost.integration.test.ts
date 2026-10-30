@@ -5,6 +5,7 @@ import {
     openMiraBrowserSession,
     recoverMiraBrowserProcesses,
 } from "@homelab/mira/data/browserHost";
+import { saveMiraBrowserProfileSnapshot } from "@homelab/mira/data/browserProcesses";
 
 import { browserHostFixture as fixture } from "../testing/miraBrowserHost";
 
@@ -372,6 +373,102 @@ test("an ID discovered during unknown-create recovery survives a failure after a
         });
         expect(await f.api.browser.list()).toMatchObject([{ state: "closed" }]);
         expect(f.engine.events.filter((e) => e.startsWith("DELETE:"))).toHaveLength(1);
+    } finally {
+        owner.abort();
+        await f.close();
+    }
+});
+
+test("saved snapshots are private, reused after cleanup, and erased with their reserved slot", async () => {
+    const f = await fixture(),
+        owner = new AbortController();
+    try {
+        const profile = await f.api.browser.createProfile({
+            name: "Private synthetic profile",
+            origins: f.request.origins,
+        });
+        const grant = await f.api.browser.request({
+            ...f.request,
+            profileId: profile.id,
+        });
+        const session = await openMiraBrowserSession(
+            f.worker,
+            grant.id,
+            f.config,
+            owner.signal
+        );
+        expect(f.engine.restored).toEqual([null]);
+        await rejects(f.api.browser.deleteProfile(profile), /cleanup/);
+        await session.close();
+        const [row] = await f.client<
+            { snapshot: string; host: string }[]
+        >`SELECT snapshot,host_id AS host FROM mira_browser_profiles WHERE id=${profile.id}`;
+        expect(row).toEqual({ snapshot: f.engine.snapshot, host: f.config.hostId });
+        expect(JSON.stringify(await f.api.browser.profiles())).not.toContain(
+            f.engine.snapshot
+        );
+        f.engine.id = "c".repeat(64);
+        const second = await f.api.browser.request({
+            ...f.request,
+            profileId: profile.id,
+        });
+        const reopened = await openMiraBrowserSession(
+            f.worker,
+            second.id,
+            f.config,
+            owner.signal
+        );
+        expect(f.engine.restored).toEqual([null, f.engine.snapshot]);
+        await reopened.close();
+        expect(f.engine.events.some((item) => item.includes("/volumes"))).toBe(false);
+        await f.api.browser.deleteProfile(profile);
+        expect(await f.api.browser.profiles()).toEqual([]);
+        const [deleted] = await f.client<
+            { snapshot: null; slot: null }[]
+        >`SELECT snapshot,quota_slot AS slot FROM mira_browser_profiles WHERE id=${profile.id}`;
+        expect(deleted).toEqual({ snapshot: null, slot: null });
+    } finally {
+        owner.abort();
+        await f.close();
+    }
+});
+
+test("missing checkpoints retain the prior snapshot and stale process leases cannot overwrite it", async () => {
+    const f = await fixture(),
+        owner = new AbortController();
+    try {
+        const profile = await f.api.browser.createProfile({
+            name: "Interrupted profile",
+            origins: f.request.origins,
+        });
+        await f.client`UPDATE mira_browser_profiles SET host_id=${f.config.hostId},snapshot=${f.engine.snapshot} WHERE id=${profile.id}`;
+        const grant = await f.api.browser.request({
+            ...f.request,
+            profileId: profile.id,
+        });
+        const session = await openMiraBrowserSession(
+            f.worker,
+            grant.id,
+            f.config,
+            owner.signal
+        );
+        const [claim] = await f.client<
+            { id: string; hostId: string; leaseToken: string }[]
+        >`SELECT id,host_id AS "hostId",lease_token AS "leaseToken" FROM mira_browser_processes WHERE access_id=${grant.id}`;
+        await rejects(
+            saveMiraBrowserProfileSnapshot(
+                f.client,
+                { ...claim, leaseToken: crypto.randomUUID() },
+                f.engine.snapshot
+            )
+        );
+        f.engine.omitCheckpoint = true;
+        await session.close();
+        await rejects(saveMiraBrowserProfileSnapshot(f.client, claim, f.engine.snapshot));
+        const [row] = await f.client<
+            { snapshot: string }[]
+        >`SELECT snapshot FROM mira_browser_profiles WHERE id=${profile.id}`;
+        expect(row?.snapshot).toBe(f.engine.snapshot);
     } finally {
         owner.abort();
         await f.close();

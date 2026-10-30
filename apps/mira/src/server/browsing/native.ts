@@ -8,6 +8,7 @@ import * as v from "valibot";
 
 import { computerDriverVersion } from "../computer/policy";
 import { browserGrant, browserManifest, browserUrl } from "./policy";
+import { prepareBrowserProfileShutdown } from "./profileShutdown";
 import {
     bindingSchema,
     browserMetadata,
@@ -58,6 +59,7 @@ export async function openNativeBrowser(
     let closing: Promise<void> | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let driver: ReturnType<typeof sdk.CuaDriver.createConfigured> | undefined;
+    let saveProfile: (() => Promise<void>) | undefined;
     let target: { targetId: string; tabId: string; origins: string[] };
     let observed:
         | {
@@ -78,6 +80,7 @@ export async function openNativeBrowser(
             try {
                 if (driver) {
                     try {
+                        await saveProfile?.().catch(() => {});
                         await driver.shutdown();
                     } finally {
                         if (sdk.CuaDriver.instanceOf(driver)) driver.uniffiDestroy();
@@ -206,13 +209,27 @@ export async function openNativeBrowser(
             browserMetadata(
                 await call(
                     "browser_prepare",
-                    { allow_launch: true, profile: { mode: "isolated_new" } },
+                    {
+                        allow_launch: true,
+                        profile: grant.savedProfile
+                            ? { mode: "isolated_named", name: "saved" }
+                            : { mode: "isolated_new" },
+                    },
                     signal
                 )
             )
         );
         if (prepared.endpoint_ownership.owner_pid !== prepared.prepared_pid)
             throw new Error("The browser process ownership could not be verified.");
+        if (
+            prepared.lifecycle.profile_persists_after_session !==
+            Boolean(grant.savedProfile)
+        )
+            throw new Error(
+                "The browser profile lifetime differs from the approved policy."
+            );
+        if (grant.savedProfile)
+            saveProfile = await prepareBrowserProfileShutdown(prepared.prepared_pid);
         const windows = v.parse(
             windowsSchema,
             browserMetadata(

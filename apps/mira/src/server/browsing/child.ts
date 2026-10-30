@@ -5,6 +5,13 @@ import * as v from "valibot";
 import { computerDriverVersion } from "../computer/policy";
 import { openNativeBrowser } from "./native";
 import { browserUrl } from "./policy";
+import { BrowserProfileTransfer, browserProfileParts } from "./profileTransfer";
+
+/** Fixed tmpfs callbacks available only to the host-marked saved-profile worker. */
+export interface BrowserWorkerProfile {
+    restore: (snapshot: string | null) => Promise<void>;
+    capture: () => Promise<string>;
+}
 import {
     browserWorkerExecutable,
     browserWorkerFrame,
@@ -18,6 +25,7 @@ import {
  * @param output - Bounded result stream; diagnostics and native tool names are never forwarded.
  * @param open - Native implementation, replaceable only for isolated unit qualification.
  * @param forceExit - Process-only fallback if native work or cleanup ignores cancellation.
+ * @param profile - Private fixed-root snapshot callbacks; omitted for temporary workers.
  * @returns Completion after native cleanup; cleanup failure rejects and forced exit is never success.
  */
 export function serveBrowserWorker(
@@ -26,7 +34,8 @@ export function serveBrowserWorker(
     open: typeof openNativeBrowser = openNativeBrowser,
     forceExit: () => void = () => {
         process.kill(process.pid, "SIGKILL");
-    }
+    },
+    profile?: BrowserWorkerProfile
 ): Promise<void> {
     const owner = new AbortController();
     const done = Promise.withResolvers<void>();
@@ -37,6 +46,8 @@ export function serveBrowserWorker(
         initialized = false,
         lastId = 0;
     let initializationFailed = false;
+    const restore = new BrowserProfileTransfer();
+    let restored = false;
     let port: Awaited<ReturnType<typeof open>> | undefined;
     let grant: ReturnType<typeof browserWorkerGrant> | undefined;
     const lifetime = setTimeout(() => stop(), 300_000);
@@ -50,8 +61,8 @@ export function serveBrowserWorker(
         clearTimeout(idle);
         input.off("data", receive);
         input.destroy();
-        output.destroy();
-        const forced = setTimeout(forceExit, 2000);
+        if (!profile) output.destroy();
+        const forced = setTimeout(forceExit, profile ? 4000 : 2000);
         void active
             .catch(() => {})
             .then(async () => {
@@ -59,12 +70,24 @@ export function serveBrowserWorker(
                     await port?.close();
                     if (initializationFailed)
                         throw new Error("Initialization did not confirm cleanup.");
+                    if (profile && restored && port) {
+                        const snapshot = await profile.capture();
+                        for (const part of browserProfileParts(snapshot)) {
+                            const message = JSON.stringify({ checkpoint: part }) + "\n";
+                            await new Promise<void>((resolve, reject) =>
+                                output.write(message, (error) =>
+                                    error ? reject(error) : resolve()
+                                )
+                            );
+                        }
+                    }
                     done.resolve();
                     return true;
                 } catch {
                     done.reject(new Error("Browser worker cleanup did not complete."));
                     return false;
                 } finally {
+                    output.destroy();
                     clearTimeout(forced);
                     input.off("end", stop);
                     input.off("close", stop);
@@ -83,7 +106,18 @@ export function serveBrowserWorker(
         lastId = request.id;
         const command = request.body;
         let result: unknown;
-        if (command.method === "initialize") {
+        if (command.method === "profile") {
+            if (!profile || initialized || restored)
+                throw new Error("Unexpected browser profile restore.");
+            const snapshot = restore.accept(command.params);
+            if (snapshot !== undefined) {
+                await profile.restore(snapshot);
+                restored = true;
+            }
+            result = { accepted: true };
+        } else if (command.method === "initialize") {
+            if (profile && !restored)
+                throw new Error("Browser profile restore is incomplete.");
             if (initialized) throw new Error("Browser worker already initialized.");
             initialized = true;
             grant = browserWorkerGrant(command.params);

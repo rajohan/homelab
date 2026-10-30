@@ -609,3 +609,40 @@ test("recovery rejects foreign ownership and rechecks controller authority befor
         }
     }
 });
+
+test("saved profiles use a hard bounded tmpfs with no persistent host mounts", () => {
+    const spec = browserContainerSpec(image, crypto.randomUUID(), undefined, {
+        id: crypto.randomUUID(),
+    });
+    expect(spec.HostConfig.Binds).toEqual([]);
+    expect("Mounts" in spec.HostConfig).toBe(false);
+    expect(spec.HostConfig.Tmpfs["/var/lib/mira-browser-profile"]).toBe(
+        "rw,nosuid,nodev,noexec,size=64m,uid=1000,gid=1000,mode=0700"
+    );
+    expect(spec.Env).toContain("MIRA_BROWSER_PROFILE=saved");
+});
+
+test("Docker auto-removal conflicts require independently verified absence", async () => {
+    const f = await fixture();
+    try {
+        const lease = await f.open();
+        await lease.start();
+        const original = f.transport.request;
+        let removing = false,
+            polls = 0;
+        f.transport.request = (method, route, body) => {
+            if (method === "DELETE") {
+                removing = true;
+                return Promise.resolve({ status: 409, body: null });
+            }
+            if (removing && route.endsWith("/json") && ++polls === 3)
+                f.state.exists = false;
+            return original(method, route, body);
+        };
+        await lease.close();
+        expect(polls).toBe(3);
+        expect(f.state.exists).toBe(false);
+    } finally {
+        await f.cleanup();
+    }
+});

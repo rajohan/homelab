@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { SQL, TransactionSQL } from "bun";
 import * as v from "valibot";
 
+import { browserProfileSnapshot } from "../browsing/profileSnapshot";
 import { closeMiraBrowserAccess, requireMiraBrowserAccess } from "./browserAccess";
 import { MiraFailure, type MiraContext } from "./context";
 
@@ -14,6 +15,7 @@ interface ProcessRow extends Authority {
     accessId: string;
     imageId: string;
     networkId: string | null;
+    profileId: string | null;
     phase: "reserved" | "creating" | "created" | "rejected";
     state: "active" | "cleanup" | "removed";
     containerId: string | null;
@@ -37,6 +39,7 @@ function result(row: ProcessRow) {
         hostId: row.hostId,
         imageId: row.imageId,
         networkId: row.networkId,
+        profileId: row.profileId,
         claim: { id: row.id, hostId: row.hostId, leaseToken: row.leaseToken },
         leaseExpiresAt: row.leaseExpiresAt.toISOString(),
         phase: row.phase,
@@ -52,7 +55,7 @@ async function capacity(query: TransactionSQL) {
 }
 async function read(query: TransactionSQL, id: string) {
     const [row] = await query<ProcessRow[]>`
-        SELECT p.id,p.access_id AS "accessId",p.host_id AS "hostId",p.image_id AS "imageId",p.network_id AS "networkId",
+        SELECT p.id,p.access_id AS "accessId",p.host_id AS "hostId",p.image_id AS "imageId",p.network_id AS "networkId",g.profile_id AS "profileId",
             p.lease_token AS "leaseToken",p.lease_expires_at AS "leaseExpiresAt",p.phase,p.state,p.container_id AS "containerId",
             p.lease_expires_at>clock_timestamp() AS current,g.owner,g.run_id AS "runId",g.run_lease AS "runLease",g.host_token AS "hostToken"
         FROM mira_browser_processes p JOIN mira_browser_access g ON g.id=p.access_id WHERE p.id=${id}`;
@@ -140,8 +143,10 @@ export async function reserveMiraBrowserProcess(
     );
     const reserve = async (query: TransactionSQL) => {
         await capacity(query);
-        const [grant] = await query<{ owner: string; runId: string; runLease: string }[]>`
-            SELECT owner,run_id AS "runId",run_lease AS "runLease" FROM mira_browser_access WHERE id=${request.accessId} AND host_token=${request.hostToken}`;
+        const [grant] = await query<
+            { owner: string; runId: string; runLease: string; profileId: string | null }[]
+        >`
+            SELECT owner,run_id AS "runId",run_lease AS "runLease",profile_id AS "profileId" FROM mira_browser_access WHERE id=${request.accessId} AND host_token=${request.hostToken}`;
         if (!grant) throw failure();
         await requireMiraBrowserAccess(context(client, query, grant), {
             id: request.accessId,
@@ -155,6 +160,19 @@ export async function reserveMiraBrowserProcess(
                 "PRECONDITION_FAILED",
                 "Browser capacity is reserved; finish existing cleanup before starting another process."
             );
+        if (grant.profileId) {
+            const [profile] = await query<{ id: string }[]>`
+                UPDATE mira_browser_profiles SET host_id=${request.hostId}
+                WHERE id=${grant.profileId} AND owner=${grant.owner} AND state='active'
+                    AND (host_id IS NULL OR host_id=${request.hostId})
+                    AND NOT EXISTS(SELECT 1 FROM mira_browser_processes p JOIN mira_browser_access g ON g.id=p.access_id
+                        WHERE g.profile_id=${grant.profileId} AND p.state<>'removed') RETURNING id`;
+            if (!profile)
+                throw new MiraFailure(
+                    "PRECONDITION_FAILED",
+                    "This browser profile is unavailable, still in use, or belongs to another browser host."
+                );
+        }
         let networkId: string | null = null;
         if (request.networkIds) {
             const used = await query<
@@ -227,6 +245,29 @@ export async function renewMiraBrowserProcess(client: SQL, claim: unknown) {
         >`UPDATE mira_browser_processes SET lease_expires_at=clock_timestamp()+interval '15 seconds' WHERE id=${row.id} AND lease_expires_at>clock_timestamp() RETURNING id`;
         if (updated.length === 0) throw failure();
         return result((await read(query, row.id))!);
+    });
+}
+
+/**
+ * Atomically checkpoint a bounded profile while serializing with controller recovery.
+ * @param client - Trusted host database connection.
+ * @param claim - Exact process lease; removed, expired or replaced owners cannot write.
+ * @param snapshot - Private validated snapshot, never exposed in tool results or logs.
+ * @returns Completion after a current active/cleanup process replaces its own profile snapshot.
+ */
+export async function saveMiraBrowserProfileSnapshot(
+    client: SQL,
+    claim: unknown,
+    snapshot: string
+): Promise<void> {
+    browserProfileSnapshot(snapshot);
+    await owned(client, claim, async (query, row) => {
+        if (!row.current || row.state === "removed" || !row.profileId) throw failure();
+        await query`SET LOCAL statement_timeout='2s'`;
+        const [saved] = await query<{ id: string }[]>`
+            UPDATE mira_browser_profiles SET snapshot=${snapshot} WHERE id=${row.profileId} AND host_id=${row.hostId} AND state='active'
+                AND EXISTS(SELECT 1 FROM mira_browser_processes WHERE id=${row.id} AND lease_expires_at>clock_timestamp()) RETURNING id`;
+        if (!saved) throw failure();
     });
 }
 

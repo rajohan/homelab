@@ -938,6 +938,38 @@ export const miraComputerCommands = pgTable(
     ]
 );
 
+export const miraBrowserProfiles = pgTable(
+    "mira_browser_profiles",
+    {
+        id: uuid().primaryKey(),
+        owner: text().notNull(),
+        name: text().notNull(),
+        origins: jsonb().notNull(),
+        hostId: uuid("host_id"),
+        state: text().notNull().default("active"),
+        quotaSlot: integer("quota_slot"),
+        snapshot: text(),
+        createdAt: time("created_at").notNull().defaultNow(),
+    },
+    (t) => [
+        index("mira_browser_profiles_owner").on(t.owner, t.state),
+        check("mira_browser_profiles_name", sql`length(${t.name}) BETWEEN 1 AND 80`),
+        check(
+            "mira_browser_profiles_state",
+            sql`${t.state} IN ('active','deleting','deleted')`
+        ),
+        check(
+            "mira_browser_profiles_storage",
+            sql`(${t.state}='deleted' AND ${t.quotaSlot} IS NULL AND ${t.snapshot} IS NULL) OR (${t.state}<>'deleted' AND ${t.quotaSlot} BETWEEN 0 AND 15 AND ${t.quotaSlot} IS NOT NULL AND (${t.snapshot} IS NULL OR (${t.hostId} IS NOT NULL AND octet_length(${t.snapshot})<=26214400)))`
+        ),
+        uniqueIndex("mira_browser_profiles_quota_slot").on(t.quotaSlot),
+        check(
+            "mira_browser_profiles_origins",
+            sql`jsonb_typeof(${t.origins})='array' AND jsonb_array_length(${t.origins}) BETWEEN 1 AND 16 AND octet_length(${t.origins}::text)<=65536`
+        ),
+    ]
+);
+
 export const miraBrowserAccess = pgTable(
     "mira_browser_access",
     {
@@ -952,6 +984,7 @@ export const miraBrowserAccess = pgTable(
         policy: jsonb(),
         state: text().notNull().default("pending"),
         hostToken: uuid("host_token"),
+        profileId: uuid("profile_id").references(() => miraBrowserProfiles.id),
         claimedAt: time("claimed_at"),
         closedAt: time("closed_at"),
         expiresAt: time("expires_at").notNull(),

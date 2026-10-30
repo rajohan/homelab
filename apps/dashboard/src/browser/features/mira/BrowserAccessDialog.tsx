@@ -21,6 +21,7 @@ import type * as v from "valibot";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
+import { BrowserProfileControls } from "./BrowserProfileControls";
 import { browserAccessLabel, useBrowserAccess } from "./useBrowserAccess";
 
 /**
@@ -39,6 +40,14 @@ export function BrowserAccessDialog({
     const [initialUrl, setInitialUrl] = useState("");
     const [additional, setAdditional] = useState("");
     const [mode, setMode] = useState<"view" | "control">("view");
+    const [profileId, setProfileId] = useState("");
+    const profiles = useQuery({
+        queryKey: ["operations", "mira", "browser-profiles"],
+        queryFn: ({ signal }) => api.mira.browser.profiles.query(undefined, { signal }),
+        refetchInterval: 5000,
+        retry: false,
+    });
+    const profile = profiles.data?.find((item) => item.id === profileId);
     const controls = useQuery({
         queryKey: ["operations", "mira", "controls"],
         queryFn: ({ signal }) => api.mira.controls.list.query(undefined, { signal }),
@@ -69,11 +78,16 @@ export function BrowserAccessDialog({
         enabled &&
         controlFresh &&
         accessQuery.fresh &&
+        (!profileId ||
+            (profile?.state === "active" &&
+                !profile.busy &&
+                !profiles.error &&
+                accessQuery.now - profiles.dataUpdatedAt < 10_000)) &&
         !current;
     return (
         <Modal
             title="Browser access"
-            description="Let Mira use an isolated browser on the server for this run. It starts with a fresh profile."
+            description="Let Mira use an isolated browser on the server for this run."
             onClose={onClose}
             dismissible={!request.isPending}
         >
@@ -145,6 +159,30 @@ export function BrowserAccessDialog({
                         Refresh status
                     </Button>
                 )}
+                {!current && (
+                    <>
+                        <BrowserProfileControls
+                            profiles={profiles.data ?? []}
+                            selected={profileId}
+                            disabled={
+                                request.isPending ||
+                                profiles.isPending ||
+                                Boolean(profiles.error)
+                            }
+                            onSelect={(id) => {
+                                setProfileId(id);
+                                const chosen = profiles.data?.find(
+                                    (item) => item.id === id
+                                );
+                                if (chosen) {
+                                    setInitialUrl(chosen.origins[0] ?? "");
+                                    setAdditional(chosen.origins.slice(1).join("\n"));
+                                }
+                            }}
+                        />
+                        {profiles.error && <ErrorNotice error={profiles.error} />}
+                    </>
+                )}
                 {running && !current && (
                     <form
                         className="space-y-4"
@@ -170,6 +208,7 @@ export function BrowserAccessDialog({
                                     ]),
                                 ],
                                 mode,
+                                ...(profileId ? { profileId } : {}),
                             });
                         }}
                     >

@@ -9,6 +9,8 @@ import {
     requireMiraBrowserAccess,
     requestMiraBrowserAccess,
 } from "@homelab/mira/data/browserAccess";
+import { reserveMiraBrowserProcess } from "@homelab/mira/data/browserProcesses";
+import { createMiraBrowserProfile } from "@homelab/mira/data/browserProfiles";
 import { claimMiraRun } from "@homelab/mira/data/queue";
 
 import { appRouter } from "../api/router";
@@ -347,6 +349,157 @@ test("stopping an unclaimed reservation is final and repeated requests respect t
         await f.client`INSERT INTO mira_browser_access(id,owner,run_id,run_lease,controls,mode,state,closed_at,created_at,expires_at)
             SELECT gen_random_uuid(),owner,run_id,run_lease,controls,mode,'closed',clock_timestamp(),clock_timestamp(),clock_timestamp()+interval '1 minute' FROM mira_browser_access CROSS JOIN generate_series(1,19) WHERE id=${grant.id}`;
         await rejects(f.api.browser.request(f.request), /request limit/);
+    } finally {
+        await f.close();
+    }
+});
+
+test("saved browser profiles require fresh humans, remain owner-only and cannot broaden their website scope", async () => {
+    const f = await fixture();
+    try {
+        const input = { name: "Synthetic sign-in", origins: f.request.origins };
+        await rejects(
+            f.caller("operator", "operator", "automation").browser.createProfile(input),
+            /signed-in operator/
+        );
+        await rejects(
+            f.caller("operator", "other").browser.createProfile(input),
+            /account changed/
+        );
+        await rejects(
+            f.caller("operator", "operator", "human", false).browser.createProfile(input),
+            /verified operator/
+        );
+        await rejects(createMiraBrowserProfile(f.worker, input), /signed-in operator/);
+        for (const origins of [
+            ["https://example.test/"],
+            ["file:///tmp/a"],
+            ["https://example.test", "https://example.test"],
+        ])
+            await rejects(f.api.browser.createProfile({ ...input, origins }));
+        const profile = await f.api.browser.createProfile(input);
+        expect(await f.api.browser.profiles()).toMatchObject([
+            {
+                ...profile,
+                name: input.name,
+                origins: input.origins,
+                busy: false,
+                state: "active",
+            },
+        ]);
+        expect(await f.caller("other").browser.profiles()).toEqual([]);
+        const foreign = await f.caller("other").browser.createProfile(input);
+        await rejects(
+            f.api.browser.request({ ...f.request, profileId: foreign.id }),
+            /owned profile/
+        );
+        await rejects(
+            f.api.browser.request({
+                ...f.request,
+                profileId: profile.id,
+                origins: [...f.request.origins, "https://other.test"],
+            }),
+            /approved websites/
+        );
+        const access = await f.api.browser.request({
+            ...f.request,
+            profileId: profile.id,
+        });
+        expect(await f.api.browser.profiles()).toMatchObject([{ busy: true }]);
+        await rejects(f.api.browser.deleteProfile(profile), /wait for cleanup/);
+        await f.api.browser.stop({ id: access.id });
+        await f.caller("other").browser.deleteProfile(profile);
+        expect(await f.api.browser.profiles()).toHaveLength(1);
+        await f.api.browser.deleteProfile(profile);
+        expect(await f.api.browser.profiles()).toEqual([]);
+        await rejects(
+            f.api.browser.request({ ...f.request, profileId: profile.id }),
+            /available owned/
+        );
+    } finally {
+        await f.close();
+    }
+});
+
+test("browser profile limits are serialized and stored host identity cannot move between engines", async () => {
+    const f = await fixture();
+    try {
+        const attempts = await Promise.allSettled(
+            Array.from({ length: 6 }, (_, index) =>
+                f.api.browser.createProfile({
+                    name: `Profile ${index}`,
+                    origins: f.request.origins,
+                })
+            )
+        );
+        expect(attempts.filter((item) => item.status === "fulfilled")).toHaveLength(4);
+        const profiles = await f.api.browser.profiles();
+        const profile = profiles[0]!;
+        const access = await f.api.browser.request({
+            ...f.request,
+            profileId: profile.id,
+        });
+        const claimed = await claimMiraBrowserAccess(f.worker, access.id);
+        const hostId = crypto.randomUUID(),
+            otherHost = crypto.randomUUID();
+        await f.client`UPDATE mira_browser_profiles SET host_id=${hostId} WHERE id=${profile.id}`;
+        const request = {
+            accessId: claimed.id,
+            hostToken: claimed.hostToken,
+            hostId: otherHost,
+            imageId: `sha256:${"b".repeat(64)}`,
+        };
+        await rejects(
+            reserveMiraBrowserProcess(f.client, request),
+            /another browser host/
+        );
+        const process = await reserveMiraBrowserProcess(f.client, { ...request, hostId });
+        expect(process.profileId).toBe(profile.id);
+        await f.api.browser.stop({ id: access.id });
+        await rejects(
+            f.api.browser.deleteProfile({ id: profile.id }),
+            /wait for cleanup/
+        );
+        await rejects(
+            f.api.browser.request({ ...f.request, profileId: profile.id }),
+            /finish browser cleanup/
+        );
+        const [row] = await f.client<
+            { host: string }[]
+        >`SELECT host_id AS host FROM mira_browser_profiles WHERE id=${profile.id}`;
+        expect(row!.host).toBe(hostId);
+    } finally {
+        await f.close();
+    }
+});
+
+test("global profile reservations and database byte limits bound persistent snapshots", async () => {
+    const f = await fixture();
+    try {
+        const attempts = await Promise.allSettled(
+            Array.from({ length: 20 }, (_, index) =>
+                f.caller(`profile-owner-${index}`).browser.createProfile({
+                    name: "Quota fixture",
+                    origins: f.request.origins,
+                })
+            )
+        );
+        expect(attempts.filter((item) => item.status === "fulfilled")).toHaveLength(16);
+        const [row] = await f.client<
+            { id: string; owner: string }[]
+        >`SELECT id,owner FROM mira_browser_profiles ORDER BY quota_slot LIMIT 1`;
+        await rejects(
+            f.client`UPDATE mira_browser_profiles SET host_id=${crypto.randomUUID()},snapshot=repeat('a',26214401) WHERE id=${row!.id}`
+        );
+        await f.caller(row!.owner).browser.deleteProfile({ id: row!.id });
+        await f.api.browser.createProfile({
+            name: "Reclaimed slot",
+            origins: f.request.origins,
+        });
+        const [used] = await f.client<
+            { count: number }[]
+        >`SELECT count(*)::int AS count FROM mira_browser_profiles WHERE quota_slot IS NOT NULL`;
+        expect(used?.count).toBe(16);
     } finally {
         await f.close();
     }

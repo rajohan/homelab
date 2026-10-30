@@ -21,6 +21,7 @@ import {
     recordMiraBrowserProcessCleanup,
     reserveMiraBrowserProcess,
 } from "./browserProcesses";
+import { prepareMiraBrowserProfile } from "./browserProfileHost";
 import type { MiraContext } from "./context";
 
 export const browserHostConfigurationSchema = v.strictObject({
@@ -193,13 +194,16 @@ export async function openMiraBrowserSession(
         },
     };
     const session = await openBrowserSession(
-        (signal) =>
-            (dependencies.open ?? openBrowserWorker)(
-                fixed,
+        async (signal) => {
+            const profile = await prepareMiraBrowserProfile(host.client, claim);
+            signal.throwIfAborted();
+            return (dependencies.open ?? openBrowserWorker)(
+                { ...fixed, ...(profile ? { profile: { id: profile.id } } : {}) },
                 access.policy,
                 signal,
                 (input, lifetime) =>
                     openBrowserConnection(input, lifetime, {
+                        ...(profile ? { profile: profile.persistence } : {}),
                         prepare: (input, lifetime) =>
                             (dependencies.prepare ?? prepareBrowserContainer)(
                                 input,
@@ -208,7 +212,8 @@ export async function openMiraBrowserSession(
                                 journal
                             ),
                     })
-            ),
+            );
+        },
         {
             check: async (mode) => {
                 await renewMiraBrowserProcess(host.client, claim);

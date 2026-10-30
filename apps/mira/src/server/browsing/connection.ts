@@ -5,6 +5,9 @@ import * as v from "valibot";
 import { attachBrowserContainer, browserDockerFrames } from "./attach";
 import { prepareBrowserContainer } from "./container";
 import { browserEngineConfigurationSchema } from "./engine";
+import type { BrowserProfilePersistence } from "./profile";
+import { BrowserProfileCheckpoint } from "./profileCheckpoint";
+import { browserProfileParts } from "./profileTransfer";
 
 const replySchema = v.strictObject({
     id: v.pipe(
@@ -27,6 +30,7 @@ interface Dependencies {
     prepare?: typeof prepareBrowserContainer;
     attach?: typeof attachBrowserContainer;
     requestTimeoutMs?: number;
+    profile?: BrowserProfilePersistence;
 }
 
 /** A single-flight JSONL channel whose retirement includes confirmed process-tree cleanup. */
@@ -43,7 +47,14 @@ class BrowserConnection {
     private pending: Pending | undefined;
     private buffer = Buffer.alloc(0);
     private nextId = 1;
+    private initializeSent = false;
+    private lateReply: number | undefined;
+    private readonly checkpoint: BrowserProfileCheckpoint | undefined;
     private readonly disconnected = () => this.retire();
+    private readonly ended = () => {
+        this.checkpoint?.cancel();
+        this.retire();
+    };
 
     /**
      * Bind one private stream to its owning lease; no remote endpoint or arbitrary process can be attached.
@@ -51,26 +62,40 @@ class BrowserConnection {
      * @param lease - The exact immutable container lifetime that must be removed on failure.
      * @param owner - Permanent host cancellation.
      * @param timeoutMs - Validated request deadline from the host factory.
+     * @param profile - Private persistence selected by the trusted host, never by a model request.
      */
-    constructor(stream: Duplex, lease: Lease, owner: AbortSignal, timeoutMs: number) {
+    constructor(
+        stream: Duplex,
+        lease: Lease,
+        owner: AbortSignal,
+        timeoutMs: number,
+        profile?: BrowserProfilePersistence
+    ) {
         this.stream = stream;
         this.lease = lease;
         this.owner = owner;
         this.timeoutMs = timeoutMs;
+        if (profile) {
+            if (!lease.beforeRemoval)
+                throw new Error("Saved profiles require bounded cleanup.");
+            this.checkpoint = new BrowserProfileCheckpoint();
+            lease.beforeRemoval(() => this.checkpoint!.persist(profile));
+        }
         const decode = browserDockerFrames((bytes, complete) =>
             this.receive(bytes, complete)
         );
         stream.on("data", (chunk: Buffer) => {
-            if (this.failure) return;
+            if (this.failure && !this.checkpoint) return;
             try {
                 decode(chunk);
             } catch {
+                this.checkpoint?.cancel();
                 this.retire();
             }
         });
-        stream.on("error", this.disconnected);
-        stream.on("end", this.disconnected);
-        stream.on("close", this.disconnected);
+        stream.on("error", this.ended);
+        stream.on("end", this.ended);
+        stream.on("close", this.ended);
         this.lifetime = setTimeout(this.disconnected, 300_000);
         this.idle = setTimeout(this.disconnected, 60_000);
         this.lifetime.unref();
@@ -107,9 +132,16 @@ class BrowserConnection {
         if (this.pending)
             return Promise.reject(new Error("The browser connection is busy."));
         operation.throwIfAborted();
-        const maximum = this.nextId === 1 ? 60_000 : 30_000;
+        const initializing =
+            !this.initializeSent &&
+            !!body &&
+            typeof body === "object" &&
+            "method" in body &&
+            body.method === "initialize";
+        const maximum = this.nextId === 1 || initializing ? 60_000 : 30_000;
         if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > maximum)
             throw new Error("Invalid browser operation deadline.");
+        if (initializing) this.initializeSent = true;
         const id = this.nextId++;
         const line = JSON.stringify({ id, body }) + "\n";
         if (Buffer.byteLength(line) > 64 * 1024 || this.stream.writableLength > 64 * 1024)
@@ -141,7 +173,32 @@ class BrowserConnection {
     }
 
     private receive(bytes: Buffer, frameComplete: boolean) {
-        if (this.failure) return;
+        if (this.failure) {
+            if (!this.checkpoint) return;
+            if (this.buffer.length + bytes.length > 4 * 1024 * 1024)
+                throw new Error("Oversized browser checkpoint.");
+            this.buffer = Buffer.concat([this.buffer, bytes]);
+            let end: number;
+            while ((end = this.buffer.indexOf(10)) !== -1) {
+                const value: unknown = JSON.parse(
+                    new TextDecoder("utf-8", { fatal: true }).decode(
+                        this.buffer.subarray(0, end)
+                    )
+                );
+                this.buffer = this.buffer.subarray(end + 1);
+                const late = v.safeParse(replySchema, value);
+                if (late.success && late.output.id === this.lateReply) {
+                    this.lateReply = undefined;
+                    continue;
+                }
+                const message = v.parse(
+                    v.strictObject({ checkpoint: v.unknown() }),
+                    value
+                );
+                this.checkpoint.receive(message.checkpoint);
+            }
+            return;
+        }
         if (!this.pending || this.buffer.length + bytes.length > 4 * 1024 * 1024)
             throw new Error("Unexpected or oversized browser reply.");
         this.buffer = Buffer.concat([this.buffer, bytes]);
@@ -175,8 +232,18 @@ class BrowserConnection {
         clearTimeout(this.idle);
         this.owner.removeEventListener("abort", this.disconnected);
         this.lease.signal.removeEventListener("abort", this.disconnected);
-        this.buffer = Buffer.alloc(0);
-        this.stream.destroy();
+        if (this.checkpoint) {
+            this.lateReply = this.pending?.id;
+            this.checkpoint.start();
+            try {
+                this.stream.end();
+            } catch {
+                this.checkpoint.cancel();
+            }
+        } else {
+            this.buffer = Buffer.alloc(0);
+            this.stream.destroy();
+        }
         const pending = this.pending;
         this.pending = undefined;
         if (pending) {
@@ -184,8 +251,14 @@ class BrowserConnection {
             pending.cancel();
         }
         void this.closing.then(
-            () => pending?.reject(this.failure),
-            (error: unknown) => pending?.reject(error)
+            () => {
+                this.stream.destroy();
+                return pending?.reject(this.failure);
+            },
+            (error: unknown) => {
+                this.stream.destroy();
+                pending?.reject(error);
+            }
         );
     }
 }
@@ -204,6 +277,8 @@ export async function openBrowserConnection(
 ) {
     signal.throwIfAborted();
     const config = v.parse(browserEngineConfigurationSchema, input);
+    if (!!config.profile !== !!dependencies.profile)
+        throw new Error("Saved browser profile persistence is unavailable.");
     const timeout = dependencies.requestTimeoutMs ?? 30_000;
     if (!Number.isInteger(timeout) || timeout < 1 || timeout > 30_000)
         throw new Error("Invalid browser request deadline.");
@@ -216,10 +291,25 @@ export async function openBrowserConnection(
             lease.id,
             AbortSignal.any([signal, lease.signal])
         );
-        connection = new BrowserConnection(stream, lease, signal, timeout);
+        connection = new BrowserConnection(
+            stream,
+            lease,
+            signal,
+            timeout,
+            dependencies.profile
+        );
         connection.signal.throwIfAborted();
         await lease.start();
         connection.signal.throwIfAborted();
+        if (dependencies.profile) {
+            for (const part of browserProfileParts(dependencies.profile.snapshot)) {
+                const reply = await connection.request(
+                    { method: "profile", params: part },
+                    signal
+                );
+                v.parse(v.strictObject({ accepted: v.literal(true) }), reply);
+            }
+        }
         return connection;
     } catch (error) {
         stream?.destroy();

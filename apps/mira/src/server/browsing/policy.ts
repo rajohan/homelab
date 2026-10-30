@@ -8,6 +8,7 @@ const grantSchema = v.strictObject({
     origins: v.pipe(v.array(address), v.minLength(1), v.maxLength(16)),
     initialUrl: address,
     mode: v.picklist(["view", "control"]),
+    savedProfile: v.optional(v.literal(true)),
 });
 export type BrowserGrant = v.InferOutput<typeof grantSchema>;
 
