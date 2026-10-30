@@ -1,4 +1,7 @@
 import {
+    miraBrowserConsoleSchema,
+    miraBrowserTransferSchema,
+    miraBrowserHumanCommandSchema,
     miraBrowserAccessListSchema,
     miraBrowserAccessRequestSchema,
     miraBrowserAccessStopSchema,
@@ -8,6 +11,11 @@ import {
     requestMiraBrowserAccess,
     stopMiraBrowserAccess,
 } from "@homelab/mira/data/browserAccess";
+import {
+    readMiraBrowserConsole,
+    transferMiraBrowserControl,
+    enqueueMiraBrowserHumanCommand,
+} from "@homelab/mira/data/browserConsole";
 import { MiraFailure, type MiraContext } from "@homelab/mira/data/context";
 
 import { runOperation, trpc } from "../api/trpc";
@@ -46,6 +54,21 @@ function execute<T>(
 }
 
 export const miraBrowserRouter = trpc.router({
+    console: trpc.procedure
+        .input(miraBrowserConsoleSchema)
+        .query(({ ctx, input }) =>
+            execute(ctx, false, (mira) => readMiraBrowserConsole(mira, input))
+        ),
+    transfer: trpc.procedure
+        .input(miraBrowserTransferSchema)
+        .mutation(({ ctx, input }) =>
+            execute(ctx, true, (mira) => transferMiraBrowserControl(mira, input))
+        ),
+    command: trpc.procedure
+        .input(miraBrowserHumanCommandSchema)
+        .mutation(({ ctx, input }) =>
+            execute(ctx, true, (mira) => enqueueMiraBrowserHumanCommand(mira, input))
+        ),
     list: trpc.procedure
         .input(miraBrowserAccessListSchema)
         .query(({ ctx, input }) =>

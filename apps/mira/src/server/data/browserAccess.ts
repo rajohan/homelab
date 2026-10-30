@@ -32,6 +32,7 @@ interface AccessRow {
     policy: Policy | null;
     expiresAt: Date;
     available: boolean;
+    controller: "mira" | "human";
     validForMs: number;
 }
 function human(context: MiraContext) {
@@ -77,7 +78,7 @@ export async function readBrowserAccess(
     id: string
 ): Promise<AccessRow | undefined> {
     const [row] = await query<AccessRow[]>`
-        SELECT g.id,g.run_id AS "runId",g.run_lease AS "runLease",g.mode,g.state,g.host_token AS "hostToken",g.policy,g.expires_at AS "expiresAt",
+        SELECT g.id,g.run_id AS "runId",g.run_lease AS "runLease",g.mode,g.state,g.host_token AS "hostToken",g.policy,g.expires_at AS "expiresAt",coalesce(console.controller,'mira') AS controller,
             (g.state IN ('pending','active') AND g.expires_at>clock_timestamp() AND r.manual
                 AND r.state='running' AND NOT r.cancel_requested AND r.lease_token=g.run_lease
                 AND r.lease_expires_at>clock_timestamp() AND r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp()
@@ -90,6 +91,7 @@ export async function readBrowserAccess(
                 r.started_at+r.budget_seconds*interval '1 second')-clock_timestamp()))*1000)))::int AS "validForMs"
         FROM mira_browser_access g JOIN mira_runs r ON r.id=g.run_id AND r.owner=g.owner
         JOIN mira_conversations c ON c.id=r.conversation_id AND c.owner=g.owner
+        LEFT JOIN mira_browser_consoles console ON console.access_id=g.id
         LEFT JOIN mira_switches u ON u.owner=g.owner AND u.key='autonomy'
         LEFT JOIN mira_switches b ON b.owner=g.owner AND b.key='computer:browser'
         LEFT JOIN mira_automations a ON a.id=r.automation_id AND a.owner=r.owner
@@ -179,6 +181,7 @@ export async function requestMiraBrowserAccess(
                 "PRECONDITION_FAILED",
                 "The browser job expired before access could be granted."
             );
+        await query`INSERT INTO mira_browser_consoles(access_id,epoch) VALUES(${id},${crypto.randomUUID()})`;
         await auditMira(query, context, "browser.access_requested", id);
         return summary((await readBrowserAccess(query, context.owner, id))!);
     });

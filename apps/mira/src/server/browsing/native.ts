@@ -60,7 +60,12 @@ export async function openNativeBrowser(
     let driver: ReturnType<typeof sdk.CuaDriver.createConfigured> | undefined;
     let target: { targetId: string; tabId: string; origins: string[] };
     let observed:
-        | { id: string; time: number; refs: Map<string, ("click" | "type")[]> }
+        | {
+              id: string;
+              time: number;
+              refs: Map<string, ("click" | "type")[]>;
+              maxAge: number;
+          }
         | undefined;
     const session = randomUUID();
     const close = () => {
@@ -236,7 +241,7 @@ export async function openNativeBrowser(
         touched = now();
         armTimer();
         return {
-            observe: (operation: AbortSignal) =>
+            observe: (operation: AbortSignal, operator = false) =>
                 run(operation, async () => {
                     observed = undefined;
                     const frame = browserSnapshot(
@@ -255,6 +260,7 @@ export async function openNativeBrowser(
                     observed = {
                         id,
                         time: now(),
+                        maxAge: operator ? 60_000 : 10_000,
                         refs: new Map(frame.refs.map((item) => [item.ref, item.actions])),
                     };
                     return { observationId: id, ...frame };
@@ -275,7 +281,7 @@ export async function openNativeBrowser(
                         !previous ||
                         previous.id !== action.observationId ||
                         now() - previous.time < 0 ||
-                        now() - previous.time > 10_000 ||
+                        now() - previous.time >= previous.maxAge ||
                         !previous.refs.get(action.ref)?.includes(action.action)
                     )
                         throw new Error(

@@ -105,6 +105,7 @@ async function active(client: SQL, query: TransactionSQL, row: ProcessRow) {
     });
 }
 async function stopGrant(query: TransactionSQL, accessId: string) {
+    await query`UPDATE mira_browser_consoles SET frame=NULL,frame_at=NULL,payload=NULL,state='idle',method=NULL,expires_at=NULL WHERE access_id=${accessId}`;
     await query`UPDATE mira_browser_access SET state='stopping',policy=NULL WHERE id=${accessId} AND state='active'`;
 }
 

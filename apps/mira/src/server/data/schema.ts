@@ -1077,3 +1077,42 @@ export const miraBrowserCommands = pgTable(
         ),
     ]
 );
+
+export const miraBrowserConsoles = pgTable(
+    "mira_browser_consoles",
+    {
+        accessId: uuid("access_id")
+            .primaryKey()
+            .references(() => miraBrowserAccess.id),
+        controller: text().notNull().default("mira"),
+        epoch: uuid().notNull(),
+        attempts: jsonb()
+            .notNull()
+            .default(sql`'[]'::jsonb`),
+        commandId: uuid("command_id"),
+        state: text().notNull().default("idle"),
+        method: text(),
+        payload: jsonb(),
+        expiresAt: time("expires_at"),
+        frame: jsonb(),
+        frameAt: time("frame_at"),
+    },
+    (t) => [
+        check(
+            "mira_browser_console_controller",
+            sql`${t.controller} IN ('mira','human')`
+        ),
+        check(
+            "mira_browser_console_state",
+            sql`(${t.state}='idle' AND ${t.payload} IS NULL AND ${t.method} IS NULL AND ${t.expiresAt} IS NULL) OR (${t.state} IN ('queued','claimed') AND ${t.controller}='human' AND ${t.commandId} IS NOT NULL AND ${t.method} IN ('observe','navigate','act') AND ${t.expiresAt} IS NOT NULL AND ((${t.state}='queued' AND ${t.payload} IS NOT NULL) OR (${t.state}='claimed' AND ${t.payload} IS NULL)))`
+        ),
+        check(
+            "mira_browser_console_size",
+            sql`(${t.payload} IS NULL OR octet_length(${t.payload}::text)<=32768) AND (${t.frame} IS NULL OR octet_length(${t.frame}::text)<=4194304) AND jsonb_typeof(${t.attempts})='array' AND jsonb_array_length(${t.attempts})<=128`
+        ),
+        check(
+            "mira_browser_console_frame",
+            sql`(${t.frame} IS NULL) = (${t.frameAt} IS NULL)`
+        ),
+    ]
+);

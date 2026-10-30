@@ -2,7 +2,7 @@
 
 Chat now declares browser wait, observation, navigation and input tools. The separate trusted browser host consumes their durable commands and owns Docker cleanup. Chat includes human origin/mode selection and a direct stop control using the shared responsive components.
 
-**Deployment is not activated.** The container remains offline (`NetworkDisabled`, `NetworkMode: none`). External-network egress enforcement, live host provisioning and updater activation remain deployment gates. A website origin grant is not a network firewall. The qualification sites are synthetic loopback servers inside disposable containers; successful tests do not claim public-website access.
+**Deployment is not activated.** Offline sessions use `NetworkDisabled` and `NetworkMode: none`. Explicitly configured public sessions use one isolated Docker slot and its verified Squid/nft proxy, as documented in `deploy/README.md`. Real Chromium, synthetic public DNS/HTTP/TLS and direct/private destination refusal are qualified; live host provisioning and updater activation remain deployment gates. A website origin grant is not a network firewall.
 
 ## Human authority
 
@@ -38,7 +38,7 @@ The fixed container runs as UID/GID 1000 with a read-only root, no host mounts o
 
 The private Docker connection attaches before startup and validates non-TTY framing, UTF-8, increasing request IDs and bounded JSONL. Requests are at most 64 KiB; replies at most 4 MiB. Only initialize, observe, navigate and act are accepted. The first handshake has sixty seconds for sequential native startup; subsequent calls have thirty seconds, with ten-second native operation limits. Invalid output, overlap, EOF or cancellation permanently retires the connection. There is no reconnect or input replay.
 
-The origin ceiling limits observation and input, not subresource requests or page-driven navigation. External egress must be separately enforced before live websites are enabled. Persistent profiles, downloads/uploads, additional tabs, live preview and manual takeover are not implemented by this boundary.
+The origin ceiling limits observation and input, not subresource requests or page-driven navigation. External egress must be separately enforced before live websites are enabled. Persistent profiles, downloads/uploads and additional tabs remain separate deployment work.
 
 ## Configuration and qualification
 
@@ -52,8 +52,18 @@ Build with `bun run build:mira`; the host entry point is `bun --no-env-file apps
 
 `bun run test:browser` qualifies native capture, literal trusted typing/clicking, one-use refs, origin refusal, frozen-driver cleanup and the private worker protocol in offline containers. `bun run test:browser:image <local-image>` verifies the unchanged release image and real worker behavior; a qualification-only Docker exec supplies its synthetic loopback site without changing image layers.
 
-`bun run test:browser:service` requires the fixture image built by `test:browser`. It builds and starts the actual host CLI against a disposable PostgreSQL allocation, invokes the real Chat tools, verifies native PNG delivery and independent trusted DOM events, then sends SIGTERM and proves container removal, closed grants and erased transient results. The required Isolated browser CI job runs all three qualifications before a release image can be published. PRs never publish images.
+`bun run test:browser:service` requires the fixture image built by `test:browser`. It builds and starts the actual host CLI against a disposable PostgreSQL allocation, invokes the real Chat tools, verifies native PNG delivery and independent trusted DOM events, then sends SIGTERM and proves container removal, closed grants and erased transient results. The required Isolated browser CI job runs these qualifications plus the public-egress qualification before release images can be published. PRs never publish images.
 
 Real-database integration tests additionally cover competing hosts, stale controller/run identities, one-time result consumption, view-only scope, human stop, uncertain input, atomic startup rollback and cleanup failures. Shared-component tests and the disposable Chat preview cover explicit origin submission, stale/paused/text-only refusal, direct stop and viewport-bounded responsive dialogs.
 
 The release workflow transfers and publishes the exact tested browser image without rebuilding and attaches `browser-image.json` with its immutable reference. Host provisioning, egress qualification and updater consumption remain required before production activation.
+
+## Preview and human takeover
+
+Open browser in Chat displays the latest completed observation without asking Chromium for another snapshot. Passive dashboard polling therefore cannot invalidate the model's one-use refs. Only the signed-in owner can read the bounded PNG, title and URL; the page is never embedded as active HTML. Images expire after sixty seconds, are hidden on stale/error status and are erased on revocation, conversation deletion and host cleanup. The dialog removes its image query cache on closing.
+
+Take control atomically changes the controller generation while holding the same account lock as model-command admission. Queued, claimed, unconsumed and not-yet-finalized model work must settle first. While the human owns the browser, model tools cannot enqueue actions or read new observations. The wait tool reports the human controller and can wait for an explicit return. Closing the dialog does not return control; the original grant, job budget, pause controls and five-minute process limit still apply.
+
+Human Refresh view, approved navigation and observed-element click/type use the same serialized host port. There is one operator command per grant, 128 unique attempts per session and a twenty-five-second command ceiling. Epoch checks exclude stale tabs; retained request IDs prevent replay. Returning to Mira requires an idle command queue and erases the operator observation; Mira must observe again before input. Single-use refs remain mandatory. Mira retains a ten-second observation limit; only the host-verified operator queue can request a sixty-second observation for manual entry. This flag is absent from the model and human API command schemas and cannot extend the grant or native idle/lifetime limits. A typing draft survives refresh so the operator can prepare text before choosing a fresh element.
+
+Operator text is sent directly to the private command queue, not Chat, tool receipts, audit content or the browser's React Query mutation cache. It is masked in the entry field and cleared on submission. Queue payloads are erased on claim; input never produces a stored response. Errors and unknown delivery are not automatically retried. Actual Chromium qualification covers operator screenshots, trusted typing/clicking, returning to Mira and complete shutdown cleanup. The console uses observed page elements rather than a remote desktop stream; it does not add arbitrary JavaScript, coordinates, browser chrome controls or new origin permissions.

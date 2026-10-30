@@ -105,7 +105,10 @@ export function serveBrowserWorker(
             switch (command.method) {
                 case "observe": {
                     result = browserWorkerFrame(
-                        await port.observe(owner.signal),
+                        await port.observe(
+                            owner.signal,
+                            command.params.operator ?? false
+                        ),
                         grant.origins
                     );
                     break;

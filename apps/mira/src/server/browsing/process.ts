@@ -34,7 +34,12 @@ export async function openBrowserWorker(
     const connection = await connect(configuration, owner);
     let busy = false;
     let observed:
-        | { id: string; refs: Map<string, readonly string[]>; time: number }
+        | {
+              id: string;
+              refs: Map<string, readonly string[]>;
+              time: number;
+              maxAge: number;
+          }
         | undefined;
     const close = () => {
         observed = undefined;
@@ -76,12 +81,12 @@ export async function openBrowserWorker(
     );
     return {
         signal: connection.signal,
-        observe: (operation: AbortSignal) =>
+        observe: (operation: AbortSignal, operator = false) =>
             run(operation, async () => {
                 observed = undefined;
                 const frame = browserWorkerFrame(
                     await connection.request(
-                        { method: "observe", params: {} },
+                        { method: "observe", params: operator ? { operator: true } : {} },
                         operation
                     ),
                     grant.origins
@@ -92,6 +97,7 @@ export async function openBrowserWorker(
                         frame.refs.map((item) => [item.ref, [...item.actions]])
                     ),
                     time: now(),
+                    maxAge: operator ? 60_000 : 10_000,
                 };
                 return frame;
             }),
@@ -120,7 +126,7 @@ export async function openBrowserWorker(
                     !previous ||
                     previous.id !== action.observationId ||
                     now() - previous.time < 0 ||
-                    now() - previous.time > 10_000 ||
+                    now() - previous.time >= previous.maxAge ||
                     !previous.refs.get(action.ref)?.includes(action.action)
                 )
                     throw new Error(

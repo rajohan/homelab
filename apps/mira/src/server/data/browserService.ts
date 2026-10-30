@@ -11,6 +11,10 @@ import {
     pendingMiraBrowsers,
 } from "./browserCommands";
 import {
+    claimBrowserHumanCommand,
+    finishBrowserHumanCommand,
+} from "./browserConsoleHost";
+import {
     browserHostConfigurationSchema,
     openMiraBrowserSession,
     recoverMiraBrowserProcesses,
@@ -67,7 +71,13 @@ export async function runMiraBrowserHost(
             const running = AbortSignal.any([lifetime, current.signal]);
             while (!running.aborted) {
                 const started = performance.now();
-                const command = await claimMiraBrowserCommand(client, current.claim);
+                const humanCommand = await claimBrowserHumanCommand(
+                    client,
+                    current.claim
+                );
+                const command =
+                    humanCommand ??
+                    (await claimMiraBrowserCommand(client, current.claim));
                 running.throwIfAborted();
                 if (!command) {
                     await delay(100, undefined, { signal: running });
@@ -82,18 +92,25 @@ export async function runMiraBrowserHost(
                 ]);
                 let result: unknown;
                 if (command.operation.method === "observe")
-                    result = await current.observe(operation);
+                    result = await current.observe(operation, Boolean(humanCommand));
                 else if (command.operation.method === "navigate")
                     result = await current.navigate(command.operation.url, operation);
                 else result = await current.act(command.operation.input, operation);
                 operation.throwIfAborted();
                 if (
-                    !(await finishMiraBrowserCommand(
-                        client,
-                        current.claim,
-                        command.id,
-                        result
-                    ))
+                    !(humanCommand
+                        ? await finishBrowserHumanCommand(
+                              client,
+                              current.claim,
+                              humanCommand,
+                              result
+                          )
+                        : await finishMiraBrowserCommand(
+                              client,
+                              current.claim,
+                              command.id,
+                              result
+                          ))
                 )
                     throw new Error("Browser result lost its authority.");
             }

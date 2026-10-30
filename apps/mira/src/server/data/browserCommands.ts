@@ -8,6 +8,11 @@ import {
 } from "../browsing/command";
 import { browserUrl } from "../browsing/policy";
 import { lockBrowserOwner, readBrowserAccess } from "./browserAccess";
+import {
+    saveBrowserPreview,
+    requireBrowserObservation,
+    cleanupBrowserConsoles,
+} from "./browserConsole";
 import { retireBrowserCommands } from "./browserRetirement";
 import { MiraFailure, type MiraContext } from "./context";
 
@@ -67,6 +72,7 @@ async function accessForCommand(
 ) {
     const access = await readBrowserAccess(query, context.owner, row.accessId);
     return access?.available &&
+        access.controller === "mira" &&
         access.policy &&
         access.runId === context.run?.id &&
         access.runLease === context.run.leaseToken &&
@@ -122,6 +128,7 @@ async function reconcile(query: TransactionSQL, owner: string) {
  * @returns Number of retired grants, with no page or input content logged.
  */
 export async function cleanupMiraBrowserCommands(client: SQL): Promise<number> {
+    await cleanupBrowserConsoles(client);
     const owners = await client<
         { owner: string }[]
     >`SELECT DISTINCT owner FROM mira_browser_commands WHERE state IN ('queued','claimed','completed') ORDER BY owner LIMIT 32`;
@@ -175,6 +182,7 @@ export async function enqueueMiraBrowserCommand(
                 );
             }
         }
+        await requireBrowserObservation(query, access.id, operation);
         const [limits] = await query<
             { total: number; busy: boolean; attempted: boolean; recent: number }[]
         >`SELECT
@@ -211,7 +219,18 @@ export async function pendingMiraBrowsers(client: SQL) {
         FROM mira_browser_access g WHERE g.state='pending' AND EXISTS(SELECT 1 FROM mira_browser_commands c WHERE c.access_id=g.id AND c.state='queued' AND c.expires_at>clock_timestamp())
         ORDER BY g.created_at,g.id LIMIT 2`;
 }
-async function hostContext(client: SQL, query: TransactionSQL, input: unknown) {
+/**
+ * Verify a trusted host claim while holding the owning account lock.
+ * @param client - Private host database connection.
+ * @param query - Current host transaction.
+ * @param input - Exact durable process/controller identity.
+ * @returns Bound owner, run and grant after validating the live process and run.
+ */
+export async function browserHostContext(
+    client: SQL,
+    query: TransactionSQL,
+    input: unknown
+) {
     const claim = v.parse(claimSchema, input);
     const [first] = await query<
         { owner: string }[]
@@ -243,7 +262,11 @@ async function hostContext(client: SQL, query: TransactionSQL, input: unknown) {
  */
 export async function claimMiraBrowserCommand(client: SQL, input: BrowserCommandClaim) {
     return client.begin(async (query) => {
-        const { context, accessId, claim } = await hostContext(client, query, input);
+        const { context, accessId, claim } = await browserHostContext(
+            client,
+            query,
+            input
+        );
         await reconcile(query, context.owner);
         const [row] = await query<
             { id: string; method: BrowserCommand["method"]; payload: unknown }[]
@@ -295,7 +318,7 @@ export async function finishMiraBrowserCommand(
 ): Promise<boolean> {
     v.parse(uuid, id);
     return client.begin(async (query) => {
-        const { context, accessId } = await hostContext(client, query, claim);
+        const { context, accessId } = await browserHostContext(client, query, claim);
         await receipt(query, context, id);
         const [row] = await query<
             CommandRow[]
@@ -322,6 +345,11 @@ export async function finishMiraBrowserCommand(
                 AND p.id=mira_browser_commands.process_id AND p.lease_token=mira_browser_commands.process_token AND p.state='active' AND p.lease_expires_at>clock_timestamp()) RETURNING id`;
         if (updated.length === 0)
             await retireBrowserCommands(query, context.owner, accessId);
+        if (updated.length === 1) {
+            await (row.method === "observe" && "content" in parsed
+                ? saveBrowserPreview(query, accessId, parsed)
+                : query`UPDATE mira_browser_consoles SET frame=NULL,frame_at=NULL WHERE access_id=${accessId}`);
+        }
         return updated.length === 1;
     });
 }

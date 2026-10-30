@@ -7,6 +7,11 @@ import { promisify } from "node:util";
 
 import { setMiraEnabled } from "@homelab/mira/data/automations";
 import { requestMiraBrowserAccess } from "@homelab/mira/data/browserAccess";
+import {
+    readMiraBrowserConsole,
+    transferMiraBrowserControl,
+    enqueueMiraBrowserHumanCommand,
+} from "@homelab/mira/data/browserConsole";
 import { createConversation, enqueueTurn } from "@homelab/mira/data/conversations";
 import { claimMiraRun } from "@homelab/mira/data/queue";
 
@@ -81,7 +86,7 @@ export async function main() {
                 () => {}
             );
         }, 5000);
-        await requestMiraBrowserAccess(context, {
+        const grant = await requestMiraBrowserAccess(context, {
             runId: run.id,
             origins: ["http://127.0.0.1:4173"],
             initialUrl: "http://127.0.0.1:4173/",
@@ -200,6 +205,97 @@ export async function main() {
             count: 1,
             trusted: true,
         });
+        const console = await readMiraBrowserConsole(context, { id: grant.id });
+        await transferMiraBrowserControl(context, {
+            id: grant.id,
+            epoch: console.epoch,
+            controller: "human",
+        });
+        const humanCommand = async (
+            operation: Parameters<typeof enqueueMiraBrowserHumanCommand>[1]
+        ) => {
+            await enqueueMiraBrowserHumanCommand(context, operation);
+            for (let attempt = 0; attempt < 500; attempt++) {
+                const current = await readMiraBrowserConsole(context, { id: grant.id });
+                if (!current.busy) return current;
+                await Bun.sleep(20);
+            }
+            throw new Error("Operator browser command did not settle.");
+        };
+        const human = await readMiraBrowserConsole(context, { id: grant.id });
+        const viewed = await humanCommand({
+            id: grant.id,
+            epoch: human.epoch,
+            commandId: crypto.randomUUID(),
+            operation: { method: "observe" },
+        });
+        assert.ok(viewed.preview);
+        const field = viewed.preview.refs.find(
+            (item) => item.label === "Fixture text" && item.actions.includes("type")
+        );
+        assert.ok(field);
+        await humanCommand({
+            id: grant.id,
+            epoch: human.epoch,
+            commandId: crypto.randomUUID(),
+            operation: {
+                method: "act",
+                input: {
+                    action: "type",
+                    observationId: viewed.preview.observationId,
+                    ref: field.ref,
+                    text: "synthetic operator value",
+                    replace: true,
+                },
+            },
+        });
+        const refreshed = await humanCommand({
+            id: grant.id,
+            epoch: human.epoch,
+            commandId: crypto.randomUUID(),
+            operation: { method: "observe" },
+        });
+        const count = refreshed.preview?.refs.find(
+            (item) => item.label === "Count" && item.actions.includes("click")
+        );
+        assert.ok(count);
+        assert.ok(refreshed.preview);
+        await humanCommand({
+            id: grant.id,
+            epoch: human.epoch,
+            commandId: crypto.randomUUID(),
+            operation: {
+                method: "act",
+                input: {
+                    action: "click",
+                    observationId: refreshed.preview.observationId,
+                    ref: count.ref,
+                },
+            },
+        });
+        for (let attempt = 0; attempt < 100; attempt++) {
+            evidence = JSON.parse(
+                await docker(
+                    "exec",
+                    selected,
+                    "cat",
+                    "/tmp/mira-browser-worker-events.json"
+                )
+            ) as typeof evidence;
+            if (evidence?.count === 2) break;
+            await Bun.sleep(20);
+        }
+        assert.deepEqual(evidence, {
+            text: "synthetic operator value",
+            count: 2,
+            trusted: true,
+        });
+        await transferMiraBrowserControl(context, {
+            id: grant.id,
+            epoch: human.epoch,
+            controller: "mira",
+        });
+        await observe();
         const ready = await fetch(`http://127.0.0.1:${healthPort}/health/ready`);
         assert.equal(ready.status, 200);
         host.kill("SIGTERM");
@@ -214,9 +310,12 @@ export async function main() {
         const [commands] = await db.client<
             { count: number; scrubbed: boolean }[]
         >`SELECT count(*)::int AS count,bool_and(state='consumed' AND payload IS NULL AND result IS NULL) AS scrubbed FROM mira_browser_commands`;
-        assert.deepEqual(commands, { count: 4, scrubbed: true });
+        assert.deepEqual(commands, { count: 5, scrubbed: true });
         process.stdout.write(
             JSON.stringify({
+                humanTakeover: true,
+                privateOperatorInput: true,
+                returnedToMira: true,
                 builtHost: true,
                 durableQueue: true,
                 realTabImages: true,
