@@ -57,6 +57,8 @@ function childFixture(profile?: BrowserWorkerProfile) {
     let closes = 0,
         forced = 0;
     const port = {
+        download: () =>
+            Promise.reject(new Error("Download is not exposed to this worker protocol.")),
         observe: (_signal: AbortSignal) => {
             calls.push("observe");
             return Promise.resolve(frame());
@@ -171,7 +173,7 @@ test("worker fixes its executable and serves only initialized browser operations
     const f = childFixture();
     expect(await f.send(1, "initialize", grant)).toEqual({
         version: 1,
-        driver: "0.37.0",
+        driver: "0.38.0",
     });
     expect(f.opened).toEqual([{ ...grant, executable: "/usr/lib/chromium/chromium" }]);
     const observation = browserWorkerFrame(await f.send(2, "observe", {}), grant.origins);
@@ -328,7 +330,7 @@ async function hostFixture(
             );
             calls.push(command);
             if (handler) return handler(command.method, command.params);
-            if (command.method === "initialize") return { version: 1, driver: "0.37.0" };
+            if (command.method === "initialize") return { version: 1, driver: "0.38.0" };
             if (command.method === "observe") return frame();
             if (command.method === "navigate") return command.params;
             return { effect: "unverified" };
@@ -422,7 +424,7 @@ test("host retires mismatched worker results and keeps cleanup errors authoritat
                 const command = v.parse(v.object({ method: v.string() }), body);
                 if (command.method === phase) return Promise.resolve({ invalid: true });
                 if (command.method === "observe") return Promise.resolve(frame());
-                return Promise.resolve({ version: 1, driver: "0.37.0" });
+                return Promise.resolve({ version: 1, driver: "0.38.0" });
             },
             close: () => {
                 closed++;
@@ -477,7 +479,7 @@ test("host rejects concurrent operations without cancelling the first and invali
     const response = Promise.withResolvers<unknown>();
     const f = await hostFixture("control", (method) =>
         method === "initialize"
-            ? Promise.resolve({ version: 1, driver: "0.37.0" })
+            ? Promise.resolve({ version: 1, driver: "0.38.0" })
             : response.promise
     );
     const signal = new AbortController().signal;
@@ -576,7 +578,7 @@ test("host assigns the aggregate deadline only to initialization", async () => {
                 const command = v.parse(v.object({ method: v.string() }), body);
                 return Promise.resolve(
                     command.method === "initialize"
-                        ? { version: 1, driver: "0.37.0" }
+                        ? { version: 1, driver: "0.38.0" }
                         : frame()
                 );
             },

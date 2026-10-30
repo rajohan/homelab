@@ -219,7 +219,7 @@ export async function browserHostFixture(enabled = true) {
                     engine.uploads.push(upload.finish().file);
                     result = { effect: "unverified" };
                 } else if (message.body.method === "initialize")
-                    result = { version: 1, driver: "0.37.0" };
+                    result = { version: 1, driver: "0.38.0" };
                 else if (message.body.method === "observe")
                     result = {
                         observationId: crypto.randomUUID(),

@@ -50,3 +50,40 @@ process.stdin.on("end", () => {
         await rm(directory, { recursive: true, force: true });
     }
 });
+
+test("standard MCP transport includes JSON-RPC 2.0 on requests and notifications", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "mira-rpc-version-"));
+    const child = path.join(directory, "fixture.ts");
+    await Bun.write(
+        child,
+        `
+let notified = false, buffer = "";
+process.stdin.on("data", (chunk) => {
+    buffer += chunk.toString();
+    for (;;) {
+        const end = buffer.indexOf("\\n");
+        if (end < 0) break;
+        const input = JSON.parse(buffer.slice(0, end)); buffer = buffer.slice(end + 1);
+        if (input.jsonrpc !== "2.0") process.exit(1);
+        if (input.id === undefined) notified = true;
+        else console.log(JSON.stringify({jsonrpc:"2.0", id:input.id, result:{notified}}));
+    }
+});
+`
+    );
+    const connection = new RpcProcess({
+        command: process.execPath,
+        args: ["--no-env-file", child],
+        cwd: directory,
+        env: computerChildEnvironment(process.env),
+        jsonrpc: true,
+        onRequest: () => Promise.reject(new Error("Not supported")),
+    });
+    try {
+        connection.notify("notifications/initialized", {});
+        expect(await connection.request("tools/call", {})).toEqual({ notified: true });
+    } finally {
+        await connection.close();
+        await rm(directory, { recursive: true, force: true });
+    }
+});

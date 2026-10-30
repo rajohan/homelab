@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -8,14 +8,16 @@ import { buildBrowser } from "./buildBrowser";
 
 const linux = process.platform === "linux" && process.arch === "x64";
 test.skipIf(!linux)(
-    "browser package contains only the runnable worker and locked native closure",
+    "browser package contains only the runnable worker and pinned official CLI",
     async () => {
         const output = await mkdtemp(path.join(os.tmpdir(), "browser-build-test-"));
         try {
-            await buildBrowser(output);
+            await buildBrowser(output, (file) =>
+                writeFile(file, "synthetic executable for bundle layout only")
+            );
             const entries = await readdir(output);
             expect(entries.toSorted()).toEqual([
-                "node_modules",
+                "cua-driver",
                 "package.json",
                 "worker.js",
             ]);

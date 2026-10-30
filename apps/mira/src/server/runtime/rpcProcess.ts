@@ -33,6 +33,8 @@ export interface RpcProcessOptions {
     requestTimeoutMs?: number;
     signal?: AbortSignal;
     maxFrameBytes?: number;
+    /** Include the JSON-RPC 2.0 version required by a standard MCP child. */
+    jsonrpc?: boolean;
     onRequest: (request: RuntimeEvent, signal: AbortSignal) => Promise<unknown>;
 }
 
@@ -170,9 +172,13 @@ export class RpcProcess {
             throw new RuntimeCleanupError();
     }
 
-    private send(message: unknown): void {
+    private send(message: Record<string, unknown>): void {
         if (this.failure) throw this.failure;
-        const line = JSON.stringify(message) + "\n";
+        const line =
+            JSON.stringify({
+                ...(this.options.jsonrpc ? { jsonrpc: "2.0" } : {}),
+                ...message,
+            }) + "\n";
         if (Buffer.byteLength(line) > (this.options.maxFrameBytes ?? 4 * 1024 * 1024))
             throw new Error("Mira runtime request exceeds the frame limit.");
         // Bound writes too; a child that stops reading must not accumulate requests.

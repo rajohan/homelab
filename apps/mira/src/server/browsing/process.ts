@@ -1,7 +1,7 @@
 import * as v from "valibot";
 
-import { computerDriverVersion } from "../computer/policy";
 import { openBrowserConnection } from "./connection";
+import { browserDriverVersion } from "./driver";
 import { browserUrl } from "./policy";
 import {
     browserUploadActionSchema,
@@ -76,7 +76,7 @@ export async function openBrowserWorker(
         v.parse(
             v.strictObject({
                 version: v.literal(1),
-                driver: v.literal(computerDriverVersion),
+                driver: v.literal(browserDriverVersion),
             }),
             await connection.request(
                 { method: "initialize", params: grant },

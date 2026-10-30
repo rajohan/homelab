@@ -10,6 +10,7 @@ const grantSchema = v.strictObject({
     mode: v.picklist(["view", "control"]),
     savedProfile: v.optional(v.literal(true)),
     uploads: v.optional(v.literal(true)),
+    downloads: v.optional(v.literal(true)),
 });
 export type BrowserGrant = v.InferOutput<typeof grantSchema>;
 
@@ -30,9 +31,12 @@ export function browserGrant(input: unknown): BrowserGrant {
     });
     if (new Set(origins).size !== origins.length)
         throw new Error("Browser origins must be unique.");
-    if (grant.uploads && (grant.mode !== "control" || origins.length !== 1))
+    if (
+        (grant.uploads || grant.downloads) &&
+        (grant.mode !== "control" || origins.length !== 1)
+    )
         throw new Error(
-            "Browser uploads require control of exactly one approved origin."
+            "Browser file transfers require control of exactly one approved origin."
         );
     browserUrl(grant.initialUrl, origins);
     return { ...grant, origins };
@@ -54,15 +58,25 @@ export function browserUrl(input: unknown, origins: readonly string[]): string {
  * Construct a browser-only ceiling for one fresh driver-owned profile.
  * @param input - Trusted local policy; generic desktop and existing-profile tools are absent.
  * @param uploadRoot - Private session staging root, never a product file-store mount or model path.
+ * @param downloadRoot - Private session destination, inaccessible to model arguments.
  * @returns A bounded v3 manifest with an exact blank-page bootstrap and approved web origins.
  */
-export function browserManifest(input: unknown, uploadRoot?: string) {
+export function browserManifest(
+    input: unknown,
+    uploadRoot?: string,
+    downloadRoot?: string
+) {
     const grant = browserGrant(input);
     if (
         Boolean(grant.uploads) !== Boolean(uploadRoot) ||
         (uploadRoot && !path.isAbsolute(uploadRoot))
     )
         throw new Error("Browser upload authority requires its private staging root.");
+    if (
+        Boolean(grant.downloads) !== Boolean(downloadRoot) ||
+        (downloadRoot && !path.isAbsolute(downloadRoot))
+    )
+        throw new Error("Browser download authority requires its private destination.");
     return {
         version: 3,
         expires_after: "5m",
@@ -77,6 +91,7 @@ export function browserManifest(input: unknown, uploadRoot?: string) {
                 "browser_navigate",
                 ...(grant.mode === "control" ? ["browser_click", "browser_type"] : []),
                 ...(grant.uploads ? ["browser_set_input_files"] : []),
+                ...(grant.downloads ? ["browser_download"] : []),
             ],
         },
         resources: {
@@ -93,8 +108,17 @@ export function browserManifest(input: unknown, uploadRoot?: string) {
                 origins: ["about:blank", ...grant.origins],
             },
             desktop: { display: false },
-            ...(uploadRoot
-                ? { files: { read: [{ dir: uploadRoot, recursive: true }] } }
+            ...(uploadRoot || downloadRoot
+                ? {
+                      files: {
+                          ...(uploadRoot
+                              ? { read: [{ dir: uploadRoot, recursive: true }] }
+                              : {}),
+                          ...(downloadRoot
+                              ? { write: [{ dir: downloadRoot, recursive: true }] }
+                              : {}),
+                      },
+                  }
                 : {}),
         },
     };

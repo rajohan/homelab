@@ -128,3 +128,16 @@ export function browserWorkerEnvironment(): boolean {
         throw new Error("Invalid saved browser profile environment.");
     return true;
 }
+
+/**
+ * Select the browser container's OS environment and fixed profile/sandbox markers.
+ * @returns No product credentials, loader overrides or arbitrary driver options.
+ */
+export function browserDriverEnvironment(): Record<string, string> {
+    const environment = computerEnvironment();
+    for (const name of ["CUA_E2E_BROWSER_NO_SANDBOX", "CUA_DRIVER_BROWSER_NO_SANDBOX"])
+        if (process.env[name] === "1") environment[name] = "1";
+    if (browserWorkerEnvironment())
+        environment.CUA_DRIVER_BROWSER_PROFILE_ROOT = "/var/lib/mira-browser-profile";
+    return environment;
+}
