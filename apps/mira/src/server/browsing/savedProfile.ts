@@ -4,8 +4,8 @@ import path from "node:path";
 import { browserProfileDirectory } from "./profile";
 
 /**
- * Prepare the fixed, exclusively mounted profile before any Chromium process starts.
- * @param directory - Trusted fixed volume root; an isolated temporary path is used by tests only.
+ * Prepare the fixed, private tmpfs profile before any Chromium process starts.
+ * @param directory - Trusted fixed tmpfs root; an isolated temporary path is used by tests only.
  * @returns Completion after removing only stale Chromium runtime links and its old port marker.
  */
 export async function prepareSavedBrowserProfile(
@@ -68,6 +68,6 @@ export async function prepareSavedBrowserProfile(
         stale.push(file);
     }
     // Never follow runtime links or traverse stored content. Exclusive database
-    // ownership and Docker mount inspection prove the old browser is absent.
+    // ownership and the fresh container prove no earlier browser can access it.
     for (const file of stale) await unlink(file);
 }

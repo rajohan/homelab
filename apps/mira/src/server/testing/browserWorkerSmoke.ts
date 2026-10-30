@@ -10,12 +10,8 @@ import * as v from "valibot";
 
 import { openBrowserConnection } from "../browsing/connection";
 import { prepareBrowserContainer } from "../browsing/container";
-import { browserDockerRequest } from "../browsing/docker";
 import { openBrowserWorker } from "../browsing/process";
-import {
-    createBrowserProfileVolume,
-    removeBrowserProfileVolume,
-} from "../browsing/profile";
+import { browserProfileSnapshotBytes } from "../browsing/profile";
 import { openBrowserSession } from "../browsing/session";
 
 /**
@@ -46,11 +42,10 @@ export async function qualifyBrowserWorker(
         return result.stdout.trim();
     };
     const profile = { id: crypto.randomUUID() };
-    const profileEngine = browserDockerRequest(socket);
-    let failure: unknown;
+    let snapshot: string | null = null;
+    let checkpoints = 0;
     try {
         const imageId = await docker("image", "inspect", image, "--format", "{{.Id}}");
-        await createBrowserProfileVolume(profileEngine, profile);
         for (const mode of [
             "control",
             "view",
@@ -89,6 +84,25 @@ export async function qualifyBrowserWorker(
                         sessionSignal,
                         (config, signal) =>
                             openBrowserConnection(config, signal, {
+                                ...(["save", "restore"].includes(mode)
+                                    ? {
+                                          profile: {
+                                              snapshot,
+                                              save: (value: string) => {
+                                                  assert.ok(
+                                                      value.length <=
+                                                          browserProfileSnapshotBytes
+                                                  );
+                                                  assert.ok(
+                                                      journalEvents.includes("cleaning")
+                                                  );
+                                                  snapshot = value;
+                                                  checkpoints++;
+                                                  return Promise.resolve();
+                                              },
+                                          },
+                                      }
+                                    : {}),
                                 prepare: async (input, abort) => {
                                     const lease = await prepareBrowserContainer(
                                         input,
@@ -146,11 +160,32 @@ export async function qualifyBrowserWorker(
                                     );
                                     assert.equal(lease.name, `mira-browser-${processId}`);
                                     selected = lease.id;
-                                    if (!packaged) return lease;
                                     return {
                                         ...lease,
                                         start: async () => {
                                             await lease.start();
+                                            if (mode === "save") {
+                                                await docker(
+                                                    "exec",
+                                                    selected,
+                                                    "bun",
+                                                    "--no-env-file",
+                                                    "-e",
+                                                    `
+                                                    const fs=require('node:fs');
+                                                    const root='/var/lib/mira-browser-profile';
+                                                    const stat=fs.statfsSync(root);
+                                                    if(stat.bsize*stat.blocks!==64*1024*1024) throw Error('Expected hard 64 MiB tmpfs');
+                                                    const file=root+'/quota-probe';const fd=fs.openSync(file,'wx',0o600);
+                                                    let limited=false;
+                                                    try { const block=Buffer.alloc(1024*1024,1);for(let i=0;i<65;i++)fs.writeSync(fd,block); }
+                                                    catch(e) { if(e.code!=='ENOSPC')throw e;limited=true; }
+                                                    finally {fs.closeSync(fd);fs.unlinkSync(file);}
+                                                    if(!limited)throw Error('Profile quota was not enforced');
+                                                `
+                                                );
+                                            }
+                                            if (!packaged) return;
                                             const site = await Bun.file(
                                                 new URL(
                                                     "browserSiteFixture.ts",
@@ -319,6 +354,13 @@ export async function qualifyBrowserWorker(
             } finally {
                 await browser.close();
             }
+            if (mode === "save")
+                assert.equal(
+                    checkpoints,
+                    1,
+                    "The first saved snapshot must complete before removal"
+                );
+            if (mode === "restore") assert.equal(checkpoints, 2);
             assert.equal(released, true);
             await assert.rejects(docker("inspect", selected));
         }
@@ -336,21 +378,11 @@ export async function qualifyBrowserWorker(
             foreignOriginDenied: true,
             containersRemoved: true,
             savedProfileRestored: true,
+            hardProfileQuota: true,
+            privateBoundedSnapshots: true,
             temporaryProfileIsolated: true,
         };
-    } catch (error) {
-        failure = error;
-        throw error;
     } finally {
-        await removeBrowserProfileVolume(profileEngine, profile).catch(
-            (error: unknown) => {
-                throw new AggregateError(
-                    [failure, error],
-                    "Browser profile qualification or cleanup failed.",
-                    { cause: error }
-                );
-            }
-        );
         await rm(temporary, { recursive: true, force: true });
     }
 }

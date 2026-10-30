@@ -947,7 +947,8 @@ export const miraBrowserProfiles = pgTable(
         origins: jsonb().notNull(),
         hostId: uuid("host_id"),
         state: text().notNull().default("active"),
-        storage: text().notNull().default("new"),
+        quotaSlot: integer("quota_slot"),
+        snapshot: text(),
         createdAt: time("created_at").notNull().defaultNow(),
     },
     (t) => [
@@ -959,8 +960,9 @@ export const miraBrowserProfiles = pgTable(
         ),
         check(
             "mira_browser_profiles_storage",
-            sql`${t.storage} IN ('new','creating','ready') AND (${t.storage}='new' OR ${t.hostId} IS NOT NULL)`
+            sql`(${t.state}='deleted' AND ${t.quotaSlot} IS NULL AND ${t.snapshot} IS NULL) OR (${t.state}<>'deleted' AND ${t.quotaSlot} BETWEEN 0 AND 15 AND ${t.quotaSlot} IS NOT NULL AND (${t.snapshot} IS NULL OR (${t.hostId} IS NOT NULL AND octet_length(${t.snapshot})<=26214400)))`
         ),
+        uniqueIndex("mira_browser_profiles_quota_slot").on(t.quotaSlot),
         check(
             "mira_browser_profiles_origins",
             sql`jsonb_typeof(${t.origins})='array' AND jsonb_array_length(${t.origins}) BETWEEN 1 AND 16 AND octet_length(${t.origins}::text)<=65536`

@@ -2,7 +2,7 @@
     "type": "diff",
     "version": "9",
     "dialect": "postgres",
-    "id": "f418ba73-2631-4fc5-9dba-2acaab32754a",
+    "id": "3a9a099b-d85c-4583-aac9-66fc8dc02559",
     "prevIds": ["a228eb25-5d7b-486e-8b2f-a39125990826"],
     "footprints": [
         {
@@ -47,6 +47,26 @@
                 "n|sch|public",
                 "n|col|public.mira_browser_profiles.owner",
                 "n|col|public.mira_browser_profiles.state"
+            ]
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": [
+                "index",
+                "public",
+                "mira_browser_profiles",
+                "mira_browser_profiles_quota_slot"
+            ],
+            "writes": [
+                "s|idx|public.mira_browser_profiles_quota_slot",
+                "n|idx|public.mira_browser_profiles_quota_slot",
+                "e|idx|public.mira_browser_profiles_quota_slot",
+                "n|rel|public.mira_browser_profiles_quota_slot"
+            ],
+            "reads": [
+                "n|tbl|public.mira_browser_profiles",
+                "n|sch|public",
+                "n|col|public.mira_browser_profiles.quota_slot"
             ]
         },
         {
@@ -196,12 +216,28 @@
             "row": {
                 "schema": "public",
                 "table": "mira_browser_profiles",
-                "name": "storage",
+                "name": "quota_slot",
+                "type": "integer",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_browser_profiles",
+                "name": "snapshot",
                 "type": "text",
                 "typeSchema": null,
-                "notNull": true,
+                "notNull": false,
                 "dimensions": 0,
-                "default": "'new'",
+                "default": null,
                 "generated": null,
                 "identity": null,
                 "entityType": "columns"
@@ -247,6 +283,30 @@
                     }
                 ],
                 "isUnique": false,
+                "where": null,
+                "with": "",
+                "method": "btree",
+                "concurrently": false,
+                "entityType": "indexes"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_browser_profiles",
+                "name": "mira_browser_profiles_quota_slot",
+                "nameExplicit": true,
+                "columns": [
+                    {
+                        "value": "quota_slot",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    }
+                ],
+                "isUnique": true,
                 "where": null,
                 "with": "",
                 "method": "btree",
@@ -307,7 +367,7 @@
                 "schema": "public",
                 "table": "mira_browser_profiles",
                 "name": "mira_browser_profiles_storage",
-                "value": "\"storage\" IN ('new','creating','ready') AND (\"storage\"='new' OR \"host_id\" IS NOT NULL)",
+                "value": "(\"state\"='deleted' AND \"quota_slot\" IS NULL AND \"snapshot\" IS NULL) OR (\"state\"<>'deleted' AND \"quota_slot\" BETWEEN 0 AND 15 AND \"quota_slot\" IS NOT NULL AND (\"snapshot\" IS NULL OR (\"host_id\" IS NOT NULL AND octet_length(\"snapshot\")<=26214400)))",
                 "entityType": "checks"
             }
         },

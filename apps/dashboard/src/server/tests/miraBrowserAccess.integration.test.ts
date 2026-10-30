@@ -472,3 +472,35 @@ test("browser profile limits are serialized and stored host identity cannot move
         await f.close();
     }
 });
+
+test("global profile reservations and database byte limits bound persistent snapshots", async () => {
+    const f = await fixture();
+    try {
+        const attempts = await Promise.allSettled(
+            Array.from({ length: 20 }, (_, index) =>
+                f.caller(`profile-owner-${index}`).browser.createProfile({
+                    name: "Quota fixture",
+                    origins: f.request.origins,
+                })
+            )
+        );
+        expect(attempts.filter((item) => item.status === "fulfilled")).toHaveLength(16);
+        const [row] = await f.client<
+            { id: string; owner: string }[]
+        >`SELECT id,owner FROM mira_browser_profiles ORDER BY quota_slot LIMIT 1`;
+        await rejects(
+            f.client`UPDATE mira_browser_profiles SET host_id=${crypto.randomUUID()},snapshot=repeat('a',26214401) WHERE id=${row!.id}`
+        );
+        await f.caller(row!.owner).browser.deleteProfile({ id: row!.id });
+        await f.api.browser.createProfile({
+            name: "Reclaimed slot",
+            origins: f.request.origins,
+        });
+        const [used] = await f.client<
+            { count: number }[]
+        >`SELECT count(*)::int AS count FROM mira_browser_profiles WHERE quota_slot IS NOT NULL`;
+        expect(used?.count).toBe(16);
+    } finally {
+        await f.close();
+    }
+});

@@ -6,7 +6,7 @@ import { PassThrough } from "node:stream";
 import * as v from "valibot";
 
 import { createVisualChallenge } from "../testing/visualChallenge";
-import { serveBrowserWorker } from "./child";
+import { serveBrowserWorker, type BrowserWorkerProfile } from "./child";
 import { openBrowserWorker } from "./process";
 import { browserWorkerFrame, browserWorkerGrant } from "./wire";
 
@@ -43,7 +43,7 @@ function frame() {
         },
     };
 }
-function childFixture() {
+function childFixture(profile?: BrowserWorkerProfile) {
     const input = new PassThrough(),
         output = new PassThrough();
     const replies: { id: number; result: unknown }[] = [];
@@ -80,7 +80,8 @@ function childFixture() {
         },
         () => {
             forced++;
-        }
+        },
+        profile
     );
     output.on("data", (chunk: Buffer) =>
         replies.push(
@@ -571,4 +572,45 @@ test("host assigns the aggregate deadline only to initialization", async () => {
     await port.observe(new AbortController().signal);
     await port.close();
     expect(deadlines).toEqual([60_000, undefined]);
+});
+
+test("saved workers require private bootstrap before initialization and checkpoint only after native cleanup", async () => {
+    const events: string[] = [];
+    const f = childFixture({
+        restore: (value) => {
+            expect(value).toBeNull();
+            events.push("restore");
+            return Promise.resolve();
+        },
+        capture: () => {
+            expect(f.closes()).toBe(1);
+            events.push("capture");
+            return Promise.resolve("aaaa");
+        },
+    });
+    await f.send(1, "profile", { data: "", last: true });
+    await f.send(2, "initialize", grant);
+    f.input.end();
+    await f.done;
+    expect(events).toEqual(["restore", "capture"]);
+    expect(f.replies.at(-1) as unknown).toEqual({
+        checkpoint: { data: "aaaa", last: true },
+    });
+    for (const saved of [false, true]) {
+        const rejected = childFixture(
+            saved
+                ? {
+                      restore: () => Promise.resolve(),
+                      capture: () => Promise.resolve("aaaa"),
+                  }
+                : undefined
+        );
+        rejected.write(
+            1,
+            saved ? "initialize" : "profile",
+            saved ? grant : { data: "", last: true }
+        );
+        await rejected.done;
+        expect(rejected.opened).toEqual([]);
+    }
 });

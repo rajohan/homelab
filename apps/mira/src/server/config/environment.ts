@@ -109,8 +109,8 @@ export function browserHostEnvironment() {
 }
 
 /**
- * Read the fixed, host-only marker for a saved browser volume.
- * @returns Whether the worker must open its exclusively mounted saved profile.
+ * Read the fixed, host-only marker for a bounded saved browser profile.
+ * @returns Whether the worker must restore its private profile into the fixed quota-enforced tmpfs.
  */
 export function browserWorkerEnvironment(): boolean {
     const marker = process.env.MIRA_BROWSER_PROFILE;

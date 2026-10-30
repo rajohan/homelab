@@ -5,13 +5,7 @@ import * as v from "valibot";
 import type { BrowserDockerRequest } from "./docker";
 import { browserEgressSchema, verifyBrowserEgress, type BrowserEgress } from "./egress";
 import { browserEngine } from "./engine";
-import {
-    browserProfileDirectory,
-    browserProfileVolume,
-    inspectBrowserProfile,
-    type BrowserProfile,
-} from "./profile";
-import { requireBrowserProfileMount } from "./profileMount";
+import { browserProfileDirectory, type BrowserProfile } from "./profile";
 
 const imageId = v.pipe(v.string(), v.regex(/^sha256:[a-f0-9]{64}$/));
 const containerId = v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/));
@@ -60,7 +54,7 @@ export class BrowserContainerCleanupError extends Error {
  * @param image - Already-installed immutable image ID, selected by the trusted updater/host.
  * @param owner - Unpredictable host-generated lifetime identifier.
  * @param egress - Optional trusted preprovisioned private slot; omitted means fully offline.
- * @param profile - Optional trusted registry identity for the one exclusively reserved named volume.
+ * @param profile - Optional trusted registry identity for the one reserved bounded profile snapshot.
  * @returns Fixed resource limits and a hard deadline around the packaged worker entrypoint.
  */
 export function browserContainerSpec(
@@ -112,6 +106,12 @@ export function browserContainerSpec(
             NanoCpus: 2_000_000_000,
             PidsLimit: 256,
             Tmpfs: {
+                ...(profile
+                    ? {
+                          [browserProfileDirectory]:
+                              "rw,nosuid,nodev,noexec,size=64m,uid=1000,gid=1000,mode=0700",
+                      }
+                    : {}),
                 ...(egress
                     ? {
                           "/etc/chromium/policies/managed":
@@ -124,22 +124,19 @@ export function browserContainerSpec(
             LogConfig: { Type: "none", Config: {} },
             RestartPolicy: { Name: "no", MaximumRetryCount: 0 },
             Binds: [],
-            ...(profile
-                ? {
-                      Mounts: [
-                          {
-                              Type: "volume",
-                              Source: browserProfileVolume(profile),
-                              Target: browserProfileDirectory,
-                              ReadOnly: false,
-                              VolumeOptions: { NoCopy: false },
-                          },
-                      ],
-                  }
-                : {}),
             PortBindings: {},
         },
     };
+}
+
+/** Private lifecycle with an optional bounded checkpoint before destructive cleanup. */
+export interface BrowserContainerLease {
+    id: string;
+    name: string;
+    signal: AbortSignal;
+    start: () => Promise<void>;
+    close: () => Promise<void>;
+    beforeRemoval?: (checkpoint: () => Promise<void>) => void;
 }
 
 /**
@@ -155,7 +152,7 @@ export async function prepareBrowserContainer(
     signal: AbortSignal,
     transport?: BrowserDockerRequest,
     journal?: BrowserContainerJournal
-) {
+): Promise<BrowserContainerLease> {
     signal.throwIfAborted();
     const engine = await browserEngine(input, transport);
     const { config, call } = engine;
@@ -171,6 +168,7 @@ export async function prepareBrowserContainer(
     let checking = false;
     let networkJoined = false;
     let networkTimer: ReturnType<typeof setInterval> | undefined;
+    let checkpoint: (() => Promise<void>) | undefined;
     const verify = async () => {
         if (config.egress)
             await verifyBrowserEgress(
@@ -178,9 +176,6 @@ export async function prepareBrowserContainer(
                 config.egress,
                 networkJoined ? id : undefined
             );
-        if (config.profile && !(await inspectBrowserProfile(call, config.profile)))
-            throw new Error("The saved browser profile is missing.");
-        if (config.profile) await requireBrowserProfileMount(call, config.profile, id);
     };
     const controller = new AbortController();
     const inspect = (reference: string) => engine.inspect(reference, owner, id);
@@ -196,6 +191,16 @@ export async function prepareBrowserContainer(
         }
         await journal?.discovered(found);
         const response = await call("DELETE", `/containers/${found}?force=1&v=1`);
+        if (response.status === 409) {
+            // AutoRemove may already own removal after the final checkpoint.
+            // A conflict is never cleanup proof; require verified absence.
+            const deadline = performance.now() + 1500;
+            while (performance.now() < deadline) {
+                if (!(await inspect(found)))
+                    return { kind: "absent", containerId: found };
+                await Bun.sleep(50);
+            }
+        }
         if (![204, 404].includes(response.status))
             throw new BrowserContainerCleanupError(name);
         if (await inspect(found)) throw new BrowserContainerCleanupError(name);
@@ -211,13 +216,9 @@ export async function prepareBrowserContainer(
             await active.catch(() => {});
             try {
                 await journal?.cleaning();
-                // Revocation closes the private stream immediately. Allow only
-                // saved-profile workers a bounded flush before forced removal.
-                if (config.profile && started && id) {
-                    const deadline = performance.now() + 1600;
-                    while (performance.now() < deadline && (await inspect(id)))
-                        await Bun.sleep(50);
-                }
+                // Input is already revoked. The private checkpoint has its own deadline;
+                // any failure still proceeds to unconditional, ownership-verified removal.
+                if (config.profile && started) await checkpoint?.().catch(() => {});
                 const proof = await remove();
                 await journal?.cleaned(proof);
             } catch {
@@ -277,6 +278,11 @@ export async function prepareBrowserContainer(
         id: id!,
         name,
         signal: controller.signal,
+        beforeRemoval: (flush: () => Promise<void>) => {
+            if (started || stopped || checkpoint)
+                throw new Error("Invalid browser checkpoint registration.");
+            checkpoint = flush;
+        },
         start: () => {
             if (stopped || started)
                 return Promise.reject(

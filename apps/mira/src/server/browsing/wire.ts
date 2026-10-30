@@ -4,6 +4,7 @@ import * as v from "valibot";
 
 import { runtimeContentItems } from "../runtime/toolResult";
 import { browserGrant, browserUrl } from "./policy";
+import { browserProfilePartSchema } from "./profileTransfer";
 
 export const browserWorkerExecutable = "/usr/lib/chromium/chromium";
 const address = v.pipe(v.string(), v.minLength(1), v.maxLength(2048));
@@ -23,6 +24,10 @@ export const browserWorkerRequestSchema = v.strictObject({
         v.maxValue(Number.MAX_SAFE_INTEGER)
     ),
     body: v.variant("method", [
+        v.strictObject({
+            method: v.literal("profile"),
+            params: browserProfilePartSchema,
+        }),
         v.strictObject({ method: v.literal("initialize"), params: grantSchema }),
         v.strictObject({
             method: v.literal("observe"),

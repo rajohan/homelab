@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { SQL, TransactionSQL } from "bun";
 import * as v from "valibot";
 
+import { browserProfileSnapshot } from "../browsing/profileSnapshot";
 import { closeMiraBrowserAccess, requireMiraBrowserAccess } from "./browserAccess";
 import { MiraFailure, type MiraContext } from "./context";
 
@@ -244,6 +245,29 @@ export async function renewMiraBrowserProcess(client: SQL, claim: unknown) {
         >`UPDATE mira_browser_processes SET lease_expires_at=clock_timestamp()+interval '15 seconds' WHERE id=${row.id} AND lease_expires_at>clock_timestamp() RETURNING id`;
         if (updated.length === 0) throw failure();
         return result((await read(query, row.id))!);
+    });
+}
+
+/**
+ * Atomically checkpoint a bounded profile while serializing with controller recovery.
+ * @param client - Trusted host database connection.
+ * @param claim - Exact process lease; removed, expired or replaced owners cannot write.
+ * @param snapshot - Private validated snapshot, never exposed in tool results or logs.
+ * @returns Completion after a current active/cleanup process replaces its own profile snapshot.
+ */
+export async function saveMiraBrowserProfileSnapshot(
+    client: SQL,
+    claim: unknown,
+    snapshot: string
+): Promise<void> {
+    browserProfileSnapshot(snapshot);
+    await owned(client, claim, async (query, row) => {
+        if (!row.current || row.state === "removed" || !row.profileId) throw failure();
+        await query`SET LOCAL statement_timeout='2s'`;
+        const [saved] = await query<{ id: string }[]>`
+            UPDATE mira_browser_profiles SET snapshot=${snapshot} WHERE id=${row.profileId} AND host_id=${row.hostId} AND state='active'
+                AND EXISTS(SELECT 1 FROM mira_browser_processes WHERE id=${row.id} AND lease_expires_at>clock_timestamp()) RETURNING id`;
+        if (!saved) throw failure();
     });
 }
 

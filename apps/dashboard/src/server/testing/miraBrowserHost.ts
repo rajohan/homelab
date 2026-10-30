@@ -4,11 +4,16 @@ import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import type { Duplex } from "node:stream";
+import { gzipSync } from "node:zlib";
 
 import { capabilities } from "@homelab/contracts/operations";
 import { setMiraEnabled } from "@homelab/mira/data/automations";
 import { claimMiraRun } from "@homelab/mira/data/queue";
 
+import {
+    BrowserProfileTransfer,
+    browserProfileParts,
+} from "../../../../mira/src/server/browsing/profileTransfer";
 import { syntheticRedImage } from "../../../../mira/src/server/testing/image";
 import { appRouter } from "../api/router";
 import { operationFixture } from "./operations";
@@ -80,17 +85,16 @@ export async function browserHostFixture(enabled = true) {
         rejectCreate: null as number | null,
         replaceCleanupAfterDelete: false,
         failDelete: false,
-        failVolumeCreate: false,
-        volumes: new Map<
-            string,
-            {
-                Name: string;
-                Driver: string;
-                Scope: string;
-                Options: null;
-                Labels: Record<string, string>;
-            }
-        >(),
+        omitCheckpoint: false,
+        snapshot: gzipSync(
+            JSON.stringify([
+                {
+                    name: "Default/Cookies",
+                    data: Buffer.from("synthetic sign-in").toString("base64"),
+                },
+            ])
+        ).toString("base64"),
+        restored: [] as (string | null)[],
         events: [] as string[],
     };
     const streams = new Set<Duplex>();
@@ -103,56 +107,7 @@ export async function browserHostFixture(enabled = true) {
             engine.events.push(`${request.method}:${route}`);
             let status: number,
                 body: unknown = null;
-            if (route === "/volumes/create") {
-                const spec = JSON.parse(Buffer.concat(chunks).toString()) as {
-                    Name: string;
-                    Driver: string;
-                    DriverOpts: Record<string, string>;
-                    Labels: Record<string, string>;
-                };
-                const profileId = spec.Labels["io.homelab.mira.browser-profile"]!;
-                expect(spec.Name).toBe(`mira-browser-profile-${profileId}`);
-                expect(spec.Driver).toBe("local");
-                expect(spec.DriverOpts).toEqual({});
-                const [profile] = await f.client<
-                    { storage: string }[]
-                >`SELECT storage FROM mira_browser_profiles WHERE id=${profileId}`;
-                expect(profile?.storage).toBe("creating");
-                if (engine.failVolumeCreate) status = 503;
-                else {
-                    body = {
-                        Name: spec.Name,
-                        Driver: spec.Driver,
-                        Scope: "local",
-                        Options: null,
-                        Labels: spec.Labels,
-                    };
-                    engine.volumes.set(
-                        spec.Name,
-                        body as {
-                            Name: string;
-                            Driver: string;
-                            Scope: string;
-                            Options: null;
-                            Labels: Record<string, string>;
-                        }
-                    );
-                    status = 201;
-                }
-            } else if (route.startsWith("/volumes/")) {
-                const name = route.slice("/volumes/".length);
-                const volume = engine.volumes.get(name);
-                if (request.method === "DELETE") {
-                    engine.volumes.delete(name);
-                    status = 204;
-                } else {
-                    status = volume ? 200 : 404;
-                    body = volume ?? null;
-                }
-            } else if (route.startsWith("/containers/json?")) {
-                status = 200;
-                body = engine.exists ? [{ Id: engine.id }] : [];
-            } else if (route.startsWith("/containers/create")) {
+            if (route.startsWith("/containers/create")) {
                 const spec = JSON.parse(Buffer.concat(chunks).toString()) as {
                     Image: string;
                     Labels: Record<string, string>;
@@ -215,6 +170,20 @@ export async function browserHostFixture(enabled = true) {
             "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: tcp\r\n\r\n"
         );
         let buffered = "";
+        const restore = new BrowserProfileTransfer();
+        let prepared = false;
+        stream.on("end", () => {
+            if (prepared && !engine.omitCheckpoint) {
+                for (const part of browserProfileParts(engine.snapshot)) {
+                    const body = Buffer.from(JSON.stringify({ checkpoint: part }) + "\n");
+                    const header = Buffer.alloc(8);
+                    header[0] = 1;
+                    header.writeUInt32BE(body.length, 4);
+                    stream.write(Buffer.concat([header, body]));
+                }
+            }
+            stream.end();
+        });
         stream.on("data", (chunk: Buffer) => {
             buffered += chunk.toString();
             while (buffered.includes("\n")) {
@@ -228,7 +197,14 @@ export async function browserHostFixture(enabled = true) {
                 engine.events.push(message.body.method);
                 if (engine.holdInput && message.body.method === "act") continue;
                 let result: unknown;
-                if (message.body.method === "initialize")
+                if (message.body.method === "profile") {
+                    const value = restore.accept(message.body.params);
+                    if (value !== undefined) {
+                        engine.restored.push(value);
+                        prepared = true;
+                    }
+                    result = { accepted: true };
+                } else if (message.body.method === "initialize")
                     result = { version: 1, driver: "0.37.0" };
                 else if (message.body.method === "observe")
                     result = {

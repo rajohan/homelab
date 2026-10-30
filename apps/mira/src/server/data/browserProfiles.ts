@@ -65,16 +65,25 @@ export async function createMiraBrowserProfile(context: MiraContext, input: unkn
                 "PRECONDITION_FAILED",
                 "Delete an unused browser profile before creating another. Four profiles are allowed per account."
             );
+        await query`SELECT pg_advisory_xact_lock(hashtextextended('mira:browser:profile-capacity',0))`;
+        const [slot] = await query<
+            { slot: number }[]
+        >`SELECT slot FROM generate_series(0,15) AS slot WHERE NOT EXISTS(SELECT 1 FROM mira_browser_profiles p WHERE p.quota_slot=slot) ORDER BY slot LIMIT 1`;
+        if (!slot)
+            throw new MiraFailure(
+                "PRECONDITION_FAILED",
+                "Saved browser profile storage is fully reserved. Delete an unused profile before creating another."
+            );
         const id = Bun.randomUUIDv7();
-        await query`INSERT INTO mira_browser_profiles(id,owner,name,origins) VALUES(${id},${context.owner},${request.name},${JSON.stringify(origins)}::text::jsonb)`;
+        await query`INSERT INTO mira_browser_profiles(id,owner,name,origins,quota_slot) VALUES(${id},${context.owner},${request.name},${JSON.stringify(origins)}::text::jsonb,${slot.slot})`;
         await auditMira(query, context, "browser.profile_created", id);
         return { id };
     });
 }
 
 /**
- * Request deletion after all grants and processes have closed; the trusted host erases storage.
- * @returns Completion of the request, not a claim that Docker storage has already been removed.
+ * Erase a private snapshot and release its reserved capacity after all browser cleanup completes.
+ * @returns Completion of the atomic owned deletion; no browser data is exposed.
  */
 export async function deleteMiraBrowserProfile(
     context: MiraContext,
@@ -94,7 +103,7 @@ export async function deleteMiraBrowserProfile(
                 "PRECONDITION_FAILED",
                 "Stop browser access and wait for cleanup before deleting its profile."
             );
-        await query`UPDATE mira_browser_profiles SET state=${profile.hostId ? "deleting" : "deleted"} WHERE id=${id}`;
+        await query`UPDATE mira_browser_profiles SET state='deleted',snapshot=NULL,quota_slot=NULL WHERE id=${id}`;
         await auditMira(query, context, "browser.profile_deletion_requested", id);
     });
 }

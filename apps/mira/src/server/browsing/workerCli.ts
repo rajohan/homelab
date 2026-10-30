@@ -4,6 +4,7 @@ import { browserWorkerEnvironment } from "../config/environment";
 import { serveBrowserWorker } from "./child";
 import { openNativeBrowser } from "./native";
 import { browserGrant } from "./policy";
+import { captureBrowserProfile, restoreBrowserProfile } from "./profileSnapshot";
 import { prepareSavedBrowserProfile } from "./savedProfile";
 
 if (import.meta.main) {
@@ -22,7 +23,14 @@ if (import.meta.main) {
                                 ...(saved ? { savedProfile: true } : {}),
                             },
                             signal
-                        )
+                        ),
+                    undefined,
+                    saved
+                        ? {
+                              restore: restoreBrowserProfile,
+                              capture: captureBrowserProfile,
+                          }
+                        : undefined
                 );
             },
             catch: () => new Error("Browser worker stopped."),
