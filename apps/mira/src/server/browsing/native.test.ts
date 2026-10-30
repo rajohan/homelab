@@ -2,8 +2,6 @@ import { expect, test } from "bun:test";
 import assert from "node:assert/strict";
 import { realpath } from "node:fs/promises";
 
-import type * as NativeSdk from "@trycua/cua-driver";
-
 import { createVisualChallenge } from "../testing/visualChallenge";
 import { openNativeBrowser } from "./native";
 import { browserGrant, browserManifest, browserUrl } from "./policy";
@@ -57,21 +55,20 @@ function response(
     return { isError: false, structuredJson: JSON.stringify(data), images };
 }
 const image = () => ({ mimeType: "image/png", dataBase64: createVisualChallenge().data });
-async function fixture(uploads = false) {
+async function fixture(uploads = false, downloads = false) {
     const grant = {
         executable: await realpath(process.execPath),
         origins: [origin],
         initialUrl: `${origin}/`,
         mode: "control" as "view" | "control",
         ...(uploads ? { uploads: true as const } : {}),
+        ...(downloads ? { downloads: true as const } : {}),
     };
     const owner = new AbortController();
     const calls: { name: string; args: Record<string, unknown> }[] = [];
     let manifest = "",
         shuts = 0,
-        destroys = 0,
         time = 0;
-    const metadata = { driverVersion: "0.37.0", embedded: true };
     const results: Record<string, BrowserNativeResult> = {
         browser_prepare: response({
             status: "ok",
@@ -115,10 +112,11 @@ async function fixture(uploads = false) {
         }),
     };
     const native = {
-        metadata: () => Promise.resolve(metadata),
-        startSession: () => Promise.resolve(),
-        callTool: (name: string, input: string, _options?: { signal?: AbortSignal }) => {
-            const args = JSON.parse(input) as Record<string, unknown>;
+        callTool: (
+            name: string,
+            args: Record<string, unknown>,
+            _signal?: AbortSignal
+        ) => {
             calls.push({ name, args });
             return Promise.resolve(
                 results[name === "get_browser_state" && args.pid ? "bind" : name]!
@@ -128,38 +126,21 @@ async function fixture(uploads = false) {
             shuts++;
             return Promise.resolve();
         },
-        uniffiDestroy: () => {
-            destroys++;
-        },
     };
-    const sdk = {
-        CuaDriver: {
-            instanceOf: () => true,
-            createConfigured: (input: {
-                authorization: {
-                    compatibilityCapabilityManifestPath: string;
-                    unrestrictedAcknowledged: boolean;
-                };
-            }) => {
-                manifest = input.authorization.compatibilityCapabilityManifestPath;
-                expect(input.authorization.unrestrictedAcknowledged).toBe(false);
-                return native;
-            },
-        },
-        SessionPermissionMode: { Bounded: 1 },
-    } as unknown as typeof NativeSdk;
     return {
         grant,
         owner,
         calls,
         native,
-        metadata,
         results,
         open: () =>
             openNativeBrowser(
                 grant,
                 owner.signal,
-                () => Promise.resolve(sdk),
+                (file) => {
+                    manifest = file;
+                    return Promise.resolve(native);
+                },
                 () => time
             ),
         time: (next: number) => {
@@ -167,7 +148,6 @@ async function fixture(uploads = false) {
         },
         manifest: () => manifest,
         shuts: () => shuts,
-        destroys: () => destroys,
     };
 }
 
@@ -412,7 +392,6 @@ test("dedicated browser binds an owned blank tab and dispatches only observed in
     });
     await Promise.all([browser.close(), browser.close()]);
     expect(f.shuts()).toBe(1);
-    expect(f.destroys()).toBe(1);
     expect(await Bun.file(f.manifest()).exists()).toBe(false);
     await assert.rejects(browser.observe(signal()), /stopped/);
 });
@@ -465,10 +444,8 @@ test("view-only, forged, stale, reused and mismatched action references never di
     }
 });
 
-test("startup refuses unexpected SDK, process, profile, window and tab identities with cleanup", async () => {
+test("startup refuses unexpected process, profile, window and tab identities with cleanup", async () => {
     for (const scenario of [
-        "version",
-        "embedded",
         "owner",
         "profile",
         "window",
@@ -479,8 +456,6 @@ test("startup refuses unexpected SDK, process, profile, window and tab identitie
         "refused",
     ]) {
         const f = await fixture();
-        if (scenario === "version") f.metadata.driverVersion = "0.38.0";
-        if (scenario === "embedded") f.metadata.embedded = false;
         if (scenario === "owner" || scenario === "profile") {
             const prepared = JSON.parse(f.results.browser_prepare!.structuredJson!) as {
                 endpoint_ownership: { owner_pid: number };
@@ -517,7 +492,6 @@ test("startup refuses unexpected SDK, process, profile, window and tab identitie
         if (scenario === "refused") f.results.browser_prepare!.isError = true;
         await assert.rejects(f.open());
         expect(f.shuts()).toBe(1);
-        expect(f.destroys()).toBe(1);
         expect(await Bun.file(f.manifest()).exists()).toBe(false);
     }
 });
@@ -603,7 +577,6 @@ test("operation cancellation and native cleanup failures cannot reopen the brows
     second.native.shutdown = () => Promise.reject(new Error("cleanup failed"));
     await assert.rejects(other.close(), /cleanup failed/);
     await assert.rejects(other.close(), /cleanup failed/);
-    expect(second.destroys()).toBe(1);
     expect(await Bun.file(second.manifest()).exists()).toBe(false);
 });
 
@@ -665,5 +638,48 @@ test("operator observations allow manual entry without extending model refs or a
         } finally {
             await browser.close();
         }
+    }
+});
+
+test("native downloads require explicit authority, operator link refs and one unused observation", async () => {
+    for (const scenario of [
+        "disabled",
+        "model",
+        "stale",
+        "ref",
+        "image",
+        "success",
+    ] as const) {
+        const f = await fixture(false, scenario !== "disabled");
+        const data = snapshot();
+        data.refs[1]!.role = "link";
+        f.results.get_browser_state = response(data, [image()]);
+        const dispatch = f.native.callTool;
+        f.native.callTool = async (name, args, operation) => {
+            if (name !== "browser_download") return dispatch(name, args, operation);
+            const id = "01a1fc90-473e-7500-8102-010203040506";
+            await Bun.write(String(args.destination_root) + "/" + id, "hello");
+            f.calls.push({ name, args });
+            return response(
+                { status: "completed", download_id: id, bytes: 5 },
+                scenario === "image" ? [image()] : []
+            );
+        };
+        const browser = await f.open();
+        const frame = await browser.observe(signal(), scenario !== "model");
+        if (scenario === "stale") f.time(60_000);
+        const command = {
+            observationId: frame.observationId,
+            ref: scenario === "ref" ? "p1:0" : "p1:1",
+        };
+        if (scenario === "success") {
+            const result = await browser.download(command, signal());
+            expect(result.bytes.toString()).toBe("hello");
+            await assert.rejects(browser.download(command, signal()));
+        } else await assert.rejects(browser.download(command, signal()));
+        expect(f.calls.filter((call) => call.name === "browser_download")).toHaveLength(
+            ["success", "image"].includes(scenario) ? 1 : 0
+        );
+        await browser.close();
     }
 });

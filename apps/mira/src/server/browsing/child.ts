@@ -2,7 +2,7 @@ import type { Readable, Writable } from "node:stream";
 
 import * as v from "valibot";
 
-import { computerDriverVersion } from "../computer/policy";
+import { browserDriverVersion } from "./driver";
 import { openNativeBrowser } from "./native";
 import { browserUrl } from "./policy";
 import { BrowserProfileTransfer, browserProfileParts } from "./profileTransfer";
@@ -141,7 +141,7 @@ export function serveBrowserWorker(
                 initializationFailed = true;
                 throw error;
             }
-            result = { version: 1, driver: computerDriverVersion };
+            result = { version: 1, driver: browserDriverVersion };
         } else {
             if (!port || !grant) throw new Error("Browser worker is not initialized.");
             owner.signal.throwIfAborted();

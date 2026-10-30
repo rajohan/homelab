@@ -111,6 +111,10 @@
     "apps/mira/src/server/browsing/savedProfile.test.ts": 59,
     "apps/mira/src/server/browsing/upload.test.ts": 91,
     "apps/mira/src/server/browsing/uploadTransfer.test.ts": 2,
-    "apps/mira/src/server/config/environment.test.ts": 1
+    "apps/mira/src/server/config/environment.test.ts": 1,
+    "scripts/fetchBrowserDriver.test.ts": 123,
+    "apps/mira/src/server/browsing/driverProcess.test.ts": 71,
+    "apps/mira/src/server/browsing/download.test.ts": 8,
+    "apps/mira/src/server/browsing/driver.test.ts": 8
   }
 }

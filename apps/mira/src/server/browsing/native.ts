@@ -3,10 +3,14 @@ import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import type * as NativeSdk from "@trycua/cua-driver";
 import * as v from "valibot";
 
-import { computerDriverVersion } from "../computer/policy";
+import { createBrowserDownloads } from "./download";
+import {
+    openBrowserDriver,
+    type BrowserDriver,
+    type BrowserDriverFactory,
+} from "./driver";
 import { browserGrant, browserManifest, browserUrl } from "./policy";
 import { prepareBrowserProfileShutdown } from "./profileShutdown";
 import {
@@ -40,21 +44,20 @@ const actionSchema = v.object({
  * Open one fresh, isolated browser and retain the only selected tab internally.
  * @param input - Host-owned executable, origin ceiling, initial URL and input permission.
  * @param signal - Owner cancellation for the entire lifetime, including startup.
- * @param loadSdk - Pinned native SDK loader; synthetic replacement is for unit tests only.
+ * @param openDriver - Pinned bounded MCP driver factory; synthetic replacements are for unit tests only.
  * @param now - Monotonic clock for observation, idle and total lifetime deadlines.
  * @returns A serialized browser port. The host must supervise its process and await close.
  */
 export async function openNativeBrowser(
     input: unknown,
     signal: AbortSignal,
-    loadSdk: () => Promise<typeof NativeSdk> = () => import("@trycua/cua-driver"),
+    openDriver: BrowserDriverFactory = openBrowserDriver,
     now: () => number = () => performance.now()
 ) {
     signal.throwIfAborted();
     const grant = browserGrant(input);
     if ((await realpath(grant.executable)) !== grant.executable)
         throw new Error("Browser executable must use its canonical path.");
-    const sdk = await loadSdk();
     const directory = await mkdtemp(path.join(os.tmpdir(), "homelab-browser-"));
     const stop = new AbortController();
     const started = now();
@@ -63,8 +66,10 @@ export async function openNativeBrowser(
     let closed = false;
     let closing: Promise<void> | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    let driver: ReturnType<typeof sdk.CuaDriver.createConfigured> | undefined;
+    let driver: BrowserDriver | undefined;
+    let opening: Promise<BrowserDriver> | undefined;
     let saveProfile: (() => Promise<void>) | undefined;
+    let downloads: Awaited<ReturnType<typeof createBrowserDownloads>> | undefined;
     let uploads: Awaited<ReturnType<typeof createBrowserUploads>> | undefined;
     let target: { targetId: string; tabId: string; origins: string[] };
     let observed:
@@ -73,9 +78,9 @@ export async function openNativeBrowser(
               time: number;
               refs: Map<string, ("click" | "type" | "upload")[]>;
               maxAge: number;
+              downloads: Set<string>;
           }
         | undefined;
-    const session = randomUUID();
     const close = () => {
         closed = true;
         observed = undefined;
@@ -84,13 +89,10 @@ export async function openNativeBrowser(
         signal.removeEventListener("abort", onAbort);
         closing ??= (async () => {
             try {
-                if (driver) {
-                    try {
-                        await saveProfile?.().catch(() => {});
-                        await driver.shutdown();
-                    } finally {
-                        if (sdk.CuaDriver.instanceOf(driver)) driver.uniffiDestroy();
-                    }
+                const active = driver ?? (await opening?.catch(() => null));
+                if (active) {
+                    await saveProfile?.().catch(() => {});
+                    await active.shutdown();
                 }
             } finally {
                 await rm(directory, { recursive: true, force: true });
@@ -130,7 +132,8 @@ export async function openNativeBrowser(
             | "browser_navigate"
             | "browser_click"
             | "browser_set_input_files"
-            | "browser_type",
+            | "browser_type"
+            | "browser_download",
         args: Record<string, unknown>,
         operation: AbortSignal
     ) => {
@@ -141,11 +144,7 @@ export async function openNativeBrowser(
             AbortSignal.timeout(10_000),
         ]);
         check(combined);
-        const result = await driver!.callTool(
-            name,
-            JSON.stringify({ ...args, session }),
-            { signal: combined }
-        );
+        const result = await driver!.callTool(name, args, combined);
         check(combined);
         return result;
     };
@@ -181,37 +180,20 @@ export async function openNativeBrowser(
     };
     try {
         if (grant.uploads) uploads = await createBrowserUploads(directory);
+        if (grant.downloads) downloads = await createBrowserDownloads(directory);
         const manifest = path.join(directory, "capabilities.json");
-        await writeFile(manifest, JSON.stringify(browserManifest(grant, uploads?.root)), {
-            mode: 0o600,
-        });
-        check(signal);
-        driver = sdk.CuaDriver.createConfigured({
-            claudeCodeCompatibility: false,
-            authorization: {
-                allowedModes: [sdk.SessionPermissionMode.Bounded],
-                compatibilityMode: sdk.SessionPermissionMode.Bounded,
-                compatibilityCapabilityManifestPath: manifest,
-                unrestrictedAcknowledged: false,
-                maxSessionTtlSeconds: 300n,
-                maxIdleTtlSeconds: 60n,
-            },
-        });
-        armTimer();
-        const metadata = await driver.metadata();
-        if (metadata.driverVersion !== computerDriverVersion || !metadata.embedded)
-            throw new Error("Unexpected browser driver version or execution mode.");
-        check(signal);
-        await driver.startSession(
-            { session },
+        await writeFile(
+            manifest,
+            JSON.stringify(browserManifest(grant, uploads?.root, downloads?.root)),
             {
-                signal: AbortSignal.any([
-                    signal,
-                    stop.signal,
-                    AbortSignal.timeout(10_000),
-                ]),
+                mode: 0o600,
             }
         );
+        check(signal);
+        armTimer();
+        opening = openDriver(manifest, directory, signal);
+        driver = await opening;
+        check(signal);
         const prepared = v.parse(
             preparedSchema,
             browserMetadata(
@@ -287,6 +269,17 @@ export async function openNativeBrowser(
                         id,
                         time: now(),
                         maxAge: operator ? 60_000 : 10_000,
+                        downloads: new Set(
+                            operator
+                                ? frame.refs
+                                      .filter(
+                                          (item) =>
+                                              item.role === "link" &&
+                                              item.actions.includes("click")
+                                      )
+                                      .map((item) => item.ref)
+                                : []
+                        ),
                         refs: new Map(frame.refs.map((item) => [item.ref, item.actions])),
                     };
                     return { observationId: id, ...frame };
@@ -295,6 +288,38 @@ export async function openNativeBrowser(
                 run(operation, async () => {
                     observed = undefined;
                     return navigate(browserUrl(url, grant.origins), operation);
+                }),
+            download: (command: unknown, operation: AbortSignal) =>
+                run(operation, async () => {
+                    const previous = observed;
+                    observed = undefined;
+                    const action = v.parse(browserUploadActionSchema, command);
+                    if (
+                        !downloads ||
+                        !previous ||
+                        previous.id !== action.observationId ||
+                        now() - previous.time < 0 ||
+                        now() - previous.time >= previous.maxAge ||
+                        !previous.downloads.has(action.ref)
+                    )
+                        throw new Error(
+                            "Browser download requires explicit authority and a fresh operator link observation."
+                        );
+                    const result = await call(
+                        "browser_download",
+                        {
+                            ...tabArgs(),
+                            ref: action.ref,
+                            destination_root: downloads.root,
+                        },
+                        operation
+                    );
+                    if (result.images.length > 0)
+                        throw new Error("Unexpected browser download images.");
+                    return downloads.collect(
+                        browserMetadata(result),
+                        AbortSignal.any([signal, stop.signal, operation])
+                    );
                 }),
             upload: (command: unknown, file: BrowserUploadFile, operation: AbortSignal) =>
                 run(operation, async () => {

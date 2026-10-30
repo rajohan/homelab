@@ -4,6 +4,7 @@ import { readdir, readlink } from "node:fs/promises";
 import { Effect } from "effect";
 
 import { openNativeBrowser } from "../browsing/native";
+import { qualifyBrowserDownloads } from "./browserDownloadSmoke";
 import { qualifyBrowserUploads } from "./browserUploadSmoke";
 
 const executable = "/usr/lib/chromium/chromium";
@@ -197,7 +198,7 @@ export async function qualifyBrowserFixture() {
         assert.equal(freshProfiles, 4);
         assert.equal(count, 1);
         return {
-            driver: "0.37.0",
+            driver: "0.38.0",
             platform: "linux-chromium",
             tabImage: true,
             trustedType: true,
@@ -222,6 +223,7 @@ if (import.meta.main) {
             try: async () => ({
                 ...(await qualifyBrowserFixture()),
                 uploads: await qualifyBrowserUploads(),
+                downloads: await qualifyBrowserDownloads(),
             }),
             catch: (cause) =>
                 new Error("Isolated browser qualification failed.", { cause }),

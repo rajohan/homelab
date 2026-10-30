@@ -58,10 +58,9 @@ export async function qualifyBrowserImage(image: string) {
         const probe = `import assert from 'node:assert/strict';import {existsSync,readdirSync} from 'node:fs';
             assert.equal(Bun.version,'1.4.4');assert.equal(process.getuid(),1000);
             assert.equal(existsSync('/source'),false);assert.equal(existsSync('/opt/mira-browser/apps'),false);
-            const root='/opt/mira-browser/node_modules';const names=readdirSync(root).flatMap(scope=>readdirSync(root+'/'+scope).map(name=>scope+'/'+name)).sort();
-            assert.deepEqual(names,['@trycua/cua-driver','@trycua/cua-driver-linux-x64-gnu','@ubjs/core','@ubjs/node','@ubjs/node-linux-x64-gnu']);
-            const sdk=await import('@trycua/cua-driver');const driver=sdk.CuaDriver.create();
-            try{const m=await driver.metadata();assert.equal(m.driverVersion,'0.37.0');assert.equal(m.embedded,true);}finally{await driver.shutdown();driver.uniffiDestroy();}
+            assert.deepEqual(readdirSync('/opt/mira-browser').sort(),['cua-driver','package.json','proxy-policy.json','start.sh','worker.js']);
+            const version=Bun.spawnSync(['/opt/mira-browser/cua-driver','--version']);
+            assert.equal(version.exitCode,0);assert.equal(version.stdout.toString().trim(),'cua-driver 0.38.0');
             console.log('package-ok');`;
         assert.equal(
             await docker(
