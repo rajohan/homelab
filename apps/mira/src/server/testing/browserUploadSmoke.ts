@@ -33,14 +33,21 @@ export async function qualifyBrowserUploads() {
     };
     let received: typeof expected | undefined;
     let leave = false;
-    let outside = 0;
+    let outsideLoaded = false;
     const other = Bun.serve({
         hostname: "127.0.0.1",
         port: 0,
-        fetch: () => {
-            outside++;
+        fetch: (request) => {
+            if (
+                new URL(request.url).pathname === "/loaded" &&
+                request.method === "POST"
+            ) {
+                outsideLoaded = true;
+                return new Response("ok");
+            }
             return new Response(
-                '<title>Outside approved upload origin</title><label>Upload<input type="file"></label>',
+                `<!doctype html><title>Outside approved upload origin</title><label>Upload<input type="file"></label>
+                <script>addEventListener('DOMContentLoaded',()=>fetch('/loaded',{method:'POST'}),{once:true});</script>`,
                 { headers: { "content-type": "text/html" } }
             );
         },
@@ -112,7 +119,7 @@ export async function qualifyBrowserUploads() {
         const stale = frame.refs.find((item) => item.actions.includes("upload"));
         assert.ok(stale);
         leave = true;
-        await eventually(() => outside > 0);
+        await eventually(() => outsideLoaded);
         // The wrapper still holds the fresh ref; only native live-origin/node enforcement can refuse this.
         await assert.rejects(
             redirected.upload(
