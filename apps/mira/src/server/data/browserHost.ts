@@ -6,6 +6,7 @@ import {
     prepareBrowserContainer,
     type BrowserContainerJournal,
 } from "../browsing/container";
+import { browserEgressSchema } from "../browsing/egress";
 import { browserEngine } from "../browsing/engine";
 import { openBrowserWorker } from "../browsing/process";
 import { reconcileBrowserContainer } from "../browsing/reconciliation";
@@ -26,6 +27,19 @@ export const browserHostConfigurationSchema = v.strictObject({
     hostId: v.pipe(v.string(), v.uuid()),
     socketPath: v.pipe(v.string(), v.minLength(1), v.maxLength(4096)),
     imageId: v.pipe(v.string(), v.regex(/^sha256:[a-f0-9]{64}$/)),
+    networks: v.optional(
+        v.pipe(
+            v.array(browserEgressSchema),
+            v.minLength(1),
+            v.maxLength(2),
+            v.check(
+                (values) =>
+                    new Set(values.map((item) => item.networkId)).size ===
+                        values.length &&
+                    new Set(values.map((item) => item.proxyId)).size === values.length
+            )
+        )
+    ),
 });
 type Configuration = v.InferOutput<typeof browserHostConfigurationSchema>;
 type Claim = Awaited<ReturnType<typeof reserveMiraBrowserProcess>>["claim"];
@@ -107,14 +121,14 @@ export async function openMiraBrowserSession(
 ) {
     owner.throwIfAborted();
     const config = v.parse(browserHostConfigurationSchema, configuration);
-    const fixed = { socketPath: config.socketPath, imageId: config.imageId };
+    const engineConfig = { socketPath: config.socketPath, imageId: config.imageId };
     const host: MiraContext = {
         client: context.client,
         owner: context.owner,
         actor: context.actor,
         ...(context.run ? { run: { ...context.run } } : {}),
     };
-    await browserEngine(fixed);
+    await browserEngine(engineConfig);
     owner.throwIfAborted();
     // Grant consumption and process reservation commit together. A host crash
     // cannot strand an active grant without a recoverable process record.
@@ -128,11 +142,18 @@ export async function openMiraBrowserSession(
                 hostToken: access.hostToken,
                 hostId: config.hostId,
                 imageId: config.imageId,
+                ...(config.networks
+                    ? { networkIds: config.networks.map((network) => network.networkId) }
+                    : {}),
             },
             query
         );
         return { access, record };
     });
+    const egress = config.networks?.find(
+        (network) => network.networkId === record.networkId
+    );
+    const fixed = { ...engineConfig, ...(egress ? { egress } : {}) };
     const identity = { id: access.id, hostToken: access.hostToken };
     const { claim } = record;
     const journal: BrowserContainerJournal = {

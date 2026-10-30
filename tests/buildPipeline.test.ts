@@ -156,13 +156,17 @@ test("PR execution cannot share a runner or secrets with authenticated coverage 
     const save = browser.steps.findIndex(
         (step) =>
             step.run ===
-            "docker save --output browser-images.tar homelab-browser/runtime:tested"
+            "docker save --output browser-images.tar homelab-browser/runtime:tested homelab-browser/proxy:tested"
     );
     const transfer = browser.steps.findIndex(
         (step) => step.with?.name === "tested-browser-image"
     );
     expect(runtimeTest).toBeGreaterThan(0);
-    expect(save).toBeGreaterThan(runtimeTest);
+    const egressTest = browser.steps.findIndex((step) =>
+        step.run?.includes("python3 -I scripts/smokeBrowserEgress.py")
+    );
+    expect(egressTest).toBeGreaterThan(runtimeTest);
+    expect(save).toBeGreaterThan(egressTest);
     expect(transfer).toBeGreaterThan(save);
     expect(browser.steps[save]?.if).toBe("github.event_name == 'release'");
     expect(browser.steps[transfer]?.if).toBe("github.event_name == 'release'");

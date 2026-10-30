@@ -85,7 +85,7 @@ jobs:
   browser:
     name: Isolated browser
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
@@ -125,9 +125,23 @@ jobs:
             --label "org.opencontainers.image.version=$version" .
       - name: Qualify the unchanged browser runtime image
         run: bun run test:browser:image homelab-browser/runtime:tested
+      - name: Build and qualify the unchanged public web proxy
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          version="$(bun -e 'console.log((await Bun.file("package.json").json()).version)')"
+          docker build --provenance=false -f deploy/browser-proxy/Dockerfile -t homelab-browser-proxy-test:local \
+            --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
+            --label "org.opencontainers.image.revision=$SOURCE_SHA" \
+            --label "org.opencontainers.image.version=$version" .
+          docker build -f deploy/browser-test/egress.Dockerfile -t homelab-browser-egress-fixture:local .
+          docker tag homelab-browser/runtime:tested homelab-browser-egress-runtime:local
+          python3 -I scripts/smokeBrowserEgress.py
+          docker tag homelab-browser-proxy-test:local homelab-browser/proxy:tested
       - name: Save only the qualified browser image
         if: github.event_name == 'release'
-        run: docker save --output browser-images.tar homelab-browser/runtime:tested
+        run: docker save --output browser-images.tar homelab-browser/runtime:tested homelab-browser/proxy:tested
       - name: Transfer the qualified browser image to the release publisher
         if: github.event_name == 'release'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

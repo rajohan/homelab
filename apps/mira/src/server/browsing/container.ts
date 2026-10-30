@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import * as v from "valibot";
 
 import type { BrowserDockerRequest } from "./docker";
+import { browserEgressSchema, verifyBrowserEgress, type BrowserEgress } from "./egress";
 import { browserEngine } from "./engine";
 
 const imageId = v.pipe(v.string(), v.regex(/^sha256:[a-f0-9]{64}$/));
@@ -48,12 +49,18 @@ export class BrowserContainerCleanupError extends Error {
 }
 
 /**
- * Build an offline, unprivileged browser container with a daemon-enforced process boundary.
+ * Build an isolated, unprivileged browser container with a daemon-enforced process boundary.
  * @param image - Already-installed immutable image ID, selected by the trusted updater/host.
  * @param owner - Unpredictable host-generated lifetime identifier.
+ * @param egress - Optional trusted preprovisioned private slot; omitted means fully offline.
  * @returns Fixed resource limits and a hard deadline around the packaged worker entrypoint.
  */
-export function browserContainerSpec(image: string, owner: string) {
+export function browserContainerSpec(
+    image: string,
+    owner: string,
+    egress?: BrowserEgress
+) {
+    if (egress) v.parse(browserEgressSchema, egress);
     v.parse(imageId, image);
     v.parse(v.pipe(v.string(), v.uuid()), owner);
     return {
@@ -68,11 +75,13 @@ export function browserContainerSpec(image: string, owner: string) {
         AttachStdin: true,
         AttachStdout: true,
         AttachStderr: false,
-        NetworkDisabled: true,
+        NetworkDisabled: !egress,
+        ...(egress ? { Env: ["MIRA_BROWSER_NETWORK=public"] } : {}),
         HostConfig: {
             AutoRemove: true,
             Init: true,
-            NetworkMode: "none",
+            NetworkMode: egress?.networkId ?? "none",
+            ...(egress ? { Dns: ["127.0.0.1"] } : {}),
             ReadonlyRootfs: true,
             CapDrop: ["ALL"],
             SecurityOpt: ["no-new-privileges:true"],
@@ -80,6 +89,12 @@ export function browserContainerSpec(image: string, owner: string) {
             NanoCpus: 2_000_000_000,
             PidsLimit: 256,
             Tmpfs: {
+                ...(egress
+                    ? {
+                          "/etc/chromium/policies/managed":
+                              "rw,nosuid,nodev,noexec,size=64k,uid=1000,gid=1000",
+                      }
+                    : {}),
                 "/tmp": "rw,nosuid,nodev,size=256m",
                 "/home/bun": "rw,nosuid,nodev,size=128m,uid=1000,gid=1000",
             },
@@ -117,6 +132,13 @@ export async function prepareBrowserContainer(
     let started = false;
     let closing: Promise<void> | undefined;
     let active = Promise.resolve();
+    let checking = false;
+    let networkJoined = false;
+    let networkTimer: ReturnType<typeof setInterval> | undefined;
+    const verify = () =>
+        config.egress
+            ? verifyBrowserEgress(call, config.egress, networkJoined ? id : undefined)
+            : Promise.resolve();
     const controller = new AbortController();
     const inspect = (reference: string) => engine.inspect(reference, owner, id);
     const remove = async (): Promise<BrowserContainerProof> => {
@@ -138,6 +160,7 @@ export async function prepareBrowserContainer(
     };
     const close = () => {
         stopped = true;
+        clearInterval(networkTimer);
         controller.abort();
         signal.removeEventListener("abort", onAbort);
         closing ??= (async () => {
@@ -159,6 +182,8 @@ export async function prepareBrowserContainer(
     signal.addEventListener("abort", onAbort, { once: true });
     const create = async () => {
         signal.throwIfAborted();
+        await verify();
+        signal.throwIfAborted();
         await journal?.creating();
         // Once intent is committed, settle this single create even if cancellation
         // arrived during the journal write. The container stays stopped; close
@@ -167,7 +192,7 @@ export async function prepareBrowserContainer(
         const response = await call(
             "POST",
             `/containers/create?name=${name}`,
-            browserContainerSpec(config.imageId, owner)
+            browserContainerSpec(config.imageId, owner, config.egress)
         );
         // Even a non-201 reply is not proof that no container was created. Inspect
         // the generated name on failure; only a completed valid response settles it.
@@ -214,12 +239,28 @@ export async function prepareBrowserContainer(
                     throw new Error("The browser container is no longer available.");
                 signal.throwIfAborted();
                 if (stopped) throw new Error("The browser container is stopped.");
+                await verify();
                 await journal?.starting();
                 signal.throwIfAborted();
                 if (stopped) throw new Error("The browser container is stopped.");
                 const response = await call("POST", `/containers/${id}/start`);
                 if (response.status !== 204)
                     throw new Error("The browser container did not start.");
+                networkJoined = true;
+                await verify();
+                if (config.egress && !stopped) {
+                    networkTimer = setInterval(() => {
+                        if (checking || stopped) return;
+                        checking = true;
+                        void verify()
+                            .catch(() => close())
+                            .catch(() => {})
+                            .finally(() => {
+                                checking = false;
+                            });
+                    }, 2000);
+                    networkTimer.unref();
+                }
                 signal.throwIfAborted();
                 if (stopped) throw new Error("The browser container is stopped.");
             })();

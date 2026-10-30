@@ -4,11 +4,8 @@ import * as v from "valibot";
 
 import { attachBrowserContainer, browserDockerFrames } from "./attach";
 import { prepareBrowserContainer } from "./container";
+import { browserEngineConfigurationSchema } from "./engine";
 
-const configuration = v.strictObject({
-    socketPath: v.pipe(v.string(), v.minLength(1), v.maxLength(4096)),
-    imageId: v.pipe(v.string(), v.regex(/^sha256:[a-f0-9]{64}$/)),
-});
 const replySchema = v.strictObject({
     id: v.pipe(
         v.number(),
@@ -206,7 +203,7 @@ export async function openBrowserConnection(
     dependencies: Dependencies = {}
 ) {
     signal.throwIfAborted();
-    const config = v.parse(configuration, input);
+    const config = v.parse(browserEngineConfigurationSchema, input);
     const timeout = dependencies.requestTimeoutMs ?? 30_000;
     if (!Number.isInteger(timeout) || timeout < 1 || timeout > 30_000)
         throw new Error("Invalid browser request deadline.");

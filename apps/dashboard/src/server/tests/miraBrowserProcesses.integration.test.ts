@@ -526,3 +526,43 @@ test("cleanup discovery and settled rejection require the current controller and
         await f.close();
     }
 });
+
+test("private browser networks stay reserved through cleanup and are allocated independently", async () => {
+    const f = await fixture();
+    try {
+        const networkIds = ["c".repeat(64), "d".repeat(64)];
+        const a = await f.grant("network-first"),
+            b = await f.grant("network-second");
+        const [first, second] = await Promise.all([
+            reserveMiraBrowserProcess(f.client, { ...a.input, networkIds }),
+            reserveMiraBrowserProcess(f.client, { ...b.input, networkIds }),
+        ]);
+        expect(new Set([first.networkId!, second.networkId!])).toEqual(
+            new Set(networkIds)
+        );
+        await beginMiraBrowserProcessCleanup(f.client, first.claim);
+        const [persisted] = await f.client<
+            { networkId: string }[]
+        >`SELECT network_id AS "networkId" FROM mira_browser_processes WHERE id=${first.id}`;
+        expect(persisted!.networkId).toBe(first.networkId!);
+        await confirmMiraBrowserProcessCleanup(f.client, first.claim, {
+            kind: "not-created",
+        });
+        await f.client`UPDATE mira_runs SET state='completed',finished_at=clock_timestamp(),lease_expires_at=NULL WHERE id=${a.run.id}`;
+        const third = await f.grant("network-third");
+        await rejects(
+            reserveMiraBrowserProcess(f.client, {
+                ...third.input,
+                networkIds: [second.networkId],
+            }),
+            /networks are reserved/
+        );
+        const replacement = await reserveMiraBrowserProcess(f.client, {
+            ...third.input,
+            networkIds,
+        });
+        expect(replacement.networkId).toBe(first.networkId);
+    } finally {
+        await f.close();
+    }
+});

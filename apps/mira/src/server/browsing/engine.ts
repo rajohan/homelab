@@ -4,8 +4,14 @@ import path from "node:path";
 import * as v from "valibot";
 
 import { browserDockerRequest, type BrowserDockerRequest } from "./docker";
+import { browserEgressSchema } from "./egress";
 
 const imageId = v.pipe(v.string(), v.regex(/^sha256:[a-f0-9]{64}$/));
+export const browserEngineConfigurationSchema = v.strictObject({
+    socketPath: v.pipe(v.string(), v.minLength(1), v.maxLength(4096)),
+    imageId,
+    egress: v.optional(browserEgressSchema),
+});
 const inspection = v.object({
     Id: v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/)),
     Image: imageId,
@@ -19,13 +25,7 @@ const inspection = v.object({
  * @returns Fixed configuration, bounded requests and ownership-checked inspection.
  */
 export async function browserEngine(input: unknown, transport?: BrowserDockerRequest) {
-    const config = v.parse(
-        v.strictObject({
-            socketPath: v.pipe(v.string(), v.minLength(1), v.maxLength(4096)),
-            imageId,
-        }),
-        input
-    );
+    const config = v.parse(browserEngineConfigurationSchema, input);
     const metadata = path.isAbsolute(config.socketPath)
         ? await lstat(config.socketPath)
         : null;

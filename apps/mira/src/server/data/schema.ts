@@ -987,6 +987,7 @@ export const miraBrowserProcesses = pgTable(
             .references(() => miraBrowserAccess.id),
         hostId: uuid("host_id").notNull(),
         imageId: text("image_id").notNull(),
+        networkId: text("network_id"),
         leaseToken: uuid("lease_token").notNull(),
         leaseExpiresAt: time("lease_expires_at").notNull(),
         phase: text().notNull().default("reserved"),
@@ -998,6 +999,13 @@ export const miraBrowserProcesses = pgTable(
     },
     (t) => [
         uniqueIndex("mira_browser_process_access").on(t.accessId),
+        uniqueIndex("mira_browser_process_network")
+            .on(t.hostId, t.networkId)
+            .where(sql`${t.state} <> 'removed'`),
+        check(
+            "mira_browser_process_network_id",
+            sql`${t.networkId} IS NULL OR ${t.networkId} ~ '^[a-f0-9]{64}$'`
+        ),
         uniqueIndex("mira_browser_process_container").on(t.hostId, t.containerId),
         index("mira_browser_process_recovery").on(t.hostId, t.state, t.leaseExpiresAt),
         check("mira_browser_process_image", sql`${t.imageId} ~ '^sha256:[a-f0-9]{64}$'`),
