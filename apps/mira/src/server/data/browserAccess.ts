@@ -18,6 +18,26 @@ import {
     type MiraQuery,
 } from "./context";
 
+/**
+ * Validate a human-selected profile inside the same owner lock as grant admission.
+ * @returns Completion only for an active owned profile whose sites include the requested origins.
+ */
+async function requireBrowserProfile(
+    query: TransactionSQL,
+    owner: string,
+    id: string,
+    origins: string[]
+) {
+    const [profile] = await query<
+        { origins: string[] }[]
+    >`SELECT origins FROM mira_browser_profiles WHERE id=${id} AND owner=${owner} AND state='active'`;
+    if (!profile || origins.some((origin) => !profile.origins.includes(origin)))
+        throw new MiraFailure(
+            "FORBIDDEN",
+            "Choose an available owned profile and only its approved websites."
+        );
+}
+
 type Policy = Pick<
     ReturnType<typeof browserWorkerGrant>,
     "origins" | "initialUrl" | "mode"
@@ -133,6 +153,13 @@ export async function requestMiraBrowserAccess(
     }
     return context.client.begin(async (query) => {
         await lockBrowserOwner(query, context.owner);
+        if (request.profileId)
+            await requireBrowserProfile(
+                query,
+                context.owner,
+                request.profileId,
+                policy.origins
+            );
         const previous = await query<
             { id: string }[]
         >`SELECT id FROM mira_browser_access WHERE owner=${context.owner} AND state='pending'`;
@@ -173,8 +200,8 @@ export async function requestMiraBrowserAccess(
         const id = Bun.randomUUIDv7();
         const [inserted] = await query<{ id: string }[]>`
             WITH timing AS MATERIALIZED(SELECT clock_timestamp() AS at)
-            INSERT INTO mira_browser_access(id,owner,run_id,run_lease,controls,mode,policy,expires_at,created_at)
-            SELECT ${id},${context.owner},${request.runId},${run.lease},${JSON.stringify(run.controls)}::text::jsonb,${request.mode},${JSON.stringify(policy)}::text::jsonb,
+            INSERT INTO mira_browser_access(id,owner,run_id,run_lease,controls,mode,policy,profile_id,expires_at,created_at)
+            SELECT ${id},${context.owner},${request.runId},${run.lease},${JSON.stringify(run.controls)}::text::jsonb,${request.mode},${JSON.stringify(policy)}::text::jsonb,${request.profileId ?? null},
                 least(${run.expiresAt}::timestamptz,timing.at+interval '5 minutes'),timing.at FROM timing WHERE ${run.expiresAt}::timestamptz>timing.at RETURNING id`;
         if (!inserted)
             throw new MiraFailure(

@@ -36,7 +36,7 @@ export const preparedSchema = v.object({
     lifecycle: v.object({
         owner: v.literal("session"),
         process_ends_with_session: v.literal(true),
-        profile_persists_after_session: v.literal(false),
+        profile_persists_after_session: v.boolean(),
     }),
 });
 export const windowsSchema = v.object({

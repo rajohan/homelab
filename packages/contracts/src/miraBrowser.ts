@@ -7,7 +7,21 @@ export const miraBrowserAccessRequestSchema = v.strictObject({
     origins: v.pipe(v.array(address), v.minLength(1), v.maxLength(16)),
     initialUrl: address,
     mode: v.picklist(["view", "control"]),
+    profileId: v.optional(id),
 });
+export const miraBrowserProfileCreateSchema = v.strictObject({
+    name: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(80)),
+    origins: v.pipe(v.array(address), v.minLength(1), v.maxLength(16)),
+});
+export const miraBrowserProfileDeleteSchema = v.strictObject({ id });
+export interface MiraBrowserProfile {
+    id: string;
+    name: string;
+    origins: string[];
+    state: "active" | "deleting";
+    busy: boolean;
+    createdAt: string;
+}
 export const miraBrowserAccessStopSchema = v.strictObject({ id });
 export const miraBrowserAccessListSchema = v.optional(v.strictObject({ runId: id }));
 export interface MiraBrowserAccessSummary {

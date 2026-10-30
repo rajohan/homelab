@@ -377,3 +377,119 @@ test("stale browser status hides pixels and disables takeover without hiding sto
         f.close();
     }
 });
+
+test("saved browser profiles populate only their approved origins and cannot be granted while busy", async () => {
+    const current = run(),
+        wire = network(true);
+    const f = fixture(
+        current,
+        [],
+        <BrowserAccessDialog run={current} supportsImages onClose={() => {}} />
+    );
+    const profile = {
+        id: crypto.randomUUID(),
+        name: "My websites",
+        origins: ["https://example.test", "https://login.test"],
+        state: "active",
+        busy: false,
+        createdAt: new Date().toISOString(),
+    };
+    const key = ["operations", "mira", "browser-profiles"];
+    try {
+        act(() => {
+            f.query.setQueryData(key, [profile]);
+        });
+        const user = userEvent.setup();
+        await user.click(screen.getByRole("button", { name: /Browser profile/ }));
+        await user.click(screen.getByRole("option", { name: "My websites" }));
+        expect(screen.getByRole("textbox", { name: "Starting URL" })).toHaveValue(
+            "https://example.test"
+        );
+        expect(
+            screen.getByRole("textbox", { name: /Other allowed origins/ })
+        ).toHaveValue("https://login.test");
+        act(() => {
+            f.query.setQueryData(key, [{ ...profile, busy: true }]);
+        });
+        await waitFor(() =>
+            expect(
+                screen.getByRole<HTMLButtonElement>("button", { name: "Allow browser" })
+                    .disabled
+            ).toBe(true)
+        );
+        await waitFor(() =>
+            expect(
+                screen.getByRole<HTMLButtonElement>("button", { name: "Delete profile" })
+                    .disabled
+            ).toBe(true)
+        );
+        act(() => {
+            f.query.setQueryData(key, [profile]);
+        });
+        await waitFor(() =>
+            expect(
+                screen.getByRole<HTMLButtonElement>("button", { name: "Allow browser" })
+                    .disabled
+            ).toBe(false)
+        );
+        await user.click(screen.getByRole("button", { name: "Allow browser" }));
+        await waitFor(() => expect(wire.sent).toHaveLength(1));
+        expect(JSON.stringify(wire.sent[0]!.body)).toContain(profile.id);
+        expect(wire.sent[0]!.url).toContain("mira.browser.request");
+    } finally {
+        f.close();
+        wire.close();
+    }
+});
+
+test("profile creation and deletion stay explicit human actions with confirmation", async () => {
+    const current = run(),
+        wire = network(true);
+    const f = fixture(
+        current,
+        [],
+        <BrowserAccessDialog run={current} supportsImages onClose={() => {}} />
+    );
+    const key = ["operations", "mira", "browser-profiles"];
+    const profile = {
+        id: crypto.randomUUID(),
+        name: "Saved sign-in",
+        origins: ["https://example.test"],
+        state: "active",
+        busy: false,
+        createdAt: new Date().toISOString(),
+    };
+    try {
+        act(() => {
+            f.query.setQueryData(key, [profile]);
+        });
+        const user = userEvent.setup();
+        await user.click(screen.getByRole("button", { name: "New profile" }));
+        await user.type(
+            screen.getByRole("textbox", { name: "Profile name" }),
+            "Personal websites"
+        );
+        await user.type(
+            screen.getByRole("textbox", { name: "Profile websites" }),
+            "https://example.test\nhttps://login.test"
+        );
+        await user.click(screen.getByRole("button", { name: "Create profile" }));
+        await waitFor(() => expect(wire.sent).toHaveLength(1));
+        expect(wire.sent[0]!.url).toContain("mira.browser.createProfile");
+        expect(JSON.stringify(wire.sent[0]!.body)).toContain("https://login.test");
+        await screen.findByRole("alert");
+        await user.click(screen.getByRole("button", { name: "Cancel new profile" }));
+        await user.click(screen.getByRole("button", { name: /Browser profile/ }));
+        await user.click(screen.getByRole("option", { name: "Saved sign-in" }));
+        await user.click(screen.getByRole("button", { name: "Delete profile" }));
+        expect(wire.sent).toHaveLength(1);
+        await screen.findByRole("dialog", { name: "Delete browser profile" });
+        await user.click(screen.getByRole("button", { name: "Delete profile" }));
+        await waitFor(() => expect(wire.sent).toHaveLength(2));
+        expect(wire.sent[1]!.url).toContain("mira.browser.deleteProfile");
+        expect(JSON.stringify(wire.sent[1]!.body)).toContain(profile.id);
+    } finally {
+        f.close();
+        wire.close();
+    }
+});

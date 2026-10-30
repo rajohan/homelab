@@ -12,6 +12,6 @@ COPY --from=build /output/ ./
 COPY deploy/browser/start.sh ./start.sh
 COPY deploy/browser/proxy-policy.json ./proxy-policy.json
 COPY deploy/browser/worker.sh /usr/local/bin/mira-browser
-RUN chmod 0755 /usr/local/bin/mira-browser && chmod -R a-w /opt/mira-browser
+RUN chmod 0755 /usr/local/bin/mira-browser && chmod -R a-w /opt/mira-browser && mkdir /var/lib/mira-browser-profile && chown bun:bun /var/lib/mira-browser-profile && chmod 0700 /var/lib/mira-browser-profile
 USER bun
 ENTRYPOINT ["/usr/bin/timeout", "--signal=KILL", "305s", "/usr/local/bin/mira-browser"]

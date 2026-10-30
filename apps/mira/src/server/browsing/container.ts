@@ -5,6 +5,13 @@ import * as v from "valibot";
 import type { BrowserDockerRequest } from "./docker";
 import { browserEgressSchema, verifyBrowserEgress, type BrowserEgress } from "./egress";
 import { browserEngine } from "./engine";
+import {
+    browserProfileDirectory,
+    browserProfileVolume,
+    inspectBrowserProfile,
+    type BrowserProfile,
+} from "./profile";
+import { requireBrowserProfileMount } from "./profileMount";
 
 const imageId = v.pipe(v.string(), v.regex(/^sha256:[a-f0-9]{64}$/));
 const containerId = v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/));
@@ -53,12 +60,14 @@ export class BrowserContainerCleanupError extends Error {
  * @param image - Already-installed immutable image ID, selected by the trusted updater/host.
  * @param owner - Unpredictable host-generated lifetime identifier.
  * @param egress - Optional trusted preprovisioned private slot; omitted means fully offline.
+ * @param profile - Optional trusted registry identity for the one exclusively reserved named volume.
  * @returns Fixed resource limits and a hard deadline around the packaged worker entrypoint.
  */
 export function browserContainerSpec(
     image: string,
     owner: string,
-    egress?: BrowserEgress
+    egress?: BrowserEgress,
+    profile?: BrowserProfile
 ) {
     if (egress) v.parse(browserEgressSchema, egress);
     v.parse(imageId, image);
@@ -76,7 +85,19 @@ export function browserContainerSpec(
         AttachStdout: true,
         AttachStderr: false,
         NetworkDisabled: !egress,
-        ...(egress ? { Env: ["MIRA_BROWSER_NETWORK=public"] } : {}),
+        ...(egress || profile
+            ? {
+                  Env: [
+                      ...(egress ? ["MIRA_BROWSER_NETWORK=public"] : []),
+                      ...(profile
+                          ? [
+                                "MIRA_BROWSER_PROFILE=saved",
+                                `CUA_DRIVER_BROWSER_PROFILE_ROOT=${browserProfileDirectory}`,
+                            ]
+                          : []),
+                  ],
+              }
+            : {}),
         HostConfig: {
             AutoRemove: true,
             Init: true,
@@ -103,6 +124,19 @@ export function browserContainerSpec(
             LogConfig: { Type: "none", Config: {} },
             RestartPolicy: { Name: "no", MaximumRetryCount: 0 },
             Binds: [],
+            ...(profile
+                ? {
+                      Mounts: [
+                          {
+                              Type: "volume",
+                              Source: browserProfileVolume(profile),
+                              Target: browserProfileDirectory,
+                              ReadOnly: false,
+                              VolumeOptions: { NoCopy: false },
+                          },
+                      ],
+                  }
+                : {}),
             PortBindings: {},
         },
     };
@@ -137,10 +171,17 @@ export async function prepareBrowserContainer(
     let checking = false;
     let networkJoined = false;
     let networkTimer: ReturnType<typeof setInterval> | undefined;
-    const verify = () =>
-        config.egress
-            ? verifyBrowserEgress(call, config.egress, networkJoined ? id : undefined)
-            : Promise.resolve();
+    const verify = async () => {
+        if (config.egress)
+            await verifyBrowserEgress(
+                call,
+                config.egress,
+                networkJoined ? id : undefined
+            );
+        if (config.profile && !(await inspectBrowserProfile(call, config.profile)))
+            throw new Error("The saved browser profile is missing.");
+        if (config.profile) await requireBrowserProfileMount(call, config.profile, id);
+    };
     const controller = new AbortController();
     const inspect = (reference: string) => engine.inspect(reference, owner, id);
     const remove = async (): Promise<BrowserContainerProof> => {
@@ -170,6 +211,13 @@ export async function prepareBrowserContainer(
             await active.catch(() => {});
             try {
                 await journal?.cleaning();
+                // Revocation closes the private stream immediately. Allow only
+                // saved-profile workers a bounded flush before forced removal.
+                if (config.profile && started && id) {
+                    const deadline = performance.now() + 1600;
+                    while (performance.now() < deadline && (await inspect(id)))
+                        await Bun.sleep(50);
+                }
                 const proof = await remove();
                 await journal?.cleaned(proof);
             } catch {
@@ -194,7 +242,7 @@ export async function prepareBrowserContainer(
         const response = await call(
             "POST",
             `/containers/create?name=${name}`,
-            browserContainerSpec(config.imageId, owner, config.egress)
+            browserContainerSpec(config.imageId, owner, config.egress, config.profile)
         );
         // Even a non-201 reply is not proof that no container was created. Inspect
         // the generated name on failure; only a completed valid response settles it.

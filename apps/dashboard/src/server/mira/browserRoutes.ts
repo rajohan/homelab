@@ -5,6 +5,8 @@ import {
     miraBrowserAccessListSchema,
     miraBrowserAccessRequestSchema,
     miraBrowserAccessStopSchema,
+    miraBrowserProfileCreateSchema,
+    miraBrowserProfileDeleteSchema,
 } from "@homelab/contracts/miraBrowser";
 import {
     listMiraBrowserAccess,
@@ -16,6 +18,11 @@ import {
     transferMiraBrowserControl,
     enqueueMiraBrowserHumanCommand,
 } from "@homelab/mira/data/browserConsole";
+import {
+    listMiraBrowserProfiles,
+    createMiraBrowserProfile,
+    deleteMiraBrowserProfile,
+} from "@homelab/mira/data/browserProfiles";
 import { MiraFailure, type MiraContext } from "@homelab/mira/data/context";
 
 import { runOperation, trpc } from "../api/trpc";
@@ -54,6 +61,19 @@ function execute<T>(
 }
 
 export const miraBrowserRouter = trpc.router({
+    profiles: trpc.procedure.query(({ ctx }) =>
+        execute(ctx, false, listMiraBrowserProfiles)
+    ),
+    createProfile: trpc.procedure
+        .input(miraBrowserProfileCreateSchema)
+        .mutation(({ ctx, input }) =>
+            execute(ctx, true, (mira) => createMiraBrowserProfile(mira, input))
+        ),
+    deleteProfile: trpc.procedure
+        .input(miraBrowserProfileDeleteSchema)
+        .mutation(({ ctx, input }) =>
+            execute(ctx, true, (mira) => deleteMiraBrowserProfile(mira, input))
+        ),
     console: trpc.procedure
         .input(miraBrowserConsoleSchema)
         .query(({ ctx, input }) =>

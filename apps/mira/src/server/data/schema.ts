@@ -938,6 +938,36 @@ export const miraComputerCommands = pgTable(
     ]
 );
 
+export const miraBrowserProfiles = pgTable(
+    "mira_browser_profiles",
+    {
+        id: uuid().primaryKey(),
+        owner: text().notNull(),
+        name: text().notNull(),
+        origins: jsonb().notNull(),
+        hostId: uuid("host_id"),
+        state: text().notNull().default("active"),
+        storage: text().notNull().default("new"),
+        createdAt: time("created_at").notNull().defaultNow(),
+    },
+    (t) => [
+        index("mira_browser_profiles_owner").on(t.owner, t.state),
+        check("mira_browser_profiles_name", sql`length(${t.name}) BETWEEN 1 AND 80`),
+        check(
+            "mira_browser_profiles_state",
+            sql`${t.state} IN ('active','deleting','deleted')`
+        ),
+        check(
+            "mira_browser_profiles_storage",
+            sql`${t.storage} IN ('new','creating','ready') AND (${t.storage}='new' OR ${t.hostId} IS NOT NULL)`
+        ),
+        check(
+            "mira_browser_profiles_origins",
+            sql`jsonb_typeof(${t.origins})='array' AND jsonb_array_length(${t.origins}) BETWEEN 1 AND 16 AND octet_length(${t.origins}::text)<=65536`
+        ),
+    ]
+);
+
 export const miraBrowserAccess = pgTable(
     "mira_browser_access",
     {
@@ -952,6 +982,7 @@ export const miraBrowserAccess = pgTable(
         policy: jsonb(),
         state: text().notNull().default("pending"),
         hostToken: uuid("host_token"),
+        profileId: uuid("profile_id").references(() => miraBrowserProfiles.id),
         claimedAt: time("claimed_at"),
         closedAt: time("closed_at"),
         expiresAt: time("expires_at").notNull(),

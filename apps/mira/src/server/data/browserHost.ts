@@ -21,6 +21,10 @@ import {
     recordMiraBrowserProcessCleanup,
     reserveMiraBrowserProcess,
 } from "./browserProcesses";
+import {
+    cleanupMiraBrowserProfiles,
+    prepareMiraBrowserProfile,
+} from "./browserProfileHost";
 import type { MiraContext } from "./context";
 
 export const browserHostConfigurationSchema = v.strictObject({
@@ -100,7 +104,8 @@ export async function recoverMiraBrowserProcesses(
             unresolved++;
         }
     }
-    return { recovered, unresolved };
+    const profiles = await cleanupMiraBrowserProfiles(client, config);
+    return { recovered, unresolved: unresolved + profiles.unresolved };
 }
 
 /**
@@ -193,9 +198,15 @@ export async function openMiraBrowserSession(
         },
     };
     const session = await openBrowserSession(
-        (signal) =>
-            (dependencies.open ?? openBrowserWorker)(
-                fixed,
+        async (signal) => {
+            const profile = await prepareMiraBrowserProfile(
+                host.client,
+                claim,
+                engineConfig
+            );
+            signal.throwIfAborted();
+            return (dependencies.open ?? openBrowserWorker)(
+                { ...fixed, ...(profile ? { profile } : {}) },
                 access.policy,
                 signal,
                 (input, lifetime) =>
@@ -208,7 +219,8 @@ export async function openMiraBrowserSession(
                                 journal
                             ),
                     })
-            ),
+            );
+        },
         {
             check: async (mode) => {
                 await renewMiraBrowserProcess(host.client, claim);

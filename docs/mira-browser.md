@@ -38,7 +38,21 @@ The fixed container runs as UID/GID 1000 with a read-only root, no host mounts o
 
 The private Docker connection attaches before startup and validates non-TTY framing, UTF-8, increasing request IDs and bounded JSONL. Requests are at most 64 KiB; replies at most 4 MiB. Only initialize, observe, navigate and act are accepted. The first handshake has sixty seconds for sequential native startup; subsequent calls have thirty seconds, with ten-second native operation limits. Invalid output, overlap, EOF or cancellation permanently retires the connection. There is no reconnect or input replay.
 
-The origin ceiling limits observation and input, not subresource requests or page-driven navigation. External egress must be separately enforced before live websites are enabled. Persistent profiles, downloads/uploads and additional tabs remain separate deployment work.
+The origin ceiling limits observation and input, not subresource requests or page-driven navigation. External egress must be separately enforced before live websites are enabled. Downloads/uploads and additional tabs remain separate deployment work.
+
+## Saved profiles
+
+Temporary browsing remains the default. A freshly verified human can create up to four account-owned profiles in Chat's browser dialog, each with a name and an immutable list of approved origins. Selecting a profile never grants access by itself: the human still approves a running manual job, exact origins, initial URL and view/control mode. The grant's origins must be a subset of the profile's origins. Models and automation tokens cannot create, select, delete or broaden profiles. The public API returns metadata only, never cookies or storage paths.
+
+The first reservation binds a profile to a stable browser-host UUID. Subsequent use on another host is refused. Only one unclosed grant per owner and one unfinished process per profile are admitted; cleanup uncertainty retains both reservations. A saved profile uses a fixed, labelled local Docker volume, with no host bind mount or daemon driver options. Before startup the host checks its identity and refuses foreign running or stopped containers that reference it. The private directory is owned by the unprivileged browser UID and has mode 0700. This is a dedicated Mira profile, never the operator's existing Chrome/Edge profile.
+
+Volume creation commits a `new` to `creating` transition before one Docker request. An uncertain request is not replayed; recovery requires the matching observed volume. A missing `ready` volume is an error rather than a silently reset login. Only known stale Chromium runtime links and the port marker are removed before opening an exclusively reserved profile. Cookies and other stored browser data are never traversed by that preparation step.
+
+On normal shutdown, input authority is revoked and the private stream is closed immediately. The adapter sends only Chromium's fixed, parameterless [`Browser.close`](https://chromedevtools.github.io/devtools-protocol/tot/Browser/#method-close) lifecycle command to the attested local browser. It waits up to 1.2 seconds for the same process to exit before unconditional native shutdown. The host allows at most 1.6 seconds before forced container removal. This endpoint is internal and exposes no general CDP interface to Chat. Abrupt host failure or a hung browser can still lose the newest unsaved changes; previous stored profile data remains. The SDK package is unchanged.
+
+Deleting an unused profile requires fresh human verification and confirmation. Deletion prevents new grants immediately, then the original host removes the matching volume only after all grants and processes are closed. Docker volume removal never uses force. Missing ownership proof or uncertain creation leaves deletion pending for recovery; the UI does not claim completion early. Profile storage persists after deleting a conversation or stopping a run; use Delete profile to erase it explicitly.
+
+Profiles contain sensitive site sessions. Production activation must include the Docker volume location in disk monitoring, backup/retention and host recovery procedures. The four-profile count is not a byte quota; volume data is not encrypted or backed up by this feature. A database backup alone cannot restore a profile. The native worker qualification sets a synthetic persistent HttpOnly cookie, replaces the entire container, verifies the saved session and proves that a separate temporary session does not receive it.
 
 ## Configuration and qualification
 

@@ -5,6 +5,7 @@ import {
     openMiraBrowserSession,
     recoverMiraBrowserProcesses,
 } from "@homelab/mira/data/browserHost";
+import { cleanupMiraBrowserProfiles } from "@homelab/mira/data/browserProfileHost";
 
 import { browserHostFixture as fixture } from "../testing/miraBrowserHost";
 
@@ -372,6 +373,122 @@ test("an ID discovered during unknown-create recovery survives a failure after a
         });
         expect(await f.api.browser.list()).toMatchObject([{ state: "closed" }]);
         expect(f.engine.events.filter((e) => e.startsWith("DELETE:"))).toHaveLength(1);
+    } finally {
+        owner.abort();
+        await f.close();
+    }
+});
+
+test("saved profile creation is journaled once and reused only after process cleanup, then deleted by its host", async () => {
+    const f = await fixture(),
+        owner = new AbortController();
+    try {
+        const profile = await f.api.browser.createProfile({
+            name: "Private synthetic profile",
+            origins: f.request.origins,
+        });
+        const grant = await f.api.browser.request({
+            ...f.request,
+            profileId: profile.id,
+        });
+        const session = await openMiraBrowserSession(
+            f.worker,
+            grant.id,
+            f.config,
+            owner.signal
+        );
+        expect(f.engine.volumes.size).toBe(1);
+        await rejects(f.api.browser.deleteProfile(profile), /cleanup/);
+        await session.close();
+        const [storage] = await f.client<
+            { storage: string; host: string }[]
+        >`SELECT storage,host_id AS host FROM mira_browser_profiles WHERE id=${profile.id}`;
+        expect(storage).toEqual({ storage: "ready", host: f.config.hostId });
+        f.engine.id = "c".repeat(64);
+        const second = await f.api.browser.request({
+            ...f.request,
+            profileId: profile.id,
+        });
+        const reopened = await openMiraBrowserSession(
+            f.worker,
+            second.id,
+            f.config,
+            owner.signal
+        );
+        await reopened.close();
+        expect(
+            f.engine.events.filter((event) => event === "POST:/volumes/create")
+        ).toHaveLength(1);
+        await f.api.browser.deleteProfile(profile);
+        expect(await f.api.browser.profiles()).toMatchObject([{ state: "deleting" }]);
+        expect(
+            await cleanupMiraBrowserProfiles(f.client, {
+                ...f.config,
+                hostId: crypto.randomUUID(),
+            })
+        ).toEqual({ removed: 0, unresolved: 0 });
+        expect(await cleanupMiraBrowserProfiles(f.client, f.config)).toEqual({
+            removed: 1,
+            unresolved: 0,
+        });
+        expect(f.engine.volumes.size).toBe(0);
+        expect(await f.api.browser.profiles()).toEqual([]);
+    } finally {
+        owner.abort();
+        await f.close();
+    }
+});
+
+test("uncertain profile creation is never replayed and deletion waits for actual ownership evidence", async () => {
+    const f = await fixture(),
+        owner = new AbortController();
+    try {
+        const profile = await f.api.browser.createProfile({
+            name: "Uncertain synthetic profile",
+            origins: f.request.origins,
+        });
+        const grant = await f.api.browser.request({
+            ...f.request,
+            profileId: profile.id,
+        });
+        f.engine.failVolumeCreate = true;
+        await rejects(openMiraBrowserSession(f.worker, grant.id, f.config, owner.signal));
+        await f.client`UPDATE mira_browser_processes SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE state<>'removed'`;
+        await recoverMiraBrowserProcesses(f.client, f.config);
+        const second = await f.api.browser.request({
+            ...f.request,
+            profileId: profile.id,
+        });
+        await rejects(
+            openMiraBrowserSession(f.worker, second.id, f.config, owner.signal)
+        );
+        await f.client`UPDATE mira_browser_processes SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE state<>'removed'`;
+        await recoverMiraBrowserProcesses(f.client, f.config);
+        expect(
+            f.engine.events.filter((event) => event === "POST:/volumes/create")
+        ).toHaveLength(1);
+        await f.api.browser.deleteProfile(profile);
+        expect(await cleanupMiraBrowserProfiles(f.client, f.config)).toEqual({
+            removed: 0,
+            unresolved: 1,
+        });
+        const name = `mira-browser-profile-${profile.id}`;
+        f.engine.volumes.set(name, {
+            Name: name,
+            Driver: "foreign",
+            Scope: "local",
+            Options: null,
+            Labels: { "io.homelab.mira.browser-profile": profile.id },
+        });
+        expect(await cleanupMiraBrowserProfiles(f.client, f.config)).toEqual({
+            removed: 0,
+            unresolved: 1,
+        });
+        f.engine.volumes.get(name)!.Driver = "local";
+        expect(await cleanupMiraBrowserProfiles(f.client, f.config)).toEqual({
+            removed: 1,
+            unresolved: 0,
+        });
     } finally {
         owner.abort();
         await f.close();

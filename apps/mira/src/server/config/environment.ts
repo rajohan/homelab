@@ -107,3 +107,18 @@ export function browserHostEnvironment() {
         throw new Error("A product database is required.");
     return { file, databaseUrl, port };
 }
+
+/**
+ * Read the fixed, host-only marker for a saved browser volume.
+ * @returns Whether the worker must open its exclusively mounted saved profile.
+ */
+export function browserWorkerEnvironment(): boolean {
+    const marker = process.env.MIRA_BROWSER_PROFILE;
+    if (marker === undefined) return false;
+    if (
+        marker !== "saved" ||
+        process.env.CUA_DRIVER_BROWSER_PROFILE_ROOT !== "/var/lib/mira-browser-profile"
+    )
+        throw new Error("Invalid saved browser profile environment.");
+    return true;
+}

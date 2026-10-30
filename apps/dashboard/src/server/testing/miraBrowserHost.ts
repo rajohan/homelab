@@ -80,6 +80,17 @@ export async function browserHostFixture(enabled = true) {
         rejectCreate: null as number | null,
         replaceCleanupAfterDelete: false,
         failDelete: false,
+        failVolumeCreate: false,
+        volumes: new Map<
+            string,
+            {
+                Name: string;
+                Driver: string;
+                Scope: string;
+                Options: null;
+                Labels: Record<string, string>;
+            }
+        >(),
         events: [] as string[],
     };
     const streams = new Set<Duplex>();
@@ -92,7 +103,56 @@ export async function browserHostFixture(enabled = true) {
             engine.events.push(`${request.method}:${route}`);
             let status: number,
                 body: unknown = null;
-            if (route.startsWith("/containers/create")) {
+            if (route === "/volumes/create") {
+                const spec = JSON.parse(Buffer.concat(chunks).toString()) as {
+                    Name: string;
+                    Driver: string;
+                    DriverOpts: Record<string, string>;
+                    Labels: Record<string, string>;
+                };
+                const profileId = spec.Labels["io.homelab.mira.browser-profile"]!;
+                expect(spec.Name).toBe(`mira-browser-profile-${profileId}`);
+                expect(spec.Driver).toBe("local");
+                expect(spec.DriverOpts).toEqual({});
+                const [profile] = await f.client<
+                    { storage: string }[]
+                >`SELECT storage FROM mira_browser_profiles WHERE id=${profileId}`;
+                expect(profile?.storage).toBe("creating");
+                if (engine.failVolumeCreate) status = 503;
+                else {
+                    body = {
+                        Name: spec.Name,
+                        Driver: spec.Driver,
+                        Scope: "local",
+                        Options: null,
+                        Labels: spec.Labels,
+                    };
+                    engine.volumes.set(
+                        spec.Name,
+                        body as {
+                            Name: string;
+                            Driver: string;
+                            Scope: string;
+                            Options: null;
+                            Labels: Record<string, string>;
+                        }
+                    );
+                    status = 201;
+                }
+            } else if (route.startsWith("/volumes/")) {
+                const name = route.slice("/volumes/".length);
+                const volume = engine.volumes.get(name);
+                if (request.method === "DELETE") {
+                    engine.volumes.delete(name);
+                    status = 204;
+                } else {
+                    status = volume ? 200 : 404;
+                    body = volume ?? null;
+                }
+            } else if (route.startsWith("/containers/json?")) {
+                status = 200;
+                body = engine.exists ? [{ Id: engine.id }] : [];
+            } else if (route.startsWith("/containers/create")) {
                 const spec = JSON.parse(Buffer.concat(chunks).toString()) as {
                     Image: string;
                     Labels: Record<string, string>;

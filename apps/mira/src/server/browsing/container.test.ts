@@ -12,6 +12,12 @@ import {
     type BrowserContainerJournal,
 } from "./container";
 import type { BrowserDockerRequest, BrowserDockerResponse } from "./docker";
+import {
+    browserProfileVolume,
+    inspectBrowserProfile,
+    createBrowserProfileVolume,
+    removeBrowserProfileVolume,
+} from "./profile";
 import { reconcileBrowserContainer } from "./reconciliation";
 
 const image = `sha256:${"b".repeat(64)}`;
@@ -608,4 +614,91 @@ test("recovery rejects foreign ownership and rechecks controller authority befor
             await f.cleanup();
         }
     }
+});
+
+test("saved profiles use one fixed owned volume and reject driver options, foreign labels and paths", async () => {
+    const profile = { id: crypto.randomUUID() };
+    const expected = {
+        Name: browserProfileVolume(profile),
+        Driver: "local",
+        Scope: "local",
+        Labels: { "io.homelab.mira.browser-profile": profile.id },
+        Options: null,
+    };
+    const spec = browserContainerSpec(image, crypto.randomUUID(), undefined, profile);
+    expect(spec.HostConfig.Mounts).toEqual([
+        {
+            Type: "volume",
+            Source: expected.Name,
+            Target: "/var/lib/mira-browser-profile",
+            ReadOnly: false,
+            VolumeOptions: { NoCopy: false },
+        },
+    ]);
+    expect(spec.Env).toContain("MIRA_BROWSER_PROFILE=saved");
+    expect(spec.HostConfig.Binds).toEqual([]);
+    expect(() => browserProfileVolume({ id: "../../operator" })).toThrow();
+    for (const invalid of [
+        { Driver: "external" },
+        { Scope: "global" },
+        { Name: "foreign" },
+        { Options: { device: "/home/operator", type: "none", o: "bind" } },
+        { Labels: {} },
+    ]) {
+        const request: BrowserDockerRequest = () =>
+            Promise.resolve({ status: 200, body: { ...expected, ...invalid } });
+        await assert.rejects(inspectBrowserProfile(request, profile));
+        await assert.rejects(removeBrowserProfileVolume(request, profile));
+    }
+    let exists = false;
+    const calls: string[] = [];
+    const request: BrowserDockerRequest = (method, route, body) => {
+        calls.push(`${method} ${route}`);
+        if (method === "POST") {
+            expect(body).toEqual({
+                Name: expected.Name,
+                Driver: "local",
+                DriverOpts: {},
+                Labels: expected.Labels,
+            });
+            exists = true;
+            return Promise.resolve({ status: 201, body: expected });
+        }
+        if (method === "DELETE") {
+            expect(route).toBe(`/volumes/${expected.Name}`);
+            exists = false;
+            return Promise.resolve({ status: 204, body: null });
+        }
+        return Promise.resolve({
+            status: exists ? 200 : 404,
+            body: exists ? expected : null,
+        });
+    };
+    await createBrowserProfileVolume(request, profile);
+    expect(await inspectBrowserProfile(request, profile)).toBe(true);
+    await removeBrowserProfileVolume(request, profile);
+    expect(await inspectBrowserProfile(request, profile)).toBe(false);
+    expect(calls.filter((call) => call.startsWith("POST"))).toHaveLength(1);
+    expect(calls.filter((call) => call.startsWith("DELETE"))).toEqual([
+        `DELETE /volumes/${expected.Name}`,
+    ]);
+    await assert.rejects(
+        createBrowserProfileVolume(
+            () => Promise.resolve({ status: 500, body: null }),
+            profile
+        )
+    );
+    await assert.rejects(
+        inspectBrowserProfile(() => Promise.resolve({ status: 500, body: null }), profile)
+    );
+    await assert.rejects(
+        removeBrowserProfileVolume(
+            (method) =>
+                Promise.resolve({
+                    status: method === "DELETE" ? 409 : 200,
+                    body: expected,
+                }),
+            profile
+        )
+    );
 });

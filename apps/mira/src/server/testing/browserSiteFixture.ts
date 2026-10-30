@@ -7,6 +7,21 @@ export function browserSiteFixture() {
         hostname: "127.0.0.1",
         port: 4173,
         fetch: async (request) => {
+            const pathname = new URL(request.url).pathname;
+            if (pathname === "/profile/save")
+                return new Response(null, {
+                    status: 302,
+                    headers: {
+                        location: "/profile/check",
+                        "set-cookie":
+                            "mira_fixture=saved; Path=/; Max-Age=86400; HttpOnly; SameSite=Strict",
+                    },
+                });
+            if (pathname === "/profile/check")
+                return new Response(
+                    `<title>${request.headers.get("cookie")?.includes("mira_fixture=saved") ? "Saved profile restored" : "Fresh profile"}</title><p>Disposable profile qualification</p>`,
+                    { headers: { "content-type": "text/html" } }
+                );
             if (new URL(request.url).pathname === "/event" && request.method === "POST") {
                 const body = await request.text();
                 if (body.length > 8192) return new Response("Too large", { status: 413 });

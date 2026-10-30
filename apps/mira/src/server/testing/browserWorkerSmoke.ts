@@ -10,7 +10,12 @@ import * as v from "valibot";
 
 import { openBrowserConnection } from "../browsing/connection";
 import { prepareBrowserContainer } from "../browsing/container";
+import { browserDockerRequest } from "../browsing/docker";
 import { openBrowserWorker } from "../browsing/process";
+import {
+    createBrowserProfileVolume,
+    removeBrowserProfileVolume,
+} from "../browsing/profile";
 import { openBrowserSession } from "../browsing/session";
 
 /**
@@ -40,9 +45,28 @@ export async function qualifyBrowserWorker(
         );
         return result.stdout.trim();
     };
+    const profile = { id: crypto.randomUUID() };
+    const profileEngine = browserDockerRequest(socket);
+    let failure: unknown;
     try {
         const imageId = await docker("image", "inspect", image, "--format", "{{.Id}}");
-        for (const mode of ["control", "view", "origin", "revocation"] as const) {
+        await createBrowserProfileVolume(profileEngine, profile);
+        for (const mode of [
+            "control",
+            "view",
+            "origin",
+            "revocation",
+            "save",
+            "restore",
+            "fresh",
+        ] as const) {
+            let startPath = "",
+                expectedTitle = "Worker fixture";
+            if (mode === "save") startPath = "profile/save";
+            if (mode === "restore" || mode === "fresh") startPath = "profile/check";
+            if (mode === "save" || mode === "restore")
+                expectedTitle = "Saved profile restored";
+            if (mode === "fresh") expectedTitle = "Fresh profile";
             const owner = new AbortController();
             let selected = "";
             const processId = crypto.randomUUID();
@@ -52,10 +76,14 @@ export async function qualifyBrowserWorker(
             const browser = await openBrowserSession(
                 (sessionSignal) =>
                     openBrowserWorker(
-                        { socketPath: socket, imageId },
+                        {
+                            socketPath: socket,
+                            imageId,
+                            ...(["save", "restore"].includes(mode) ? { profile } : {}),
+                        },
                         {
                             origins: ["http://127.0.0.1:4173"],
-                            initialUrl: "http://127.0.0.1:4173/",
+                            initialUrl: `http://127.0.0.1:4173/${startPath}`,
                             mode: mode === "view" ? "view" : "control",
                         },
                         sessionSignal,
@@ -219,9 +247,11 @@ export async function qualifyBrowserWorker(
             };
             try {
                 let frame = await browser.observe(owner.signal);
-                assert.equal(frame.title, "Worker fixture");
+                assert.equal(frame.title, expectedTitle);
                 assert.ok(frame.content.content[0]!.data.length > 100);
-                if (mode === "revocation") {
+                if (["save", "restore", "fresh"].includes(mode)) {
+                    // The next iteration starts a separate browser/container and site process.
+                } else if (mode === "revocation") {
                     revoked = true;
                     await browser.closed;
                     assert.equal(browser.signal.aborted, true);
@@ -305,8 +335,22 @@ export async function qualifyBrowserWorker(
             staleRefsDenied: true,
             foreignOriginDenied: true,
             containersRemoved: true,
+            savedProfileRestored: true,
+            temporaryProfileIsolated: true,
         };
+    } catch (error) {
+        failure = error;
+        throw error;
     } finally {
+        await removeBrowserProfileVolume(profileEngine, profile).catch(
+            (error: unknown) => {
+                throw new AggregateError(
+                    [failure, error],
+                    "Browser profile qualification or cleanup failed.",
+                    { cause: error }
+                );
+            }
+        );
         await rm(temporary, { recursive: true, force: true });
     }
 }
