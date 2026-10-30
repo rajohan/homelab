@@ -1,0 +1,110 @@
+# Optional trusted browser host. The dashboard and model executor never receive Docker access.
+x-browser-proxy: &browser-proxy
+  image: ${HOMELAB_MIRA_BROWSER_PROXY_IMAGE:?Set the tested proxy digest from browser-image.json}
+  pull_policy: always
+  read_only: true
+  cap_drop: [ALL]
+  cap_add: [NET_ADMIN, SETUID, SETGID, SETPCAP]
+  security_opt: [no-new-privileges:true]
+  sysctls:
+    net.ipv4.ip_forward: "0"
+  tmpfs: ["/tmp:rw,nosuid,nodev,size=16m,mode=1777"]
+  cpus: 0.5
+  mem_limit: 128m
+  pids_limit: 64
+  restart: unless-stopped
+  stop_grace_period: 5s
+  logging:
+    driver: local
+    options:
+      max-size: 2m
+      max-file: "2"
+
+services:
+  mira-browser-proxy-a:
+    <<: *browser-proxy
+    networks:
+      mira-browser-a:
+        aliases: [mira-egress]
+        interface_name: browser
+      mira-browser-outbound:
+        interface_name: external
+        gw_priority: 1
+  mira-browser-proxy-b:
+    <<: *browser-proxy
+    networks:
+      mira-browser-b:
+        aliases: [mira-egress]
+        interface_name: browser
+      mira-browser-outbound:
+        interface_name: external
+        gw_priority: 1
+  mira-browser-host:
+    image: ${HOMELAB_MIRA_IMAGE:?Set the tested Mira digest from container-images.json}
+    pull_policy: always
+    command: [bun, --no-env-file, hostCli.js]
+    environment:
+      NODE_ENV: production
+      HOMELAB_DASHBOARD_DATABASE_URL:
+      HOMELAB_MIRA_BROWSER_CONFIG: /etc/homelab-mira/browser.json
+      HOMELAB_MIRA_BROWSER_HEALTH_PORT: "3441"
+    group_add: ["${HOMELAB_DOCKER_GID:?Set the local Docker socket group ID}"]
+    volumes:
+      - type: bind
+        source: ${HOMELAB_MIRA_BROWSER_CONFIG:?Set the nonsecret browser host JSON path}
+        target: /etc/homelab-mira/browser.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${HOMELAB_DOCKER_SOCKET:-/var/run/docker.sock}
+        target: /run/docker.sock
+        read_only: true
+        bind:
+          create_host_path: false
+    depends_on:
+      mira-browser-proxy-a:
+        condition: service_healthy
+      mira-browser-proxy-b:
+        condition: service_healthy
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 35s
+    cpus: 1
+    mem_limit: 256m
+    pids_limit: 64
+    tmpfs: ["/tmp:rw,nosuid,nodev,size=16m,mode=1777"]
+    healthcheck:
+      test:
+        [
+          CMD,
+          bun,
+          -e,
+          "const r = await fetch('http://127.0.0.1:3441/health/ready'); process.exit(r.ok ? 0 : 1)",
+        ]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    logging:
+      driver: local
+      options:
+        max-size: 5m
+        max-file: "2"
+
+networks:
+  mira-browser-a:
+    internal: true
+    enable_ipv6: false
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
+  mira-browser-b:
+    internal: true
+    enable_ipv6: false
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
+  mira-browser-outbound:
+    enable_ipv6: false

@@ -285,10 +285,16 @@ jobs:
           version="${RELEASE_TAG#v}"
           repository="${REPOSITORY,,}"
           docker load --input browser-images.tar
-          for app in mira-browser; do
-            local_image="homelab-browser/runtime:tested"
+          for app in mira-browser mira-browser-proxy; do
+            if [[ "$app" == mira-browser ]]; then
+              local_image="homelab-browser/runtime:tested"
+              expected_user=bun
+            else
+              local_image="homelab-browser/proxy:tested"
+              expected_user=0:0
+            fi
             image="ghcr.io/$repository/$app:$version"
-            [[ "$(docker inspect --format '{{.Config.User}}' "$local_image")" == bun ]]
+            [[ "$(docker inspect --format '{{.Config.User}}' "$local_image")" == "$expected_user" ]]
             [[ "$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$local_image")" == "$SOURCE_SHA" ]]
             [[ "$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$local_image")" == "$version" ]]
             # Image IDs differ between classic and containerd stores; hash the saved config.
@@ -310,7 +316,7 @@ jobs:
             [[ "$digest" == "ghcr.io/$repository/$app@sha256:"* ]]
             jq -n --arg app "$app" --arg tag "$image" --arg reference "$image@${digest##*@}" '{app:$app, tag:$tag, reference:$reference}' > "$app-image.json"
           done
-          jq -s --arg version "$version" --arg revision "$SOURCE_SHA" '{version:$version, revision:$revision, platform:"linux/amd64", images:.}' mira-browser-image.json > browser-image.json
+          jq -s --arg version "$version" --arg revision "$SOURCE_SHA" '{version:$version, revision:$revision, platform:"linux/amd64", images:.}' mira-browser-image.json mira-browser-proxy-image.json > browser-image.json
           cp browser-image.json "browser-manifest-$GITHUB_RUN_ATTEMPT.json"
           {
             echo '## Published browser runtime image'

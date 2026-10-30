@@ -13,6 +13,7 @@ type Authority = v.InferOutput<typeof authority>;
 interface ProcessRow extends Authority {
     accessId: string;
     imageId: string;
+    networkId: string | null;
     phase: "reserved" | "creating" | "created" | "rejected";
     state: "active" | "cleanup" | "removed";
     containerId: string | null;
@@ -35,6 +36,7 @@ function result(row: ProcessRow) {
         accessId: row.accessId,
         hostId: row.hostId,
         imageId: row.imageId,
+        networkId: row.networkId,
         claim: { id: row.id, hostId: row.hostId, leaseToken: row.leaseToken },
         leaseExpiresAt: row.leaseExpiresAt.toISOString(),
         phase: row.phase,
@@ -50,7 +52,7 @@ async function capacity(query: TransactionSQL) {
 }
 async function read(query: TransactionSQL, id: string) {
     const [row] = await query<ProcessRow[]>`
-        SELECT p.id,p.access_id AS "accessId",p.host_id AS "hostId",p.image_id AS "imageId",
+        SELECT p.id,p.access_id AS "accessId",p.host_id AS "hostId",p.image_id AS "imageId",p.network_id AS "networkId",
             p.lease_token AS "leaseToken",p.lease_expires_at AS "leaseExpiresAt",p.phase,p.state,p.container_id AS "containerId",
             p.lease_expires_at>clock_timestamp() AS current,g.owner,g.run_id AS "runId",g.run_lease AS "runLease",g.host_token AS "hostToken"
         FROM mira_browser_processes p JOIN mira_browser_access g ON g.id=p.access_id WHERE p.id=${id}`;
@@ -124,6 +126,14 @@ export async function reserveMiraBrowserProcess(
             hostToken: uuid,
             hostId: uuid,
             imageId: v.pipe(v.string(), v.regex(/^sha256:[a-f0-9]{64}$/)),
+            networkIds: v.optional(
+                v.pipe(
+                    v.array(containerId),
+                    v.minLength(1),
+                    v.maxLength(2),
+                    v.check((values) => new Set(values).size === values.length)
+                )
+            ),
         }),
         input
     );
@@ -144,10 +154,25 @@ export async function reserveMiraBrowserProcess(
                 "PRECONDITION_FAILED",
                 "Browser capacity is reserved; finish existing cleanup before starting another process."
             );
+        let networkId: string | null = null;
+        if (request.networkIds) {
+            const used = await query<
+                { networkId: string }[]
+            >`SELECT network_id AS "networkId" FROM mira_browser_processes WHERE host_id=${request.hostId} AND state<>'removed' AND network_id IS NOT NULL`;
+            networkId =
+                request.networkIds.find(
+                    (candidate) => !used.some((row) => row.networkId === candidate)
+                ) ?? null;
+            if (!networkId)
+                throw new MiraFailure(
+                    "PRECONDITION_FAILED",
+                    "Browser networks are reserved until existing cleanup completes."
+                );
+        }
         const id = randomUUID(),
             token = randomUUID();
-        await query`INSERT INTO mira_browser_processes(id,access_id,host_id,image_id,lease_token,lease_expires_at)
-            VALUES(${id},${request.accessId},${request.hostId},${request.imageId},${token},clock_timestamp()+interval '15 seconds')`;
+        await query`INSERT INTO mira_browser_processes(id,access_id,host_id,image_id,network_id,lease_token,lease_expires_at)
+            VALUES(${id},${request.accessId},${request.hostId},${request.imageId},${networkId},${token},clock_timestamp()+interval '15 seconds')`;
         return result((await read(query, id))!);
     };
     return transaction ? reserve(transaction) : client.begin(reserve);

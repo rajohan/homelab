@@ -63,7 +63,8 @@
         "test:browser": "docker build -f deploy/browser-test/Dockerfile -t homelab-browser-test:local . && docker run --rm --init --network none --cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp:rw,nosuid,nodev,size=256m --tmpfs /home/bun:rw,nosuid,nodev,size=128m,uid=1000,gid=1000 --memory 1536m --cpus 2 homelab-browser-test:local && bun --no-env-file apps/mira/src/server/testing/browserContainerSmoke.ts && docker build -f deploy/browser-test/worker.Dockerfile -t homelab-browser-worker-test:local . && bun --no-env-file apps/mira/src/server/testing/browserWorkerSmoke.ts",
         "build:browser": "bun --no-env-file scripts/buildBrowser.ts",
         "test:browser:image": "bun --no-env-file apps/mira/src/server/testing/browserImageSmoke.ts",
-        "test:browser:service": "bun run build:mira && PYTHONDONTWRITEBYTECODE=1 python3 scripts/smokeBrowserService.py"
+        "test:browser:service": "bun run build:mira && PYTHONDONTWRITEBYTECODE=1 python3 scripts/smokeBrowserService.py",
+        "test:browser:egress": "docker build -f deploy/browser/Dockerfile -t homelab-browser-egress-runtime:local . && docker build -f deploy/browser-proxy/Dockerfile -t homelab-browser-proxy-test:local . && docker build -f deploy/browser-test/egress.Dockerfile -t homelab-browser-egress-fixture:local . && PYTHONDONTWRITEBYTECODE=1 python3 -I scripts/smokeBrowserEgress.py"
     },
     "devDependencies": {
         "@happy-dom/global-registrator": "21.0.4",

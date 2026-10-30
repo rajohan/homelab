@@ -1,0 +1,119 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "8b44010f-c8cb-4bca-9704-f8e746e900bb",
+    "prevIds": ["80d6b472-2050-430c-bec5-85d3b2914f8a"],
+    "footprints": [
+        {
+            "statementType": "add_column",
+            "statementTarget": [
+                "column",
+                "public",
+                "mira_browser_processes",
+                "network_id"
+            ],
+            "writes": [
+                "s|col|public.mira_browser_processes.network_id",
+                "n|col|public.mira_browser_processes.network_id",
+                "e|col|public.mira_browser_processes.network_id"
+            ],
+            "reads": ["n|tbl|public.mira_browser_processes", "n|sch|public"]
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": [
+                "index",
+                "public",
+                "mira_browser_processes",
+                "mira_browser_process_network"
+            ],
+            "writes": [
+                "s|idx|public.mira_browser_process_network",
+                "n|idx|public.mira_browser_process_network",
+                "e|idx|public.mira_browser_process_network",
+                "n|rel|public.mira_browser_process_network"
+            ],
+            "reads": [
+                "n|tbl|public.mira_browser_processes",
+                "n|sch|public",
+                "n|col|public.mira_browser_processes.host_id",
+                "n|col|public.mira_browser_processes.network_id"
+            ]
+        },
+        {
+            "statementType": "add_check",
+            "statementTarget": ["table", "public", "mira_browser_processes"],
+            "writes": [
+                "s|ck|public.mira_browser_processes.mira_browser_process_network_id",
+                "n|ck|public.mira_browser_processes.mira_browser_process_network_id",
+                "e|ck|public.mira_browser_processes.mira_browser_process_network_id",
+                "n|con|public.mira_browser_processes.mira_browser_process_network_id"
+            ],
+            "reads": [
+                "n|tbl|public.mira_browser_processes",
+                "n|sch|public",
+                "n|col|public.mira_browser_processes.network_id"
+            ]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_browser_processes",
+                "name": "network_id",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_browser_processes",
+                "name": "mira_browser_process_network",
+                "nameExplicit": true,
+                "columns": [
+                    {
+                        "value": "host_id",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    },
+                    {
+                        "value": "network_id",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    }
+                ],
+                "isUnique": true,
+                "where": "\"state\" <> 'removed'",
+                "with": "",
+                "method": "btree",
+                "concurrently": false,
+                "entityType": "indexes"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_browser_processes",
+                "name": "mira_browser_process_network_id",
+                "value": "\"network_id\" IS NULL OR \"network_id\" ~ '^[a-f0-9]{64}$'",
+                "entityType": "checks"
+            }
+        }
+    ]
+}

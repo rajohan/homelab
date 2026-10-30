@@ -210,3 +210,45 @@ This avoids releasing unrelated package-upgrade jobs queued behind incomplete
 cloud-init provisioning. It does not repair or resume cloud-init itself. Qualify the
 host's APT sources/hooks first, compare installed package versions before and after,
 and verify both report and package-list timestamps. Do not install the drop-in globally.
+
+### Isolated browser web access
+
+`compose.browser.yaml` adds the trusted browser host and two separate browser slots. Merge it with the dashboard's deployment Compose project so the host can reach the same database. The dashboard, Mira model executor and browser workers do not receive the Docker socket. The browser host alone controls that local engine; a read-only socket mount still permits Docker API mutations and must be treated as host administrative authority.
+
+The overlay requires Docker's `isolated` bridge gateway mode and Compose support for `interface_name` (2.36 or newer). Each slot is internal and has no host bridge address. It contains only its dedicated proxy and, while reserved, one browser. The two proxy containers share a separate outbound network, publish no ports and use their immutable, baked configuration. Public IPv4 HTTP/HTTPS on ports 80/443 is supported. IPv6-only sites and other destination ports are deliberately unavailable. TLS remains end to end; the proxy does not intercept certificates.
+
+Squid resolves through 1.1.1.1 and 9.9.9.9 inside its own namespace. Both its address ACL and an independent nftables output policy reject loopback, private, link-local, CGNAT, reserved and multicast destinations, including DNS rebinding and redirects. The firewall permits DNS only to those two resolvers. The startup process installs namespace-local rules, then drops every capability before Squid serves requests. The health check requires that capless process. An unprivileged browser has no direct outbound route, and Chromium's fixed proxy policy includes loopback destinations rather than silently bypassing the proxy.
+
+Provisioning uses the standard Compose overlay, not a second setup framework:
+
+1. Pull the exact Mira image from `container-images.json` and both browser images from `browser-image.json` for the same reviewed release. Keep their immutable digest references. The release publisher publishes only images already qualified in CI.
+2. Set `HOMELAB_MIRA_BROWSER_PROXY_IMAGE`, `HOMELAB_MIRA_IMAGE`, `HOMELAB_DOCKER_GID`, `HOMELAB_DOCKER_SOCKET`, `HOMELAB_DASHBOARD_DATABASE_URL` and `HOMELAB_MIRA_BROWSER_CONFIG`. The config file is nonsecret and must exist before starting the host. Do not pass model/provider credentials to this service.
+3. Start only `mira-browser-proxy-a` and `mira-browser-proxy-b` with Compose. Read their immutable container IDs and image IDs with `docker inspect`, and the slot network IDs with `docker network inspect`. The browser worker image ID comes from `docker image inspect` after pulling its published digest.
+4. Write the configuration below with those exact IDs and a stable host UUID. Inside the host container the canonical socket path is `/run/docker.sock`. Apply the dashboard migrations before starting `mira-browser-host`.
+5. Start the host, verify its private health check, and qualify a disposable human-granted Chat session before enabling browser access for normal use.
+
+```json
+{
+    "hostId": "00000000-0000-4000-8000-000000000001",
+    "socketPath": "/run/docker.sock",
+    "imageId": "sha256:<installed-browser-image-config-digest>",
+    "networks": [
+        {
+            "networkId": "<slot-a-network-id>",
+            "proxyId": "<proxy-a-container-id>",
+            "proxyImageId": "sha256:<installed-proxy-image-config-digest>"
+        },
+        {
+            "networkId": "<slot-b-network-id>",
+            "proxyId": "<proxy-b-container-id>",
+            "proxyImageId": "sha256:<installed-proxy-image-config-digest>"
+        }
+    ]
+}
+```
+
+A missing `networks` property preserves the existing fully offline mode. The database reserves each configured slot until the original browser's removal is confirmed, including after host crashes. Before start and every two seconds while active, the host checks the exact proxy/image, healthy capless startup, isolated network and absence of other peers or browser routes. Losing that configuration retires the session; input is never replayed.
+
+For upgrades, stop accepting new browser sessions, allow active jobs to finish or explicitly stop them, and verify cleanup before recreating proxies. Recreating a proxy or network changes its immutable ID: update the nonsecret host configuration before restarting the host. A release notification or image publication alone does not perform this deployment. No production routing or activation is changed by this overlay.
+
+Run `bun run test:browser:egress` to qualify the actual images. The fixture uses synthetic HTTP, TLS and DNS servers in fully isolated Docker networks (including 1.1.1.0/29 with no host bridge address); it never contacts public DNS or the Internet. It tests mixed DNS answers, rebinding, redirects, independent packet filtering, direct-route refusal, dropped runtime capabilities, actual Chromium screenshots/input and automatic retirement after proxy loss. The existing offline image and host-service tests remain required too.
