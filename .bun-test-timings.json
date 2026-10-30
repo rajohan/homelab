@@ -110,6 +110,7 @@
     "apps/mira/src/server/browsing/egress.test.ts": 3,
     "apps/mira/src/server/browsing/savedProfile.test.ts": 59,
     "apps/mira/src/server/browsing/upload.test.ts": 91,
-    "apps/mira/src/server/browsing/uploadTransfer.test.ts": 2
+    "apps/mira/src/server/browsing/uploadTransfer.test.ts": 2,
+    "apps/mira/src/server/config/environment.test.ts": 1
   }
 }

@@ -85,12 +85,15 @@ export function hostedComputerQualificationEnvironment(): boolean {
 
 /**
  * Read the explicitly provisioned private browser-host configuration.
+ * @param environment - Explicit host settings, defaulting to the service environment.
  * @returns Validated paths and health/database settings, never inherited by browser workers.
  */
-export function browserHostEnvironment() {
-    const file = process.env.HOMELAB_MIRA_BROWSER_CONFIG;
-    const databaseUrl = process.env.HOMELAB_DASHBOARD_DATABASE_URL;
-    const port = Number(process.env.HOMELAB_MIRA_BROWSER_HEALTH_PORT ?? 3441);
+export function browserHostEnvironment(
+    environment: Readonly<Record<string, string | undefined>> = process.env
+) {
+    const file = environment.HOMELAB_MIRA_BROWSER_CONFIG;
+    const databaseUrl = environment.HOMELAB_DASHBOARD_DATABASE_URL;
+    const port = Number(environment.HOMELAB_MIRA_BROWSER_HEALTH_PORT ?? 3441);
     if (
         !file ||
         !path.isAbsolute(file) ||
@@ -105,9 +108,9 @@ export function browserHostEnvironment() {
     const url = new URL(databaseUrl);
     if (!["postgres:", "postgresql:"].includes(url.protocol) || url.pathname === "/")
         throw new Error("A product database is required.");
-    const filesDirectory = process.env.HOMELAB_MIRA_FILES_DIR;
-    if (filesDirectory !== undefined && !path.isAbsolute(filesDirectory))
-        throw new Error("Browser host attachment storage must be an absolute path.");
+    const filesDirectory = environment.HOMELAB_MIRA_FILES_DIR;
+    if (!filesDirectory || !path.isAbsolute(filesDirectory))
+        throw new Error("Browser host attachment storage requires an absolute path.");
     return { file, databaseUrl, port, filesDirectory };
 }
 

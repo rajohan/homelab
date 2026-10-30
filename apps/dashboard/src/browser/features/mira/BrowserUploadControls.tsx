@@ -86,7 +86,12 @@ export function BrowserUploadControls({
                         { value: "", label: "Choose an attachment" },
                         ...(files.data ?? []).map((file) => ({
                             value: file.id,
-                            label: `${file.name} · ${Math.ceil(file.size / 1024)} KB`,
+                            label: (
+                                <span className="block wrap-anywhere whitespace-normal">
+                                    {file.name} · {file.size.toLocaleString("en-US")}{" "}
+                                    bytes · {file.id}
+                                </span>
+                            ),
                         })),
                     ]}
                 />
@@ -151,8 +156,12 @@ export function BrowserUploadControls({
                             <dt className="text-primary-400">File</dt>
                             <dd>
                                 {confirmation.file.name} ·{" "}
-                                {Math.ceil(confirmation.file.size / 1024)} KB
+                                {confirmation.file.size.toLocaleString("en-US")} bytes
                             </dd>
+                        </div>
+                        <div>
+                            <dt className="text-primary-400">Attachment ID</dt>
+                            <dd>{confirmation.file.id}</dd>
                         </div>
                         <div>
                             <dt className="text-primary-400">Website</dt>

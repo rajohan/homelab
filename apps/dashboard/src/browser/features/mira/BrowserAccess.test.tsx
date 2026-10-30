@@ -507,7 +507,12 @@ test("attachment upload requires explicit confirmation and freezes the website, 
         sha256: "a".repeat(64),
     };
     const key = ["operations", "mira", "browser-uploads", access.id];
-    f.query.setQueryData(key, [file]);
+    const duplicates = [
+        file,
+        { ...file, id: crypto.randomUUID(), size: 1026, sha256: "b".repeat(64) },
+        { ...file, id: crypto.randomUUID(), sha256: "c".repeat(64) },
+    ];
+    f.query.setQueryData(key, duplicates);
     const image = {
         ...preview(),
         refs: [
@@ -537,7 +542,17 @@ test("attachment upload requires explicit confirmation and freezes the website, 
         await user.click(
             screen.getByRole("button", { name: /^Conversation attachment/ })
         );
-        await user.click(screen.getByRole("option", { name: /document.txt/ }));
+        for (const duplicate of duplicates)
+            expect(
+                screen.getByRole("option", {
+                    name: `${duplicate.name} · ${duplicate.size.toLocaleString("en-US")} bytes · ${duplicate.id}`,
+                })
+            ).toBeInTheDocument();
+        await user.click(
+            screen.getByRole("option", {
+                name: `document.txt · 1,025 bytes · ${file.id}`,
+            })
+        );
         await user.click(screen.getByRole("button", { name: /^File input on the page/ }));
         await user.click(screen.getByRole("option", { name: "Upload document" }));
         await user.click(screen.getByRole("button", { name: "Review upload" }));
@@ -547,7 +562,34 @@ test("attachment upload requires explicit confirmation and freezes the website, 
         ).toHaveTextContent(new URL(image.url).origin);
         expect(
             screen.getByRole("dialog", { name: "Upload attachment" })
-        ).toHaveTextContent("document.txt");
+        ).toHaveTextContent("document.txt · 1,025 bytes");
+        expect(
+            screen.getByRole("dialog", { name: "Upload attachment" })
+        ).toHaveTextContent(file.id);
+        for (const duplicate of duplicates.slice(1))
+            expect(
+                screen.getByRole("dialog", { name: "Upload attachment" })
+            ).not.toHaveTextContent(duplicate.id);
+        act(() => {
+            f.query.setQueryData(key, [{ ...file, sha256: "d".repeat(64) }]);
+        });
+        await waitFor(() =>
+            expect(
+                screen.getByRole<HTMLButtonElement>("button", {
+                    name: "Send file to website",
+                }).disabled
+            ).toBe(true)
+        );
+        act(() => {
+            f.query.setQueryData(key, duplicates);
+        });
+        await waitFor(() =>
+            expect(
+                screen.getByRole<HTMLButtonElement>("button", {
+                    name: "Send file to website",
+                }).disabled
+            ).toBe(false)
+        );
         show({ ...image, observationId: crypto.randomUUID() });
         expect(
             screen.getByRole("button", { name: "Send file to website" })
