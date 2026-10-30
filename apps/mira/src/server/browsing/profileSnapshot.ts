@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { lstat, mkdir, open, readdir, realpath } from "node:fs/promises";
+import { mkdir, open, readdir, type FileHandle } from "node:fs/promises";
 import path from "node:path";
 import { gzipSync, gunzipSync } from "node:zlib";
 
@@ -123,42 +123,44 @@ export async function restoreBrowserProfile(
 export async function captureBrowserProfile(
     directory = browserProfileDirectory
 ): Promise<string> {
-    const root = path.join(directory, "saved");
-    const metadata = await lstat(root);
-    if (
-        !metadata.isDirectory() ||
-        (await realpath(root)) !== root ||
-        metadata.uid !== process.getuid?.()
-    )
-        throw new Error("Invalid browser profile root.");
+    const root = await open(
+        path.join(directory, "saved"),
+        constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW
+    );
     const records: { name: string; data: string }[] = [];
     let total = 0,
         visited = 0;
-    const walk = async (parent: string, prefix: string) => {
-        for (const name of await readdir(parent)) {
+    const walk = async (parent: FileHandle, prefix: string, owner: number) => {
+        // The Linux worker pins every ancestor by descriptor. A renamed directory
+        // or substituted link cannot redirect later opens outside this profile.
+        const pinned = `/proc/self/fd/${parent.fd}`;
+        for (const name of await readdir(pinned)) {
             if (!prefix && runtime.has(name)) continue;
             if (++visited > 5000)
                 throw new Error("Browser profile has too many entries.");
-            const relative = relativeName(prefix + name),
-                target = path.join(parent, name);
-            const stat = await lstat(target);
-            if (stat.uid !== metadata.uid)
-                throw new Error("Invalid browser profile owner.");
-            if (stat.isDirectory()) {
-                await walk(target, relative + "/");
-                continue;
-            }
-            if (
-                !stat.isFile() ||
-                stat.nlink !== 1 ||
-                stat.size > browserProfileMemoryBytes
-            )
+            const relative = relativeName(prefix + name);
+            const file = await open(
+                path.join(pinned, name),
+                constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK
+            ).catch(() => {
                 throw new Error("Unsupported browser profile entry.");
-            total += stat.size;
-            if (total > browserProfileMemoryBytes)
-                throw new Error("Browser profile exceeds its limit.");
-            const file = await open(target, constants.O_RDONLY | constants.O_NOFOLLOW);
+            });
             try {
+                const stat = await file.stat();
+                if (stat.uid !== owner) throw new Error("Invalid browser profile owner.");
+                if (stat.isDirectory()) {
+                    await walk(file, relative + "/", owner);
+                    continue;
+                }
+                if (
+                    !stat.isFile() ||
+                    stat.nlink !== 1 ||
+                    stat.size > browserProfileMemoryBytes
+                )
+                    throw new Error("Unsupported browser profile entry.");
+                total += stat.size;
+                if (total > browserProfileMemoryBytes)
+                    throw new Error("Browser profile exceeds its limit.");
                 const bytes = Buffer.alloc(stat.size + 1);
                 let offset = 0;
                 while (offset < bytes.length) {
@@ -171,7 +173,14 @@ export async function captureBrowserProfile(
                     if (!read.bytesRead) break;
                     offset += read.bytesRead;
                 }
-                if (offset !== stat.size)
+                const after = await file.stat();
+                if (
+                    offset !== stat.size ||
+                    after.size !== stat.size ||
+                    after.mtimeMs !== stat.mtimeMs ||
+                    after.ctimeMs !== stat.ctimeMs ||
+                    after.nlink !== 1
+                )
                     throw new Error("Browser profile changed during capture.");
                 records.push({
                     name: relative,
@@ -182,7 +191,14 @@ export async function captureBrowserProfile(
             }
         }
     };
-    await walk(root, "");
+    try {
+        const metadata = await root.stat();
+        if (!metadata.isDirectory() || metadata.uid !== process.getuid?.())
+            throw new Error("Invalid browser profile root.");
+        await walk(root, "", metadata.uid);
+    } finally {
+        await root.close();
+    }
     const raw = JSON.stringify(records);
     if (Buffer.byteLength(raw) > rawLimit)
         throw new Error("Browser profile snapshot exceeds its limit.");

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
     chmod,
     lstat,
+    link,
     mkdir,
     mkdtemp,
     readFile,
@@ -151,6 +152,16 @@ test("bounded profile snapshots round-trip regular files without runtime links o
         await symlink("/etc/passwd", path.join(source, "saved", "foreign"));
         await assert.rejects(captureBrowserProfile(source), /Unsupported/);
         await rm(path.join(source, "saved", "foreign"));
+        await link(
+            path.join(source, "saved", "Default", "Cookies"),
+            path.join(source, "saved", "alias")
+        );
+        await assert.rejects(captureBrowserProfile(source), /Unsupported/);
+        await rm(path.join(source, "saved", "alias"));
+        const redirected = path.join(root, "redirected");
+        await mkdir(redirected);
+        await symlink(path.join(source, "saved"), path.join(redirected, "saved"));
+        await assert.rejects(captureBrowserProfile(redirected));
         await truncate(
             path.join(source, "saved", "Default", "Cookies"),
             browserProfileMemoryBytes + 1
