@@ -8,7 +8,11 @@ import * as v from "valibot";
 import { createVisualChallenge } from "../testing/visualChallenge";
 import { serveBrowserWorker, type BrowserWorkerProfile } from "./child";
 import { openBrowserWorker } from "./process";
-import { browserWorkerFrame, browserWorkerGrant } from "./wire";
+import {
+    browserWorkerFrame,
+    browserWorkerGrant,
+    browserWorkerRequestSchema,
+} from "./wire";
 
 const grant = {
     origins: ["http://fixture.invalid"],
@@ -64,6 +68,8 @@ function childFixture(profile?: BrowserWorkerProfile) {
             calls.push("act");
             return Promise.resolve({ effect: "unverified" as const });
         },
+        upload: () =>
+            Promise.reject(new Error("Uploads are not exposed by the worker protocol.")),
         close: () => {
             closes++;
             return Promise.resolve();
@@ -122,6 +128,7 @@ test("worker grant and observation validation refuse authority widening and malf
     for (const value of [
         { ...grant, executable: "/other" },
         { ...grant, profile: "existing" },
+        { ...grant, uploads: true },
         { ...grant, initialUrl: "https://outside.invalid/" },
         { ...grant, origins: ["http://fixture.invalid/"] },
     ])
@@ -613,4 +620,16 @@ test("saved workers require private bootstrap before initialization and checkpoi
         await rejected.done;
         expect(rejected.opened).toEqual([]);
     }
+});
+
+test("worker wire cannot activate the private native upload foundation", () => {
+    for (const body of [
+        { method: "initialize", params: { ...grant, uploads: true } },
+        { method: "upload", params: { observationId: randomUUID(), ref: "p1:0" } },
+        {
+            method: "act",
+            params: { action: "upload", observationId: randomUUID(), ref: "p1:0" },
+        },
+    ])
+        expect(() => v.parse(browserWorkerRequestSchema, { id: 1, body })).toThrow();
 });

@@ -57,12 +57,13 @@ function response(
     return { isError: false, structuredJson: JSON.stringify(data), images };
 }
 const image = () => ({ mimeType: "image/png", dataBase64: createVisualChallenge().data });
-async function fixture() {
+async function fixture(uploads = false) {
     const grant = {
         executable: await realpath(process.execPath),
         origins: [origin],
         initialUrl: `${origin}/`,
         mode: "control" as "view" | "control",
+        ...(uploads ? { uploads: true as const } : {}),
     };
     const owner = new AbortController();
     const calls: { name: string; args: Record<string, unknown> }[] = [];
@@ -210,6 +211,145 @@ test("browser policy admits exact web origins and no model-selected profiles or 
         { initialUrl: "https://other.invalid/" },
     ])
         expect(() => browserGrant({ ...valid, ...patch })).toThrow();
+});
+
+test("native upload grants are opt-in and bind the file reader to one origin and private staging root", async () => {
+    const f = await fixture();
+    const manifest = browserManifest(f.grant);
+    expect(manifest.allow.tools).not.toContain("browser_set_input_files");
+    expect(manifest.resources).not.toHaveProperty("files");
+    for (const input of [
+        { ...f.grant, uploads: true, mode: "view" },
+        { ...f.grant, uploads: true, origins: [origin, "https://other.invalid"] },
+    ])
+        expect(() => browserGrant(input)).toThrow();
+    expect(() => browserManifest({ ...f.grant, uploads: true })).toThrow();
+    expect(() => browserManifest(f.grant, "/tmp/staged")).toThrow();
+    expect(() => browserManifest({ ...f.grant, uploads: true }, "relative")).toThrow();
+});
+
+test("native uploads consume one fresh file ref, disclose no paths, and remove staged bytes on close", async () => {
+    const f = await fixture(true);
+    const data = snapshot();
+    data.refs[0] = { ...data.refs[0]!, role: "file", actions: ["upload"] };
+    f.results.get_browser_state = response(data, [image()]);
+    f.results.browser_set_input_files = response({
+        status: "ok",
+        target_id: "target",
+        tab_id: "tab",
+        ref: "p1:0",
+        frame: "main",
+        file_count: 1,
+    });
+    const browser = await f.open();
+    const bytes = new TextEncoder().encode("Exact approved content");
+    const file = {
+        name: "report.txt",
+        bytes,
+        size: bytes.length,
+        sha256: new Bun.CryptoHasher("sha256").update(bytes).digest("hex"),
+    };
+    const frame = await browser.observe(signal());
+    const command = { observationId: frame.observationId, ref: "p1:0" };
+    expect(await browser.upload(command, file, signal())).toEqual({
+        effect: "unverified",
+    });
+    const call = f.calls.find((item) => item.name === "browser_set_input_files")!;
+    const [staged] = call.args.files as string[];
+    expect(await Bun.file(staged!).text()).toBe("Exact approved content");
+    const manifest = (await Bun.file(f.manifest()).json()) as {
+        allow: { tools: string[] };
+        resources: { files: { read: { dir: string }[]; write?: unknown } };
+    };
+    expect(manifest.allow.tools).toContain("browser_set_input_files");
+    expect(manifest.resources.files.write).toBeUndefined();
+    expect(
+        staged!.startsWith(manifest.resources.files.read[0]!.dir + "/") ||
+            staged!.startsWith(manifest.resources.files.read[0]!.dir + "\\")
+    ).toBe(true);
+    await assert.rejects(browser.upload(command, file, signal()), /fresh file-input/);
+    expect(
+        f.calls.filter((item) => item.name === "browser_set_input_files")
+    ).toHaveLength(1);
+    await browser.close();
+    expect(await Bun.file(staged!).exists()).toBe(false);
+});
+
+test("native upload refusals retire the session without dispatching unapproved bytes", async () => {
+    for (const scenario of [
+        "disabled",
+        "expired",
+        "wrong-ref",
+        "wrong-observation",
+        "digest",
+        "extra-path",
+        "refused",
+        "response-tab",
+        "response-ref",
+        "response-image",
+        "cancelled",
+    ]) {
+        const f = await fixture(scenario !== "disabled");
+        const data = snapshot();
+        data.refs[0] = { ...data.refs[0]!, actions: ["upload"] };
+        f.results.get_browser_state = response(data, [image()]);
+        f.results.browser_set_input_files = response(
+            {
+                status: "ok",
+                target_id: "target",
+                tab_id: scenario === "response-tab" ? "other" : "tab",
+                ref: scenario === "response-ref" ? "p1:1" : "p1:0",
+                frame: "main",
+                file_count: 1,
+            },
+            scenario === "response-image" ? [image()] : []
+        );
+        if (scenario === "refused") f.results.browser_set_input_files.isError = true;
+        const browser = await f.open();
+        const frame = await browser.observe(signal());
+        if (scenario === "disabled")
+            expect(frame.refs.some((item) => item.actions.includes("upload"))).toBe(
+                false
+            );
+        if (scenario === "expired") f.time(10_000);
+        const bytes = new Uint8Array([1]);
+        const file = {
+            name: "test.txt",
+            bytes,
+            size: 1,
+            sha256:
+                scenario === "digest"
+                    ? "0".repeat(64)
+                    : new Bun.CryptoHasher("sha256").update(bytes).digest("hex"),
+        };
+        const operation = new AbortController();
+        if (scenario === "cancelled") operation.abort();
+        await assert.rejects(
+            browser.upload(
+                {
+                    observationId:
+                        scenario === "wrong-observation"
+                            ? crypto.randomUUID()
+                            : frame.observationId,
+                    ref: scenario === "wrong-ref" ? "p1:1" : "p1:0",
+                    ...(scenario === "extra-path" ? { path: "/private/secret" } : {}),
+                },
+                file,
+                operation.signal
+            )
+        );
+        if (
+            !["refused", "response-tab", "response-ref", "response-image"].includes(
+                scenario
+            )
+        )
+            expect(f.calls.some((item) => item.name === "browser_set_input_files")).toBe(
+                false
+            );
+        await assert.rejects(browser.observe(signal()));
+        await browser.close();
+        expect(await Bun.file(f.manifest()).exists()).toBe(false);
+    }
 });
 
 test("dedicated browser binds an owned blank tab and dispatches only observed input", async () => {
