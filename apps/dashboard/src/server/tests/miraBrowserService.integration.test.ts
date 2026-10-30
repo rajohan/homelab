@@ -351,20 +351,14 @@ test("queue ownership, stale controller and consumed result fences reject cross-
     }
 });
 
-test("stopping a pending grant immediately erases text and expiry cleanup leaves tombstones", async () => {
+test("stopping a pending grant immediately erases private URLs and expiry cleanup leaves tombstones", async () => {
     const f = await fixture();
     try {
         const grant = await f.grant();
-        const id = await reserve(f, "mira_browser_input");
+        const id = await reserve(f, "mira_browser_navigate");
         await enqueueMiraBrowserCommand(f.worker, id, {
-            method: "act",
-            input: {
-                action: "type",
-                observationId: crypto.randomUUID(),
-                ref: "p1:1",
-                text: "Synthetic private text",
-                replace: true,
-            },
+            method: "navigate",
+            url: "https://example.test/?private=synthetic-value",
         });
         await f.api.browser.stop({ id: grant.id });
         const [row] = await f.client<
@@ -453,20 +447,14 @@ test("cancelling a read-only browser wait records a known failure without fencin
     }
 });
 
-test("replacing a stale pending grant scrubs queued private input atomically without a cleanup service", async () => {
+test("replacing a stale pending grant scrubs queued private navigation atomically without a cleanup service", async () => {
     const f = await fixture();
     try {
         const previous = await f.grant();
-        const id = await reserve(f, "mira_browser_input");
+        const id = await reserve(f, "mira_browser_navigate");
         await enqueueMiraBrowserCommand(f.worker, id, {
-            method: "act",
-            input: {
-                action: "type",
-                observationId: crypto.randomUUID(),
-                ref: "p1:1",
-                text: "Synthetic private text",
-                replace: true,
-            },
+            method: "navigate",
+            url: "https://example.test/?private=synthetic-value",
         });
         await f.client`UPDATE mira_switches SET version=version+1 WHERE owner=${f.context.owner} AND key='computer:browser'`;
         const replacement = await f.grant();
@@ -524,3 +512,355 @@ for (const character of ["界", "\u0001", '"']) {
         }
     });
 }
+
+async function operatorCommand(
+    f: Awaited<ReturnType<typeof fixture>>,
+    id: string,
+    operation: Parameters<typeof f.api.browser.command>[0]["operation"],
+    commandId = crypto.randomUUID()
+) {
+    const console = await f.api.browser.console({ id });
+    await f.api.browser.command({ id, epoch: console.epoch, commandId, operation });
+    await until(async () => {
+        const current = await f.api.browser.console({ id });
+        return !current.busy;
+    });
+    return f.api.browser.console({ id });
+}
+
+test("private browser takeover shares the serial host without replay or Chat disclosure", async () => {
+    const f = await fixture();
+    try {
+        const grant = await f.grant();
+        void f.start();
+        const observed = frame(await f.invoke("mira_browser_observe", {}));
+        const first = await f.api.browser.console({ id: grant.id });
+        expect(first.preview?.observationId).toBe(observed.observationId);
+        expect(first.preview?.refs).toEqual([]);
+        const before = f.engine.events.filter((value) => value === "observe").length;
+        await f.api.browser.console({ id: grant.id });
+        expect(f.engine.events.filter((value) => value === "observe")).toHaveLength(
+            before
+        );
+        await f.api.browser.transfer({
+            id: grant.id,
+            epoch: first.epoch,
+            controller: "human",
+        });
+        expect(await readMiraBrowserReadiness(f.worker)).toEqual({ state: "human" });
+        expect(text(await f.invoke("mira_browser_observe", {})).ok).toBe(false);
+        const view = await operatorCommand(f, grant.id, { method: "observe" });
+        expect(view.controller).toBe("human");
+        expect(view.preview?.refs).toHaveLength(1);
+        const commandId = crypto.randomUUID();
+        const operation = {
+            method: "act" as const,
+            input: {
+                action: "type" as const,
+                observationId: view.preview!.observationId,
+                ref: view.preview!.refs[0]!.ref,
+                text: "synthetic private value",
+                replace: true,
+            },
+        };
+        const after = await operatorCommand(f, grant.id, operation, commandId);
+        expect(after.preview).toBeNull();
+        await rejects(
+            f.api.browser.command({
+                id: grant.id,
+                epoch: view.epoch,
+                commandId,
+                operation,
+            })
+        );
+        expect(f.engine.events.filter((value) => value === "act")).toHaveLength(1);
+        const [stored] = await f.client<
+            { payload: unknown; frame: unknown }[]
+        >`SELECT payload,frame FROM mira_browser_consoles WHERE access_id=${grant.id}`;
+        expect(stored).toEqual({ payload: null, frame: null });
+        const [logs] = await f.client<
+            { found: boolean }[]
+        >`SELECT EXISTS(SELECT 1 FROM mira_tool_receipts WHERE run_id=${f.run.id} AND tool LIKE '%operator%') AS found`;
+        expect(logs?.found).toBe(false);
+        await f.api.browser.transfer({
+            id: grant.id,
+            epoch: after.epoch,
+            controller: "mira",
+        });
+        await rejects(
+            f.api.browser.command({
+                id: grant.id,
+                epoch: after.epoch,
+                commandId: crypto.randomUUID(),
+                operation: { method: "observe" },
+            })
+        );
+        expect(text(await f.invoke("mira_browser_input", operation.input)).ok).toBe(
+            false
+        );
+        expect(frame(await f.invoke("mira_browser_observe", {})).refs).toHaveLength(1);
+        await f.api.browser.stop({ id: grant.id });
+        await until(() => !f.engine.exists);
+        const [erased] = await f.client<
+            { frame: unknown; payload: unknown }[]
+        >`SELECT frame,payload FROM mira_browser_consoles WHERE access_id=${grant.id}`;
+        expect(erased).toEqual({ frame: null, payload: null });
+    } finally {
+        await f.close();
+    }
+});
+
+test("browser console requires the owner and fresh human authority for mutations", async () => {
+    const f = await fixture();
+    try {
+        const grant = await f.grant();
+        void f.start();
+        await f.invoke("mira_browser_observe", {});
+        const console = await f.api.browser.console({ id: grant.id });
+        const transfer = {
+            id: grant.id,
+            epoch: console.epoch,
+            controller: "human" as const,
+        };
+        await rejects(f.caller("other").browser.console({ id: grant.id }));
+        await rejects(
+            f
+                .caller("operator", "operator", "automation")
+                .browser.console({ id: grant.id })
+        );
+        await rejects(
+            f.caller("operator", "operator", "human", false).browser.transfer(transfer)
+        );
+        await rejects(f.caller("operator", "other").browser.transfer(transfer));
+        await f.api.browser.transfer(transfer);
+        const current = await f.api.browser.console({ id: grant.id });
+        await rejects(f.api.browser.transfer({ ...transfer, controller: "mira" }));
+        await rejects(
+            f.caller("operator", "operator", "human", false).browser.command({
+                id: grant.id,
+                epoch: current.epoch,
+                commandId: crypto.randomUUID(),
+                operation: { method: "observe" },
+            })
+        );
+    } finally {
+        await f.close();
+    }
+});
+
+test("queued model work prevents browser takeover until its receipt settles", async () => {
+    const f = await fixture();
+    try {
+        const grant = await f.grant();
+        const session = await openMiraBrowserSession(
+            f.worker,
+            grant.id,
+            f.config,
+            f.hostLifetime.signal
+        );
+        try {
+            const receiptId = await reserve(f);
+            await enqueueMiraBrowserCommand(f.worker, receiptId, {
+                method: "navigate",
+                url: "https://example.test/next",
+            });
+            const console = await f.api.browser.console({ id: grant.id });
+            const transfer = {
+                id: grant.id,
+                epoch: console.epoch,
+                controller: "human" as const,
+            };
+            await rejects(f.api.browser.transfer(transfer));
+            const command = await claimMiraBrowserCommand(f.client, session.claim);
+            expect(command).not.toBeNull();
+            await rejects(f.api.browser.transfer(transfer));
+            await finishMiraBrowserCommand(f.client, session.claim, receiptId, {
+                url: "https://example.test/next",
+            });
+            await rejects(f.api.browser.transfer(transfer));
+            await takeMiraBrowserCommand(f.worker, receiptId);
+            await rejects(f.api.browser.transfer(transfer));
+            await finalizeMiraBrowserCommand(f.worker, receiptId, f.toolLifetime.signal);
+            await f.api.browser.transfer(transfer);
+            const transferred = await f.api.browser.console({ id: grant.id });
+            expect(transferred.controller).toBe("human");
+        } finally {
+            await session.close();
+        }
+    } finally {
+        await f.close();
+    }
+});
+
+test("operator refs, view scope, request generations and limits remain enforced", async () => {
+    const f = await fixture("view");
+    try {
+        const grant = await f.grant();
+        void f.start();
+        await f.invoke("mira_browser_observe", {});
+        const first = await f.api.browser.console({ id: grant.id });
+        await f.api.browser.transfer({
+            id: grant.id,
+            epoch: first.epoch,
+            controller: "human",
+        });
+        const current = await operatorCommand(f, grant.id, { method: "observe" });
+        const command = {
+            id: grant.id,
+            epoch: current.epoch,
+            commandId: crypto.randomUUID(),
+            operation: {
+                method: "act" as const,
+                input: {
+                    action: "click" as const,
+                    observationId: current.preview!.observationId,
+                    ref: current.preview!.refs[0]!.ref,
+                },
+            },
+        };
+        await rejects(f.api.browser.command(command));
+        await rejects(
+            f.api.browser.command({
+                ...command,
+                operation: { method: "navigate", url: "https://unapproved.test" },
+            })
+        );
+        const repeated = crypto.randomUUID();
+        await operatorCommand(f, grant.id, { method: "observe" }, repeated);
+        await rejects(
+            f.api.browser.command({
+                ...command,
+                commandId: repeated,
+                operation: { method: "observe" },
+            })
+        );
+        await f.client`UPDATE mira_browser_consoles SET attempts=${JSON.stringify(Array.from({ length: 128 }, () => crypto.randomUUID()))}::text::jsonb WHERE access_id=${grant.id}`;
+        await rejects(
+            f.api.browser.command({ ...command, operation: { method: "observe" } })
+        );
+        expect(f.engine.events.filter((value) => value === "act")).toHaveLength(0);
+    } finally {
+        await f.close();
+    }
+});
+
+test("expired operator observations cannot deliver input and pending input blocks return", async () => {
+    const f = await fixture();
+    try {
+        const grant = await f.grant();
+        void f.start();
+        await f.invoke("mira_browser_observe", {});
+        let current = await f.api.browser.console({ id: grant.id });
+        await f.api.browser.transfer({
+            id: grant.id,
+            epoch: current.epoch,
+            controller: "human",
+        });
+        current = await operatorCommand(f, grant.id, { method: "observe" });
+        const command = {
+            id: grant.id,
+            epoch: current.epoch,
+            commandId: crypto.randomUUID(),
+            operation: {
+                method: "act" as const,
+                input: {
+                    action: "click" as const,
+                    observationId: current.preview!.observationId,
+                    ref: current.preview!.refs[0]!.ref,
+                },
+            },
+        };
+        await f.client`UPDATE mira_browser_consoles SET frame_at=clock_timestamp()-interval '61 seconds' WHERE access_id=${grant.id}`;
+        await rejects(f.api.browser.command(command));
+        const stale = await f.api.browser.console({ id: grant.id });
+        expect(stale.preview).toBeNull();
+        current = await operatorCommand(f, grant.id, { method: "observe" });
+        f.engine.holdInput = true;
+        await f.api.browser.command({
+            ...command,
+            operation: {
+                ...command.operation,
+                input: {
+                    ...command.operation.input,
+                    observationId: current.preview!.observationId,
+                },
+            },
+        });
+        await until(() => f.engine.events.includes("act"));
+        await rejects(
+            f.api.browser.transfer({
+                id: grant.id,
+                epoch: current.epoch,
+                controller: "mira",
+            })
+        );
+        await f.api.browser.stop({ id: grant.id });
+        await until(() => !f.engine.exists);
+        await rejects(f.api.browser.console({ id: grant.id }));
+        const [erased] = await f.client<
+            { payload: unknown; frame: unknown; state: string }[]
+        >`SELECT payload,frame,state FROM mira_browser_consoles WHERE access_id=${grant.id}`;
+        expect(erased).toEqual({ payload: null, frame: null, state: "idle" });
+    } finally {
+        await f.close();
+    }
+});
+
+test("independent cleanup erases old previews and expires operator work without a host loop", async () => {
+    const f = await fixture();
+    try {
+        const grant = await f.grant();
+        const session = await openMiraBrowserSession(
+            f.worker,
+            grant.id,
+            f.config,
+            f.hostLifetime.signal
+        );
+        try {
+            const receiptId = await reserve(f, "mira_browser_observe");
+            await enqueueMiraBrowserCommand(f.worker, receiptId, { method: "observe" });
+            await claimMiraBrowserCommand(f.client, session.claim);
+            await finishMiraBrowserCommand(
+                f.client,
+                session.claim,
+                receiptId,
+                await session.observe(f.toolLifetime.signal)
+            );
+            await takeMiraBrowserCommand(f.worker, receiptId);
+            await finalizeMiraBrowserCommand(f.worker, receiptId, f.toolLifetime.signal);
+            await f.client`UPDATE mira_browser_consoles SET frame_at=clock_timestamp()-interval '61 seconds' WHERE access_id=${grant.id}`;
+            await cleanupMiraBrowserCommands(f.client);
+            const current = await f.api.browser.console({ id: grant.id });
+            expect(current.preview).toBeNull();
+            await f.api.browser.transfer({
+                id: grant.id,
+                epoch: current.epoch,
+                controller: "human",
+            });
+            const human = await f.api.browser.console({ id: grant.id });
+            await f.api.browser.command({
+                id: grant.id,
+                epoch: human.epoch,
+                commandId: crypto.randomUUID(),
+                operation: {
+                    method: "navigate",
+                    url: "https://example.test/private-synthetic",
+                },
+            });
+            await f.client`UPDATE mira_browser_consoles SET expires_at=clock_timestamp()-interval '1 second' WHERE access_id=${grant.id}`;
+            await cleanupMiraBrowserCommands(f.client);
+            await rejects(f.api.browser.console({ id: grant.id }));
+            const [row] = await f.client<
+                { state: string; payload: unknown }[]
+            >`SELECT state,payload FROM mira_browser_consoles WHERE access_id=${grant.id}`;
+            expect(row).toEqual({ state: "idle", payload: null });
+            expect(f.engine.events.filter((value) => value === "navigate")).toHaveLength(
+                0
+            );
+        } finally {
+            await session.close();
+        }
+    } finally {
+        await f.close();
+    }
+});

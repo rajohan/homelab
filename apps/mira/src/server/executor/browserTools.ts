@@ -57,7 +57,7 @@ export function createMiraBrowserTools(): MiraToolDefinition[] {
             name: "mira_browser_wait",
             automatic: false,
             description:
-                "Check server-browser access for this manual run, or wait up to 60 seconds. Use only when the operator requests browsing. Explain that Browser access in Chat lets them approve exact website origins and View only or Control for this run. This tool cannot request, approve, broaden or renew access. If disabled, the operator must enable Browser in Automations. Ready is informational; each command rechecks authority. Do not repeatedly request a stopped grant. The isolated browser has no existing PC profile or signed-in sessions.",
+                "Check server-browser access for this manual run, or wait up to 60 seconds. Use only when the operator requests browsing. Explain that Browser access in Chat lets them approve exact website origins and View only or Control for this run. This tool cannot request, approve, broaden or renew access. If disabled, the operator must enable Browser in Automations. Ready is informational; each command rechecks authority. Do not repeatedly request a stopped grant. The isolated browser has no existing PC profile or signed-in sessions. If state is human, the operator has exclusive browser control; wait without calling browser actions until they return control. After a return, observe again before input.",
             inputSchema: {
                 type: "object",
                 properties: { waitSeconds: { type: "integer", minimum: 0, maximum: 60 } },
@@ -84,7 +84,10 @@ export function createMiraBrowserTools(): MiraToolDefinition[] {
                         signal.throwIfAborted();
                         const status = await readMiraBrowserReadiness(context);
                         signal.throwIfAborted();
-                        if (status.state !== "waiting" || performance.now() >= deadline)
+                        if (
+                            !["waiting", "human"].includes(status.state) ||
+                            performance.now() >= deadline
+                        )
                             return status;
                         await delay(
                             Math.min(250, Math.max(1, deadline - performance.now())),

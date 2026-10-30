@@ -1,9 +1,11 @@
 import type { MiraRun } from "@homelab/contracts/mira";
 import { Badge, Button, ErrorNotice, SectionHeader } from "@homelab/ui";
 import { Globe, Square } from "lucide-react";
+import { useState } from "react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
+import { BrowserConsoleDialog } from "./BrowserConsoleDialog";
 import { browserAccessLabel, useBrowserAccess } from "./useBrowserAccess";
 
 /**
@@ -19,6 +21,7 @@ export function BrowserAccessPanel({
     readonly waiting: boolean;
     readonly onManage: () => void;
 }) {
+    const [showBrowser, setShowBrowser] = useState(false);
     const query = useBrowserAccess(run);
     const access = query.data?.[0];
     const stop = useOperation((id: string, signal) =>
@@ -45,6 +48,15 @@ export function BrowserAccessPanel({
                         : {})}
                 />
                 <div className="flex flex-col gap-2 @min-[36rem]/browser-access:flex-row">
+                    {access?.state === "active" && (
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => setShowBrowser(true)}
+                        >
+                            Open browser
+                        </Button>
+                    )}
                     <Button variant="secondary" size="sm" onClick={onManage}>
                         Manage access
                     </Button>
@@ -62,6 +74,13 @@ export function BrowserAccessPanel({
                 </div>
             </div>
             {stop.error && <ErrorNotice error={stop.error} />}
+            {showBrowser && access?.state === "active" && (
+                <BrowserConsoleDialog
+                    key={access.id}
+                    access={access}
+                    onClose={() => setShowBrowser(false)}
+                />
+            )}
         </section>
     );
 }

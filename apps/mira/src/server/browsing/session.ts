@@ -174,8 +174,8 @@ export async function openBrowserSession(
     return {
         signal,
         closed: completion.promise,
-        observe: (operation: AbortSignal) =>
-            run("view", operation, (s) => active.observe(s)),
+        observe: (operation: AbortSignal, operator = false) =>
+            run("view", operation, (s) => active.observe(s, operator)),
         navigate: (url: unknown, operation: AbortSignal) =>
             run("view", operation, (s) => active.navigate(url, s)),
         act: (input: unknown, operation: AbortSignal) => {

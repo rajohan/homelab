@@ -1,3 +1,4 @@
+import { miraBrowserActionSchema } from "@homelab/contracts/miraBrowser";
 import { imageSize } from "image-size";
 import * as v from "valibot";
 
@@ -13,20 +14,7 @@ const grantSchema = v.strictObject({
 });
 const ref = v.pipe(v.string(), v.regex(/^p[0-9]{1,16}:[0-9]{1,6}$/));
 const observationId = v.pipe(v.string(), v.uuid());
-export const browserActionSchema = v.variant("action", [
-    v.strictObject({ action: v.literal("click"), observationId, ref }),
-    v.strictObject({
-        action: v.literal("type"),
-        observationId,
-        ref,
-        text: v.pipe(
-            v.string(),
-            v.maxLength(4000),
-            v.check((text) => text.isWellFormed() && !text.includes("\0"))
-        ),
-        replace: v.boolean(),
-    }),
-]);
+export const browserActionSchema = miraBrowserActionSchema;
 export const browserWorkerRequestSchema = v.strictObject({
     id: v.pipe(
         v.number(),
@@ -36,7 +24,10 @@ export const browserWorkerRequestSchema = v.strictObject({
     ),
     body: v.variant("method", [
         v.strictObject({ method: v.literal("initialize"), params: grantSchema }),
-        v.strictObject({ method: v.literal("observe"), params: v.strictObject({}) }),
+        v.strictObject({
+            method: v.literal("observe"),
+            params: v.strictObject({ operator: v.optional(v.boolean()) }),
+        }),
         v.strictObject({
             method: v.literal("navigate"),
             params: v.strictObject({ url: address }),

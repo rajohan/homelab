@@ -503,3 +503,27 @@ test("browser protocol bounds pixels, metadata and exact current document refere
     );
     expect(browserSnapshot(response(data, [image()]), target).refs).toHaveLength(2);
 });
+
+test("operator observations allow manual entry without extending model refs or allowing reuse", async () => {
+    for (const operator of [false, true]) {
+        const f = await fixture();
+        const browser = await f.open();
+        try {
+            const frame = await browser.observe(signal(), operator);
+            f.time(30_000);
+            const command = {
+                action: "click",
+                observationId: frame.observationId,
+                ref: "p1:1",
+            };
+            if (operator) {
+                expect(await browser.act(command, signal())).toEqual({
+                    effect: "unverified",
+                });
+                await assert.rejects(browser.act(command, signal()));
+            } else await assert.rejects(browser.act(command, signal()));
+        } finally {
+            await browser.close();
+        }
+    }
+});

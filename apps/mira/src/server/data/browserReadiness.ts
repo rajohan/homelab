@@ -25,6 +25,7 @@ export async function readMiraBrowserReadiness(context: MiraContext) {
     if (!last) return { state: "waiting" as const };
     const access = await readBrowserAccess(context.client, context.owner, last.id);
     if (!access?.available || !access.policy) return { state: "stopped" as const };
+    if (access.controller === "human") return { state: "human" as const };
     return {
         state: "ready" as const,
         mode: access.mode,

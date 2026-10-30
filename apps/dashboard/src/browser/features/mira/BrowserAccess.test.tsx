@@ -12,6 +12,8 @@ import { serialize } from "superjson";
 import { IdentityClientContext } from "../../identity/IdentityClientContext";
 import { BrowserAccessDialog } from "./BrowserAccessDialog";
 import { BrowserAccessPanel } from "./BrowserAccessPanel";
+import { BrowserConsoleDialog } from "./BrowserConsoleDialog";
+import { BrowserPageControls } from "./BrowserPageControls";
 
 function run(): MiraRun {
     return {
@@ -231,5 +233,147 @@ test("stale browser status preserves the exact direct stop action outside the di
     } finally {
         f.close();
         wire.close();
+    }
+});
+
+function preview() {
+    return {
+        observationId: crypto.randomUUID(),
+        url: "https://example.test/page",
+        title: "Synthetic browser page",
+        refs: [
+            {
+                ref: "p1:1",
+                role: "textbox",
+                label: "Synthetic field",
+                actions: ["type" as const, "click" as const],
+            },
+        ],
+        width: 64,
+        height: 64,
+        image: "synthetic",
+        observedAt: new Date().toISOString(),
+    };
+}
+
+test("browser console shows bounded images and sends private input outside mutation storage", async () => {
+    const current = run(),
+        access = { ...grant(current), mode: "control" as const };
+    const f = fixture(current, [access], null);
+    const view = preview(),
+        epoch = crypto.randomUUID();
+    f.query.setQueryData(["operations", "mira", "browser-console", access.id], {
+        epoch,
+        controller: "human",
+        busy: false,
+        preview: view,
+    });
+    const wire = network();
+    try {
+        f.rerender(<BrowserConsoleDialog access={access} onClose={() => {}} />);
+        expect(
+            screen.getByRole("img", {
+                name: "Latest view of the isolated server browser",
+            })
+        ).toBeInTheDocument();
+        expect(
+            screen.getByRole("button", { name: "Return to Mira" })
+        ).toBeInTheDocument();
+        const user = userEvent.setup();
+        await user.click(screen.getByRole("button", { name: /^Page element/ }));
+        await user.click(
+            await screen.findByRole("option", { name: "textbox: Synthetic field" })
+        );
+        await user.type(
+            screen.getByLabelText("Text to enter"),
+            "synthetic private value"
+        );
+        await user.click(screen.getByRole("button", { name: "Enter text" }));
+        await waitFor(() => expect(wire.sent).toHaveLength(1));
+        expect(wire.sent[0]!.url).toContain("mira.browser.command");
+        expect(JSON.stringify(wire.sent[0]!.body)).toContain("synthetic private value");
+        expect(screen.getByLabelText("Text to enter")).toHaveValue("");
+        expect(f.query.getMutationCache().getAll()).toHaveLength(0);
+    } finally {
+        f.close();
+        wire.close();
+    }
+});
+
+test("private typing draft survives a refreshed observation while stale actions stay disabled", async () => {
+    const first = preview();
+    const sent: unknown[] = [];
+    const view = render(
+        <BrowserPageControls
+            preview={first}
+            disabled
+            onCommand={(input) => sent.push(input)}
+        />
+    );
+    try {
+        const user = userEvent.setup();
+        await user.type(screen.getByLabelText("Text to enter"), "synthetic draft");
+        view.rerender(
+            <BrowserPageControls
+                preview={null}
+                disabled
+                onCommand={(input) => sent.push(input)}
+            />
+        );
+        expect(screen.getByLabelText("Text to enter")).toHaveValue("synthetic draft");
+        const next = { ...preview(), refs: [{ ...first.refs[0]!, ref: "p2:1" }] };
+        view.rerender(
+            <BrowserPageControls
+                preview={next}
+                disabled={false}
+                onCommand={(input) => sent.push(input)}
+            />
+        );
+        await user.click(screen.getByRole("button", { name: /^Page element/ }));
+        await user.click(
+            await screen.findByRole("option", { name: "textbox: Synthetic field" })
+        );
+        await user.click(screen.getByRole("button", { name: "Enter text" }));
+        expect(sent).toEqual([
+            {
+                method: "act",
+                input: {
+                    action: "type",
+                    observationId: next.observationId,
+                    ref: "p2:1",
+                    text: "synthetic draft",
+                    replace: true,
+                },
+            },
+        ]);
+    } finally {
+        view.unmount();
+    }
+});
+
+test("stale browser status hides pixels and disables takeover without hiding stop", () => {
+    const current = run(),
+        access = grant(current);
+    const f = fixture(current, [access], null);
+    f.query.setQueryData(
+        ["operations", "mira", "browser-console", access.id],
+        {
+            epoch: crypto.randomUUID(),
+            controller: "mira",
+            busy: false,
+            preview: preview(),
+        },
+        { updatedAt: Date.now() - 10_000 }
+    );
+    try {
+        f.rerender(<BrowserConsoleDialog access={access} onClose={() => {}} />);
+        expect(screen.queryByRole("img")).not.toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Take control" })).toBeDisabled();
+        expect(screen.getByRole("button", { name: "Stop access" })).toBeEnabled();
+        expect(
+            screen.getByRole("region", { name: "Server browser content" })
+        ).toHaveClass("overflow-y-auto");
+    } finally {
+        f.close();
     }
 });
