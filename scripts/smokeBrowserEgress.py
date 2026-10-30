@@ -86,6 +86,27 @@ def main():
             docker("network", "connect", "--driver-opt", "com.docker.network.endpoint.ifname=external", public, proxy)
             docker("start", proxy)
             endpoint = "http://mira-egress:3128"
+
+            # A user-defined network retains embedded DNS for its local aliases.
+            # --dns changes external forwarding, not the embedded resolver address.
+            dns_probe = prefix + "-dns-probe"
+            containers.append(dns_probe)
+            dns_code = """import pathlib,socket,json
+assert 'nameserver 127.0.0.11' in pathlib.Path('/etc/resolv.conf').read_text()
+assert socket.gethostbyname('mira-egress') == '""" + proxy_ip + """'
+try:
+    socket.getaddrinfo('public.mira.test',80)
+except socket.gaierror:
+    pass
+else:
+    raise AssertionError('External browser DNS must remain unavailable')
+print(json.dumps({'localProxyAlias':True,'externalBrowserDnsBlocked':True}))
+"""
+            print(docker("run", "--rm", "--name", dns_probe, "--network", client, "--dns", "127.0.0.1",
+                "--dns-option", "timeout:1", "--dns-option", "attempts:1",
+                "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true", "--user", "65534:65534",
+                "--read-only", "--memory", "96m", "--pids-limit", "32", "--entrypoint", "python",
+                "homelab-browser-egress-fixture:local", "-c", dns_code, timeout=10), flush=True)
             ready = None
             for _ in range(30):
                 for service in [site, proxy]:

@@ -81,6 +81,8 @@ export function browserContainerSpec(
             AutoRemove: true,
             Init: true,
             NetworkMode: egress?.networkId ?? "none",
+            // Docker retains 127.0.0.11 for local aliases on this private network;
+            // this setting disables external forwarding, not alias resolution.
             ...(egress ? { Dns: ["127.0.0.1"] } : {}),
             ReadonlyRootfs: true,
             CapDrop: ["ALL"],
