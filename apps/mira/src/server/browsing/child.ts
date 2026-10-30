@@ -6,6 +6,7 @@ import { computerDriverVersion } from "../computer/policy";
 import { openNativeBrowser } from "./native";
 import { browserUrl } from "./policy";
 import { BrowserProfileTransfer, browserProfileParts } from "./profileTransfer";
+import { BrowserUploadTransfer } from "./uploadTransfer";
 
 /** Fixed tmpfs callbacks available only to the host-marked saved-profile worker. */
 export interface BrowserWorkerProfile {
@@ -47,6 +48,7 @@ export function serveBrowserWorker(
         lastId = 0;
     let initializationFailed = false;
     const restore = new BrowserProfileTransfer();
+    const upload = new BrowserUploadTransfer();
     let restored = false;
     let port: Awaited<ReturnType<typeof open>> | undefined;
     let grant: ReturnType<typeof browserWorkerGrant> | undefined;
@@ -56,6 +58,7 @@ export function serveBrowserWorker(
         if (stopped) return;
         stopped = true;
         owner.abort();
+        upload.clear();
         buffer = Buffer.alloc(0);
         clearTimeout(lifetime);
         clearTimeout(idle);
@@ -105,6 +108,12 @@ export function serveBrowserWorker(
         if (request.id <= lastId) throw new Error("Repeated browser request.");
         lastId = request.id;
         const command = request.body;
+        if (
+            upload.active &&
+            command.method !== "uploadPart" &&
+            command.method !== "uploadFinish"
+        )
+            throw new Error("Browser upload transfer is incomplete.");
         let result: unknown;
         if (command.method === "profile") {
             if (!profile || initialized || restored)
@@ -137,14 +146,48 @@ export function serveBrowserWorker(
             if (!port || !grant) throw new Error("Browser worker is not initialized.");
             owner.signal.throwIfAborted();
             switch (command.method) {
+                case "uploadBegin": {
+                    if (!grant.uploads)
+                        throw new Error("Browser uploads are unavailable.");
+                    upload.begin(command.params);
+                    result = { accepted: true };
+                    break;
+                }
+                case "uploadPart": {
+                    upload.accept(command.params);
+                    result = { accepted: true };
+                    break;
+                }
+                case "uploadFinish": {
+                    const selected = upload.finish();
+                    result = await port.upload(
+                        selected.input,
+                        selected.file,
+                        owner.signal
+                    );
+                    break;
+                }
                 case "observe": {
-                    result = browserWorkerFrame(
+                    const frame = browserWorkerFrame(
                         await port.observe(
                             owner.signal,
                             command.params.operator ?? false
                         ),
                         grant.origins
                     );
+                    result = command.params.operator
+                        ? frame
+                        : {
+                              ...frame,
+                              refs: frame.refs
+                                  .map((item) => ({
+                                      ...item,
+                                      actions: item.actions.filter(
+                                          (action) => action !== "upload"
+                                      ),
+                                  }))
+                                  .filter((item) => item.actions.length),
+                          };
                     break;
                 }
                 case "navigate": {

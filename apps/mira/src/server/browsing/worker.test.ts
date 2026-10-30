@@ -8,6 +8,7 @@ import * as v from "valibot";
 import { createVisualChallenge } from "../testing/visualChallenge";
 import { serveBrowserWorker, type BrowserWorkerProfile } from "./child";
 import { openBrowserWorker } from "./process";
+import type { BrowserUploadFile } from "./upload";
 import {
     browserWorkerFrame,
     browserWorkerGrant,
@@ -31,7 +32,7 @@ function frame() {
                 ref: "p1:1",
                 role: "textbox",
                 label: "Text",
-                actions: ["click", "type"] as ("click" | "type")[],
+                actions: ["click", "type"] as ("click" | "type" | "upload")[],
             },
         ],
         width: 390,
@@ -68,8 +69,12 @@ function childFixture(profile?: BrowserWorkerProfile) {
             calls.push("act");
             return Promise.resolve({ effect: "unverified" as const });
         },
-        upload: () =>
-            Promise.reject(new Error("Uploads are not exposed by the worker protocol.")),
+        upload: (
+            _input: unknown,
+            _file: BrowserUploadFile,
+            _signal: AbortSignal
+        ): Promise<{ effect: "unverified" }> =>
+            Promise.reject(new Error("No upload fixture selected.")),
         close: () => {
             closes++;
             return Promise.resolve();
@@ -128,7 +133,9 @@ test("worker grant and observation validation refuse authority widening and malf
     for (const value of [
         { ...grant, executable: "/other" },
         { ...grant, profile: "existing" },
-        { ...grant, uploads: true },
+        { ...grant, uploads: false },
+        { ...grant, mode: "view", uploads: true },
+        { ...grant, origins: [grant.origins[0], "https://second.test"], uploads: true },
         { ...grant, initialUrl: "https://outside.invalid/" },
         { ...grant, origins: ["http://fixture.invalid/"] },
     ])
@@ -622,9 +629,8 @@ test("saved workers require private bootstrap before initialization and checkpoi
     }
 });
 
-test("worker wire cannot activate the private native upload foundation", () => {
+test("worker wire refuses direct file paths and model upload actions", () => {
     for (const body of [
-        { method: "initialize", params: { ...grant, uploads: true } },
         { method: "upload", params: { observationId: randomUUID(), ref: "p1:0" } },
         {
             method: "act",
@@ -632,4 +638,87 @@ test("worker wire cannot activate the private native upload foundation", () => {
         },
     ])
         expect(() => v.parse(browserWorkerRequestSchema, { id: 1, body })).toThrow();
+});
+
+test("private worker transports approved file chunks once and hides upload refs from model observations", async () => {
+    const f = childFixture(),
+        controller = new AbortController();
+    const observed = frame();
+    observed.refs = [
+        { ref: "p1:2", role: "file", label: "Fixture upload", actions: ["upload"] },
+    ];
+    f.port.observe = () => Promise.resolve(observed);
+    const bytes = new Uint8Array(100_003).fill(97);
+    const file = {
+        name: "fixture.txt",
+        size: bytes.length,
+        sha256: new Bun.CryptoHasher("sha256").update(bytes).digest("hex"),
+        bytes,
+    };
+    let uploads = 0,
+        sequence = 0;
+    f.port.upload = (input, received) => {
+        expect(input).toEqual({ observationId: observed.observationId, ref: "p1:2" });
+        expect(received).toEqual(file);
+        uploads++;
+        return Promise.resolve({ effect: "unverified" });
+    };
+    const port = await openBrowserWorker(
+        {},
+        { ...grant, uploads: true },
+        controller.signal,
+        () =>
+            Promise.resolve({
+                signal: controller.signal,
+                request: async (body) => {
+                    await Bun.sleep(0);
+                    const command = v.parse(browserWorkerRequestSchema, {
+                        id: ++sequence,
+                        body,
+                    });
+                    return f.send(sequence, command.body.method, command.body.params);
+                },
+                close: async () => {
+                    controller.abort();
+                    f.input.end();
+                    await f.done;
+                },
+            })
+    );
+    const modelView = await port.observe(controller.signal);
+    expect(modelView.refs).toEqual([]);
+    const operator = await port.observe(controller.signal, true);
+    expect(operator.refs[0]?.actions).toEqual(["upload"]);
+    const input = { observationId: operator.observationId, ref: "p1:2" };
+    expect(await port.upload(input, file, controller.signal)).toEqual({
+        effect: "unverified",
+    });
+    expect(uploads).toBe(1);
+    await assert.rejects(port.upload(input, file, controller.signal));
+    expect(uploads).toBe(1);
+    expect(f.closes()).toBe(1);
+});
+
+test("worker closes incomplete uploads on disconnect, interleaving or missing capability", async () => {
+    for (const interruption of ["disconnect", "observe", "denied"] as const) {
+        const f = childFixture();
+        await f.send(
+            1,
+            "initialize",
+            interruption === "denied" ? grant : { ...grant, uploads: true }
+        );
+        const params = {
+            input: { observationId: crypto.randomUUID(), ref: "p1:1" },
+            file: { name: "fixture.txt", size: 1, sha256: "a".repeat(64) },
+        };
+        if (interruption === "denied") f.write(2, "uploadBegin", params);
+        else {
+            await f.send(2, "uploadBegin", params);
+            if (interruption === "disconnect") f.input.end();
+            else f.write(3, "observe", {});
+        }
+        await f.done;
+        expect(f.closes()).toBe(1);
+        expect(f.calls).not.toContain("observe");
+    }
 });

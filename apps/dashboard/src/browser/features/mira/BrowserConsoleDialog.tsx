@@ -21,6 +21,7 @@ import type * as v from "valibot";
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
 import { BrowserPageControls } from "./BrowserPageControls";
+import { BrowserUploadControls } from "./BrowserUploadControls";
 import { useBrowserCommand } from "./useBrowserCommand";
 
 /**
@@ -208,6 +209,21 @@ export function BrowserConsoleDialog({
                                 onCommand={send}
                             />
                         )}
+                        {access.mode === "control" &&
+                            (access.origins.length === 1 ? (
+                                <BrowserUploadControls
+                                    now={now}
+                                    accessId={access.id}
+                                    preview={preview ?? null}
+                                    disabled={Boolean(busy) || !inputFresh}
+                                    onCommand={send}
+                                />
+                            ) : (
+                                <p className="text-sm text-primary-400">
+                                    To upload an attachment, start browser access for one
+                                    website.
+                                </p>
+                            ))}
                         {preview && !inputFresh && (
                             <p className="text-sm text-primary-400">
                                 Refresh the view before the next click or text entry.

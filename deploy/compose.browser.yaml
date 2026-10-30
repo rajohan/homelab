@@ -48,8 +48,15 @@ services:
       HOMELAB_DASHBOARD_DATABASE_URL:
       HOMELAB_MIRA_BROWSER_CONFIG: /etc/homelab-mira/browser.json
       HOMELAB_MIRA_BROWSER_HEALTH_PORT: "3441"
+      HOMELAB_MIRA_FILES_DIR: /var/lib/mira/files
     group_add: ["${HOMELAB_DOCKER_GID:?Set the local Docker socket group ID}"]
     volumes:
+      - type: bind
+        source: ${HOMELAB_MIRA_FILES_DIR:?Set the private shared attachment directory}
+        target: /var/lib/mira/files
+        read_only: true
+        bind:
+          create_host_path: false
       - type: bind
         source: ${HOMELAB_MIRA_BROWSER_CONFIG:?Set the nonsecret browser host JSON path}
         target: /etc/homelab-mira/browser.json
@@ -74,7 +81,7 @@ services:
     restart: unless-stopped
     stop_grace_period: 35s
     cpus: 1
-    mem_limit: 256m
+    mem_limit: 512m
     pids_limit: 64
     tmpfs: ["/tmp:rw,nosuid,nodev,size=16m,mode=1777"]
     healthcheck:

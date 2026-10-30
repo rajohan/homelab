@@ -1,0 +1,59 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "8c5a066b-b20b-4142-98f0-171200715cb4",
+    "prevIds": ["3a9a099b-d85c-4583-aac9-66fc8dc02559"],
+    "footprints": [
+        {
+            "statementType": "alter_check",
+            "statementTarget": ["table", "public", "mira_browser_commands"],
+            "writes": ["s|ck|public.mira_browser_commands.mira_browser_commands_method"],
+            "reads": [
+                "n|tbl|public.mira_browser_commands",
+                "n|sch|public",
+                "n|col|public.mira_browser_commands.method",
+                "e|col|public.mira_browser_commands.method"
+            ],
+            "sqlHash": "2acd1d707c121622"
+        },
+        {
+            "statementType": "alter_check",
+            "statementTarget": ["table", "public", "mira_browser_consoles"],
+            "writes": ["s|ck|public.mira_browser_consoles.mira_browser_console_state"],
+            "reads": [
+                "n|tbl|public.mira_browser_consoles",
+                "n|sch|public",
+                "n|col|public.mira_browser_consoles.state",
+                "n|col|public.mira_browser_consoles.payload",
+                "n|col|public.mira_browser_consoles.method",
+                "n|col|public.mira_browser_consoles.expires_at",
+                "n|col|public.mira_browser_consoles.controller",
+                "n|col|public.mira_browser_consoles.command_id",
+                "e|col|public.mira_browser_consoles.state",
+                "e|col|public.mira_browser_consoles.payload",
+                "e|col|public.mira_browser_consoles.method",
+                "e|col|public.mira_browser_consoles.expires_at",
+                "e|col|public.mira_browser_consoles.controller",
+                "e|col|public.mira_browser_consoles.command_id"
+            ],
+            "sqlHash": "8b4d52dce0943cf0"
+        }
+    ],
+    "deltas": [
+        {
+            "op": "alter",
+            "key": "checks\u0000[\"public\",\"mira_browser_commands\",\"mira_browser_commands_method\"]",
+            "set": {
+                "value": "\"method\" IN ('observe','navigate','act','upload')"
+            }
+        },
+        {
+            "op": "alter",
+            "key": "checks\u0000[\"public\",\"mira_browser_consoles\",\"mira_browser_console_state\"]",
+            "set": {
+                "value": "(\"state\"='idle' AND \"payload\" IS NULL AND \"method\" IS NULL AND \"expires_at\" IS NULL) OR (\"state\" IN ('queued','claimed') AND \"controller\"='human' AND \"command_id\" IS NOT NULL AND \"method\" IN ('observe','navigate','act','upload') AND \"expires_at\" IS NOT NULL AND ((\"state\"='queued' AND \"payload\" IS NOT NULL) OR (\"state\"='claimed' AND \"payload\" IS NULL)))"
+            }
+        }
+    ]
+}

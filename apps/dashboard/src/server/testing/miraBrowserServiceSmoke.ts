@@ -12,7 +12,9 @@ import {
     transferMiraBrowserControl,
     enqueueMiraBrowserHumanCommand,
 } from "@homelab/mira/data/browserConsole";
+import { listMiraBrowserUploads } from "@homelab/mira/data/browserUploads";
 import { createConversation, enqueueTurn } from "@homelab/mira/data/conversations";
+import { saveMiraFile } from "@homelab/mira/data/files";
 import { claimMiraRun } from "@homelab/mira/data/queue";
 
 import { createTestDatabase } from "../../../../../tests/database";
@@ -71,12 +73,19 @@ export async function main() {
             context,
             "Synthetic native browser service"
         );
+        const attachmentBytes = new Uint8Array(100_003).fill(97);
+        const attachmentDirectory = path.join(temporary, "files");
+        const attachment = await saveMiraFile(context, attachmentDirectory, {
+            id: crypto.randomUUID(),
+            name: "approved-fixture.txt",
+            bytes: attachmentBytes,
+        });
         await db.client.begin((query) =>
             enqueueTurn(query, context, {
                 conversationId: conversation.id,
                 requestId: crypto.randomUUID(),
                 text: "Inspect the synthetic offline website.",
-                attachmentIds: [],
+                attachmentIds: [attachment.id],
             })
         );
         const run = await claimMiraRun(db.client, crypto.randomUUID(), "foreground");
@@ -112,6 +121,7 @@ export async function main() {
                     HOME: temporary,
                     HOMELAB_DASHBOARD_DATABASE_URL: allocation.url,
                     HOMELAB_MIRA_BROWSER_CONFIG: config,
+                    HOMELAB_MIRA_FILES_DIR: attachmentDirectory,
                     HOMELAB_MIRA_BROWSER_HEALTH_PORT: String(healthPort),
                 },
                 stdin: "ignore",
@@ -290,6 +300,80 @@ export async function main() {
             count: 2,
             trusted: true,
         });
+        const uploadView = await humanCommand({
+            id: grant.id,
+            epoch: human.epoch,
+            commandId: crypto.randomUUID(),
+            operation: { method: "observe" },
+        });
+        const uploadTarget = uploadView.preview?.refs.find((item) =>
+            item.actions.includes("upload")
+        );
+        assert.ok(uploadView.preview);
+        assert.ok(uploadTarget);
+        const files = await listMiraBrowserUploads(context, { id: grant.id });
+        assert.equal(files.length, 1);
+        await humanCommand({
+            id: grant.id,
+            epoch: human.epoch,
+            commandId: crypto.randomUUID(),
+            operation: {
+                method: "upload",
+                origin: "http://127.0.0.1:4173",
+                input: {
+                    observationId: uploadView.preview.observationId,
+                    ref: uploadTarget.ref,
+                },
+                file: files[0]!,
+            },
+        });
+        // Native assignment must retain the file until the later form submission.
+        const submitView = await humanCommand({
+            id: grant.id,
+            epoch: human.epoch,
+            commandId: crypto.randomUUID(),
+            operation: { method: "observe" },
+        });
+        const submit = submitView.preview?.refs.find(
+            (item) =>
+                item.label === "Submit fixture file" && item.actions.includes("click")
+        );
+        assert.ok(submitView.preview);
+        assert.ok(submit);
+        await humanCommand({
+            id: grant.id,
+            epoch: human.epoch,
+            commandId: crypto.randomUUID(),
+            operation: {
+                method: "act",
+                input: {
+                    action: "click",
+                    observationId: submitView.preview.observationId,
+                    ref: submit.ref,
+                },
+            },
+        });
+        let uploaded: unknown;
+        for (let attempt = 0; attempt < 100; attempt++) {
+            try {
+                uploaded = JSON.parse(
+                    await docker(
+                        "exec",
+                        selected,
+                        "cat",
+                        "/tmp/mira-browser-upload-proof.json"
+                    )
+                );
+                break;
+            } catch {
+                await Bun.sleep(20);
+            }
+        }
+        assert.deepEqual(uploaded, {
+            name: attachment.name,
+            size: attachmentBytes.length,
+            sha256: files[0]!.sha256,
+        });
         await transferMiraBrowserControl(context, {
             id: grant.id,
             epoch: human.epoch,
@@ -315,6 +399,7 @@ export async function main() {
             JSON.stringify({
                 humanTakeover: true,
                 privateOperatorInput: true,
+                approvedUpload: true,
                 returnedToMira: true,
                 builtHost: true,
                 durableQueue: true,

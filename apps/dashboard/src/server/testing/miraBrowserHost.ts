@@ -14,6 +14,8 @@ import {
     BrowserProfileTransfer,
     browserProfileParts,
 } from "../../../../mira/src/server/browsing/profileTransfer";
+import type { BrowserUploadFile } from "../../../../mira/src/server/browsing/upload";
+import { BrowserUploadTransfer } from "../../../../mira/src/server/browsing/uploadTransfer";
 import { syntheticRedImage } from "../../../../mira/src/server/testing/image";
 import { appRouter } from "../api/router";
 import { operationFixture } from "./operations";
@@ -80,6 +82,8 @@ export async function browserHostFixture(enabled = true) {
         exists: false,
         failCreate: false,
         holdInput: false,
+        uploadInput: false,
+        uploads: [] as BrowserUploadFile[],
         observationText: "",
         paddedImage: false,
         rejectCreate: null as number | null,
@@ -171,6 +175,7 @@ export async function browserHostFixture(enabled = true) {
         );
         let buffered = "";
         const restore = new BrowserProfileTransfer();
+        const upload = new BrowserUploadTransfer();
         let prepared = false;
         stream.on("end", () => {
             if (prepared && !engine.omitCheckpoint) {
@@ -204,6 +209,15 @@ export async function browserHostFixture(enabled = true) {
                         prepared = true;
                     }
                     result = { accepted: true };
+                } else if (message.body.method === "uploadBegin") {
+                    upload.begin(message.body.params);
+                    result = { accepted: true };
+                } else if (message.body.method === "uploadPart") {
+                    upload.accept(message.body.params);
+                    result = { accepted: true };
+                } else if (message.body.method === "uploadFinish") {
+                    engine.uploads.push(upload.finish().file);
+                    result = { effect: "unverified" };
                 } else if (message.body.method === "initialize")
                     result = { version: 1, driver: "0.37.0" };
                 else if (message.body.method === "observe")
@@ -227,7 +241,9 @@ export async function browserHostFixture(enabled = true) {
                                       ref: "p1:1",
                                       role: "button",
                                       label: "Synthetic action",
-                                      actions: ["click", "type"],
+                                      actions: engine.uploadInput
+                                          ? ["upload"]
+                                          : ["click", "type"],
                                   },
                               ],
                         width: 64,

@@ -32,10 +32,16 @@ export function BrowserPageControls({
                     disabled={disabled}
                     options={[
                         { value: "", label: "Choose an element" },
-                        ...(preview?.refs ?? []).map((item) => ({
-                            value: item.ref,
-                            label: `${item.role}: ${item.label || item.ref}`,
-                        })),
+                        ...(preview?.refs ?? [])
+                            .filter(
+                                (item) =>
+                                    item.actions.includes("click") ||
+                                    item.actions.includes("type")
+                            )
+                            .map((item) => ({
+                                value: item.ref,
+                                label: `${item.role}: ${item.label || item.ref}`,
+                            })),
                     ]}
                 />
             </FormField>

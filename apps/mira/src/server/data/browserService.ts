@@ -20,6 +20,7 @@ import {
     recoverMiraBrowserProcesses,
 } from "./browserHost";
 import { retireBrowserCommands } from "./browserRetirement";
+import { readMiraFile } from "./files";
 
 export interface MiraBrowserHealth {
     ready: boolean;
@@ -40,6 +41,7 @@ export async function runMiraBrowserHost(
         configuration: unknown;
         signal: AbortSignal;
         health: MiraBrowserHealth;
+        filesDirectory?: string | undefined;
     },
     dependencies: {
         open?: typeof openMiraBrowserSession;
@@ -95,7 +97,35 @@ export async function runMiraBrowserHost(
                     result = await current.observe(operation, Boolean(humanCommand));
                 else if (command.operation.method === "navigate")
                     result = await current.navigate(command.operation.url, operation);
-                else result = await current.act(command.operation.input, operation);
+                else if (command.operation.method === "upload") {
+                    if (!humanCommand)
+                        throw new Error("Only a human can select browser uploads.");
+                    const selected = command.operation.file;
+                    const file = await readMiraFile(
+                        context,
+                        options.filesDirectory,
+                        selected.id
+                    );
+                    operation.throwIfAborted();
+                    if (
+                        file.metadata.name !== selected.name ||
+                        file.metadata.bytes !== selected.size ||
+                        new Bun.CryptoHasher("sha256")
+                            .update(file.bytes)
+                            .digest("hex") !== selected.sha256
+                    )
+                        throw new Error("The confirmed attachment has changed.");
+                    result = await current.upload(
+                        command.operation.input,
+                        {
+                            name: selected.name,
+                            size: selected.size,
+                            sha256: selected.sha256,
+                            bytes: file.bytes,
+                        },
+                        operation
+                    );
+                } else result = await current.act(command.operation.input, operation);
                 operation.throwIfAborted();
                 if (
                     !(humanCommand

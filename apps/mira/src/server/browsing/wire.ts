@@ -5,6 +5,7 @@ import * as v from "valibot";
 import { runtimeContentItems } from "../runtime/toolResult";
 import { browserGrant, browserUrl } from "./policy";
 import { browserProfilePartSchema } from "./profileTransfer";
+import { browserUploadHeaderSchema, browserUploadPartSchema } from "./uploadTransfer";
 
 export const browserWorkerExecutable = "/usr/lib/chromium/chromium";
 const address = v.pipe(v.string(), v.minLength(1), v.maxLength(2048));
@@ -12,6 +13,7 @@ const grantSchema = v.strictObject({
     origins: v.pipe(v.array(address), v.minLength(1), v.maxLength(16)),
     initialUrl: address,
     mode: v.picklist(["view", "control"]),
+    uploads: v.optional(v.literal(true)),
 });
 const ref = v.pipe(v.string(), v.regex(/^p[0-9]{1,16}:[0-9]{1,6}$/));
 const observationId = v.pipe(v.string(), v.uuid());
@@ -38,14 +40,23 @@ export const browserWorkerRequestSchema = v.strictObject({
             params: v.strictObject({ url: address }),
         }),
         v.strictObject({ method: v.literal("act"), params: browserActionSchema }),
+        v.strictObject({
+            method: v.literal("uploadBegin"),
+            params: browserUploadHeaderSchema,
+        }),
+        v.strictObject({
+            method: v.literal("uploadPart"),
+            params: browserUploadPartSchema,
+        }),
+        v.strictObject({ method: v.literal("uploadFinish"), params: v.strictObject({}) }),
     ]),
 });
 const bounded = (limit: number) => v.pipe(v.string(), v.maxLength(limit));
 const dimension = v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(8192));
 const actionsSchema = v.pipe(
-    v.array(v.picklist(["click", "type"])),
+    v.array(v.picklist(["click", "type", "upload"])),
     v.minLength(1),
-    v.maxLength(2)
+    v.maxLength(3)
 );
 const frameSchema = v.strictObject({
     observationId,

@@ -14,6 +14,7 @@ import { BrowserAccessDialog } from "./BrowserAccessDialog";
 import { BrowserAccessPanel } from "./BrowserAccessPanel";
 import { BrowserConsoleDialog } from "./BrowserConsoleDialog";
 import { BrowserPageControls } from "./BrowserPageControls";
+import { BrowserUploadControls } from "./BrowserUploadControls";
 
 function run(): MiraRun {
     return {
@@ -491,5 +492,84 @@ test("profile creation and deletion stay explicit human actions with confirmatio
     } finally {
         f.close();
         wire.close();
+    }
+});
+
+test("attachment upload requires explicit confirmation and freezes the website, file and observation", async () => {
+    const current = run(),
+        access = grant(current),
+        f = fixture(current, [access], null);
+    const now = Date.now();
+    const file = {
+        id: crypto.randomUUID(),
+        name: "document.txt",
+        size: 1025,
+        sha256: "a".repeat(64),
+    };
+    const key = ["operations", "mira", "browser-uploads", access.id];
+    f.query.setQueryData(key, [file]);
+    const image = {
+        ...preview(),
+        refs: [
+            {
+                ref: "p1:1",
+                role: "file",
+                label: "Upload document",
+                actions: ["upload" as const],
+            },
+        ],
+    };
+    const sent: unknown[] = [];
+    const show = (view = image, disabled = false, time = now) =>
+        f.rerender(
+            <BrowserUploadControls
+                accessId={access.id}
+                preview={view}
+                disabled={disabled}
+                now={time}
+                onCommand={(input) => sent.push(input)}
+            />
+        );
+    const user = userEvent.setup();
+    try {
+        show();
+        expect(screen.getByRole("button", { name: "Review upload" })).toBeDisabled();
+        await user.click(
+            screen.getByRole("button", { name: /^Conversation attachment/ })
+        );
+        await user.click(screen.getByRole("option", { name: /document.txt/ }));
+        await user.click(screen.getByRole("button", { name: /^File input on the page/ }));
+        await user.click(screen.getByRole("option", { name: "Upload document" }));
+        await user.click(screen.getByRole("button", { name: "Review upload" }));
+        expect(sent).toEqual([]);
+        expect(
+            screen.getByRole("dialog", { name: "Upload attachment" })
+        ).toHaveTextContent(new URL(image.url).origin);
+        expect(
+            screen.getByRole("dialog", { name: "Upload attachment" })
+        ).toHaveTextContent("document.txt");
+        show({ ...image, observationId: crypto.randomUUID() });
+        expect(
+            screen.getByRole("button", { name: "Send file to website" })
+        ).toBeDisabled();
+        await user.click(screen.getByRole("button", { name: "Cancel" }));
+        show();
+        await user.click(screen.getByRole("button", { name: "Review upload" }));
+        show(image, false, now + 11_000);
+        expect(
+            screen.getByRole("button", { name: "Send file to website" })
+        ).toBeDisabled();
+        show();
+        await user.click(screen.getByRole("button", { name: "Send file to website" }));
+        expect(sent).toEqual([
+            {
+                method: "upload",
+                input: { observationId: image.observationId, ref: "p1:1" },
+                origin: new URL(image.url).origin,
+                file,
+            },
+        ]);
+    } finally {
+        f.close();
     }
 });

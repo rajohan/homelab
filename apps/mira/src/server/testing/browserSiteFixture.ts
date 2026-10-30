@@ -8,6 +8,24 @@ export function browserSiteFixture() {
         port: 4173,
         fetch: async (request) => {
             const pathname = new URL(request.url).pathname;
+            if (pathname === "/upload" && request.method === "POST") {
+                const data = await request.formData();
+                const file = data.get("attachment");
+                if (!(file instanceof File))
+                    return new Response("Missing file", { status: 400 });
+                const bytes = new Uint8Array(await file.arrayBuffer());
+                await Bun.write(
+                    "/tmp/mira-browser-upload-proof.json",
+                    JSON.stringify({
+                        name: file.name,
+                        size: bytes.length,
+                        sha256: new Bun.CryptoHasher("sha256")
+                            .update(bytes)
+                            .digest("hex"),
+                    })
+                );
+                return new Response("Stored fixture");
+            }
             if (pathname === "/profile/save")
                 return new Response(null, {
                     status: 302,
@@ -31,7 +49,9 @@ export function browserSiteFixture() {
             return new Response(
                 `<!doctype html><title>Worker fixture</title>
                 <label>Fixture text<input id="entry"></label><button id="counter">Count</button>
+                <form id="upload"><label>Fixture file<input type="file" name="attachment"></label><button>Submit fixture file</button></form>
                 <script>
+                document.getElementById('upload').addEventListener('submit',e=>{e.preventDefault();fetch('/upload',{method:'POST',body:new FormData(e.target)})});
                 let count=0;const entry=document.getElementById('entry');
                 function record(event){fetch('/event',{method:'POST',body:JSON.stringify({text:entry.value,count,trusted:event.isTrusted})});}
                 entry.addEventListener('input',record);

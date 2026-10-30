@@ -105,7 +105,10 @@ export function browserHostEnvironment() {
     const url = new URL(databaseUrl);
     if (!["postgres:", "postgresql:"].includes(url.protocol) || url.pathname === "/")
         throw new Error("A product database is required.");
-    return { file, databaseUrl, port };
+    const filesDirectory = process.env.HOMELAB_MIRA_FILES_DIR;
+    if (filesDirectory !== undefined && !path.isAbsolute(filesDirectory))
+        throw new Error("Browser host attachment storage must be an absolute path.");
+    return { file, databaseUrl, port, filesDirectory };
 }
 
 /**

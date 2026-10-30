@@ -11,7 +11,7 @@ export const browserUploadActionSchema = v.strictObject({
     observationId: v.pipe(v.string(), v.uuid()),
     ref: v.pipe(v.string(), v.regex(/^p[0-9]{1,16}:[0-9]{1,6}$/)),
 });
-const fileSchema = v.strictObject({
+export const browserUploadFileSchema = v.strictObject({
     name: v.pipe(
         v.string(),
         v.minLength(1),
@@ -32,7 +32,10 @@ const fileSchema = v.strictObject({
 });
 
 /** Exact immutable attachment bytes selected by the trusted host, never a model path. */
-export type BrowserUploadFile = v.InferOutput<typeof fileSchema>;
+export type BrowserUploadFile = Omit<
+    v.InferOutput<typeof browserUploadFileSchema>,
+    "bytes"
+> & { bytes: Uint8Array };
 
 /**
  * Create a private staging area inside the session's disposable directory.
@@ -50,7 +53,7 @@ export async function createBrowserUploads(directory: string) {
         root,
         stage: async (input: BrowserUploadFile, signal: AbortSignal) => {
             signal.throwIfAborted();
-            const file = v.parse(fileSchema, input);
+            const file = v.parse(browserUploadFileSchema, input);
             if (
                 file.bytes.byteLength !== file.size ||
                 bytes + file.size > browserUploadLimit ||

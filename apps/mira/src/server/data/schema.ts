@@ -1086,7 +1086,7 @@ export const miraBrowserCommands = pgTable(
             .where(sql`${t.state} IN ('queued','claimed','completed')`),
         check(
             "mira_browser_commands_method",
-            sql`${t.method} IN ('observe','navigate','act')`
+            sql`${t.method} IN ('observe','navigate','act','upload')`
         ),
         check(
             "mira_browser_commands_state",
@@ -1137,7 +1137,7 @@ export const miraBrowserConsoles = pgTable(
         ),
         check(
             "mira_browser_console_state",
-            sql`(${t.state}='idle' AND ${t.payload} IS NULL AND ${t.method} IS NULL AND ${t.expiresAt} IS NULL) OR (${t.state} IN ('queued','claimed') AND ${t.controller}='human' AND ${t.commandId} IS NOT NULL AND ${t.method} IN ('observe','navigate','act') AND ${t.expiresAt} IS NOT NULL AND ((${t.state}='queued' AND ${t.payload} IS NOT NULL) OR (${t.state}='claimed' AND ${t.payload} IS NULL)))`
+            sql`(${t.state}='idle' AND ${t.payload} IS NULL AND ${t.method} IS NULL AND ${t.expiresAt} IS NULL) OR (${t.state} IN ('queued','claimed') AND ${t.controller}='human' AND ${t.commandId} IS NOT NULL AND ${t.method} IN ('observe','navigate','act','upload') AND ${t.expiresAt} IS NOT NULL AND ((${t.state}='queued' AND ${t.payload} IS NOT NULL) OR (${t.state}='claimed' AND ${t.payload} IS NULL)))`
         ),
         check(
             "mira_browser_console_size",

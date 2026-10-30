@@ -1,17 +1,18 @@
 import {
     miraBrowserConsoleSchema,
     miraBrowserHumanCommandSchema,
+    miraBrowserHumanOperationSchema,
     miraBrowserTransferSchema,
     type MiraBrowserConsole,
 } from "@homelab/contracts/miraBrowser";
 import type { SQL, TransactionSQL } from "bun";
 import * as v from "valibot";
 
-import { browserCommandSchema, type BrowserCommand } from "../browsing/command";
 import { browserUrl } from "../browsing/policy";
 import { browserWorkerFrame } from "../browsing/wire";
 import { lockBrowserOwner, readBrowserAccess } from "./browserAccess";
 import { retireBrowserCommands } from "./browserRetirement";
+import { requireBrowserUpload } from "./browserUploads";
 import { auditMira, MiraFailure, type MiraContext } from "./context";
 
 type Frame = ReturnType<typeof browserWorkerFrame>;
@@ -145,19 +146,23 @@ export async function transferMiraBrowserControl(
 export async function requireBrowserObservation(
     query: TransactionSQL,
     id: string,
-    operation: BrowserCommand
+    operation: v.InferOutput<typeof miraBrowserHumanOperationSchema>
 ) {
-    if (operation.method !== "act") return;
+    if (operation.method !== "act" && operation.method !== "upload") return;
     const [row] = await query<
         { frame: Frame }[]
     >`SELECT frame FROM mira_browser_consoles WHERE access_id=${id} AND frame IS NOT NULL AND frame_at>clock_timestamp()-(CASE WHEN controller='human' THEN interval '60 seconds' ELSE interval '10 seconds' END)`;
     if (
         !row ||
         row.frame.observationId !== operation.input.observationId ||
+        (operation.method === "upload" &&
+            new URL(row.frame.url).origin !== operation.origin) ||
         !row.frame.refs.some(
             (item) =>
                 item.ref === operation.input.ref &&
-                item.actions.includes(operation.input.action)
+                item.actions.includes(
+                    operation.method === "upload" ? "upload" : operation.input.action
+                )
         )
     )
         throw new MiraFailure(
@@ -176,7 +181,7 @@ export async function enqueueMiraBrowserHumanCommand(
     input: unknown
 ): Promise<void> {
     const request = v.parse(miraBrowserHumanCommandSchema, input);
-    const operation = v.parse(browserCommandSchema, request.operation);
+    const operation = v.parse(miraBrowserHumanOperationSchema, request.operation);
     await context.client.begin(async (query) => {
         const { access, console } = await human(query, context, request.id);
         if (
@@ -186,7 +191,13 @@ export async function enqueueMiraBrowserHumanCommand(
             (await modelBusy(query, request.id))
         )
             throw unavailable();
-        if (operation.method === "act" && access.mode !== "control") throw unavailable();
+        if (
+            (operation.method === "act" || operation.method === "upload") &&
+            access.mode !== "control"
+        )
+            throw unavailable();
+        if (operation.method === "upload")
+            await requireBrowserUpload(query, context.owner, request.id, operation);
         if (operation.method === "navigate") {
             try {
                 browserUrl(operation.url, access.policy!.origins);
