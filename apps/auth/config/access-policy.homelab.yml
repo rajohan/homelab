@@ -2,9 +2,6 @@
 # Not activated. First matching resource rule wins; application tokens still apply.
 # RE2 expressions match the normalized URL path, without its query string.
 routes:
-  - origin: https://aiomanager.home.rajohan.no
-    groups: [admins]
-    publicPaths: [/hydra/status, /hydra/reinstall, /hydra/register]
   - origin: https://jackett.home.rajohan.no
     groups: [admins]
   - origin: https://bitmagnet.home.rajohan.no
@@ -20,8 +17,6 @@ routes:
   - origin: https://tools.home.rajohan.no
     groups: [admins]
   - origin: https://links.home.rajohan.no
-    groups: [admins]
-  - origin: https://openclaw.home.rajohan.no
     groups: [admins]
   - origin: https://aiostreams.rajohan.no
     groups: [admins]

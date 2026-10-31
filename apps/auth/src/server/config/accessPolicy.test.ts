@@ -64,14 +64,15 @@ test("preserves public Stremio APIs without exposing nested or encoded administr
     expect(decision("aiometadata.rajohan.no", "/catalogue/a").policy).toBe("two_factor");
 });
 
-test("preserves the three exact Hydra exceptions and protects all ten administration origins", () => {
-    for (const path of ["/hydra/status", "/hydra/register", "/hydra/reinstall"])
-        expect(decision("aiomanager.home.rajohan.no", path).policy).toBe("bypass");
-    expect(decision("aiomanager.home.rajohan.no", "/hydra/status/extra").policy).toBe(
-        "two_factor"
-    );
+test("protects current administration origins without retaining retired service routes", () => {
+    for (const retired of ["aiomanager", "openclaw"])
+        expect(
+            policy.routes.some(
+                (route) => route.origin === `https://${retired}.home.rajohan.no`
+            )
+        ).toBe(false);
     expect(policy.routes.filter((route) => route.origin.includes(".home.")).length).toBe(
-        10
+        8
     );
     for (const route of policy.routes) {
         validateResourceRules(route);

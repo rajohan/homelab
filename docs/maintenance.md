@@ -77,10 +77,10 @@ the remote host immediately before mutation. Failure never requests the restart.
 The Homelab DNS recipes check the other node's real DNS response. Sentinel host
 restart also requires UPS mains power; PBS host/API restarts require no active tasks.
 
-The catalog covers 11 hosts and 54 services. Eight worker/database dependencies
+The catalog covers 11 hosts and 58 services. Eight worker/database dependencies
 remain externally managed: Main/PVE/DB hosts, the Main worker/Docker/containerd,
 and PostgreSQL/PgBouncer. Their reason is visible in Restarts instead of silently
-omitting them. Docker applications keep their existing confirmed controls in
+omitting them. Mira executor, browser host, both browser network slots and mail tunnel have explicit service recipes. Docker applications keep their existing confirmed controls in
 Applications. CLI tools, one-shot backup binaries and package managers have no
 long-running service to restart. Shared runtimes are covered by their consumers.
 
@@ -168,3 +168,42 @@ exact migration inventory. Prefer a forward repair release. A full rollback need
 the matching prior database backup and image pair under a separate recovery plan;
 restoring it can discard newer operational history. Keep the normal external deploy
 procedure for Auth/dashboard/worker and their infrastructure dependencies.
+
+## Build cache retention
+
+Main uses the checked-in `deploy/maintenance/homelab-build-cache-cleanup.service`
+and `.timer` to prune unused records in Docker's default builder at 04:30, with
+up to fifteen minutes of random delay. Persistent scheduling catches up after a
+missed run. `docker buildx prune --max-used-space 20GB --all --force` reduces the
+cache toward 20 GB when eligible records are available; actively used records can
+keep usage above that target. This is not a filesystem quota.
+
+Install both units in `/etc/systemd/system/`, run `systemctl daemon-reload`, then
+`systemctl enable --now homelab-build-cache-cleanup.timer`. Inspect the next run
+with `systemctl list-timers homelab-build-cache-cleanup.timer` and the last outcome
+with `systemctl status homelab-build-cache-cleanup.service`. This requires the
+existing Docker Buildx plugin. It does not restart Docker or prune application
+images, containers, volumes, databases or release recovery backups.
+
+Development worktrees, preview processes and test images belong to their current
+qualification only. Remove them after their receipts have been preserved and no
+process or container references them. Keep production checkouts and explicitly
+identified recovery backups. Do not replace this with a broad age-based purge of
+`/srv` or `/var/tmp`; those locations also hold runtime state and recovery evidence.
+
+## Retiring the legacy agent
+
+The packaged catalog no longer includes AIOManager, OpenClaw, or the Codex CLI
+inside OpenClaw's private runtime. Mira and its pinned Codex runtime update through
+the Homelab release. Keep the ordinary Bun, Node and GitHub CLI update targets.
+
+At cutover, remove the matching live update/restart entries and
+`openclawManifest`/legacy Codex inventory source, then refresh inventory. Main has
+no remaining native application resource entries: disable its
+`homelab-native-resources.timer` and remove only its generated
+`native-resources.prom` output. Other hosts keep their native collectors. Mira
+continues to use the Docker resource collector. Before removing OpenClaw's
+workspace, detach code-server's `40-openclaw-view.conf` and ownership-view mount;
+retain its ordinary workspace, settings and independent GitHub credentials.
+Stop and disable the OpenClaw gateway, listener and secret-delivery services only
+after the new Mira runtime and provider connections are qualified.

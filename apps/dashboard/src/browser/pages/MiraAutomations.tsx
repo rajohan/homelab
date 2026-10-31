@@ -21,6 +21,7 @@ import { useState } from "react";
 import { api } from "../api/client";
 import { AutomationEditor } from "../features/mira/AutomationEditor";
 import { ImprovementPermission } from "../features/mira/ImprovementPermission";
+import { MiraBrowserControl } from "../features/mira/MiraBrowserControl";
 import { MiraDisableDialog } from "../features/mira/MiraDisableDialog";
 import { MiraIntegrations } from "../features/mira/MiraIntegrations";
 import { MiraRunHistory } from "../features/mira/MiraRunHistory";
@@ -272,6 +273,7 @@ export function MiraAutomations() {
                 </Button>
             )}
             <MiraIntegrations />
+            <MiraBrowserControl />
             <MiraSkills />
             <MiraRunHistory />
             {editing && (
