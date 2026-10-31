@@ -4,6 +4,7 @@ import {
     Button,
     Card,
     ErrorNotice,
+    formatDateTime,
     LoadingState,
     SectionHeader,
 } from "@homelab/ui";
@@ -65,7 +66,10 @@ export function MiraBrowserControl() {
             {controls.isPending && <LoadingState label="Loading browser control…" />}
             {error && <ErrorNotice error={error} />}
             {control && !control.enabled && control.reason && (
-                <p className="text-sm text-primary-400">{control.reason}</p>
+                <p className="text-sm text-primary-400">
+                    {control.reason}
+                    {control.until ? ` · Resumes ${formatDateTime(control.until)}` : ""}
+                </p>
             )}
             {paused && (
                 <MiraDisableDialog

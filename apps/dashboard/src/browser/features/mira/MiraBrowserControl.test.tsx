@@ -1,6 +1,7 @@
 import { expect, spyOn, test } from "bun:test";
 
 import type { MiraSwitch } from "@homelab/contracts/mira";
+import { formatDateTime } from "@homelab/ui";
 import { IdentityClient } from "@homelab/ui/identity/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
@@ -10,7 +11,7 @@ import { serialize } from "superjson";
 import { IdentityClientContext } from "../../identity/IdentityClientContext";
 import { MiraBrowserControl } from "./MiraBrowserControl";
 
-function fixture(enabled: boolean) {
+function fixture(enabled: boolean, until: string | null = null) {
     const sent: { url: string; body: unknown }[] = [];
     const network = spyOn(globalThis, "fetch").mockImplementation(
         Object.assign(
@@ -34,7 +35,7 @@ function fixture(enabled: boolean) {
         enabled,
         version: 7,
         reason: enabled ? null : "Awaiting browser qualification",
-        until: null,
+        until,
     };
     const query = new QueryClient({
         defaultOptions: {
@@ -119,6 +120,20 @@ test("Browser pause uses the shared reason dialog independently of automatic wor
                 },
             },
         });
+    } finally {
+        f.close();
+    }
+});
+
+test("Browser status keeps the automatic resume time visible after the pause dialog closes", () => {
+    const until = "2026-11-02T09:30:00.000Z";
+    const f = fixture(false, until);
+    try {
+        expect(screen.getByText(/Awaiting browser qualification/)).toHaveTextContent(
+            `Awaiting browser qualification · Resumes ${formatDateTime(until)}`
+        );
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+        expect(f.sent).toHaveLength(0);
     } finally {
         f.close();
     }
