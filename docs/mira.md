@@ -31,16 +31,16 @@ not the reserved light infrastructure worker.
 
 ## Delivery sequence
 
-| Delivery                   | Scope                                                                                                                        | Status                                                                                                                                                     |
-| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Runtime qualification      | Separate ChatGPT login; streaming, host tools, interruption and process replacement                                          | Implemented; isolated live qualification passed                                                                                                            |
-| Chat and files             | Owned conversations, streaming, cancellation, search/archive/delete, bounded uploads and editable memory                     | Implemented; synthetic preview and live text/PDF/image qualification passed                                                                                |
-| Tasks                      | Four-column drag-and-drop board, keyboard controls, search/filters, versioned edits, progress and conversation links         | Board, product tools and [explicit task execution](mira-tasks.md) implemented; resource-context actions pending                                            |
-| Automations and Reports    | Durable scheduler, heartbeat, reasoned individual/global pause, run history, report snapshots and deduplicated notifications | Core implemented; migrated presets installed paused; live qualification and activation pending                                                             |
-| Computer control           | Dedicated browser, required Windows pairing, scoped controls, preview, local stop and takeover                               | Windows companion and browser host/Chat queue implemented; external browser egress, live Windows and private-route acceptance pending                      |
-| Voice                      | Shared conversation context, provider qualification and explicit billing limits                                              | Pending; no paid voice budget enabled                                                                                                                      |
-| Migration and integrations | Validated legacy imports, AgentMail, Daytona, here.now and Moltbook adapters                                                 | AgentMail delivery/attachments, here.now publication, Moltbook participation and reviewed Daytona jobs implemented; live qualification and cutover pending |
-| Self-update                | Exact verified releases, independent deployment runner, receipts, health checks and compatible recovery                      | Mira image/release packaging implemented; replacement runner and automatic policy pending                                                                  |
+| Delivery                 | Scope                                                                                                                        | Status                                                                                                                                                     |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime qualification    | Separate ChatGPT login; streaming, host tools, interruption and process replacement                                          | Implemented; isolated live qualification passed                                                                                                            |
+| Chat and files           | Owned conversations, streaming, cancellation, search/archive/delete, bounded uploads and editable memory                     | Implemented; synthetic preview and live text/PDF/image qualification passed                                                                                |
+| Tasks                    | Four-column drag-and-drop board, keyboard controls, search/filters, versioned edits, progress and conversation links         | Board, product tools and [explicit task execution](mira-tasks.md) implemented; resource-context actions pending                                            |
+| Automations and Reports  | Durable scheduler, heartbeat, reasoned individual/global pause, run history, report snapshots and deduplicated notifications | Core implemented; new presets installed paused; live qualification and activation pending                                                                  |
+| Computer control         | Dedicated browser, required Windows pairing, scoped controls, preview, local stop and takeover                               | Windows companion, browser host/Chat queue and isolated egress implemented; actual Windows PC and private-route acceptance pending                         |
+| Voice                    | Shared conversation context, provider qualification and explicit billing limits                                              | Pending; no paid voice budget enabled                                                                                                                      |
+| Integrations and cutover | Fresh Mira state, AgentMail, Daytona, here.now and Moltbook adapters                                                         | AgentMail delivery/attachments, here.now publication, Moltbook participation and reviewed Daytona jobs implemented; live qualification and cutover pending |
+| Self-update              | Exact verified releases, independent deployment runner, receipts, health checks and compatible recovery                      | Verified release runner, backup/recovery and optional automatic policy implemented; host recipe and activation pending                                     |
 
 Each delivery uses Bun, Valibot, Effect boundaries, existing dashboard contracts and
 shared UI. Reuse cards, headers, actions, forms, lists and viewport-bounded modals;
@@ -216,8 +216,13 @@ drain/reconcile work, verify the running revision and health, and qualify recove
 against actual schema compatibility. Image rollback is not database rollback.
 Automatic deployment is a separate opt-in policy and cannot bypass PR approval.
 
-Before cutover, dry-run task/progress/report/attachment mappings, preserve original
-records, check ownership and links, and prevent duplicate old/new scheduled execution.
+The operator declined legacy data migration on 2026-10-31. Start new Mira tasks,
+reports, progress and conversation history without importing the old dashboard.
+This does not authorize deleting the old database. Preserve the requested brief,
+summary and improvement behavior using the new paused presets. During cutover,
+stop the old execution owners before enabling their replacements so jobs cannot
+run twice. The current Homelab database and its existing infrastructure history
+remain part of the ordinary backed-up schema upgrade.
 Test DST, missed schedules, concurrent edits, notification races and process crashes.
 The feature is not complete until Windows acceptance, external adapters, updates,
 disable preservation and server-side independent execution pass their checks.

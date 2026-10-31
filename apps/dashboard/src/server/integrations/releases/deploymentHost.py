@@ -639,8 +639,8 @@ def recover(directory, database_restored=False):
         save_status(directory, current)
 
 
-def database_environment(value):
-    """Translate an explicit PostgreSQL URL to libpq variables without putting credentials in argv."""
+def database_environment(value, root_certificate=None):
+    """Translate a PostgreSQL URL and optional CA fallback into a minimal libpq environment."""
     parsed = urlsplit(value)
     if parsed.scheme not in {"postgres", "postgresql"} or not parsed.hostname or not parsed.username or not parsed.path.startswith("/") or len(parsed.path) < 2 or parsed.fragment:
         raise Refusal("backup_configuration")
@@ -657,6 +657,8 @@ def database_environment(value):
             raise Refusal("backup_configuration")
         seen.add(key)
         result[options[key]] = item
+    if "PGSSLROOTCERT" not in result and root_certificate is not None:
+        result["PGSSLROOTCERT"] = root_certificate
     if not result["PGCONNECT_TIMEOUT"].isdigit() or not 1 <= int(result["PGCONNECT_TIMEOUT"]) <= 30:
         raise Refusal("backup_configuration")
     if any(not item or len(item) > 8192 or "\0" in item or "\n" in item or "\r" in item for item in result.values()):
@@ -678,7 +680,7 @@ def main():
         if not database:
             raise Refusal("backup_configuration")
         os.execve("/usr/bin/pg_dump", ["/usr/bin/pg_dump", "--format=custom", "--no-owner", "--no-acl"],
-                  database_environment(database))
+                  database_environment(database, os.environ.get("PGSSLROOTCERT")))
     raw = sys.stdin.buffer.read(65537)
     if len(raw) > 65536:
         raise Refusal("request_limit")
