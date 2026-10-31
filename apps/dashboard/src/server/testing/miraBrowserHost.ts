@@ -10,6 +10,7 @@ import { capabilities } from "@homelab/contracts/operations";
 import { setMiraEnabled } from "@homelab/mira/data/automations";
 import { claimMiraRun } from "@homelab/mira/data/queue";
 
+import { BrowserDownloadTransfer } from "../../../../mira/src/server/browsing/downloadTransfer";
 import {
     BrowserProfileTransfer,
     browserProfileParts,
@@ -83,6 +84,8 @@ export async function browserHostFixture(enabled = true) {
         failCreate: false,
         holdInput: false,
         uploadInput: false,
+        downloadInput: false,
+        downloadBytes: new Uint8Array(100_003).fill(97),
         uploads: [] as BrowserUploadFile[],
         observationText: "",
         paddedImage: false,
@@ -176,6 +179,7 @@ export async function browserHostFixture(enabled = true) {
         let buffered = "";
         const restore = new BrowserProfileTransfer();
         const upload = new BrowserUploadTransfer();
+        const download = new BrowserDownloadTransfer();
         let prepared = false;
         stream.on("end", () => {
             if (prepared && !engine.omitCheckpoint) {
@@ -209,6 +213,18 @@ export async function browserHostFixture(enabled = true) {
                         prepared = true;
                     }
                     result = { accepted: true };
+                } else if (message.body.method === "downloadBegin") {
+                    result = download.begin({
+                        bytes: engine.downloadBytes,
+                        sha256: new Bun.CryptoHasher("sha256")
+                            .update(engine.downloadBytes)
+                            .digest("hex"),
+                    });
+                } else if (message.body.method === "downloadPart") {
+                    result = download.take(message.body.params);
+                } else if (message.body.method === "downloadFinish") {
+                    download.finish();
+                    result = { accepted: true };
                 } else if (message.body.method === "uploadBegin") {
                     upload.begin(message.body.params);
                     result = { accepted: true };
@@ -239,7 +255,7 @@ export async function browserHostFixture(enabled = true) {
                             : [
                                   {
                                       ref: "p1:1",
-                                      role: "button",
+                                      role: engine.downloadInput ? "link" : "button",
                                       label: "Synthetic action",
                                       actions: engine.uploadInput
                                           ? ["upload"]

@@ -6,6 +6,7 @@ import { browserCommandResult } from "../browsing/command";
 import { readBrowserAccess } from "./browserAccess";
 import { browserHostContext, type BrowserCommandClaim } from "./browserCommands";
 import { saveBrowserPreview } from "./browserConsole";
+import { requireBrowserDownload } from "./browserDownloadAccess";
 import { requireBrowserUpload } from "./browserUploads";
 import { MiraFailure } from "./context";
 
@@ -32,10 +33,14 @@ export async function claimBrowserHumanCommand(client: SQL, claim: BrowserComman
             throw new MiraFailure("FORBIDDEN", "Browser operator authority expired.");
         const operation = v.parse(miraBrowserHumanOperationSchema, row.payload);
         if (
-            (operation.method === "act" || operation.method === "upload") &&
+            (operation.method === "act" ||
+                operation.method === "upload" ||
+                operation.method === "download") &&
             access.mode !== "control"
         )
             throw new MiraFailure("FORBIDDEN", "Browser access is view-only.");
+        if (operation.method === "download")
+            await requireBrowserDownload(query, context.owner, accessId, operation);
         if (operation.method === "upload")
             await requireBrowserUpload(query, context.owner, accessId, operation);
         await query`UPDATE mira_browser_consoles SET state='claimed',payload=NULL WHERE access_id=${accessId}`;
@@ -65,6 +70,11 @@ export async function finishBrowserHumanCommand(
     },
     result: unknown
 ): Promise<boolean> {
+    if (command.operation.method === "download")
+        throw new Error(
+            "Downloads must settle atomically with the conversation attachment."
+        );
+    const method = command.operation.method;
     return client.begin(async (query) => {
         const { context, accessId } = await browserHostContext(client, query, claim);
         const access = await readBrowserAccess(query, context.owner, accessId);
@@ -76,7 +86,7 @@ export async function finishBrowserHumanCommand(
         )
             return false;
         const parsed = browserCommandResult(
-            command.operation.method === "upload" ? "act" : command.operation.method,
+            method === "upload" ? "act" : method,
             result,
             access.policy.origins
         );

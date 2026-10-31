@@ -7,6 +7,7 @@ import * as v from "valibot";
 
 import { createVisualChallenge } from "../testing/visualChallenge";
 import { serveBrowserWorker, type BrowserWorkerProfile } from "./child";
+import type { BrowserDownloadFile } from "./downloadTransfer";
 import { openBrowserWorker } from "./process";
 import type { BrowserUploadFile } from "./upload";
 import {
@@ -57,8 +58,8 @@ function childFixture(profile?: BrowserWorkerProfile) {
     let closes = 0,
         forced = 0;
     const port = {
-        download: () =>
-            Promise.reject(new Error("Download is not exposed to this worker protocol.")),
+        download: (_input: unknown, _signal: AbortSignal): Promise<BrowserDownloadFile> =>
+            Promise.reject(new Error("No download fixture selected.")),
         observe: (_signal: AbortSignal) => {
             calls.push("observe");
             return Promise.resolve(frame());
@@ -722,5 +723,133 @@ test("worker closes incomplete uploads on disconnect, interleaving or missing ca
         await f.done;
         expect(f.closes()).toBe(1);
         expect(f.calls).not.toContain("observe");
+    }
+});
+
+test("download crosses the private worker only from a fresh operator link and is consumed once", async () => {
+    const f = childFixture(),
+        controller = new AbortController();
+    const bytes = new Uint8Array(100_003).fill(97);
+    const file = {
+        bytes,
+        sha256: new Bun.CryptoHasher("sha256").update(bytes).digest("hex"),
+    };
+    let downloads = 0;
+    f.port.download = () => {
+        downloads++;
+        return Promise.resolve(file);
+    };
+    f.port.observe = () =>
+        Promise.resolve({
+            ...frame(),
+            refs: [{ ref: "p1:2", role: "link", label: "Download", actions: ["click"] }],
+        });
+    let sequence = 0;
+    const port = await openBrowserWorker(
+        {},
+        { ...grant, downloads: true },
+        controller.signal,
+        () =>
+            Promise.resolve({
+                signal: controller.signal,
+                request: async (body: unknown) => {
+                    await Bun.sleep(0);
+                    const parsed = v.parse(browserWorkerRequestSchema, {
+                        id: ++sequence,
+                        body,
+                    });
+                    return f.send(sequence, parsed.body.method, parsed.body.params);
+                },
+                close: async () => {
+                    f.input.end();
+                    await f.done;
+                },
+            })
+    );
+    const view = await port.observe(controller.signal, true);
+    const input = { observationId: view.observationId, ref: "p1:2" };
+    expect(await port.download(input, controller.signal)).toEqual(file);
+    expect(downloads).toBe(1);
+    await assert.rejects(port.download(input, controller.signal));
+    expect(downloads).toBe(1);
+    expect(f.closes()).toBe(1);
+});
+
+test("downloads reject model observations, unavailable capability and interrupted private transfers", async () => {
+    for (const reason of ["model", "capability", "stale", "ref", "role"] as const) {
+        const f = childFixture(),
+            owner = new AbortController().signal;
+        f.port.observe = () =>
+            Promise.resolve({
+                ...frame(),
+                refs: [
+                    {
+                        ref: "p1:2",
+                        role: reason === "role" ? "button" : "link",
+                        label: "Download",
+                        actions: ["click"],
+                    },
+                ],
+            });
+        let sequence = 0,
+            clock = 0;
+        const port = await openBrowserWorker(
+            {},
+            reason === "capability" ? grant : { ...grant, downloads: true },
+            owner,
+            () =>
+                Promise.resolve({
+                    signal: owner,
+                    request: async (body: unknown) => {
+                        await Bun.sleep(0);
+                        const request = v.parse(browserWorkerRequestSchema, {
+                            id: ++sequence,
+                            body,
+                        });
+                        return f.send(sequence, request.body.method, request.body.params);
+                    },
+                    close: async () => {
+                        f.input.end();
+                        await f.done;
+                    },
+                }),
+            () => clock
+        );
+        const view = await port.observe(owner, reason !== "model");
+        if (reason === "stale") clock = 60_001;
+        await assert.rejects(
+            port.download(
+                {
+                    observationId: view.observationId,
+                    ref: reason === "ref" ? "p1:3" : "p1:2",
+                },
+                owner
+            )
+        );
+        expect(f.replies).toHaveLength(2);
+        expect(f.closes()).toBe(1);
+    }
+    for (const reason of ["disconnect", "interleave", "denied", "finish"] as const) {
+        const f = childFixture(),
+            bytes = new Uint8Array([97]);
+        f.port.download = () =>
+            Promise.resolve({
+                bytes,
+                sha256: new Bun.CryptoHasher("sha256").update(bytes).digest("hex"),
+            });
+        await f.send(
+            1,
+            "initialize",
+            reason === "denied" ? grant : { ...grant, downloads: true }
+        );
+        const input = { observationId: crypto.randomUUID(), ref: "p1:2" };
+        if (reason === "denied") f.write(2, "downloadBegin", input);
+        else {
+            await f.send(2, "downloadBegin", input);
+            if (reason === "disconnect") f.input.end();
+            else f.write(3, reason === "finish" ? "downloadFinish" : "observe", {});
+        }
+        await f.done;
+        expect(f.closes()).toBe(1);
     }
 });

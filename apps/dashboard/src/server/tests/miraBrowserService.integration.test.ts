@@ -15,14 +15,18 @@ import {
     takeMiraBrowserCommand,
 } from "@homelab/mira/data/browserCommands";
 import { saveBrowserPreview } from "@homelab/mira/data/browserConsole";
-import { claimBrowserHumanCommand } from "@homelab/mira/data/browserConsoleHost";
+import {
+    claimBrowserHumanCommand,
+    finishBrowserHumanCommand,
+} from "@homelab/mira/data/browserConsoleHost";
+import { saveBrowserDownload } from "@homelab/mira/data/browserDownloads";
 import { openMiraBrowserSession } from "@homelab/mira/data/browserHost";
 import { readMiraBrowserReadiness } from "@homelab/mira/data/browserReadiness";
 import {
     runMiraBrowserHost,
     type MiraBrowserHealth,
 } from "@homelab/mira/data/browserService";
-import { saveMiraFile } from "@homelab/mira/data/files";
+import { saveMiraFile, readMiraFile } from "@homelab/mira/data/files";
 
 import { createMiraTools } from "../../../../mira/src/server/executor/tools";
 import {
@@ -1060,5 +1064,305 @@ test("file selection remains unavailable for view and multi-website browser gran
         } finally {
             await f.close();
         }
+    }
+});
+
+test("confirmed download is atomically saved in its conversation and discovered after returning control", async () => {
+    const f = await fixture(),
+        directory = await mkdtemp(path.join(os.tmpdir(), "mira-download-"));
+    try {
+        const grant = await f.grant();
+        void f.start(directory);
+        await f.invoke("mira_browser_observe", {});
+        const initial = await f.api.browser.console({ id: grant.id });
+        await f.api.browser.transfer({
+            id: grant.id,
+            epoch: initial.epoch,
+            controller: "human",
+        });
+        f.engine.downloadInput = true;
+        const view = await operatorCommand(f, grant.id, { method: "observe" });
+        const operation = {
+            method: "download" as const,
+            name: "confirmed.txt",
+            origin: f.request.origins[0]!,
+            input: {
+                observationId: view.preview!.observationId,
+                ref: view.preview!.refs[0]!.ref,
+            },
+        };
+        for (const invalid of [
+            { ...operation, name: "../outside.txt" },
+            { ...operation, origin: "https://other.test" },
+            { ...operation, input: { ...operation.input, ref: "p1:999" } },
+            {
+                ...operation,
+                input: { ...operation.input, observationId: crypto.randomUUID() },
+            },
+        ])
+            await rejects(
+                f.api.browser.command({
+                    id: grant.id,
+                    epoch: view.epoch,
+                    commandId: crypto.randomUUID(),
+                    operation: invalid,
+                })
+            );
+        for (const api of [
+            f.caller("other"),
+            f.caller("operator", "operator", "automation"),
+            f.caller("operator", "operator", "human", false),
+        ])
+            await rejects(
+                api.browser.command({
+                    id: grant.id,
+                    epoch: view.epoch,
+                    commandId: crypto.randomUUID(),
+                    operation,
+                })
+            );
+        const id = crypto.randomUUID();
+        await operatorCommand(f, grant.id, operation, id);
+        const saved = await readMiraFile(f.context, directory, id);
+        expect(saved.metadata.name).toBe("confirmed.txt");
+        expect(saved.bytes).toEqual(f.engine.downloadBytes);
+        const conversation = await f.api.conversations.read({ id: f.chat.id });
+        expect(JSON.stringify(conversation)).toContain(id);
+        const [message] = await f.client<
+            { ids: string[] }[]
+        >`SELECT attachment_ids AS ids FROM mira_messages WHERE id=${f.run.assistantMessageId}`;
+        expect(message!.ids).toEqual([id]);
+        const [console] = await f.client<
+            { state: string; payload: unknown }[]
+        >`SELECT state,payload FROM mira_browser_consoles WHERE access_id=${grant.id}`;
+        expect(console).toEqual({ state: "idle", payload: null });
+        await rejects(
+            f.api.browser.command({
+                id: grant.id,
+                epoch: view.epoch,
+                commandId: crypto.randomUUID(),
+                operation,
+            })
+        );
+        expect(f.engine.events.filter((event) => event === "downloadBegin")).toHaveLength(
+            1
+        );
+        expect(
+            text(
+                await f.invoke("mira_browser_input", {
+                    action: "download",
+                    ...operation.input,
+                })
+            ).ok
+        ).toBe(false);
+        await f.api.browser.transfer({
+            id: grant.id,
+            epoch: view.epoch,
+            controller: "mira",
+        });
+        const readiness = await readMiraBrowserReadiness(f.worker);
+        expect(readiness.state).toBe("ready");
+        if (!("attachments" in readiness))
+            throw new Error("Expected imported attachment metadata.");
+        expect(readiness.attachments).toHaveLength(1);
+        expect(readiness.attachments[0]!.id).toBe(id);
+        expect(readiness.attachments[0]!.name).toBe("confirmed.txt");
+        expect(readiness.attachments[0]!.bytes).toBe(100_003);
+        expect(readiness.attachments[0]!.mediaType).toBe("text/plain; charset=utf-8");
+        const tools = createMiraTools(f.client, f.run, directory);
+        const read = tools.find((tool) => tool.name === "mira_attachment_read")!;
+        const output = await read.execute({ id }, f.toolLifetime.signal, {
+            callId: crypto.randomUUID(),
+            turnId: "synthetic",
+            threadId: "synthetic",
+        });
+        expect(JSON.parse(output as string)).toMatchObject({
+            ok: true,
+            result: { text: "a".repeat(48_000), nextOffset: 48_000 },
+        });
+    } finally {
+        await f.close();
+        await rm(directory, { recursive: true, force: true });
+    }
+});
+
+async function claimedDownload(f: Awaited<ReturnType<typeof fixture>>) {
+    const grant = await f.grant();
+    const session = await openMiraBrowserSession(
+        f.worker,
+        grant.id,
+        f.config,
+        f.hostLifetime.signal
+    );
+    try {
+        const initial = await f.api.browser.console({ id: grant.id });
+        await f.api.browser.transfer({
+            id: grant.id,
+            epoch: initial.epoch,
+            controller: "human",
+        });
+        f.engine.downloadInput = true;
+        const view = await session.observe(f.toolLifetime.signal, true);
+        await f.client.begin(async (query) => {
+            await lockBrowserOwner(query, f.context.owner);
+            await saveBrowserPreview(query, grant.id, view);
+        });
+        const current = await f.api.browser.console({ id: grant.id });
+        await f.api.browser.command({
+            id: grant.id,
+            epoch: current.epoch,
+            commandId: crypto.randomUUID(),
+            operation: {
+                method: "download",
+                name: "confirmed.txt",
+                origin: f.request.origins[0]!,
+                input: { observationId: view.observationId, ref: view.refs[0]!.ref },
+            },
+        });
+        const command = await claimBrowserHumanCommand(f.client, session.claim);
+        if (!command) throw new Error("Expected the confirmed download command.");
+        return { grant, session, command };
+    } catch (error) {
+        await session.close();
+        throw error;
+    }
+}
+
+for (const reason of [
+    "epoch",
+    "expiry",
+    "grant",
+    "lease",
+    "cancel",
+    "deleted",
+    "capacity",
+    "binary",
+    "digest",
+    "signal",
+    "foreign",
+] as const) {
+    test(`a claimed download cannot expose a file after ${reason} changes`, async () => {
+        const f = await fixture(),
+            directory = await mkdtemp(path.join(os.tmpdir(), "mira-download-refused-"));
+        let session: Awaited<ReturnType<typeof openMiraBrowserSession>> | undefined;
+        try {
+            const setup = await claimedDownload(f);
+            session = setup.session;
+            const { grant, command } = setup;
+            await rejects(
+                finishBrowserHumanCommand(f.client, session.claim, command, {})
+            );
+            if (reason === "epoch")
+                await f.client`UPDATE mira_browser_consoles SET epoch=${crypto.randomUUID()} WHERE access_id=${grant.id}`;
+            if (reason === "expiry")
+                await f.client`UPDATE mira_browser_consoles SET expires_at=clock_timestamp()-interval '1 second' WHERE access_id=${grant.id}`;
+            if (reason === "grant") await f.api.browser.stop({ id: grant.id });
+            if (reason === "lease")
+                await f.client`UPDATE mira_runs SET lease_token=${crypto.randomUUID()} WHERE id=${f.run.id}`;
+            if (reason === "cancel")
+                await f.client`UPDATE mira_runs SET cancel_requested=true WHERE id=${f.run.id}`;
+            if (reason === "deleted")
+                await f.client`UPDATE mira_conversations SET deleted_at=clock_timestamp() WHERE id=${f.chat.id}`;
+            if (reason === "capacity")
+                await f.client`UPDATE mira_messages SET attachment_ids=${JSON.stringify(Array.from({ length: 8 }, () => crypto.randomUUID()))}::text::jsonb WHERE id=${f.run.assistantMessageId}`;
+            const bytes =
+                reason === "binary"
+                    ? new Uint8Array([0, 255])
+                    : new TextEncoder().encode("bounded text");
+            const file = {
+                bytes,
+                sha256:
+                    reason === "digest"
+                        ? "0".repeat(64)
+                        : new Bun.CryptoHasher("sha256").update(bytes).digest("hex"),
+            };
+            if (reason === "foreign")
+                await saveMiraFile(
+                    { ...f.context, owner: "other", actor: "human:other" },
+                    directory,
+                    { id: command.id, name: "confirmed.txt", bytes }
+                );
+            await rejects(
+                saveBrowserDownload(
+                    f.client,
+                    session.claim,
+                    command,
+                    directory,
+                    file,
+                    reason === "signal" ? AbortSignal.abort() : f.toolLifetime.signal
+                )
+            );
+            const ready = await f.client<
+                { id: string }[]
+            >`SELECT id FROM mira_attachments WHERE id=${command.id} AND owner=${f.context.owner} AND ready_at IS NOT NULL`;
+            expect(ready).toHaveLength(0);
+            const [message] = await f.client<
+                { ids: string[] }[]
+            >`SELECT attachment_ids AS ids FROM mira_messages WHERE id=${f.run.assistantMessageId}`;
+            expect(message!.ids).not.toContain(command.id);
+        } finally {
+            await session?.close();
+            await f.close();
+            await rm(directory, { recursive: true, force: true });
+        }
+    });
+}
+
+test("cancellation while waiting for file storage cannot commit download readiness or message linking", async () => {
+    const f = await fixture(),
+        directory = await mkdtemp(path.join(os.tmpdir(), "mira-download-race-"));
+    let session: Awaited<ReturnType<typeof openMiraBrowserSession>> | undefined;
+    const locked = Promise.withResolvers<void>(),
+        release = Promise.withResolvers<void>();
+    let blocker: Promise<unknown> | undefined, saving: Promise<unknown> | undefined;
+    try {
+        const setup = await claimedDownload(f);
+        session = setup.session;
+        blocker = f.client.begin(async (query) => {
+            await query`SELECT pg_advisory_xact_lock(hashtextextended('homelab:mira:files',0))`;
+            locked.resolve();
+            await release.promise;
+        });
+        await locked.promise;
+        const bytes = new TextEncoder().encode("bounded text"),
+            controller = new AbortController();
+        saving = saveBrowserDownload(
+            f.client,
+            session.claim,
+            setup.command,
+            directory,
+            { bytes, sha256: new Bun.CryptoHasher("sha256").update(bytes).digest("hex") },
+            controller.signal
+        );
+        const refused = rejects(saving);
+        await until(async () => {
+            const [waiting] = await f.client<
+                { busy: boolean }[]
+            >`SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event='advisory' AND state='active') AS busy`;
+            return waiting!.busy;
+        });
+        controller.abort();
+        release.resolve();
+        await blocker;
+        await refused;
+        const rows = await f.client<
+            { id: string }[]
+        >`SELECT id FROM mira_attachments WHERE id=${setup.command.id}`;
+        expect(rows).toHaveLength(0);
+        const [message] = await f.client<
+            { ids: string[] }[]
+        >`SELECT attachment_ids AS ids FROM mira_messages WHERE id=${f.run.assistantMessageId}`;
+        expect(message!.ids).toEqual([]);
+        const [console] = await f.client<
+            { state: string }[]
+        >`SELECT state FROM mira_browser_consoles WHERE access_id=${setup.grant.id}`;
+        expect(console!.state).toBe("claimed");
+    } finally {
+        release.resolve();
+        await blocker;
+        await saving?.catch(() => {});
+        await session?.close();
+        await f.close();
+        await rm(directory, { recursive: true, force: true });
     }
 });

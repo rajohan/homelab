@@ -13,6 +13,7 @@ import { IdentityClientContext } from "../../identity/IdentityClientContext";
 import { BrowserAccessDialog } from "./BrowserAccessDialog";
 import { BrowserAccessPanel } from "./BrowserAccessPanel";
 import { BrowserConsoleDialog } from "./BrowserConsoleDialog";
+import { BrowserDownloadControls } from "./BrowserDownloadControls";
 import { BrowserPageControls } from "./BrowserPageControls";
 import { BrowserUploadControls } from "./BrowserUploadControls";
 
@@ -609,6 +610,65 @@ test("attachment upload requires explicit confirmation and freezes the website, 
                 input: { observationId: image.observationId, ref: "p1:1" },
                 origin: new URL(image.url).origin,
                 file,
+            },
+        ]);
+    } finally {
+        f.close();
+    }
+});
+
+test("download confirmation freezes a link, website and safe filename and rejects a changed view", async () => {
+    const currentRun = run(),
+        f = fixture(currentRun, [grant(currentRun)], null);
+    const image = {
+        ...preview(),
+        refs: [
+            { ref: "p1:2", role: "link", label: "Report", actions: ["click" as const] },
+        ],
+    };
+    const sent: unknown[] = [];
+    const show = (view = image, disabled = false) =>
+        f.rerender(
+            <BrowserDownloadControls
+                preview={view}
+                disabled={disabled}
+                onCommand={(input) => sent.push(input)}
+            />
+        );
+    try {
+        const user = userEvent.setup();
+        show();
+        expect(screen.getByRole("button", { name: "Review download" })).toBeDisabled();
+        await user.click(
+            screen.getByRole("button", { name: /^Download link on the page/ })
+        );
+        await user.click(screen.getByRole("option", { name: "Report" }));
+        const filename = screen.getByRole("textbox", { name: "Save attachment as" });
+        await user.type(filename, "../report.pdf");
+        expect(screen.getByRole("button", { name: "Review download" })).toBeDisabled();
+        await user.clear(filename);
+        await user.type(filename, "report.pdf");
+        await user.click(screen.getByRole("button", { name: "Review download" }));
+        expect(sent).toEqual([]);
+        const dialog = screen.getByRole("dialog", { name: "Download attachment" });
+        expect(dialog).toHaveTextContent("report.pdf");
+        expect(dialog).toHaveTextContent(new URL(image.url).origin);
+        show({ ...image, observationId: crypto.randomUUID() });
+        expect(
+            screen.getByRole("button", { name: "Save to conversation" })
+        ).toBeDisabled();
+        show(image, true);
+        expect(
+            screen.getByRole("button", { name: "Save to conversation" })
+        ).toBeDisabled();
+        show();
+        await user.click(screen.getByRole("button", { name: "Save to conversation" }));
+        expect(sent).toEqual([
+            {
+                method: "download",
+                name: "report.pdf",
+                origin: new URL(image.url).origin,
+                input: { observationId: image.observationId, ref: "p1:2" },
             },
         ]);
     } finally {

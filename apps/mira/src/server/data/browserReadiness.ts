@@ -26,7 +26,16 @@ export async function readMiraBrowserReadiness(context: MiraContext) {
     const access = await readBrowserAccess(context.client, context.owner, last.id);
     if (!access?.available || !access.policy) return { state: "stopped" as const };
     if (access.controller === "human") return { state: "human" as const };
+    const attachments = await context.client<
+        { id: string; name: string; mediaType: string; bytes: number }[]
+    >`
+        SELECT f.id,f.name,f.media_type AS "mediaType",f.bytes FROM mira_runs r
+        JOIN mira_messages m ON m.id=r.assistant_message_id AND m.conversation_id=r.conversation_id
+        JOIN mira_attachments f ON m.attachment_ids @> jsonb_build_array(f.id::text)
+        WHERE r.id=${context.run.id} AND r.owner=${context.owner} AND f.owner=r.owner
+        AND f.ready_at IS NOT NULL AND f.deleted_at IS NULL ORDER BY f.created_at,f.id LIMIT 8`;
     return {
+        ...(attachments.length > 0 ? { attachments } : {}),
         state: "ready" as const,
         mode: access.mode,
         origins: access.policy.origins,

@@ -115,6 +115,7 @@
     "scripts/fetchBrowserDriver.test.ts": 123,
     "apps/mira/src/server/browsing/driverProcess.test.ts": 71,
     "apps/mira/src/server/browsing/download.test.ts": 8,
-    "apps/mira/src/server/browsing/driver.test.ts": 8
+    "apps/mira/src/server/browsing/driver.test.ts": 8,
+    "apps/mira/src/server/browsing/downloadTransfer.test.ts": 1
   }
 }

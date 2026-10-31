@@ -54,7 +54,7 @@ services:
       - type: bind
         source: ${HOMELAB_MIRA_FILES_DIR:?Set the private shared attachment directory}
         target: /var/lib/mira/files
-        read_only: true
+        read_only: false
         bind:
           create_host_path: false
       - type: bind

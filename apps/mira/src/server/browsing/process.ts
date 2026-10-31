@@ -1,6 +1,12 @@
 import * as v from "valibot";
 
 import { openBrowserConnection } from "./connection";
+import {
+    BrowserDownloadReceiver,
+    browserDownloadHeaderSchema,
+    browserDownloadCount,
+    browserDownloadTotal,
+} from "./downloadTransfer";
 import { browserDriverVersion } from "./driver";
 import { browserUrl } from "./policy";
 import {
@@ -39,12 +45,15 @@ export async function openBrowserWorker(
     const grant = browserWorkerGrant(grantInput);
     const connection = await connect(configuration, owner);
     let busy = false;
+    let downloadCount = 0,
+        downloadBytes = 0;
     let observed:
         | {
               id: string;
               refs: Map<string, readonly string[]>;
               time: number;
               maxAge: number;
+              downloads: Set<string>;
           }
         | undefined;
     const close = () => {
@@ -104,6 +113,17 @@ export async function openBrowserWorker(
                     ),
                     time: now(),
                     maxAge: operator ? 60_000 : 10_000,
+                    downloads: new Set(
+                        operator
+                            ? frame.refs
+                                  .filter(
+                                      (item) =>
+                                          item.role === "link" &&
+                                          item.actions.includes("click")
+                                  )
+                                  .map((item) => item.ref)
+                            : []
+                    ),
                 };
                 return frame;
             }),
@@ -142,6 +162,54 @@ export async function openBrowserWorker(
                     v.strictObject({ effect: v.literal("unverified") }),
                     await connection.request({ method: "act", params: action }, operation)
                 );
+            }),
+        download: (input: unknown, operation: AbortSignal) =>
+            run(operation, async () => {
+                const previous = observed;
+                observed = undefined;
+                const action = v.parse(browserUploadActionSchema, input);
+                if (
+                    !grant.downloads ||
+                    grant.mode !== "control" ||
+                    !previous ||
+                    previous.id !== action.observationId ||
+                    now() - previous.time < 0 ||
+                    now() - previous.time >= previous.maxAge ||
+                    !previous.downloads.has(action.ref) ||
+                    ++downloadCount > browserDownloadCount
+                )
+                    throw new Error(
+                        "Download requires an unused operator link observation."
+                    );
+                const header = v.parse(
+                    browserDownloadHeaderSchema,
+                    await connection.request(
+                        { method: "downloadBegin", params: action },
+                        operation
+                    )
+                );
+                downloadBytes += header.size;
+                if (downloadBytes > browserDownloadTotal)
+                    throw new Error("Browser download lifetime quota exceeded.");
+                const receiver = new BrowserDownloadReceiver(header);
+                for (let offset = 0; offset < header.size; offset += 24 * 1024) {
+                    operation.throwIfAborted();
+                    receiver.accept(
+                        await connection.request(
+                            { method: "downloadPart", params: { offset } },
+                            operation
+                        )
+                    );
+                }
+                const file = receiver.finish();
+                v.parse(
+                    v.strictObject({ accepted: v.literal(true) }),
+                    await connection.request(
+                        { method: "downloadFinish", params: {} },
+                        operation
+                    )
+                );
+                return file;
             }),
         upload: (input: unknown, file: BrowserUploadFile, operation: AbortSignal) => {
             const action = v.parse(browserUploadActionSchema, input);

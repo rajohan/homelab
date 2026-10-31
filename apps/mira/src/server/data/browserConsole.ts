@@ -11,6 +11,7 @@ import * as v from "valibot";
 import { browserUrl } from "../browsing/policy";
 import { browserWorkerFrame } from "../browsing/wire";
 import { lockBrowserOwner, readBrowserAccess } from "./browserAccess";
+import { requireBrowserDownload } from "./browserDownloadAccess";
 import { retireBrowserCommands } from "./browserRetirement";
 import { requireBrowserUpload } from "./browserUploads";
 import { auditMira, MiraFailure, type MiraContext } from "./context";
@@ -148,21 +149,30 @@ export async function requireBrowserObservation(
     id: string,
     operation: v.InferOutput<typeof miraBrowserHumanOperationSchema>
 ) {
-    if (operation.method !== "act" && operation.method !== "upload") return;
+    if (
+        operation.method !== "act" &&
+        operation.method !== "upload" &&
+        operation.method !== "download"
+    )
+        return;
     const [row] = await query<
         { frame: Frame }[]
     >`SELECT frame FROM mira_browser_consoles WHERE access_id=${id} AND frame IS NOT NULL AND frame_at>clock_timestamp()-(CASE WHEN controller='human' THEN interval '60 seconds' ELSE interval '10 seconds' END)`;
     if (
         !row ||
         row.frame.observationId !== operation.input.observationId ||
-        (operation.method === "upload" &&
+        ((operation.method === "upload" || operation.method === "download") &&
             new URL(row.frame.url).origin !== operation.origin) ||
         !row.frame.refs.some(
             (item) =>
                 item.ref === operation.input.ref &&
-                item.actions.includes(
-                    operation.method === "upload" ? "upload" : operation.input.action
-                )
+                (operation.method === "download"
+                    ? item.role === "link" && item.actions.includes("click")
+                    : item.actions.includes(
+                          operation.method === "upload"
+                              ? "upload"
+                              : operation.input.action
+                      ))
         )
     )
         throw new MiraFailure(
@@ -192,10 +202,14 @@ export async function enqueueMiraBrowserHumanCommand(
         )
             throw unavailable();
         if (
-            (operation.method === "act" || operation.method === "upload") &&
+            (operation.method === "act" ||
+                operation.method === "upload" ||
+                operation.method === "download") &&
             access.mode !== "control"
         )
             throw unavailable();
+        if (operation.method === "download")
+            await requireBrowserDownload(query, context.owner, request.id, operation);
         if (operation.method === "upload")
             await requireBrowserUpload(query, context.owner, request.id, operation);
         if (operation.method === "navigate") {

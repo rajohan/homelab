@@ -20,6 +20,7 @@ import type * as v from "valibot";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
+import { BrowserDownloadControls } from "./BrowserDownloadControls";
 import { BrowserPageControls } from "./BrowserPageControls";
 import { BrowserUploadControls } from "./BrowserUploadControls";
 import { useBrowserCommand } from "./useBrowserCommand";
@@ -211,16 +212,23 @@ export function BrowserConsoleDialog({
                         )}
                         {access.mode === "control" &&
                             (access.origins.length === 1 ? (
-                                <BrowserUploadControls
-                                    now={now}
-                                    accessId={access.id}
-                                    preview={preview ?? null}
-                                    disabled={Boolean(busy) || !inputFresh}
-                                    onCommand={send}
-                                />
+                                <>
+                                    <BrowserUploadControls
+                                        now={now}
+                                        accessId={access.id}
+                                        preview={preview ?? null}
+                                        disabled={Boolean(busy) || !inputFresh}
+                                        onCommand={send}
+                                    />
+                                    <BrowserDownloadControls
+                                        preview={preview ?? null}
+                                        disabled={Boolean(busy) || !inputFresh}
+                                        onCommand={send}
+                                    />
+                                </>
                             ) : (
                                 <p className="text-sm text-primary-400">
-                                    To upload an attachment, start browser access for one
+                                    To transfer attachments, start browser access for one
                                     website.
                                 </p>
                             ))}

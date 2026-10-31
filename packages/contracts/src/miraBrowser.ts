@@ -62,10 +62,23 @@ export const miraBrowserUploadFileSchema = v.strictObject({
     sha256: v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/)),
 });
 export type MiraBrowserUploadFile = v.InferOutput<typeof miraBrowserUploadFileSchema>;
+export const miraBrowserDownloadNameSchema = v.pipe(
+    v.string(),
+    v.trim(),
+    v.minLength(1),
+    v.maxLength(200),
+    v.check((name) => name.isWellFormed() && !/[\p{Cc}/\\]/u.test(name))
+);
 export const miraBrowserHumanOperationSchema = v.variant("method", [
     v.strictObject({ method: v.literal("observe") }),
     v.strictObject({ method: v.literal("navigate"), url: address }),
     v.strictObject({ method: v.literal("act"), input: miraBrowserActionSchema }),
+    v.strictObject({
+        method: v.literal("download"),
+        input: v.strictObject({ observationId: id, ref }),
+        origin: address,
+        name: miraBrowserDownloadNameSchema,
+    }),
     v.strictObject({
         method: v.literal("upload"),
         input: v.strictObject({ observationId: id, ref }),

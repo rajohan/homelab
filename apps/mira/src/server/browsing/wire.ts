@@ -3,8 +3,10 @@ import { imageSize } from "image-size";
 import * as v from "valibot";
 
 import { runtimeContentItems } from "../runtime/toolResult";
+import { browserDownloadOffsetSchema } from "./downloadTransfer";
 import { browserGrant, browserUrl } from "./policy";
 import { browserProfilePartSchema } from "./profileTransfer";
+import { browserUploadActionSchema } from "./upload";
 import { browserUploadHeaderSchema, browserUploadPartSchema } from "./uploadTransfer";
 
 export const browserWorkerExecutable = "/usr/lib/chromium/chromium";
@@ -14,6 +16,7 @@ const grantSchema = v.strictObject({
     initialUrl: address,
     mode: v.picklist(["view", "control"]),
     uploads: v.optional(v.literal(true)),
+    downloads: v.optional(v.literal(true)),
 });
 const ref = v.pipe(v.string(), v.regex(/^p[0-9]{1,16}:[0-9]{1,6}$/));
 const observationId = v.pipe(v.string(), v.uuid());
@@ -49,6 +52,18 @@ export const browserWorkerRequestSchema = v.strictObject({
             params: browserUploadPartSchema,
         }),
         v.strictObject({ method: v.literal("uploadFinish"), params: v.strictObject({}) }),
+        v.strictObject({
+            method: v.literal("downloadBegin"),
+            params: browserUploadActionSchema,
+        }),
+        v.strictObject({
+            method: v.literal("downloadPart"),
+            params: browserDownloadOffsetSchema,
+        }),
+        v.strictObject({
+            method: v.literal("downloadFinish"),
+            params: v.strictObject({}),
+        }),
     ]),
 });
 const bounded = (limit: number) => v.pipe(v.string(), v.maxLength(limit));
