@@ -247,6 +247,7 @@ export class CodexRuntime {
         void active.acknowledged.promise.catch(() => {});
         this.active = active;
         let output = "";
+        let lastMessageId: string | null = null;
         const completion = Promise.withResolvers<TurnResult>();
         // The notification can arrive before the turn/start response.
         const unsubscribe = this.connection.subscribe((event) => {
@@ -273,11 +274,19 @@ export class CodexRuntime {
                     (active.id && delta.turnId !== active.id)
                 )
                     return;
-                if (output.length + delta.delta.length > 256_000)
+                if (delta.delta.length === 0) return;
+                // Distinct commentary/final items share one product message, not one paragraph.
+                const separator =
+                    lastMessageId !== null && lastMessageId !== delta.itemId
+                        ? "\n\n"
+                        : "";
+                const chunk = separator + delta.delta;
+                if (output.length + chunk.length > 256_000)
                     throw new Error("Mira output limit reached.");
                 options.onActivity?.({ phase: "replying", tool: null });
-                output += delta.delta;
-                options.onDelta?.(delta.delta);
+                lastMessageId = delta.itemId;
+                output += chunk;
+                options.onDelta?.(chunk);
             } else if (event.method === "turn/completed") {
                 const result = v.parse(completedSchema, event.params);
                 if (

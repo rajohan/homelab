@@ -30,6 +30,7 @@ for await (const line of reader) {
                 params: {
                     threadId: "thread-test",
                     turnId: `turn-${activeTurn}`,
+                    itemId: `message-${activeTurn}`,
                     delta: JSON.stringify(message.result ?? message.error),
                 },
             });
@@ -252,6 +253,36 @@ for await (const line of reader) {
     } else if (message.method === "turn/start") {
         activeTurn++;
         const turnId = `turn-${activeTurn}`;
+        if (mode.startsWith("message-")) {
+            write({ id: message.id, result: { turn: { id: turnId } } });
+            await Bun.sleep(20);
+            const emit = (itemId: string, delta: string, scope = {}) =>
+                write({
+                    method: "item/agentMessage/delta",
+                    params: { threadId: "thread-test", turnId, itemId, delta, ...scope },
+                });
+            if (mode === "message-boundaries") {
+                emit("empty-first", "");
+                emit("commentary", "Creating ");
+                emit("commentary", "the file.");
+                emit("empty-middle", "");
+                emit("foreign", "unrelated", { threadId: "other-thread" });
+                emit("foreign", "stale", { turnId: "other-turn" });
+                emit("final", "Created.\n\n```json\n{");
+                emit("final", '\n  "ok": true\n}\n```');
+            } else {
+                emit("first", "x".repeat(255_999));
+                emit(mode === "message-limit-same-item" ? "first" : "second", "y");
+            }
+            write({
+                method: "turn/completed",
+                params: {
+                    threadId: "thread-test",
+                    turn: { id: turnId, status: "completed" },
+                },
+            });
+            continue;
+        }
         if (mode.startsWith("tool-") || mode === "approval") {
             write({ id: message.id, result: { turn: { id: turnId } } });
             write({
@@ -306,7 +337,12 @@ for await (const line of reader) {
         if (mode !== "wait") {
             write({
                 method: "item/agentMessage/delta",
-                params: { threadId: "thread-test", turnId, delta: text },
+                params: {
+                    threadId: "thread-test",
+                    turnId,
+                    itemId: `message-${activeTurn}`,
+                    delta: text,
+                },
             });
             write({
                 method: "turn/completed",
