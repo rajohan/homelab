@@ -55,6 +55,8 @@
     "apps/dashboard/src/browser/features/mira/BrowserAccess.test.tsx": 1500,
     "apps/dashboard/src/browser/features/releases/DeploymentPanel.test.tsx": 28,
     "apps/dashboard/src/browser/features/releases/DeploymentPolicyControl.test.tsx": 180,
-    "apps/dashboard/src/browser/features/mira/ChatPanel.test.tsx": 51
+    "apps/dashboard/src/browser/features/mira/ChatPanel.test.tsx": 51,
+    "apps/dashboard/src/browser/features/mira/ImprovementPermission.test.tsx": 75,
+    "apps/dashboard/src/browser/features/mira/ReportDetail.test.tsx": 53
   }
 }
