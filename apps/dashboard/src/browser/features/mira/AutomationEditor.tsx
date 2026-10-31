@@ -186,6 +186,10 @@ export function AutomationEditor({
                                       ]
                                     : []),
                                 { value: "task_due", label: "Task due" },
+                                {
+                                    value: "task_changed",
+                                    label: "Task created or changed",
+                                },
                             ]}
                             onChange={(event) => setSchedule({ kind: "event", event })}
                         />

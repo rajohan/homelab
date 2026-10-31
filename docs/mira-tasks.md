@@ -51,3 +51,11 @@ Linking a task to an existing conversation atomically adopts its previously unas
 Upgrade migrations adopt existing unambiguous task/conversation runs, including active and uncertain history. Conflicting live or historical task associations stop the migration with an actionable message; they are never assigned arbitrarily. Reviewing a run records a separate acknowledgement and preserves the task's edit version, so Edit and Delete remain usable immediately afterward.
 
 Generated task turns persist only the task reference and the operator's optional instructions. The executor reads current task details through its scoped tool instead of copying title, description or completion criteria into the conversation. New task conversations use an abbreviated task reference. Legacy migration also adopts runs linked to deleted tasks, so deleting a task cannot leave its old uncertain conversation unrestricted. Ambiguous retained links fail migration closed.
+
+## Change assessments
+
+An enabled **Task created or changed** event automation wakes Mira after human-created tasks, saved edits (including board moves) and progress notes. Five seconds without a newer edit coalesces rapid changes into one assessment of the latest saved task. Changes older than a day and changes made during an intentional pause are not replayed. Deleted tasks and superseded queued assessments are skipped.
+
+These runs can read tasks, progress, run outcomes, reports and pause reasons, and save a private report. Their server-provided tool catalog excludes task changes, drafts, external integrations, computer control and code execution. They do not start the task itself: use **Start work** or **Continue work** for execution. Reports and Mira's own actions do not trigger another assessment. A reviewed human approval of a task proposal is a human edit and may produce an assessment, but the assessment cannot create another proposal.
+
+Each assessment automation has its own pause and notification policy. Results use the existing Reports and notification components. Ordinary task execution and automatic assessments share task admission, so they cannot run on the same task simultaneously.

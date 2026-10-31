@@ -114,7 +114,7 @@ export const miraScheduleSchema = v.union([
     v.strictObject({ kind: v.literal("once"), at: v.pipe(v.string(), v.isoTimestamp()) }),
     v.strictObject({
         kind: v.literal("event"),
-        event: v.picklist(["agentmail", "task_due"]),
+        event: v.picklist(["agentmail", "task_due", "task_changed"]),
     }),
 ]);
 export const miraAutomationInputSchema = v.strictObject({

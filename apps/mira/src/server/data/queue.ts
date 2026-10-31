@@ -12,6 +12,7 @@ import { auditMira, type MiraContext } from "./context";
 import { enqueueTurn } from "./conversations";
 import { scheduleMiraEvents } from "./events";
 import { miraObservationFingerprint, notifyMiraRun } from "./notifications";
+import { currentTaskChange, pendingTaskChanges } from "./taskChanges";
 
 export interface MiraClaim {
     id: string;
@@ -25,6 +26,7 @@ export interface MiraClaim {
     budgetSeconds: number;
     manual: boolean;
     deadlineAt?: number;
+    taskAssessment?: boolean;
 }
 
 /**
@@ -99,12 +101,24 @@ export async function claimMiraRun(
                 continue;
             }
             if (run.taskId && !run.manual) {
+                const [change] = await query<{ eventId: string }[]>`
+                    SELECT e.id AS "eventId" FROM mira_event_deliveries d JOIN mira_events e ON e.id=d.event_id
+                    WHERE d.run_id=${run.id} AND e.owner=${run.owner} AND e.task_id=${run.taskId} AND e.kind='task_changed'`;
+                run.taskAssessment = Boolean(change);
                 await query`SELECT id FROM mira_tasks WHERE id=${run.taskId} AND owner=${run.owner} FOR SHARE`;
                 const [due] = await query<
                     { valid: boolean }[]
                 >`SELECT EXISTS (SELECT 1 FROM mira_event_deliveries d JOIN mira_events e ON e.id=d.event_id JOIN mira_tasks t ON t.id=e.task_id AND t.owner=e.owner WHERE d.run_id=${run.id} AND e.kind='task_due' AND t.id=${run.taskId} AND t.owner=${run.owner} AND t.deleted_at IS NULL AND t.status<>'done' AND t.due_at<=now() AND e.source_key=t.id::text || ':' || t.due_at::text) AS valid`;
-                if (!due?.valid) {
-                    await query`UPDATE mira_runs SET state='interrupted', message='Task deadline changed before execution.', finished_at=now() WHERE id=${run.id}`;
+                const valid = change
+                    ? await currentTaskChange(
+                          query,
+                          run.owner,
+                          run.taskId,
+                          change.eventId
+                      )
+                    : due?.valid;
+                if (!valid) {
+                    await query`UPDATE mira_runs SET state='interrupted', message=${change ? "Task changed before assessment started." : "Task deadline changed before execution."}, finished_at=now() WHERE id=${run.id}`;
                     await query`UPDATE mira_messages SET state='interrupted' WHERE id=${run.assistantMessageId}`;
                     continue;
                 }
@@ -228,9 +242,11 @@ async function lockScheduledOwners(query: TransactionSQL, now: Date): Promise<st
         UNION SELECT owner FROM (SELECT t.owner FROM mira_tasks t WHERE t.deleted_at IS NULL AND t.status<>'done' AND t.due_at<=${now} AND t.due_at>${new Date(now.getTime() - 86_400_000)} AND NOT EXISTS (SELECT 1 FROM mira_events e WHERE e.owner=t.owner AND e.kind='task_due' AND e.source_key=t.id::text || ':' || t.due_at::text) ORDER BY t.due_at LIMIT 20) tasks
         UNION SELECT owner FROM (SELECT e.owner FROM mira_event_deliveries d JOIN mira_events e ON e.id=d.event_id WHERE d.state='pending' AND d.next_attempt_at<=${now} ORDER BY d.next_attempt_at,e.id LIMIT 20) deliveries
         ORDER BY owner`;
-    for (const row of rows)
-        await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${row.owner}`},0))`;
-    return rows.map((row) => row.owner);
+    const changes = await pendingTaskChanges(query, now);
+    const owners = [...new Set([...rows, ...changes].map((row) => row.owner))].toSorted();
+    for (const owner of owners)
+        await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${owner}`},0))`;
+    return owners;
 }
 
 /**
