@@ -300,9 +300,11 @@ class HostTests(unittest.TestCase):
     def test_browser_proxy_ids_refresh_before_other_units_start_and_failure_holds_deployment(self):
         baseline = copy.deepcopy(self.target)
         for failure in [None, "network", "early_start", "recreated", "config_race",
-                        "backup_recreate", "backup_network", "backup_config_race"]:
+                        "backup_recreate", "backup_network", "backup_config_race", "stop_partial", "stop_persistent"]:
             with self.subTest(failure=failure):
                 backup_failure = bool(failure and failure.startswith("backup_"))
+                stop_failure = bool(failure and failure.startswith("stop_"))
+                recovery = backup_failure or stop_failure
                 self.target = copy.deepcopy(baseline)
                 self.target, browser, observed = self.browser_fixture()
                 old_proxy = "ghcr.io/demo/homelab/mira-browser-proxy:1.2.2@sha256:" + "a"*64
@@ -323,8 +325,9 @@ class HostTests(unittest.TestCase):
                      "phase": "accepted", "state": "running", "changesStarted": False, "migrationStarted": False})
                 self.calls = []
                 started = []
+                stopped = []
                 slots = [{"networkId": "e"*64, "proxyId": "2"*64,
-                          "proxyImageId": "sha256:" + ("a" if backup_failure else "b")*64}]
+                          "proxyImageId": "sha256:" + ("a" if recovery else "b")*64}]
 
                 def configured(_target):
                     text = self.compose.read_text()
@@ -332,6 +335,11 @@ class HostTests(unittest.TestCase):
                             "proxy": {"image": new_proxy if new_proxy in text else old_proxy}}}
 
                 def execute(arguments, directory, timeout=60, output_file=None):
+                    if arguments[:2] == ["/usr/bin/systemctl", "stop"]:
+                        stopped.append(arguments[2:])
+                        self.assertEqual(arguments[2:], self.target["units"])
+                        if stop_failure and len(stopped) == 1:
+                            raise host.Refusal("command_failed")
                     if backup_failure and arguments[0] == "/fixture/backup":
                         raise host.Refusal("command_failed")
                     if arguments[:2] == ["/usr/bin/systemctl", "start"]:
@@ -341,7 +349,7 @@ class HostTests(unittest.TestCase):
                         else:
                             saved = json.loads(browser_path.read_bytes())
                             self.assertEqual(saved["networks"], slots)
-                            self.assertEqual(saved["imageId"], browser["imageId"] if backup_failure else "sha256:" + "b"*64)
+                            self.assertEqual(saved["imageId"], browser["imageId"] if recovery else "sha256:" + "b"*64)
                             self.assertEqual(saved["hostId"], browser["hostId"])
                     return self.command(arguments, directory, timeout, output_file)
 
@@ -354,9 +362,9 @@ class HostTests(unittest.TestCase):
                 def verified(target, references, identities):
                     for service in target["services"]:
                         name = service["name"]
-                        self.assertEqual(references[name], self.expected["containers"][name]["image"] if backup_failure
+                        self.assertEqual(references[name], self.expected["containers"][name]["image"] if recovery
                                          else self.new if name == "dashboard" else new_proxy)
-                        self.assertEqual(identities[name], "sha256:" + ("a" if backup_failure else "b")*64)
+                        self.assertEqual(identities[name], "sha256:" + ("a" if recovery else "b")*64)
                     return {name: {"id": "2"*64, "image": references[name], "imageId": identities[name]}
                             for name in references}
 
@@ -364,22 +372,25 @@ class HostTests(unittest.TestCase):
                     (self.operation / file).unlink(missing_ok=True)
                 with patch.object(host, "inspect", return_value=self.expected), patch.object(host, "configured", side_effect=configured), \
                         patch.object(host, "command", side_effect=execute), patch.object(host, "image_identity", return_value="sha256:" + "b"*64), \
-                        patch.object(host, "container", side_effect=lambda *_: {"running": failure == "early_start" and bool(started)}), \
+                        patch.object(host, "container", side_effect=lambda *_: {"running":
+                            (failure == "early_start" and bool(started)) or
+                            (stop_failure and (len(stopped) < 2 or failure == "stop_persistent"))}), \
                         patch.object(host, "verify_services", side_effect=verified), \
                         patch.object(host, "browser_slots", side_effect=verify_slots):
                     host.run(self.operation)
                 result = json.loads((self.operation / "status.json").read_text())
                 self.assertEqual(result["state"], "failed" if failure else "succeeded", result)
-                self.assertEqual(result["migrationStarted"], not backup_failure, result)
-                if failure == "backup_recreate":
+                self.assertEqual(result["migrationStarted"], not recovery, result)
+                if failure in ["backup_recreate", "stop_partial"]:
                     self.assertTrue(result["recovered"], result)
                     self.assertEqual(len(started), 2)
                     self.assertEqual(self.compose.read_bytes(), self.source)
                     self.assertEqual(json.loads(browser_path.read_bytes()), {**browser, "networks": slots})
                 elif failure:
                     self.assertFalse(result["recovered"])
-                    self.assertEqual(len(started), 2 if failure == "recreated" else 1)
-                if backup_failure:
+                    self.assertEqual(len(started), 0 if failure == "stop_persistent" else 2 if failure == "recreated" else 1)
+                if recovery:
+                    self.assertEqual(len(stopped), 2)
                     self.assertFalse(any(arguments[0] == "/fixture/migrate" for arguments in self.calls))
                     if failure == "backup_config_race":
                         self.assertEqual(browser_path.read_bytes(), b"operator-edit")

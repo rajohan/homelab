@@ -589,6 +589,10 @@ def run(directory):
             recovered = not current["changesStarted"]
             if current["changesStarted"] and not current["migrationStarted"]:
                 try:
+                    if bindings:
+                        command(["/usr/bin/systemctl", "stop", *target["units"]], target["directory"], timeout=120)
+                        if any(container(target, service["name"])["running"] for service in target["services"]):
+                            raise Refusal("stop_verification")
                     for path, content in written.items():
                         replace_file(path, sources[path], content)
                     previous = intent["expected"]["containers"]
