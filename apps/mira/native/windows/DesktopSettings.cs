@@ -1,10 +1,11 @@
 using System;
 using System.IO;
-using System.Text;
 using System.Text.RegularExpressions;
 
 internal static class DesktopSettings
 {
+    internal const string ServerOrigin = "https://computer.home.rajohan.no:3443";
+
     internal static string Origin(string value)
     {
         if (value == null || value.Length > 255 || !Regex.IsMatch(value, @"\Ahttps://[a-zA-Z0-9.-]+(?::[0-9]{1,5})?/?\z"))
@@ -35,31 +36,4 @@ internal static class DesktopSettings
         return directory;
     }
 
-    internal static string Load(string directory)
-    {
-        string file = Path.Combine(directory, "server.txt");
-        if (!File.Exists(file)) return "";
-        if ((File.GetAttributes(file) & FileAttributes.ReparsePoint) != 0 || new FileInfo(file).Length > 512)
-            throw new InvalidDataException();
-        return Origin(File.ReadAllText(file, Encoding.UTF8).TrimEnd('\r', '\n'));
-    }
-
-    internal static void Save(string directory, string origin)
-    {
-        origin = Origin(origin);
-        Directory.CreateDirectory(directory);
-        for (var parent = new DirectoryInfo(directory); parent != null; parent = parent.Parent)
-            if ((parent.Attributes & FileAttributes.ReparsePoint) != 0) throw new InvalidDataException();
-        string file = Path.Combine(directory, "server.txt");
-        if (File.Exists(file) && (File.GetAttributes(file) & FileAttributes.ReparsePoint) != 0) throw new InvalidDataException();
-        string temporary = Path.Combine(directory, Guid.NewGuid().ToString("N") + ".tmp");
-        try
-        {
-            using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-            using (var writer = new StreamWriter(stream, new UTF8Encoding(false))) writer.Write(origin);
-            if (File.Exists(file)) File.Replace(temporary, file, null);
-            else File.Move(temporary, file);
-        }
-        finally { if (File.Exists(temporary)) File.Delete(temporary); }
-    }
 }

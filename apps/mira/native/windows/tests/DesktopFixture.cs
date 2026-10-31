@@ -39,7 +39,8 @@ internal static class DesktopFixture
         }
         string directory = AppDomain.CurrentDomain.BaseDirectory;
         string mode = File.ReadAllText(Path.Combine(directory, "mode.txt"));
-        if (args.Length < 2 || args[1] != "https://mira.example.test") return 2;
+        string expectedOrigin = Path.Combine(directory, "expected-origin.txt");
+        if (args.Length < 2 || args[1] != (File.Exists(expectedOrigin) ? File.ReadAllText(expectedOrigin) : "https://mira.example.test")) return 2;
         if (args[0] == "download-update") {
             if (args.Length != 3 || args[2] != "--supervised") return 9;
             if (mode == "update-hang") { Console.In.ReadToEnd(); return 1; }

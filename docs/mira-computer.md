@@ -433,11 +433,13 @@ or network configuration is changed by building or publishing an archive.
 ## Windows connection window and system tray
 
 Open `mira-computer-desktop.exe` from the complete local package in a normal,
-non-administrator Windows session. Enter the private HTTPS server address and the
-single-use pairing code from Settings > Computers, then select Pair computer.
+non-administrator Windows session. The desktop app connects to the fixed private
+Homelab address `https://computer.home.rajohan.no:3443` at home or through Meshnet.
+Enter only the single-use pairing code from Settings > Computers, then select Pair computer.
 The code is hidden, sent through a private pipe and never stored in preferences
-or command arguments. Credentials remain in the existing Windows vault. Only
-the server address is saved in `%LOCALAPPDATA%\Homelab\MiraComputer\server.txt`.
+or command arguments. Credentials remain in the existing Windows vault. An old
+`%LOCALAPPDATA%\Homelab\MiraComputer\server.txt` file is ignored; it cannot redirect
+the desktop app. Existing pairing for the same origin is retained across upgrades.
 Pairing does not automatically connect or grant window access.
 
 Connect starts the companion; Stop ends the connection and any owned native
@@ -459,7 +461,8 @@ account. Remove pairing deletes the local vault entry; use Settings to revoke
 server access too. A failed or cancelled pairing must be revoked before retrying.
 
 `bun run test:computer:windows-desktop` builds native isolated fixtures and checks
-argument quoting, private pairing input, settings validation, graceful stop,
+argument quoting, private pairing input, fixed-origin startup with absent or stale
+preferences, graceful stop,
 unresponsive children, nested process ownership, manager death and malformed
 output. CI also checks the actual extracted desktop executable and its
 missing-sibling refusal. These checks do not capture or control a real desktop;
