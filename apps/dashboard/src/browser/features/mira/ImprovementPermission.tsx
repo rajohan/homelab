@@ -33,29 +33,33 @@ export function ImprovementPermission({
         queryKey: ["operations", "mira", "improvement-grant", automation.id],
         queryFn: () => api.mira.improvements.grant.query({ id: automation.id }),
     });
-    const resolve = useOperation(() =>
-        api.mira.improvements.resolve.mutate({
-            id: query.data!.blocked!.id,
+    const grant = query.data;
+    const blocked = grant?.blocked;
+    const resolve = useOperation(() => {
+        if (!blocked) throw new Error("No blocked attempt is available to review.");
+        return api.mira.improvements.resolve.mutate({
+            id: blocked.id,
             reviewed: true,
             reason,
-        })
-    );
-    const save = useOperation((enabled: boolean) =>
-        api.mira.improvements.allow.mutate({
+        });
+    });
+    const save = useOperation((enabled: boolean) => {
+        if (!grant) throw new Error("Coding permission has not loaded yet.");
+        return api.mira.improvements.allow.mutate({
             automationId: automation.id,
             automationVersion: automation.version,
-            version: query.data!.version,
+            version: grant.version,
             enabled,
             policyVersion: miraImprovementPolicy.version,
-        })
-    );
+        });
+    });
     const apply = (enabled: boolean) => {
         void save
             .mutateAsync(enabled)
             .then(onClose)
             .catch(() => {});
     };
-    const active = query.data?.enabled && query.data.current;
+    const active = grant?.enabled && grant.current;
     return (
         <Modal
             title="Automatic code changes"
@@ -101,23 +105,21 @@ export function ImprovementPermission({
                     changing its account or snapshot requires renewed permission.
                 </p>
                 {query.isPending && <LoadingState label="Loading coding permission…" />}
-                {query.data && !query.data.available && (
+                {grant && !grant.available && (
                     <p className="text-sm text-primary-300">
                         Qualified Daytona and GitHub integrations must be enabled before
                         allowing code changes.
                     </p>
                 )}
-                {query.data?.enabled && !query.data.current && (
+                {grant?.enabled && !grant.current && (
                     <p className="text-sm text-primary-300">
                         The automation or integration settings changed. Review the current
                         scope before renewing permission.
                     </p>
                 )}
-                {query.data?.blocked && (
+                {blocked && (
                     <Fieldset legend="Blocked attempt">
-                        <p className="text-sm text-primary-300">
-                            {query.data.blocked.reason}
-                        </p>
+                        <p className="text-sm text-primary-300">{blocked.reason}</p>
                         <FormField label="Review note">
                             <Textarea
                                 value={reason}
@@ -130,7 +132,7 @@ export function ImprovementPermission({
                             <Button
                                 variant="secondary"
                                 disabled={
-                                    !query.data.blocked.canClose ||
+                                    !blocked.canClose ||
                                     reason.trim().length < 10 ||
                                     save.isPending
                                 }
@@ -155,18 +157,14 @@ export function ImprovementPermission({
                         <Button
                             busy={save.isPending && save.variables === true}
                             disabled={
-                                !query.data?.available ||
-                                save.isPending ||
-                                resolve.isPending
+                                !grant?.available || save.isPending || resolve.isPending
                             }
                             onClick={() => apply(true)}
                         >
-                            {query.data?.enabled
-                                ? "Renew permission"
-                                : "Allow code changes"}
+                            {grant?.enabled ? "Renew permission" : "Allow code changes"}
                         </Button>
                     )}
-                    {query.data?.enabled && (
+                    {grant?.enabled && (
                         <Button
                             variant="secondary"
                             busy={save.isPending && save.variables === false}

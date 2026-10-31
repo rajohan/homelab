@@ -34,10 +34,11 @@ export function ReportDetail({
         queryKey: ["operations", "mira", "report", id],
         queryFn: () => api.mira.reports.read.query({ id }),
     });
-    const change = useOperation((action: "archive" | "restore" | "delete") =>
-        api.mira.reports.change.mutate({ id, version: query.data!.version, action })
-    );
     const report = query.data;
+    const change = useOperation((action: "archive" | "restore" | "delete") => {
+        if (!report) throw new Error("The report has not loaded yet.");
+        return api.mira.reports.change.mutate({ id, version: report.version, action });
+    });
     if (deleting)
         return (
             <ConfirmDialog
