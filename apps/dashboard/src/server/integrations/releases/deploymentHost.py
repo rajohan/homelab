@@ -314,7 +314,7 @@ def release_images(release):
     return images
 
 
-def inspect(target, release, allow_current=False):
+def inspect(target, release, allow_current=False, drained=False):
     """Observe only identities/hashes; never return expanded Compose environment or paths."""
     images = release_images(release)
     canonical(target["directory"], directory=True)
@@ -344,7 +344,8 @@ def inspect(target, release, allow_current=False):
         browser_source = read_file(Path(target["browserConfigFile"]))
         browser_hash = digest(browser_source)
         bindings = browser_bindings(target, json.loads(browser_source), observed)
-        browser_slots(target, bindings, observed)
+        if drained:
+            browser_slots(target, bindings, observed)
     return {"targetHash": digest(encoded(target)), "composeHash": digest(source), "configHash": digest(encoded(config)),
             "browserHash": browser_hash, "containers": observed, "units": units}
 
@@ -395,7 +396,7 @@ def submit(request, source):
             return status(target, identity)
         if not time.time() < request["deadline"] <= time.time() + 90:
             raise Refusal("request_expired")
-        if inspect(target, request["release"]) != request["expected"]:
+        if inspect(target, request["release"], drained=True) != request["expected"]:
             raise Refusal("confirmation_changed")
         if time.time() >= request["deadline"]:
             raise Refusal("request_expired")
@@ -499,7 +500,7 @@ def run(directory):
         sources, written = {}, {}
         try:
             phase("checking")
-            if inspect(target, release) != intent["expected"]:
+            if inspect(target, release, drained=True) != intent["expected"]:
                 raise Refusal("confirmation_changed")
             config = configured(target)
             images = release_images(release)
@@ -511,7 +512,7 @@ def run(directory):
             for app in sorted(apps):
                 command(["/usr/bin/docker", "pull", "--platform=linux/amd64", images[app]], target["directory"], timeout=300)
                 identities[app] = image_identity(target, images[app], release)
-            if inspect(target, release) != intent["expected"]:
+            if inspect(target, release, drained=True) != intent["expected"]:
                 raise Refusal("confirmation_changed")
             compose_path = Path(target["composeFile"])
             sources[compose_path] = read_file(compose_path)

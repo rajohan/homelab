@@ -232,6 +232,30 @@ class HostTests(unittest.TestCase):
                 host.browser_bindings(*arguments)
         self.assertEqual(host.browser_bindings(self.target, {"imageId": "sha256:" + "a"*64}, {}), [])
 
+    def test_preparation_allows_active_browser_but_submission_requires_drained_network(self):
+        target, browser, observed = self.browser_fixture()
+        path = Path(target["browserConfigFile"])
+        path.write_bytes(host.encoded(browser))
+        path.chmod(0o600)
+        proxy_image = "ghcr.io/demo/homelab/mira-browser-proxy:1.2.2@sha256:" + "a"*64
+        observed["proxy"].update(image=proxy_image, running=True, health="healthy")
+        observed["dashboard"] = {"image": self.old, "running": True, "health": "healthy"}
+        release = {**self.release, "images": [*self.release["images"],
+            {"app": "mira-browser-proxy", "reference": "ghcr.io/demo/homelab/mira-browser-proxy:1.2.3@sha256:" + "b"*64},
+            {"app": "mira-browser", "reference": "ghcr.io/demo/homelab/mira-browser:1.2.3@sha256:" + "b"*64}]}
+        config = {"name": "homelab", "services": {name: {"image": value["image"]} for name, value in observed.items()}}
+        with patch.object(host, "configured", return_value=config), patch.object(host, "container", side_effect=lambda _target, name: observed[name]), \
+                patch.object(host, "unit_state", return_value={"active": "active", "invocation": "a"*32}), \
+                patch.object(host, "browser_slots", side_effect=host.Refusal("browser_proxy_verification")) as guard:
+            expected = host.inspect(target, release)
+            guard.assert_not_called()
+            with self.assertRaisesRegex(host.Refusal, "browser_proxy_verification"):
+                host.inspect(target, release, drained=True)
+            identity = str(uuid.uuid4())
+            with self.assertRaisesRegex(host.Refusal, "browser_proxy_verification"):
+                host.submit({"target": target, "id": identity, "release": release, "expected": expected, "deadline": time.time()+30}, "unused")
+            self.assertFalse((self.state / identity).exists())
+
     def test_browser_slots_reject_network_replacement_extra_peers_and_wrong_image(self):
         target, browser, observed = self.browser_fixture()
         bindings = host.browser_bindings(target, browser, observed)
