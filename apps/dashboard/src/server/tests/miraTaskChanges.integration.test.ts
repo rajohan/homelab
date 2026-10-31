@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test";
 
 import { capabilities } from "@homelab/contracts/operations";
+import type { MiraQuery } from "@homelab/mira/data/context";
 import { claimMiraRun, finishMiraRun, scheduleMiraRuns } from "@homelab/mira/data/queue";
+import { currentTaskChange, pendingTaskChanges } from "@homelab/mira/data/taskChanges";
 import { runMiraTask } from "@homelab/mira/data/taskExecution";
 import { addTaskProgress, readTask } from "@homelab/mira/data/tasks";
 
@@ -305,6 +307,55 @@ test("pausing an assessment after dispatch prevents its queued run from claiming
         expect(await claimMiraRun(f.client, crypto.randomUUID(), "general")).toBeNull();
         await f.toggle(`automation:${f.automation.id}`, true);
         expect(await scheduleMiraRuns(f.client, afterQuiet())).toBe(0);
+    } finally {
+        await f.close();
+    }
+});
+
+test("assessments that expire while queued cannot start after the one-day window", async () => {
+    const f = await fixture();
+    try {
+        const task = await f.api.tasks.create(taskFields);
+        expect(await scheduleMiraRuns(f.client, afterQuiet())).toBe(1);
+        await f.client`UPDATE mira_events SET created_at=now()-interval '2 days' WHERE kind='task_changed' AND task_id=${task.id}`;
+        expect(await claimMiraRun(f.client, crypto.randomUUID(), "general")).toBeNull();
+        const history = await f.api.runs.list({ search: "", archived: false });
+        expect(history.rows[0]?.state).toBe("interrupted");
+    } finally {
+        await f.close();
+    }
+});
+
+test("task-change discovery and latest-edit validation use selective paths through audit history", async () => {
+    const f = await fixture();
+    try {
+        const task = await f.api.tasks.create(taskFields);
+        await f.client`INSERT INTO mira_audit(id,owner,actor,action,target,created_at)
+            SELECT gen_random_uuid(),'operator',CASE WHEN n%2=0 THEN 'human:operator' ELSE 'mira:worker' END,
+                CASE WHEN n%2=0 THEN 'task.updated' ELSE 'report.created' END,${task.id},now()-interval '30 days'
+            FROM generate_series(1,20000) n`;
+        await f.client`ANALYZE mira_audit`;
+        const plans: string[] = [];
+        const query = ((strings: TemplateStringsArray, ...parameters: unknown[]) => {
+            const statement = strings
+                .map((part, index) => (index ? `$${index}${part}` : part))
+                .join("");
+            return f.client
+                .unsafe(`EXPLAIN (ANALYZE, FORMAT JSON) ${statement}`, parameters)
+                .then((rows) => {
+                    plans.push(JSON.stringify(rows));
+                    return [];
+                });
+        }) as unknown as MiraQuery;
+        await pendingTaskChanges(query, afterQuiet());
+        expect(plans[0]).toContain("mira_audit_task_changes_recent");
+        expect(await scheduleMiraRuns(f.client, afterQuiet())).toBe(1);
+        const [event] = await f.client<
+            { id: string }[]
+        >`SELECT id FROM mira_events WHERE task_id=${task.id} AND kind='task_changed'`;
+        if (!event) throw new Error("Expected assessment event.");
+        await currentTaskChange(query, "operator", task.id, event.id);
+        expect(plans[1]).toContain("mira_audit_task_changes_");
     } finally {
         await f.close();
     }

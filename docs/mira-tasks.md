@@ -54,7 +54,7 @@ Generated task turns persist only the task reference and the operator's optional
 
 ## Change assessments
 
-An enabled **Task created or changed** event automation wakes Mira after human-created tasks, saved edits (including board moves) and progress notes. Five seconds without a newer edit coalesces rapid changes into one assessment of the latest saved task. Changes older than a day and changes made during an intentional pause are not replayed. Deleted tasks and superseded queued assessments are skipped.
+An enabled **Task created or changed** event automation wakes Mira after human-created tasks, saved edits (including board moves) and progress notes. Five seconds without a newer edit coalesces rapid changes into one assessment of the latest saved task. Changes older than a day and changes made during an intentional pause are not replayed. Deleted tasks, superseded queued assessments and assessments that expire while waiting for a worker are skipped. Partial audit indexes support recent-change discovery and the latest human edit per task without scanning unrelated historical activity.
 
 These runs can read tasks, progress, run outcomes, reports and pause reasons, and save a private report. Their server-provided tool catalog excludes task changes, drafts, external integrations, computer control and code execution. They do not start the task itself: use **Start work** or **Continue work** for execution. Reports and Mira's own actions do not trigger another assessment. A reviewed human approval of a task proposal is a human edit and may produce an assessment, but the assessment cannot create another proposal.
 

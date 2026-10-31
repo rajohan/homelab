@@ -192,7 +192,8 @@ export async function scheduleMiraEvents(
                         query,
                         event.owner,
                         event.taskId,
-                        event.eventId
+                        event.eventId,
+                        now
                     )))) ||
             new Date(event.createdAt).getTime() < now.getTime() - 86_400_000 ||
             !(await miraRunAllowed(query, event.owner, event.automationId))
