@@ -63,12 +63,12 @@ export function TaskColumn({
                     </Badge>
                 }
             />
-            {query.isPending && <LoadingState label="Loading tasks…" />}
-            {query.error && <ErrorNotice error={query.error} />}
             <div
                 ref={ref}
                 className={`min-h-64 flex-1 space-y-3 rounded-xl border border-dashed p-3 transition-colors md:max-h-[calc(100dvh-19rem)] md:overflow-y-auto md:overscroll-contain ${isDropTarget ? "border-accent-400 bg-accent-900/20" : "border-primary-700/60 bg-primary-800/30"}`}
             >
+                {query.isPending && <LoadingState label="Loading tasks…" />}
+                {query.error && <ErrorNotice error={query.error} />}
                 {rows.map((task) => (
                     <TaskCard
                         key={task.id}
@@ -77,7 +77,7 @@ export function TaskColumn({
                         onSelect={onSelect}
                     />
                 ))}
-                {!query.isPending && rows.length === 0 && (
+                {!query.isPending && !query.isError && rows.length === 0 && (
                     <p className="py-6 text-center text-sm text-primary-400">
                         No matching tasks.
                     </p>

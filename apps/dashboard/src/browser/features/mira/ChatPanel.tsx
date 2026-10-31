@@ -119,22 +119,26 @@ export function ChatPanel({
     const cancel = useOperation((runId: string) =>
         api.mira.runs.cancel.mutate({ id: runId })
     );
-    const change = useOperation((action: "archive" | "restore" | "delete") =>
-        api.mira.conversations.change.mutate({
+    const conversationVersion = query.data?.conversation.version;
+    const change = useOperation((action: "archive" | "restore" | "delete") => {
+        if (conversationVersion === undefined)
+            throw new Error("The conversation has not loaded yet.");
+        return api.mira.conversations.change.mutate({
             id,
-            version: query.data!.conversation.version,
+            version: conversationVersion,
             action,
-        })
-    );
-    const rename = useOperation((title: string) =>
-        api.mira.conversations.rename.mutate({
+        });
+    });
+    const rename = useOperation((title: string) => {
+        if (conversationVersion === undefined)
+            throw new Error("The conversation has not loaded yet.");
+        return api.mira.conversations.rename.mutate({
             id,
-            version: query.data!.conversation.version,
+            version: conversationVersion,
             title,
-        })
-    );
-    const active =
-        query.data?.run && ["queued", "running"].includes(query.data.run.state);
+        });
+    });
+    const active = ["queued", "running"].includes(query.data?.run?.state ?? "");
     const error = send.error ?? cancel.error ?? change.error ?? rename.error;
     if (query.isPending)
         return (

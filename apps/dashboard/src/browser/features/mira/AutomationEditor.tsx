@@ -79,7 +79,7 @@ export function AutomationEditor({
             dismissible={!save.isPending}
         >
             <form
-                className="space-y-4"
+                className="flex flex-col gap-4"
                 onSubmit={(event) => {
                     event.preventDefault();
                     void save
