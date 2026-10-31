@@ -63,7 +63,9 @@ def main():
             assert host_service["command"] == ["bun", "--no-env-file", "hostCli.js"]
             attachment_mount = next(volume for volume in host_service["volumes"] if volume["target"] == "/var/lib/mira/files")
             assert attachment_mount["source"] == compose_environment["HOMELAB_MIRA_FILES_DIR"]
-            assert attachment_mount["read_only"] is True and attachment_mount["bind"]["create_host_path"] is False
+            assert attachment_mount.get("read_only", False) is False and attachment_mount["bind"]["create_host_path"] is False
+            assert host_service["read_only"] is True
+            assert all(volume.get("read_only") is True for volume in host_service["volumes"] if volume["target"] != "/var/lib/mira/files")
             assert host_service["environment"]["HOMELAB_MIRA_FILES_DIR"] == attachment_mount["target"]
             client = network("client")
             # Isolated gateway mode creates no host bridge address/route. This prefix exists only in the fixture namespace.

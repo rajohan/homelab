@@ -203,7 +203,7 @@ export async function openMiraBrowserSession(
                     ...access.policy,
                     ...(access.policy.mode === "control" &&
                     access.policy.origins.length === 1
-                        ? { uploads: true }
+                        ? { uploads: true, downloads: true }
                         : {}),
                 },
                 signal,

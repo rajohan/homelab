@@ -2,6 +2,7 @@ import type { Readable, Writable } from "node:stream";
 
 import * as v from "valibot";
 
+import { BrowserDownloadTransfer } from "./downloadTransfer";
 import { browserDriverVersion } from "./driver";
 import { openNativeBrowser } from "./native";
 import { browserUrl } from "./policy";
@@ -49,6 +50,7 @@ export function serveBrowserWorker(
     let initializationFailed = false;
     const restore = new BrowserProfileTransfer();
     const upload = new BrowserUploadTransfer();
+    const download = new BrowserDownloadTransfer();
     let restored = false;
     let port: Awaited<ReturnType<typeof open>> | undefined;
     let grant: ReturnType<typeof browserWorkerGrant> | undefined;
@@ -59,6 +61,7 @@ export function serveBrowserWorker(
         stopped = true;
         owner.abort();
         upload.clear();
+        download.clear();
         buffer = Buffer.alloc(0);
         clearTimeout(lifetime);
         clearTimeout(idle);
@@ -114,6 +117,12 @@ export function serveBrowserWorker(
             command.method !== "uploadFinish"
         )
             throw new Error("Browser upload transfer is incomplete.");
+        if (
+            download.active &&
+            command.method !== "downloadPart" &&
+            command.method !== "downloadFinish"
+        )
+            throw new Error("Browser download transfer is incomplete.");
         let result: unknown;
         if (command.method === "profile") {
             if (!profile || initialized || restored)
@@ -146,6 +155,23 @@ export function serveBrowserWorker(
             if (!port || !grant) throw new Error("Browser worker is not initialized.");
             owner.signal.throwIfAborted();
             switch (command.method) {
+                case "downloadBegin": {
+                    if (!grant.downloads)
+                        throw new Error("Browser downloads are unavailable.");
+                    const file = await port.download(command.params, owner.signal);
+                    owner.signal.throwIfAborted();
+                    result = download.begin(file);
+                    break;
+                }
+                case "downloadPart": {
+                    result = download.take(command.params);
+                    break;
+                }
+                case "downloadFinish": {
+                    download.finish();
+                    result = { accepted: true };
+                    break;
+                }
                 case "uploadBegin": {
                     if (!grant.uploads)
                         throw new Error("Browser uploads are unavailable.");

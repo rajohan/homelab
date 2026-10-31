@@ -19,7 +19,7 @@ test("native downloads bind opaque artifact IDs to exact bytes and remove collec
             { status: "completed", download_id: id, bytes: bytes.length },
             signal()
         );
-        expect(result.bytes.equals(bytes)).toBe(true);
+        expect(Buffer.from(result.bytes).equals(bytes)).toBe(true);
         expect(result.sha256).toBe(createHash("sha256").update(bytes).digest("hex"));
         expect(await readdir(downloads.root)).toEqual([]);
         await assert.rejects(

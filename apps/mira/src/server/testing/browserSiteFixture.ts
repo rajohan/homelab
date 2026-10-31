@@ -8,6 +8,14 @@ export function browserSiteFixture() {
         port: 4173,
         fetch: async (request) => {
             const pathname = new URL(request.url).pathname;
+            if (pathname === "/download")
+                return new Response(new Uint8Array(100_003).fill(97), {
+                    headers: {
+                        "content-type": "application/octet-stream",
+                        "content-disposition":
+                            "attachment; filename=untrusted-site-name.exe",
+                    },
+                });
             if (pathname === "/upload" && request.method === "POST") {
                 const data = await request.formData();
                 const file = data.get("attachment");
@@ -49,6 +57,7 @@ export function browserSiteFixture() {
             return new Response(
                 `<!doctype html><title>Worker fixture</title>
                 <label>Fixture text<input id="entry"></label><button id="counter">Count</button>
+                <a href="/download" download>Download fixture</a>
                 <form id="upload"><label>Fixture file<input type="file" name="attachment"></label><button>Submit fixture file</button></form>
                 <script>
                 document.getElementById('upload').addEventListener('submit',e=>{e.preventDefault();fetch('/upload',{method:'POST',body:new FormData(e.target)})});

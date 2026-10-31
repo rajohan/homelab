@@ -14,7 +14,7 @@ import {
 } from "@homelab/mira/data/browserConsole";
 import { listMiraBrowserUploads } from "@homelab/mira/data/browserUploads";
 import { createConversation, enqueueTurn } from "@homelab/mira/data/conversations";
-import { saveMiraFile } from "@homelab/mira/data/files";
+import { saveMiraFile, readMiraFile } from "@homelab/mira/data/files";
 import { claimMiraRun } from "@homelab/mira/data/queue";
 
 import { createTestDatabase } from "../../../../../tests/database";
@@ -374,6 +374,42 @@ export async function main() {
             size: attachmentBytes.length,
             sha256: files[0]!.sha256,
         });
+        const downloadView = await humanCommand({
+            id: grant.id,
+            epoch: human.epoch,
+            commandId: crypto.randomUUID(),
+            operation: { method: "observe" },
+        });
+        const link = downloadView.preview?.refs.find(
+            (item) => item.label === "Download fixture" && item.role === "link"
+        );
+        assert.ok(link);
+        assert.ok(downloadView.preview);
+        const downloadedId = crypto.randomUUID();
+        await humanCommand({
+            id: grant.id,
+            epoch: human.epoch,
+            commandId: downloadedId,
+            operation: {
+                method: "download",
+                name: "approved-download.txt",
+                origin: "http://127.0.0.1:4173",
+                input: {
+                    observationId: downloadView.preview.observationId,
+                    ref: link.ref,
+                },
+            },
+        });
+        const downloaded = await readMiraFile(context, attachmentDirectory, downloadedId);
+        assert.equal(downloaded.metadata.name, "approved-download.txt");
+        assert.equal(
+            Buffer.from(downloaded.bytes).equals(Buffer.from(attachmentBytes)),
+            true
+        );
+        const [response] = await db.client<
+            { ids: string[] }[]
+        >`SELECT attachment_ids AS ids FROM mira_messages WHERE id=${run.assistantMessageId}`;
+        assert.deepEqual(response?.ids, [downloadedId]);
         await transferMiraBrowserControl(context, {
             id: grant.id,
             epoch: human.epoch,
@@ -400,6 +436,9 @@ export async function main() {
                 humanTakeover: true,
                 privateOperatorInput: true,
                 approvedUpload: true,
+                approvedDownload: true,
+                downloadBytes: downloaded.bytes.length,
+                downloadLinkedToConversation: true,
                 returnedToMira: true,
                 builtHost: true,
                 durableQueue: true,

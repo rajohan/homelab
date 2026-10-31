@@ -183,6 +183,10 @@ export async function openBrowserSession(
             const snapshot = structuredClone(input);
             return run("control", operation, (s) => active.act(snapshot, s));
         },
+        download: (input: unknown, operation: AbortSignal) => {
+            const snapshot = structuredClone(input);
+            return run("control", operation, (s) => active.download(snapshot, s));
+        },
         upload: (input: unknown, file: BrowserUploadFile, operation: AbortSignal) => {
             const snapshot = structuredClone(input);
             const selected = { ...file, bytes: Uint8Array.from(file.bytes) };

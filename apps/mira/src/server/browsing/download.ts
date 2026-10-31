@@ -5,11 +5,21 @@ import path from "node:path";
 
 import * as v from "valibot";
 
-const limit = 25 * 1024 * 1024;
+import {
+    type BrowserDownloadFile,
+    browserDownloadCount,
+    browserDownloadLimit,
+    browserDownloadTotal,
+} from "./downloadTransfer";
 const receipt = v.strictObject({
     status: v.literal("completed"),
     download_id: v.pipe(v.string(), v.uuid()),
-    bytes: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(limit)),
+    bytes: v.pipe(
+        v.number(),
+        v.integer(),
+        v.minValue(1),
+        v.maxValue(browserDownloadLimit)
+    ),
 });
 
 /**
@@ -26,10 +36,16 @@ export async function createBrowserDownloads(directory: string) {
     let bytes = 0;
     return {
         root,
-        collect: async (input: unknown, signal: AbortSignal) => {
+        collect: async (
+            input: unknown,
+            signal: AbortSignal
+        ): Promise<BrowserDownloadFile> => {
             signal.throwIfAborted();
             const result = v.parse(receipt, input);
-            if (++count > 16 || bytes + result.bytes > 100 * 1024 * 1024)
+            if (
+                ++count > browserDownloadCount ||
+                bytes + result.bytes > browserDownloadTotal
+            )
                 throw new Error("Browser download session quota exhausted.");
             bytes += result.bytes;
             const entries = await readdir(root);

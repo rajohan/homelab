@@ -45,6 +45,7 @@ function fixture() {
             input = value;
             return acting ?? Promise.resolve({ effect: "unverified" });
         },
+        download: () => Promise.reject(new Error("No download fixture selected.")),
         upload: () => Promise.resolve({ effect: "unverified" }),
         close: async () => {
             calls.push("close");

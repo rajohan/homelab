@@ -14,6 +14,7 @@ import {
     claimBrowserHumanCommand,
     finishBrowserHumanCommand,
 } from "./browserConsoleHost";
+import { saveBrowserDownload } from "./browserDownloads";
 import {
     browserHostConfigurationSchema,
     openMiraBrowserSession,
@@ -97,7 +98,24 @@ export async function runMiraBrowserHost(
                     result = await current.observe(operation, Boolean(humanCommand));
                 else if (command.operation.method === "navigate")
                     result = await current.navigate(command.operation.url, operation);
-                else if (command.operation.method === "upload") {
+                else if (command.operation.method === "download") {
+                    if (!humanCommand)
+                        throw new Error("Only a human can request browser downloads.");
+                    const file = await current.download(
+                        command.operation.input,
+                        operation
+                    );
+                    operation.throwIfAborted();
+                    await saveBrowserDownload(
+                        client,
+                        current.claim,
+                        humanCommand,
+                        options.filesDirectory,
+                        file,
+                        operation
+                    );
+                    continue;
+                } else if (command.operation.method === "upload") {
                     if (!humanCommand)
                         throw new Error("Only a human can select browser uploads.");
                     const selected = command.operation.file;
