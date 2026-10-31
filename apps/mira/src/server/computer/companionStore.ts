@@ -88,3 +88,22 @@ export class ComputerCredentialStore {
         }
     }
 }
+
+/**
+ * Forget local pairing, including the fixed Homelab service's retired HTTPS port.
+ * @param origin - Explicit current HTTPS origin; other origins retain isolated removal.
+ * @param vault - Current user's encrypted store, injectable for isolated tests.
+ * @returns Completion only after all applicable entries are removed; no credential is read or transmitted.
+ */
+export async function forgetComputerPairing(
+    origin: string,
+    vault: typeof Bun.secrets = Bun.secrets
+): Promise<void> {
+    const canonical = computerOrigin(origin);
+    await new ComputerCredentialStore(canonical, vault).forget();
+    if (canonical === "https://computer.home.rajohan.no")
+        await new ComputerCredentialStore(
+            "https://computer.home.rajohan.no:3443",
+            vault
+        ).forget();
+}

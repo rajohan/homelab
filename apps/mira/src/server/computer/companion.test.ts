@@ -14,7 +14,7 @@ import {
 import { main } from "./companionCli";
 import { readComputerTicket } from "./companionInput";
 import { runComputerPresence } from "./companionPresence";
-import { ComputerCredentialStore } from "./companionStore";
+import { ComputerCredentialStore, forgetComputerPairing } from "./companionStore";
 import { issueComputerCredential } from "./credentials";
 
 const id = crypto.randomUUID();
@@ -199,6 +199,62 @@ test("OS vault is origin-bound, local to this device and fails closed without a 
         }).read(),
         /store is unavailable/
     );
+});
+
+test("forget removes current and retired Homelab pairings without touching another origin", async () => {
+    const f = vault();
+    const current = new ComputerCredentialStore(
+        "https://computer.home.rajohan.no",
+        f.store
+    );
+    const retired = new ComputerCredentialStore(
+        "https://computer.home.rajohan.no:3443",
+        f.store
+    );
+    const other = new ComputerCredentialStore("https://another.example.test", f.store);
+    for (const entry of [current, retired, other]) await entry.save(record);
+    await forgetComputerPairing("https://computer.home.rajohan.no:443/", f.store);
+    expect(await current.read()).toBeNull();
+    expect(await retired.read()).toBeNull();
+    expect(await other.read()).toEqual(record);
+    await forgetComputerPairing("https://computer.home.rajohan.no", f.store);
+    for (const entry of [current, retired]) await entry.save(record);
+    await forgetComputerPairing("https://another.example.test", f.store);
+    expect(await other.read()).toBeNull();
+    expect(await current.read()).toEqual(record);
+    expect(await retired.read()).toEqual(record);
+});
+
+test("forget never reports success when legacy vault cleanup fails and can safely be retried", async () => {
+    const f = vault();
+    const current = new ComputerCredentialStore(
+        "https://computer.home.rajohan.no",
+        f.store
+    );
+    const retired = new ComputerCredentialStore(
+        "https://computer.home.rajohan.no:3443",
+        f.store
+    );
+    await current.save(record);
+    await retired.save(record);
+    const legacyKey = f.writes[1]!.name;
+    await rejects(
+        forgetComputerPairing("https://computer.home.rajohan.no", {
+            ...f.store,
+            get: () => {
+                throw new Error("Removal must not read credentials");
+            },
+            delete: (key) =>
+                key.name === legacyKey
+                    ? Promise.reject(new Error("private vault failure"))
+                    : f.store.delete(key),
+        }),
+        /saved pairing could not be removed/
+    );
+    expect(await current.read()).toBeNull();
+    expect(await retired.read()).toEqual(record);
+    await forgetComputerPairing("https://computer.home.rajohan.no", f.store);
+    expect(await retired.read()).toBeNull();
 });
 
 test("hidden pairing input restores raw mode and rejects oversized or interrupted tickets", async () => {

@@ -6,7 +6,7 @@ import { ComputerCompanion, computerOrigin } from "./companion";
 import { readComputerTicket } from "./companionInput";
 import { watchComputerParent } from "./companionParent";
 import { runComputerPresence } from "./companionPresence";
-import { ComputerCredentialStore } from "./companionStore";
+import { ComputerCredentialStore, forgetComputerPairing } from "./companionStore";
 import { computerConnectionWork } from "./companionWork";
 import { openComputerInstallationLease } from "./installationLease";
 import { installedComputerHost, readComputerPackage } from "./installedComputer";
@@ -87,7 +87,7 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<void
             stopped.signal.throwIfAborted();
         }
         if (command === "forget") {
-            await store.forget();
+            await forgetComputerPairing(origin);
             print(
                 "Local pairing removed. Revoke the computer in Settings to end existing connections."
             );

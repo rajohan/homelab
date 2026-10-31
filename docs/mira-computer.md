@@ -461,7 +461,9 @@ It first closes the private input pipe to request the existing controller's
 graceful cleanup, then enforces bounded process-tree termination. If the manager
 crashes, kill-on-close retires the same tree. Cleanup that cannot be confirmed
 blocks another connection in that manager. One manager is allowed per Windows
-account. Remove pairing deletes the local vault entry; use Settings to revoke
+account. Remove pairing deletes the local vault entry and the fixed Homelab
+service's retired port-3443 entry, without reading or transmitting either credential;
+other origins remain isolated. Use Settings to revoke
 server access too. A failed or cancelled pairing must be revoked before retrying.
 
 `bun run test:computer:windows-desktop` builds native isolated fixtures and checks
