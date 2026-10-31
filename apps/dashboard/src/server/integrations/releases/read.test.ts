@@ -30,6 +30,9 @@ function fixture(
         windows?: unknown;
         windowsAssets?: unknown[];
         windowsEvidence?: unknown[];
+        browser?: unknown;
+        browserAssets?: unknown[];
+        browserEvidence?: unknown[];
     } = {}
 ) {
     const requests: { url: string; authorization: string | null }[] = [];
@@ -50,9 +53,13 @@ function fixture(
                 assets: [
                     { id: 42, name: "container-images.json" },
                     ...(options.windowsAssets ?? []),
+                    ...(options.browserAssets ?? []),
                 ],
             });
         if (url.endsWith("/releases/assets/43")) return Response.json(options.windows);
+        if (url.endsWith("/releases/assets/45")) return Response.json(options.browser);
+        if (url.includes("name=browser-manifest-"))
+            return Response.json({ artifacts: options.browserEvidence ?? [] });
         if (url.includes("name=computer-manifest-"))
             return Response.json({ artifacts: options.windowsEvidence ?? [] });
         if (url.endsWith("/releases/assets/42"))
@@ -364,4 +371,118 @@ test("Windows downloads require the exact tested manifest, current workflow atte
             .request
     );
     expect(failed.computer).toBeNull();
+});
+
+const browser = {
+    version: "0.8.0",
+    revision,
+    platform: "linux/amd64",
+    images: (["mira-browser", "mira-browser-proxy"] as const).map((app) => ({
+        app,
+        tag: `ghcr.io/demo/homelab/${app}:0.8.0`,
+        reference: `ghcr.io/demo/homelab/${app}:0.8.0@sha256:${"f".repeat(64)}`,
+    })),
+};
+const browserAssets = [{ id: 45, name: "browser-image.json" }];
+const browserEvidence = [
+    {
+        ...evidence,
+        name: "browser-manifest-1.json",
+        digest: `sha256:${new Bun.CryptoHasher("sha256").update(JSON.stringify(browser)).digest("hex")}`,
+    },
+];
+
+test("browser and proxy publication must match the exact verified release and workflow attempt", async () => {
+    const result = await readHomelabRelease(
+        "demo/homelab",
+        "synthetic-token",
+        AbortSignal.timeout(1000),
+        fixture({ browser, browserAssets, browserEvidence }).request
+    );
+    expect(result.browser).toEqual({
+        version: browser.version,
+        revision,
+        platform: "linux/amd64",
+        images: browser.images.map(({ app, reference }) => ({ app, reference })),
+    });
+    for (const options of [
+        { browserAssets: [] },
+        { browserAssets: [...browserAssets, ...browserAssets] },
+        { browser: { ...browser, version: "0.8.1" } },
+        { browser: { ...browser, revision: "c".repeat(40) } },
+        { browser: { ...browser, platform: "linux/arm64" } },
+        { browser: { ...browser, images: browser.images.slice(0, 1) } },
+        { browser: { ...browser, images: [browser.images[0], browser.images[0]] } },
+        {
+            browser: {
+                ...browser,
+                images: browser.images.map((image) => ({
+                    ...image,
+                    reference: image.reference.replace("demo/homelab", "other/homelab"),
+                })),
+            },
+        },
+        {
+            browser: {
+                ...browser,
+                images: browser.images.map((image) => ({
+                    ...image,
+                    reference: image.tag,
+                })),
+            },
+        },
+        { browser: { ...browser, changed: true } },
+        { browserEvidence: [] },
+        { browserEvidence: [...browserEvidence, ...browserEvidence] },
+        { browserEvidence: [{ ...browserEvidence[0], expired: true }] },
+        { browserEvidence: [{ ...browserEvidence[0], digest: null }] },
+        { browserEvidence: [{ ...browserEvidence[0], name: "browser-manifest-2.json" }] },
+        {
+            browserEvidence: [
+                { ...browserEvidence[0], workflow_run: { id: 101, head_sha: revision } },
+            ],
+        },
+        {
+            browserEvidence: [
+                {
+                    ...browserEvidence[0],
+                    workflow_run: { id: 100, head_sha: "b".repeat(40) },
+                },
+            ],
+        },
+    ]) {
+        const matchingEvidence =
+            "browser" in options && options.browser && !("changed" in options.browser)
+                ? browserEvidence.map((artifact) => ({
+                      ...artifact,
+                      digest: `sha256:${new Bun.CryptoHasher("sha256").update(JSON.stringify(options.browser)).digest("hex")}`,
+                  }))
+                : browserEvidence;
+        const unavailable = await readHomelabRelease(
+            "demo/homelab",
+            undefined,
+            AbortSignal.timeout(1000),
+            fixture({
+                browser,
+                browserAssets,
+                browserEvidence: matchingEvidence,
+                ...options,
+            }).request
+        );
+        expect(unavailable.verified).toBe(true);
+        expect(unavailable.browser).toBeNull();
+    }
+    for (const options of [{ conclusion: "failure" }, { artifacts: [] }]) {
+        const client = fixture({ browser, browserAssets, browserEvidence, ...options });
+        const unverified = await readHomelabRelease(
+            "demo/homelab",
+            undefined,
+            AbortSignal.timeout(1000),
+            client.request
+        );
+        expect(unverified.browser).toBeNull();
+        expect(
+            client.requests.some(({ url }) => url.endsWith("/releases/assets/45"))
+        ).toBe(false);
+    }
 });

@@ -52,6 +52,7 @@
     "apps/dashboard/src/browser/features/updates/RestartStatus.test.tsx": 1,
     "apps/dashboard/src/browser/features/mira/MiraComputers.test.tsx": 870,
     "apps/dashboard/src/browser/features/mira/ComputerAccess.test.tsx": 4626,
-    "apps/dashboard/src/browser/features/mira/BrowserAccess.test.tsx": 1500
+    "apps/dashboard/src/browser/features/mira/BrowserAccess.test.tsx": 1500,
+    "apps/dashboard/src/browser/features/releases/DeploymentPanel.test.tsx": 28
   }
 }

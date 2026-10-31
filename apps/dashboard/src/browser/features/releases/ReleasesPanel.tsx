@@ -13,6 +13,7 @@ import { PackageCheck, Tag } from "lucide-react";
 
 import { api } from "../../api/client";
 import { useJobOperation } from "../jobs/useJobOperation";
+import { DeploymentPanel } from "./DeploymentPanel";
 
 /**
  * Separate the published Homelab release from the versions actually observed in deployment.
@@ -149,6 +150,7 @@ export function ReleasesPanel() {
                     )}
                 </>
             )}
+            {data && <DeploymentPanel />}
         </Card>
     );
 }

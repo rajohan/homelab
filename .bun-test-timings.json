@@ -116,6 +116,8 @@
     "apps/mira/src/server/browsing/driverProcess.test.ts": 71,
     "apps/mira/src/server/browsing/download.test.ts": 8,
     "apps/mira/src/server/browsing/driver.test.ts": 8,
-    "apps/mira/src/server/browsing/downloadTransfer.test.ts": 1
+    "apps/mira/src/server/browsing/downloadTransfer.test.ts": 1,
+    "apps/dashboard/src/server/integrations/releases/deployment.test.ts": 93,
+    "apps/mira/src/server/executor/maintenanceGate.test.ts": 3
   }
 }

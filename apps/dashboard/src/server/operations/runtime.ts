@@ -26,6 +26,8 @@ import { metricsJob } from "../integrations/metrics/job";
 import { createInventoryReader } from "../integrations/metrics/liveInventory";
 import { readSavedInventory } from "../integrations/metrics/snapshot";
 import type { MetricsConfiguration } from "../integrations/metrics/transport";
+import type { ReleaseDeploymentTarget } from "../integrations/releases/deploymentConfiguration";
+import { deploymentPreparationJobs } from "../integrations/releases/deploymentPlans";
 import { readHomelabRelease } from "../integrations/releases/read";
 import { snapshotJob } from "../integrations/snapshots/job";
 import { updateActionJobs } from "../integrations/updates/actions";
@@ -59,6 +61,12 @@ export function createOperationsRuntime(
           )
         : undefined;
     const registry = createJobRegistry([
+        ...deploymentPreparationJobs({
+            targets: configuration.deploymentTargets ?? [],
+            connections: configuration.updateTargets ?? [],
+            repository: configuration.releaseRepository,
+            token: configuration.githubToken,
+        }),
         ...maintenanceJobs(
             configuration.maintenanceTargets ?? [],
             configuration.updateTargets ?? []
@@ -152,6 +160,7 @@ export function createOperationsRuntime(
           )
         : undefined;
     return {
+        deploymentTargets: configuration.deploymentTargets ?? [],
         miraFilesDirectory: configuration.miraFilesDirectory,
         agentMailHook: configuration.agentMailHook,
         moltbookBinding: configuration.moltbookBinding,
@@ -174,6 +183,7 @@ export function createOperationsRuntime(
     };
 }
 export type OperationsRuntime = ReturnType<typeof connectDashboardDatabase> & {
+    readonly deploymentTargets?: readonly ReleaseDeploymentTarget[];
     readonly miraFilesDirectory?: string | undefined;
     readonly agentMailHook?: AgentMailHookConfiguration | undefined;
     readonly moltbookBinding?: MoltbookBinding | undefined;

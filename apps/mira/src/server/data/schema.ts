@@ -349,6 +349,7 @@ export const miraRuntimeStatus = pgTable(
         version: text().notNull(),
         skillCatalogHash: text("skill_catalog_hash"),
         skillCatalogWorkerId: uuid("skill_catalog_worker_id"),
+        deploymentDrainedFor: uuid("deployment_drained_for"),
         model: text(),
         ready: boolean().notNull(),
         message: text(),
