@@ -5,7 +5,7 @@ import type { MiraAutomation } from "@homelab/contracts/mira";
 import type { MiraImprovementGrant } from "@homelab/contracts/miraImprovement";
 import { IdentityClient } from "@homelab/ui/identity/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitForElementToBeRemoved } from "@testing-library/react";
 
 import { IdentityClientContext } from "../../identity/IdentityClientContext";
 import { ImprovementPermission as SourcePermission } from "./ImprovementPermission";
@@ -109,20 +109,17 @@ test.each([
             expect(
                 await screen.findByText("Review the synthetic unresolved check.")
             ).toBeVisible();
-            expect(
-                screen.getByRole("button", { name: "Close reviewed attempt" })
-            ).toBeDisabled();
+            const closeAttempt = screen.getByRole("button", {
+                name: "Close reviewed attempt",
+            });
+            expect(closeAttempt).toBeDisabled();
             act(() => {
                 query.setQueryData(key, (current: MiraImprovementGrant) => ({
                     ...current,
                     blocked: null,
                 }));
             });
-            await waitFor(() =>
-                expect(
-                    screen.queryByRole("button", { name: "Close reviewed attempt" })
-                ).not.toBeInTheDocument()
-            );
+            await waitForElementToBeRemoved(closeAttempt);
         } else {
             expect(
                 await screen.findByRole("button", { name: "Allow code changes" })
