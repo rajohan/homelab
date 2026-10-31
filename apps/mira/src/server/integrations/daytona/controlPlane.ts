@@ -10,6 +10,7 @@ import * as v from "valibot";
 import { integrationJson } from "../http";
 import {
     daytonaBindingHash,
+    daytonaOriginalBindingHash,
     daytonaPolicy,
     daytonaSandboxName,
     type DaytonaConfiguration,
@@ -99,13 +100,19 @@ export class DaytonaUncertainMutation extends Error {
 export class DaytonaClient {
     private readonly configuration: DaytonaConfiguration;
     private readonly request: typeof fetch;
+    private readonly ownershipHash: string;
     /**
      * Bind one operator-owned account to a fixed HTTPS origin and bounded transport.
      * @param configuration - Provisioned account, private snapshot ID and executor-only credential.
      * @param request - Substitute only for synthetic provider qualification.
+     * @param recordedHash - Durable original attempt fingerprint; retired policies permit observation and cleanup only.
      */
-    constructor(configuration: DaytonaConfiguration, request: typeof fetch = fetch) {
-        daytonaBindingHash(configuration);
+    constructor(
+        configuration: DaytonaConfiguration,
+        request: typeof fetch = fetch,
+        recordedHash = daytonaBindingHash(configuration)
+    ) {
+        this.ownershipHash = daytonaOriginalBindingHash(configuration, recordedHash);
         if (!/^[\u0021-\u007E]{20,2048}$/.test(configuration.apiKey))
             throw new Error("Invalid Daytona credential.");
         this.configuration = { ...configuration };
@@ -163,9 +170,14 @@ export class DaytonaClient {
         }
     }
 
+    private requireCurrentPolicy() {
+        if (this.ownershipHash !== daytonaBindingHash(this.configuration))
+            throw new Error("Retired Daytona policy permits cleanup only.");
+    }
+
     private labels(runId: string) {
         return {
-            "homelab.owner": daytonaBindingHash(this.configuration),
+            "homelab.owner": this.ownershipHash,
             "homelab.run": runId,
             "homelab.service": "mira",
         };
@@ -178,7 +190,11 @@ export class DaytonaClient {
     ): DaytonaObservation {
         const row = v.parse(sandboxSchema, value);
         const labels = this.labels(reference.runId);
-        const name = daytonaSandboxName(this.configuration, reference.runId);
+        const name = daytonaSandboxName(
+            this.configuration,
+            reference.runId,
+            this.ownershipHash
+        );
         // Daytona renames a sandbox as soon as deletion begins. Only a persisted
         // exact ID, terminal lifecycle state and unchanged owner labels can identify it.
         const renamedDuringDeletion =
@@ -307,6 +323,7 @@ export class DaytonaClient {
         signal: AbortSignal,
         authorize: () => Promise<void>
     ): Promise<DaytonaObservation> {
+        this.requireCurrentPolicy();
         const name = daytonaSandboxName(this.configuration, runId);
         await this.preflight(signal, true);
         const snapshot = await this.snapshot(signal);
@@ -351,7 +368,11 @@ export class DaytonaClient {
         reference: DaytonaReference,
         signal: AbortSignal
     ): Promise<DaytonaObservation | null> {
-        const name = daytonaSandboxName(this.configuration, reference.runId);
+        const name = daytonaSandboxName(
+            this.configuration,
+            reference.runId,
+            this.ownershipHash
+        );
         if (reference.sandboxId !== undefined) v.parse(id, reference.sandboxId);
         await this.preflight(signal);
         const value = await this.json(
@@ -385,6 +406,7 @@ export class DaytonaClient {
         signal: AbortSignal,
         authorize: () => Promise<void>
     ): Promise<void> {
+        this.requireCurrentPolicy();
         await this.preflight(signal, true);
         const observed = await this.inspect(reference, signal);
         if (!observed || observed.state !== "started" || !observed.settingsMatch)

@@ -74,7 +74,8 @@ function sandbox() {
     };
 }
 function transport(
-    handler: (path: string, init: RequestInit) => Response | Promise<Response>
+    handler: (path: string, init: RequestInit) => Response | Promise<Response>,
+    recordedHash?: string
 ) {
     const calls: { path: string; init: RequestInit }[] = [];
     const request = Object.assign(
@@ -100,7 +101,7 @@ function transport(
         },
         { preconnect: fetch.preconnect }
     );
-    return { client: new DaytonaClient(configuration, request), calls };
+    return { client: new DaytonaClient(configuration, request, recordedHash), calls };
 }
 function fixture(path: string, init: RequestInit): Response {
     if (path === "/api/sandbox" && init.method === "POST") {
@@ -688,4 +689,44 @@ test("Daytona accepts a long-running sandbox with recent activity and no wall-cl
     );
     const observed = await client.inspect({ runId, sandboxId }, signal);
     expect(observed?.settingsMatch).toBe(true);
+});
+
+test("retired policy identity can inspect and destroy but cannot create or refresh", async () => {
+    const originalHash =
+        "b035a198edc59c253f453bbb9ad659fa3d815af1b9aa10febd94f70054ba5cd9";
+    const originalName = `mira-${originalHash.slice(0, 16)}-${runId}`;
+    const { client, calls } = transport(
+        (path, init) =>
+            path.includes("/sandbox/")
+                ? Response.json({
+                      ...sandbox(),
+                      name: originalName,
+                      cpu: 2,
+                      memory: 4,
+                      labels: { ...sandbox().labels, "homelab.owner": originalHash },
+                      state: init.method === "DELETE" ? "destroying" : "started",
+                  })
+                : fixture(path, init),
+        originalHash
+    );
+    expect(await client.inspect({ runId, sandboxId }, signal)).toMatchObject({
+        id: sandboxId,
+        name: originalName,
+        settingsMatch: false,
+    });
+    await rejects(
+        client.create(runId, signal, async () => {}),
+        /cleanup only/
+    );
+    await rejects(
+        client.refreshActivity({ runId, sandboxId }, signal, async () => {}),
+        /cleanup only/
+    );
+    expect(await client.destroy({ runId, sandboxId }, signal)).toBe("requested");
+    expect(
+        calls.filter((call) => call.init.method !== "GET").map((call) => call.init.method)
+    ).toEqual(["DELETE"]);
+    expect(() => new DaytonaClient(configuration, fetch, "a".repeat(64))).toThrow(
+        /ownership policy/
+    );
 });

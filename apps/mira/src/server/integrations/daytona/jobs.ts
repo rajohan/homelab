@@ -50,6 +50,8 @@ interface Job {
     token: string;
     files: { name: string; id: string }[];
 }
+// Provisioning is separately bounded; running jobs use renewable idle windows.
+const provisioningMinutes = 15;
 const logWarning =
     "Logs are unavailable or exceeded the 128 KiB limit. Displayed logs may be incomplete.";
 const unknownMessage =
@@ -165,11 +167,11 @@ export async function dispatchMiraDaytona(
                 return null;
             }
             // Admission survives a crash before POST. No other job can consume this slot.
-            await query`UPDATE mira_daytona_jobs SET state='running',phase='admitted',cleanup='pending',started_at=clock_timestamp(),deadline=clock_timestamp()+${daytonaPolicy.idleMinutes}*interval '1 minute',message=NULL WHERE id=${row.id}`;
+            await query`UPDATE mira_daytona_jobs SET state='running',phase='admitted',cleanup='pending',started_at=clock_timestamp(),deadline=clock_timestamp()+${provisioningMinutes}*interval '1 minute',message=NULL WHERE id=${row.id}`;
             row.state = "running";
             row.phase = "admitted";
             row.cleanup = "pending";
-            row.deadline = new Date(Date.now() + daytonaPolicy.idleMinutes * 60_000);
+            row.deadline = new Date(Date.now() + provisioningMinutes * 60_000);
         }
         const token = crypto.randomUUID();
         await query`UPDATE mira_daytona_jobs SET lease_token=${token},lease_expires_at=clock_timestamp()+interval '90 seconds',retry_at=NULL WHERE id=${row.id}`;
@@ -194,7 +196,7 @@ export async function dispatchMiraDaytona(
         }
         // Cleanup uses the persisted original binding even after snapshot or region changes.
         const original = { ...job.binding, apiKey: configuration.apiKey };
-        const control = new DaytonaClient(original, request);
+        const control = new DaytonaClient(original, request, job.bindingHash);
         const reference = {
             runId: job.id,
             ...(job.sandboxId ? { sandboxId: job.sandboxId } : {}),
@@ -278,7 +280,10 @@ export async function dispatchMiraDaytona(
         if (!job.sandboxId) throw new Error("Missing sandbox receipt.");
         // The executor, not the model, renews activity. An expired local deadline
         // is never revived; pause, cancellation and lost leases fail the guard.
-        if ((job.deadline?.getTime() ?? 0) - Date.now() <= 240_000) {
+        if (
+            job.phase === "waiting" ||
+            (job.deadline?.getTime() ?? 0) - Date.now() <= 240_000
+        ) {
             const observed = await control.inspect(reference, signal);
             if (observed?.state === "started")
                 await control.refreshActivity(
