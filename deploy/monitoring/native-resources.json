@@ -1,11 +1,4 @@
 {
-    "main": [
-        {
-            "project": "openclaw",
-            "service": "gateway",
-            "units": { "openclaw-gateway.service": true }
-        }
-    ],
     "db": [
         {
             "project": "homelab-native",

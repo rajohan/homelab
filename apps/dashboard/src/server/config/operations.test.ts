@@ -40,9 +40,9 @@ test("packaged deployment targets validate without reading credentials or granti
         undefined,
         fileURLToPath(new URL("../../../config/update-targets.json", import.meta.url))
     );
-    expect(targets).toHaveLength(70);
+    expect(targets).toHaveLength(67);
     expect(targets.filter((target) => target.driver.kind === "apt")).toHaveLength(11);
-    expect(targets.filter((target) => target.driver.kind === "docker")).toHaveLength(19);
+    expect(targets.filter((target) => target.driver.kind === "docker")).toHaveLength(18);
     expect(
         targets.find((target) => target.id === "stremio-jackett")?.driver
     ).toMatchObject({
@@ -68,13 +68,11 @@ test("packaged deployment targets validate without reading credentials or granti
         "alloy",
         "blackbox-exporter",
         "bun",
-        "codex",
         "github-cli",
         "loki",
         "nextcloud",
         "node",
         "node-exporter",
-        "openclaw",
         "pve-exporter",
         "smartctl-exporter",
         "traefik",

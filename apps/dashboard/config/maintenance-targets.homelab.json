@@ -3,7 +3,7 @@
         "id": "main-host",
         "connection": "main-apt",
         "label": "Main",
-        "impact": "Dashboard, worker, media applications, OpenClaw and local web tools will be unavailable until Main returns.",
+        "impact": "Dashboard, worker, media applications, Mira and local web tools will be unavailable until Main returns.",
         "kind": "host",
         "health": [
             "/usr/bin/curl",
@@ -179,26 +179,6 @@
             "import socket,struct; s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM); s.settimeout(2); q=struct.pack('!6H',12345,256,1,0,0,0)+b''.join(bytes([len(x)])+x.encode() for x in 'db.home.rajohan.no'.split('.'))+b'\\0\\0\\1\\0\\1'; s.sendto(q,('10.77.10.12',53)); r=s.recv(4096); h=struct.unpack('!6H',r[:12]); assert h[0]==12345 and h[1]&32768 and h[1]&15==0 and h[3]>0; s.close()"
         ],
         "lockConnections": ["sentinel-apt", "adguard-apt"]
-    },
-    {
-        "id": "main-native-openclaw",
-        "connection": "main-native-openclaw",
-        "label": "OpenClaw",
-        "impact": "OpenClaw connections and active agent work will be interrupted while the gateway restarts. Dashboard jobs continue.",
-        "kind": "service",
-        "health": [
-            "/usr/bin/curl",
-            "--fail",
-            "--silent",
-            "--show-error",
-            "--max-time",
-            "5",
-            "--output",
-            "/dev/null",
-            "http://127.0.0.1:18789/readyz"
-        ],
-        "workerIndependent": true,
-        "service": "openclaw-gateway.service"
     },
     {
         "id": "main-node-exporter",
@@ -866,8 +846,8 @@
             "--output",
             "/dev/null",
             "--resolve",
-            "openclaw.home.rajohan.no:443:127.0.0.1",
-            "https://openclaw.home.rajohan.no/"
+            "code.home.rajohan.no:443:127.0.0.1",
+            "https://code.home.rajohan.no/"
         ],
         "workerIndependent": true,
         "service": "nginx.service"
@@ -1200,5 +1180,89 @@
         "workerIndependent": false,
         "service": "homelab-pgbouncer.service",
         "externalReason": "Pause jobs and restart from an independent session. Losing this connection pool prevents reliable job verification."
+    },
+    {
+        "id": "main-mira",
+        "connection": "main-apt",
+        "label": "Mira executor",
+        "impact": "Active conversations and automation runs pause while Mira restarts. Durable work is recovered after startup; infrastructure jobs continue.",
+        "kind": "service",
+        "service": "homelab-mira.service",
+        "health": [
+            "/usr/bin/docker",
+            "exec",
+            "homelab-dashboard-mira-1",
+            "bun",
+            "-e",
+            "const r = await fetch('http://127.0.0.1:3440/health/ready'); process.exit(r.ok ? 0 : 1)"
+        ],
+        "workerIndependent": true
+    },
+    {
+        "id": "main-mira-browser-host",
+        "connection": "main-apt",
+        "label": "Mira browser service",
+        "impact": "Active Mira browser sessions stop and are cleaned up. Start a new browser session after recovery.",
+        "kind": "service",
+        "service": "homelab-mira-browser-host.service",
+        "health": [
+            "/usr/bin/docker",
+            "exec",
+            "homelab-dashboard-mira-browser-host-1",
+            "bun",
+            "-e",
+            "const r = await fetch('http://127.0.0.1:3441/health/ready'); process.exit(r.ok ? 0 : 1)"
+        ],
+        "workerIndependent": true
+    },
+    {
+        "id": "main-mira-browser-proxy-a",
+        "connection": "main-apt",
+        "label": "Mira browser network A",
+        "impact": "Network requests for browser slot A disconnect briefly. The browser session may need to retry the interrupted request.",
+        "kind": "service",
+        "service": "homelab-mira-browser-proxy-a.service",
+        "health": [
+            "/usr/bin/docker",
+            "exec",
+            "homelab-dashboard-mira-browser-proxy-a-1",
+            "/usr/local/bin/mira-egress-health"
+        ],
+        "workerIndependent": true
+    },
+    {
+        "id": "main-mira-browser-proxy-b",
+        "connection": "main-apt",
+        "label": "Mira browser network B",
+        "impact": "Network requests for browser slot B disconnect briefly. The browser session may need to retry the interrupted request.",
+        "kind": "service",
+        "service": "homelab-mira-browser-proxy-b.service",
+        "health": [
+            "/usr/bin/docker",
+            "exec",
+            "homelab-dashboard-mira-browser-proxy-b-1",
+            "/usr/local/bin/mira-egress-health"
+        ],
+        "workerIndependent": true
+    },
+    {
+        "id": "main-mira-mail-tunnel",
+        "connection": "main-apt",
+        "label": "Mira mail tunnel",
+        "impact": "Incoming email notifications pause briefly while the tunnel restarts. Chat and queued jobs continue.",
+        "kind": "service",
+        "service": "homelab-mira-mail-tunnel.service",
+        "health": [
+            "/usr/bin/curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            "--output",
+            "/dev/null",
+            "http://127.0.0.1:3115/ready"
+        ],
+        "workerIndependent": true
     }
 ]

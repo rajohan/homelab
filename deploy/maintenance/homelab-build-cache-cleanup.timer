@@ -1,0 +1,11 @@
+[Unit]
+Description=Clean unused Docker build cache nightly
+
+[Timer]
+OnCalendar=*-*-* 04:30:00
+RandomizedDelaySec=15m
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+
