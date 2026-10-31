@@ -21,6 +21,8 @@ export async function pendingTaskChanges(
             WHERE a.actor='human:'||a.owner AND a.action IN ('task.created','task.updated','task.progress_added')
               AND t.deleted_at IS NULL AND a.created_at>${new Date(now.getTime() - 86_400_000)} AND a.created_at<=${now}
               AND (${owners === undefined} OR a.owner IN (SELECT jsonb_array_elements_text(${JSON.stringify(owners ?? [])}::text::jsonb)))
+              AND NOT EXISTS (SELECT 1 FROM mira_runs r WHERE r.owner=t.owner AND r.task_id=t.id AND r.manual
+                AND (r.state IN ('queued','running') OR r.task_change_id>=a.id))
               AND EXISTS (SELECT 1 FROM mira_automations m WHERE m.owner=a.owner AND m.deleted_at IS NULL AND m.schedule->>'kind'='event' AND m.schedule->>'event'='task_changed')
             ORDER BY a.owner,a.target,a.created_at DESC NULLS LAST,a.id DESC NULLS LAST
         )

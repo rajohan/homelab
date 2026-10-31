@@ -334,7 +334,7 @@ for await (const line of reader) {
                 effort: message.params.effort,
                 serviceTier: message.params.serviceTier,
             });
-        if (mode !== "wait") {
+        if (mode !== "wait" && !mode.startsWith("steer-")) {
             write({
                 method: "item/agentMessage/delta",
                 params: {
@@ -356,6 +356,44 @@ for await (const line of reader) {
             });
         }
         write({ id: message.id, result: { turn: { id: turnId } } });
+    } else if (message.method === "turn/steer") {
+        if (mode === "steer-error") {
+            write({
+                id: message.id,
+                error: { code: -32_000, message: "synthetic steering failure" },
+            });
+            continue;
+        }
+        if (
+            message.params.threadId !== "thread-test" ||
+            message.params.expectedTurnId !== `turn-${activeTurn}`
+        )
+            throw new Error("Unexpected steering identity.");
+        write({
+            id: message.id,
+            result: {
+                turnId:
+                    mode === "steer-wrong-receipt" ? "other-turn" : `turn-${activeTurn}`,
+            },
+        });
+        if (mode === "steer-ok") {
+            write({
+                method: "item/agentMessage/delta",
+                params: {
+                    threadId: "thread-test",
+                    turnId: `turn-${activeTurn}`,
+                    itemId: "steered-result",
+                    delta: JSON.stringify(message.params.input),
+                },
+            });
+            write({
+                method: "turn/completed",
+                params: {
+                    threadId: "thread-test",
+                    turn: { id: `turn-${activeTurn}`, status: "completed" },
+                },
+            });
+        }
     } else if (message.method === "turn/interrupt") {
         write({ id: message.id, result: {} });
         write({

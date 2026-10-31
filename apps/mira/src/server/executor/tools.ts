@@ -529,7 +529,7 @@ export function createMiraTools(
                     .digest("hex");
                 const reserved = await client<
                     { id: string }[]
-                >`INSERT INTO mira_tool_receipts (id, run_id, call_id, tool, input_hash, state) SELECT ${receipt}, id, ${call.callId}, ${definition.name}, ${hash}, 'running' FROM mira_runs WHERE id = ${run.id} AND state = 'running' AND NOT cancel_requested AND lease_token = ${run.leaseToken} AND lease_expires_at > now() ON CONFLICT (run_id, call_id) DO NOTHING RETURNING id`;
+                >`INSERT INTO mira_tool_receipts (id, run_id, call_id, tool, input_hash, state) SELECT ${receipt}, id, ${call.callId}, ${definition.name}, ${hash}, 'running' FROM mira_runs WHERE id = ${run.id} AND state = 'running' AND NOT cancel_requested AND NOT EXISTS (SELECT 1 FROM mira_tasks t WHERE t.id=mira_runs.task_id AND t.owner=mira_runs.owner AND mira_runs.manual AND (t.deleted_at IS NOT NULL OR t.work_stopped_at>=mira_runs.created_at)) AND lease_token = ${run.leaseToken} AND lease_expires_at > now() ON CONFLICT (run_id, call_id) DO NOTHING RETURNING id`;
                 if (!reserved[0])
                     return JSON.stringify({
                         ok: false,

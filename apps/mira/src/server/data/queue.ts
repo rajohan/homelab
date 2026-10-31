@@ -13,6 +13,12 @@ import { enqueueTurn } from "./conversations";
 import { scheduleMiraEvents } from "./events";
 import { miraObservationFingerprint, notifyMiraRun } from "./notifications";
 import { currentTaskChange, pendingTaskChanges } from "./taskChanges";
+import {
+    latestTaskEdit,
+    pendingTaskContinuations,
+    scheduleTaskContinuations,
+    taskContinuationAllowed,
+} from "./taskSteering";
 
 export interface MiraClaim {
     id: string;
@@ -27,6 +33,7 @@ export interface MiraClaim {
     manual: boolean;
     deadlineAt?: number;
     taskAssessment?: boolean;
+    taskResumed?: boolean;
 }
 
 /**
@@ -84,7 +91,7 @@ export async function claimMiraRun(
         for (let skipped = 0; skipped < 20; skipped++) {
             const [run] = await query<
                 Omit<MiraClaim, "leaseToken">[]
-            >`SELECT id, owner, conversation_id AS "conversationId", user_message_id AS "userMessageId", assistant_message_id AS "assistantMessageId", automation_id AS "automationId", task_id AS "taskId", budget_seconds AS "budgetSeconds", manual FROM mira_runs WHERE state = 'queued' AND NOT cancel_requested AND (${lane === "general"} OR manual) AND (${catalog === undefined} OR COALESCE(settings->>'model',${catalog?.defaultModel ?? null}) IN (SELECT jsonb_array_elements_text(${JSON.stringify(catalog?.models ?? [])}::text::jsonb))) ORDER BY priority DESC, id LIMIT 1 FOR UPDATE SKIP LOCKED`;
+            >`SELECT id, owner, conversation_id AS "conversationId", user_message_id AS "userMessageId", assistant_message_id AS "assistantMessageId", automation_id AS "automationId", task_id AS "taskId", budget_seconds AS "budgetSeconds", manual, task_resumed AS "taskResumed" FROM mira_runs WHERE state = 'queued' AND NOT cancel_requested AND (${lane === "general"} OR manual) AND (${catalog === undefined} OR COALESCE(settings->>'model',${catalog?.defaultModel ?? null}) IN (SELECT jsonb_array_elements_text(${JSON.stringify(catalog?.models ?? [])}::text::jsonb))) ORDER BY priority DESC, id LIMIT 1 FOR UPDATE SKIP LOCKED`;
             if (!run) return null;
             // A pause/delete may hold controls while waiting for this row. Never wait in reverse order.
             const [controls] = await query<
@@ -92,6 +99,7 @@ export async function claimMiraRun(
             >`SELECT pg_try_advisory_xact_lock(hashtextextended(${`mira:controls:${run.owner}`},0)) AS acquired`;
             if (!controls?.acquired) return null;
             if (
+                (run.taskResumed && !(await taskContinuationAllowed(query, run.owner))) ||
                 !(run.manual
                     ? await miraDependenciesAllowed(query, run.owner, run.automationId)
                     : await miraRunAllowed(query, run.owner, run.automationId))
@@ -99,6 +107,19 @@ export async function claimMiraRun(
                 await query`UPDATE mira_runs SET state = 'interrupted', message = 'Automation disabled before execution.', finished_at = now() WHERE id = ${run.id}`;
                 await query`UPDATE mira_messages SET state = 'interrupted' WHERE id = ${run.assistantMessageId}`;
                 continue;
+            }
+            if (run.taskId && run.manual) {
+                const [task] = await query<{ id: string }[]>`
+                    SELECT t.id FROM mira_tasks t JOIN mira_runs r ON r.id=${run.id} AND r.owner=t.owner
+                    WHERE t.id=${run.taskId} AND t.owner=${run.owner} AND t.deleted_at IS NULL
+                        AND t.assignee='mira' AND t.status NOT IN ('blocked','done')
+                        AND (t.work_stopped_at IS NULL OR t.work_stopped_at<r.created_at) FOR SHARE OF t`;
+                if (!task) {
+                    await query`UPDATE mira_runs SET state='interrupted',cancel_requested=true,message='Task work was paused or stopped before execution.',finished_at=now() WHERE id=${run.id}`;
+                    await query`UPDATE mira_messages SET state='interrupted' WHERE id=${run.assistantMessageId}`;
+                    continue;
+                }
+                await query`UPDATE mira_runs SET task_change_id=${await latestTaskEdit(query, run.owner, run.taskId)} WHERE id=${run.id}`;
             }
             if (run.taskId && !run.manual) {
                 const [change] = await query<{ eventId: string }[]>`
@@ -152,7 +173,7 @@ export async function claimMiraRun(
 export async function renewMiraRun(client: SQL, run: MiraClaim): Promise<boolean> {
     const rows = await client<
         { cancelRequested: boolean }[]
-    >`UPDATE mira_runs SET lease_expires_at = now() + interval '30 seconds' WHERE id = ${run.id} AND state = 'running' AND lease_token = ${run.leaseToken} AND lease_expires_at > now() RETURNING cancel_requested AS "cancelRequested"`;
+    >`UPDATE mira_runs SET cancel_requested=cancel_requested OR (${Boolean(run.manual && run.taskId)} AND EXISTS (SELECT 1 FROM mira_tasks t WHERE t.id=mira_runs.task_id AND t.owner=mira_runs.owner AND (t.deleted_at IS NOT NULL OR t.work_stopped_at>=mira_runs.created_at))), lease_expires_at = now() + interval '30 seconds' WHERE id = ${run.id} AND state = 'running' AND lease_token = ${run.leaseToken} AND lease_expires_at > now() RETURNING cancel_requested AS "cancelRequested"`;
     return rows[0]?.cancelRequested === false;
 }
 
@@ -243,7 +264,10 @@ async function lockScheduledOwners(query: TransactionSQL, now: Date): Promise<st
         UNION SELECT owner FROM (SELECT e.owner FROM mira_event_deliveries d JOIN mira_events e ON e.id=d.event_id WHERE d.state='pending' AND d.next_attempt_at<=${now} ORDER BY d.next_attempt_at,e.id LIMIT 20) deliveries
         ORDER BY owner`;
     const changes = await pendingTaskChanges(query, now);
-    const owners = [...new Set([...rows, ...changes].map((row) => row.owner))].toSorted();
+    const continuations = await pendingTaskContinuations(query, now);
+    const owners = [
+        ...new Set([...rows, ...changes, ...continuations].map((row) => row.owner)),
+    ].toSorted();
     for (const owner of owners)
         await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${owner}`},0))`;
     return owners;
@@ -271,7 +295,8 @@ export async function scheduleMiraRuns(client: SQL, now = new Date()): Promise<n
                 nextRunAt: Date;
             }[]
         >`SELECT id, owner, title, prompt, schedule, budget_seconds AS "budgetSeconds", next_run_at AS "nextRunAt" FROM mira_automations WHERE owner IN (SELECT jsonb_array_elements_text(${JSON.stringify(owners)}::text::jsonb)) AND deleted_at IS NULL AND next_run_at <= ${now} ORDER BY next_run_at LIMIT 20 FOR UPDATE SKIP LOCKED`;
-        let queued = await scheduleMiraEvents(query, now, owners);
+        let queued = await scheduleTaskContinuations(query, now, owners);
+        queued += await scheduleMiraEvents(query, now, owners);
         for (const automation of due) {
             const next = nextMiraOccurrence(
                 automation.schedule,

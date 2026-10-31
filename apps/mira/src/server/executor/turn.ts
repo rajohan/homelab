@@ -11,6 +11,7 @@ import {
     saveMiraActivity,
     type MiraClaim,
 } from "../data/queue";
+import { readTaskSteering, acknowledgeTaskSteering } from "../data/taskSteering";
 import type { AgentMailReadConfiguration } from "../integrations/agentmail/configuration";
 import type { DaytonaBinding } from "../integrations/daytona/configuration";
 import type {
@@ -74,6 +75,18 @@ export async function executeMiraTurn(
     );
     const signal = AbortSignal.any([stopping, controller.signal, deadline.signal]);
     let runtime: CodexRuntime | undefined;
+    let providerThread: string | undefined;
+    let providerTurn: string | undefined;
+    let steeringFailed = false;
+    const transport = new AbortController();
+    let stopTransportTimer: ReturnType<typeof setTimeout> | undefined;
+    const stopTransport = () => {
+        // Active turns need a short window to acknowledge interruption; host tools stop immediately.
+        if (providerTurn) stopTransportTimer = setTimeout(() => transport.abort(), 5000);
+        else transport.abort();
+    };
+    signal.addEventListener("abort", stopTransport, { once: true });
+    if (signal.aborted) stopTransport();
     let attachments: Awaited<ReturnType<typeof prepareMiraAttachments>> | undefined;
     let activity: MiraActivity = { phase: "starting", tool: null };
     let savedActivity = "";
@@ -87,8 +100,28 @@ export async function executeMiraTurn(
         if (renewing) return;
         renewing = true;
         renewal = renewMiraRun(client, run)
-            .then((allowed) => {
-                if (!allowed) controller.abort();
+            .then(async (allowed) => {
+                if (!allowed) {
+                    controller.abort();
+                    return;
+                }
+                if (!runtime || !providerThread || !providerTurn || signal.aborted)
+                    return;
+                const edit = await readTaskSteering(client, run);
+                if (!edit || signal.aborted) return;
+                let accepted: boolean;
+                try {
+                    accepted = await runtime.steer(
+                        providerThread,
+                        providerTurn,
+                        `The operator updated task ${run.taskId} while you were working (change ${edit.id}). Read its current title, description, completion criteria and latest progress now. Adapt this ongoing work to the update; preserve completed work and do not restart from scratch. The update does not grant new external permissions.`
+                    );
+                } catch (error) {
+                    steeringFailed = true;
+                    throw error;
+                }
+                if (accepted && !(await acknowledgeTaskSteering(client, run, edit.id)))
+                    controller.abort();
                 return;
             })
             .catch(() => controller.abort())
@@ -129,7 +162,7 @@ export async function executeMiraTurn(
             args: pilotArguments(),
             cwd: config.workspace,
             env: runtimeEnvironment(config),
-            signal,
+            signal: transport.signal,
         });
         const account = await runtime.account();
         if (!account.authenticated)
@@ -217,6 +250,7 @@ export async function executeMiraTurn(
             { id: string }[]
         >`UPDATE mira_runs SET effective_settings = ${JSON.stringify(settings)}::text::jsonb WHERE id = ${run.id} AND state = 'running' AND NOT cancel_requested AND lease_token = ${run.leaseToken} AND lease_expires_at > now() RETURNING id`;
         if (!recorded[0]) throw new Error("Run lease lost.");
+        providerThread = threadId;
         const result = await runtime.turn(threadId, record.content, {
             signal,
             settings,
@@ -231,6 +265,7 @@ export async function executeMiraTurn(
                         throw new Error("Run lease lost before turn acknowledgement.");
                     await query`UPDATE mira_conversations SET provider_context_ready=true WHERE id=${run.conversationId} AND provider_thread=${threadId}`;
                 });
+                providerTurn = turnId;
             },
             onActivity: (next) => {
                 activity = next;
@@ -239,6 +274,9 @@ export async function executeMiraTurn(
                 text += delta;
             },
         });
+        clearInterval(interval);
+        await renewal;
+        if (steeringFailed) throw new Error("Task steering outcome requires review.");
         clearInterval(flush);
         await update;
         await finishMiraRun(client, run, {
@@ -262,6 +300,8 @@ export async function executeMiraTurn(
         await finishMiraRun(client, run, { state: "needs_attention", text, message });
     } finally {
         clearTimeout(timer);
+        clearTimeout(stopTransportTimer);
+        signal.removeEventListener("abort", stopTransport);
         clearInterval(flush);
         clearInterval(interval);
         await Promise.allSettled([update, renewal]);

@@ -1,8 +1,9 @@
 # Mira task execution
 
 Tasks keep their requirements and human-managed status separately from each run.
-Moving a card does not start work, and a finished run does not automatically mark
-the task complete.
+New tasks start only through **Start work**. Moving an already started task from
+**Blocked** to **In progress** continues its existing conversation. A finished run
+does not automatically mark the task complete.
 
 ## Starting and continuing work
 
@@ -19,7 +20,7 @@ width and task details scroll inside the viewport-bounded shared dialog.
 
 A stable request ID prevents a lost response or double submission from creating
 another run. Manual and due-task starts share one task admission lock; a task can
-have only one queued or running execution. Completed or operator-assigned tasks
+have only one queued or running execution. Completed, blocked or operator-assigned tasks
 cannot start through this action. Stop or finish an active run before deleting
 its task. Deleting a conversation detaches the task link so a later explicit start
 can create a new conversation.
@@ -59,3 +60,28 @@ An enabled **Task created or changed** event automation wakes Mira after human-c
 These runs can read tasks, progress, run outcomes, reports and pause reasons, and save a private report. Their server-provided tool catalog excludes task changes, drafts, external integrations, computer control and code execution. They do not start the task itself: use **Start work** or **Continue work** for execution. Reports and Mira's own actions do not trigger another assessment. A reviewed human approval of a task proposal is a human edit and may produce an assessment, but the assessment cannot create another proposal.
 
 Each assessment automation has its own pause and notification policy. Results use the existing Reports and notification components. Ordinary task execution and automatic assessments share task admission, so they cannot run on the same task simultaneously.
+
+## Steering ongoing work
+
+Human edits and progress notes on an active task are coalesced and delivered through
+Codex `turn/steer`, fenced to the exact provider turn and executor lease. Mira reads
+the current saved requirements and progress, and adjusts the ongoing work. Successful
+acknowledgements advance a durable edit cursor; a lost or mismatched acknowledgement
+requires review rather than replay. An edit that arrives while the turn is ending
+continues the same conversation once after the previous run completes.
+
+Moving an active task to **Blocked** or **Done**, or assigning it to the operator,
+prevents new tool calls immediately and requests interruption at the next lease check
+(within five seconds). A tool already in progress cannot be undone; uncertain results
+retain the existing review gate. Moving **Blocked → In progress** requests continued
+work only if this owned task already has a user-started run in its linked conversation.
+It never starts a new, previously unstarted task. A rapid unblock waits for the old
+run to stop. Archived/deleted conversations, reassignment, completion, a newer explicit
+Run or Stop, and unresolved outcomes prevent stale continuation. Global automatic-work
+pause applies both when queuing and claiming continuations. Requests expire after
+one day instead of replaying old board actions after a long outage.
+
+Continuations retain the prior work budget, use the same admission and capacity limits,
+and do not inherit expired browser, computer, publication or spending permissions.
+Updates consumed by active work do not create a second assessment report. Changes to
+other tasks still use the individually controlled **Task created or changed** automation.

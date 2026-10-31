@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { setTimeout as delay } from "node:timers/promises";
 
 import { capabilities } from "@homelab/contracts/operations";
 import type { MiraQuery } from "@homelab/mira/data/context";
@@ -270,13 +271,21 @@ test("assessments wait for explicit task work and cannot overlap with Run", asyn
             text: "Explicit task work finished.",
             message: null,
         });
+        expect(await scheduleMiraRuns(f.client, new Date(Date.now() + 40_000))).toBe(0);
+        await f.api.tasks.update({
+            ...taskFields,
+            id: task.id,
+            version: 2,
+            priority: "high",
+            conversationId: explicit.conversationId,
+        });
         expect(await scheduleMiraRuns(f.client, new Date(Date.now() + 40_000))).toBe(1);
         const assessment = await claimMiraRun(f.client, crypto.randomUUID(), "general");
         expect(assessment?.taskAssessment).toBe(true);
         if (!assessment) throw new Error("Expected deferred assessment.");
         const blocked = await runMiraTask(context, {
             id: task.id,
-            version: 2,
+            version: 3,
             requestId: crypto.randomUUID(),
             instructions: "",
             reviewedRunId: null,
@@ -357,6 +366,59 @@ test("task-change discovery and latest-edit validation use selective paths throu
         await currentTaskChange(query, "operator", task.id, event.id);
         expect(plans[1]).toContain("mira_audit_task_changes_");
     } finally {
+        await f.close();
+    }
+});
+
+test("assessment claims wait for concurrent human progress and reject the superseded edit", async () => {
+    const f = await fixture();
+    const inserted = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    let editing: Promise<void> | undefined;
+    let claimed: ReturnType<typeof claimMiraRun> | undefined;
+    try {
+        const task = await f.api.tasks.create(taskFields);
+        expect(await scheduleMiraRuns(f.client, afterQuiet())).toBe(1);
+        editing = f.client.begin(async (query) => {
+            await addTaskProgress(
+                {
+                    client: f.client,
+                    transaction: query,
+                    owner: "operator",
+                    actor: "human:operator",
+                },
+                task.id,
+                "New human context committed while an assessment is claiming."
+            );
+            inserted.resolve();
+            await release.promise;
+        });
+        await inserted.promise;
+        let completed = false;
+        claimed = claimMiraRun(f.client, crypto.randomUUID(), "general").finally(() => {
+            completed = true;
+        });
+        let blocked = false;
+        for (let attempt = 0; attempt < 100 && !blocked && !completed; attempt++) {
+            const [state] = await f.client<{ blocked: boolean }[]>`
+                SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE datname=current_database()
+                    AND wait_event_type='Lock' AND query LIKE '%FROM mira_tasks%'
+                    AND pid<>pg_backend_pid()) AS blocked`;
+            blocked = state?.blocked === true;
+            if (!blocked && !completed) await delay(10);
+        }
+        expect(blocked).toBe(true);
+        release.resolve();
+        await editing;
+        expect(await claimed).toBeNull();
+        const history = await f.api.runs.list({ search: "", archived: false });
+        expect(history.rows[0]?.state).toBe("interrupted");
+        expect(await scheduleMiraRuns(f.client, afterQuiet())).toBe(1);
+        const latest = await claimMiraRun(f.client, crypto.randomUUID(), "general");
+        expect(latest).toMatchObject({ taskId: task.id, taskAssessment: true });
+    } finally {
+        release.resolve();
+        await Promise.allSettled([editing, claimed]);
         await f.close();
     }
 });

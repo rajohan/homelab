@@ -93,6 +93,11 @@ export async function runMiraTask(
                 "CONFLICT",
                 "The task changed. Refresh before starting work."
             );
+        if (task.status === "blocked")
+            throw new MiraFailure(
+                "PRECONDITION_FAILED",
+                "Move the task out of Blocked before starting work."
+            );
         if (task.assignee !== "mira" || task.status === "done")
             throw new MiraFailure(
                 "PRECONDITION_FAILED",
