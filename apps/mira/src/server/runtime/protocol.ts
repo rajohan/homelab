@@ -45,6 +45,7 @@ export const completedSchema = v.object({
 export const deltaSchema = v.object({
     threadId: v.string(),
     turnId: v.string(),
+    itemId: v.string(),
     delta: v.string(),
 });
 export const toolCallSchema = v.object({

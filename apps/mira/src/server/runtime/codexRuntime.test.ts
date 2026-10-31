@@ -30,6 +30,56 @@ const options = (mode = "ok") => ({
 });
 
 describe("Mira runtime transport", () => {
+    test("separates message items while preserving streamed Markdown and turn boundaries", async () => {
+        const runtime = await CodexRuntime.connect(options("message-boundaries"));
+        try {
+            const thread = await runtime.startThread("synthetic", process.cwd(), []);
+            for (const text of ["first", "next"]) {
+                const chunks: string[] = [];
+                const result = await runtime.turn(thread, text, {
+                    onDelta: (delta) => chunks.push(delta),
+                });
+                expect(result.text).toBe(
+                    'Creating the file.\n\nCreated.\n\n```json\n{\n  "ok": true\n}\n```'
+                );
+                expect(chunks).toEqual([
+                    "Creating ",
+                    "the file.",
+                    "\n\nCreated.\n\n```json\n{",
+                    '\n  "ok": true\n}\n```',
+                ]);
+                expect(chunks.join("")).toBe(result.text);
+            }
+        } finally {
+            await runtime.close();
+        }
+    });
+    test.each(["same-item", "new-item"])(
+        "includes message separators in the output limit for %s",
+        async (suffix) => {
+            const runtime = await CodexRuntime.connect(
+                options(`message-limit-${suffix}`)
+            );
+            const chunks: string[] = [];
+            try {
+                const thread = await runtime.startThread("synthetic", process.cwd(), []);
+                const turn = runtime.turn(thread, "test", {
+                    onDelta: (delta) => chunks.push(delta),
+                });
+                if (suffix === "same-item") {
+                    const result = await turn;
+                    expect(result.text).toHaveLength(256_000);
+                    expect(result.text).toBe(chunks.join(""));
+                } else {
+                    await rejects(turn, /disconnected/);
+                    expect(chunks.join("")).toHaveLength(255_999);
+                }
+            } finally {
+                await runtime.close();
+            }
+        }
+    );
+
     test.each(["resume-missing", "resume-missing-other"])(
         "classifies only the exact missing resume reference for %s",
         async (mode) => {
