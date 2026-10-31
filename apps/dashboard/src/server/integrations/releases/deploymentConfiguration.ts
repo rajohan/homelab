@@ -27,7 +27,7 @@ const unitName = v.pipe(
     v.string(),
     v.regex(/^[a-zA-Z0-9][a-zA-Z0-9_.@-]{0,150}\.service$/)
 );
-const targetSchema = v.strictObject({
+const hostSchema = v.strictObject({
     id: identifier,
     label: v.pipe(v.string(), v.minLength(1), v.maxLength(100)),
     connection: v.pipe(v.string(), v.minLength(1), v.maxLength(64)),
@@ -48,7 +48,7 @@ const targetSchema = v.strictObject({
         v.array(
             v.strictObject({
                 name: v.pipe(v.string(), v.regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/)),
-                app: v.picklist(["dashboard", "mira", "mira-browser-proxy"]),
+                app: v.picklist(["auth", "dashboard", "mira", "mira-browser-proxy"]),
             })
         ),
         v.minLength(1),
@@ -56,13 +56,32 @@ const targetSchema = v.strictObject({
     ),
     units: v.pipe(v.array(unitName), v.minLength(1), v.maxLength(16)),
 });
+const authSchema = v.strictObject({
+    ...v.omit(hostSchema, ["browserConfigFile", "browserProxyUnits"]).entries,
+    mira: v.literal(false),
+    services: v.pipe(
+        v.array(
+            v.strictObject({
+                name: v.pipe(v.string(), v.regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/)),
+                app: v.literal("auth"),
+            })
+        ),
+        v.minLength(1),
+        v.maxLength(16)
+    ),
+});
+const targetSchema = v.strictObject({
+    ...hostSchema.entries,
+    auth: v.optional(authSchema),
+});
+export type ReleaseDeploymentHostTarget = v.InferOutput<typeof hostSchema>;
 export type ReleaseDeploymentTarget = v.InferOutput<typeof targetSchema>;
 
 /**
  * Validate operator-owned self-deployment recipes without granting browser or model command selection.
  * @param value - Optional nonsecret deployment JSON; absence leaves self-deployment unavailable.
  * @param connections - Existing pinned SSH authorities used by ordinary updates.
- * @returns Explicit host recipes; Auth remains independently deployed.
+ * @returns Explicit host recipes, optionally coordinating an independent Auth deployment first.
  */
 export function parseReleaseDeploymentTargets(
     value: string | undefined,
@@ -75,6 +94,16 @@ export function parseReleaseDeploymentTargets(
     if (new Set(targets.map((target) => target.id)).size !== targets.length)
         throw new Error("Release deployment IDs must be unique");
     for (const target of targets) {
+        if (
+            !target.services.some((service) => service.app === "dashboard") ||
+            target.services.some((service) => service.app === "auth") ||
+            (target.auth &&
+                (target.auth.id === target.id ||
+                    target.auth.connection === target.connection))
+        )
+            throw new Error("Auth requires a separate deployment host and recipe");
+    }
+    for (const target of targets.flatMap((entry) => deploymentHosts(entry))) {
         if (
             new TextEncoder().encode(JSON.stringify(target)).byteLength > 16_384 ||
             !connections.some((connection) => connection.id === target.connection) ||
@@ -89,7 +118,6 @@ export function parseReleaseDeploymentTargets(
                     target.browserProxyUnits.some(
                         (unit) => !target.units.includes(unit)
                     ))) ||
-            !target.services.some((service) => service.app === "dashboard") ||
             (target.mira && !target.services.some((service) => service.app === "mira")) ||
             (target.browserConfigFile &&
                 (!target.mira ||
@@ -110,6 +138,17 @@ export function parseReleaseDeploymentTargets(
 }
 
 /**
+ * Enumerate fixed host recipes in their deployment order.
+ * @param target - Dashboard recipe with an optional independently managed Auth host.
+ * @returns Auth first, followed by the dashboard and its workers.
+ */
+export function deploymentHosts(
+    target: ReleaseDeploymentTarget
+): ReleaseDeploymentHostTarget[] {
+    return target.auth ? [target.auth, target] : [target];
+}
+
+/**
  * Bind release confirmation to the complete host recipe and its existing SSH authority.
  * @param target - Validated deployment-owned paths, services and fixed commands.
  * @param connections - Currently configured scoped SSH targets.
@@ -119,9 +158,18 @@ export function releaseDeploymentRevision(
     target: ReleaseDeploymentTarget,
     connections: readonly UpdateTarget[]
 ): string {
-    const connection = connections.find((entry) => entry.id === target.connection);
-    if (!connection) throw new Error("Release deployment connection is unavailable");
+    const authorities = deploymentHosts(target).map((host) => {
+        const connection = connections.find((entry) => entry.id === host.connection);
+        if (!connection) throw new Error("Release deployment connection is unavailable");
+        return connection;
+    });
     return new Bun.CryptoHasher("sha256")
-        .update(JSON.stringify({ target, connection }))
+        .update(
+            JSON.stringify(
+                target.auth
+                    ? { target, authorities }
+                    : { target, connection: authorities[0] }
+            )
+        )
         .digest("hex");
 }

@@ -2,13 +2,14 @@ import * as v from "valibot";
 
 import type { UpdateTarget } from "../updates/configuration";
 import { updateSshArguments } from "../updates/execution";
-import type { ReleaseDeploymentTarget } from "./deploymentConfiguration";
+import type { ReleaseDeploymentHostTarget } from "./deploymentConfiguration";
 import program from "./deploymentHost.py" with { type: "text" };
 
 const hash = v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/));
 const imageId = v.pipe(v.string(), v.regex(/^sha256:[a-f0-9]{64}$/));
 const containerSchema = v.strictObject({
     dashboardSchema: v.optional(v.nullable(hash)),
+    authSchema: v.optional(v.nullable(hash)),
     id: hash,
     imageId,
     image: v.pipe(v.string(), v.maxLength(500)),
@@ -31,6 +32,7 @@ export const deploymentObservationSchema = v.strictObject({
 });
 export const deploymentReleaseSchema = v.strictObject({
     dashboardSchema: v.optional(hash),
+    authSchema: v.optional(hash),
     repository: v.pipe(
         v.string(),
         v.regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/)
@@ -58,6 +60,7 @@ export const deploymentPlanSchema = v.strictObject({
     configuration: hash,
     release: deploymentReleaseSchema,
     expected: deploymentObservationSchema,
+    authExpected: v.optional(deploymentObservationSchema),
 });
 const id = v.pipe(v.string(), v.uuid());
 export const deploymentReceiptSchema = v.variant("state", [
@@ -93,7 +96,15 @@ export type DeploymentPlan = v.InferOutput<typeof deploymentPlanSchema>;
 export type DeploymentRelease = DeploymentPlan["release"];
 export type DeploymentObservation = DeploymentPlan["expected"];
 export type DeploymentReceipt = v.InferOutput<typeof deploymentReceiptSchema>;
-export type DeploymentHostRequest = { target: ReleaseDeploymentTarget } & (
+export const deploymentProgressSchema = v.strictObject({
+    stage: v.picklist(["auth", "main"]),
+    submitted: v.boolean(),
+    authAlreadyCurrent: v.optional(v.literal(true)),
+    auth: v.optional(deploymentReceiptSchema),
+    main: v.optional(deploymentReceiptSchema),
+});
+export type DeploymentProgress = v.InferOutput<typeof deploymentProgressSchema>;
+export type DeploymentHostRequest = { target: ReleaseDeploymentHostTarget } & (
     | { mode: "inspect"; release: DeploymentRelease; allowCurrent?: boolean }
     | { mode: "status"; id: string }
     | {

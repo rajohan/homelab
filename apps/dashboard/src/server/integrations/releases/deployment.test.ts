@@ -79,6 +79,54 @@ test("browser proxy startup units must be a distinct subset of the complete depl
     );
 });
 
+test("unified release binds both SSH authorities and only accepts an independent Auth recipe", () => {
+    const authorities = [
+        ...connections,
+        { ...connections[0]!, id: "edge", host: "auth.example.test" },
+    ];
+    const auth = {
+        ...target,
+        id: "auth",
+        connection: "edge",
+        mira: false as const,
+        services: [{ name: "auth", app: "auth" as const }],
+    };
+    const combined = { ...target, auth };
+    expect(
+        parseReleaseDeploymentTargets(JSON.stringify([combined]), authorities)
+    ).toEqual([combined]);
+    for (const change of [
+        { connection: target.connection },
+        { id: target.id },
+        { mira: true },
+        { services: target.services },
+        { directory: "/outside" },
+        { stateDirectory: auth.directory },
+        { browserConfigFile: "/srv/browser.json" },
+    ])
+        expect(() =>
+            parseReleaseDeploymentTargets(
+                JSON.stringify([{ ...target, auth: { ...auth, ...change } }]),
+                authorities
+            )
+        ).toThrow();
+    expect(() =>
+        parseReleaseDeploymentTargets(JSON.stringify([combined]), connections)
+    ).toThrow();
+    expect(releaseDeploymentRevision(combined, authorities)).not.toBe(
+        releaseDeploymentRevision(combined, [
+            authorities[0]!,
+            { ...authorities[1]!, host: "changed.example.test" },
+        ])
+    );
+    expect(releaseDeploymentRevision(combined, authorities)).not.toBe(
+        releaseDeploymentRevision(
+            { ...combined, auth: { ...auth, backupCommand: ["/usr/bin/false"] } },
+            authorities
+        )
+    );
+});
+
 test("journal digests use deterministic recursive JSON with UTF-8 labels", async () => {
     const value = { z: [1, { b: true, a: null }], a: "Vert – æøå" };
     expect(deploymentDigest(value)).toBe(

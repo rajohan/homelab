@@ -30,6 +30,7 @@ const releaseSchema = v.object({
 });
 const manifestSchema = v.object({
     dashboardSchema: v.optional(v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/))),
+    authSchema: v.optional(v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/))),
     version: v.pipe(v.string(), v.regex(/^\d+\.\d+\.\d+$/)),
     revision: sha,
     platform: v.literal("linux/amd64"),
@@ -216,6 +217,7 @@ export async function readHomelabRelease(
               })
             : null;
     return {
+        ...(manifest.authSchema ? { authSchema: manifest.authSchema } : {}),
         ...(manifest.dashboardSchema
             ? { dashboardSchema: manifest.dashboardSchema }
             : {}),

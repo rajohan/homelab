@@ -66,6 +66,7 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "dashboard_schema=$(bun scripts/releaseSchema.ts)" >> "$GITHUB_OUTPUT"
+          echo "auth_schema=$(bun scripts/releaseSchema.ts auth)" >> "$GITHUB_OUTPUT"
       - name: Install locked test dependencies
         run: bun install --frozen-lockfile --ignore-scripts
       - name: Set up Docker Buildx
@@ -85,6 +86,7 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.source.outputs.version }}
             org.opencontainers.image.title=Homelab Auth
+            io.homelab.auth-schema=${{ steps.source.outputs.auth_schema }}
           cache-from: type=gha,scope=auth
           cache-to: type=gha,mode=max,scope=auth
       - name: Build dashboard image without publishing
@@ -237,7 +239,9 @@ jobs:
           schema="$(docker inspect --format '{{index .Config.Labels "io.homelab.dashboard-schema"}}' homelab-release/dashboard:tested)"
           [[ "$schema" =~ ^[a-f0-9]{64}$ ]]
           [[ "$(docker inspect --format '{{index .Config.Labels "io.homelab.dashboard-schema"}}' homelab-release/mira:tested)" == "$schema" ]]
-          jq -s --arg version "$version" --arg revision "$SOURCE_SHA" --arg schema "$schema" '{version:$version, revision:$revision, dashboardSchema:$schema, platform:"linux/amd64", images:.}' auth-image.json dashboard-image.json mira-image.json > container-images.json
+          auth_schema="$(docker inspect --format '{{index .Config.Labels "io.homelab.auth-schema"}}' homelab-release/auth:tested)"
+          [[ "$auth_schema" =~ ^[a-f0-9]{64}$ ]]
+          jq -s --arg version "$version" --arg revision "$SOURCE_SHA" --arg schema "$schema" --arg auth_schema "$auth_schema" '{version:$version, revision:$revision, dashboardSchema:$schema, authSchema:$auth_schema, platform:"linux/amd64", images:.}' auth-image.json dashboard-image.json mira-image.json > container-images.json
           cp container-images.json "release-manifest-$GITHUB_RUN_ATTEMPT.json"
           {
             echo '## Published container images'

@@ -109,6 +109,74 @@ test("unavailable restart observations cannot enable a mutation", () => {
     }
 });
 
+test.each(["verified", "stale", "unverified", "expired"])(
+    "release panel shows Mira and only a %s Windows download",
+    (kind) => {
+        const close = fixture(<ReleasesPanel />, "releases", {
+            configured: true,
+            dashboard: "0.10.1",
+            workers: [],
+            auth: [],
+            mira: { version: "0.10.0", online: false, ready: false },
+            computersAvailable: true,
+            computers: [
+                {
+                    id: "windows",
+                    label: "Desktop",
+                    platform: "win32",
+                    companionVersion: "0.9.0",
+                    connected: false,
+                },
+                {
+                    id: "linux",
+                    label: "Server",
+                    platform: "linux",
+                    companionVersion: "0.9.0",
+                    connected: true,
+                },
+            ],
+            release: {
+                fresh: kind !== "stale",
+                capturedAt: new Date(
+                    Date.now() - (kind === "expired" ? 3_600_000 : 0)
+                ).toISOString(),
+                value: {
+                    version: "0.10.1",
+                    verified: kind !== "unverified",
+                    url: "https://github.com/demo/homelab/releases/tag/v0.10.1",
+                    computer: {
+                        version: "0.10.1",
+                        url: "https://github.com/demo/homelab/releases/download/v0.10.1/windows.zip",
+                    },
+                },
+            },
+        });
+        try {
+            expect(screen.getByText("0.10.0 (not ready)")).toBeVisible();
+            expect(screen.getByRole("heading", { name: "Windows app" })).toBeVisible();
+            expect(screen.getByText("Desktop")).toBeVisible();
+            expect(screen.getByText("Offline")).toBeVisible();
+            expect(screen.queryByText("Server")).not.toBeInTheDocument();
+            if (kind === "verified") {
+                expect(
+                    screen.getByRole("link", { name: "Download Windows" })
+                ).toHaveAttribute(
+                    "href",
+                    "https://github.com/demo/homelab/releases/download/v0.10.1/windows.zip"
+                );
+                expect(screen.getByText("Update available")).toBeVisible();
+            } else {
+                expect(
+                    screen.queryByRole("link", { name: "Download Windows" })
+                ).not.toBeInTheDocument();
+                expect(screen.queryByText("Update available")).not.toBeInTheDocument();
+            }
+        } finally {
+            close();
+        }
+    }
+);
+
 test("release publication is displayed separately from running versions and stale checks", () => {
     const close = fixture(<ReleasesPanel />, "releases", {
         configured: true,

@@ -7,6 +7,7 @@ import type { UpdateTarget } from "../updates/configuration";
 import { updateResourceKeys } from "../updates/configuration";
 import { admitDeployment } from "./deploymentAdmission";
 import {
+    deploymentHosts,
     releaseDeploymentRevision,
     type ReleaseDeploymentTarget,
 } from "./deploymentConfiguration";
@@ -40,31 +41,37 @@ export function automaticReleaseEligible(
         policy.paused ||
         policy.configurationChanged ||
         !next?.every((part) => Number.isSafeInteger(part)) ||
-        !plan.release.dashboardSchema
+        !plan.release.dashboardSchema ||
+        (target.auth !== undefined && (!plan.release.authSchema || !plan.authExpected))
     )
         return false;
-    return target.services.every((service) => {
-        const observed = plan.expected.containers[service.name];
-        if (!observed) return false;
-        const prefix = `ghcr.io/${plan.release.repository.toLowerCase()}/${service.app}:`;
-        if (!observed.image.startsWith(prefix)) return false;
-        const before = /^(\d+)\.(\d+)\.(\d+)@sha256:[a-f0-9]{64}$/
-            .exec(observed.image.slice(prefix.length))
-            ?.slice(1)
-            .map(Number);
-        if (
-            !before?.every((part) => Number.isSafeInteger(part)) ||
-            before[0] !== next[0] ||
-            before[1]! > next[1]! ||
-            (before[1] === next[1] && before[2]! >= next[2]!)
-        )
-            return false;
-        if (policy.mode === "patch" && before[1] !== next[1]) return false;
-        return (
-            service.app === "mira-browser-proxy" ||
-            observed.dashboardSchema === plan.release.dashboardSchema
-        );
-    });
+    return deploymentHosts(target).every((host) =>
+        host.services.every((service) => {
+            const observed = (host === target ? plan.expected : plan.authExpected)
+                ?.containers[service.name];
+            if (!observed) return false;
+            const prefix = `ghcr.io/${plan.release.repository.toLowerCase()}/${service.app}:`;
+            if (!observed.image.startsWith(prefix)) return false;
+            const before = /^(\d+)\.(\d+)\.(\d+)@sha256:[a-f0-9]{64}$/
+                .exec(observed.image.slice(prefix.length))
+                ?.slice(1)
+                .map(Number);
+            if (
+                !before?.every((part) => Number.isSafeInteger(part)) ||
+                before[0] !== next[0] ||
+                before[1]! > next[1]! ||
+                (before[1] === next[1] && before[2]! >= next[2]!)
+            )
+                return false;
+            if (policy.mode === "patch" && before[1] !== next[1]) return false;
+            return (
+                service.app === "mira-browser-proxy" ||
+                (service.app === "auth"
+                    ? observed.authSchema === plan.release.authSchema
+                    : observed.dashboardSchema === plan.release.dashboardSchema)
+            );
+        })
+    );
 }
 /**
  * Register bounded automatic deployment checks on the existing network job lane.
@@ -93,13 +100,16 @@ export function automaticDeploymentJobs(options: {
                 resourceKeys: [
                     "homelab:deployment-policy",
                     ...new Set(
-                        options.targets.flatMap((target) =>
-                            updateResourceKeys(
-                                options.connections.find(
-                                    (connection) => connection.id === target.connection
-                                )!
+                        options.targets
+                            .flatMap(deploymentHosts)
+                            .flatMap((target) =>
+                                updateResourceKeys(
+                                    options.connections.find(
+                                        (connection) =>
+                                            connection.id === target.connection
+                                    )!
+                                )
                             )
-                        )
                     ),
                 ],
                 timeoutMs: 300_000,
@@ -144,11 +154,14 @@ export function automaticDeploymentJobs(options: {
                     if (
                         !published.verified ||
                         !published.dashboardSchema ||
+                        (target.auth !== undefined && !published.authSchema) ||
                         (target.browserConfigFile && !published.browser) ||
-                        target.services.some(
-                            (service) =>
-                                !available.some((image) => image.app === service.app)
-                        )
+                        deploymentHosts(target)
+                            .flatMap((entry) => entry.services)
+                            .some(
+                                (service) =>
+                                    !available.some((image) => image.app === service.app)
+                            )
                     )
                         continue;
                     const release = deploymentRelease(published, target);
@@ -170,6 +183,28 @@ export function automaticDeploymentJobs(options: {
                     );
                     if (expected.targetHash !== deploymentDigest(target))
                         throw new Error("Deployment authority changed");
+                    const authExpected = target.auth
+                        ? v.parse(
+                              deploymentObservationSchema,
+                              await (options.host ?? deploymentHost)(
+                                  options.connections.find(
+                                      (entry) => entry.id === target.auth!.connection
+                                  )!,
+                                  {
+                                      mode: "inspect",
+                                      target: target.auth,
+                                      release,
+                                      allowCurrent: true,
+                                  },
+                                  context.signal
+                              )
+                          )
+                        : undefined;
+                    if (
+                        target.auth &&
+                        authExpected?.targetHash !== deploymentDigest(target.auth)
+                    )
+                        throw new Error("Auth deployment authority changed");
                     const plan = {
                         configuration: releaseDeploymentRevision(
                             target,
@@ -177,6 +212,7 @@ export function automaticDeploymentJobs(options: {
                         ),
                         release,
                         expected,
+                        ...(authExpected ? { authExpected } : {}),
                     };
                     if (!automaticReleaseEligible(policy, target, plan)) continue;
                     let admitted = false;

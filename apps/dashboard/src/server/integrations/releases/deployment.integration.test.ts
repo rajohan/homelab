@@ -11,24 +11,77 @@ import { createJobRegistry } from "../../jobs/registry";
 import { operationFixture, expectOperationFailure } from "../../testing/operations";
 import { coordinateDeployment } from "./deploymentCoordinator";
 import {
-    deploymentTestConnections as connections,
-    deploymentTestTarget as target,
+    deploymentTestConnections,
+    deploymentTestTarget,
     deploymentTestPlan,
 } from "./deploymentFixtures";
 import { deploymentPreparationJobs } from "./deploymentPlans";
 import {
     deploymentDigest,
     type DeploymentHostRequest,
+    type DeploymentObservation,
     type DeploymentReceipt,
 } from "./deploymentProtocol";
 import type { readHomelabRelease } from "./read";
 
-async function fixture() {
+const target = deploymentTestTarget;
+
+function completeHost(state: Awaited<ReturnType<typeof fixture>>, auth = false) {
+    const selected = auth ? state.target.auth! : state.target;
+    const expected = auth ? state.plan.authExpected! : state.plan.expected;
+    state.setReceipt(
+        {
+            state: "succeeded",
+            phase: "complete",
+            changesStarted: true,
+            migrationStarted: true,
+            version: state.plan.release.version,
+            revision: state.plan.release.revision,
+            containers: Object.fromEntries(
+                selected.services.map((service) => [
+                    service.name,
+                    {
+                        ...expected.containers[service.name]!,
+                        image: state.plan.release.images.find(
+                            (image) => image.app === service.app
+                        )!.reference,
+                    },
+                ])
+            ),
+        },
+        selected.id
+    );
+}
+
+async function fixture(includeAuth = false) {
+    const connections = includeAuth
+        ? [
+              ...deploymentTestConnections,
+              {
+                  ...deploymentTestConnections[0]!,
+                  id: "edge",
+                  host: "auth.example.test",
+              },
+          ]
+        : deploymentTestConnections;
+    const target = includeAuth
+        ? {
+              ...deploymentTestTarget,
+              auth: {
+                  ...deploymentTestTarget,
+                  id: "auth",
+                  connection: "edge",
+                  mira: false as const,
+                  services: [{ name: "auth", app: "auth" as const }],
+              },
+          }
+        : deploymentTestTarget;
     const state = await operationFixture();
-    const plan = deploymentTestPlan();
+    const plan = deploymentTestPlan(target, connections);
     const calls: DeploymentHostRequest[] = [];
-    let receipt: DeploymentReceipt | undefined;
+    const receipts = new Map<string, DeploymentReceipt>();
     let lostSubmit = false;
+    let authObservation: DeploymentObservation | Error | undefined;
     let published = {
         ...plan.release,
         browser: null,
@@ -40,25 +93,46 @@ async function fixture() {
     };
     const host = (_connection: unknown, request: DeploymentHostRequest) => {
         calls.push(request);
-        if (request.mode === "inspect") return Promise.resolve(plan.expected);
+        const before = request.target.id === "auth" ? plan.authExpected! : plan.expected;
+        const previous = receipts.get(request.target.id);
+        if (request.mode === "inspect") {
+            if (request.target.id === "auth" && authObservation) {
+                if (authObservation instanceof Error)
+                    return Promise.reject(authObservation);
+                if (
+                    !request.allowCurrent &&
+                    authObservation.containers.auth!.image !==
+                        before.containers.auth!.image
+                )
+                    return Promise.reject(new Error("release_not_newer"));
+                return Promise.resolve(authObservation);
+            }
+            return Promise.resolve(
+                request.allowCurrent && previous?.state === "succeeded"
+                    ? { ...before, containers: previous.containers }
+                    : before
+            );
+        }
         if (request.mode === "submit") {
-            receipt = {
+            receipts.set(request.target.id, {
                 state: "running",
                 id: request.id,
                 requestHash: deploymentDigest({
                     id: request.id,
-                    target,
+                    target: request.target,
                     release: plan.release,
-                    expected: plan.expected,
+                    expected: request.expected,
                 }),
                 phase: "accepted",
                 updatedAt: Date.now() / 1000,
                 changesStarted: false,
                 migrationStarted: false,
-            };
+            });
             if (lostSubmit) return Promise.reject(new Error("Lost SSH acknowledgement"));
         }
-        return Promise.resolve(receipt ?? { state: "absent", id: request.id });
+        return Promise.resolve(
+            receipts.get(request.target.id) ?? { state: "absent", id: request.id }
+        );
     };
     const read = () =>
         Promise.resolve(published as Awaited<ReturnType<typeof readHomelabRelease>>);
@@ -135,12 +209,16 @@ async function fixture() {
         operations,
         principal,
         worker,
+        target,
         plan,
         calls,
         request,
         executePreparation,
         coordinate,
         drained,
+        observeAuth: (value: DeploymentObservation | Error) => {
+            authObservation = value;
+        },
         loseSubmit: () => {
             lostSubmit = true;
         },
@@ -148,9 +226,13 @@ async function fixture() {
             published = { ...published, version: "1.2.4" };
         },
         setReceipt: (
-            update: Partial<Exclude<DeploymentReceipt, { state: "absent" }>>
+            update: Partial<Exclude<DeploymentReceipt, { state: "absent" }>>,
+            hostId = target.id
         ) => {
-            receipt = { ...receipt, ...update } as DeploymentReceipt;
+            receipts.set(hostId, {
+                ...receipts.get(hostId),
+                ...update,
+            } as DeploymentReceipt);
         },
         record: async () => {
             const [record] = await state.client<
@@ -160,6 +242,303 @@ async function fixture() {
         },
     };
 }
+
+test.each([false, true])(
+    "unified deployment verifies Auth before replacing Main and survives lost SSH: %s",
+    async (lost) => {
+        const state = await fixture(true);
+        try {
+            const { id } = await state.request();
+            await state.drained(id);
+            if (lost) state.loseSubmit();
+            await state.coordinate();
+            expect(
+                state.calls
+                    .filter((call) => call.mode === "submit")
+                    .map((call) => call.target.id)
+            ).toEqual(["auth"]);
+            if (lost)
+                expect(await state.record()).toMatchObject({
+                    state: "unknown",
+                    finished: false,
+                });
+            await state.coordinate();
+            expect(state.calls.filter((call) => call.mode === "submit")).toHaveLength(1);
+            completeHost(state, true);
+            await state.coordinate();
+            expect(await state.record()).toMatchObject({
+                state: "running",
+                phase: "auth_complete",
+                finished: false,
+            });
+            await expectOperationFailure(
+                state.caller.releases.deployment.cancel({ id }),
+                "Only a deployment waiting"
+            );
+            await state.coordinate();
+            expect(
+                state.calls
+                    .filter((call) => call.mode === "submit")
+                    .map((call) => call.target.id)
+            ).toEqual(["auth", "main"]);
+            await state.coordinate();
+            expect(state.calls.filter((call) => call.mode === "submit")).toHaveLength(2);
+            completeHost(state);
+            await state.coordinate();
+            expect(await state.record()).toMatchObject({
+                state: "succeeded",
+                finished: true,
+            });
+            const [row] = await state.client<
+                { receipt: { auth: DeploymentReceipt; main: DeploymentReceipt } }[]
+            >`SELECT receipt FROM release_deployments WHERE id=${id}`;
+            expect(row!.receipt.auth.state).toBe("succeeded");
+            expect(row!.receipt.main.state).toBe("succeeded");
+        } finally {
+            await state.close();
+        }
+    }
+);
+
+test.each(["auth", "main"])(
+    "unified deployment records a recovered %s failure without claiming total success",
+    async (hostId) => {
+        const state = await fixture(true);
+        try {
+            const { id } = await state.request();
+            await state.drained(id);
+            await state.coordinate();
+            if (hostId === "main") {
+                completeHost(state, true);
+                await state.coordinate();
+                await state.coordinate();
+            }
+            state.setReceipt(
+                {
+                    state: "failed",
+                    phase: "failed",
+                    changesStarted: false,
+                    migrationStarted: false,
+                    recovered: true,
+                },
+                hostId
+            );
+            await state.coordinate();
+            expect(await state.record()).toMatchObject({
+                state: "failed",
+                finished: true,
+            });
+            expect(state.calls.filter((call) => call.mode === "submit")).toHaveLength(
+                hostId === "auth" ? 1 : 2
+            );
+            const [row] = await state.client<
+                { message: string }[]
+            >`SELECT message FROM release_deployments WHERE id=${id}`;
+            if (hostId === "main") expect(row!.message).toContain("Auth was updated");
+        } finally {
+            await state.close();
+        }
+    }
+);
+
+test("unified deployment refuses missing Auth completion and holds uncertain recovery", async () => {
+    const state = await fixture(true);
+    try {
+        const { id } = await state.request();
+        await state.drained(id);
+        await state.coordinate();
+        state.setReceipt(
+            {
+                state: "failed",
+                phase: "failed",
+                migrationStarted: true,
+                recovered: false,
+            },
+            "auth"
+        );
+        await state.coordinate();
+        expect(await state.record()).toMatchObject({ state: "failed", finished: false });
+        await state.client`UPDATE release_deployments SET receipt='{"stage":"main","submitted":false}'::jsonb WHERE id=${id}`;
+        await state.coordinate();
+        expect(await state.record()).toMatchObject({ state: "unknown", finished: false });
+        expect(state.calls.filter((call) => call.mode === "submit")).toHaveLength(1);
+    } finally {
+        await state.close();
+    }
+});
+
+function currentAuth(state: Awaited<ReturnType<typeof fixture>>): DeploymentObservation {
+    return {
+        ...state.plan.authExpected!,
+        containers: {
+            auth: {
+                ...state.plan.authExpected!.containers.auth!,
+                image: state.plan.release.images.find((image) => image.app === "auth")!
+                    .reference,
+            },
+        },
+    };
+}
+
+test("unified deployment permits a healthy Auth container recreation during handoff", async () => {
+    const state = await fixture(true);
+    try {
+        const { id } = await state.request();
+        await state.drained(id);
+        await state.coordinate();
+        completeHost(state, true);
+        await state.coordinate();
+        const observed = currentAuth(state);
+        observed.containers.auth!.id = "f".repeat(64);
+        observed.units["homelab.service"]!.invocation = "f".repeat(32);
+        state.observeAuth(observed);
+        await state.coordinate();
+        expect(
+            state.calls
+                .filter((call) => call.mode === "submit")
+                .map((call) => call.target.id)
+        ).toEqual(["auth", "main"]);
+        completeHost(state);
+        await state.coordinate();
+        expect(await state.record()).toMatchObject({
+            state: "succeeded",
+            finished: true,
+        });
+    } finally {
+        await state.close();
+    }
+});
+
+test.each(["image", "unreachable"])(
+    "unified handoff ends safely when Auth is %s before Main starts",
+    async (failure) => {
+        const state = await fixture(true);
+        try {
+            const { id } = await state.request();
+            await state.drained(id);
+            await state.coordinate();
+            completeHost(state, true);
+            await state.coordinate();
+            const observed = currentAuth(state);
+            observed.containers.auth!.imageId = `sha256:${"f".repeat(64)}`;
+            state.observeAuth(
+                failure === "unreachable" ? new Error("SSH unavailable") : observed
+            );
+            await state.coordinate();
+            expect(await state.record()).toMatchObject({
+                state: "failed",
+                phase: "auth_verification",
+                finished: true,
+            });
+            await state.coordinate();
+            expect(
+                state.calls
+                    .filter((call) => call.mode === "submit")
+                    .map((call) => call.target.id)
+            ).toEqual(["auth"]);
+            await state.caller.jobs.run({
+                action: "homelab.prepare.main",
+                requestId: crypto.randomUUID(),
+            });
+            expect(
+                await claimJob(state.client, state.worker, ["homelab.prepare.main"], true)
+            ).toBeDefined();
+        } finally {
+            await state.close();
+        }
+    }
+);
+
+test.each([false, true])(
+    "manual retry preserves existing Auth and submits Main once after lost SSH: prior partial failure %s",
+    async (retry) => {
+        const state = await fixture(true);
+        try {
+            if (retry) {
+                const { id } = await state.request();
+                await state.drained(id);
+                await state.coordinate();
+                completeHost(state, true);
+                await state.coordinate();
+                await state.coordinate();
+                state.setReceipt({
+                    state: "failed",
+                    phase: "failed",
+                    changesStarted: false,
+                    migrationStarted: false,
+                    recovered: true,
+                });
+                await state.coordinate();
+                expect(await state.record()).toMatchObject({
+                    state: "failed",
+                    finished: true,
+                });
+            } else state.observeAuth(currentAuth(state));
+            const { id } = await state.request();
+            await state.drained(id);
+            state.loseSubmit();
+            await state.coordinate();
+            expect(await state.record()).toMatchObject({
+                state: "unknown",
+                finished: false,
+            });
+            await state.coordinate();
+            expect(await state.record()).toMatchObject({
+                state: "running",
+                finished: false,
+            });
+            completeHost(state);
+            await state.coordinate();
+            expect(await state.record()).toMatchObject({
+                state: "succeeded",
+                finished: true,
+            });
+            expect(
+                state.calls
+                    .filter((call) => call.mode === "submit")
+                    .map((call) => call.target.id)
+            ).toEqual(retry ? ["auth", "main", "main"] : ["main"]);
+            const [row] = await state.client<
+                { receipt: { authAlreadyCurrent: boolean; auth?: unknown } }[]
+            >`SELECT receipt FROM release_deployments WHERE id=${id}`;
+            expect(row!.receipt.authAlreadyCurrent).toBe(true);
+            expect(row!.receipt.auth).toBeUndefined();
+        } finally {
+            await state.close();
+        }
+    }
+);
+
+test.each(["different_digest", "newer", "unhealthy"])(
+    "manual preparation refuses Auth with %s evidence",
+    async (failure) => {
+        const state = await fixture(true);
+        try {
+            const observed = currentAuth(state);
+            if (failure === "different_digest")
+                observed.containers.auth!.image = observed.containers.auth!.image.replace(
+                    "c".repeat(64),
+                    "d".repeat(64)
+                );
+            if (failure === "newer")
+                observed.containers.auth!.image = observed.containers.auth!.image.replace(
+                    ":1.2.3@",
+                    ":1.2.4@"
+                );
+            if (failure === "unhealthy") observed.containers.auth!.health = "unhealthy";
+            state.observeAuth(observed);
+            expect(
+                await state.executePreparation().then(
+                    () => null,
+                    (error: unknown) => error
+                )
+            ).toBeInstanceOf(Error);
+            expect(state.calls.filter((call) => call.mode === "submit")).toHaveLength(0);
+        } finally {
+            await state.close();
+        }
+    }
+);
 
 test("deployment admission requires fresh human authority, current preparation and compatible workers", async () => {
     const state = await fixture();

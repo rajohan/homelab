@@ -47,11 +47,18 @@ export const deploymentTestTarget: ReleaseDeploymentTarget = {
 /**
  * Build independent release evidence without real hosts or production identities.
  * @param target - Optional modified synthetic deployment recipe.
+ * @param connections - Synthetic SSH authorities, including Auth when configured.
  * @returns A plan matching the same hashing and protocol used by the real host boundary.
  */
-export function deploymentTestPlan(target = deploymentTestTarget): DeploymentPlan {
+export function deploymentTestPlan(
+    target = deploymentTestTarget,
+    connections = deploymentTestConnections
+): DeploymentPlan {
     return {
-        configuration: releaseDeploymentRevision(target, deploymentTestConnections),
+        configuration: releaseDeploymentRevision(target, connections),
+        ...(target.auth
+            ? { authExpected: deploymentTestPlan(target.auth, connections).expected }
+            : {}),
         release: {
             repository: "demo/homelab",
             version: "1.2.3",

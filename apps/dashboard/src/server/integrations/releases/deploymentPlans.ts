@@ -5,6 +5,7 @@ import type { JobHandler } from "../../jobs/types";
 import type { UpdateTarget } from "../updates/configuration";
 import { updateResourceKeys } from "../updates/configuration";
 import {
+    deploymentHosts,
     releaseDeploymentRevision,
     type ReleaseDeploymentTarget,
 } from "./deploymentConfiguration";
@@ -14,6 +15,8 @@ import {
     deploymentObservationSchema,
     deploymentPlanSchema,
     type DeploymentHost,
+    type DeploymentObservation,
+    type DeploymentRelease,
 } from "./deploymentProtocol";
 import { readHomelabRelease } from "./read";
 
@@ -34,18 +37,67 @@ export function deploymentRelease(
         ...(target.browserConfigFile ? release.browser!.images : []),
     ];
     if (
-        target.services.some(
-            (service) => !images.some((image) => image.app === service.app)
-        )
+        deploymentHosts(target)
+            .flatMap((entry) => entry.services)
+            .some((service) => !images.some((image) => image.app === service.app))
     )
         throw new Error("Required release images are unavailable");
     return {
         ...(release.dashboardSchema ? { dashboardSchema: release.dashboardSchema } : {}),
+        ...(release.authSchema ? { authSchema: release.authSchema } : {}),
         repository: release.repository,
         version: release.version,
         revision: release.revision,
         images,
     };
+}
+
+/**
+ * Distinguish an already verified Auth release from a permitted upgrade.
+ * @param target - Complete recipe with its optional independent Auth host.
+ * @param release - Frozen verified publication.
+ * @param observed - Fresh Auth host evidence, including immutable image references.
+ * @returns True only when every Auth service already runs the candidate; mixed or newer versions are refused.
+ */
+export function authDeploymentCurrent(
+    target: ReleaseDeploymentTarget,
+    release: DeploymentRelease,
+    observed: DeploymentObservation
+): boolean {
+    if (!target.auth || observed.targetHash !== deploymentDigest(target.auth))
+        throw new Error("Auth deployment authority changed");
+    const services = target.auth.services.map((service) => ({
+        service,
+        current: observed.containers[service.name],
+        candidate: release.images.find((image) => image.app === service.app)?.reference,
+    }));
+    if (services.some(({ current }) => !current?.running || current.health !== "healthy"))
+        throw new Error("Auth deployment is not healthy");
+    if (
+        services.every(
+            ({ current, candidate }) => candidate && current!.image === candidate
+        )
+    )
+        return true;
+    const next = release.version.split(".").map(Number);
+    const older = services.every(({ service, current }) => {
+        const prefix = `ghcr.io/${release.repository.toLowerCase()}/${service.app}:`;
+        if (!current!.image.startsWith(prefix)) return false;
+        const version = /^(\d+)\.(\d+)\.(\d+)@sha256:[a-f0-9]{64}$/
+            .exec(current!.image.slice(prefix.length))
+            ?.slice(1)
+            .map(Number);
+        if (
+            !version?.every((part) => Number.isSafeInteger(part)) ||
+            !next.every((part) => Number.isSafeInteger(part))
+        )
+            return false;
+        const difference = version.findIndex((part, index) => part !== next[index]);
+        return difference !== -1 && version[difference]! < next[difference]!;
+    });
+    if (!older)
+        throw new Error("Auth must run an older version or the exact approved release");
+    return false;
 }
 
 /**
@@ -70,9 +122,17 @@ export function deploymentPreparationJobs(options: {
                 "Check the published release and current deployment before confirmation.",
             capability: "updates:refresh",
             resourceClass: "network",
-            resourceKeys: updateResourceKeys(
-                options.connections.find((entry) => entry.id === target.connection)!
-            ),
+            resourceKeys: [
+                ...new Set(
+                    deploymentHosts(target).flatMap((entry) =>
+                        updateResourceKeys(
+                            options.connections.find(
+                                (connection) => connection.id === entry.connection
+                            )!
+                        )
+                    )
+                ),
+            ],
             timeoutMs: 60_000,
             attemptLimit: 1,
             retrySafe: true,
@@ -100,7 +160,32 @@ export function deploymentPreparationJobs(options: {
             if (expected.targetHash !== deploymentDigest(target))
                 throw new Error("Deployment authority changed");
             const configuration = releaseDeploymentRevision(target, options.connections);
-            const value = { configuration, release, expected };
+            const authExpected = target.auth
+                ? v.parse(
+                      deploymentObservationSchema,
+                      await (options.host ?? deploymentHost)(
+                          options.connections.find(
+                              (entry) => entry.id === target.auth!.connection
+                          )!,
+                          {
+                              mode: "inspect",
+                              target: target.auth,
+                              release,
+                              allowCurrent: true,
+                          },
+                          context.signal
+                      )
+                  )
+                : undefined;
+            if (target.auth && authExpected?.targetHash !== deploymentDigest(target.auth))
+                throw new Error("Auth deployment authority changed");
+            if (authExpected) authDeploymentCurrent(target, release, authExpected);
+            const value = {
+                configuration,
+                release,
+                expected,
+                ...(authExpected ? { authExpected } : {}),
+            };
             if (
                 !(await context.commit(async (transaction) => {
                     const [active] = await transaction<
@@ -137,6 +222,7 @@ export async function preparedDeployment(
     const plan =
         parsed.success &&
         row?.fresh &&
+        Boolean(target.auth) === Boolean(parsed.output.authExpected) &&
         parsed.output.configuration === releaseDeploymentRevision(target, connections)
             ? parsed.output
             : null;

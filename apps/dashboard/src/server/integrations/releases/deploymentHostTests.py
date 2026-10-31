@@ -197,11 +197,36 @@ class HostTests(unittest.TestCase):
                 result=host.container(self.target,"dashboard")
             self.assertEqual(result["dashboardSchema"],schema if schema=="d"*64 else None)
 
+    def test_auth_image_and_backup_are_bound_to_auth(self):
+        reference = self.new.replace("/dashboard:", "/auth:")
+        release = {**self.release, "authSchema": "d" * 64,
+                   "images": [*self.release["images"], {"app": "auth", "reference": reference}]}
+        image = {"Architecture": "amd64", "Os": "linux", "Id": "sha256:" + "b" * 64,
+                 "Config": {"Labels": {"org.opencontainers.image.source": "https://github.com/demo/homelab",
+                 "org.opencontainers.image.version": "1.2.3", "org.opencontainers.image.revision": "c" * 40,
+                 "io.homelab.auth-schema": "d" * 64}}}
+        with patch.object(host, "command", return_value=json.dumps([image]).encode()):
+            self.assertEqual(host.image_identity(self.target, reference, release), image["Id"])
+        image["Config"]["Labels"]["io.homelab.auth-schema"] = "e" * 64
+        with patch.object(host, "command", return_value=json.dumps([image]).encode()), self.assertRaisesRegex(host.Refusal, "image_verification"):
+            host.image_identity(self.target, reference, release)
+        self.assertEqual(host.recipe(["/fixture/migrate", "{authImage}"], self.operation, host.release_images(release)), ["/fixture/migrate", reference])
+        with patch.object(host.sys, "argv", ["runner.py", "backup", "auth"]), \
+             patch.dict(host.os.environ, {"HOMELAB_AUTH_DATABASE_URL": "postgres://operator@db.example.test/auth", "HOMELAB_DASHBOARD_DATABASE_URL": "postgres://operator@db.example.test/dashboard"}, clear=True), \
+             patch.object(host.os, "execve", side_effect=RuntimeError("intercepted")) as execute:
+            with self.assertRaisesRegex(RuntimeError, "intercepted"): host.main()
+            self.assertEqual(execute.call_args.args[2]["PGDATABASE"], "auth")
+        with patch.object(host.sys, "argv", ["runner.py", "backup", "unexpected"]), self.assertRaisesRegex(host.Refusal, "backup_configuration"):
+            host.main()
+
     def test_automatic_read_can_observe_current_version_but_submit_inspection_stays_strict(self):
-        current={"image":self.old,"running":True,"health":"healthy"}
+        current={"image":self.old,"imageId":"sha256:"+"a"*64,"running":True,"health":"healthy"}
         release={**self.release,"version":"1.2.2","images":[{"app":"dashboard","reference":self.old}]}
-        with patch.object(host,"canonical"),patch.object(host,"configured",side_effect=self.config),patch.object(host,"container",return_value=current),patch.object(host,"unit_state",return_value={"active":"active","invocation":"a"*32}):
+        with patch.object(host,"canonical"),patch.object(host,"configured",side_effect=self.config),patch.object(host,"container",return_value=current),patch.object(host,"unit_state",return_value={"active":"active","invocation":"a"*32}),patch.object(host,"image_identity",return_value=current["imageId"]) as identity:
             self.assertEqual(host.inspect(self.target,release,True)["containers"]["dashboard"],current)
+            identity.assert_called_once_with(self.target,self.old,release)
+            identity.return_value="sha256:"+"b"*64
+            with self.assertRaisesRegex(host.Refusal,"image_verification"):host.inspect(self.target,release,True)
             with self.assertRaisesRegex(host.Refusal,"release_not_newer"):host.inspect(self.target,release)
 
     def test_directory_lock_excludes_other_operations(self):

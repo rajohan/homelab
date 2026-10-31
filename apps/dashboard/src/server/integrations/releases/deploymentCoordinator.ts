@@ -8,15 +8,18 @@ import {
     releaseDeploymentRevision,
     type ReleaseDeploymentTarget,
 } from "./deploymentConfiguration";
-import { deploymentRelease } from "./deploymentPlans";
+import { authDeploymentCurrent, deploymentRelease } from "./deploymentPlans";
 import { automaticDeploymentAllowed } from "./deploymentPolicies";
 import {
     deploymentDigest,
     deploymentHost,
+    deploymentObservationSchema,
     deploymentPlanSchema,
+    deploymentProgressSchema,
     deploymentReceiptSchema,
     type DeploymentHost,
     type DeploymentReceipt,
+    type DeploymentProgress,
 } from "./deploymentProtocol";
 import { readHomelabRelease } from "./read";
 
@@ -25,6 +28,7 @@ interface Claim {
     target: string;
     configuration: string;
     plan: unknown;
+    receipt: unknown;
     state: string;
     expired: boolean;
     lease: string;
@@ -56,7 +60,7 @@ export async function coordinateDeployment(options: {
             UPDATE release_deployments SET controller=${controller}, lease_token=${lease},
                 lease_expires_at=clock_timestamp()+interval '180 seconds'
             WHERE finished_at IS NULL AND (lease_expires_at IS NULL OR lease_expires_at<=clock_timestamp())
-            RETURNING id,target,configuration,plan,state,policy_version AS "policyVersion",window_ends_at AS "windowEndsAt",created_at<clock_timestamp()-interval '30 minutes' AS expired,lease_token AS lease`;
+            RETURNING id,target,configuration,plan,receipt,state,policy_version AS "policyVersion",window_ends_at AS "windowEndsAt",created_at<clock_timestamp()-interval '30 minutes' AS expired,lease_token AS lease`;
         return row;
     });
     if (!claim) return;
@@ -65,7 +69,7 @@ export async function coordinateDeployment(options: {
         phase: string,
         message: string,
         finished: boolean,
-        receipt?: DeploymentReceipt
+        receipt?: DeploymentReceipt | DeploymentProgress
     ) =>
         client.begin(async (transaction) => {
             await lockQueue(transaction);
@@ -91,7 +95,7 @@ export async function coordinateDeployment(options: {
             const complete = finished || !allowed;
             const rows = await transaction<{ id: string }[]>`
                 UPDATE release_deployments SET state=${nextState},phase=${nextPhase},message=${nextMessage},
-                receipt=${JSON.stringify(receipt ?? null)}::text::jsonb,updated_at=now(),
+                receipt=${JSON.stringify(receipt ?? claim.receipt ?? null)}::text::jsonb,updated_at=now(),
                 finished_at=CASE WHEN ${complete} THEN now() ELSE NULL END
                 WHERE id=${claim.id} AND lease_token=${lease} AND lease_expires_at>clock_timestamp() AND finished_at IS NULL
                 RETURNING id`;
@@ -103,15 +107,16 @@ export async function coordinateDeployment(options: {
                     claim.id,
                     nextMessage
                 );
+            if (rows.length > 0 && receipt) claim.receipt = receipt;
             return rows.length === 1 && allowed;
         });
     try {
         const target = options.targets.find((entry) => entry.id === claim.target);
-        const connection =
+        const mainConnection =
             target && options.connections.find((entry) => entry.id === target.connection);
         if (
             !target ||
-            !connection ||
+            !mainConnection ||
             !options.repository ||
             claim.configuration !== releaseDeploymentRevision(target, options.connections)
         ) {
@@ -124,12 +129,69 @@ export async function coordinateDeployment(options: {
             return;
         }
         const plan = v.parse(deploymentPlanSchema, claim.plan);
+        if (Boolean(target.auth) !== Boolean(plan.authExpected))
+            throw new Error("Auth preparation is incomplete");
+        let progress: DeploymentProgress | undefined;
+        if (target.auth) {
+            if (claim.state === "waiting") {
+                const current = authDeploymentCurrent(
+                    target,
+                    plan.release,
+                    plan.authExpected!
+                );
+                progress = {
+                    stage: current ? "main" : "auth",
+                    submitted: false,
+                    ...(current ? { authAlreadyCurrent: true as const } : {}),
+                };
+            } else progress = v.parse(deploymentProgressSchema, claim.receipt);
+        }
+        const hostTarget = progress?.stage === "auth" ? target.auth! : target;
+        const expected = progress?.stage === "auth" ? plan.authExpected! : plan.expected;
+        const connection = options.connections.find(
+            (entry) => entry.id === hostTarget.connection
+        )!;
+        const authIntent = target.auth
+            ? {
+                  id: claim.id,
+                  target: target.auth,
+                  release: plan.release,
+                  expected: plan.authExpected!,
+              }
+            : undefined;
+        const authCompleted = (receipt: DeploymentReceipt | undefined) =>
+            Boolean(
+                receipt?.state === "succeeded" &&
+                receipt.requestHash === deploymentDigest(authIntent) &&
+                receipt.id === claim.id &&
+                receipt.phase === "complete" &&
+                receipt.migrationStarted &&
+                receipt.version === plan.release.version &&
+                receipt.revision === plan.release.revision &&
+                target.auth!.services.every((service) => {
+                    const observed = receipt.containers?.[service.name];
+                    return (
+                        observed?.running &&
+                        observed.health === "healthy" &&
+                        observed.image ===
+                            plan.release.images.find((image) => image.app === service.app)
+                                ?.reference
+                    );
+                })
+            );
+        if (
+            progress?.stage === "main" &&
+            !(progress.authAlreadyCurrent
+                ? authDeploymentCurrent(target, plan.release, plan.authExpected!)
+                : authCompleted(progress.auth))
+        )
+            throw new Error("Auth completion evidence is missing");
         const host = options.host ?? deploymentHost;
         const intent = {
             id: claim.id,
-            target,
+            target: hostTarget,
             release: plan.release,
-            expected: plan.expected,
+            expected,
         };
         if (claim.state === "waiting") {
             if (
@@ -208,13 +270,74 @@ export async function coordinateDeployment(options: {
                 );
                 return;
             }
-            // No retry after this durable boundary: a lost SSH result is inspected by ID.
+        }
+        if (
+            claim.state === "waiting" ||
+            (progress?.stage === "main" && !progress.submitted)
+        ) {
+            if (progress?.stage === "main") {
+                // A recreated container can retain the verified release. No Main
+                // installation has started, so failed verification can finish safely.
+                const completedContainers =
+                    progress.auth?.state === "succeeded"
+                        ? progress.auth.containers
+                        : undefined;
+                const before = progress.authAlreadyCurrent
+                    ? plan.authExpected!.containers
+                    : completedContainers;
+                let verified = false;
+                try {
+                    const current = v.parse(
+                        deploymentObservationSchema,
+                        await host(
+                            options.connections.find(
+                                (entry) => entry.id === target.auth!.connection
+                            )!,
+                            {
+                                mode: "inspect",
+                                target: target.auth!,
+                                release: plan.release,
+                                allowCurrent: true,
+                            },
+                            AbortSignal.any([options.signal, AbortSignal.timeout(30_000)])
+                        )
+                    );
+                    verified =
+                        authDeploymentCurrent(target, plan.release, current) &&
+                        target.auth!.services.every((service) => {
+                            const observed = current.containers[service.name];
+                            const previous = before?.[service.name];
+                            return (
+                                previous &&
+                                observed?.imageId === previous.imageId &&
+                                observed.authSchema === previous.authSchema
+                            );
+                        });
+                } catch {
+                    verified = false;
+                }
+                if (!verified) {
+                    await write(
+                        "failed",
+                        "auth_verification",
+                        "Auth could not be verified before starting Main. Main was not changed; prepare a new deployment after checking Auth.",
+                        true,
+                        progress
+                    );
+                    return;
+                }
+            }
+            // Persist each host boundary: losing SSH never repeats either installation.
+            if (progress) progress.submitted = true;
             if (
                 !(await write(
                     "submitting",
                     "accepted",
-                    "Starting the independent host deployment.",
-                    false
+                    progress?.stage === "auth"
+                        ? "Starting the Auth deployment."
+                        : "Starting the dashboard, worker and Mira deployment.",
+                    false,
+                    progress
                 ))
             )
                 return;
@@ -233,7 +356,7 @@ export async function coordinateDeployment(options: {
             deploymentReceiptSchema,
             await host(
                 connection,
-                { mode: "status", target, id: claim.id },
+                { mode: "status", target: hostTarget, id: claim.id },
                 AbortSignal.any([options.signal, AbortSignal.timeout(30_000)])
             )
         );
@@ -243,13 +366,15 @@ export async function coordinateDeployment(options: {
                 receipt.requestHash !== deploymentDigest(intent))
         )
             throw new Error("Deployment receipt does not match the approved operation");
+        if (progress) progress[progress.stage] = receipt;
+        const evidence = progress ?? receipt;
         if (receipt.state === "absent" || receipt.state === "unknown") {
             await write(
                 "unknown",
                 "recovery",
                 "The host outcome is unknown. Work remains paused until the host journal and database are recovered.",
                 false,
-                receipt
+                evidence
             );
         } else if (receipt.state === "succeeded") {
             if (
@@ -258,7 +383,7 @@ export async function coordinateDeployment(options: {
                 receipt.phase !== "complete" ||
                 !receipt.migrationStarted ||
                 !receipt.containers ||
-                target.services.some((service) => {
+                hostTarget.services.some((service) => {
                     const observed = receipt.containers?.[service.name];
                     return (
                         !observed?.running ||
@@ -270,33 +395,49 @@ export async function coordinateDeployment(options: {
                 })
             )
                 throw new Error("Deployment completion evidence is incomplete");
+            if (progress?.stage === "auth") {
+                await write(
+                    "running",
+                    "auth_complete",
+                    "Auth is updated and verified. Preparing the dashboard, worker and Mira deployment.",
+                    false,
+                    { ...progress, stage: "main", submitted: false }
+                );
+                return;
+            }
             await write(
                 "succeeded",
                 "complete",
                 "Release deployed and all configured services verified.",
                 true,
-                receipt
+                evidence
             );
         } else if (receipt.state === "failed") {
             const recovered =
                 receipt.recovered === true &&
                 (!receipt.migrationStarted || receipt.code === "operator_recovered");
+            const recoveredMessage =
+                progress?.stage === "main"
+                    ? `${progress.authAlreadyCurrent ? "Auth already runs the release" : "Auth was updated"}, but deployment on the dashboard host failed. Its previous services are verified and queued work can continue.`
+                    : "Deployment failed. The previous deployment is verified and queued work can continue.";
             await write(
                 "failed",
                 "failed",
                 recovered
-                    ? "Deployment failed. The previous deployment is verified and queued work can continue."
+                    ? recoveredMessage
                     : "Deployment failed. Work remains paused; inspect the host journal and database backup before recovery.",
                 recovered,
-                receipt
+                evidence
             );
         } else {
             await write(
                 "running",
                 receipt.phase,
-                "The host is deploying the confirmed release. This page will reconnect after restart.",
+                progress?.stage === "auth"
+                    ? "Auth is deploying the confirmed release."
+                    : "The dashboard host is deploying the confirmed release. This page will reconnect after restart.",
                 false,
-                receipt
+                evidence
             );
         }
     } catch {
