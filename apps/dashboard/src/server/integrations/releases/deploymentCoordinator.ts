@@ -8,7 +8,7 @@ import {
     releaseDeploymentRevision,
     type ReleaseDeploymentTarget,
 } from "./deploymentConfiguration";
-import { deploymentRelease } from "./deploymentPlans";
+import { authDeploymentCurrent, deploymentRelease } from "./deploymentPlans";
 import { automaticDeploymentAllowed } from "./deploymentPolicies";
 import {
     deploymentDigest,
@@ -132,11 +132,20 @@ export async function coordinateDeployment(options: {
         if (Boolean(target.auth) !== Boolean(plan.authExpected))
             throw new Error("Auth preparation is incomplete");
         let progress: DeploymentProgress | undefined;
-        if (target.auth)
-            progress =
-                claim.state === "waiting"
-                    ? { stage: "auth", submitted: false }
-                    : v.parse(deploymentProgressSchema, claim.receipt);
+        if (target.auth) {
+            if (claim.state === "waiting") {
+                const current = authDeploymentCurrent(
+                    target,
+                    plan.release,
+                    plan.authExpected!
+                );
+                progress = {
+                    stage: current ? "main" : "auth",
+                    submitted: false,
+                    ...(current ? { authAlreadyCurrent: true as const } : {}),
+                };
+            } else progress = v.parse(deploymentProgressSchema, claim.receipt);
+        }
         const hostTarget = progress?.stage === "auth" ? target.auth! : target;
         const expected = progress?.stage === "auth" ? plan.authExpected! : plan.expected;
         const connection = options.connections.find(
@@ -170,7 +179,12 @@ export async function coordinateDeployment(options: {
                     );
                 })
             );
-        if (progress?.stage === "main" && !authCompleted(progress.auth))
+        if (
+            progress?.stage === "main" &&
+            !(progress.authAlreadyCurrent
+                ? authDeploymentCurrent(target, plan.release, plan.authExpected!)
+                : authCompleted(progress.auth))
+        )
             throw new Error("Auth completion evidence is missing");
         const host = options.host ?? deploymentHost;
         const intent = {
@@ -262,29 +276,56 @@ export async function coordinateDeployment(options: {
             (progress?.stage === "main" && !progress.submitted)
         ) {
             if (progress?.stage === "main") {
-                // Auth must still match the successful receipt before restarting the dashboard host.
-                const current = v.parse(
-                    deploymentObservationSchema,
-                    await host(
-                        options.connections.find(
-                            (entry) => entry.id === target.auth!.connection
-                        )!,
-                        {
-                            mode: "inspect",
-                            target: target.auth!,
-                            release: plan.release,
-                            allowCurrent: true,
-                        },
-                        AbortSignal.any([options.signal, AbortSignal.timeout(30_000)])
-                    )
-                );
-                if (
-                    current.targetHash !== deploymentDigest(target.auth) ||
-                    progress.auth?.state !== "succeeded" ||
-                    deploymentDigest(current.containers) !==
-                        deploymentDigest(progress.auth.containers)
-                )
-                    throw new Error("Auth changed after deployment");
+                // A recreated container can retain the verified release. No Main
+                // installation has started, so failed verification can finish safely.
+                const completedContainers =
+                    progress.auth?.state === "succeeded"
+                        ? progress.auth.containers
+                        : undefined;
+                const before = progress.authAlreadyCurrent
+                    ? plan.authExpected!.containers
+                    : completedContainers;
+                let verified = false;
+                try {
+                    const current = v.parse(
+                        deploymentObservationSchema,
+                        await host(
+                            options.connections.find(
+                                (entry) => entry.id === target.auth!.connection
+                            )!,
+                            {
+                                mode: "inspect",
+                                target: target.auth!,
+                                release: plan.release,
+                                allowCurrent: true,
+                            },
+                            AbortSignal.any([options.signal, AbortSignal.timeout(30_000)])
+                        )
+                    );
+                    verified =
+                        authDeploymentCurrent(target, plan.release, current) &&
+                        target.auth!.services.every((service) => {
+                            const observed = current.containers[service.name];
+                            const previous = before?.[service.name];
+                            return (
+                                previous &&
+                                observed?.imageId === previous.imageId &&
+                                observed.authSchema === previous.authSchema
+                            );
+                        });
+                } catch {
+                    verified = false;
+                }
+                if (!verified) {
+                    await write(
+                        "failed",
+                        "auth_verification",
+                        "Auth could not be verified before starting Main. Main was not changed; prepare a new deployment after checking Auth.",
+                        true,
+                        progress
+                    );
+                    return;
+                }
             }
             // Persist each host boundary: losing SSH never repeats either installation.
             if (progress) progress.submitted = true;
@@ -377,7 +418,7 @@ export async function coordinateDeployment(options: {
                 (!receipt.migrationStarted || receipt.code === "operator_recovered");
             const recoveredMessage =
                 progress?.stage === "main"
-                    ? "Auth was updated, but deployment on the dashboard host failed. Its previous services are verified and queued work can continue."
+                    ? `${progress.authAlreadyCurrent ? "Auth already runs the release" : "Auth was updated"}, but deployment on the dashboard host failed. Its previous services are verified and queued work can continue.`
                     : "Deployment failed. The previous deployment is verified and queued work can continue.";
             await write(
                 "failed",

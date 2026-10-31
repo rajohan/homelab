@@ -159,6 +159,14 @@ def qualify(directory, images, scenario, base, app):
             assert result["containers"][app]["image"] == references[1]
             assert result["requestHash"] == host.digest(host.encoded(intent))
             assert (operation / "database.dump").stat().st_size > 100
+            current = invoke({"mode": "inspect", "target": target, "release": release, "allowCurrent": True})
+            assert current["containers"][app]["imageId"] == result["containers"][app]["imageId"]
+            command(["systemctl", "restart", unit])
+            wait(lambda: json.loads(command(["docker", "inspect", application]))[0]["State"]["Health"]["Status"] == "healthy")
+            recreated = invoke({"mode": "inspect", "target": target, "release": release, "allowCurrent": True})
+            assert recreated["containers"][app]["id"] != current["containers"][app]["id"]
+            assert recreated["containers"][app]["imageId"] == current["containers"][app]["imageId"]
+            assert recreated["containers"][app]["image"] == references[1]
             duplicate = invoke({"mode": "submit", **intent, "deadline": time.time() + 60})
             assert duplicate["state"] == "succeeded"
         else:

@@ -57,6 +57,8 @@ The Auth backup command invokes `{runner} backup auth` with `HOMELAB_AUTH_DATABA
 
 Preparation freezes both recipes, SSH authorities and host observations. The coordinator records a submission boundary and receipt for each host, so a lost SSH acknowledgement never resubmits either installation. Once Auth succeeds, its current containers are checked again before the dashboard host starts. The overall operation succeeds only after both hosts provide verified completion. If Auth fails, the dashboard host is untouched. If Auth succeeds but the dashboard host fails, the result reports the partial deployment; it does not claim to roll back Auth or its database. Each failed host uses its own recorded backup and operator recovery procedure.
 
+Manual preparation also accepts Auth already healthy on the exact candidate image, verified against its release labels and image identity. It records that observation and skips Auth replacement; it never invents a migration receipt. This permits an intentional Main retry after a recovered partial failure, or when Auth was updated independently. Before Main starts, Auth is checked again against the approved image and schema; recreating the same healthy container is allowed. If that verification fails, the operation ends without starting Main and releases its queue hold. Prepare a new operation after checking Auth. Mixed, newer or same-version Auth images with different digests are refused.
+
 The release overview also shows Mira's runtime status and the signed-in operator's paired Windows companions. Windows downloads use the verified release manifest; pairing and local access remain in Settings. Installing a Windows update remains a separate client action.
 
 ## Automatic deployment policy
@@ -71,7 +73,7 @@ Automatic deployment requires every configured service to run an older stable ve
 
 An admitted operation uses the same durable queue drain, backup, host execution and completion verification as manual deployment. Policy version and the original window are checked again under the queue lock immediately before submission. Pausing or changing a policy while it waits cancels it before replacement; work already submitted is allowed to finish. Cancelled candidates are not re-admitted during the same window. Failed, uncertain or previously successful automatic candidates are not silently retried. Recovery and any intentional retry use the existing manual controls. The thirty-minute drain limit and bounded host execution still apply.
 
-The initial release introducing this feature requires the ordinary qualified manual installation. Older releases lack the required migration evidence. Authentication remains independently deployed and is not included in a dashboard/Mira policy.
+The initial release introducing this feature requires the ordinary qualified manual installation. Older releases lack the required migration evidence. Authentication remains independently runnable; when an Auth recipe is configured, the target's policy includes that recipe and requires its separate schema evidence. Without an Auth recipe, the policy only covers the configured dashboard/Mira services.
 
 ## Execution and recovery
 

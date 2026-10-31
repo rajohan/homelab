@@ -220,10 +220,13 @@ class HostTests(unittest.TestCase):
             host.main()
 
     def test_automatic_read_can_observe_current_version_but_submit_inspection_stays_strict(self):
-        current={"image":self.old,"running":True,"health":"healthy"}
+        current={"image":self.old,"imageId":"sha256:"+"a"*64,"running":True,"health":"healthy"}
         release={**self.release,"version":"1.2.2","images":[{"app":"dashboard","reference":self.old}]}
-        with patch.object(host,"canonical"),patch.object(host,"configured",side_effect=self.config),patch.object(host,"container",return_value=current),patch.object(host,"unit_state",return_value={"active":"active","invocation":"a"*32}):
+        with patch.object(host,"canonical"),patch.object(host,"configured",side_effect=self.config),patch.object(host,"container",return_value=current),patch.object(host,"unit_state",return_value={"active":"active","invocation":"a"*32}),patch.object(host,"image_identity",return_value=current["imageId"]) as identity:
             self.assertEqual(host.inspect(self.target,release,True)["containers"]["dashboard"],current)
+            identity.assert_called_once_with(self.target,self.old,release)
+            identity.return_value="sha256:"+"b"*64
+            with self.assertRaisesRegex(host.Refusal,"image_verification"):host.inspect(self.target,release,True)
             with self.assertRaisesRegex(host.Refusal,"release_not_newer"):host.inspect(self.target,release)
 
     def test_directory_lock_excludes_other_operations(self):

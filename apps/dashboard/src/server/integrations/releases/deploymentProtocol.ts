@@ -99,6 +99,7 @@ export type DeploymentReceipt = v.InferOutput<typeof deploymentReceiptSchema>;
 export const deploymentProgressSchema = v.strictObject({
     stage: v.picklist(["auth", "main"]),
     submitted: v.boolean(),
+    authAlreadyCurrent: v.optional(v.literal(true)),
     auth: v.optional(deploymentReceiptSchema),
     main: v.optional(deploymentReceiptSchema),
 });

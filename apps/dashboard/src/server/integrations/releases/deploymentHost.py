@@ -335,6 +335,8 @@ def inspect(target, release, allow_current=False, drained=False):
         match = re.fullmatch(re.escape(prefix) + r"(\d+)\.(\d+)\.(\d+)@sha256:[a-f0-9]{64}", current["image"])
         if not match or (not allow_current and tuple(map(int, match.groups())) >= tuple(map(int, release["version"].split(".")))):
             raise Refusal("release_not_newer")
+        if allow_current and current["image"] == images[app] and current["imageId"] != image_identity(target, images[app], release):
+            raise Refusal("image_verification")
         observed[name] = current
     units = {unit: unit_state(target, unit) for unit in target["units"]}
     if any(value["active"] != "active" or not re.fullmatch("[a-f0-9]{32}", value["invocation"] or "") for value in units.values()):
