@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.2](https://github.com/rajohan/homelab/compare/v0.11.1...v0.11.2) (2026-10-31)
+
+
+### Bug Fixes
+
+* **mira:** guard dialog data while loading ([#153](https://github.com/rajohan/homelab/issues/153)) ([1493771](https://github.com/rajohan/homelab/commit/149377136326a1fe54ff1319ec9532d05d51b96d))
+
 ## [0.11.1](https://github.com/rajohan/homelab/compare/v0.11.0...v0.11.1) (2026-10-31)
 
 
