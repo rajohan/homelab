@@ -36,7 +36,6 @@ internal static class DesktopTests
                 Application.EnableVisualStyles();
                 using (var form = new DesktopForm(AppDomain.CurrentDomain.BaseDirectory, Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "no-settings"), delegate { }))
                 {
-                    ((TextBox)typeof(DesktopForm).GetField("server", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(form)).Text = "https://mira.example.test";
                     if (args.Length == 3) form.Width = Math.Max(520, Math.Min(1000, int.Parse(args[2])));
                     // Materialize only this owned test form's controls; never show a window or tray icon.
                     var create = typeof(Control).GetMethod("CreateControl", BindingFlags.Instance | BindingFlags.NonPublic, null, new[] { typeof(bool) }, null);
@@ -86,35 +85,38 @@ internal static class DesktopTests
     }
     private static void Startup(string root)
     {
-        string package = Path.Combine(root, "startup-fixture");
-        string settings = Path.Combine(root, "startup-settings");
-        Directory.CreateDirectory(package);
-        File.Copy(Path.Combine(root, "fixture", "mira-computer.exe"), Path.Combine(package, "mira-computer.exe"));
-        File.WriteAllText(Path.Combine(package, "mode.txt"), "eof");
-        var start = typeof(DesktopForm).GetMethod("StartSavedConnection", BindingFlags.Instance | BindingFlags.NonPublic);
+        var start = typeof(DesktopForm).GetMethod("StartAtSignIn", BindingFlags.Instance | BindingFlags.NonPublic);
         var stop = typeof(DesktopForm).GetMethod("Stop", BindingFlags.Instance | BindingFlags.NonPublic);
         var label = typeof(DesktopForm).GetField("status", BindingFlags.Instance | BindingFlags.NonPublic);
         // No form is shown and no tray icon is registered. Only the owned fake companion is started.
-        using (var form = new DesktopForm(package, settings, null, true)) {
-            Require(!form.ShowInTaskbar && form.WindowState == FormWindowState.Minimized);
-            Require(((Task)start.Invoke(form, null)).IsCompleted);
-            Require(!File.Exists(Path.Combine(package, "parent.pid")));
-        }
-        DesktopSettings.Save(settings, Origin);
-        using (var form = new DesktopForm(package, settings, null, true)) {
-            IntPtr unused = form.Handle;
-            var task = (Task)start.Invoke(form, null);
-            var clock = Stopwatch.StartNew();
-            while (((Label)label.GetValue(form)).Text != "Connected" && !task.IsCompleted && clock.ElapsedMilliseconds < 5000) {
-                Application.DoEvents(); Thread.Sleep(10);
+        int index = 0;
+        foreach (string previous in new[] { null, "https://different.example.test", new string('a', 513) }) {
+            string package = Path.Combine(root, "startup-fixture-" + index);
+            string settings = Path.Combine(root, "startup-settings-" + index++);
+            Directory.CreateDirectory(package);
+            Directory.CreateDirectory(settings);
+            File.Copy(Path.Combine(root, "fixture", "mira-computer.exe"), Path.Combine(package, "mira-computer.exe"));
+            File.WriteAllText(Path.Combine(package, "mode.txt"), "eof");
+            File.WriteAllText(Path.Combine(package, "expected-origin.txt"), DesktopSettings.ServerOrigin);
+            string legacy = Path.Combine(settings, "server.txt");
+            if (previous != null) File.WriteAllText(legacy, previous);
+            using (var form = new DesktopForm(package, settings, null, true)) {
+                Require(!form.ShowInTaskbar && form.WindowState == FormWindowState.Minimized);
+                IntPtr unused = form.Handle;
+                var task = (Task)start.Invoke(form, null);
+                var clock = Stopwatch.StartNew();
+                while (((Label)label.GetValue(form)).Text != "Connected" && !task.IsCompleted && clock.ElapsedMilliseconds < 5000) {
+                    Application.DoEvents(); Thread.Sleep(10);
+                }
+                Require(((Label)label.GetValue(form)).Text == "Connected");
+                Require(File.Exists(Path.Combine(package, "parent.pid")));
+                stop.Invoke(form, null);
+                clock.Restart();
+                while (!task.IsCompleted && clock.ElapsedMilliseconds < 6000) { Application.DoEvents(); Thread.Sleep(10); }
+                Require(task.IsCompleted && !task.IsFaulted);
+                Require(((Label)label.GetValue(form)).Text == "Disconnected");
+                Require(previous == null ? !File.Exists(legacy) : File.ReadAllText(legacy) == previous);
             }
-            Require(((Label)label.GetValue(form)).Text == "Connected");
-            Require(File.Exists(Path.Combine(package, "parent.pid")));
-            stop.Invoke(form, null);
-            clock.Restart();
-            while (!task.IsCompleted && clock.ElapsedMilliseconds < 6000) { Application.DoEvents(); Thread.Sleep(10); }
-            Require(task.IsCompleted && !task.IsFaulted);
-            Require(((Label)label.GetValue(form)).Text == "Disconnected");
         }
     }
 
@@ -124,15 +126,7 @@ internal static class DesktopTests
         Require(DesktopSettings.Origin("https://10.0.0.2:8443") == "https://10.0.0.2:8443");
         foreach (string value in new[] { "http://mira.example.test", "https://user:secret@mira.example.test", Origin + "/path", Origin + "?token=value", Origin + "#fragment", Origin + "\n", " https://mira.example.test", "https://mira.example.test:0", "https://mira.example.test:65536", "https://[::1]", "https://mira\\example.test" })
             Reject(delegate { DesktopSettings.Origin(value); });
-        string settings = Path.Combine(root, "settings-test");
-        Require(DesktopSettings.Load(settings) == "");
-        DesktopSettings.Save(settings, Origin);
-        Require(DesktopSettings.Load(settings) == Origin);
-        DesktopSettings.Save(settings, "https://second.example.test");
-        Require(DesktopSettings.Load(settings) == "https://second.example.test");
-        Require(Directory.GetFiles(settings).Length == 1);
-        File.WriteAllText(Path.Combine(settings, "server.txt"), new string('a', 513));
-        Reject(delegate { DesktopSettings.Load(settings); });
+        Require(DesktopSettings.Origin(DesktopSettings.ServerOrigin) == "https://computer.home.rajohan.no");
         string package = Path.Combine(root, "package-test"); Directory.CreateDirectory(package);
         string executable = Path.Combine(package, "mira-computer-desktop.exe");
         foreach (string name in new[] { "mira-computer-desktop.exe", "mira-computer.exe", "mira-computer-consent.exe", "mira-computer-worker-host.exe", "mira-computer-worker.exe", "mira-window-capture.exe" }) File.WriteAllText(Path.Combine(package, name), "fixture");

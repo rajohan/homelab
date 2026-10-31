@@ -7,7 +7,6 @@ using Microsoft.Win32;
 internal sealed class DesktopForm : Form
 {
     private readonly string package, settings;
-    private readonly TextBox server = new TextBox();
     private readonly TextBox code = new TextBox();
     private readonly Label status = new Label();
     private readonly Button connect = new DesktopButton(), pair = new DesktopButton(), forget = new DesktopButton(), stop = new DesktopButton(), update = new DesktopButton();
@@ -35,8 +34,8 @@ internal sealed class DesktopForm : Form
         Font = new Font("Segoe UI", 10);
         BackColor = Color.FromArgb(15, 23, 42);
         ForeColor = Color.FromArgb(226, 232, 240);
-        ClientSize = new Size(600, 460);
-        MinimumSize = new Size(520, 480);
+        ClientSize = new Size(600, 390);
+        MinimumSize = new Size(520, 410);
         StartPosition = FormStartPosition.CenterScreen;
         MaximizeBox = false;
         AutoScaleMode = AutoScaleMode.Dpi;
@@ -44,7 +43,7 @@ internal sealed class DesktopForm : Form
         var layout = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(24), ColumnCount = 1 };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         layout.Controls.Add(new Label { Text = "Connect this computer", AutoSize = true, Font = new Font(Font.FontFamily, 18, FontStyle.Bold), Margin = new Padding(0, 0, 0, 10) });
-        var explanation = new Label { Text = "Use your private server address. Window access is approved separately for each request.", AutoSize = true, Margin = new Padding(0, 0, 0, 20) };
+        var explanation = new Label { Text = "Connect to Homelab at home or through Meshnet. Window access is approved separately for each request.", AutoSize = true, Margin = new Padding(0, 0, 0, 20) };
         layout.Controls.Add(explanation);
         EventHandler wrap = delegate
         {
@@ -53,9 +52,6 @@ internal sealed class DesktopForm : Form
         };
         ClientSizeChanged += wrap;
         wrap(this, EventArgs.Empty);
-        layout.Controls.Add(new Label { Text = "Server address", AutoSize = true, Margin = new Padding(0, 0, 0, 6) });
-        ConfigureField(server); server.MaxLength = 255;
-        layout.Controls.Add(server);
         layout.Controls.Add(new Label { Text = "Pairing code from Settings > Computers", AutoSize = true, Margin = new Padding(0, 12, 0, 6) });
         ConfigureField(code); code.MaxLength = 128; code.UseSystemPasswordChar = true;
         layout.Controls.Add(code);
@@ -87,7 +83,7 @@ internal sealed class DesktopForm : Form
             tray.Visible = true;
             if (startup) {
                 Hide();
-                await StartSavedConnection();
+                await StartAtSignIn();
             }
         };
         Resize += delegate
@@ -98,9 +94,6 @@ internal sealed class DesktopForm : Form
                 Hide();
             }
         };
-        try { server.Text = DesktopSettings.Load(settings); }
-        catch { status.Text = "The saved server address is unavailable. Enter it again."; }
-        server.TextChanged += delegate { UpdateActions(); };
         code.TextChanged += delegate { UpdateActions(); };
         connect.Click += async delegate { await Start("run"); };
         pair.Click += async delegate { await Start("pair"); };
@@ -121,9 +114,9 @@ internal sealed class DesktopForm : Form
         UpdateActions();
     }
 
-    private Task StartSavedConnection()
+    private Task StartAtSignIn()
     {
-        return String.IsNullOrEmpty(server.Text) ? Task.FromResult(0) : Start("run");
+        return Start("run");
     }
 
     private void ConfigureField(TextBox field)
@@ -140,12 +133,10 @@ internal sealed class DesktopForm : Form
     private void UpdateActions()
     {
         bool idle = session == null && download == null && !blocked && !installing && !closing;
-        bool valid;
-        try { DesktopSettings.Origin(server.Text); valid = true; } catch { valid = false; }
-        server.Enabled = code.Enabled = idle;
-        pair.Enabled = idle && valid && code.Text.Length > 0;
-        connect.Enabled = forget.Enabled = idle && valid;
-        update.Enabled = idle && valid && maintenance != null;
+        code.Enabled = idle;
+        pair.Enabled = idle && code.Text.Length > 0;
+        connect.Enabled = forget.Enabled = idle;
+        update.Enabled = idle && maintenance != null;
         stop.Enabled = trayStop.Enabled = (session != null || download != null) && !stopping && !installing;
     }
     private async Task Start(string operation)
@@ -154,11 +145,9 @@ internal sealed class DesktopForm : Form
         DesktopSession current = null;
         try
         {
-            string origin = DesktopSettings.Origin(server.Text);
+            string origin = DesktopSettings.ServerOrigin;
             current = new DesktopSession(package, operation, origin, operation == "pair" ? code.Text : null);
             code.Clear();
-            DesktopSettings.Save(settings, origin);
-            server.Text = origin;
             session = current;
             stopping = false;
             status.Text = operation == "pair" ? "Pairing…" : operation == "forget" ? "Removing pairing…" : "Connecting…";
@@ -178,13 +167,13 @@ internal sealed class DesktopForm : Form
             if (blocked) status.Text = "Process cleanup could not be confirmed. Close Mira and check Windows before restarting.";
             else if (operation == "pair") status.Text = result.Success && !result.Stopped ? "Paired. Select Connect when ready." : "Pairing was not confirmed. Revoke the ticket or computer in Settings before trying again.";
             else if (operation == "forget") status.Text = result.Success ? "Local pairing removed. Revoke the computer in Settings too." : "The local pairing could not be removed.";
-            else status.Text = result.Stopped ? "Disconnected" : "Connection ended. Check the server address and pairing before reconnecting.";
+            else status.Text = result.Stopped ? "Disconnected" : "Connection ended. Check your home network or Meshnet connection and pairing before reconnecting.";
         }
         catch (ArgumentException error) { status.Text = error.Message; }
         catch
         {
             blocked = session != null;
-            status.Text = blocked ? "Process cleanup could not be confirmed. Close Mira and check Windows before restarting." : "The computer connection could not start. Check the local installation and server address.";
+            status.Text = blocked ? "Process cleanup could not be confirmed. Close Mira and check Windows before restarting." : "The computer connection could not start. Check the local installation and your home network or Meshnet connection.";
         }
         finally
         {
@@ -203,8 +192,7 @@ internal sealed class DesktopForm : Form
         DesktopUpdateArtifact artifact = null;
         bool released = false, completed = false;
         try {
-            string origin = DesktopSettings.Origin(server.Text);
-            DesktopSettings.Save(settings, origin);
+            string origin = DesktopSettings.ServerOrigin;
             code.Clear();
             current = new DesktopUpdateSession(package, origin, settings);
             download = current; stopping = false;

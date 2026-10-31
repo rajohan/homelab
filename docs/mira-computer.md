@@ -433,11 +433,17 @@ or network configuration is changed by building or publishing an archive.
 ## Windows connection window and system tray
 
 Open `mira-computer-desktop.exe` from the complete local package in a normal,
-non-administrator Windows session. Enter the private HTTPS server address and the
-single-use pairing code from Settings > Computers, then select Pair computer.
+non-administrator Windows session. The desktop app connects to the fixed private
+Homelab address `https://computer.home.rajohan.no` at home or through Meshnet.
+Enter only the single-use pairing code from Settings > Computers, then select Pair computer.
 The code is hidden, sent through a private pipe and never stored in preferences
-or command arguments. Credentials remain in the existing Windows vault. Only
-the server address is saved in `%LOCALAPPDATA%\Homelab\MiraComputer\server.txt`.
+or command arguments. Credentials remain in the existing Windows vault. An old
+`%LOCALAPPDATA%\Homelab\MiraComputer\server.txt` file is ignored; it cannot redirect
+the desktop app. Existing pairing for the same origin is retained across upgrades.
+The earlier deployment used port 3443. That is a different credential-store origin;
+moving an already paired installation to standard HTTPS requires a one-time
+operator migration of its existing vault entry, or fresh pairing. The client never
+automatically forwards another origin's credential or follows an HTTP redirect.
 Pairing does not automatically connect or grant window access.
 
 Connect starts the companion; Stop ends the connection and any owned native
@@ -455,11 +461,14 @@ It first closes the private input pipe to request the existing controller's
 graceful cleanup, then enforces bounded process-tree termination. If the manager
 crashes, kill-on-close retires the same tree. Cleanup that cannot be confirmed
 blocks another connection in that manager. One manager is allowed per Windows
-account. Remove pairing deletes the local vault entry; use Settings to revoke
+account. Remove pairing deletes the local vault entry and the fixed Homelab
+service's retired port-3443 entry, without reading or transmitting either credential;
+other origins remain isolated. Use Settings to revoke
 server access too. A failed or cancelled pairing must be revoked before retrying.
 
 `bun run test:computer:windows-desktop` builds native isolated fixtures and checks
-argument quoting, private pairing input, settings validation, graceful stop,
+argument quoting, private pairing input, fixed-origin startup with absent or stale
+preferences, graceful stop,
 unresponsive children, nested process ownership, manager death and malformed
 output. CI also checks the actual extracted desktop executable and its
 missing-sibling refusal. These checks do not capture or control a real desktop;
@@ -584,9 +593,10 @@ including broken pipes, incorrect bytes, cancellation and installer descendants.
 
 The per-user installer offers **Start Mira in the tray and connect when I sign in**,
 unchecked on a new installation. Opting in adds only the current user's startup
-shortcut. It starts the qualified desktop manager with `--startup`, uses the saved
-private server and OS-vault pairing, and stays in the tray. If no server is configured,
-it remains disconnected. Startup never enrolls the computer or approves a window.
+shortcut. It starts the qualified desktop manager with `--startup` and always attempts
+the fixed Homelab address using its existing OS-vault pairing, even when no preferences
+file exists. The app stays in the tray; a missing or rejected pairing leaves it
+disconnected. Startup never enrolls the computer or approves a window.
 
 Automatic upgrades preserve the selected task and update the shortcut to the new
 immutable version. Run the installer again and uncheck the startup task to remove
