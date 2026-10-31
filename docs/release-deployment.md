@@ -2,7 +2,7 @@
 
 The release panel can prepare and deploy the latest verified stable release. A recently verified human with `updates:apply` and `jobs:run` confirms the exact prepared version. Preparation is a read-only job; deployment is a separate durable operation so replacement never consumes a job lane or depends on the worker staying alive.
 
-This is opt-in. Initial installation must deploy the new schema and deployment-capable worker and Mira together. Leave `HOMELAB_DASHBOARD_DEPLOYMENT_TARGETS` unset until the host recipe has been qualified. Automatic deployment is not enabled by this setting. Authentication remains independently deployed.
+This is opt-in. Initial installation must deploy the new schema and deployment-capable worker and Mira together. Leave `HOMELAB_DASHBOARD_DEPLOYMENT_TARGETS` unset until the host recipe has been qualified. Automatic deployment is not enabled by this setting. Authentication remains an independent service and can optionally join the same release operation through its own host recipe.
 
 ## Configuration
 
@@ -49,9 +49,21 @@ After migration the runner starts and verifies only the proxy units, rewrites th
 
 This recipe manages one complete dashboard/worker/Mira deployment sharing one database. Include every service and systemd unit that owns those containers. Units must recreate their containers from the configured Compose file when started, and must not regenerate that file or apply database migrations implicitly. Every selected service requires a Docker healthcheck. The source must use literal immutable image pins; aliases, interpolated images and local source overrides require separate qualification. State and configuration files must be owned by the SSH execution user (normally root), without group/world write access. The state directory must already exist with mode `0700`. The account needs existing scoped authority for Docker, systemd and those paths. No new SSH identity or trust is created.
 
+## Coordinated Auth deployment
+
+Add an optional `auth` object to the dashboard recipe to update Auth first, followed by dashboard, worker and Mira under one confirmation. It has its own `id`, `label`, `connection`, project, paths, fixed commands, `services` and `units`, with the same validation as the main recipe. Its connection and ID must differ from the dashboard's. Set `mira: false`, include only services with `app: "auth"`, and omit browser fields. Use Auth's existing Compose and secret-loading entrypoints; no new SSH identity or network access is created.
+
+The Auth backup command invokes `{runner} backup auth` with `HOMELAB_AUTH_DATABASE_URL`. Its migration command runs the confirmed `{authImage}` with `bun --no-env-file admin.js migrate` against that same database, then removes the one-off container. `{image}` remains the dashboard image. Auth has a separate private state directory, database backup, migration and health verification. Keep Auth's deployment independent of dashboard startup and availability.
+
+Preparation freezes both recipes, SSH authorities and host observations. The coordinator records a submission boundary and receipt for each host, so a lost SSH acknowledgement never resubmits either installation. Once Auth succeeds, its current containers are checked again before the dashboard host starts. The overall operation succeeds only after both hosts provide verified completion. If Auth fails, the dashboard host is untouched. If Auth succeeds but the dashboard host fails, the result reports the partial deployment; it does not claim to roll back Auth or its database. Each failed host uses its own recorded backup and operator recovery procedure.
+
+The release overview also shows Mira's runtime status and the signed-in operator's paired Windows companions. Windows downloads use the verified release manifest; pairing and local access remain in Settings. Installing a Windows update remains a separate client action.
+
 ## Automatic deployment policy
 
 Each target starts in **Manual**. In the release card, **Edit policy** can authorize stable patch releases or stable patch and minor releases during a daily 15–240 minute maintenance window. Saving or pausing a policy requires a recently verified human with `updates:configure`, `updates:apply` and `jobs:run`. The policy binds the current host recipe, SSH authority and server timezone. Configuration or timezone changes suspend automatic admission until the policy is saved again. Merely configuring a target never enables automatic deployment.
+
+With an Auth recipe, automatic admission also requires matching Auth migration fingerprints from the installed image and the verified publication. Missing legacy metadata or a schema change requires manual preparation and confirmation. The container workflow fingerprints Auth migrations separately from dashboard migrations and publishes both identities with the tested images.
 
 The scheduled `homelab.automatic` check uses the existing network job lane every five minutes and respects ordinary queue and schedule pauses. User-started checks enforce the same policy and window. A policy can be paused independently, with a reason and optional resume time. Saving a changed scope preserves an existing pause. Times follow the server clock shown in the editor; a nonexistent start during the spring DST transition is skipped. Window duration is elapsed time from its scheduled start, including across midnight.
 

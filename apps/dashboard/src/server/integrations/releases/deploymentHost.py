@@ -212,7 +212,9 @@ def container(target, service):
     image = json.loads(command(["/usr/bin/docker", "image", "inspect", data["Image"]], target["directory"]))[0]
     image_labels = image.get("Config", {}).get("Labels") or {}
     schema = image_labels.get("io.homelab.dashboard-schema", "")
-    return {"dashboardSchema": schema if isinstance(schema, str) and re.fullmatch("[a-f0-9]{64}", schema) else None, "id": data["Id"], "imageId": data["Image"], "image": data["Config"]["Image"],
+    auth_schema = image_labels.get("io.homelab.auth-schema", "")
+    return {"authSchema": auth_schema if isinstance(auth_schema, str) and re.fullmatch("[a-f0-9]{64}", auth_schema) else None,
+            "dashboardSchema": schema if isinstance(schema, str) and re.fullmatch("[a-f0-9]{64}", schema) else None, "id": data["Id"], "imageId": data["Image"], "image": data["Config"]["Image"],
             "running": data["State"]["Running"], "health": data["State"].get("Health", {}).get("Status")}
 
 
@@ -300,7 +302,7 @@ def release_images(release):
     repository, version, revision = release["repository"].lower(), release["version"], release["revision"]
     if not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,99}/[a-z0-9][a-z0-9_.-]{0,99}", repository) or not re.fullmatch(r"\d+\.\d+\.\d+", version) or not re.fullmatch("[a-f0-9]{40}", revision):
         raise Refusal("release_invalid")
-    if "dashboardSchema" in release and not re.fullmatch("[a-f0-9]{64}", release["dashboardSchema"]):
+    if any(key in release and not re.fullmatch("[a-f0-9]{64}", release[key]) for key in ["dashboardSchema", "authSchema"]):
         raise Refusal("release_invalid")
     images = {}
     for image in release["images"]:
@@ -434,6 +436,9 @@ def image_identity(target, reference, release):
     if release.get("dashboardSchema") and reference in [image["reference"] for image in release["images"] if image["app"] in {"dashboard", "mira"}]:
         if labels.get("io.homelab.dashboard-schema") != release["dashboardSchema"]:
             raise Refusal("image_verification")
+    if release.get("authSchema") and reference in [image["reference"] for image in release["images"] if image["app"] == "auth"]:
+        if labels.get("io.homelab.auth-schema") != release["authSchema"]:
+            raise Refusal("image_verification")
     return data["Id"]
 
 
@@ -494,6 +499,8 @@ def start_browser_proxies(target, bindings, path, configuration, previous, refer
 
 def recipe(arguments, directory, images):
     values = {"{runner}": str(directory / "runner.py"), "{image}": images["dashboard"]}
+    if "auth" in images:
+        values["{authImage}"] = images["auth"]
     return [values.get(argument, argument) for argument in arguments]
 
 
@@ -676,7 +683,9 @@ def main():
         recover(Path(sys.argv[2]), len(sys.argv) == 4)
         return
     if len(sys.argv) > 1 and sys.argv[1] == "backup":
-        database = os.environ.get("HOMELAB_DASHBOARD_DATABASE_URL")
+        if len(sys.argv) > 3 or (len(sys.argv) == 3 and sys.argv[2] != "auth"):
+            raise Refusal("backup_configuration")
+        database = os.environ.get("HOMELAB_AUTH_DATABASE_URL" if len(sys.argv) == 3 else "HOMELAB_DASHBOARD_DATABASE_URL")
         if not database:
             raise Refusal("backup_configuration")
         os.execve("/usr/bin/pg_dump", ["/usr/bin/pg_dump", "--format=custom", "--no-owner", "--no-acl"],

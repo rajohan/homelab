@@ -16,12 +16,19 @@ import {
 import { type DeploymentHostRequest, deploymentDigest } from "./deploymentProtocol";
 import type { readHomelabRelease } from "./read";
 
-async function fixture() {
+async function fixture(selectedTarget = target, selectedConnections = connections) {
+    const target = selectedTarget;
+    const connections = selectedConnections;
     const state = await operationFixture();
-    const plan = deploymentTestPlan();
+    const plan = deploymentTestPlan(target, connections);
     plan.release.dashboardSchema = "f".repeat(64);
     for (const current of Object.values(plan.expected.containers))
         current.dashboardSchema = plan.release.dashboardSchema;
+    if (plan.authExpected) {
+        plan.release.authSchema = "c".repeat(64);
+        for (const current of Object.values(plan.authExpected.containers))
+            current.authSchema = plan.release.authSchema;
+    }
     const calls: DeploymentHostRequest[] = [];
     let verified = true;
     let reads = 0,
@@ -44,7 +51,9 @@ async function fixture() {
         calls.push(request);
         if (request.mode === "inspect") {
             await afterInspect?.();
-            return plan.expected;
+            return request.target.id === target.auth?.id
+                ? plan.authExpected!
+                : plan.expected;
         }
         if (request.mode === "submit") return { state: "running" };
         if (request.mode !== "status") throw new Error("Unexpected host request");
@@ -201,6 +210,55 @@ async function fixture() {
         },
     };
 }
+
+test.each(["complete", "missing", "different"])(
+    "automatic unified admission requires %s Auth schema evidence and remains pausable",
+    async (kind) => {
+        const auth = {
+            ...target,
+            id: "auth",
+            connection: "edge",
+            mira: false as const,
+            services: [{ name: "auth", app: "auth" as const }],
+        };
+        const state = await fixture({ ...target, auth }, [
+            ...connections,
+            { ...connections[0]!, id: "edge", host: "auth.example.test" },
+        ]);
+        try {
+            await state.enable();
+            if (kind === "missing") delete state.plan.release.authSchema;
+            if (kind === "different")
+                state.plan.authExpected!.containers.auth!.authSchema = "d".repeat(64);
+            await state.check();
+            const current = await state.record();
+            if (kind !== "complete") {
+                expect(current).toBeUndefined();
+                return;
+            }
+            expect(current).toMatchObject({ state: "waiting", finished: false });
+            const [row] = await state.client<
+                { plan: { authExpected: unknown } }[]
+            >`SELECT plan FROM release_deployments WHERE id=${current!.id}`;
+            expect(row!.plan.authExpected).toEqual(state.plan.authExpected);
+            expect(
+                state.calls
+                    .filter((call) => call.mode === "inspect")
+                    .map((call) => call.target.id)
+            ).toEqual(["main", "auth"]);
+            await state.pause();
+            await state.drain();
+            await state.coordinate();
+            expect(await state.record()).toMatchObject({
+                state: "cancelled",
+                finished: true,
+            });
+            expect(state.calls.some((call) => call.mode === "submit")).toBe(false);
+        } finally {
+            await state.close();
+        }
+    }
+);
 
 test("automatic deployment defaults to manual and policies require fresh human authority with optimistic versions", async () => {
     const state = await fixture();

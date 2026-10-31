@@ -488,7 +488,11 @@ test("browser and proxy publication must match the exact verified release and wo
 });
 
 test("schema compatibility metadata is accepted only with matching publication evidence", async () => {
-    const upgraded = { ...manifest, dashboardSchema: "d".repeat(64) };
+    const upgraded = {
+        ...manifest,
+        dashboardSchema: "d".repeat(64),
+        authSchema: "e".repeat(64),
+    };
     const digest = `sha256:${new Bun.CryptoHasher("sha256").update(JSON.stringify(upgraded)).digest("hex")}`;
     const valid = fixture({ manifest: upgraded, artifacts: [{ ...evidence, digest }] });
     const result = await readHomelabRelease(
@@ -498,6 +502,7 @@ test("schema compatibility metadata is accepted only with matching publication e
         valid.request
     );
     expect(result.dashboardSchema).toBe(upgraded.dashboardSchema);
+    expect(result.authSchema).toBe(upgraded.authSchema);
     const changed = fixture({ manifest: upgraded });
     const unverified = await readHomelabRelease(
         "demo/homelab",

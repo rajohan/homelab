@@ -14,6 +14,7 @@ import { PackageCheck, Tag } from "lucide-react";
 import { api } from "../../api/client";
 import { useJobOperation } from "../jobs/useJobOperation";
 import { DeploymentPanel } from "./DeploymentPanel";
+import { WindowsRelease } from "./WindowsRelease";
 
 /**
  * Separate the published Homelab release from the versions actually observed in deployment.
@@ -34,7 +35,7 @@ export function ReleasesPanel() {
     const release = data?.release;
     const verification = release?.value.verified ? "Verified release" : "Not verified";
     return (
-        <Card className="@container space-y-4">
+        <Card id="homelab-release" className="@container space-y-4">
             <SectionHeader
                 title="Homelab release"
                 description="Current app versions and the latest published release."
@@ -61,7 +62,7 @@ export function ReleasesPanel() {
             {refresh.isError && <ErrorNotice error={refresh.error} />}
             {data && (
                 <>
-                    <dl className="grid gap-3 text-sm @min-[48rem]:grid-cols-3">
+                    <dl className="grid gap-3 text-sm @min-[30rem]:grid-cols-2 @min-[54rem]:grid-cols-4">
                         <div className="space-y-2 rounded-lg border border-primary-700 bg-primary-950/40 p-4">
                             <dt className="text-xs text-primary-400">Dashboard</dt>
                             <dd className="font-medium wrap-anywhere">
@@ -91,6 +92,14 @@ export function ReleasesPanel() {
                                                   `${auth.version}${auth.stale ? " (outdated)" : ""}`
                                           )
                                           .join("; ")
+                                    : "Version unavailable"}
+                            </dd>
+                        </div>
+                        <div className="space-y-2 rounded-lg border border-primary-700 bg-primary-950/40 p-4">
+                            <dt className="text-xs text-primary-400">Mira</dt>
+                            <dd className="font-medium wrap-anywhere">
+                                {data.mira
+                                    ? `${data.mira.version}${data.mira.online && data.mira.ready ? "" : " (not ready)"}`
                                     : "Version unavailable"}
                             </dd>
                         </div>
@@ -151,6 +160,15 @@ export function ReleasesPanel() {
                 </>
             )}
             {data && <DeploymentPanel />}
+            {data?.computersAvailable && !query.isError && (
+                <WindowsRelease
+                    data={data}
+                    checkedAt={query.dataUpdatedAt}
+                    refresh={() => {
+                        void query.refetch();
+                    }}
+                />
+            )}
         </Card>
     );
 }

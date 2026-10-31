@@ -16,6 +16,7 @@ import { useState } from "react";
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
 import { ComputerPairDialog } from "./ComputerPairDialog";
+import { olderComputerVersion } from "./computerVersions";
 
 /**
  * Manage the signed-in operator's paired computers using the existing Settings card design.
@@ -192,14 +193,4 @@ function computerStatus(computer: MiraComputerSummary, checkedAt: number): strin
 function platformLabel(platform: string): string {
     if (platform === "win32") return "Windows";
     return platform === "darwin" ? "macOS" : "Linux";
-}
-
-function olderComputerVersion(installed: string | null, available: string): boolean {
-    if (!installed || !/^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(installed)) return false;
-    const current = installed.split(".").map(Number);
-    const latest = available.split(".").map(Number);
-    for (let index = 0; index < 3; index++) {
-        if (current[index] !== latest[index]) return current[index]! < latest[index]!;
-    }
-    return false;
 }

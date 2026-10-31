@@ -100,6 +100,39 @@ test("daily windows follow the shared timezone clock, cross midnight and end exc
     );
 });
 
+test("automatic unified release also requires matching Auth migrations and a newer Auth version", () => {
+    const combined = {
+        ...target,
+        auth: {
+            ...target,
+            id: "auth",
+            connection: "edge",
+            mira: false as const,
+            services: [{ name: "auth", app: "auth" as const }],
+        },
+    };
+    const plan = qualified();
+    plan.authExpected = {
+        ...plan.expected,
+        containers: {
+            auth: {
+                ...plan.expected.containers.dashboard!,
+                image: `ghcr.io/demo/homelab/auth:1.2.2@sha256:${"a".repeat(64)}`,
+            },
+        },
+    };
+    expect(automaticReleaseEligible(policy, combined, plan)).toBe(false);
+    plan.release.authSchema = "c".repeat(64);
+    plan.authExpected.containers.auth!.authSchema = plan.release.authSchema;
+    expect(automaticReleaseEligible(policy, combined, plan)).toBe(true);
+    plan.authExpected.containers.auth!.authSchema = "d".repeat(64);
+    expect(automaticReleaseEligible(policy, combined, plan)).toBe(false);
+    plan.authExpected.containers.auth!.authSchema = plan.release.authSchema;
+    plan.authExpected.containers.auth!.image =
+        plan.authExpected.containers.auth!.image.replace("1.2.2", "1.2.3");
+    expect(automaticReleaseEligible(policy, combined, plan)).toBe(false);
+});
+
 test("deployment policy inputs reject broad scopes, unbounded windows and unexplained pauses", () => {
     const input = {
         target: "main",

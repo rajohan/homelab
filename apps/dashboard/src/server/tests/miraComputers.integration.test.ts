@@ -1,9 +1,11 @@
 import { expect, test } from "bun:test";
 import { rejects } from "node:assert/strict";
 
-import { capabilities } from "@homelab/contracts/operations";
+import { capabilities, type Capability } from "@homelab/contracts/operations";
 import {
     connectMiraComputer,
+    createMiraComputerPairing,
+    revokeMiraComputer,
     enrollMiraComputer,
     heartbeatMiraComputer,
 } from "@homelab/mira/data/computers";
@@ -641,6 +643,88 @@ test("private update lookup requires a live paired credential and fresh reposito
         await status(post(device.credential), 403);
     } finally {
         await server.stop(true);
+        await f.close();
+    }
+});
+
+test("release overview exposes only the human's current computer versions and distinguishes stale Mira presence", async () => {
+    const f = await operationFixture();
+    try {
+        const caller = (
+            id: string,
+            kind: "human" | "automation" = "human",
+            granted: readonly Capability[] = capabilities
+        ) =>
+            appRouter.createCaller({
+                operations: f,
+                principal: { id, kind, capabilities: granted },
+            }).releases;
+        const context = (owner: string) => ({
+            client: f.client,
+            owner,
+            actor: `human:${owner}`,
+        });
+        const pair = async (owner: string, label: string) => {
+            const ticket = await createMiraComputerPairing(context(owner), { label });
+            const device = await enrollMiraComputer(f.client, ticket.token, {
+                installationId: crypto.randomUUID(),
+                platform: "win32",
+                version: "0.10.0",
+            });
+            return { ticket, device };
+        };
+        const own = await pair("operator", "Owned computer");
+        const other = await pair("another", "Another person's computer");
+        const revoked = await pair("operator", "Revoked computer");
+        await revokeMiraComputer(context("operator"), {
+            id: revoked.device.id,
+            version: 2,
+        });
+        await createMiraComputerPairing(context("operator"), {
+            label: "Pending computer",
+        });
+        const before = await caller("operator").overview();
+        expect(before.mira).toBeNull();
+        expect(before.computersAvailable).toBe(true);
+        expect(before.computers).toMatchObject([
+            { id: own.device.id, companionVersion: "0.10.0", connected: false },
+        ]);
+        expect(before.computers).toHaveLength(1);
+        for (const secret of [
+            own.device.credential,
+            own.ticket.token,
+            other.device.credential,
+            "Another person's computer",
+        ])
+            expect(JSON.stringify(before)).not.toContain(secret);
+        const worker = await f.registerWorker();
+        await f.client`INSERT INTO mira_runtime_status(id,worker_id,version,model,ready,message,heartbeat_at)
+            VALUES(1,${worker},'0.10.1','test',true,NULL,now())`;
+        const current = await caller("operator").overview();
+        expect(current.mira).toEqual({
+            version: "0.10.1",
+            ready: true,
+            online: true,
+        });
+        await f.client`UPDATE mira_runtime_status SET heartbeat_at=now()-interval '1 minute' WHERE id=1`;
+        const stale = await caller("operator").overview();
+        expect(stale.mira).toEqual({
+            version: "0.10.1",
+            ready: true,
+            online: false,
+        });
+        for (const reader of [
+            caller("operator", "automation"),
+            caller("operator", "human", ["updates:read"]),
+        ]) {
+            const result = await reader.overview();
+            expect(result.computersAvailable).toBe(false);
+            expect(result.computers).toEqual([]);
+        }
+        await rejects(caller("operator", "human", ["jobs:read"]).overview());
+        const otherOverview = await caller("another").overview();
+        expect(otherOverview.computers).toMatchObject([{ id: other.device.id }]);
+    } finally {
         await f.close();
     }
 });

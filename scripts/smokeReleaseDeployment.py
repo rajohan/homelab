@@ -56,7 +56,7 @@ if mode=='up':
  reference=(root/'compose.yaml').read_text().split('image: ')[1].splitlines()[0].strip()
  execute(['/usr/bin/docker','rm','-f',settings['container']],False)
  execute(['/usr/bin/docker','run','-d','--name',settings['container'],'--network','none','--memory','128m','--cpus','0.5',
-  '--label','com.docker.compose.project='+settings['project'],'--label','com.docker.compose.service=dashboard',
+  '--label','com.docker.compose.project='+settings['project'],'--label','com.docker.compose.service='+settings['app'],
   '--label','homelab.test.reference='+reference,'--health-cmd','true','--health-interval','1s','--health-timeout','1s',
   settings['images'][reference],'/bin/sh','-c','while true; do sleep 1; done'])
 elif mode=='stop':
@@ -65,9 +65,10 @@ elif mode=='backup':
  descriptor=os.open(root/'backup-error',os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600)
  os.dup2(descriptor,2);os.close(descriptor)
  os.environ.clear();os.environ.update(environment)
- os.environ['HOMELAB_DASHBOARD_DATABASE_URL']=settings['database']
- os.execv('/usr/bin/python3',['/usr/bin/python3','-I','-B',sys.argv[2],'backup'])
+ os.environ['HOMELAB_AUTH_DATABASE_URL' if settings['app']=='auth' else 'HOMELAB_DASHBOARD_DATABASE_URL']=settings['database']
+ os.execv('/usr/bin/python3',['/usr/bin/python3','-I','-B',sys.argv[2],'backup']+(['auth'] if settings['app']=='auth' else []))
 elif mode=='migrate':
+ if settings['app']=='auth': assert sys.argv[2]==settings['candidate']
  execute(['/usr/bin/psql','-v','ON_ERROR_STOP=1','-c','CREATE TABLE deployment_probe (id integer); INSERT INTO deployment_probe VALUES (42);'])
  if settings['scenario']=='interrupted':
   (root/'migration-started').write_text('yes')
@@ -101,7 +102,7 @@ def command(arguments,directory,timeout=60,output_file=None):
 '''
 
 
-def qualify(directory, images, scenario, base):
+def qualify(directory, images, scenario, base, app):
     prefix = "homelab-release-test-" + uuid.uuid4().hex
     unit = prefix + ".service"
     unit_file = Path("/run/systemd/system") / unit
@@ -117,16 +118,16 @@ def qualify(directory, images, scenario, base):
     test_runner.write_text(source)
     script = directory / "fixture.py"
     script.write_text(FIXTURE)
-    references = list(images)
+    references = [reference for reference in images if '/'+app+':' in reference]
     compose = directory / "compose.yaml"
-    compose.write_text("name: " + project + "\nservices:\n  dashboard:\n    image: " + references[0] + "\n")
+    compose.write_text("name: " + project + "\nservices:\n  " + app + ":\n    image: " + references[0] + "\n")
     try:
         command(["docker", "run", "-d", "--rm", "--name", database, "--tmpfs", "/var/lib/postgresql:rw,size=256m",
                  "-p", "127.0.0.1::5432", "-e", "POSTGRES_USER=fixture", "-e", "POSTGRES_PASSWORD=synthetic-only",
                  "-e", "POSTGRES_DB=fixture", base])
         port = command(["docker", "port", database, "5432"]).decode().strip().rsplit(":", 1)[1]
         wait(lambda: subprocess.run(["docker", "exec", database, "pg_isready", "-h", "127.0.0.1", "-U", "fixture"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0)
-        settings = {"project": project, "container": application, "database": "postgres://fixture:synthetic-only@127.0.0.1:" + port + "/fixture", "images": images, "scenario": scenario}
+        settings = {"app": app, "candidate": references[1], "project": project, "container": application, "database": "postgres://fixture:synthetic-only@127.0.0.1:" + port + "/fixture", "images": images, "scenario": scenario}
         private = directory / "fixture.json"
         private.write_text(json.dumps(settings)); private.chmod(0o600)
         unit_file.write_text("[Unit]\nDescription=Disposable release qualification\n[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=/usr/bin/python3 -I -B " + str(script) + " up\nExecStop=/usr/bin/python3 -I -B " + str(script) + " stop\nTimeoutStartSec=30\nTimeoutStopSec=15\n")
@@ -136,9 +137,10 @@ def qualify(directory, images, scenario, base):
         target = {"id": "fixture", "label": "Fixture", "connection": "fixture", "project": project, "directory": str(directory),
                   "composeFile": str(compose), "stateDirectory": str(state), "composeCommand": ["/usr/bin/docker", "compose", "-f", str(compose)],
                   "backupCommand": ["/usr/bin/python3", "-I", "-B", str(script), "backup", "{runner}"],
-                  "migrateCommand": ["/usr/bin/python3", "-I", "-B", str(script), "migrate"], "mira": False,
-                  "services": [{"name": "dashboard", "app": "dashboard"}], "units": [unit]}
-        release = {"repository": "demo/homelab", "version": "1.2.3", "revision": "c" * 40, "images": [{"app": "dashboard", "reference": references[1]}]}
+                  "migrateCommand": ["/usr/bin/python3", "-I", "-B", str(script), "migrate"] + (["{authImage}"] if app == "auth" else []), "mira": False,
+                  "services": [{"name": app, "app": app}], "units": [unit]}
+        release = {"repository": "demo/homelab", "version": "1.2.3", "revision": "c" * 40,
+                   "images": [{"app": kind, "reference": next(reference for reference in images if '/'+kind+':1.2.3@' in reference)} for kind in ["auth", "dashboard"]]}
         def invoke(request):
             return json.loads(command(["python3", "-I", "-B", str(test_runner)], input=json.dumps(request).encode()))["result"]
         expected = invoke({"mode": "inspect", "target": target, "release": release})
@@ -153,8 +155,8 @@ def qualify(directory, images, scenario, base):
                 for name in ['failed-command','backup-error']:
                     if (directory/name).exists(): print(name,(directory/name).read_text()[-2000:],flush=True)
                 raise AssertionError(result)
-            assert result["containers"]["dashboard"]["id"] != expected["containers"]["dashboard"]["id"]
-            assert result["containers"]["dashboard"]["image"] == references[1]
+            assert result["containers"][app]["id"] != expected["containers"][app]["id"]
+            assert result["containers"][app]["image"] == references[1]
             assert result["requestHash"] == host.digest(host.encoded(intent))
             assert (operation / "database.dump").stat().st_size > 100
             duplicate = invoke({"mode": "submit", **intent, "deadline": time.time() + 60})
@@ -173,7 +175,7 @@ def qualify(directory, images, scenario, base):
             assert result["state"] == "failed" and result["recovered"] and result["code"] == "operator_recovered", result
             count = command(["docker", "exec", database, "psql", "-U", "fixture", "-d", "fixture", "-Atc", "SELECT count(*) FROM information_schema.tables WHERE table_name='deployment_probe'"])
             assert count.strip() == b"0"
-        print("PASS:", scenario, "real systemd ownership, containers, backup and receipt", flush=True)
+        print("PASS:", app, scenario, "real systemd ownership, containers, backup and receipt", flush=True)
     finally:
         for name in [runner_unit, unit]:
             subprocess.run(["systemctl", "stop", name], env=ENV, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -200,12 +202,14 @@ def main():
                 dockerfile = ("FROM " + base + "\nLABEL org.opencontainers.image.source=https://github.com/demo/homelab\nLABEL org.opencontainers.image.version=" + version + "\nLABEL org.opencontainers.image.revision=" + "c" * 40 + "\n")
                 command(["docker", "build", "--provenance=false", "-t", tag, "-"], input=dockerfile.encode(), timeout=300)
                 images["ghcr.io/demo/homelab/dashboard:" + version + "@sha256:" + digest * 64] = tag
-            for scenario in ["success", "interrupted"]:
-                directory = root / scenario
-                directory.mkdir(mode=0o700)
-                qualify(directory, images, scenario, base)
+                images["ghcr.io/demo/homelab/auth:" + version + "@sha256:" + digest * 64] = tag
+            for app in ["dashboard", "auth"]:
+                for scenario in ["success", "interrupted"]:
+                    directory = root / (app + '-' + scenario)
+                    directory.mkdir(mode=0o700)
+                    qualify(directory, images, scenario, base, app)
         finally:
-            for image in images.values():
+            for image in set(images.values()):
                 subprocess.run(["docker", "image", "rm", image], env=ENV, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 

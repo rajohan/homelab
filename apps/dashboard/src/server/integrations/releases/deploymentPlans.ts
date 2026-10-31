@@ -5,6 +5,7 @@ import type { JobHandler } from "../../jobs/types";
 import type { UpdateTarget } from "../updates/configuration";
 import { updateResourceKeys } from "../updates/configuration";
 import {
+    deploymentHosts,
     releaseDeploymentRevision,
     type ReleaseDeploymentTarget,
 } from "./deploymentConfiguration";
@@ -34,13 +35,14 @@ export function deploymentRelease(
         ...(target.browserConfigFile ? release.browser!.images : []),
     ];
     if (
-        target.services.some(
-            (service) => !images.some((image) => image.app === service.app)
-        )
+        deploymentHosts(target)
+            .flatMap((entry) => entry.services)
+            .some((service) => !images.some((image) => image.app === service.app))
     )
         throw new Error("Required release images are unavailable");
     return {
         ...(release.dashboardSchema ? { dashboardSchema: release.dashboardSchema } : {}),
+        ...(release.authSchema ? { authSchema: release.authSchema } : {}),
         repository: release.repository,
         version: release.version,
         revision: release.revision,
@@ -70,9 +72,17 @@ export function deploymentPreparationJobs(options: {
                 "Check the published release and current deployment before confirmation.",
             capability: "updates:refresh",
             resourceClass: "network",
-            resourceKeys: updateResourceKeys(
-                options.connections.find((entry) => entry.id === target.connection)!
-            ),
+            resourceKeys: [
+                ...new Set(
+                    deploymentHosts(target).flatMap((entry) =>
+                        updateResourceKeys(
+                            options.connections.find(
+                                (connection) => connection.id === entry.connection
+                            )!
+                        )
+                    )
+                ),
+            ],
             timeoutMs: 60_000,
             attemptLimit: 1,
             retrySafe: true,
@@ -100,7 +110,26 @@ export function deploymentPreparationJobs(options: {
             if (expected.targetHash !== deploymentDigest(target))
                 throw new Error("Deployment authority changed");
             const configuration = releaseDeploymentRevision(target, options.connections);
-            const value = { configuration, release, expected };
+            const authExpected = target.auth
+                ? v.parse(
+                      deploymentObservationSchema,
+                      await (options.host ?? deploymentHost)(
+                          options.connections.find(
+                              (entry) => entry.id === target.auth!.connection
+                          )!,
+                          { mode: "inspect", target: target.auth, release },
+                          context.signal
+                      )
+                  )
+                : undefined;
+            if (target.auth && authExpected?.targetHash !== deploymentDigest(target.auth))
+                throw new Error("Auth deployment authority changed");
+            const value = {
+                configuration,
+                release,
+                expected,
+                ...(authExpected ? { authExpected } : {}),
+            };
             if (
                 !(await context.commit(async (transaction) => {
                     const [active] = await transaction<
@@ -137,6 +166,7 @@ export async function preparedDeployment(
     const plan =
         parsed.success &&
         row?.fresh &&
+        Boolean(target.auth) === Boolean(parsed.output.authExpected) &&
         parsed.output.configuration === releaseDeploymentRevision(target, connections)
             ? parsed.output
             : null;
