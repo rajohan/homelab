@@ -71,7 +71,7 @@ The initial release introducing this feature requires the ordinary qualified man
 
 The host stores `intent.json`, `runner.py`, `status.json`, `compose.before`, optional `browser.before` and `database.dump` under `<stateDirectory>/<operation-id>`. The dashboard never exposes command output, expanded Compose secrets or backup contents. A submission is never replayed after a lost acknowledgement. An interrupted runner or uncertain migration leaves the queue closed.
 
-Failures before migration restore the original pins and only resume after verifying the previous services. After migration starts, do not restore an old image alone. Stop the affected units, inspect the journal and backup, restore the correct database/configuration using the existing operator procedure, and verify the original services. The staged runner provides an operator-only final verification:
+Failures before migration restore the original pins and only resume after verifying the previous services. If the stopped proxy units recreate their containers during this recovery, the runner starts and verifies the original proxy images first, refreshes only their saved container/image IDs, then starts the remaining services. A changed network, concurrent configuration edit or failed verification keeps recovery blocked. After migration starts, do not restore an old image alone. Stop the affected units, inspect the journal and backup, restore the correct database/configuration using the existing operator procedure, and verify the original services. The staged runner provides an operator-only final verification:
 
 ```text
 /usr/bin/python3 -I -B <operation-directory>/runner.py recover <operation-directory> --database-restored

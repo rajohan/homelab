@@ -299,8 +299,10 @@ class HostTests(unittest.TestCase):
 
     def test_browser_proxy_ids_refresh_before_other_units_start_and_failure_holds_deployment(self):
         baseline = copy.deepcopy(self.target)
-        for failure in [None, "network", "early_start", "recreated", "config_race"]:
+        for failure in [None, "network", "early_start", "recreated", "config_race",
+                        "backup_recreate", "backup_network", "backup_config_race"]:
             with self.subTest(failure=failure):
+                backup_failure = bool(failure and failure.startswith("backup_"))
                 self.target = copy.deepcopy(baseline)
                 self.target, browser, observed = self.browser_fixture()
                 old_proxy = "ghcr.io/demo/homelab/mira-browser-proxy:1.2.2@sha256:" + "a"*64
@@ -312,14 +314,17 @@ class HostTests(unittest.TestCase):
                 browser_path.chmod(0o600)
                 self.release["images"] = [{"app": "dashboard", "reference": self.new}, {"app": "mira-browser-proxy", "reference": new_proxy},
                                           {"app": "mira-browser", "reference": "ghcr.io/demo/homelab/mira-browser:1.2.3@sha256:" + "b"*64}]
-                self.expected["containers"] = {"dashboard": {"image": self.old, "imageId": "sha256:" + "a"*64}, "proxy": observed["proxy"]}
+                self.expected["containers"] = {"dashboard": {"image": self.old, "imageId": "sha256:" + "a"*64},
+                                               "proxy": {**observed["proxy"], "image": old_proxy}}
+                self.expected["browserHash"] = host.digest(host.encoded(browser))
                 self.intent.update(target=self.target, release=self.release, expected=self.expected)
                 host.replace_file(self.operation / "intent.json", host.encoded(self.intent), (self.operation / "intent.json").read_bytes())
                 host.save_status(self.operation, {"id": self.identity, "requestHash": host.digest(host.encoded(self.intent)),
                      "phase": "accepted", "state": "running", "changesStarted": False, "migrationStarted": False})
                 self.calls = []
                 started = []
-                slots = [{"networkId": "e"*64, "proxyId": "2"*64, "proxyImageId": "sha256:" + "b"*64}]
+                slots = [{"networkId": "e"*64, "proxyId": "2"*64,
+                          "proxyImageId": "sha256:" + ("a" if backup_failure else "b")*64}]
 
                 def configured(_target):
                     text = self.compose.read_text()
@@ -327,6 +332,8 @@ class HostTests(unittest.TestCase):
                             "proxy": {"image": new_proxy if new_proxy in text else old_proxy}}}
 
                 def execute(arguments, directory, timeout=60, output_file=None):
+                    if backup_failure and arguments[0] == "/fixture/backup":
+                        raise host.Refusal("command_failed")
                     if arguments[:2] == ["/usr/bin/systemctl", "start"]:
                         started.append(arguments[2:])
                         if len(started) == 1:
@@ -334,30 +341,48 @@ class HostTests(unittest.TestCase):
                         else:
                             saved = json.loads(browser_path.read_bytes())
                             self.assertEqual(saved["networks"], slots)
-                            self.assertEqual(saved["imageId"], "sha256:" + "b"*64)
+                            self.assertEqual(saved["imageId"], browser["imageId"] if backup_failure else "sha256:" + "b"*64)
                             self.assertEqual(saved["hostId"], browser["hostId"])
                     return self.command(arguments, directory, timeout, output_file)
 
                 def verify_slots(_target, _bindings, _observed):
-                    if failure == "network": raise host.Refusal("browser_proxy_verification")
-                    if failure == "config_race": browser_path.write_bytes(b"operator-edit")
+                    if failure in ["network", "backup_network"]: raise host.Refusal("browser_proxy_verification")
+                    if failure in ["config_race", "backup_config_race"]: browser_path.write_bytes(b"operator-edit")
                     if failure == "recreated" and len(started) == 2: return [{**slots[0], "proxyId": "3"*64}]
                     return slots
+
+                def verified(target, references, identities):
+                    for service in target["services"]:
+                        name = service["name"]
+                        self.assertEqual(references[name], self.expected["containers"][name]["image"] if backup_failure
+                                         else self.new if name == "dashboard" else new_proxy)
+                        self.assertEqual(identities[name], "sha256:" + ("a" if backup_failure else "b")*64)
+                    return {name: {"id": "2"*64, "image": references[name], "imageId": identities[name]}
+                            for name in references}
 
                 for file in ["compose.before", "browser.before", "database.dump"]:
                     (self.operation / file).unlink(missing_ok=True)
                 with patch.object(host, "inspect", return_value=self.expected), patch.object(host, "configured", side_effect=configured), \
                         patch.object(host, "command", side_effect=execute), patch.object(host, "image_identity", return_value="sha256:" + "b"*64), \
                         patch.object(host, "container", side_effect=lambda *_: {"running": failure == "early_start" and bool(started)}), \
-                        patch.object(host, "verify_services", return_value={"proxy": {"id": "2"*64, "imageId": "sha256:" + "b"*64}}), \
+                        patch.object(host, "verify_services", side_effect=verified), \
                         patch.object(host, "browser_slots", side_effect=verify_slots):
                     host.run(self.operation)
                 result = json.loads((self.operation / "status.json").read_text())
                 self.assertEqual(result["state"], "failed" if failure else "succeeded", result)
-                self.assertTrue(result["migrationStarted"], result)
-                if failure:
+                self.assertEqual(result["migrationStarted"], not backup_failure, result)
+                if failure == "backup_recreate":
+                    self.assertTrue(result["recovered"], result)
+                    self.assertEqual(len(started), 2)
+                    self.assertEqual(self.compose.read_bytes(), self.source)
+                    self.assertEqual(json.loads(browser_path.read_bytes()), {**browser, "networks": slots})
+                elif failure:
                     self.assertFalse(result["recovered"])
                     self.assertEqual(len(started), 2 if failure == "recreated" else 1)
+                if backup_failure:
+                    self.assertFalse(any(arguments[0] == "/fixture/migrate" for arguments in self.calls))
+                    if failure == "backup_config_race":
+                        self.assertEqual(browser_path.read_bytes(), b"operator-edit")
 
     def test_backup_url_uses_explicit_libpq_fields_and_rejects_connection_overrides(self):
         environment=host.database_environment('postgres://demo:p%40ss@[::1]:5433/test%20db?sslmode=require&connect_timeout=8')

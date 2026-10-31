@@ -476,6 +476,22 @@ def verify_services(target, references, identities, timeout=120):
         time.sleep(1)
 
 
+def start_browser_proxies(target, bindings, path, configuration, previous, references, identities):
+    """Start only selected proxies and atomically bind their verified replacement identities."""
+    proxy_target = {**target, "services": [service for service in target["services"] if service["app"] == "mira-browser-proxy"],
+                    "units": target["browserProxyUnits"]}
+    command(["/usr/bin/systemctl", "start", *proxy_target["units"]], target["directory"], timeout=120)
+    proxies = verify_services(proxy_target,
+        {service["name"]: references[service["name"]] for service in proxy_target["services"]},
+        {service["name"]: identities[service["name"]] for service in proxy_target["services"]})
+    if any(container(target, service["name"])["running"] for service in target["services"] if service["app"] != "mira-browser-proxy"):
+        raise Refusal("browser_proxy_units")
+    refreshed = {**configuration, "networks": browser_slots(target, bindings, proxies)}
+    replacement = encoded(refreshed)
+    replace_file(path, replacement, previous)
+    return replacement, refreshed
+
+
 def recipe(arguments, directory, images):
     values = {"{runner}": str(directory / "runner.py"), "{image}": images["dashboard"]}
     return [values.get(argument, argument) for argument in arguments]
@@ -554,23 +570,14 @@ def run(directory):
             phase("migrating", migrationStarted=True)
             command(recipe(target["migrateCommand"], directory, images), target["directory"], timeout=300)
             phase("starting")
+            references = {service["name"]: images[service["app"]] for service in target["services"]}
+            expected_ids = {service["name"]: identities[service["app"]] for service in target["services"]}
             if bindings:
-                proxy_target = {**target, "services": [service for service in target["services"] if service["app"] == "mira-browser-proxy"],
-                                "units": target["browserProxyUnits"]}
-                command(["/usr/bin/systemctl", "start", *proxy_target["units"]], target["directory"], timeout=120)
-                proxies = verify_services(proxy_target,
-                    {service["name"]: images[service["app"]] for service in proxy_target["services"]},
-                    {service["name"]: identities[service["app"]] for service in proxy_target["services"]})
-                if any(container(target, service["name"])["running"] for service in target["services"] if service["app"] != "mira-browser-proxy"):
-                    raise Refusal("browser_proxy_units")
-                browser_config["networks"] = browser_slots(target, bindings, proxies)
-                refreshed = encoded(browser_config)
-                replace_file(browser_path, refreshed, written[browser_path])
+                refreshed, browser_config = start_browser_proxies(target, bindings, browser_path, browser_config,
+                    written[browser_path], references, expected_ids)
                 written[browser_path] = refreshed
             command(["/usr/bin/systemctl", "start", *target["units"]], target["directory"], timeout=120)
             phase("verifying")
-            references = {service["name"]: images[service["app"]] for service in target["services"]}
-            expected_ids = {service["name"]: identities[service["app"]] for service in target["services"]}
             observed = verify_services(target, references, expected_ids)
             if bindings and browser_slots(target, bindings, observed) != browser_config["networks"]:
                 raise Refusal("browser_proxy_verification")
@@ -584,11 +591,17 @@ def run(directory):
                 try:
                     for path, content in written.items():
                         replace_file(path, sources[path], content)
-                    command(["/usr/bin/systemctl", "start", *target["units"]], target["directory"], timeout=120)
                     previous = intent["expected"]["containers"]
-                    observed = verify_services(target, {name: value["image"] for name, value in previous.items()},
-                                    {name: value["imageId"] for name, value in previous.items()})
+                    references = {name: value["image"] for name, value in previous.items()}
+                    previous_ids = {name: value["imageId"] for name, value in previous.items()}
+                    if bindings:
+                        start_browser_proxies(target, bindings, browser_path, json.loads(sources[browser_path]),
+                            sources[browser_path], references, previous_ids)
+                    command(["/usr/bin/systemctl", "start", *target["units"]], target["directory"], timeout=120)
+                    observed = verify_services(target, references, previous_ids)
                     verify_browser_recovery(target, directory, intent["expected"], observed)
+                    if configured(target) != config or read_file(compose_path) != sources[compose_path]:
+                        raise Refusal("configuration_changed")
                     recovered = True
                 except Exception:
                     recovered = False
