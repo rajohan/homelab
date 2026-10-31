@@ -14,6 +14,7 @@ import { api } from "../../api/client";
 import { useJobOperation } from "../jobs/useJobOperation";
 import { useOperation } from "../operations/useOperation";
 import { DeploymentDialog } from "./DeploymentDialog";
+import { DeploymentPolicyControl } from "./DeploymentPolicyControl";
 
 const labels: Record<string, string> = {
     waiting: "Waiting for active work",
@@ -114,6 +115,7 @@ export function DeploymentPanel() {
                             </Button>
                         </div>
                     </div>
+                    <DeploymentPolicyControl policy={target.policy} />
                 </div>
             ))}
             {run && (

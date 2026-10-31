@@ -65,6 +65,7 @@ jobs:
             git merge-base --is-ancestor HEAD origin/main
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "dashboard_schema=$(bun scripts/releaseSchema.ts)" >> "$GITHUB_OUTPUT"
       - name: Install locked test dependencies
         run: bun install --frozen-lockfile --ignore-scripts
       - name: Set up Docker Buildx
@@ -101,6 +102,7 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.source.outputs.version }}
             org.opencontainers.image.title=Homelab Dashboard
+            io.homelab.dashboard-schema=${{ steps.source.outputs.dashboard_schema }}
           cache-from: type=gha,scope=dashboard
           cache-to: type=gha,mode=max,scope=dashboard
       - name: Build mira image without publishing
@@ -118,6 +120,7 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.source.outputs.version }}
             org.opencontainers.image.title=Homelab Mira
+            io.homelab.dashboard-schema=${{ steps.source.outputs.dashboard_schema }}
           cache-from: type=gha,scope=mira
           cache-to: type=gha,mode=max,scope=mira
       - name: Test all actual images and the complete OIDC flow
@@ -231,7 +234,10 @@ jobs:
             [[ "$digest" == "ghcr.io/$repository/$app@sha256:"* ]]
             jq -n --arg app "$app" --arg tag "$image" --arg reference "$image@${digest##*@}" '{app:$app, tag:$tag, reference:$reference}' > "$app-image.json"
           done
-          jq -s --arg version "$version" --arg revision "$SOURCE_SHA" '{version:$version, revision:$revision, platform:"linux/amd64", images:.}' auth-image.json dashboard-image.json mira-image.json > container-images.json
+          schema="$(docker inspect --format '{{index .Config.Labels "io.homelab.dashboard-schema"}}' homelab-release/dashboard:tested)"
+          [[ "$schema" =~ ^[a-f0-9]{64}$ ]]
+          [[ "$(docker inspect --format '{{index .Config.Labels "io.homelab.dashboard-schema"}}' homelab-release/mira:tested)" == "$schema" ]]
+          jq -s --arg version "$version" --arg revision "$SOURCE_SHA" --arg schema "$schema" '{version:$version, revision:$revision, dashboardSchema:$schema, platform:"linux/amd64", images:.}' auth-image.json dashboard-image.json mira-image.json > container-images.json
           cp container-images.json "release-manifest-$GITHUB_RUN_ATTEMPT.json"
           {
             echo '## Published container images'

@@ -209,7 +209,10 @@ def container(target, service):
     labels = data["Config"].get("Labels", {})
     if labels.get("com.docker.compose.project") != target["project"] or labels.get("com.docker.compose.service") != service:
         raise Refusal("container_changed")
-    return {"id": data["Id"], "imageId": data["Image"], "image": data["Config"]["Image"],
+    image = json.loads(command(["/usr/bin/docker", "image", "inspect", data["Image"]], target["directory"]))[0]
+    image_labels = image.get("Config", {}).get("Labels") or {}
+    schema = image_labels.get("io.homelab.dashboard-schema", "")
+    return {"dashboardSchema": schema if isinstance(schema, str) and re.fullmatch("[a-f0-9]{64}", schema) else None, "id": data["Id"], "imageId": data["Image"], "image": data["Config"]["Image"],
             "running": data["State"]["Running"], "health": data["State"].get("Health", {}).get("Status")}
 
 
@@ -223,6 +226,8 @@ def release_images(release):
     repository, version, revision = release["repository"].lower(), release["version"], release["revision"]
     if not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,99}/[a-z0-9][a-z0-9_.-]{0,99}", repository) or not re.fullmatch(r"\d+\.\d+\.\d+", version) or not re.fullmatch("[a-f0-9]{40}", revision):
         raise Refusal("release_invalid")
+    if "dashboardSchema" in release and not re.fullmatch("[a-f0-9]{64}", release["dashboardSchema"]):
+        raise Refusal("release_invalid")
     images = {}
     for image in release["images"]:
         app, reference = image["app"], image["reference"]
@@ -235,7 +240,7 @@ def release_images(release):
     return images
 
 
-def inspect(target, release):
+def inspect(target, release, allow_current=False):
     """Observe only identities/hashes; never return expanded Compose environment or paths."""
     images = release_images(release)
     canonical(target["directory"], directory=True)
@@ -252,7 +257,7 @@ def inspect(target, release):
             raise Refusal("service_unavailable")
         prefix = "ghcr.io/" + release["repository"].lower() + "/" + app + ":"
         match = re.fullmatch(re.escape(prefix) + r"(\d+)\.(\d+)\.(\d+)@sha256:[a-f0-9]{64}", current["image"])
-        if not match or tuple(map(int, match.groups())) >= tuple(map(int, release["version"].split("."))):
+        if not match or (not allow_current and tuple(map(int, match.groups())) >= tuple(map(int, release["version"].split(".")))):
             raise Refusal("release_not_newer")
         observed[name] = current
     units = {unit: unit_state(target, unit) for unit in target["units"]}
@@ -348,6 +353,9 @@ def image_identity(target, reference, release):
             labels.get("org.opencontainers.image.revision") != release["revision"] or
             labels.get("org.opencontainers.image.source", "").lower() != "https://github.com/" + release["repository"].lower()):
         raise Refusal("image_verification")
+    if release.get("dashboardSchema") and reference in [image["reference"] for image in release["images"] if image["app"] in {"dashboard", "mira"}]:
+        if labels.get("io.homelab.dashboard-schema") != release["dashboardSchema"]:
+            raise Refusal("image_verification")
     return data["Id"]
 
 
@@ -570,7 +578,7 @@ def main():
     signal.signal(signal.SIGALRM, expired)
     signal.alarm(90)
     if request["mode"] == "inspect":
-        result = inspect(request["target"], request["release"])
+        result = inspect(request["target"], request["release"], request.get("allowCurrent") is True)
     elif request["mode"] == "status":
         result = status(request["target"], request["id"])
     elif request["mode"] == "submit":

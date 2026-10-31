@@ -8,6 +8,7 @@ import program from "./deploymentHost.py" with { type: "text" };
 const hash = v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/));
 const imageId = v.pipe(v.string(), v.regex(/^sha256:[a-f0-9]{64}$/));
 const containerSchema = v.strictObject({
+    dashboardSchema: v.optional(v.nullable(hash)),
     id: hash,
     imageId,
     image: v.pipe(v.string(), v.maxLength(500)),
@@ -29,6 +30,7 @@ export const deploymentObservationSchema = v.strictObject({
     ),
 });
 export const deploymentReleaseSchema = v.strictObject({
+    dashboardSchema: v.optional(hash),
     repository: v.pipe(
         v.string(),
         v.regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/)
@@ -92,7 +94,7 @@ export type DeploymentRelease = DeploymentPlan["release"];
 export type DeploymentObservation = DeploymentPlan["expected"];
 export type DeploymentReceipt = v.InferOutput<typeof deploymentReceiptSchema>;
 export type DeploymentHostRequest = { target: ReleaseDeploymentTarget } & (
-    | { mode: "inspect"; release: DeploymentRelease }
+    | { mode: "inspect"; release: DeploymentRelease; allowCurrent?: boolean }
     | { mode: "status"; id: string }
     | {
           mode: "submit";

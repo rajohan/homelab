@@ -1,0 +1,348 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "9f376f1b-e06e-46d9-9403-4f5c205526e7",
+    "prevIds": ["aa413ea2-a34f-4763-a412-bfb7ea900794"],
+    "footprints": [
+        {
+            "statementType": "create_table",
+            "statementTarget": ["table", "public", "release_deployment_policies"],
+            "writes": [
+                "s|tbl|public.release_deployment_policies",
+                "n|tbl|public.release_deployment_policies",
+                "e|tbl|public.release_deployment_policies",
+                "n|rel|public.release_deployment_policies",
+                "n|type|public.release_deployment_policies",
+                "n|rel|public.release_deployment_policies_pkey"
+            ],
+            "reads": ["n|sch|public"]
+        },
+        {
+            "statementType": "add_column",
+            "statementTarget": [
+                "column",
+                "public",
+                "release_deployments",
+                "policy_version"
+            ],
+            "writes": [
+                "s|col|public.release_deployments.policy_version",
+                "n|col|public.release_deployments.policy_version",
+                "e|col|public.release_deployments.policy_version"
+            ],
+            "reads": ["n|tbl|public.release_deployments", "n|sch|public"]
+        },
+        {
+            "statementType": "add_column",
+            "statementTarget": [
+                "column",
+                "public",
+                "release_deployments",
+                "window_ends_at"
+            ],
+            "writes": [
+                "s|col|public.release_deployments.window_ends_at",
+                "n|col|public.release_deployments.window_ends_at",
+                "e|col|public.release_deployments.window_ends_at"
+            ],
+            "reads": ["n|tbl|public.release_deployments", "n|sch|public"]
+        },
+        {
+            "statementType": "add_check",
+            "statementTarget": ["table", "public", "release_deployments"],
+            "writes": [
+                "s|ck|public.release_deployments.release_deployments_automatic",
+                "n|ck|public.release_deployments.release_deployments_automatic",
+                "e|ck|public.release_deployments.release_deployments_automatic",
+                "n|con|public.release_deployments.release_deployments_automatic"
+            ],
+            "reads": [
+                "n|tbl|public.release_deployments",
+                "n|sch|public",
+                "n|col|public.release_deployments.policy_version",
+                "n|col|public.release_deployments.window_ends_at"
+            ]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "name": "release_deployment_policies",
+                "isRlsEnabled": false,
+                "entityType": "tables"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "release_deployment_policies",
+                "name": "target",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "release_deployment_policies",
+                "name": "version",
+                "type": "integer",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "1",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "release_deployment_policies",
+                "name": "configuration",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "release_deployment_policies",
+                "name": "mode",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "'manual'",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "release_deployment_policies",
+                "name": "window",
+                "type": "jsonb",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "release_deployment_policies",
+                "name": "time_zone",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "release_deployment_policies",
+                "name": "paused",
+                "type": "boolean",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "false",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "release_deployment_policies",
+                "name": "disable_reason",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "release_deployment_policies",
+                "name": "disabled_until",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "release_deployment_policies",
+                "name": "updated_by",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "release_deployment_policies",
+                "name": "updated_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "now()",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "release_deployments",
+                "name": "policy_version",
+                "type": "integer",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "release_deployments",
+                "name": "window_ends_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "release_deployment_policies",
+                "name": "release_deployment_policies_pkey",
+                "columns": ["target"],
+                "nameExplicit": false,
+                "entityType": "pks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "release_deployment_policies",
+                "name": "release_deployment_policies_version",
+                "value": "\"version\">0",
+                "entityType": "checks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "release_deployment_policies",
+                "name": "release_deployment_policies_mode",
+                "value": "\"mode\" in ('manual','patch','minor')",
+                "entityType": "checks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "release_deployment_policies",
+                "name": "release_deployment_policies_configuration",
+                "value": "\"configuration\" ~ '^[a-f0-9]{64}$'",
+                "entityType": "checks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "release_deployment_policies",
+                "name": "release_deployment_policies_pause",
+                "value": "(\"paused\" and \"disable_reason\" is not null and length(\"disable_reason\") between 1 and 1000) or (not \"paused\" and \"disable_reason\" is null and \"disabled_until\" is null)",
+                "entityType": "checks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "release_deployments",
+                "name": "release_deployments_automatic",
+                "value": "(\"policy_version\" is null and \"window_ends_at\" is null) or (\"policy_version\" is not null and \"policy_version\">0 and \"window_ends_at\" is not null)",
+                "entityType": "checks"
+            }
+        }
+    ]
+}

@@ -486,3 +486,34 @@ test("browser and proxy publication must match the exact verified release and wo
         ).toBe(false);
     }
 });
+
+test("schema compatibility metadata is accepted only with matching publication evidence", async () => {
+    const upgraded = { ...manifest, dashboardSchema: "d".repeat(64) };
+    const digest = `sha256:${new Bun.CryptoHasher("sha256").update(JSON.stringify(upgraded)).digest("hex")}`;
+    const valid = fixture({ manifest: upgraded, artifacts: [{ ...evidence, digest }] });
+    const result = await readHomelabRelease(
+        "demo/homelab",
+        undefined,
+        AbortSignal.timeout(1000),
+        valid.request
+    );
+    expect(result.dashboardSchema).toBe(upgraded.dashboardSchema);
+    const changed = fixture({ manifest: upgraded });
+    const unverified = await readHomelabRelease(
+        "demo/homelab",
+        undefined,
+        AbortSignal.timeout(1000),
+        changed.request
+    );
+    expect(unverified.verified).toBe(false);
+    const malformed = fixture({
+        manifest: { ...manifest, dashboardSchema: "unqualified" },
+    });
+    const error = await readHomelabRelease(
+        "demo/homelab",
+        undefined,
+        AbortSignal.timeout(1000),
+        malformed.request
+    ).catch((error_: unknown) => error_);
+    expect(error).toBeInstanceOf(Error);
+});

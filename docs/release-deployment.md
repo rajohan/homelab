@@ -1,4 +1,4 @@
-# Confirmed release deployment
+# Release deployment
 
 The release panel can prepare and deploy the latest verified stable release. A recently verified human with `updates:apply` and `jobs:run` confirms the exact prepared version. Preparation is a read-only job; deployment is a separate durable operation so replacement never consumes a job lane or depends on the worker staying alive.
 
@@ -44,6 +44,18 @@ Paths and commands are existing operator-owned deployment configuration, never s
 An optional private `environmentFile` is loaded by systemd for the runner, and may supply `DOPPLER_TOKEN` or `DOCKER_CONFIG`. It does not configure the preparation SSH process. An optional `browserConfigFile` identifies the existing browser-service JSON; configure its proxy service as `mira-browser-proxy` in `services`. Both browser images must have matching release-workflow evidence. The runtime image is updated by immutable Docker image ID after pull and OCI-label verification.
 
 This recipe manages one complete dashboard/worker/Mira deployment sharing one database. Include every service and systemd unit that owns those containers. Units must recreate their containers from the configured Compose file when started, and must not regenerate that file or apply database migrations implicitly. Every selected service requires a Docker healthcheck. The source must use literal immutable image pins; aliases, interpolated images and local source overrides require separate qualification. State and configuration files must be owned by the SSH execution user (normally root), without group/world write access. The state directory must already exist with mode `0700`. The account needs existing scoped authority for Docker, systemd and those paths. No new SSH identity or trust is created.
+
+## Automatic deployment policy
+
+Each target starts in **Manual**. In the release card, **Edit policy** can authorize stable patch releases or stable patch and minor releases during a daily 15–240 minute maintenance window. Saving or pausing a policy requires a recently verified human with `updates:configure`, `updates:apply` and `jobs:run`. The policy binds the current host recipe, SSH authority and server timezone. Configuration or timezone changes suspend automatic admission until the policy is saved again. Merely configuring a target never enables automatic deployment.
+
+The scheduled `homelab.automatic` check uses the existing network job lane every five minutes and respects ordinary queue and schedule pauses. User-started checks enforce the same policy and window. A policy can be paused independently, with a reason and optional resume time. Saving a changed scope preserves an existing pause. Times follow the server clock shown in the editor; a nonexistent start during the spring DST transition is skipped. Window duration is elapsed time from its scheduled start, including across midnight.
+
+Automatic deployment requires every configured service to run an older stable version in the authorized range. Major releases, prereleases, equal versions and downgrades are never admitted. The official container publication includes a SHA-256 identity for the ordered dashboard migration SQL programs and their directory names. Tested dashboard and Mira images carry the same `io.homelab.dashboard-schema` label. Automatic admission requires the candidate's verified publication identity to match the actual installed core images; Compose label overrides cannot supply this evidence. Missing or changed migration evidence requires manual deployment. This is a schema-compatibility gate, not a guarantee of application compatibility or automatic database rollback.
+
+An admitted operation uses the same durable queue drain, backup, host execution and completion verification as manual deployment. Policy version and the original window are checked again under the queue lock immediately before submission. Pausing or changing a policy while it waits cancels it before replacement; work already submitted is allowed to finish. Cancelled candidates are not re-admitted during the same window. Failed, uncertain or previously successful automatic candidates are not silently retried. Recovery and any intentional retry use the existing manual controls. The thirty-minute drain limit and bounded host execution still apply.
+
+The initial release introducing this feature requires the ordinary qualified manual installation. Older releases lack the required migration evidence. Authentication remains independently deployed and is not included in a dashboard/Mira policy.
 
 ## Execution and recovery
 

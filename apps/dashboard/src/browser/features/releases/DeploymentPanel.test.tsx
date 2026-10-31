@@ -8,11 +8,27 @@ import userEvent from "@testing-library/user-event";
 import { IdentityClientContext } from "../../identity/IdentityClientContext";
 import { DeploymentPanel } from "./DeploymentPanel";
 
-function fixture(data: unknown) {
+function fixture(data: { targets: Record<string, unknown>[]; history: unknown[] }) {
     const client = new QueryClient({
         defaultOptions: { queries: { staleTime: Infinity, retry: false } },
     });
-    client.setQueryData(["operations", "deployment"], data);
+    client.setQueryData(["operations", "deployment"], {
+        ...data,
+        targets: data.targets.map((target) => ({
+            ...target,
+            policy: {
+                target: target.id,
+                version: 0,
+                mode: "manual",
+                window: { start: "03:00", minutes: 60 },
+                timeZone: "UTC",
+                paused: false,
+                reason: null,
+                until: null,
+                configurationChanged: false,
+            },
+        })),
+    });
     render(
         <QueryClientProvider client={client}>
             <IdentityClientContext value={new IdentityClient()}>

@@ -166,6 +166,35 @@ class HostTests(unittest.TestCase):
             with patch.object(host,"command",return_value=json.dumps([changed]).encode()),self.assertRaisesRegex(host.Refusal,"image_verification"):
                 host.image_identity(self.target,self.new,self.release)
 
+    def test_schema_label_is_verified_against_the_published_candidate(self):
+        release={**self.release,"dashboardSchema":"d"*64}
+        image={"Architecture":"amd64","Os":"linux","Id":"sha256:"+"b"*64,"Config":{"Labels":{
+            "org.opencontainers.image.source":"https://github.com/demo/homelab",
+            "org.opencontainers.image.version":"1.2.3","org.opencontainers.image.revision":"c"*40,
+            "io.homelab.dashboard-schema":"d"*64}}}
+        with patch.object(host,"command",return_value=json.dumps([image]).encode()):
+            self.assertEqual(host.image_identity(self.target,self.new,release),image["Id"])
+        image["Config"]["Labels"]["io.homelab.dashboard-schema"]="e"*64
+        with patch.object(host,"command",return_value=json.dumps([image]).encode()),self.assertRaisesRegex(host.Refusal,"image_verification"):
+            host.image_identity(self.target,self.new,release)
+
+    def test_installed_schema_comes_from_image_not_compose_labels(self):
+        identity="a"*64
+        container={"Id":identity,"Image":"sha256:"+identity,"Config":{"Image":self.old,"Labels":{
+            "com.docker.compose.project":"homelab","com.docker.compose.service":"dashboard","io.homelab.dashboard-schema":"f"*64}},
+            "State":{"Running":True,"Health":{"Status":"healthy"}}}
+        for schema in ["d"*64,"malformed",None]:
+            with patch.object(host,"command",side_effect=[identity.encode(),json.dumps([container]).encode(),json.dumps([{"Config":{"Labels":{"io.homelab.dashboard-schema":schema}}}]).encode()]):
+                result=host.container(self.target,"dashboard")
+            self.assertEqual(result["dashboardSchema"],schema if schema=="d"*64 else None)
+
+    def test_automatic_read_can_observe_current_version_but_submit_inspection_stays_strict(self):
+        current={"image":self.old,"running":True,"health":"healthy"}
+        release={**self.release,"version":"1.2.2","images":[{"app":"dashboard","reference":self.old}]}
+        with patch.object(host,"canonical"),patch.object(host,"configured",side_effect=self.config),patch.object(host,"container",return_value=current),patch.object(host,"unit_state",return_value={"active":"active","invocation":"a"*32}):
+            self.assertEqual(host.inspect(self.target,release,True)["containers"]["dashboard"],current)
+            with self.assertRaisesRegex(host.Refusal,"release_not_newer"):host.inspect(self.target,release)
+
     def test_directory_lock_excludes_other_operations(self):
         with host.directory_lock(self.root),self.assertRaisesRegex(host.Refusal,"host_busy"):
             with host.directory_lock(self.root):pass
