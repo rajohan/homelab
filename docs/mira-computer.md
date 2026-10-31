@@ -587,9 +587,10 @@ including broken pipes, incorrect bytes, cancellation and installer descendants.
 
 The per-user installer offers **Start Mira in the tray and connect when I sign in**,
 unchecked on a new installation. Opting in adds only the current user's startup
-shortcut. It starts the qualified desktop manager with `--startup`, uses the saved
-private server and OS-vault pairing, and stays in the tray. If no server is configured,
-it remains disconnected. Startup never enrolls the computer or approves a window.
+shortcut. It starts the qualified desktop manager with `--startup` and always attempts
+the fixed Homelab address using its existing OS-vault pairing, even when no preferences
+file exists. The app stays in the tray; a missing or rejected pairing leaves it
+disconnected. Startup never enrolls the computer or approves a window.
 
 Automatic upgrades preserve the selected task and update the shortcut to the new
 immutable version. Run the installer again and uncheck the startup task to remove
