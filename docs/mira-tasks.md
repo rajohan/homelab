@@ -78,11 +78,14 @@ work only if this owned task already has a user-started run in its linked conver
 It never starts a new, previously unstarted task. A rapid unblock waits for the old
 run to stop. Archived/deleted conversations, reassignment, completion, a newer explicit
 Run or Stop, and unresolved outcomes prevent stale continuation. Global automatic-work
-pause applies both when queuing and claiming continuations. Requests expire after
-one day instead of replaying old board actions after a long outage.
+pause applies both when queuing and claiming continuations. An already queued
+continuation stays pending until the pause is lifted. Requests not yet queued expire
+after one day instead of replaying old board actions after a long outage.
 
-Continuations retain the prior work budget, use the same admission and capacity limits,
-and do not inherit expired browser, computer, publication or spending permissions.
+Continuations retain the prior work budget and task permissions, but use the general
+worker lane and automatic queue limits so direct user requests keep their reserved
+worker and capacity. They preserve task admission and do not inherit expired
+browser, computer, publication or spending permissions.
 Updates consumed by active work do not create a second assessment report. Changes to
 other tasks still use the individually controlled **Task created or changed** automation.
 
@@ -90,3 +93,7 @@ Continuation discovery advances a durable round-robin cursor after every bounded
 batch, including batches deferred by a pause, full queue, uncertain result or busy
 task. Blocked owners cannot monopolize later ticks. Deferred requests remain pending
 and are revisited after other candidates, including after a scheduler restart.
+
+Audit timestamps record the actual serialized write time. Completion takes the same
+conversation/task locks before recording its terminal clock boundary, so edits from
+older transactions cannot disappear between claim and completion.

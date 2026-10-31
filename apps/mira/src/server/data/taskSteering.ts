@@ -82,7 +82,7 @@ export async function acknowledgeTaskSteering(
 /**
  * Discover explicit unblock requests and late edits after the durable round-robin cursor.
  * @param query - Scheduler transaction holding the global scheduler lock and a stable cursor.
- * @param now - Scheduler clock; requests older than one day never replay.
+ * @param now - Millisecond scheduler clock; include that entire clock bucket, with a one-day expiry.
  * @returns At most twenty already-started task requests, wrapping to older requests after the cursor.
  */
 export async function pendingTaskContinuations(query: MiraQuery, now: Date) {
@@ -102,7 +102,7 @@ export async function pendingTaskContinuations(query: MiraQuery, now: Date) {
             FROM mira_audit a
             WHERE a.actor='human:'||a.owner
                 AND a.action IN ('task.resume_requested','task.updated','task.progress_added')
-                AND a.created_at>${new Date(now.getTime() - 86_400_000)} AND a.created_at<=${now}
+                AND a.created_at>${new Date(now.getTime() - 86_400_000)} AND a.created_at<${new Date(now.getTime() + 1)}
             ORDER BY a.owner,a.target,a.action='task.resume_requested',a.id DESC
         )
         SELECT a.id,a.owner,t.id AS "taskId",r.id AS "runId",r.conversation_id AS "conversationId",a.action,r.budget_seconds AS budget
@@ -168,7 +168,7 @@ export async function scheduleTaskContinuations(
         if (
             busy ||
             (await unreviewedTaskRun(query, input.owner, input.taskId)) ||
-            !(await miraQueueAvailable(query, input.owner, true))
+            !(await miraQueueAvailable(query, input.owner, false))
         )
             continue;
         const run = await enqueueTurn(
@@ -182,7 +182,7 @@ export async function scheduleTaskContinuations(
             },
             { taskId: input.taskId, manual: true, budgetSeconds: input.budget }
         );
-        await query`UPDATE mira_runs SET task_resumed=true WHERE id=${run.id}`;
+        await query`UPDATE mira_runs SET task_resumed=true,priority=0 WHERE id=${run.id}`;
         queued++;
     }
     const last = candidates.at(-1);

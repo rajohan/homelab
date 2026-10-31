@@ -107,7 +107,7 @@ test("unblocking resumes existing work exactly once in its original conversation
             scheduleMiraRuns(f.client),
         ]);
         expect(scheduled.reduce((total, value) => total + value, 0)).toBe(1);
-        const resumed = await claimMiraRun(f.client, crypto.randomUUID(), "foreground");
+        const resumed = await claimMiraRun(f.client, crypto.randomUUID(), "general");
         expect(resumed).toMatchObject({
             taskId: f.task.id,
             conversationId: f.requested.conversationId,
@@ -190,7 +190,7 @@ test("Blocked fences new tools immediately and a quick unblock waits for the old
         expect(await readTaskSteering(f.client, f.run)).toBeNull();
         await f.finish("interrupted");
         expect(await scheduleMiraRuns(f.client)).toBe(1);
-        const resumed = await claimMiraRun(f.client, crypto.randomUUID(), "foreground");
+        const resumed = await claimMiraRun(f.client, crypto.randomUUID(), "general");
         expect(resumed?.taskResumed).toBe(true);
         if (!resumed) throw new Error("Expected replacement work after stop.");
         expect(await renewMiraRun(f.client, resumed)).toBe(true);
@@ -207,7 +207,7 @@ test("an unacknowledged edit at the end of work continues once instead of becomi
         });
         await f.finish();
         expect(await scheduleMiraRuns(f.client)).toBe(1);
-        const resumed = await claimMiraRun(f.client, crypto.randomUUID(), "foreground");
+        const resumed = await claimMiraRun(f.client, crypto.randomUUID(), "general");
         expect(resumed).toMatchObject({
             taskResumed: true,
             conversationId: f.run.conversationId,
@@ -538,3 +538,154 @@ test.each(["paused", "capacity", "uncertain", "admission"])(
     },
     15_000
 );
+
+test("an edit transaction opened before claim still continues work after its later commit", async () => {
+    const f = await operationFixture();
+    const started = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    let editing: Promise<unknown> = Promise.resolve();
+    try {
+        const context = { client: f.client, owner: "operator", actor: "human:operator" };
+        const task = await saveTask(context, fields);
+        await runMiraTask(context, {
+            id: task.id,
+            version: 1,
+            requestId: crypto.randomUUID(),
+            instructions: "",
+            reviewedRunId: null,
+        });
+        editing = f.client.begin(async (transaction) => {
+            await transaction`SELECT now()`;
+            started.resolve();
+            await release.promise;
+            await addTaskProgress(
+                { ...context, transaction },
+                task.id,
+                "Committed after the claim despite an earlier transaction start"
+            );
+        });
+        await started.promise;
+        await delay(5);
+        const run = await claimMiraRun(f.client, crypto.randomUUID(), "foreground");
+        if (!run) throw new Error("Expected original task work.");
+        release.resolve();
+        await editing;
+        await finishMiraRun(f.client, run, {
+            state: "completed",
+            text: "Fast completion",
+            message: null,
+        });
+        expect(await scheduleMiraRuns(f.client)).toBe(1);
+    } finally {
+        release.resolve();
+        await editing;
+        await f.close();
+    }
+});
+
+test("scheduled task continuations preserve the foreground worker for direct requests", async () => {
+    const f = await fixture();
+    try {
+        await f.finish();
+        await f.update(2, "blocked");
+        await f.update(3);
+        expect(await scheduleMiraRuns(f.client)).toBe(1);
+        expect(
+            await claimMiraRun(f.client, crypto.randomUUID(), "foreground")
+        ).toBeNull();
+        const chat = await f.api.conversations.create({ title: "Direct question" });
+        await f.api.conversations.send({
+            conversationId: chat.id,
+            requestId: crypto.randomUUID(),
+            text: "A direct user request",
+        });
+        const direct = await claimMiraRun(f.client, crypto.randomUUID(), "foreground");
+        expect(direct?.conversationId).toBe(chat.id);
+        const continued = await claimMiraRun(f.client, crypto.randomUUID(), "general");
+        expect(continued).toMatchObject({
+            taskId: f.task.id,
+            taskResumed: true,
+            manual: true,
+        });
+    } finally {
+        await f.close();
+    }
+});
+
+test("a pause between queue and claim preserves the original task continuation", async () => {
+    const f = await fixture();
+    try {
+        await f.finish();
+        await f.update(2, "blocked");
+        await f.update(3);
+        expect(await scheduleMiraRuns(f.client)).toBe(1);
+        const [queued] = await f.client<
+            { id: string }[]
+        >`SELECT id FROM mira_runs WHERE task_id=${f.task.id} AND task_resumed`;
+        if (!queued) throw new Error("Expected queued continuation.");
+        await setMiraEnabled(f.context, {
+            key: "autonomy",
+            version: 1,
+            enabled: false,
+            reason: "Pause before claim",
+            until: null,
+        });
+        expect(await claimMiraRun(f.client, crypto.randomUUID(), "general")).toBeNull();
+        const [paused] = await f.client<
+            { state: string }[]
+        >`SELECT state FROM mira_runs WHERE id=${queued.id}`;
+        expect(paused?.state).toBe("queued");
+        await setMiraEnabled(f.context, {
+            key: "autonomy",
+            version: 2,
+            enabled: true,
+            reason: null,
+            until: null,
+        });
+        const resumed = await claimMiraRun(f.client, crypto.randomUUID(), "general");
+        expect(resumed?.id).toBe(queued.id);
+        if (!resumed)
+            throw new Error("Expected the original pending run after resuming.");
+        await finishMiraRun(f.client, resumed, {
+            state: "completed",
+            text: "Continued",
+            message: null,
+        });
+        expect(await scheduleMiraRuns(f.client)).toBe(0);
+    } finally {
+        await f.close();
+    }
+});
+
+test("scheduled continuations leave reserved queue space for explicit user work", async () => {
+    const f = await fixture();
+    try {
+        await f.finish();
+        await f.update(2, "blocked");
+        await f.update(3);
+        await f.client.begin(async (query) => {
+            for (let index = 0; index < 28; index++) {
+                const conversationId = crypto.randomUUID();
+                await query`INSERT INTO mira_conversations(id,owner,title) VALUES (${conversationId},${f.context.owner},'Other queued work')`;
+                await enqueueTurn(query, f.context, {
+                    conversationId,
+                    requestId: crypto.randomUUID(),
+                    text: "Previously accepted work",
+                    attachmentIds: [],
+                });
+            }
+        });
+        expect(await scheduleMiraRuns(f.client)).toBe(0);
+        const chat = await f.api.conversations.create({
+            title: "Reserved user capacity",
+        });
+        const requested = await f.api.conversations.send({
+            conversationId: chat.id,
+            requestId: crypto.randomUUID(),
+            text: "A direct request still fits",
+        });
+        expect(requested.id).toBeString();
+    } finally {
+        await f.close();
+    }
+});
