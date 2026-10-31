@@ -102,8 +102,15 @@ export function deploymentPreparationJobs(options: {
             const value = { configuration, release, expected };
             if (
                 !(await context.commit(async (transaction) => {
+                    const [active] = await transaction<
+                        { id: string }[]
+                    >`SELECT id FROM release_deployments WHERE finished_at IS NULL`;
+                    if (active)
+                        throw new Error(
+                            "Deployment started while preparation was running. Prepare again after it finishes."
+                        );
                     await transaction`INSERT INTO operation_snapshots (key,value,captured_at) VALUES (${`homelab.prepare.${target.id}`}, ${JSON.stringify(value)}::text::jsonb, now()) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value,captured_at=EXCLUDED.captured_at`;
-                }))
+                }, true))
             )
                 throw new Error("Deployment preparation ownership changed");
         },

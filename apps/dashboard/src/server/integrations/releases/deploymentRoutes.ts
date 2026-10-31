@@ -126,6 +126,7 @@ export const deploymentRouter = trpc.router({
                 const id = Bun.randomUUIDv7();
                 await transaction`INSERT INTO release_deployments (id,target,requested_by,request_key,confirmation_revision,configuration,plan,state,phase,message)
                 VALUES (${id},${target.id},${actor},${key},${input.revision},${prepared.plan.configuration},${JSON.stringify(prepared.plan)}::text::jsonb,'waiting','draining','Waiting for active work to finish.')`;
+                await transaction`DELETE FROM operation_snapshots WHERE key LIKE 'homelab.prepare.%'`;
                 await auditOperation(transaction, actor, "releases.requested", id);
                 return { id };
             });

@@ -86,7 +86,7 @@ async function fixture() {
     });
     const worker = await state.registerWorker();
     await state.client`UPDATE workers SET deployment_protocol=1 WHERE id=${worker}`;
-    const executePreparation = async () => {
+    const executePreparation = async (beforeCommit?: () => Promise<void>) => {
         await caller.jobs.run({
             action: "homelab.prepare.main",
             requestId: crypto.randomUUID(),
@@ -97,8 +97,10 @@ async function fixture() {
             leaseToken: run.lease_token,
             signal: AbortSignal.timeout(2000),
             reportProgress: () => Promise.resolve(),
-            commit: (write, admission) =>
-                commitClaim(state.client, run, write, admission),
+            commit: async (write, admission) => {
+                await beforeCommit?.();
+                return commitClaim(state.client, run, write, admission);
+            },
         });
         await settleClaim(state.client, run, "succeeded");
         const overview = await caller.releases.deployment.overview();
@@ -234,7 +236,13 @@ test("deployment admission requires fresh human authority, current preparation a
 test("deployment freezes ordinary job admission, drains Mira and survives replacement without replay", async () => {
     const state = await fixture();
     try {
-        const { id } = await state.request();
+        const prepared = await state.executePreparation();
+        const input = {
+            target: target.id,
+            revision: prepared.revision!,
+            requestId: crypto.randomUUID(),
+        };
+        const { id } = await state.caller.releases.deployment.request(input);
         await state.caller.jobs.run({
             action: "homelab.prepare.main",
             requestId: crypto.randomUUID(),
@@ -279,6 +287,16 @@ test("deployment freezes ordinary job admission, drains Mira and survives replac
             state: "succeeded",
             finished: true,
         });
+        const overview = await state.caller.releases.deployment.overview();
+        expect(overview.targets[0]?.revision).toBeNull();
+        expect(await state.caller.releases.deployment.request(input)).toEqual({ id });
+        await expectOperationFailure(
+            state.caller.releases.deployment.request({
+                ...input,
+                requestId: crypto.randomUUID(),
+            }),
+            "Prepare and confirm"
+        );
         expect(
             await claimJob(state.client, state.worker, ["homelab.prepare.main"], true)
         ).toBeDefined();
@@ -454,6 +472,49 @@ test("user queue pause remains set after a recovered deployment failure", async 
         >`SELECT paused FROM worker_control WHERE id=1`;
         expect(control?.paused).toBe(true);
     } finally {
+        await state.close();
+    }
+});
+
+test("accepting a deployment consumes preparation and fences a concurrently completing preparation", async () => {
+    const state = await fixture();
+    const ready = Promise.withResolvers<void>();
+    const finish = Promise.withResolvers<void>();
+    let pending: Promise<unknown> | undefined;
+    try {
+        const prepared = await state.executePreparation();
+        pending = state
+            .executePreparation(async () => {
+                ready.resolve();
+                await finish.promise;
+            })
+            .then(
+                () => null,
+                (error: unknown) => error
+            );
+        await ready.promise;
+        const input = {
+            target: target.id,
+            revision: prepared.revision!,
+            requestId: crypto.randomUUID(),
+        };
+        const accepted = await state.caller.releases.deployment.request(input);
+        finish.resolve();
+        expect(await pending).toBeInstanceOf(Error);
+        const overview = await state.caller.releases.deployment.overview();
+        expect(overview.targets[0]?.revision).toBeNull();
+        await state.caller.releases.deployment.cancel(accepted);
+        expect(await state.caller.releases.deployment.request(input)).toEqual(accepted);
+        await expectOperationFailure(
+            state.caller.releases.deployment.request({
+                ...input,
+                requestId: crypto.randomUUID(),
+            }),
+            "Prepare and confirm"
+        );
+    } finally {
+        finish.resolve();
+        await pending;
         await state.close();
     }
 });
