@@ -80,6 +80,15 @@ export const miraMessages = pgTable(
         check("mira_messages_length", sql`length(${t.content}) <= 256000`),
     ]
 );
+export const miraTaskContinuationCursor = pgTable(
+    "mira_task_continuation_cursor",
+    {
+        id: integer().primaryKey().default(1),
+        afterId: uuid("after_id").notNull(),
+    },
+    (t) => [check("mira_task_continuation_cursor_singleton", sql`${t.id} = 1`)]
+);
+
 export const miraTasks = pgTable(
     "mira_tasks",
     {

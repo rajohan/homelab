@@ -6,6 +6,8 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 import { capabilities } from "@homelab/contracts/operations";
+import { setMiraEnabled } from "@homelab/mira/data/automations";
+import { enqueueTurn } from "@homelab/mira/data/conversations";
 import {
     claimMiraRun,
     finishMiraRun,
@@ -411,3 +413,128 @@ test("adopted conversation history does not authorize starting a new task", asyn
         await f.close();
     }
 });
+
+test.each(["paused", "capacity", "uncertain", "admission"])(
+    "a blocked continuation batch cannot starve another owner: %s",
+    async (mode) => {
+        const f = await operationFixture();
+        const blocked = {
+            client: f.client,
+            owner: "blocked-owner",
+            actor: "human:blocked-owner",
+        };
+        const ready = {
+            client: f.client,
+            owner: "ready-owner",
+            actor: "human:ready-owner",
+        };
+        const waiting: { id: string; runId: string }[] = [];
+        const release = Promise.withResolvers<void>();
+        let held: Promise<unknown> = Promise.resolve();
+        try {
+            let readyTask = "";
+            for (let index = 0; index < 21; index++) {
+                const context = index < 20 ? blocked : ready;
+                const task = await saveTask(context, fields);
+                const requested = await runMiraTask(context, {
+                    id: task.id,
+                    version: 1,
+                    requestId: crypto.randomUUID(),
+                    instructions: "",
+                    reviewedRunId: null,
+                });
+                const run = await claimMiraRun(
+                    f.client,
+                    crypto.randomUUID(),
+                    "foreground"
+                );
+                if (!run) throw new Error("Expected initial task work.");
+                await finishMiraRun(f.client, run, {
+                    state:
+                        index < 20 && mode === "uncertain"
+                            ? "needs_attention"
+                            : "completed",
+                    text: "Recorded initial work",
+                    message: null,
+                });
+                await saveTask(context, {
+                    ...fields,
+                    id: task.id,
+                    version: 2,
+                    conversationId: requested.conversationId,
+                    status: "blocked",
+                });
+                await saveTask(context, {
+                    ...fields,
+                    id: task.id,
+                    version: 3,
+                    conversationId: requested.conversationId,
+                });
+                if (index < 20) waiting.push({ id: task.id, runId: run.id });
+                else readyTask = task.id;
+            }
+            if (mode === "paused")
+                await setMiraEnabled(blocked, {
+                    key: "autonomy",
+                    version: 1,
+                    enabled: false,
+                    reason: "Deliberate pause",
+                    until: null,
+                });
+            if (mode === "capacity")
+                await f.client.begin(async (query) => {
+                    for (let index = 0; index < 32; index++) {
+                        const conversationId = crypto.randomUUID();
+                        await query`INSERT INTO mira_conversations(id,owner,title) VALUES (${conversationId},${blocked.owner},'Other queued work')`;
+                        await enqueueTurn(query, blocked, {
+                            conversationId,
+                            requestId: crypto.randomUUID(),
+                            text: "Existing queue entry",
+                            attachmentIds: [],
+                        });
+                    }
+                });
+            if (mode === "admission") {
+                const locked = Promise.withResolvers<void>();
+                held = f.client.begin(async (query) => {
+                    for (const task of waiting)
+                        await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:task:${blocked.owner}:${task.id}`},0))`;
+                    locked.resolve();
+                    await release.promise;
+                });
+                await locked.promise;
+            }
+            expect(await scheduleMiraRuns(f.client)).toBe(0);
+            expect(await scheduleMiraRuns(f.client)).toBe(1);
+            const queued = await f.client<
+                { owner: string }[]
+            >`SELECT owner FROM mira_runs WHERE task_id=${readyTask} AND state='queued'`;
+            expect(queued.map((row) => row.owner)).toEqual([ready.owner]);
+            if (mode === "paused")
+                await setMiraEnabled(blocked, {
+                    key: "autonomy",
+                    version: 2,
+                    enabled: true,
+                    reason: null,
+                    until: null,
+                });
+            if (mode === "capacity")
+                await f.client`UPDATE mira_runs SET state='interrupted' WHERE owner=${blocked.owner} AND state='queued'`;
+            if (mode === "uncertain")
+                for (const task of waiting)
+                    await reviewTaskRun(blocked, {
+                        id: task.id,
+                        runId: task.runId,
+                        version: 4,
+                    });
+            release.resolve();
+            await held;
+            expect(await scheduleMiraRuns(f.client)).toBe(20);
+        } finally {
+            release.resolve();
+            await held;
+            await f.close();
+        }
+    },
+    15_000
+);

@@ -85,3 +85,8 @@ Continuations retain the prior work budget, use the same admission and capacity 
 and do not inherit expired browser, computer, publication or spending permissions.
 Updates consumed by active work do not create a second assessment report. Changes to
 other tasks still use the individually controlled **Task created or changed** automation.
+
+Continuation discovery advances a durable round-robin cursor after every bounded
+batch, including batches deferred by a pause, full queue, uncertain result or busy
+task. Blocked owners cannot monopolize later ticks. Deferred requests remain pending
+and are revisited after other candidates, including after a scheduler restart.

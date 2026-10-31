@@ -60,7 +60,7 @@
         "apps/dashboard/src/server/tests/miraBrowserService.integration.test.ts": 7000,
         "apps/dashboard/src/server/integrations/releases/deployment.integration.test.ts": 11200,
         "apps/dashboard/src/server/integrations/releases/deploymentPolicy.integration.test.ts": 1426,
-        "apps/dashboard/src/server/tests/miraTaskChanges.integration.test.ts": 2037,
-        "apps/dashboard/src/server/tests/miraTaskSteering.integration.test.ts": 17491
+        "apps/dashboard/src/server/tests/miraTaskChanges.integration.test.ts": 2228,
+        "apps/dashboard/src/server/tests/miraTaskSteering.integration.test.ts": 19125
     }
 }

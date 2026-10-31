@@ -80,10 +80,10 @@ export async function acknowledgeTaskSteering(
 }
 
 /**
- * Discover explicit unblock requests and edits that raced the end of active work.
- * @param query - Scheduler discovery or its transaction.
+ * Discover explicit unblock requests and late edits after the durable round-robin cursor.
+ * @param query - Scheduler transaction holding the global scheduler lock and a stable cursor.
  * @param now - Scheduler clock; requests older than one day never replay.
- * @returns At most twenty requests linked to an already user-started task conversation.
+ * @returns At most twenty already-started task requests, wrapping to older requests after the cursor.
  */
 export async function pendingTaskContinuations(query: MiraQuery, now: Date) {
     return query<
@@ -125,7 +125,9 @@ export async function pendingTaskContinuations(query: MiraQuery, now: Date) {
             AND NOT EXISTS (SELECT 1 FROM mira_runs used WHERE used.request_key=a.owner||':'||a.id::text)
             AND NOT EXISTS (SELECT 1 FROM mira_audit stopped WHERE stopped.owner=a.owner
                 AND stopped.target=r.id::text AND stopped.action='run.cancel_requested' AND stopped.created_at>=a.created_at)
-        ORDER BY a.id LIMIT 20`;
+        ORDER BY CASE WHEN a.id>COALESCE(
+            (SELECT after_id FROM mira_task_continuation_cursor WHERE id=1),
+            '00000000-0000-0000-0000-000000000000'::uuid) THEN 0 ELSE 1 END,a.id LIMIT 20`;
 }
 
 /**
@@ -141,7 +143,8 @@ export async function scheduleTaskContinuations(
     owners: readonly string[]
 ) {
     let queued = 0;
-    for (const input of await pendingTaskContinuations(query, now)) {
+    const candidates = await pendingTaskContinuations(query, now);
+    for (const input of candidates) {
         if (
             !owners.includes(input.owner) ||
             !(await taskContinuationAllowed(query, input.owner))
@@ -181,6 +184,13 @@ export async function scheduleTaskContinuations(
         );
         await query`UPDATE mira_runs SET task_resumed=true WHERE id=${run.id}`;
         queued++;
+    }
+    const last = candidates.at(-1);
+    if (last) {
+        // The scheduler lock serializes this round-robin position. Advance even when
+        // every request is paused, full, uncertain or busy; none is consumed by deferral.
+        await query`INSERT INTO mira_task_continuation_cursor(id,after_id) VALUES (1,${last.id})
+            ON CONFLICT(id) DO UPDATE SET after_id=EXCLUDED.after_id`;
     }
     return queued;
 }
