@@ -25,7 +25,8 @@
         "./miraComputers": "./src/miraComputers.ts",
         "./miraComputerCommands": "./src/miraComputerCommands.ts",
         "./miraComputerUpdates": "./src/miraComputerUpdates.ts",
-        "./miraBrowser": "./src/miraBrowser.ts"
+        "./miraBrowser": "./src/miraBrowser.ts",
+        "./deployment": "./src/deployment.ts"
     },
     "dependencies": {
         "valibot": "1.5.0"

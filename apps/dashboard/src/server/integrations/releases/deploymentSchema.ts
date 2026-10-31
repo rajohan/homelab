@@ -1,6 +1,8 @@
 import { sql } from "drizzle-orm";
 import {
     check,
+    boolean,
+    integer,
     index,
     jsonb,
     pgTable,
@@ -17,6 +19,8 @@ export const releaseDeployments = pgTable(
     {
         id: uuid().primaryKey(),
         target: text().notNull(),
+        policyVersion: integer("policy_version"),
+        windowEndsAt: time("window_ends_at"),
         requestedBy: text("requested_by").notNull(),
         requestKey: text("request_key").notNull().unique(),
         confirmationRevision: text("confirmation_revision").notNull(),
@@ -34,6 +38,10 @@ export const releaseDeployments = pgTable(
         finishedAt: time("finished_at"),
     },
     (table) => [
+        check(
+            "release_deployments_automatic",
+            sql`(${table.policyVersion} is null and ${table.windowEndsAt} is null) or (${table.policyVersion} is not null and ${table.policyVersion}>0 and ${table.windowEndsAt} is not null)`
+        ),
         uniqueIndex("release_deployments_active")
             .on(sql`(true)`)
             .where(sql`${table.finishedAt} is null`),
@@ -57,6 +65,38 @@ export const releaseDeployments = pgTable(
         check(
             "release_deployments_message",
             sql`${table.message} is null or length(${table.message}) between 1 and 500`
+        ),
+    ]
+);
+
+export const releaseDeploymentPolicies = pgTable(
+    "release_deployment_policies",
+    {
+        target: text().primaryKey(),
+        version: integer().notNull().default(1),
+        configuration: text().notNull(),
+        mode: text().notNull().default("manual"),
+        window: jsonb().$type<{ start: string; minutes: number }>().notNull(),
+        timeZone: text("time_zone").notNull(),
+        paused: boolean().notNull().default(false),
+        disableReason: text("disable_reason"),
+        disabledUntil: time("disabled_until"),
+        updatedBy: text("updated_by").notNull(),
+        updatedAt: time("updated_at").notNull().defaultNow(),
+    },
+    (table) => [
+        check("release_deployment_policies_version", sql`${table.version}>0`),
+        check(
+            "release_deployment_policies_mode",
+            sql`${table.mode} in ('manual','patch','minor')`
+        ),
+        check(
+            "release_deployment_policies_configuration",
+            sql`${table.configuration} ~ '^[a-f0-9]{64}$'`
+        ),
+        check(
+            "release_deployment_policies_pause",
+            sql`(${table.paused} and ${table.disableReason} is not null and length(${table.disableReason}) between 1 and 1000) or (not ${table.paused} and ${table.disableReason} is null and ${table.disabledUntil} is null)`
         ),
     ]
 );

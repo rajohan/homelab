@@ -40,6 +40,7 @@ export function deploymentRelease(
     )
         throw new Error("Required release images are unavailable");
     return {
+        ...(release.dashboardSchema ? { dashboardSchema: release.dashboardSchema } : {}),
         repository: release.repository,
         version: release.version,
         revision: release.revision,

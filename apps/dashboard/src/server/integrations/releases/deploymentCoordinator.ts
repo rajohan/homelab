@@ -9,6 +9,7 @@ import {
     type ReleaseDeploymentTarget,
 } from "./deploymentConfiguration";
 import { deploymentRelease } from "./deploymentPlans";
+import { automaticDeploymentAllowed } from "./deploymentPolicies";
 import {
     deploymentDigest,
     deploymentHost,
@@ -27,6 +28,8 @@ interface Claim {
     state: string;
     expired: boolean;
     lease: string;
+    policyVersion: number | null;
+    windowEndsAt: Date | null;
 }
 
 /**
@@ -53,7 +56,7 @@ export async function coordinateDeployment(options: {
             UPDATE release_deployments SET controller=${controller}, lease_token=${lease},
                 lease_expires_at=clock_timestamp()+interval '180 seconds'
             WHERE finished_at IS NULL AND (lease_expires_at IS NULL OR lease_expires_at<=clock_timestamp())
-            RETURNING id,target,configuration,plan,state,created_at<clock_timestamp()-interval '30 minutes' AS expired,lease_token AS lease`;
+            RETURNING id,target,configuration,plan,state,policy_version AS "policyVersion",window_ends_at AS "windowEndsAt",created_at<clock_timestamp()-interval '30 minutes' AS expired,lease_token AS lease`;
         return row;
     });
     if (!claim) return;
@@ -65,21 +68,42 @@ export async function coordinateDeployment(options: {
         receipt?: DeploymentReceipt
     ) =>
         client.begin(async (transaction) => {
+            await lockQueue(transaction);
+            const target = options.targets.find((entry) => entry.id === claim.target);
+            const allowed =
+                claim.policyVersion === null ||
+                claim.state !== "waiting" ||
+                (state !== "waiting" && state !== "submitting") ||
+                (target !== undefined &&
+                    claim.windowEndsAt !== null &&
+                    (await automaticDeploymentAllowed(
+                        transaction,
+                        target,
+                        options.connections,
+                        claim.policyVersion,
+                        claim.windowEndsAt
+                    )));
+            const nextState = allowed ? state : "cancelled";
+            const nextPhase = allowed ? phase : "policy";
+            const nextMessage = allowed
+                ? message
+                : "Automatic deployment cancelled before replacement because its policy or maintenance window changed.";
+            const complete = finished || !allowed;
             const rows = await transaction<{ id: string }[]>`
-                UPDATE release_deployments SET state=${state},phase=${phase},message=${message},
+                UPDATE release_deployments SET state=${nextState},phase=${nextPhase},message=${nextMessage},
                 receipt=${JSON.stringify(receipt ?? null)}::text::jsonb,updated_at=now(),
-                finished_at=CASE WHEN ${finished} THEN now() ELSE NULL END
+                finished_at=CASE WHEN ${complete} THEN now() ELSE NULL END
                 WHERE id=${claim.id} AND lease_token=${lease} AND lease_expires_at>clock_timestamp() AND finished_at IS NULL
                 RETURNING id`;
-            if (rows.length > 0 && finished)
+            if (rows.length > 0 && complete)
                 await auditOperation(
                     transaction,
                     `worker:${controller}`,
-                    `releases.${state}`,
+                    `releases.${nextState}`,
                     claim.id,
-                    message
+                    nextMessage
                 );
-            return rows.length === 1;
+            return rows.length === 1 && allowed;
         });
     try {
         const target = options.targets.find((entry) => entry.id === claim.target);
@@ -108,6 +132,16 @@ export async function coordinateDeployment(options: {
             expected: plan.expected,
         };
         if (claim.state === "waiting") {
+            if (
+                claim.policyVersion !== null &&
+                !(await write(
+                    "waiting",
+                    "checking",
+                    "Checking automatic deployment policy.",
+                    false
+                ))
+            )
+                return;
             if (claim.expired) {
                 await write(
                     "failed",

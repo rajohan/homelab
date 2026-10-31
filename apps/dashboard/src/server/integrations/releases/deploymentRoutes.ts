@@ -1,3 +1,7 @@
+import {
+    deploymentPolicySchema,
+    deploymentPauseSchema,
+} from "@homelab/contracts/deployment";
 import * as v from "valibot";
 
 import { runOperation, trpc } from "../../api/trpc";
@@ -7,7 +11,13 @@ import { auditOperation } from "../../operations/audit";
 import { authorizedOperations } from "../../operations/authorization";
 import type { OperationsContext } from "../../operations/context";
 import { OperationFailure } from "../../operations/errors";
+import { admitDeployment } from "./deploymentAdmission";
 import { preparedDeployment } from "./deploymentPlans";
+import {
+    readDeploymentPolicy,
+    writeDeploymentPolicy,
+    pauseDeploymentPolicy,
+} from "./deploymentPolicies";
 
 const requestSchema = v.strictObject({
     target: v.pipe(v.string(), v.regex(/^[a-z][a-z0-9-]{0,49}$/)),
@@ -27,10 +37,39 @@ async function authorize(context: OperationsContext) {
         throw new OperationFailure("UNAUTHORIZED", "The signed-in account changed.");
     requireCapability(current, "updates:apply");
     requireCapability(current, "jobs:run");
-    return { operations, actor: `human:${current.id}` };
+    return { operations, actor: `human:${current.id}`, principal: current };
 }
 
 export const deploymentRouter = trpc.router({
+    policy: trpc.procedure.input(deploymentPolicySchema).mutation(({ ctx, input }) =>
+        runOperation(async () => {
+            const { operations, actor, principal } = await authorize(ctx);
+            requireCapability(principal, "updates:configure");
+            const target = operations.deploymentTargets?.find(
+                (entry) => entry.id === input.target
+            );
+            if (!target)
+                throw new OperationFailure("NOT_FOUND", "Deployment is not configured.");
+            await writeDeploymentPolicy(
+                operations.client,
+                target,
+                operations.updateTargets ?? [],
+                actor,
+                input
+            );
+            return { ok: true };
+        })
+    ),
+    pause: trpc.procedure.input(deploymentPauseSchema).mutation(({ ctx, input }) =>
+        runOperation(async () => {
+            const { operations, actor, principal } = await authorize(ctx);
+            requireCapability(principal, "updates:configure");
+            if (!operations.deploymentTargets?.some((entry) => entry.id === input.target))
+                throw new OperationFailure("NOT_FOUND", "Deployment is not configured.");
+            await pauseDeploymentPolicy(operations.client, actor, input);
+            return { ok: true };
+        })
+    ),
     overview: trpc.procedure.query(({ ctx }) =>
         runOperation(async () => {
             const { operations } = authorizedOperations(ctx, "updates:read");
@@ -44,6 +83,11 @@ export const deploymentRouter = trpc.router({
                     return {
                         id: target.id,
                         label: target.label,
+                        policy: await readDeploymentPolicy(
+                            operations.client,
+                            target,
+                            operations.updateTargets ?? []
+                        ),
                         version: prepared.plan?.release.version ?? null,
                         revision: prepared.revision,
                     };
@@ -113,22 +157,13 @@ export const deploymentRouter = trpc.router({
                         "CONFLICT",
                         "Prepare and confirm the current release again."
                     );
-                const [workers] = await transaction<
-                    { current: number; legacy: number }[]
-                >`
-                SELECT count(*) FILTER (WHERE deployment_protocol=1)::int AS current,count(*) FILTER (WHERE deployment_protocol<>1)::int AS legacy
-                FROM workers WHERE heartbeat_at>now()-interval '30 seconds' AND NOT draining`;
-                if (!workers?.current || workers.legacy)
-                    throw new OperationFailure(
-                        "PRECONDITION_FAILED",
-                        "A current deployment-capable worker must be running."
-                    );
-                const id = Bun.randomUUIDv7();
-                await transaction`INSERT INTO release_deployments (id,target,requested_by,request_key,confirmation_revision,configuration,plan,state,phase,message)
-                VALUES (${id},${target.id},${actor},${key},${input.revision},${prepared.plan.configuration},${JSON.stringify(prepared.plan)}::text::jsonb,'waiting','draining','Waiting for active work to finish.')`;
-                await transaction`DELETE FROM operation_snapshots WHERE key LIKE 'homelab.prepare.%'`;
-                await auditOperation(transaction, actor, "releases.requested", id);
-                return { id };
+                return admitDeployment(transaction, {
+                    target: target.id,
+                    actor,
+                    key,
+                    revision: input.revision,
+                    plan: prepared.plan,
+                });
             });
         })
     ),

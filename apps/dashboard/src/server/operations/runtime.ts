@@ -26,6 +26,7 @@ import { metricsJob } from "../integrations/metrics/job";
 import { createInventoryReader } from "../integrations/metrics/liveInventory";
 import { readSavedInventory } from "../integrations/metrics/snapshot";
 import type { MetricsConfiguration } from "../integrations/metrics/transport";
+import { automaticDeploymentJobs } from "../integrations/releases/deploymentAutomatic";
 import type { ReleaseDeploymentTarget } from "../integrations/releases/deploymentConfiguration";
 import { deploymentPreparationJobs } from "../integrations/releases/deploymentPlans";
 import { readHomelabRelease } from "../integrations/releases/read";
@@ -61,6 +62,13 @@ export function createOperationsRuntime(
           )
         : undefined;
     const registry = createJobRegistry([
+        ...automaticDeploymentJobs({
+            client: connection.client,
+            targets: configuration.deploymentTargets ?? [],
+            connections: configuration.updateTargets ?? [],
+            repository: configuration.releaseRepository,
+            token: configuration.githubToken,
+        }),
         ...deploymentPreparationJobs({
             targets: configuration.deploymentTargets ?? [],
             connections: configuration.updateTargets ?? [],
