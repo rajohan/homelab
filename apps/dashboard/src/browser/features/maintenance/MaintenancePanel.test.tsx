@@ -20,6 +20,7 @@ function fixture(
     const client = new QueryClient({
         defaultOptions: { queries: { staleTime: Infinity, retry: false } },
     });
+    client.setQueryData(["operations", "deployment"], { targets: [], history: [] });
     client.setQueryData(
         ["operations", key],
         key === "maintenance" && Array.isArray(data)

@@ -45,6 +45,7 @@ import { CodexRuntime } from "../runtime/codexRuntime";
 import { pilotArguments, type PilotConfig } from "../runtime/configuration";
 import { miraSkillCatalogHash } from "../skills/catalog";
 import { cleanupMiraResources } from "./cleanup";
+import { MaintenanceGate } from "./maintenanceGate";
 import { executeMiraTurn } from "./turn";
 
 export interface MiraHealth {
@@ -76,6 +77,10 @@ export async function runMiraExecutor(options: {
     const failed = new AbortController();
     const signal = AbortSignal.any([options.signal, failed.signal]);
     const workerId = crypto.randomUUID();
+    const maintenance = new MaintenanceGate();
+    const [pendingDeployment] = await client<{ id: string }[]>`
+        SELECT id FROM release_deployments WHERE finished_at IS NULL LIMIT 1`;
+    maintenance.update(pendingDeployment?.id ?? null);
     const reader = options.agentMail ? new AgentMailReader(options.agentMail) : undefined;
     const integrationsCatalog = options.agentMail
         ? [
@@ -124,37 +129,43 @@ export async function runMiraExecutor(options: {
         });
     const codeDelivery = async () => {
         while (!signal.aborted) {
-            await reconcileMiraCode(client, options.github);
-            if (options.github) {
-                await inspectMiraCodeAttempt(client, options.github, signal);
-                await dispatchMiraCode(
-                    client,
-                    options.github,
-                    signal,
-                    options.filesDirectory
-                );
-            }
+            await maintenance.run(async () => {
+                await reconcileMiraCode(client, options.github);
+                if (options.github) {
+                    await inspectMiraCodeAttempt(client, options.github, signal);
+                    await dispatchMiraCode(
+                        client,
+                        options.github,
+                        signal,
+                        options.filesDirectory
+                    );
+                }
+            });
             await wait(5000);
         }
     };
     const improvements = async () => {
         while (!signal.aborted) {
-            await dispatchMiraImprovement(
-                client,
-                { daytona: options.daytona, github: options.github },
-                signal,
-                options.filesDirectory
+            await maintenance.run(() =>
+                dispatchMiraImprovement(
+                    client,
+                    { daytona: options.daytona, github: options.github },
+                    signal,
+                    options.filesDirectory
+                )
             );
             await wait(5000);
         }
     };
     const cloudJobs = async () => {
         while (!signal.aborted) {
-            await dispatchMiraDaytona(
-                client,
-                options.daytona,
-                signal,
-                options.filesDirectory
+            await maintenance.run(() =>
+                dispatchMiraDaytona(
+                    client,
+                    options.daytona,
+                    signal,
+                    options.filesDirectory
+                )
             );
             await wait(5000);
         }
@@ -175,12 +186,18 @@ export async function runMiraExecutor(options: {
     const coordinator = async () => {
         while (!signal.aborted) {
             const changed = inspectionChanged.promise;
+            const [deployment] = await client<{ id: string }[]>`
+                SELECT id FROM release_deployments WHERE finished_at IS NULL LIMIT 1`;
+            maintenance.update(deployment?.id ?? null);
             await reconcileMiraRuns(client);
-            const currentMessage =
-                health.ready && cleanupPending
-                    ? "Mira is connected, but deleted-data cleanup needs attention."
-                    : message;
-            await client`INSERT INTO mira_runtime_status (id, worker_id, version, model, ready, message, heartbeat_at, models, integrations, skill_catalog_hash, skill_catalog_worker_id) VALUES (1, ${workerId}, ${options.version}, ${model}, ${health.ready}, ${currentMessage}, now(), ${JSON.stringify(models)}::text::jsonb, ${JSON.stringify(integrationsCatalog)}::text::jsonb, ${miraSkillCatalogHash}, ${workerId}) ON CONFLICT (id) DO UPDATE SET worker_id = EXCLUDED.worker_id, version = EXCLUDED.version, model = EXCLUDED.model, ready = EXCLUDED.ready, message = EXCLUDED.message, heartbeat_at = EXCLUDED.heartbeat_at, models = EXCLUDED.models, integrations = EXCLUDED.integrations, skill_catalog_hash = EXCLUDED.skill_catalog_hash, skill_catalog_worker_id = EXCLUDED.skill_catalog_worker_id`;
+            let currentMessage = message;
+            if (health.ready && cleanupPending)
+                currentMessage =
+                    "Mira is connected, but deleted-data cleanup needs attention.";
+            if (deployment)
+                currentMessage =
+                    "Mira is waiting for the Homelab deployment. Queued work is preserved.";
+            await client`INSERT INTO mira_runtime_status (id, worker_id, version, model, ready, message, heartbeat_at, models, integrations, skill_catalog_hash, skill_catalog_worker_id, deployment_drained_for) VALUES (1, ${workerId}, ${options.version}, ${model}, ${health.ready && !deployment}, ${currentMessage}, now(), ${JSON.stringify(models)}::text::jsonb, ${JSON.stringify(integrationsCatalog)}::text::jsonb, ${miraSkillCatalogHash}, ${workerId}, ${maintenance.drained}) ON CONFLICT (id) DO UPDATE SET worker_id = EXCLUDED.worker_id, version = EXCLUDED.version, model = EXCLUDED.model, ready = EXCLUDED.ready, message = EXCLUDED.message, heartbeat_at = EXCLUDED.heartbeat_at, models = EXCLUDED.models, integrations = EXCLUDED.integrations, skill_catalog_hash = EXCLUDED.skill_catalog_hash, skill_catalog_worker_id = EXCLUDED.skill_catalog_worker_id, deployment_drained_for = EXCLUDED.deployment_drained_for`;
             health.heartbeatAt = Date.now();
             await Promise.race([wait(5000), changed]);
         }
@@ -190,8 +207,10 @@ export async function runMiraExecutor(options: {
     const scheduler = async () => {
         while (!signal.aborted) {
             const changed = inspectionChanged.promise;
-            await reconcileMiraControls(client);
-            if (health.ready && defaultReady) await scheduleMiraRuns(client);
+            await maintenance.run(async () => {
+                await reconcileMiraControls(client);
+                if (health.ready && defaultReady) await scheduleMiraRuns(client);
+            });
             await Promise.race([wait(5000), changed]);
         }
     };
@@ -239,102 +258,116 @@ export async function runMiraExecutor(options: {
     };
     const integrations = async () => {
         while (!signal.aborted) {
-            if (reader && options.agentMail)
-                await pollAgentMail(client, options.agentMail, reader, signal);
+            await maintenance.run(async () => {
+                if (reader && options.agentMail)
+                    await pollAgentMail(client, options.agentMail, reader, signal);
+            });
             await wait(5000);
         }
     };
     const mailDelivery = async () => {
         while (!signal.aborted) {
-            await reconcileMiraMail(client, options.agentMail);
-            if (options.agentMail)
-                await dispatchMiraMail(
-                    client,
-                    options.agentMail,
-                    signal,
-                    fetch,
-                    options.filesDirectory
-                );
+            await maintenance.run(async () => {
+                await reconcileMiraMail(client, options.agentMail);
+                if (options.agentMail)
+                    await dispatchMiraMail(
+                        client,
+                        options.agentMail,
+                        signal,
+                        fetch,
+                        options.filesDirectory
+                    );
+            });
             await wait(5000);
         }
     };
     const publicationDelivery = async () => {
         while (!signal.aborted) {
-            await reconcileMiraPublications(client, options.hereNow);
-            if (options.hereNow)
-                await dispatchMiraPublication(
-                    client,
-                    options.hereNow,
-                    signal,
-                    options.filesDirectory
-                );
+            await maintenance.run(async () => {
+                await reconcileMiraPublications(client, options.hereNow);
+                if (options.hereNow)
+                    await dispatchMiraPublication(
+                        client,
+                        options.hereNow,
+                        signal,
+                        options.filesDirectory
+                    );
+            });
             await wait(5000);
         }
     };
     const socialDelivery = async () => {
         while (!signal.aborted) {
-            await reconcileMiraSocial(client, options.moltbook);
-            if (options.moltbook)
-                await dispatchMiraSocial(client, options.moltbook, signal);
+            await maintenance.run(async () => {
+                await reconcileMiraSocial(client, options.moltbook);
+                if (options.moltbook)
+                    await dispatchMiraSocial(client, options.moltbook, signal);
+            });
             await wait(5000);
         }
     };
     const cleaner = async () => {
         while (!signal.aborted) {
-            let runtime: CodexRuntime | undefined;
-            try {
+            await maintenance.run(async () => {
+                let runtime: CodexRuntime | undefined;
                 try {
-                    runtime = await CodexRuntime.connect({
-                        command: config.command,
-                        args: pilotArguments(),
-                        cwd: config.workspace,
-                        env: runtimeEnvironment(config),
-                        requestTimeoutMs: 5000,
-                        signal,
+                    try {
+                        runtime = await CodexRuntime.connect({
+                            command: config.command,
+                            args: pilotArguments(),
+                            cwd: config.workspace,
+                            env: runtimeEnvironment(config),
+                            requestTimeoutMs: 5000,
+                            signal,
+                        });
+                    } catch {
+                        // Local deleted content is still cleaned while the provider is unavailable.
+                    }
+                    const cleaned = await cleanupMiraResources({
+                        client,
+                        runtime,
+                        filesDirectory: options.filesDirectory,
+                        home: config.codexHome,
                     });
-                } catch {
-                    // Local deleted content is still cleaned while the provider is unavailable.
+                    cleanupPending = !runtime || !cleaned;
+                } finally {
+                    await runtime?.close();
                 }
-                const cleaned = await cleanupMiraResources({
-                    client,
-                    runtime,
-                    filesDirectory: options.filesDirectory,
-                    home: config.codexHome,
-                });
-                cleanupPending = !runtime || !cleaned;
-            } finally {
-                await runtime?.close();
-            }
+            });
             await wait(30_000);
         }
     };
     const lane = async (name: "foreground" | "general") => {
         while (!signal.aborted) {
             if (health.ready && Date.now() - health.heartbeatAt < 30_000) {
-                const run = await claimMiraRun(client, workerId, name, {
-                    models: models.map((entry) => entry.model),
-                    defaultModel: model,
-                });
-                if (run) {
-                    health.active++;
-                    try {
-                        await executeMiraTurn(
-                            client,
-                            config,
-                            run,
-                            signal,
-                            options.filesDirectory,
-                            options.agentMail,
-                            options.moltbook,
-                            options.hereNow,
-                            options.daytona,
-                            options.github
-                        );
-                    } finally {
-                        health.active--;
+                const executed = await maintenance.run(async () => {
+                    const run = await claimMiraRun(client, workerId, name, {
+                        models: models.map((entry) => entry.model),
+                        defaultModel: model,
+                    });
+                    if (run) {
+                        health.active++;
+                        try {
+                            await executeMiraTurn(
+                                client,
+                                config,
+                                run,
+                                signal,
+                                options.filesDirectory,
+                                options.agentMail,
+                                options.moltbook,
+                                options.hereNow,
+                                options.daytona,
+                                options.github
+                            );
+                        } finally {
+                            health.active--;
+                        }
+                        return true;
                     }
-                    continue;
-                }
+                    return false;
+                });
+                if (executed) continue;
             }
             await wait(500);
         }

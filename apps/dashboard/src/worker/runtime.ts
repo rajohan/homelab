@@ -106,6 +106,7 @@ export async function runWorker(options: {
     signal: AbortSignal;
     version: string;
     state?: WorkerState;
+    deployment?: (controller: string, signal: AbortSignal) => Promise<void>;
 }): Promise<void> {
     const { client, registry, concurrency } = options;
     const lifecycle = new AbortController();
@@ -113,7 +114,7 @@ export async function runWorker(options: {
     const id = Bun.randomUUIDv7();
     const state = options.state ?? createWorkerState();
     const reserved = reservedCapacity(concurrency);
-    await client`INSERT INTO workers (id, version, heartbeat_at, capacity, reserved_capacity) VALUES (${id}, ${options.version}, now(), ${concurrency}, ${reserved})`;
+    await client`INSERT INTO workers (id, version, heartbeat_at, capacity, reserved_capacity, deployment_protocol) VALUES (${id}, ${options.version}, now(), ${concurrency}, ${reserved}, 1)`;
     const lane = async (controlOnly: boolean) => {
         while (!signal.aborted) {
             const run = await claimJob(client, id, [...registry.keys()], controlOnly);
@@ -134,9 +135,12 @@ export async function runWorker(options: {
     };
     const control = async () => {
         while (!signal.aborted) {
+            const [deployment] = await client<{ id: string }[]>`
+                SELECT id FROM release_deployments WHERE finished_at IS NULL LIMIT 1`;
+            const drained = deployment && state.active === 0 ? deployment.id : null;
             const registered = await client<
                 { id: string }[]
-            >`UPDATE workers SET heartbeat_at = now() WHERE id = ${id} AND NOT draining RETURNING id`;
+            >`UPDATE workers SET heartbeat_at = now(), deployment_drained_for=${drained} WHERE id = ${id} AND NOT draining RETURNING id`;
             if (registered.length !== 1)
                 throw new Error(
                     "Worker registration expired; restart before accepting more work"
@@ -160,6 +164,16 @@ export async function runWorker(options: {
     };
     const tasks = [
         control(),
+        ...(options.deployment
+            ? [
+                  (async () => {
+                      while (!signal.aborted) {
+                          await options.deployment!(id, signal);
+                          await waitForWork(5000, signal);
+                      }
+                  })(),
+              ]
+            : []),
         ...Array.from({ length: concurrency }, (_, index) => lane(index < reserved)),
     ].map((task) =>
         task.catch((error: unknown) => {

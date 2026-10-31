@@ -2,6 +2,7 @@ import * as v from "valibot";
 
 import { readBoundedJson } from "../http/readJson";
 import { readReleaseAsset } from "./asset";
+import { readBrowserRelease } from "./browser";
 import { readComputerDownload } from "./computer";
 
 const repositorySchema = v.pipe(
@@ -183,6 +184,21 @@ export async function readHomelabRelease(
         );
         verified = matches.length === 1;
     }
+    const browser =
+        verified && build
+            ? await readBrowserRelease({
+                  repository,
+                  version: manifest.version,
+                  revision: manifest.revision,
+                  assets: release.assets,
+                  build,
+                  base,
+                  headers,
+                  read,
+                  request,
+                  signal,
+              })
+            : null;
     const computer =
         verified && build
             ? await readComputerDownload({
@@ -199,6 +215,7 @@ export async function readHomelabRelease(
               })
             : null;
     return {
+        browser,
         computer,
         repository,
         version: manifest.version,

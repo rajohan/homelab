@@ -6,6 +6,7 @@ import {
     workerHealthBinding,
 } from "../server/config/environment";
 import { assertDashboardSchema } from "../server/database/migrations";
+import { coordinateDeployment } from "../server/integrations/releases/deploymentCoordinator";
 import { createOperationsRuntime } from "../server/operations/runtime";
 import { createWorkerState, startWorkerHealth } from "./health";
 import { runWorker } from "./runtime";
@@ -45,6 +46,16 @@ export async function main(): Promise<void> {
                         signal: controller.signal,
                         version: information.version,
                         state,
+                        deployment: (id, signal) =>
+                            coordinateDeployment({
+                                client: runtime.client,
+                                controller: id,
+                                signal,
+                                targets: configuration.deploymentTargets ?? [],
+                                connections: configuration.updateTargets ?? [],
+                                repository: configuration.releaseRepository,
+                                token: configuration.githubToken,
+                            }),
                     }),
                 catch: () => new Error("Dashboard worker stopped unexpectedly"),
             })

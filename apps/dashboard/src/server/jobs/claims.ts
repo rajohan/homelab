@@ -80,6 +80,9 @@ export async function claimJob(
             { paused: boolean }[]
         >`SELECT paused FROM worker_control WHERE id = 1`;
         if (control?.paused) return;
+        const [deployment] = await transaction<{ id: string }[]>`
+            SELECT id FROM release_deployments WHERE finished_at IS NULL LIMIT 1`;
+        if (deployment) return;
         const candidates = await transaction<
             ClaimedJob[]
         >`SELECT id, action, payload, attempt, attempt_limit, retry_safe, timeout_ms, resource_keys FROM job_runs WHERE state = 'queued' AND available_at <= now() AND action = ANY(${transaction.array([...actionKeys], "TEXT")}) AND (${controlOnly} = false OR (resource_class = ANY(${transaction.array([...controlWorkClasses], "TEXT")}) AND timeout_ms <= ${controlWorkTimeoutMs})) AND (SELECT count(*) FROM job_runs busy WHERE busy.state = 'running' AND busy.worker_id = ${workerId}) < (SELECT capacity FROM workers WHERE id = ${workerId}) AND ((resource_class = ANY(${transaction.array([...controlWorkClasses], "TEXT")}) AND timeout_ms <= ${controlWorkTimeoutMs}) OR (SELECT count(*) FROM job_runs busy WHERE busy.state = 'running' AND busy.worker_id = ${workerId} AND NOT (busy.resource_class = ANY(${transaction.array([...controlWorkClasses], "TEXT")}) AND busy.timeout_ms <= ${controlWorkTimeoutMs})) < (SELECT capacity - reserved_capacity FROM workers WHERE id = ${workerId})) AND NOT EXISTS (SELECT 1 FROM resource_leases WHERE key = ANY(job_runs.resource_keys)) AND NOT EXISTS (SELECT 1 FROM job_runs active WHERE active.state = 'running' AND (active.resource_class = 'exclusive' OR job_runs.resource_class = 'exclusive' OR (active.resource_class = 'host-heavy' AND job_runs.resource_class = 'host-heavy'))) ORDER BY priority DESC, id LIMIT 1 FOR UPDATE SKIP LOCKED`;

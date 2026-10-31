@@ -3,9 +3,11 @@ import type { UpdateReport } from "@homelab/contracts/updates";
 import information from "../../../../../../package.json";
 import { runOperation, trpc } from "../../api/trpc";
 import { authorizedOperations } from "../../operations/authorization";
+import { deploymentRouter } from "./deploymentRoutes";
 import { releaseSnapshot } from "./snapshot";
 
 export const releasesRouter = trpc.router({
+    deployment: deploymentRouter,
     overview: trpc.procedure.query(({ ctx }) =>
         runOperation(async () => {
             const { operations } = authorizedOperations(ctx, "updates:read");

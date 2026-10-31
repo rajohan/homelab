@@ -1,5 +1,6 @@
 import type { MaintenanceResult } from "@homelab/contracts/maintenance";
 export * from "@homelab/mira/data/schema";
+export * from "../integrations/releases/deploymentSchema";
 import type {
     Capability,
     InfrastructureSnapshot,
@@ -151,6 +152,8 @@ export const workers = pgTable("workers", {
     heartbeatAt: time("heartbeat_at").notNull(),
     capacity: integer().notNull(),
     reservedCapacity: integer("reserved_capacity").notNull().default(0),
+    deploymentProtocol: integer("deployment_protocol").notNull().default(0),
+    deploymentDrainedFor: uuid("deployment_drained_for"),
     draining: boolean().notNull().default(false),
     startedAt: time("started_at").notNull().defaultNow(),
 });

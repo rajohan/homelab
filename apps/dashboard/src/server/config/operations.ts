@@ -36,6 +36,10 @@ import {
     parseMaintenanceTargets,
     type MaintenanceTarget,
 } from "../integrations/maintenance/configuration";
+import {
+    parseReleaseDeploymentTargets,
+    type ReleaseDeploymentTarget,
+} from "../integrations/releases/deploymentConfiguration";
 import { releaseRepository } from "../integrations/releases/read";
 import {
     loadUpdateTargets,
@@ -58,6 +62,7 @@ const storeSchema = v.strictObject({
 });
 
 export interface OperationsConfiguration {
+    readonly deploymentTargets?: readonly ReleaseDeploymentTarget[];
     readonly miraFilesDirectory?: string | undefined;
     readonly agentMailHook?: AgentMailHookConfiguration | undefined;
     readonly moltbookBinding?: MoltbookBinding | undefined;
@@ -261,6 +266,10 @@ export function parseOperationsConfiguration(
     )
         throw new Error("Every update target requires a configured reporting source");
     return {
+        deploymentTargets: parseReleaseDeploymentTargets(
+            environment.HOMELAB_DASHBOARD_DEPLOYMENT_TARGETS,
+            updateTargets
+        ),
         miraFilesDirectory: environment.HOMELAB_MIRA_FILES_DIR,
         agentMailHook: agentMailHookConfiguration(environment),
         moltbookBinding: moltbookBinding(environment),
