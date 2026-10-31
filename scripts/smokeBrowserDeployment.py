@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import uuid
 
@@ -24,12 +25,38 @@ def command(arguments, environment=None, data=None):
     return result.stdout
 
 
+def cleanup(compose, tags):
+    """Attempt every fixture cleanup without hiding the original qualification error."""
+    failures = []
+    if compose:
+        try:
+            command(compose + ["down", "--volumes", "--remove-orphans", "--timeout", "5"])
+        except (OSError, RuntimeError, subprocess.TimeoutExpired):
+            failures.append("disposable Compose project")
+    for tag in tags:
+        try:
+            command(["docker", "image", "rm", tag])
+        except (OSError, RuntimeError, subprocess.TimeoutExpired):
+            try:
+                remaining = command(["docker", "image", "ls", "--quiet", "--no-trunc", "--filter", "reference=" + tag])
+                if remaining.strip():
+                    failures.append(tag)
+            except (OSError, RuntimeError, subprocess.TimeoutExpired):
+                failures.append(tag)
+    if failures:
+        message = "Browser qualification cleanup could not confirm removal: " + ", ".join(failures)
+        original = sys.exception()
+        if original:
+            original.add_note(message)
+        else:
+            raise RuntimeError(message)
+
+
 def main():
     """Recreate both proxies, preserve isolated slots and verify refreshed IDs with the real browser guard."""
     original = json.loads(command(["docker", "image", "inspect", "homelab-browser-proxy-test:local"]))[0]["Id"]
     owner = "homelab-proxy-upgrade-" + uuid.uuid4().hex
     candidate = owner + ":candidate"
-    created = False
     compose = None
     with tempfile.TemporaryDirectory(prefix=owner) as temporary:
         directory = Path(temporary)
@@ -38,7 +65,6 @@ def main():
             # Only metadata changes; the real maintained proxy and its baked policy are unchanged.
             command(["docker", "image", "tag", original, owner + ":base"])
             command(["docker", "build", "--tag", candidate, "-"], data="FROM " + owner + ":base\nLABEL homelab.smoke=" + owner + "\n")
-            created = True
             replacement = json.loads(command(["docker", "image", "inspect", candidate]))[0]["Id"]
             assert replacement != original
             environment = {**ENVIRONMENT, "HOMELAB_MIRA_BROWSER_PROXY_IMAGE": original,
@@ -91,11 +117,7 @@ def main():
             command(["bun", "--no-env-file", "-e", probe, json.dumps(refreshed)])
             print("PASS: both real proxy replacements retained isolated network IDs; refreshed container/image IDs pass the browser guard")
         finally:
-            if compose:
-                command(compose + ["down", "--volumes", "--remove-orphans", "--timeout", "5"])
-            if created:
-                command(["docker", "image", "rm", candidate])
-            command(["docker", "image", "rm", owner + ":base"])
+            cleanup(compose, [candidate, owner + ":base"])
 
 
 if __name__ == "__main__":

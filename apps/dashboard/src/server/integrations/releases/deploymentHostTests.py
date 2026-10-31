@@ -397,6 +397,34 @@ class HostTests(unittest.TestCase):
                 self.assertIn(["docker", "network", "rm", "fixture-network"], calls)
             self.assertEqual(bool(getattr(original, "__notes__", [])), remains)
 
+    def test_browser_fixture_cleanup_attempts_all_resources_and_preserves_error(self):
+        spec = importlib.util.spec_from_file_location("browser_fixture", Path(__file__).resolve().parents[6] / "scripts/smokeBrowserDeployment.py")
+        fixture = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(fixture)
+        calls = []
+        def execute(arguments, **_kwargs):
+            calls.append(arguments)
+            if "down" in arguments or arguments == ["docker", "image", "rm", "fixture:candidate"]:
+                raise RuntimeError("cleanup failure")
+            return "remaining-image" if "ls" in arguments else ""
+        original = RuntimeError("original browser failure")
+        with patch.object(fixture, "command", side_effect=execute):
+            try:
+                try:
+                    raise original
+                finally:
+                    fixture.cleanup(["docker", "compose"], ["fixture:candidate", "fixture:base"])
+            except RuntimeError as error:
+                self.assertIs(error, original)
+            self.assertIn(["docker", "image", "rm", "fixture:base"], calls)
+            self.assertIn("fixture:candidate", original.__notes__[0])
+            calls.clear()
+            with self.assertRaisesRegex(RuntimeError, "cleanup could not confirm"):
+                fixture.cleanup(["docker", "compose"], ["fixture:candidate", "fixture:base"])
+            self.assertIn(["docker", "image", "rm", "fixture:base"], calls)
+        with patch.object(fixture, "command", side_effect=[RuntimeError("not found"), ""]):
+            fixture.cleanup(None, ["fixture:missing"])
+
 
 if __name__=="__main__":
     unittest.main()
