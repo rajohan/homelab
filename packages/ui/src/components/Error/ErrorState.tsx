@@ -16,16 +16,16 @@ export function ErrorState({
 }) {
     return (
         <Card role="alert" className="mx-auto w-full max-w-lg space-y-5">
-            <span className="grid size-11 place-items-center rounded-lg bg-red-500/10 text-red-400">
-                <TriangleAlert size={22} aria-hidden="true" />
-            </span>
-            <div>
+            <div className="flex items-center gap-3">
+                <span className="grid size-11 shrink-0 place-items-center rounded-lg bg-red-500/10 text-red-400">
+                    <TriangleAlert size={22} aria-hidden="true" />
+                </span>
                 <h1 className="text-xl font-semibold">{title}</h1>
-                <p className="mt-2 text-sm leading-6 text-primary-400">
-                    Something prevented this view from rendering. Try again, or reload the
-                    page if the problem continues.
-                </p>
             </div>
+            <p className="text-sm leading-6 text-primary-400">
+                Something prevented this view from rendering. Try again, or reload the
+                page if the problem continues.
+            </p>
             <Button onClick={onRetry}>Try again</Button>
         </Card>
     );
