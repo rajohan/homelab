@@ -23,6 +23,10 @@ const argumentsSchema = v.pipe(
     v.check((value) => value[0]!.startsWith("/"))
 );
 const identifier = v.pipe(v.string(), v.regex(/^[a-z][a-z0-9-]{0,49}$/));
+const unitName = v.pipe(
+    v.string(),
+    v.regex(/^[a-zA-Z0-9][a-zA-Z0-9_.@-]{0,150}\.service$/)
+);
 const targetSchema = v.strictObject({
     id: identifier,
     label: v.pipe(v.string(), v.minLength(1), v.maxLength(100)),
@@ -36,6 +40,9 @@ const targetSchema = v.strictObject({
     migrateCommand: argumentsSchema,
     environmentFile: v.optional(absolutePath),
     browserConfigFile: v.optional(absolutePath),
+    browserProxyUnits: v.optional(
+        v.pipe(v.array(unitName), v.minLength(1), v.maxLength(2))
+    ),
     mira: v.boolean(),
     services: v.pipe(
         v.array(
@@ -47,13 +54,7 @@ const targetSchema = v.strictObject({
         v.minLength(1),
         v.maxLength(16)
     ),
-    units: v.pipe(
-        v.array(
-            v.pipe(v.string(), v.regex(/^[a-zA-Z0-9][a-zA-Z0-9_.@-]{0,150}\.service$/))
-        ),
-        v.minLength(1),
-        v.maxLength(16)
-    ),
+    units: v.pipe(v.array(unitName), v.minLength(1), v.maxLength(16)),
 });
 export type ReleaseDeploymentTarget = v.InferOutput<typeof targetSchema>;
 
@@ -80,6 +81,14 @@ export function parseReleaseDeploymentTargets(
             new Set(target.services.map((service) => service.name)).size !==
                 target.services.length ||
             new Set(target.units).size !== target.units.length ||
+            (target.browserProxyUnits !== undefined &&
+                (!target.browserConfigFile ||
+                    target.browserProxyUnits.length >= target.units.length ||
+                    new Set(target.browserProxyUnits).size !==
+                        target.browserProxyUnits.length ||
+                    target.browserProxyUnits.some(
+                        (unit) => !target.units.includes(unit)
+                    ))) ||
             !target.services.some((service) => service.app === "dashboard") ||
             (target.mira && !target.services.some((service) => service.app === "mira")) ||
             (target.browserConfigFile &&

@@ -25,6 +25,7 @@ test("deployment recipes require explicit compatible services, authority and pri
         { composeCommand: ["docker", "compose"] },
         { directory: "/srv/../etc" },
         { browserConfigFile: "/srv/browser.json" },
+        { browserProxyUnits: ["homelab.service"] },
         { migrateCommand: ["/bin/sh", "bad\ncommand"] },
     ])
         expect(() =>
@@ -39,6 +40,40 @@ test("deployment recipes require explicit compatible services, authority and pri
     expect(releaseDeploymentRevision(target, connections)).not.toBe(
         releaseDeploymentRevision(
             { ...target, backupCommand: ["/usr/bin/false"] },
+            connections
+        )
+    );
+});
+
+test("browser proxy startup units must be a distinct subset of the complete deployment", () => {
+    const browser = {
+        ...target,
+        browserConfigFile: "/srv/browser.json",
+        browserProxyUnits: ["proxy.service"],
+        units: ["homelab.service", "proxy.service"],
+        services: [
+            ...target.services,
+            { name: "proxy", app: "mira-browser-proxy" as const },
+        ],
+    };
+    expect(parseReleaseDeploymentTargets(JSON.stringify([browser]), connections)).toEqual(
+        [browser]
+    );
+    for (const units of [
+        [],
+        ["missing.service"],
+        ["proxy.service", "proxy.service"],
+        browser.units,
+    ])
+        expect(() =>
+            parseReleaseDeploymentTargets(
+                JSON.stringify([{ ...browser, browserProxyUnits: units }]),
+                connections
+            )
+        ).toThrow();
+    expect(releaseDeploymentRevision(target, connections)).not.toBe(
+        releaseDeploymentRevision(
+            parseReleaseDeploymentTargets(JSON.stringify([browser]), connections)[0]!,
             connections
         )
     );

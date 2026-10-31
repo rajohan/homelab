@@ -94,6 +94,14 @@ class HostTests(unittest.TestCase):
         self.assertEqual(self.compose.read_bytes(), self.source)
         self.assertFalse(any(arguments[0] == "/fixture/migrate" for arguments in self.calls))
 
+    def test_failed_backup_cannot_resume_with_unverified_browser_recovery(self):
+        self.failure = "/fixture/backup"
+        with patch.object(host, "verify_browser_recovery", side_effect=host.Refusal("configuration_changed")):
+            result = self.perform()
+        self.assertEqual(result["state"], "failed")
+        self.assertFalse(result["migrationStarted"])
+        self.assertFalse(result["recovered"])
+
     def test_non_image_configuration_change_restores_original_before_migration(self):
         self.alter_config = True
         result = self.perform()
@@ -198,6 +206,133 @@ class HostTests(unittest.TestCase):
     def test_directory_lock_excludes_other_operations(self):
         with host.directory_lock(self.root),self.assertRaisesRegex(host.Refusal,"host_busy"):
             with host.directory_lock(self.root):pass
+
+    def browser_fixture(self):
+        browser = {"hostId": str(uuid.uuid4()), "socketPath": "/run/docker.sock", "imageId": "sha256:" + "d"*64,
+                   "networks": [{"networkId": "e"*64, "proxyId": "f"*64, "proxyImageId": "sha256:" + "a"*64}]}
+        target = {**self.target, "browserConfigFile": str(self.root / "browser.json"),
+                  "browserProxyUnits": ["proxy.service"], "units": ["fixture.service", "proxy.service"],
+                  "services": [*self.target["services"], {"name": "proxy", "app": "mira-browser-proxy"}]}
+        observed = {"proxy": {"id": "f"*64, "imageId": "sha256:" + "a"*64}}
+        return target, browser, observed
+
+    def test_browser_slots_require_complete_unique_managed_proxy_mapping(self):
+        target, browser, observed = self.browser_fixture()
+        self.assertEqual(host.browser_bindings(target, browser, observed), [{"service": "proxy", "networkId": "e"*64}])
+        cases = [({**target, "browserProxyUnits": []}, browser, observed),
+                 ({**target, "browserProxyUnits": target["units"]}, browser, observed),
+                 ({**target, "browserProxyUnits": ["unmanaged.service"]}, browser, observed),
+                 (target, {**browser, "networks": []}, observed),
+                 (target, {**browser, "networks": [*browser["networks"], *browser["networks"]]}, observed),
+                 (target, browser, {"proxy": {"id": "1"*64, "imageId": "sha256:" + "a"*64}}),
+                 (target, browser, {"proxy": {"id": "f"*64, "imageId": "sha256:" + "b"*64}})]
+        for arguments in cases:
+            with self.subTest(arguments=arguments), self.assertRaises(host.Refusal):
+                host.browser_bindings(*arguments)
+        self.assertEqual(host.browser_bindings(self.target, {"imageId": "sha256:" + "a"*64}, {}), [])
+
+    def test_browser_slots_reject_network_replacement_extra_peers_and_wrong_image(self):
+        target, browser, observed = self.browser_fixture()
+        bindings = host.browser_bindings(target, browser, observed)
+        network = {"Id": "e"*64, "Driver": "bridge", "Internal": True, "EnableIPv6": False,
+                   "Options": {"com.docker.network.bridge.gateway_mode_ipv4": "isolated"}, "Containers": {"f"*64: {}}}
+        proxy = {"Id": "f"*64, "Image": "sha256:" + "a"*64, "State": {"Running": True, "Health": {"Status": "healthy"}},
+                 "NetworkSettings": {"Networks": {"slot": {"NetworkID": "e"*64, "Aliases": ["mira-egress"],
+                     "DriverOpts": {"com.docker.network.endpoint.ifname": "browser"}}, "outbound": {"NetworkID": "1"*64}}}}
+        with patch.object(host, "command", side_effect=[host.encoded([network]), host.encoded([proxy])]):
+            self.assertEqual(host.browser_slots(target, bindings, observed), browser["networks"])
+        cases = [({**network, "Id": "1"*64}, proxy), ({**network, "Internal": False}, proxy),
+                 ({**network, "Containers": {"f"*64: {}, "1"*64: {}}}, proxy),
+                 (network, {**proxy, "Image": "sha256:" + "b"*64}),
+                 (network, {**proxy, "State": {"Running": True, "Health": {"Status": "starting"}}}),
+                 (network, {**proxy, "NetworkSettings": {"Networks": {}}})]
+        for changed_network, changed_proxy in cases:
+            with self.subTest(network=changed_network, proxy=changed_proxy), patch.object(host, "command", side_effect=[host.encoded([changed_network]), host.encoded([changed_proxy])]), self.assertRaisesRegex(host.Refusal, "browser_proxy_verification"):
+                host.browser_slots(target, bindings, observed)
+
+    def test_browser_recovery_accepts_only_verified_proxy_id_refresh(self):
+        target, browser, observed = self.browser_fixture()
+        source = host.encoded(browser)
+        before = {"browserHash": host.digest(source), "containers": observed}
+        (self.operation / "browser.before").write_bytes(source)
+        (self.operation / "browser.before").chmod(0o600)
+        path = Path(target["browserConfigFile"])
+        restored = {**browser, "networks": [{**browser["networks"][0], "proxyId": "1"*64}]}
+        path.write_bytes(host.encoded(restored))
+        path.chmod(0o600)
+        with patch.object(host, "browser_slots", return_value=restored["networks"]):
+            host.verify_browser_recovery(target, self.operation, before, observed)
+            for changed in [browser, {**restored, "imageId": "sha256:" + "b"*64},
+                            {**restored, "hostId": str(uuid.uuid4())}, {**restored, "socketPath": "/other.sock"},
+                            {**restored, "networks": [{**restored["networks"][0], "networkId": "2"*64}]}]:
+                path.write_bytes(host.encoded(changed))
+                with self.assertRaisesRegex(host.Refusal, "configuration_changed"):
+                    host.verify_browser_recovery(target, self.operation, before, observed)
+            (self.operation / "browser.before").write_bytes(host.encoded(restored))
+            with self.assertRaisesRegex(host.Refusal, "configuration_changed"):
+                host.verify_browser_recovery(target, self.operation, before, observed)
+
+    def test_browser_proxy_ids_refresh_before_other_units_start_and_failure_holds_deployment(self):
+        baseline = copy.deepcopy(self.target)
+        for failure in [None, "network", "early_start", "recreated", "config_race"]:
+            with self.subTest(failure=failure):
+                self.target = copy.deepcopy(baseline)
+                self.target, browser, observed = self.browser_fixture()
+                old_proxy = "ghcr.io/demo/homelab/mira-browser-proxy:1.2.2@sha256:" + "a"*64
+                new_proxy = "ghcr.io/demo/homelab/mira-browser-proxy:1.2.3@sha256:" + "b"*64
+                self.source = ("services:\n  dashboard:\n    image: " + self.old + "\n  proxy:\n    image: " + old_proxy + "\n").encode()
+                self.compose.write_bytes(self.source)
+                browser_path = Path(self.target["browserConfigFile"])
+                browser_path.write_bytes(host.encoded(browser))
+                browser_path.chmod(0o600)
+                self.release["images"] = [{"app": "dashboard", "reference": self.new}, {"app": "mira-browser-proxy", "reference": new_proxy},
+                                          {"app": "mira-browser", "reference": "ghcr.io/demo/homelab/mira-browser:1.2.3@sha256:" + "b"*64}]
+                self.expected["containers"] = {"dashboard": {"image": self.old, "imageId": "sha256:" + "a"*64}, "proxy": observed["proxy"]}
+                self.intent.update(target=self.target, release=self.release, expected=self.expected)
+                host.replace_file(self.operation / "intent.json", host.encoded(self.intent), (self.operation / "intent.json").read_bytes())
+                host.save_status(self.operation, {"id": self.identity, "requestHash": host.digest(host.encoded(self.intent)),
+                     "phase": "accepted", "state": "running", "changesStarted": False, "migrationStarted": False})
+                self.calls = []
+                started = []
+                slots = [{"networkId": "e"*64, "proxyId": "2"*64, "proxyImageId": "sha256:" + "b"*64}]
+
+                def configured(_target):
+                    text = self.compose.read_text()
+                    return {"name": "homelab", "services": {"dashboard": {"image": self.new if self.new in text else self.old},
+                            "proxy": {"image": new_proxy if new_proxy in text else old_proxy}}}
+
+                def execute(arguments, directory, timeout=60, output_file=None):
+                    if arguments[:2] == ["/usr/bin/systemctl", "start"]:
+                        started.append(arguments[2:])
+                        if len(started) == 1:
+                            self.assertEqual(arguments[2:], ["proxy.service"])
+                        else:
+                            saved = json.loads(browser_path.read_bytes())
+                            self.assertEqual(saved["networks"], slots)
+                            self.assertEqual(saved["imageId"], "sha256:" + "b"*64)
+                            self.assertEqual(saved["hostId"], browser["hostId"])
+                    return self.command(arguments, directory, timeout, output_file)
+
+                def verify_slots(_target, _bindings, _observed):
+                    if failure == "network": raise host.Refusal("browser_proxy_verification")
+                    if failure == "config_race": browser_path.write_bytes(b"operator-edit")
+                    if failure == "recreated" and len(started) == 2: return [{**slots[0], "proxyId": "3"*64}]
+                    return slots
+
+                for file in ["compose.before", "browser.before", "database.dump"]:
+                    (self.operation / file).unlink(missing_ok=True)
+                with patch.object(host, "inspect", return_value=self.expected), patch.object(host, "configured", side_effect=configured), \
+                        patch.object(host, "command", side_effect=execute), patch.object(host, "image_identity", return_value="sha256:" + "b"*64), \
+                        patch.object(host, "container", side_effect=lambda *_: {"running": failure == "early_start" and bool(started)}), \
+                        patch.object(host, "verify_services", return_value={"proxy": {"id": "2"*64, "imageId": "sha256:" + "b"*64}}), \
+                        patch.object(host, "browser_slots", side_effect=verify_slots):
+                    host.run(self.operation)
+                result = json.loads((self.operation / "status.json").read_text())
+                self.assertEqual(result["state"], "failed" if failure else "succeeded", result)
+                self.assertTrue(result["migrationStarted"], result)
+                if failure:
+                    self.assertFalse(result["recovered"])
+                    self.assertEqual(len(started), 2 if failure == "recreated" else 1)
 
     def test_backup_url_uses_explicit_libpq_fields_and_rejects_connection_overrides(self):
         environment=host.database_environment('postgres://demo:p%40ss@[::1]:5433/test%20db?sslmode=require&connect_timeout=8')
