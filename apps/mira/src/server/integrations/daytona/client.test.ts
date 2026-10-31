@@ -35,8 +35,8 @@ const snapshot = {
     organizationId: configuration.organizationId,
     general: false,
     state: "active",
-    cpu: 2,
-    mem: 4,
+    cpu: 4,
+    mem: 8,
     disk: 10,
     gpu: 0,
     sandboxClass: "container",
@@ -60,8 +60,8 @@ function sandbox() {
         networkAllowList: "",
         domainAllowList: "",
         kvm: false,
-        cpu: 2,
-        memory: 4,
+        cpu: 4,
+        memory: 8,
         disk: 10,
         gpu: 0,
         target: "eu",
@@ -70,11 +70,12 @@ function sandbox() {
         autoStopInterval: 5,
         autoPauseInterval: 0,
         createdAt: new Date(created).toISOString(),
-        autoDestroyAt: new Date(created + 15 * 60_000).toISOString(),
+        lastActivityAt: new Date(created).toISOString(),
     };
 }
 function transport(
-    handler: (path: string, init: RequestInit) => Response | Promise<Response>
+    handler: (path: string, init: RequestInit) => Response | Promise<Response>,
+    recordedHash?: string
 ) {
     const calls: { path: string; init: RequestInit }[] = [];
     const request = Object.assign(
@@ -100,12 +101,25 @@ function transport(
         },
         { preconnect: fetch.preconnect }
     );
-    return { client: new DaytonaClient(configuration, request), calls };
+    return { client: new DaytonaClient(configuration, request, recordedHash), calls };
 }
 function fixture(path: string, init: RequestInit): Response {
+    if (path === "/api/sandbox" && init.method === "POST") {
+        if (typeof init.body !== "string") throw new Error("Expected JSON body");
+        const body = JSON.parse(init.body) as Record<string, unknown>;
+        if (["cpu", "memory", "disk", "gpu"].some((field) => field in body))
+            return new Response(
+                "Cannot specify Sandbox resources when using a snapshot",
+                { status: 400 }
+            );
+        if ("queueTimeout" in body)
+            return new Response("Queue timeout is not enabled for this organization", {
+                status: 403,
+            });
+    }
     if (path === "/api/api-keys/current") return Response.json(key);
     if (path === `/api/organizations/${configuration.organizationId}`)
-        return Response.json({ id: configuration.organizationId, suspended: false });
+        return new Response("Interactive credential required", { status: 401 });
     if (path === `/api/organizations/${configuration.organizationId}/users`)
         return Response.json([
             {
@@ -188,25 +202,20 @@ test("Daytona configuration is explicit and credential rotation preserves the bi
     expect(Object.isFrozen(daytonaPolicy)).toBe(true);
 });
 
-test("Daytona create checks account and snapshot before admission and posts fixed bounded isolation settings once", async () => {
+test("Daytona create uses API-key account and membership routes before admission and posts bounded settings once", async () => {
     const { client, calls } = transport(fixture);
     const result = await client.create(runId, signal, () => {
-        expect(calls.map((call) => call.init.method)).toEqual([
-            "GET",
-            "GET",
-            "GET",
-            "GET",
-        ]);
+        expect(calls.map((call) => call.init.method)).toEqual(["GET", "GET", "GET"]);
         return Promise.resolve();
     });
-    expect(calls.map((call) => call.init.method)).toEqual([
-        "GET",
-        "GET",
-        "GET",
-        "GET",
-        "POST",
+    expect(calls.map((call) => call.init.method)).toEqual(["GET", "GET", "GET", "POST"]);
+    expect(calls.map((call) => call.path)).toEqual([
+        "/api/api-keys/current",
+        `/api/organizations/${configuration.organizationId}/users`,
+        `/api/snapshots/${configuration.snapshotId}`,
+        "/api/sandbox",
     ]);
-    const body = calls[4]?.init.body;
+    const body = calls[3]?.init.body;
     if (typeof body !== "string") throw new Error("Expected JSON body");
     expect(JSON.parse(body)).toEqual({
         name: daytonaSandboxName(configuration, runId),
@@ -223,22 +232,16 @@ test("Daytona create checks account and snapshot before admission and posts fixe
         kvm: false,
         volumes: [],
         secrets: [],
-        cpu: 2,
-        memory: 4,
-        disk: 10,
-        gpu: 0,
         autoStopInterval: 5,
         autoPauseInterval: 0,
         autoDeleteInterval: 0,
-        ttlMinutes: 15,
-        queueTimeout: 2,
     });
     expect(result).toMatchObject({
         id: sandboxId,
         state: "started",
         settingsMatch: true,
     });
-    expect(JSON.stringify(calls[4]?.init.body)).not.toContain(configuration.apiKey);
+    expect(JSON.stringify(calls[3]?.init.body)).not.toContain(configuration.apiKey);
 });
 
 for (const change of [
@@ -280,12 +283,7 @@ for (const change of [
                 : fixture(path, init)
         );
         await rejects(client.create(runId, signal, async () => {}));
-        expect(calls.map((call) => call.init.method)).toEqual([
-            "GET",
-            "GET",
-            "GET",
-            "GET",
-        ]);
+        expect(calls.map((call) => call.init.method)).toEqual(["GET", "GET", "GET"]);
     });
 
 test("Daytona admission revocation or cancellation after preflight sends no create", async () => {
@@ -296,7 +294,7 @@ test("Daytona admission revocation or cancellation after preflight sends no crea
         ),
         /permission changed/
     );
-    expect(denied.calls).toHaveLength(4);
+    expect(denied.calls).toHaveLength(3);
     const cancelled = transport(fixture),
         controller = new AbortController();
     await rejects(
@@ -305,7 +303,7 @@ test("Daytona admission revocation or cancellation after preflight sends no crea
             return Promise.resolve();
         })
     );
-    expect(cancelled.calls).toHaveLength(4);
+    expect(cancelled.calls).toHaveLength(3);
     const before = transport(fixture);
     await rejects(before.client.inspect({ runId }, controller.signal));
     expect(before.calls).toHaveLength(0);
@@ -410,9 +408,9 @@ for (const change of [
     { autoDeleteInterval: -1 },
     { autoStopInterval: 0 },
     { autoPauseInterval: 60 },
-    { autoDestroyAt: undefined },
+    { lastActivityAt: "2020-01-01T00:00:00Z" },
     { autoDestroyAt: "2020-01-01T00:00:00Z" },
-    { createdAt: "2020-01-01T00:00:00Z" },
+    { createdAt: "2099-01-01T00:00:00Z" },
     { autoDestroyAt: "2099-01-01T00:00:00Z" },
 ])
     test(`Daytona reports settings drift without preventing owned cleanup: ${JSON.stringify(change)}`, async () => {
@@ -496,6 +494,48 @@ test("Daytona deletion timeouts keep the exact known provider ID for recovery wi
     expect(calls.filter((call) => call.init.method === "DELETE")).toHaveLength(1);
 });
 
+for (const state of ["destroying", "destroyed"])
+    test(`Daytona reconciles its deletion rename in ${state} state by persisted identity`, async () => {
+        const renamed = {
+            ...sandbox(),
+            name: `DESTROYED_${sandbox().name}_1793447495966`,
+            state,
+        };
+        const { client } = transport((path, init) =>
+            path.includes("sandbox/") ? Response.json(renamed) : fixture(path, init)
+        );
+        const observed = await client.inspect({ runId, sandboxId }, signal);
+        expect(observed?.state).toBe(state);
+        expect(await client.destroy({ runId, sandboxId }, signal)).toBe(
+            state === "destroyed" ? "destroyed" : "requested"
+        );
+        await rejects(client.inspect({ runId }, signal), /ownership/);
+    });
+
+for (const change of [
+    { state: "started" },
+    { state: "unknown" },
+    { id: otherId },
+    { organizationId: otherId },
+    { labels: {} },
+    { name: `DESTROYED_other_1793447495966` },
+    { name: `DESTROYED_${sandbox().name}_not-a-timestamp` },
+])
+    test(`Daytona rejects an unverified deletion rename ${JSON.stringify(change)}`, async () => {
+        const { client, calls } = transport((path, init) =>
+            path.includes("sandbox/")
+                ? Response.json({
+                      ...sandbox(),
+                      name: `DESTROYED_${sandbox().name}_1793447495966`,
+                      state: "destroying",
+                      ...change,
+                  })
+                : fixture(path, init)
+        );
+        await rejects(client.destroy({ runId, sandboxId }, signal), /ownership/);
+        expect(calls.every((call) => call.init.method === "GET")).toBe(true);
+    });
+
 test("Daytona bounds advertised and streamed metadata and cancels oversized bodies", async () => {
     let cancelled = 0;
     for (const advertised of [true, false]) {
@@ -564,17 +604,129 @@ for (const members of [
         expect(calls.some((call) => call.path.includes("snapshots"))).toBe(false);
         expect(await client.destroy({ runId, sandboxId }, signal)).toBe("requested");
     });
-for (const change of [{ id: otherId }, { suspended: true }])
-    test("Daytona blocks an unavailable or different organization before claiming resources", async () => {
+for (const status of [401, 403, 500])
+    test(`Daytona membership failure ${status} blocks admission and creation`, async () => {
         const { client, calls } = transport((path, init) =>
-            path === `/api/organizations/${configuration.organizationId}`
-                ? Response.json({
-                      id: configuration.organizationId,
-                      suspended: false,
-                      ...change,
-                  })
+            path.endsWith("/users")
+                ? new Response("Membership unavailable", { status })
                 : fixture(path, init)
         );
-        await rejects(client.create(runId, signal, async () => {}));
+        let admitted = false;
+        await rejects(
+            client.create(runId, signal, () => {
+                admitted = true;
+                return Promise.resolve();
+            }),
+            /invalid response/
+        );
+        expect(admitted).toBe(false);
+        expect(calls.map((call) => call.path)).toEqual([
+            "/api/api-keys/current",
+            `/api/organizations/${configuration.organizationId}/users`,
+        ]);
+    });
+
+for (const status of [201])
+    test(`Daytona refresh acknowledges ${status} only after live admission`, async () => {
+        let authorized = false;
+        const { client, calls } = transport((path, init) => {
+            if (path.endsWith("/last-activity")) {
+                expect(authorized).toBe(true);
+                expect(init.method).toBe("POST");
+                return new Response(null, { status });
+            }
+            return fixture(path, init);
+        });
+        await client.refreshActivity({ runId, sandboxId }, signal, () => {
+            authorized = true;
+            return Promise.resolve();
+        });
+        expect(
+            calls.filter((call) => call.init.method !== "GET").map((call) => call.path)
+        ).toEqual([`/api/sandbox/${sandboxId}/last-activity`]);
+    });
+
+for (const state of ["stopped", "destroying", "destroyed", "starting"])
+    test(`Daytona never refreshes ${state} resources`, async () => {
+        const { client, calls } = transport((path, init) =>
+            path.includes("/sandbox/")
+                ? Response.json({ ...sandbox(), state })
+                : fixture(path, init)
+        );
+        await rejects(
+            client.refreshActivity({ runId, sandboxId }, signal, async () => {})
+        );
         expect(calls.every((call) => call.init.method === "GET")).toBe(true);
     });
+
+test("Daytona refresh rechecks cancellation and fails closed on an uncertain acknowledgement", async () => {
+    const f = transport(fixture);
+    await rejects(
+        f.client.refreshActivity({ runId, sandboxId }, signal, () =>
+            Promise.reject(new Error("cancelled"))
+        )
+    );
+    expect(f.calls.every((call) => call.init.method === "GET")).toBe(true);
+    const failed = transport((path, init) =>
+        path.endsWith("/last-activity")
+            ? new Response(null, { status: 503 })
+            : fixture(path, init)
+    );
+    await rejects(
+        failed.client.refreshActivity({ runId, sandboxId }, signal, async () => {})
+    );
+    expect(failed.calls.filter((call) => call.init.method === "POST")).toHaveLength(1);
+});
+
+test("Daytona accepts a long-running sandbox with recent activity and no wall-clock TTL", async () => {
+    const { client } = transport((path, init) =>
+        path.includes("/sandbox/")
+            ? Response.json({
+                  ...sandbox(),
+                  createdAt: new Date(Date.now() - 3_600_000).toISOString(),
+              })
+            : fixture(path, init)
+    );
+    const observed = await client.inspect({ runId, sandboxId }, signal);
+    expect(observed?.settingsMatch).toBe(true);
+});
+
+test("retired policy identity can inspect and destroy but cannot create or refresh", async () => {
+    const originalHash =
+        "b035a198edc59c253f453bbb9ad659fa3d815af1b9aa10febd94f70054ba5cd9";
+    const originalName = `mira-${originalHash.slice(0, 16)}-${runId}`;
+    const { client, calls } = transport(
+        (path, init) =>
+            path.includes("/sandbox/")
+                ? Response.json({
+                      ...sandbox(),
+                      name: originalName,
+                      cpu: 2,
+                      memory: 4,
+                      labels: { ...sandbox().labels, "homelab.owner": originalHash },
+                      state: init.method === "DELETE" ? "destroying" : "started",
+                  })
+                : fixture(path, init),
+        originalHash
+    );
+    expect(await client.inspect({ runId, sandboxId }, signal)).toMatchObject({
+        id: sandboxId,
+        name: originalName,
+        settingsMatch: false,
+    });
+    await rejects(
+        client.create(runId, signal, async () => {}),
+        /cleanup only/
+    );
+    await rejects(
+        client.refreshActivity({ runId, sandboxId }, signal, async () => {}),
+        /cleanup only/
+    );
+    expect(await client.destroy({ runId, sandboxId }, signal)).toBe("requested");
+    expect(
+        calls.filter((call) => call.init.method !== "GET").map((call) => call.init.method)
+    ).toEqual(["DELETE"]);
+    expect(() => new DaytonaClient(configuration, fetch, "a".repeat(64))).toThrow(
+        /ownership policy/
+    );
+});

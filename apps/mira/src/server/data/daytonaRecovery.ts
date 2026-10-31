@@ -21,6 +21,7 @@ async function read(
     const [row] = await query<
         {
             binding: DaytonaBinding;
+            bindingHash: string;
             sandboxId: string | null;
             state: string;
             phase: string;
@@ -31,14 +32,14 @@ async function read(
             paused: boolean;
             resolution: MiraDaytonaResolution | null;
         }[]
-    >`SELECT binding,sandbox_id AS "sandboxId",state,phase,cleanup,
+    >`SELECT binding,binding_hash AS "bindingHash",sandbox_id AS "sandboxId",state,phase,cleanup,
         (deadline+interval '5 minutes')::text AS "eligibleAt",
         coalesce(deadline+interval '5 minutes'<=clock_timestamp(),false) AS expired,
         coalesce(lease_expires_at>clock_timestamp(),false) AS leased,
         EXISTS(SELECT 1 FROM mira_switches WHERE owner=${owner} AND key='integration:daytona' AND NOT enabled AND until IS NULL) AS paused,
         cleanup_resolution AS resolution FROM mira_daytona_jobs WHERE id=${id} AND owner=${owner}`;
     if (!row) throw new MiraFailure("NOT_FOUND", "Daytona job not found.");
-    const sandboxName = daytonaSandboxName(row.binding, id);
+    const sandboxName = daytonaSandboxName(row.binding, id, row.bindingHash);
     const identityHash = new Bun.CryptoHasher("sha256")
         .update(
             JSON.stringify([id, row.binding, sandboxName, row.sandboxId, row.eligibleAt])
@@ -56,7 +57,7 @@ async function read(
             "Pause Daytona without an automatic resume before resolving cleanup.";
     else if (!row.expired)
         blockedReason =
-            "Wait until the job deadline and the five-minute recovery delay have passed.";
+            "Wait until the last activity window and the five-minute recovery delay have passed.";
     else if (row.leased)
         blockedReason = "A cleanup check is running. Wait for it to finish.";
     return {

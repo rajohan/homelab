@@ -24,12 +24,11 @@ export interface DaytonaExecutionConfiguration extends DaytonaConfiguration {
 }
 
 export const daytonaPolicy = Object.freeze({
-    version: 1,
-    cpu: 2,
-    memory: 4,
+    version: 2,
+    cpu: 4,
+    memory: 8,
     disk: 10,
-    ttlMinutes: 15,
-    queueTimeout: 2,
+    idleMinutes: 5,
     bunVersion: "1.4.4",
 });
 
@@ -92,7 +91,7 @@ export function daytonaConfiguration(
  * @param binding - Operator-owned mapping; credentials may rotate within this account.
  * @returns Stable nonsecret fingerprint, changed by region, snapshot or policy changes.
  */
-export function daytonaBindingHash(binding: DaytonaBinding): string {
+function bindingHash(binding: DaytonaBinding, policy: object): string {
     const parsed = v.parse(bindingSchema, {
         trustBoundary: binding.trustBoundary,
         networkAccess: binding.networkAccess,
@@ -102,18 +101,56 @@ export function daytonaBindingHash(binding: DaytonaBinding): string {
         target: binding.target,
     });
     return new Bun.CryptoHasher("sha256")
-        .update(JSON.stringify([parsed, daytonaPolicy]))
+        .update(JSON.stringify([parsed, policy]))
         .digest("hex");
+}
+
+/**
+ * Bind new consent and resource ownership to the currently deployed policy.
+ * @param binding - Operator-owned mapping, excluding credentials.
+ * @returns Current policy fingerprint for new admissions.
+ */
+export function daytonaBindingHash(binding: DaytonaBinding): string {
+    return bindingHash(binding, daytonaPolicy);
+}
+
+/**
+ * Verify a persisted attempt fingerprint against its original supported policy.
+ * @param binding - Original durable account, snapshot and region mapping.
+ * @param recordedHash - Fingerprint captured before the original create attempt.
+ * @returns The verified original fingerprint, usable for observation and cleanup only when retired.
+ */
+export function daytonaOriginalBindingHash(
+    binding: DaytonaBinding,
+    recordedHash: string
+): string {
+    const legacy = bindingHash(binding, {
+        version: 1,
+        cpu: 2,
+        memory: 4,
+        disk: 10,
+        ttlMinutes: 15,
+        queueTimeout: 2,
+        bunVersion: "1.4.4",
+    });
+    if (recordedHash !== daytonaBindingHash(binding) && recordedHash !== legacy)
+        throw new Error("Unknown Daytona attempt ownership policy.");
+    return recordedHash;
 }
 
 /**
  * Derive a stable provider name before sending a create request so lost acknowledgements can be reconciled.
  * @param binding - Original persisted account mapping for this attempt.
  * @param runId - Unique durable product attempt UUID, never reused for another creation.
+ * @param recordedHash - Original attempt fingerprint; omitted for a new current-policy attempt.
  * @returns Provider-safe name, containing no email address or credential.
  */
-export function daytonaSandboxName(binding: DaytonaBinding, runId: string): string {
-    return `mira-${daytonaBindingHash(binding).slice(0, 16)}-${v.parse(id, runId)}`;
+export function daytonaSandboxName(
+    binding: DaytonaBinding,
+    runId: string,
+    recordedHash = daytonaBindingHash(binding)
+): string {
+    return `mira-${daytonaOriginalBindingHash(binding, recordedHash).slice(0, 16)}-${v.parse(id, runId)}`;
 }
 
 /**

@@ -74,11 +74,11 @@ export class DaytonaToolboxUncertain extends Error {
     }
 }
 
-/** A confirmed pre-dispatch refusal because the required execution budget no longer fits. */
+/** A confirmed pre-dispatch refusal because the observed idle window is too short. */
 export class DaytonaToolboxLifetimeError extends Error {
     /**
-     * Describe a known no-write result using only the configured time budget.
-     * @param minimumMs - Validated minimum remaining runtime and collection allowance.
+     * Describe a known no-write result using only the required idle headroom.
+     * @param minimumMs - Validated minimum remaining idle window before dispatch.
      */
     constructor(minimumMs: number) {
         super(
@@ -296,30 +296,16 @@ export class DaytonaToolbox {
      * @param command - Exact approved command; never interpolated into a host shell.
      * @param signal - Run cancellation; cancellation after dispatch does not prove the process stopped.
      * @param authorize - Persist the unique command attempt and recheck consent/lease/limits before POST.
-     * @param lifetime - Optional minimum remaining budget and persisted local deadline, rechecked after authorization.
      * @returns Provider command ID to persist before polling. No automatic command retry is performed.
      */
     async submit(
         command: string,
         signal: AbortSignal,
-        authorize: () => Promise<void>,
-        lifetime?: { minimumMs: number; deadline: number }
+        authorize: () => Promise<void>
     ): Promise<string> {
         daytonaCommandHash(command);
-        const minimumMs = lifetime?.minimumMs ?? 30_000;
-        if (
-            !Number.isSafeInteger(minimumMs) ||
-            minimumMs < 30_000 ||
-            minimumMs > 900_000 ||
-            (lifetime &&
-                (!Number.isSafeInteger(lifetime.deadline) || lifetime.deadline < 0))
-        )
-            throw new Error("Invalid Daytona command lifetime budget.");
-        const expiresAt = Math.min(
-            await this.ready(signal, true),
-            lifetime?.deadline ?? Infinity
-        );
-        this.requireLifetime(expiresAt, minimumMs);
+        const expiresAt = await this.ready(signal, true);
+        this.requireLifetime(expiresAt);
         const session = await this.session(signal);
         if (!session || session.commands.length > 0)
             throw new Error("Daytona requires an acknowledged empty session.");
@@ -330,7 +316,7 @@ export class DaytonaToolbox {
         });
         await authorize();
         signal.throwIfAborted();
-        this.requireLifetime(expiresAt, minimumMs);
+        this.requireLifetime(expiresAt);
         try {
             const parsed = v.safeParse(
                 v.object({ cmdId: identifier }),

@@ -7,11 +7,7 @@ import path from "node:path";
 import { createSandboxDirectory, readSandboxPatch, writeSandboxArtifact } from "./files";
 import { runDaytonaChecks } from "./harness";
 import { runSandboxProcess } from "./process";
-import {
-    daytonaCheckContent,
-    daytonaCheckProfile,
-    daytonaCheckMinimumLifetime,
-} from "./profile";
+import { daytonaCheckContent, daytonaCheckProfile } from "./profile";
 import { executeDaytonaChecks, sandboxEnvironment } from "./workflow";
 
 const signal = new AbortController().signal;
@@ -30,8 +26,6 @@ test("fixed check proposals bind exact commit and selected patch without shell a
     );
     expect(content.outputs).toEqual(daytonaCheckProfile.outputs);
     expect(content.inputs).toEqual([]);
-    expect(daytonaCheckMinimumLifetime(content.command)).toBe(720_000);
-    expect(daytonaCheckMinimumLifetime("bun --version")).toBe(30_000);
     const patch = { id, sha256: hash("patch") };
     expect(
         daytonaCheckContent({ id, commit, patchSha256: patch.sha256 }, patch).inputs
