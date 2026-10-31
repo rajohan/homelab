@@ -222,6 +222,80 @@ def unit_state(target, unit):
     return {"active": fields.get("ActiveState"), "invocation": fields.get("InvocationID")}
 
 
+def browser_bindings(target, configuration, observed):
+    """Bind each saved network slot to exactly one explicitly managed proxy service."""
+    if not isinstance(configuration, dict) or not isinstance(configuration.get("imageId"), str) or not re.fullmatch("sha256:[a-f0-9]{64}", configuration["imageId"]):
+        raise Refusal("browser_configuration")
+    slots = configuration.get("networks", [])
+    if not isinstance(slots, list) or len(slots) > 2 or ("networks" in configuration and not slots):
+        raise Refusal("browser_configuration")
+    if not slots:
+        if target.get("browserProxyUnits"):
+            raise Refusal("browser_proxy_units")
+        return []
+    units = target.get("browserProxyUnits", [])
+    if not units or len(set(units)) != len(units) or not set(units) < set(target["units"]):
+        raise Refusal("browser_proxy_units")
+    proxies = [service for service in target["services"] if service["app"] == "mira-browser-proxy"]
+    if len(proxies) != len(slots):
+        raise Refusal("browser_proxy_mapping")
+    result = []
+    for slot in slots:
+        if not isinstance(slot, dict) or set(slot) != {"networkId", "proxyId", "proxyImageId"} or not all(
+                isinstance(slot[key], str) and re.fullmatch(pattern, slot[key]) for key, pattern in
+                [("networkId", "[a-f0-9]{64}"), ("proxyId", "[a-f0-9]{64}"), ("proxyImageId", "sha256:[a-f0-9]{64}")]):
+            raise Refusal("browser_configuration")
+        matches = [service["name"] for service in proxies if observed[service["name"]]["id"] == slot["proxyId"] and
+                   observed[service["name"]]["imageId"] == slot["proxyImageId"]]
+        if len(matches) != 1:
+            raise Refusal("browser_proxy_mapping")
+        result.append({"service": matches[0], "networkId": slot["networkId"]})
+    if len({item["service"] for item in result}) != len(result) or len({item["networkId"] for item in result}) != len(result):
+        raise Refusal("browser_proxy_mapping")
+    return result
+
+
+def browser_slots(target, bindings, observed):
+    """Keep the approved network identities and verify their sole healthy managed peers."""
+    slots = []
+    for binding in bindings:
+        proxy = observed[binding["service"]]
+        network = json.loads(command(["/usr/bin/docker", "network", "inspect", binding["networkId"]], target["directory"]))[0]
+        data = json.loads(command(["/usr/bin/docker", "inspect", proxy["id"]], target["directory"]))[0]
+        endpoints = list(data.get("NetworkSettings", {}).get("Networks", {}).values())
+        slot = next((endpoint for endpoint in endpoints if endpoint.get("NetworkID") == binding["networkId"]), {})
+        if (network.get("Id") != binding["networkId"] or network.get("Driver") != "bridge" or
+                network.get("Internal") is not True or network.get("EnableIPv6") is not False or
+                network.get("Options", {}).get("com.docker.network.bridge.gateway_mode_ipv4") != "isolated" or
+                set(network.get("Containers", {})) != {proxy["id"]} or data.get("Id") != proxy["id"] or
+                data.get("Image") != proxy["imageId"] or data.get("State", {}).get("Running") is not True or
+                data.get("State", {}).get("Health", {}).get("Status") != "healthy" or len(endpoints) != 2 or
+                "mira-egress" not in (slot.get("Aliases") or []) or
+                (slot.get("DriverOpts") or {}).get("com.docker.network.endpoint.ifname") != "browser"):
+            raise Refusal("browser_proxy_verification")
+        slots.append({"networkId": binding["networkId"], "proxyId": proxy["id"], "proxyImageId": proxy["imageId"]})
+    return slots
+
+
+def verify_browser_recovery(target, directory, before, observed):
+    """Accept only the original browser configuration plus verified replacement proxy IDs."""
+    if not target.get("browserConfigFile"):
+        return
+    current = read_file(Path(target["browserConfigFile"]))
+    backup = directory / "browser.before"
+    source = read_file(backup) if backup.exists() else current
+    if digest(source) != before["browserHash"]:
+        raise Refusal("configuration_changed")
+    original = json.loads(source)
+    bindings = browser_bindings(target, original, before["containers"])
+    if bindings:
+        original["networks"] = browser_slots(target, bindings, observed)
+        if json.loads(current) != original:
+            raise Refusal("configuration_changed")
+    elif digest(current) != before["browserHash"]:
+        raise Refusal("configuration_changed")
+
+
 def release_images(release):
     repository, version, revision = release["repository"].lower(), release["version"], release["revision"]
     if not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,99}/[a-z0-9][a-z0-9_.-]{0,99}", repository) or not re.fullmatch(r"\d+\.\d+\.\d+", version) or not re.fullmatch("[a-f0-9]{40}", revision):
@@ -240,7 +314,7 @@ def release_images(release):
     return images
 
 
-def inspect(target, release, allow_current=False):
+def inspect(target, release, allow_current=False, drained=False):
     """Observe only identities/hashes; never return expanded Compose environment or paths."""
     images = release_images(release)
     canonical(target["directory"], directory=True)
@@ -267,7 +341,11 @@ def inspect(target, release, allow_current=False):
     if target.get("browserConfigFile"):
         if "mira-browser" not in images or "mira-browser-proxy" not in images:
             raise Refusal("release_incomplete")
-        browser_hash = digest(read_file(Path(target["browserConfigFile"])))
+        browser_source = read_file(Path(target["browserConfigFile"]))
+        browser_hash = digest(browser_source)
+        bindings = browser_bindings(target, json.loads(browser_source), observed)
+        if drained:
+            browser_slots(target, bindings, observed)
     return {"targetHash": digest(encoded(target)), "composeHash": digest(source), "configHash": digest(encoded(config)),
             "browserHash": browser_hash, "containers": observed, "units": units}
 
@@ -318,7 +396,7 @@ def submit(request, source):
             return status(target, identity)
         if not time.time() < request["deadline"] <= time.time() + 90:
             raise Refusal("request_expired")
-        if inspect(target, request["release"]) != request["expected"]:
+        if inspect(target, request["release"], drained=True) != request["expected"]:
             raise Refusal("confirmation_changed")
         if time.time() >= request["deadline"]:
             raise Refusal("request_expired")
@@ -398,6 +476,22 @@ def verify_services(target, references, identities, timeout=120):
         time.sleep(1)
 
 
+def start_browser_proxies(target, bindings, path, configuration, previous, references, identities):
+    """Start only selected proxies and atomically bind their verified replacement identities."""
+    proxy_target = {**target, "services": [service for service in target["services"] if service["app"] == "mira-browser-proxy"],
+                    "units": target["browserProxyUnits"]}
+    command(["/usr/bin/systemctl", "start", *proxy_target["units"]], target["directory"], timeout=120)
+    proxies = verify_services(proxy_target,
+        {service["name"]: references[service["name"]] for service in proxy_target["services"]},
+        {service["name"]: identities[service["name"]] for service in proxy_target["services"]})
+    if any(container(target, service["name"])["running"] for service in target["services"] if service["app"] != "mira-browser-proxy"):
+        raise Refusal("browser_proxy_units")
+    refreshed = {**configuration, "networks": browser_slots(target, bindings, proxies)}
+    replacement = encoded(refreshed)
+    replace_file(path, replacement, previous)
+    return replacement, refreshed
+
+
 def recipe(arguments, directory, images):
     values = {"{runner}": str(directory / "runner.py"), "{image}": images["dashboard"]}
     return [values.get(argument, argument) for argument in arguments]
@@ -422,7 +516,7 @@ def run(directory):
         sources, written = {}, {}
         try:
             phase("checking")
-            if inspect(target, release) != intent["expected"]:
+            if inspect(target, release, drained=True) != intent["expected"]:
                 raise Refusal("confirmation_changed")
             config = configured(target)
             images = release_images(release)
@@ -434,19 +528,18 @@ def run(directory):
             for app in sorted(apps):
                 command(["/usr/bin/docker", "pull", "--platform=linux/amd64", images[app]], target["directory"], timeout=300)
                 identities[app] = image_identity(target, images[app], release)
-            if inspect(target, release) != intent["expected"]:
+            if inspect(target, release, drained=True) != intent["expected"]:
                 raise Refusal("confirmation_changed")
             compose_path = Path(target["composeFile"])
             sources[compose_path] = read_file(compose_path)
             replacement, expected_config = compose_replacement(sources[compose_path], config, target, images)
             replace_file(directory / "compose.before", sources[compose_path])
-            browser_path, browser_replacement = None, None
+            browser_path, browser_replacement, bindings = None, None, []
             if target.get("browserConfigFile"):
                 browser_path = Path(target["browserConfigFile"])
                 sources[browser_path] = read_file(browser_path)
                 browser_config = json.loads(sources[browser_path])
-                if not isinstance(browser_config, dict) or not re.fullmatch("sha256:[a-f0-9]{64}", browser_config.get("imageId", "")):
-                    raise Refusal("browser_configuration")
+                bindings = browser_bindings(target, browser_config, intent["expected"]["containers"])
                 browser_config["imageId"] = identities["mira-browser"]
                 browser_replacement = encoded(browser_config)
                 replace_file(directory / "browser.before", sources[browser_path])
@@ -477,11 +570,17 @@ def run(directory):
             phase("migrating", migrationStarted=True)
             command(recipe(target["migrateCommand"], directory, images), target["directory"], timeout=300)
             phase("starting")
-            command(["/usr/bin/systemctl", "start", *target["units"]], target["directory"], timeout=120)
-            phase("verifying")
             references = {service["name"]: images[service["app"]] for service in target["services"]}
             expected_ids = {service["name"]: identities[service["app"]] for service in target["services"]}
+            if bindings:
+                refreshed, browser_config = start_browser_proxies(target, bindings, browser_path, browser_config,
+                    written[browser_path], references, expected_ids)
+                written[browser_path] = refreshed
+            command(["/usr/bin/systemctl", "start", *target["units"]], target["directory"], timeout=120)
+            phase("verifying")
             observed = verify_services(target, references, expected_ids)
+            if bindings and browser_slots(target, bindings, observed) != browser_config["networks"]:
+                raise Refusal("browser_proxy_verification")
             if configured(target) != expected_config or any(read_file(path) != content for path, content in written.items()):
                 raise Refusal("configuration_changed")
             phase("complete", state="succeeded", version=release["version"], revision=release["revision"], containers=observed)
@@ -490,12 +589,23 @@ def run(directory):
             recovered = not current["changesStarted"]
             if current["changesStarted"] and not current["migrationStarted"]:
                 try:
+                    if bindings:
+                        command(["/usr/bin/systemctl", "stop", *target["units"]], target["directory"], timeout=120)
+                        if any(container(target, service["name"])["running"] for service in target["services"]):
+                            raise Refusal("stop_verification")
                     for path, content in written.items():
                         replace_file(path, sources[path], content)
-                    command(["/usr/bin/systemctl", "start", *target["units"]], target["directory"], timeout=120)
                     previous = intent["expected"]["containers"]
-                    verify_services(target, {name: value["image"] for name, value in previous.items()},
-                                    {name: value["imageId"] for name, value in previous.items()})
+                    references = {name: value["image"] for name, value in previous.items()}
+                    previous_ids = {name: value["imageId"] for name, value in previous.items()}
+                    if bindings:
+                        start_browser_proxies(target, bindings, browser_path, json.loads(sources[browser_path]),
+                            sources[browser_path], references, previous_ids)
+                    command(["/usr/bin/systemctl", "start", *target["units"]], target["directory"], timeout=120)
+                    observed = verify_services(target, references, previous_ids)
+                    verify_browser_recovery(target, directory, intent["expected"], observed)
+                    if configured(target) != config or read_file(compose_path) != sources[compose_path]:
+                        raise Refusal("configuration_changed")
                     recovered = True
                 except Exception:
                     recovered = False
@@ -520,11 +630,11 @@ def recover(directory, database_restored=False):
             raise Refusal("database_recovery_required")
         before = intent["expected"]
         if (digest(read_file(Path(target["composeFile"]))) != before["composeHash"] or
-                digest(encoded(configured(target))) != before["configHash"] or
-                (target.get("browserConfigFile") and digest(read_file(Path(target["browserConfigFile"]))) != before["browserHash"])):
+                digest(encoded(configured(target))) != before["configHash"]):
             raise Refusal("configuration_changed")
-        verify_services(target, {name: value["image"] for name, value in before["containers"].items()},
+        observed = verify_services(target, {name: value["image"] for name, value in before["containers"].items()},
                         {name: value["imageId"] for name, value in before["containers"].items()})
+        verify_browser_recovery(target, directory, before, observed)
         current.update(state="failed", phase="failed", code="operator_recovered", recovered=True)
         save_status(directory, current)
 

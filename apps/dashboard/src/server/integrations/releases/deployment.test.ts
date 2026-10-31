@@ -25,6 +25,7 @@ test("deployment recipes require explicit compatible services, authority and pri
         { composeCommand: ["docker", "compose"] },
         { directory: "/srv/../etc" },
         { browserConfigFile: "/srv/browser.json" },
+        { browserProxyUnits: ["homelab.service"] },
         { migrateCommand: ["/bin/sh", "bad\ncommand"] },
     ])
         expect(() =>
@@ -39,6 +40,40 @@ test("deployment recipes require explicit compatible services, authority and pri
     expect(releaseDeploymentRevision(target, connections)).not.toBe(
         releaseDeploymentRevision(
             { ...target, backupCommand: ["/usr/bin/false"] },
+            connections
+        )
+    );
+});
+
+test("browser proxy startup units must be a distinct subset of the complete deployment", () => {
+    const browser = {
+        ...target,
+        browserConfigFile: "/srv/browser.json",
+        browserProxyUnits: ["proxy.service"],
+        units: ["homelab.service", "proxy.service"],
+        services: [
+            ...target.services,
+            { name: "proxy", app: "mira-browser-proxy" as const },
+        ],
+    };
+    expect(parseReleaseDeploymentTargets(JSON.stringify([browser]), connections)).toEqual(
+        [browser]
+    );
+    for (const units of [
+        [],
+        ["missing.service"],
+        ["proxy.service", "proxy.service"],
+        browser.units,
+    ])
+        expect(() =>
+            parseReleaseDeploymentTargets(
+                JSON.stringify([{ ...browser, browserProxyUnits: units }]),
+                connections
+            )
+        ).toThrow();
+    expect(releaseDeploymentRevision(target, connections)).not.toBe(
+        releaseDeploymentRevision(
+            parseReleaseDeploymentTargets(JSON.stringify([browser]), connections)[0]!,
             connections
         )
     );
@@ -99,7 +134,7 @@ test.each(["valid", "oversized", "invalid", "failure"])(
             [
                 process.execPath,
                 "-e",
-                `process.stdout.write(${JSON.stringify(output)});process.exitCode=${kind === "failure" ? 1 : 0};`,
+                `process.stdout.write(${JSON.stringify(output)});${kind === "oversized" ? "setInterval(() => {}, 1000);" : `process.exitCode=${kind === "failure" ? 1 : 0};`}`,
             ],
             { stdin: "pipe", stdout: "pipe", stderr: "pipe" }
         );
@@ -119,10 +154,10 @@ test.each(["valid", "oversized", "invalid", "failure"])(
                 expect(failure).toBeInstanceOf(Error);
             }
             expect(spawn).toHaveBeenCalledTimes(1);
-            expect(child.exitCode).not.toBeNull();
+            expect(child.exitCode !== null || child.signalCode !== null).toBe(true);
         } finally {
             spawn.mockRestore();
-            if (child.exitCode === null) child.kill();
+            if (child.exitCode === null && child.signalCode === null) child.kill();
             await child.exited;
         }
     }
