@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.11.1](https://github.com/rajohan/homelab/compare/v0.11.0...v0.11.1) (2026-10-31)
+
+
+### Bug Fixes
+
+* **mira:** preserve boundaries between streamed messages ([#152](https://github.com/rajohan/homelab/issues/152)) ([da05dc0](https://github.com/rajohan/homelab/commit/da05dc0863b991d757260de718da27965b2109aa))
+* **mira:** use idle cleanup for Daytona jobs ([#150](https://github.com/rajohan/homelab/issues/150)) ([3efebe2](https://github.com/rajohan/homelab/commit/3efebe2da024b7b0e74e558a645ecdfb8f3b2adc))
+
 ## [0.11.0](https://github.com/rajohan/homelab/compare/v0.10.1...v0.11.0) (2026-10-31)
 
 
