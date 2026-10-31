@@ -1,0 +1,123 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "f75446a6-5201-462b-98cb-bd8904ae4dd4",
+    "prevIds": ["9f376f1b-e06e-46d9-9403-4f5c205526e7"],
+    "footprints": [
+        {
+            "statementType": "create_index",
+            "statementTarget": [
+                "index",
+                "public",
+                "mira_audit",
+                "mira_audit_task_changes_recent"
+            ],
+            "writes": [
+                "s|idx|public.mira_audit_task_changes_recent",
+                "n|idx|public.mira_audit_task_changes_recent",
+                "e|idx|public.mira_audit_task_changes_recent",
+                "n|rel|public.mira_audit_task_changes_recent"
+            ],
+            "reads": [
+                "n|tbl|public.mira_audit",
+                "n|sch|public",
+                "n|col|public.mira_audit.created_at"
+            ]
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": [
+                "index",
+                "public",
+                "mira_audit",
+                "mira_audit_task_changes_latest"
+            ],
+            "writes": [
+                "s|idx|public.mira_audit_task_changes_latest",
+                "n|idx|public.mira_audit_task_changes_latest",
+                "e|idx|public.mira_audit_task_changes_latest",
+                "n|rel|public.mira_audit_task_changes_latest"
+            ],
+            "reads": [
+                "n|tbl|public.mira_audit",
+                "n|sch|public",
+                "n|col|public.mira_audit.owner",
+                "n|col|public.mira_audit.target",
+                "n|col|public.mira_audit.created_at",
+                "n|col|public.mira_audit.id"
+            ]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_audit",
+                "name": "mira_audit_task_changes_recent",
+                "nameExplicit": true,
+                "columns": [
+                    {
+                        "value": "created_at",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    }
+                ],
+                "isUnique": false,
+                "where": "\"actor\"='human:'||\"owner\" AND \"action\" IN ('task.created','task.updated','task.progress_added')",
+                "with": "",
+                "method": "btree",
+                "concurrently": false,
+                "entityType": "indexes"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_audit",
+                "name": "mira_audit_task_changes_latest",
+                "nameExplicit": true,
+                "columns": [
+                    {
+                        "value": "owner",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    },
+                    {
+                        "value": "target",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    },
+                    {
+                        "value": "created_at",
+                        "isExpression": false,
+                        "asc": false,
+                        "nullsFirst": false,
+                        "opclass": null
+                    },
+                    {
+                        "value": "id",
+                        "isExpression": false,
+                        "asc": false,
+                        "nullsFirst": false,
+                        "opclass": null
+                    }
+                ],
+                "isUnique": false,
+                "where": "\"actor\"='human:'||\"owner\" AND \"action\" IN ('task.created','task.updated','task.progress_added')",
+                "with": "",
+                "method": "btree",
+                "concurrently": false,
+                "entityType": "indexes"
+            }
+        }
+    ]
+}

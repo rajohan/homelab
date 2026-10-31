@@ -101,11 +101,21 @@ export async function saveTask(
                     "Stop or finish active work before linking these conversations to the same task."
                 );
         }
+        const [previous] = input.id
+            ? await query<{ status: string }[]>`
+            SELECT status FROM mira_tasks WHERE id=${id} AND owner=${context.owner} AND deleted_at IS NULL FOR UPDATE`
+            : [];
+        const humanEdit = !context.run && context.actor === `human:${context.owner}`;
+        const stopWork =
+            humanEdit &&
+            (input.status === "blocked" ||
+                input.status === "done" ||
+                input.assignee !== "mira");
         const due = input.dueAt ? new Date(input.dueAt) : null;
         if (input.id) {
             const rows = await query<
                 { id: string }[]
-            >`UPDATE mira_tasks SET title = ${input.title}, description = ${input.description}, status = ${input.status}, assignee = ${input.assignee}, priority = ${input.priority}, labels = ${JSON.stringify(input.labels)}::text::jsonb, due_at = ${due}, completion_criteria = ${input.completionCriteria}, conversation_id = ${input.conversationId}, version = version + 1, updated_at = now() WHERE id = ${id} AND owner = ${context.owner} AND version = ${input.version ?? 0} AND deleted_at IS NULL RETURNING id`;
+            >`UPDATE mira_tasks SET work_stopped_at=CASE WHEN ${stopWork} THEN clock_timestamp() ELSE work_stopped_at END, title = ${input.title}, description = ${input.description}, status = ${input.status}, assignee = ${input.assignee}, priority = ${input.priority}, labels = ${JSON.stringify(input.labels)}::text::jsonb, due_at = ${due}, completion_criteria = ${input.completionCriteria}, conversation_id = ${input.conversationId}, version = version + 1, updated_at = now() WHERE id = ${id} AND owner = ${context.owner} AND version = ${input.version ?? 0} AND deleted_at IS NULL RETURNING id`;
             if (!rows[0])
                 throw new MiraFailure(
                     "CONFLICT",
@@ -117,6 +127,13 @@ export async function saveTask(
         if (input.conversationId)
             await query`UPDATE mira_runs SET task_id=${id} WHERE owner=${context.owner} AND conversation_id=${input.conversationId} AND task_id IS NULL`;
         await auditMira(query, context, input.id ? "task.updated" : "task.created", id);
+        if (
+            humanEdit &&
+            previous?.status === "blocked" &&
+            input.status === "in_progress" &&
+            input.assignee === "mira"
+        )
+            await auditMira(query, context, "task.resume_requested", id);
         return { id };
     });
 }
@@ -149,7 +166,11 @@ export async function addTaskProgress(
     content: string
 ) {
     return miraTransaction(context, async (query) => {
-        await requireTask(query, context.owner, taskId);
+        // Serialize progress and its audit with assessment validation on the same task row.
+        const [task] = await query<{ id: string }[]>`
+            SELECT id FROM mira_tasks WHERE id=${taskId} AND owner=${context.owner}
+                AND deleted_at IS NULL FOR UPDATE`;
+        if (!task) throw new MiraFailure("NOT_FOUND", "Task not found.");
         const id = Bun.randomUUIDv7();
         await query`INSERT INTO mira_progress (id, task_id, actor, content) VALUES (${id}, ${taskId}, ${context.actor}, ${content})`;
         await auditMira(query, context, "task.progress_added", taskId);

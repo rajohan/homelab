@@ -177,7 +177,11 @@ export function TaskDetail({
                 )}
                 <TaskExecution
                     id={task.id}
-                    canStart={task.assignee === "mira" && task.status !== "done"}
+                    canStart={
+                        task.assignee === "mira" &&
+                        task.status !== "done" &&
+                        task.status !== "blocked"
+                    }
                     onStart={(version, reviewRunId) =>
                         setStarting({ version, reviewRunId })
                     }

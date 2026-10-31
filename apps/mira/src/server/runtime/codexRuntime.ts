@@ -28,6 +28,7 @@ interface ActiveTurn {
     controller: AbortController;
     calls: Set<string>;
     acknowledged: PromiseWithResolvers<string>;
+    completed: boolean;
     onActivity?: ((activity: MiraActivity) => void) | undefined;
 }
 
@@ -242,6 +243,7 @@ export class CodexRuntime {
             controller,
             calls: new Set(),
             acknowledged: Promise.withResolvers<string>(),
+            completed: false,
             onActivity: options.onActivity,
         };
         void active.acknowledged.promise.catch(() => {});
@@ -296,6 +298,7 @@ export class CodexRuntime {
                     return;
                 if (result.turn.status === "inProgress")
                     throw new Error("Invalid terminal status.");
+                active.completed = true;
                 completion.resolve({
                     id: result.turn.id,
                     status: result.turn.status,
@@ -358,6 +361,36 @@ export class CodexRuntime {
             this.connection.signal.removeEventListener("abort", disconnect);
             this.active = null;
         }
+    }
+
+    /**
+     * Append operator guidance to exactly the current provider turn.
+     * @param threadId - Previously acknowledged provider thread.
+     * @param turnId - Expected active turn; never inferred from a late notification.
+     * @param text - Server-created guidance referencing a verified human task edit.
+     * @returns True only after a matching provider acknowledgement, or false if the turn already ended.
+     */
+    async steer(threadId: string, turnId: string, text: string): Promise<boolean> {
+        const active = this.active;
+        if (
+            !active ||
+            active.completed ||
+            active.controller.signal.aborted ||
+            active.threadId !== threadId ||
+            active.id !== turnId
+        )
+            return false;
+        const result = v.parse(
+            v.object({ turnId: v.string() }),
+            await this.connection.request("turn/steer", {
+                threadId,
+                expectedTurnId: turnId,
+                input: [{ type: "text", text, text_elements: [] }],
+            })
+        );
+        if (result.turnId !== turnId)
+            throw new Error("Mira steering was acknowledged by an unexpected turn.");
+        return true;
     }
 
     /**

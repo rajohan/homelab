@@ -1,0 +1,245 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "41269de3-d9e7-4f34-b359-855bafd9251d",
+    "prevIds": ["f75446a6-5201-462b-98cb-bd8904ae4dd4"],
+    "footprints": [
+        {
+            "statementType": "add_column",
+            "statementTarget": ["column", "public", "mira_runs", "task_change_id"],
+            "writes": [
+                "s|col|public.mira_runs.task_change_id",
+                "n|col|public.mira_runs.task_change_id",
+                "e|col|public.mira_runs.task_change_id"
+            ],
+            "reads": ["n|tbl|public.mira_runs", "n|sch|public"]
+        },
+        {
+            "statementType": "add_column",
+            "statementTarget": ["column", "public", "mira_runs", "task_resumed"],
+            "writes": [
+                "s|col|public.mira_runs.task_resumed",
+                "n|col|public.mira_runs.task_resumed",
+                "e|col|public.mira_runs.task_resumed"
+            ],
+            "reads": ["n|tbl|public.mira_runs", "n|sch|public"]
+        },
+        {
+            "statementType": "add_column",
+            "statementTarget": ["column", "public", "mira_tasks", "work_stopped_at"],
+            "writes": [
+                "s|col|public.mira_tasks.work_stopped_at",
+                "n|col|public.mira_tasks.work_stopped_at",
+                "e|col|public.mira_tasks.work_stopped_at"
+            ],
+            "reads": ["n|tbl|public.mira_tasks", "n|sch|public"]
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": [
+                "index",
+                "public",
+                "mira_audit",
+                "mira_audit_task_work_started"
+            ],
+            "writes": [
+                "s|idx|public.mira_audit_task_work_started",
+                "n|idx|public.mira_audit_task_work_started",
+                "e|idx|public.mira_audit_task_work_started",
+                "n|rel|public.mira_audit_task_work_started"
+            ],
+            "reads": [
+                "n|tbl|public.mira_audit",
+                "n|sch|public",
+                "n|col|public.mira_audit.owner",
+                "n|col|public.mira_audit.target"
+            ]
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": [
+                "index",
+                "public",
+                "mira_audit",
+                "mira_audit_task_work_recent"
+            ],
+            "writes": [
+                "s|idx|public.mira_audit_task_work_recent",
+                "n|idx|public.mira_audit_task_work_recent",
+                "e|idx|public.mira_audit_task_work_recent",
+                "n|rel|public.mira_audit_task_work_recent"
+            ],
+            "reads": [
+                "n|tbl|public.mira_audit",
+                "n|sch|public",
+                "n|col|public.mira_audit.created_at"
+            ]
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": [
+                "index",
+                "public",
+                "mira_audit",
+                "mira_audit_task_work_latest"
+            ],
+            "writes": [
+                "s|idx|public.mira_audit_task_work_latest",
+                "n|idx|public.mira_audit_task_work_latest",
+                "e|idx|public.mira_audit_task_work_latest",
+                "n|rel|public.mira_audit_task_work_latest"
+            ],
+            "reads": [
+                "n|tbl|public.mira_audit",
+                "n|sch|public",
+                "n|col|public.mira_audit.owner",
+                "n|col|public.mira_audit.target",
+                "n|col|public.mira_audit.id"
+            ]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_runs",
+                "name": "task_change_id",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_runs",
+                "name": "task_resumed",
+                "type": "boolean",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "false",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_tasks",
+                "name": "work_stopped_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_audit",
+                "name": "mira_audit_task_work_started",
+                "nameExplicit": true,
+                "columns": [
+                    {
+                        "value": "owner",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    },
+                    {
+                        "value": "target",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    }
+                ],
+                "isUnique": false,
+                "where": "\"actor\" = 'human:' || \"owner\" and \"action\" = 'task.run_requested'",
+                "with": "",
+                "method": "btree",
+                "concurrently": false,
+                "entityType": "indexes"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_audit",
+                "name": "mira_audit_task_work_recent",
+                "nameExplicit": true,
+                "columns": [
+                    {
+                        "value": "created_at",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    }
+                ],
+                "isUnique": false,
+                "where": "\"actor\" = 'human:' || \"owner\" and \"action\" in ('task.resume_requested','task.updated','task.progress_added')",
+                "with": "",
+                "method": "btree",
+                "concurrently": false,
+                "entityType": "indexes"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_audit",
+                "name": "mira_audit_task_work_latest",
+                "nameExplicit": true,
+                "columns": [
+                    {
+                        "value": "owner",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    },
+                    {
+                        "value": "target",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    },
+                    {
+                        "value": "id",
+                        "isExpression": false,
+                        "asc": false,
+                        "nullsFirst": false,
+                        "opclass": null
+                    }
+                ],
+                "isUnique": false,
+                "where": "\"actor\" = 'human:' || \"owner\" and \"action\" in ('task.created','task.updated','task.progress_added')",
+                "with": "",
+                "method": "btree",
+                "concurrently": false,
+                "entityType": "indexes"
+            }
+        }
+    ]
+}

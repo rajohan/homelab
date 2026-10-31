@@ -57,7 +57,7 @@ export class MiraFailure extends Error {
 }
 
 /**
- * Record the actor and affected object without copying private message content.
+ * Record the actor and affected object at the serialized write time, without copying private content.
  * @param query - The same transaction as the mutation.
  * @param context - Verified owner and actor, never supplied by a model.
  * @param action - Stable operation name.
@@ -80,7 +80,7 @@ export async function auditMira(
                 "This run no longer has permission to write."
             );
     }
-    await query`INSERT INTO mira_audit (id, owner, actor, action, target) VALUES (${Bun.randomUUIDv7()}, ${context.owner}, ${context.actor}, ${action}, ${target})`;
+    await query`INSERT INTO mira_audit (id, owner, actor, action, target, created_at) VALUES (${Bun.randomUUIDv7()}, ${context.owner}, ${context.actor}, ${action}, ${target}, clock_timestamp())`;
 }
 
 /**

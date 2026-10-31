@@ -80,6 +80,15 @@ export const miraMessages = pgTable(
         check("mira_messages_length", sql`length(${t.content}) <= 256000`),
     ]
 );
+export const miraTaskContinuationCursor = pgTable(
+    "mira_task_continuation_cursor",
+    {
+        id: integer().primaryKey().default(1),
+        afterId: uuid("after_id").notNull(),
+    },
+    (t) => [check("mira_task_continuation_cursor_singleton", sql`${t.id} = 1`)]
+);
+
 export const miraTasks = pgTable(
     "mira_tasks",
     {
@@ -93,6 +102,7 @@ export const miraTasks = pgTable(
         labels: jsonb().$type<string[]>().notNull().default([]),
         dueAt: time("due_at"),
         completionCriteria: text("completion_criteria").notNull(),
+        workStoppedAt: time("work_stopped_at"),
         conversationId: uuid("conversation_id").references(() => miraConversations.id),
         version: integer().notNull().default(1),
         deletedAt: time("deleted_at"),
@@ -201,6 +211,8 @@ export const miraRuns = pgTable(
         requestKey: text("request_key").notNull().unique(),
         requestHash: text("request_hash").notNull(),
         reviewedRunId: uuid("reviewed_run_id").references((): AnyPgColumn => miraRuns.id),
+        taskChangeId: uuid("task_change_id"),
+        taskResumed: boolean("task_resumed").notNull().default(false),
         activity: jsonb().$type<MiraActivity>(),
         effectiveSettings: jsonb("effective_settings").$type<MiraChatSettings>(),
         settings: jsonb()
@@ -339,7 +351,34 @@ export const miraAudit = pgTable(
         target: text().notNull(),
         createdAt: time("created_at").notNull().defaultNow(),
     },
-    (t) => [index("mira_audit_owner").on(t.owner, t.id)]
+    (t) => [
+        index("mira_audit_owner").on(t.owner, t.id),
+        index("mira_audit_task_work_started")
+            .on(t.owner, t.target)
+            .where(
+                sql`${t.actor} = 'human:' || ${t.owner} and ${t.action} = 'task.run_requested'`
+            ),
+        index("mira_audit_task_work_recent")
+            .on(t.createdAt)
+            .where(
+                sql`${t.actor} = 'human:' || ${t.owner} and ${t.action} in ('task.resume_requested','task.updated','task.progress_added')`
+            ),
+        index("mira_audit_task_work_latest")
+            .on(t.owner, t.target, t.id.desc())
+            .where(
+                sql`${t.actor} = 'human:' || ${t.owner} and ${t.action} in ('task.created','task.updated','task.progress_added')`
+            ),
+        index("mira_audit_task_changes_recent")
+            .on(t.createdAt)
+            .where(
+                sql`${t.actor}='human:'||${t.owner} AND ${t.action} IN ('task.created','task.updated','task.progress_added')`
+            ),
+        index("mira_audit_task_changes_latest")
+            .on(t.owner, t.target, t.createdAt.desc(), t.id.desc())
+            .where(
+                sql`${t.actor}='human:'||${t.owner} AND ${t.action} IN ('task.created','task.updated','task.progress_added')`
+            ),
+    ]
 );
 export const miraRuntimeStatus = pgTable(
     "mira_runtime_status",

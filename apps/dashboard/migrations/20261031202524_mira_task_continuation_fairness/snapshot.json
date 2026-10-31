@@ -1,0 +1,86 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "89c5a400-9e80-43db-8ad8-76b69a541552",
+    "prevIds": ["41269de3-d9e7-4f34-b359-855bafd9251d"],
+    "footprints": [
+        {
+            "statementType": "create_table",
+            "statementTarget": ["table", "public", "mira_task_continuation_cursor"],
+            "writes": [
+                "s|tbl|public.mira_task_continuation_cursor",
+                "n|tbl|public.mira_task_continuation_cursor",
+                "e|tbl|public.mira_task_continuation_cursor",
+                "n|rel|public.mira_task_continuation_cursor",
+                "n|type|public.mira_task_continuation_cursor",
+                "n|rel|public.mira_task_continuation_cursor_pkey"
+            ],
+            "reads": ["n|sch|public"]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "name": "mira_task_continuation_cursor",
+                "isRlsEnabled": false,
+                "entityType": "tables"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_task_continuation_cursor",
+                "name": "id",
+                "type": "integer",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "1",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_task_continuation_cursor",
+                "name": "after_id",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_task_continuation_cursor",
+                "name": "mira_task_continuation_cursor_pkey",
+                "columns": ["id"],
+                "nameExplicit": false,
+                "entityType": "pks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_task_continuation_cursor",
+                "name": "mira_task_continuation_cursor_singleton",
+                "value": "\"id\" = 1",
+                "entityType": "checks"
+            }
+        }
+    ]
+}

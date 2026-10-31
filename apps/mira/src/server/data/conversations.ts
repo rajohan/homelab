@@ -51,7 +51,7 @@ async function linkedTaskForSend(
             "CONFLICT",
             "Task admission is busy. Retry after the current task action finishes."
         );
-    if (task.assignee !== "mira" || task.status === "done")
+    if (task.assignee !== "mira" || task.status === "done" || task.status === "blocked")
         throw new MiraFailure(
             "PRECONDITION_FAILED",
             "Assign the linked unfinished task to Mira before continuing, or start a separate conversation."

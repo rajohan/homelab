@@ -30,6 +30,62 @@ const options = (mode = "ok") => ({
 });
 
 describe("Mira runtime transport", () => {
+    test.each(["steer-ok", "steer-error", "steer-wrong-receipt"])(
+        "steering binds guidance and acknowledgements to the active turn: %s",
+        async (mode) => {
+            const runtime = await CodexRuntime.connect(options(mode));
+            let pending: ReturnType<CodexRuntime["turn"]> | undefined;
+            try {
+                const thread = await runtime.startThread("synthetic", process.cwd(), []);
+                expect(await runtime.steer(thread, "turn-1", "before starting")).toBe(
+                    false
+                );
+                const started = Promise.withResolvers<string>();
+                pending = runtime.turn(thread, "Work on the original task", {
+                    onStarted: (id) => {
+                        started.resolve(id);
+                        return Promise.resolve();
+                    },
+                });
+                const turnId = await started.promise;
+                expect(
+                    await runtime.steer("another-thread", turnId, "wrong thread")
+                ).toBe(false);
+                expect(await runtime.steer(thread, "another-turn", "wrong turn")).toBe(
+                    false
+                );
+                if (mode === "steer-ok") {
+                    expect(
+                        await runtime.steer(
+                            thread,
+                            turnId,
+                            "Use the updated completion criteria"
+                        )
+                    ).toBe(true);
+                    const result = await pending;
+                    expect(result.id).toBe(turnId);
+                    expect(JSON.parse(result.text)).toEqual([
+                        {
+                            type: "text",
+                            text: "Use the updated completion criteria",
+                            text_elements: [],
+                        },
+                    ]);
+                    expect(await runtime.steer(thread, turnId, "after completion")).toBe(
+                        false
+                    );
+                } else {
+                    await rejects(runtime.steer(thread, turnId, "Update the task"));
+                    await runtime.interrupt();
+                    const result = await pending;
+                    expect(result.status).toBe("interrupted");
+                }
+            } finally {
+                await runtime.close();
+                await Promise.allSettled([pending]);
+            }
+        }
+    );
     test("separates message items while preserving streamed Markdown and turn boundaries", async () => {
         const runtime = await CodexRuntime.connect(options("message-boundaries"));
         try {
