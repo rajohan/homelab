@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.12.0](https://github.com/rajohan/homelab/compare/v0.11.1...v0.12.0) (2026-10-31)
+
+
+### Features
+
+* **mira:** steer and resume task work from board changes ([#155](https://github.com/rajohan/homelab/issues/155)) ([bca7fca](https://github.com/rajohan/homelab/commit/bca7fca504c32acd28391795f852ba45d2428be2))
+
+
+### Bug Fixes
+
+* **mira:** complete browser controls and cutover configuration ([#156](https://github.com/rajohan/homelab/issues/156)) ([932f5a8](https://github.com/rajohan/homelab/commit/932f5a882c3a3bde235cacee4880020d1bba47cb))
+* **mira:** guard dialog data while loading ([#153](https://github.com/rajohan/homelab/issues/153)) ([1493771](https://github.com/rajohan/homelab/commit/149377136326a1fe54ff1319ec9532d05d51b96d))
+
 ## [0.11.1](https://github.com/rajohan/homelab/compare/v0.11.0...v0.11.1) (2026-10-31)
 
 
