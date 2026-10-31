@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.11.0](https://github.com/rajohan/homelab/compare/v0.10.1...v0.11.0) (2026-10-31)
+
+
+### Features
+
+* **releases:** coordinate Auth and Mira deployment ([#149](https://github.com/rajohan/homelab/issues/149)) ([2e1b7a7](https://github.com/rajohan/homelab/commit/2e1b7a74e6f3359c6989b870657c3e365d74c305))
+
+
+### Bug Fixes
+
+* **mira:** use the private Homelab address in the Windows app ([#147](https://github.com/rajohan/homelab/issues/147)) ([9acd871](https://github.com/rajohan/homelab/commit/9acd87116b016e4f0b286fb88312cfaadcc982a8))
+
 ## [0.10.1](https://github.com/rajohan/homelab/compare/v0.10.0...v0.10.1) (2026-10-31)
 
 
