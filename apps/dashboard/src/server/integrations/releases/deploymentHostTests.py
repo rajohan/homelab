@@ -462,5 +462,37 @@ class HostTests(unittest.TestCase):
             fixture.cleanup(None, ["fixture:missing"])
 
 
+    def test_backup_root_certificate_fallback_preserves_url_authority(self):
+        url = 'postgres://demo:synthetic@db.example.test/dashboard?sslmode=verify-full'
+        environment = host.database_environment(url, 'system')
+        self.assertEqual(environment['PGSSLROOTCERT'], 'system')
+        self.assertEqual(environment['PGSSLMODE'], 'verify-full')
+        self.assertNotIn('PGSSLROOTCERT', host.database_environment(url))
+        self.assertEqual(host.database_environment(url + '&sslrootcert=%2Fprivate%2Fca.pem', 'system')['PGSSLROOTCERT'],
+                         '/private/ca.pem')
+        for invalid in ['', 'bad\npath', 'bad\rpath', 'bad\0path', 'x' * 8193]:
+            with self.subTest(invalid=repr(invalid[:20])):
+                with self.assertRaisesRegex(host.Refusal, 'backup_configuration'):
+                    host.database_environment(url, invalid)
+
+    def test_backup_entrypoint_forwards_only_selected_root_certificate(self):
+        environment = {'HOMELAB_DASHBOARD_DATABASE_URL': 'postgres://demo:synthetic@db.example.test/dashboard?sslmode=verify-full',
+                       'PGSSLROOTCERT': 'system', 'PGHOST': 'other.example.test', 'PGSSLMODE': 'disable',
+                       'PGPASSWORD': 'unrelated', 'OPENSSL_CONF': '/unexpected/config', 'DOPPLER_TOKEN': 'not-for-child'}
+        with patch.dict(os.environ, environment, clear=True), patch.object(host.sys, 'argv', ['runner.py', 'backup']), \
+                patch.object(host.os, 'execve', side_effect=SystemExit) as execute:
+            with self.assertRaises(SystemExit):
+                host.main()
+        binary, arguments, selected = execute.call_args.args
+        self.assertEqual(binary, '/usr/bin/pg_dump')
+        self.assertEqual(arguments, ['/usr/bin/pg_dump', '--format=custom', '--no-owner', '--no-acl'])
+        self.assertEqual(selected['PGHOST'], 'db.example.test')
+        self.assertEqual(selected['PGPASSWORD'], 'synthetic')
+        self.assertEqual(selected['PGSSLMODE'], 'verify-full')
+        self.assertEqual(selected['PGSSLROOTCERT'], 'system')
+        self.assertNotIn('OPENSSL_CONF', selected)
+        self.assertNotIn('DOPPLER_TOKEN', selected)
+
+
 if __name__=="__main__":
     unittest.main()
