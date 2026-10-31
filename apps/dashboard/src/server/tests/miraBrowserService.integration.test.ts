@@ -1228,20 +1228,20 @@ async function claimedDownload(f: Awaited<ReturnType<typeof fixture>>) {
     }
 }
 
-test("a claimed download cannot expose a file after authority, owner or response availability changes", async () => {
-    for (const reason of [
-        "epoch",
-        "expiry",
-        "grant",
-        "lease",
-        "cancel",
-        "deleted",
-        "capacity",
-        "binary",
-        "digest",
-        "signal",
-        "foreign",
-    ] as const) {
+for (const reason of [
+    "epoch",
+    "expiry",
+    "grant",
+    "lease",
+    "cancel",
+    "deleted",
+    "capacity",
+    "binary",
+    "digest",
+    "signal",
+    "foreign",
+] as const) {
+    test(`a claimed download cannot expose a file after ${reason} changes`, async () => {
         const f = await fixture(),
             directory = await mkdtemp(path.join(os.tmpdir(), "mira-download-refused-"));
         let session: Awaited<ReturnType<typeof openMiraBrowserSession>> | undefined;
@@ -1305,8 +1305,8 @@ test("a claimed download cannot expose a file after authority, owner or response
             await f.close();
             await rm(directory, { recursive: true, force: true });
         }
-    }
-});
+    });
+}
 
 test("cancellation while waiting for file storage cannot commit download readiness or message linking", async () => {
     const f = await fixture(),
