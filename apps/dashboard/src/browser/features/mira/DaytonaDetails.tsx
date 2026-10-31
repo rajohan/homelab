@@ -118,10 +118,10 @@ export function DaytonaDetails({
                 {job.state === "draft" && (
                     <p className="text-sm text-primary-300">
                         Start this exact command in Daytona with the selected files. Cloud
-                        usage may be billed. Each sandbox has 2 CPUs, 4 GiB memory, 10 GiB
-                        disk and a 15-minute lifetime. Mira allows one active sandbox and
-                        four attempts per rolling 24 hours. Provider network access is
-                        enabled.
+                        usage may be billed. Each sandbox has 4 CPUs, 8 GiB memory, 10 GiB
+                        disk. Mira closes finished jobs; five idle minutes trigger
+                        automatic cleanup. Mira allows one active sandbox and four
+                        attempts per rolling 24 hours. Provider network access is enabled.
                     </p>
                 )}
                 {(job.content.inputs.length > 0 || job.content.outputs.length > 0) && (

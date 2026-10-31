@@ -116,7 +116,8 @@ async function fixture() {
 function provider(
     jobId: string,
     options: {
-        lifetimeMs?: number;
+        createdMs?: number;
+        beforeActivity?: () => Promise<void>;
         unknown?: string;
         fail?: string;
         exitCode?: number;
@@ -133,10 +134,13 @@ function provider(
         command: string | null = null,
         completed = false;
     const calls: { url: URL; init: RequestInit }[] = [];
-    const createdAt = Date.now() - 1000;
+    const createdAt = options.createdMs ?? Date.now() - 1000;
+    let activityAt = Date.now() - 1000;
     const sandbox = () => ({
         id: sandboxId,
-        name: daytonaSandboxName(configuration, jobId),
+        name: destroyed
+            ? `DESTROYED_${daytonaSandboxName(configuration, jobId)}_${createdAt}`
+            : daytonaSandboxName(configuration, jobId),
         organizationId: configuration.organizationId,
         labels: {
             "homelab.owner": daytonaBindingHash(configuration),
@@ -148,8 +152,8 @@ function provider(
         public: false,
         networkBlockAll: false,
         kvm: false,
-        cpu: 2,
-        memory: 4,
+        cpu: 4,
+        memory: 8,
         disk: 10,
         gpu: 0,
         target: "eu",
@@ -158,9 +162,7 @@ function provider(
         autoStopInterval: 5,
         autoPauseInterval: 0,
         createdAt: new Date(createdAt).toISOString(),
-        autoDestroyAt: new Date(
-            createdAt + (options.lifetimeMs ?? 900_000)
-        ).toISOString(),
+        lastActivityAt: new Date(activityAt).toISOString(),
     });
     const request = Object.assign(
         async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
@@ -187,10 +189,7 @@ function provider(
                     },
                 ]);
             if (p.includes("/organizations/"))
-                return Response.json({
-                    id: configuration.organizationId,
-                    suspended: false,
-                });
+                return new Response("Interactive credential required", { status: 401 });
             if (p.includes("/snapshots/")) {
                 await options.beforeCreate?.();
                 return Response.json({
@@ -199,17 +198,33 @@ function provider(
                     general: false,
                     name: "qualified-synthetic",
                     state: "active",
-                    cpu: 2,
-                    mem: 4,
+                    cpu: 4,
+                    mem: 8,
                     disk: 10,
                     gpu: 0,
                     sandboxClass: "container",
                 });
             }
             if (p === "/api/sandbox" && init.method === "POST") {
+                if (typeof init.body !== "string") throw new Error("Expected JSON body");
+                const body = JSON.parse(init.body) as Record<string, unknown>;
+                if (
+                    ["cpu", "memory", "disk", "gpu", "queueTimeout"].some(
+                        (field) => field in body
+                    )
+                )
+                    return new Response("Unsupported snapshot overrides", {
+                        status: 400,
+                    });
                 created = true;
                 if (options.unknown === "create") throw new Error("lost acknowledgement");
                 return Response.json(sandbox());
+            }
+            if (p.endsWith("/last-activity") && init.method === "POST") {
+                if (!created || destroyed) return new Response(null, { status: 404 });
+                await options.beforeActivity?.();
+                activityAt = Date.now();
+                return new Response(null, { status: 201 });
             }
             if (p.startsWith("/api/sandbox/")) {
                 if (!created) return new Response(null, { status: 404 });
@@ -1356,7 +1371,10 @@ test("late cleanup worker cannot overwrite operator resolution or delete after i
         await f.pause();
         const p = provider(job.id);
         // Create only in the synthetic transport so cleanup finds the same owned sandbox.
-        await p.request("https://app.daytona.io/api/sandbox", { method: "POST" });
+        await p.request("https://app.daytona.io/api/sandbox", {
+            method: "POST",
+            body: JSON.stringify({ snapshot: configuration.snapshotId }),
+        });
         const { promise: inspecting, resolve: reached } = Promise.withResolvers<void>();
         let held = false;
         const request = Object.assign(
@@ -1510,31 +1528,60 @@ for (const editing of [false, true])
         }
     });
 
-for (const boundary of ["provider", "admission"] as const)
-    test(`fixed check jobs refuse insufficient ${boundary} time and clean up without command submission`, async () => {
+test("active cloud jobs renew their idle window beyond fifteen minutes and close after completion", async () => {
+    const f = await fixture();
+    try {
+        const job = await f.save();
+        await f.approve(job);
+        const p = provider(job.id, { createdMs: Date.now() - 3_600_000 });
+        await advance(f, p, 4);
+        expect(await f.read(job.id)).toMatchObject({ phase: "executing" });
+        await f.client`UPDATE mira_daytona_jobs SET started_at=clock_timestamp()-interval '1 hour',deadline=clock_timestamp()+interval '2 minutes' WHERE id=${job.id}`;
+        await advance(f, p);
+        expect(
+            p.calls.filter((call) => call.url.pathname.endsWith("/last-activity"))
+        ).toHaveLength(1);
+        const [renewed] = await f.client<
+            { renewed: boolean }[]
+        >`SELECT deadline>clock_timestamp()+interval '4 minutes' AS renewed FROM mira_daytona_jobs WHERE id=${job.id}`;
+        expect(renewed?.renewed).toBe(true);
+        await advance(f, p);
+        expect(
+            p.calls.filter((call) => call.url.pathname.endsWith("/last-activity"))
+        ).toHaveLength(1);
+        p.complete();
+        await advance(f, p, 3);
+        expect(await f.read(job.id)).toMatchObject({
+            state: "completed",
+            cleanup: "confirmed",
+        });
+    } finally {
+        await f.close();
+    }
+});
+
+for (const reason of ["paused", "expired", "provider failure"] as const)
+    test(`cloud activity stops and cleanup runs after ${reason}`, async () => {
         const f = await fixture();
         try {
-            const job = await f.save({
-                ...defaultContent,
-                command: `bun --no-env-file /opt/homelab/daytona-check.js ${crypto.randomUUID()} ${"a".repeat(40)}`,
-            });
+            const job = await f.save();
             await f.approve(job);
-            const p = provider(job.id, {
-                lifetimeMs: boundary === "provider" ? 300_000 : 900_000,
-            });
-            await advance(f, p, 3);
-            expect(await f.read(job.id)).toMatchObject({ phase: "ready" });
-            if (boundary === "admission")
-                await f.client`UPDATE mira_daytona_jobs SET deadline=clock_timestamp()+interval '5 minutes' WHERE id=${job.id}`;
-            await advance(f, p, 3);
+            const p = provider(
+                job.id,
+                reason === "provider failure" ? { fail: "/last-activity" } : {}
+            );
+            await advance(f, p, 4);
+            await f.client`UPDATE mira_daytona_jobs SET deadline=clock_timestamp()+interval '2 minutes' WHERE id=${job.id}`;
+            if (reason === "paused") await f.pause();
+            if (reason === "expired")
+                await f.client`UPDATE mira_daytona_jobs SET deadline=clock_timestamp()-interval '1 second' WHERE id=${job.id}`;
+            await advance(f, p, 2);
             expect(
-                p.calls.filter((call) => call.url.pathname.endsWith("/exec"))
-            ).toHaveLength(0);
+                p.calls.filter((call) => call.url.pathname.endsWith("/last-activity"))
+            ).toHaveLength(reason === "provider failure" ? 1 : 0);
             expect(await f.read(job.id)).toMatchObject({
-                state: "cancelled",
                 cleanup: "confirmed",
-                message:
-                    "Stopped before command submission because insufficient time remains for execution and result collection.",
+                phase: "closed",
             });
         } finally {
             await f.close();

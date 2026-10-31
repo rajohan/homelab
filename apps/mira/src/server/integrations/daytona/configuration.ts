@@ -24,12 +24,11 @@ export interface DaytonaExecutionConfiguration extends DaytonaConfiguration {
 }
 
 export const daytonaPolicy = Object.freeze({
-    version: 1,
-    cpu: 2,
-    memory: 4,
+    version: 2,
+    cpu: 4,
+    memory: 8,
     disk: 10,
-    ttlMinutes: 15,
-    queueTimeout: 2,
+    idleMinutes: 5,
     bunVersion: "1.4.4",
 });
 

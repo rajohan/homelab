@@ -56,7 +56,7 @@ async function read(
             "Pause Daytona without an automatic resume before resolving cleanup.";
     else if (!row.expired)
         blockedReason =
-            "Wait until the job deadline and the five-minute recovery delay have passed.";
+            "Wait until the last activity window and the five-minute recovery delay have passed.";
     else if (row.leased)
         blockedReason = "A cleanup check is running. Wait for it to finish.";
     return {

@@ -66,18 +66,6 @@ export function daytonaCheckContent(
 }
 
 /**
- * Reserve the fixed check duration and result collection before dispatching a referenced harness command.
- * @param command - Exact approved command; referencing the harness conservatively reserves its full budget.
- * @returns Minimum milliseconds remaining in both local admission and provider lifetime. This grants no authority.
- */
-export function daytonaCheckMinimumLifetime(command: string): number {
-    return command.includes(daytonaCheckProfile.executable)
-        ? (daytonaCheckProfile.minutes * 60 + daytonaCheckProfile.collectionSeconds) *
-              1000
-        : 30_000;
-}
-
-/**
  * Bind one immutable edit plan to the fixed sandbox and normal operator review.
  * @param request - Attempt, public commit and selected edit-plan digest.
  * @param edits - Authorized conversation attachment, never host files or inline shell input.
