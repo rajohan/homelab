@@ -55,6 +55,15 @@ import { createMiraComputerTools } from "./computerTools";
 import { saveGeneratedMiraFile } from "./generatedFiles";
 import type { MiraToolContext, MiraToolDefinition } from "./toolDefinition";
 
+const taskAssessmentTools = new Set([
+    "mira_tasks_list",
+    "mira_task_read",
+    "mira_task_progress_list",
+    "mira_runs_list",
+    "mira_reports_list",
+    "mira_report_create",
+    "mira_controls_list",
+]);
 const improvementContextTools = new Set([
     "mira_skills_list",
     "mira_skill_read",
@@ -469,7 +478,10 @@ export function createMiraTools(
             github && "token" in github ? github : undefined
         ),
     ];
-    return definitions.map(
+    const available = run.taskAssessment
+        ? definitions.filter((definition) => taskAssessmentTools.has(definition.name))
+        : definitions;
+    return available.map(
         ({
             action,
             automatic,

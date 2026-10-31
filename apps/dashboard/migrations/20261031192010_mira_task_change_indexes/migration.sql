@@ -1,0 +1,2 @@
+CREATE INDEX "mira_audit_task_changes_recent" ON "mira_audit" ("created_at") WHERE "actor"='human:'||"owner" AND "action" IN ('task.created','task.updated','task.progress_added');--> statement-breakpoint
+CREATE INDEX "mira_audit_task_changes_latest" ON "mira_audit" ("owner","target","created_at" DESC NULLS LAST,"id" DESC NULLS LAST) WHERE "actor"='human:'||"owner" AND "action" IN ('task.created','task.updated','task.progress_added');

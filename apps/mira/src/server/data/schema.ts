@@ -339,7 +339,19 @@ export const miraAudit = pgTable(
         target: text().notNull(),
         createdAt: time("created_at").notNull().defaultNow(),
     },
-    (t) => [index("mira_audit_owner").on(t.owner, t.id)]
+    (t) => [
+        index("mira_audit_owner").on(t.owner, t.id),
+        index("mira_audit_task_changes_recent")
+            .on(t.createdAt)
+            .where(
+                sql`${t.actor}='human:'||${t.owner} AND ${t.action} IN ('task.created','task.updated','task.progress_added')`
+            ),
+        index("mira_audit_task_changes_latest")
+            .on(t.owner, t.target, t.createdAt.desc(), t.id.desc())
+            .where(
+                sql`${t.actor}='human:'||${t.owner} AND ${t.action} IN ('task.created','task.updated','task.progress_added')`
+            ),
+    ]
 );
 export const miraRuntimeStatus = pgTable(
     "mira_runtime_status",
