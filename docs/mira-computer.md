@@ -434,12 +434,16 @@ or network configuration is changed by building or publishing an archive.
 
 Open `mira-computer-desktop.exe` from the complete local package in a normal,
 non-administrator Windows session. The desktop app connects to the fixed private
-Homelab address `https://computer.home.rajohan.no:3443` at home or through Meshnet.
+Homelab address `https://computer.home.rajohan.no` at home or through Meshnet.
 Enter only the single-use pairing code from Settings > Computers, then select Pair computer.
 The code is hidden, sent through a private pipe and never stored in preferences
 or command arguments. Credentials remain in the existing Windows vault. An old
 `%LOCALAPPDATA%\Homelab\MiraComputer\server.txt` file is ignored; it cannot redirect
 the desktop app. Existing pairing for the same origin is retained across upgrades.
+The earlier deployment used port 3443. That is a different credential-store origin;
+moving an already paired installation to standard HTTPS requires a one-time
+operator migration of its existing vault entry, or fresh pairing. The client never
+automatically forwards another origin's credential or follows an HTTP redirect.
 Pairing does not automatically connect or grant window access.
 
 Connect starts the companion; Stop ends the connection and any owned native

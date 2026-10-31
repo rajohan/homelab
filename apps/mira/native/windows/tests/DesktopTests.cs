@@ -126,7 +126,7 @@ internal static class DesktopTests
         Require(DesktopSettings.Origin("https://10.0.0.2:8443") == "https://10.0.0.2:8443");
         foreach (string value in new[] { "http://mira.example.test", "https://user:secret@mira.example.test", Origin + "/path", Origin + "?token=value", Origin + "#fragment", Origin + "\n", " https://mira.example.test", "https://mira.example.test:0", "https://mira.example.test:65536", "https://[::1]", "https://mira\\example.test" })
             Reject(delegate { DesktopSettings.Origin(value); });
-        Require(DesktopSettings.Origin(DesktopSettings.ServerOrigin) == "https://computer.home.rajohan.no:3443");
+        Require(DesktopSettings.Origin(DesktopSettings.ServerOrigin) == "https://computer.home.rajohan.no");
         string package = Path.Combine(root, "package-test"); Directory.CreateDirectory(package);
         string executable = Path.Combine(package, "mira-computer-desktop.exe");
         foreach (string name in new[] { "mira-computer-desktop.exe", "mira-computer.exe", "mira-computer-consent.exe", "mira-computer-worker-host.exe", "mira-computer-worker.exe", "mira-window-capture.exe" }) File.WriteAllText(Path.Combine(package, name), "fixture");

@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 
 internal static class DesktopSettings
 {
-    internal const string ServerOrigin = "https://computer.home.rajohan.no:3443";
+    internal const string ServerOrigin = "https://computer.home.rajohan.no";
 
     internal static string Origin(string value)
     {
