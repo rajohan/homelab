@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.1](https://github.com/rajohan/homelab/compare/v0.10.0...v0.10.1) (2026-10-31)
+
+
+### Bug Fixes
+
+* **dashboard:** restore chat loading and align Mira UI states ([#145](https://github.com/rajohan/homelab/issues/145)) ([ebd6c66](https://github.com/rajohan/homelab/commit/ebd6c6647946ecff7573dd00faf8a1f9ecdf1adb))
+
 ## [0.10.0](https://github.com/rajohan/homelab/compare/v0.9.0...v0.10.0) (2026-10-31)
 
 
