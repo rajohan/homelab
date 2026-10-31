@@ -134,7 +134,7 @@ test.each(["valid", "oversized", "invalid", "failure"])(
             [
                 process.execPath,
                 "-e",
-                `process.stdout.write(${JSON.stringify(output)});process.exitCode=${kind === "failure" ? 1 : 0};`,
+                `process.stdout.write(${JSON.stringify(output)});${kind === "oversized" ? "setInterval(() => {}, 1000);" : `process.exitCode=${kind === "failure" ? 1 : 0};`}`,
             ],
             { stdin: "pipe", stdout: "pipe", stderr: "pipe" }
         );
@@ -154,10 +154,10 @@ test.each(["valid", "oversized", "invalid", "failure"])(
                 expect(failure).toBeInstanceOf(Error);
             }
             expect(spawn).toHaveBeenCalledTimes(1);
-            expect(child.exitCode).not.toBeNull();
+            expect(child.exitCode !== null || child.signalCode !== null).toBe(true);
         } finally {
             spawn.mockRestore();
-            if (child.exitCode === null) child.kill();
+            if (child.exitCode === null && child.signalCode === null) child.kill();
             await child.exited;
         }
     }

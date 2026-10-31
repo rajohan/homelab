@@ -7,6 +7,7 @@ from pathlib import Path
 import tempfile
 import time
 import unittest
+import subprocess
 from unittest.mock import patch
 import uuid
 
@@ -345,6 +346,32 @@ class HostTests(unittest.TestCase):
                       'postgres://demo@host/db?sslmode=require&sslmode=disable','postgres://demo@host/db?connect_timeout=0',
                       'postgres://demo:p%00ss@host/db']:
             with self.assertRaises(host.Refusal):host.database_environment(value)
+
+    def test_upgrade_fixture_cleanup_continues_after_absent_or_unremovable_container(self):
+        spec = importlib.util.spec_from_file_location("upgrade_fixture", Path(__file__).resolve().parents[6] / "scripts/smokeDashboardUpgrade.py")
+        fixture = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(fixture)
+        for remains in [False, True]:
+            calls = []
+            def run(arguments, **_kwargs):
+                calls.append(arguments)
+                if arguments == ["docker", "rm", "--force", "fixture-a"]:
+                    return subprocess.CompletedProcess(arguments, 1, b"", b"creation failed")
+                if arguments[:2] == ["docker", "ps"]:
+                    return subprocess.CompletedProcess(arguments, 0, b"still-present" if remains else b"", b"")
+                return subprocess.CompletedProcess(arguments, 0, b"", b"")
+            original = RuntimeError("original qualification failure")
+            with patch.object(fixture.subprocess, "run", side_effect=run):
+                try:
+                    try:
+                        raise original
+                    finally:
+                        fixture.cleanup({"fixture-a", "fixture-b"}, "fixture-network")
+                except RuntimeError as error:
+                    self.assertIs(error, original)
+                self.assertIn(["docker", "rm", "--force", "fixture-b"], calls)
+                self.assertIn(["docker", "network", "rm", "fixture-network"], calls)
+            self.assertEqual(bool(getattr(original, "__notes__", [])), remains)
 
 
 if __name__=="__main__":

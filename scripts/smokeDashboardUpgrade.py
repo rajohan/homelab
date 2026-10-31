@@ -71,6 +71,33 @@ def wait(predicate, seconds=45):
     raise RuntimeError("Upgrade qualification readiness deadline exceeded")
 
 
+def cleanup(containers, network):
+    """Attempt every owned cleanup, tolerate absent containers and preserve the original failure."""
+    failures = []
+    for name in sorted(containers):
+        try:
+            result = subprocess.run(["docker", "rm", "--force", name], env=ENVIRONMENT, capture_output=True, timeout=30)
+            if result.returncode:
+                remaining = subprocess.run(["docker", "ps", "--all", "--quiet", "--no-trunc", "--filter", "name=^/" + name + "$"],
+                                           env=ENVIRONMENT, capture_output=True, timeout=10)
+                if remaining.returncode or remaining.stdout.strip():
+                    failures.append(name)
+        except (OSError, subprocess.TimeoutExpired):
+            failures.append(name)
+    if network:
+        try:
+            command(["docker", "network", "rm", network])
+        except (OSError, RuntimeError, subprocess.TimeoutExpired):
+            failures.append(network)
+    if failures:
+        message = "Qualification cleanup could not confirm removal: " + ", ".join(failures)
+        original = sys.exception()
+        if original:
+            original.add_note(message)
+        else:
+            raise RuntimeError(message)
+
+
 def main():
     """Verify preservation, schema refusal, idempotence, worker readiness and actual restore."""
     if len(sys.argv) != 3:
@@ -188,10 +215,7 @@ def main():
             remove(start(candidate, "index.js", False))
         print("PASS: packaged upgrade, preserved pauses/history, idempotent migrations, schema refusal, worker capacity and restored database")
     finally:
-        for name in list(containers):
-            remove(name)
-        if network_created:
-            command(["docker", "network", "rm", owner])
+        cleanup(containers, owner if network_created else None)
 
 
 if __name__ == "__main__":
