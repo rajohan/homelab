@@ -1,0 +1,153 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "447491ac-06fc-4d6e-8442-61b59bae3a8d",
+    "prevIds": ["32270b36-a801-40a0-b682-9de0c58fd349"],
+    "footprints": [
+        {
+            "statementType": "add_column",
+            "statementTarget": ["column", "public", "mira_runs", "task_auto_started"],
+            "writes": [
+                "s|col|public.mira_runs.task_auto_started",
+                "n|col|public.mira_runs.task_auto_started",
+                "e|col|public.mira_runs.task_auto_started"
+            ],
+            "reads": ["n|tbl|public.mira_runs", "n|sch|public"]
+        },
+        {
+            "statementType": "add_column",
+            "statementTarget": ["column", "public", "mira_tasks", "auto_start"],
+            "writes": [
+                "s|col|public.mira_tasks.auto_start",
+                "n|col|public.mira_tasks.auto_start",
+                "e|col|public.mira_tasks.auto_start"
+            ],
+            "reads": ["n|tbl|public.mira_tasks", "n|sch|public"]
+        },
+        {
+            "statementType": "add_column",
+            "statementTarget": [
+                "column",
+                "public",
+                "mira_tasks",
+                "auto_start_revoked_at"
+            ],
+            "writes": [
+                "s|col|public.mira_tasks.auto_start_revoked_at",
+                "n|col|public.mira_tasks.auto_start_revoked_at",
+                "e|col|public.mira_tasks.auto_start_revoked_at"
+            ],
+            "reads": ["n|tbl|public.mira_tasks", "n|sch|public"]
+        },
+        {
+            "statementType": "recreate_index",
+            "statementTarget": [
+                "index",
+                "public",
+                "mira_audit",
+                "mira_audit_task_work_started"
+            ],
+            "writes": [
+                "s|idx|public.mira_audit_task_work_started",
+                "n|idx|public.mira_audit_task_work_started",
+                "e|idx|public.mira_audit_task_work_started",
+                "n|rel|public.mira_audit_task_work_started"
+            ],
+            "reads": [
+                "n|tbl|public.mira_audit",
+                "n|sch|public",
+                "n|col|public.mira_audit.owner",
+                "n|col|public.mira_audit.target"
+            ],
+            "sharedWrites": [],
+            "sqlHash": "e288cc1eb8ab0e25"
+        },
+        {
+            "statementType": "recreate_index",
+            "statementTarget": [
+                "index",
+                "public",
+                "mira_audit",
+                "mira_audit_task_work_recent"
+            ],
+            "writes": [
+                "s|idx|public.mira_audit_task_work_recent",
+                "n|idx|public.mira_audit_task_work_recent",
+                "e|idx|public.mira_audit_task_work_recent",
+                "n|rel|public.mira_audit_task_work_recent"
+            ],
+            "reads": [
+                "n|tbl|public.mira_audit",
+                "n|sch|public",
+                "n|col|public.mira_audit.created_at"
+            ],
+            "sharedWrites": [],
+            "sqlHash": "839d813d3d5ef460"
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_runs",
+                "name": "task_auto_started",
+                "type": "boolean",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "false",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_tasks",
+                "name": "auto_start",
+                "type": "boolean",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "false",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_tasks",
+                "name": "auto_start_revoked_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "alter",
+            "key": "indexes\u0000[\"public\",\"mira_audit_task_work_started\"]",
+            "set": {
+                "where": "(\"actor\" = 'human:' || \"owner\" and \"action\" = 'task.run_requested') or (\"actor\" = 'mira:scheduler' and \"action\" = 'task.auto_started')"
+            }
+        },
+        {
+            "op": "alter",
+            "key": "indexes\u0000[\"public\",\"mira_audit_task_work_recent\"]",
+            "set": {
+                "where": "\"actor\" = 'human:' || \"owner\" and \"action\" in ('task.auto_start_requested','task.resume_requested','task.updated','task.progress_added')"
+            }
+        }
+    ]
+}

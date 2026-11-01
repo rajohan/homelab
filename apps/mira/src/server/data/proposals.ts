@@ -21,10 +21,10 @@ import { addTaskProgress, saveTask } from "./tasks";
 export function parseMiraProposal(tool: string, input: unknown): Record<string, unknown> {
     switch (tool) {
         case "mira_task_create": {
-            return v.parse(miraTaskInputSchema, input);
+            return v.parse(v.omit(miraTaskInputSchema, ["autoStart"]), input);
         }
         case "mira_task_update": {
-            return v.parse(miraTaskUpdateSchema, input);
+            return v.parse(v.omit(miraTaskUpdateSchema, ["autoStart"]), input);
         }
         case "mira_task_progress": {
             return v.parse(miraProgressInputSchema, input);
@@ -116,11 +116,23 @@ export async function decideMiraProposal(
         if (input.approve) {
             switch (proposal.tool) {
                 case "mira_task_create": {
-                    await saveTask(scoped, v.parse(miraTaskInputSchema, proposal.input));
+                    await saveTask(
+                        scoped,
+                        v.parse(
+                            v.omit(miraTaskInputSchema, ["autoStart"]),
+                            proposal.input
+                        )
+                    );
                     break;
                 }
                 case "mira_task_update": {
-                    await saveTask(scoped, v.parse(miraTaskUpdateSchema, proposal.input));
+                    await saveTask(
+                        scoped,
+                        v.parse(
+                            v.omit(miraTaskUpdateSchema, ["autoStart"]),
+                            proposal.input
+                        )
+                    );
                     break;
                 }
                 case "mira_task_progress": {

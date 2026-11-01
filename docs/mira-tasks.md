@@ -1,7 +1,11 @@
 # Mira task execution
 
 Tasks keep their requirements and human-managed status separately from each run.
-New tasks start only through **Start work**. Moving an already started task from
+New tasks default to **Run manually**. Choose **Start automatically** in a task's
+editor to start it when you enable that option on a ready task, assign a ready
+task to Mira, or move it from Blocked/Done to To do/In progress. Saving ordinary
+text edits does not restart finished work. Run remains available in either mode.
+Moving an already started task from
 **Blocked** to **In progress** continues its existing conversation. A finished run
 does not automatically mark the task complete.
 
@@ -24,6 +28,24 @@ have only one queued or running execution. Completed, blocked or operator-assign
 cannot start through this action. Stop or finish an active run before deleting
 its task. Deleting a conversation detaches the task link so a later explicit start
 can create a new conversation.
+
+Automatic starts reuse the same task admission, conversation, saved model/provider
+and code target as Run. A new task conversation uses the normal Chat defaults.
+They use general worker capacity and leave the foreground worker and reserved
+queue slots available to direct user requests. Global automatic-work pause defers
+starts; stale requests expire after one day. Blocked, completed, operator-assigned,
+deleted or archived work cannot start. Uncertain outcomes still require review.
+
+Only the operator can change automatic start; Mira's task tools and proposals
+cannot enable it. Switching to Run cancels the eligibility of queued automatic
+starts, including if automatic start is enabled again before they are claimed.
+It does not interrupt an already running turn: use Stop for that. Stop never
+retries the same request. Individual task pauses use Blocked; resuming already
+started work retains the existing behavior in either mode.
+
+This setting starts task work, not new external access: conversation permission
+mode, integration pauses, approval requirements and PC/browser grants still apply.
+Changing startup mode while work is already running does not request another turn.
 
 ## Uncertain results
 
@@ -57,7 +79,7 @@ Generated task turns persist only the task reference and the operator's optional
 
 An enabled **Task created or changed** event automation wakes Mira after human-created tasks, saved edits (including board moves) and progress notes. Five seconds without a newer edit coalesces rapid changes into one assessment of the latest saved task. Changes older than a day and changes made during an intentional pause are not replayed. Deleted tasks, superseded queued assessments and assessments that expire while waiting for a worker are skipped. Partial audit indexes support recent-change discovery and the latest human edit per task without scanning unrelated historical activity.
 
-These runs can read tasks, progress, run outcomes, reports and pause reasons, and save a private report. Their server-provided tool catalog excludes task changes, drafts, external integrations, computer control and code execution. They do not start the task itself: use **Start work** or **Continue work** for execution. Reports and Mira's own actions do not trigger another assessment. A reviewed human approval of a task proposal is a human edit and may produce an assessment, but the assessment cannot create another proposal.
+These runs can read tasks, progress, run outcomes, reports and pause reasons, and save a private report. Their server-provided tool catalog excludes task changes, drafts, external integrations, computer control and code execution. They do not start the task itself: use **Start work**, **Continue work**, or the task's separate automatic-start setting for execution. Reports and Mira's own actions do not trigger another assessment. A reviewed human approval of a task proposal is a human edit and may produce an assessment, but the assessment cannot create another proposal.
 
 Each assessment automation has its own pause and notification policy. Results use the existing Reports and notification components. Ordinary task execution and automatic assessments share task admission, so they cannot run on the same task simultaneously.
 
@@ -75,7 +97,7 @@ prevents new tool calls immediately and requests interruption at the next lease 
 (within five seconds). A tool already in progress cannot be undone; uncertain results
 retain the existing review gate. Moving **Blocked → In progress** requests continued
 work only if this owned task already has a user-started run in its linked conversation.
-It never starts a new, previously unstarted task. A rapid unblock waits for the old
+In Run mode it never starts a new, previously unstarted task; automatic-start tasks can start when the operator makes them ready. A rapid unblock waits for the old
 run to stop. Archived/deleted conversations, reassignment, completion, a newer explicit
 Run or Stop, and unresolved outcomes prevent stale continuation. Global automatic-work
 pause applies both when queuing and claiming continuations. An already queued
@@ -97,3 +119,7 @@ and are revisited after other candidates, including after a scheduler restart.
 Audit timestamps record the actual serialized write time. Completion takes the same
 conversation/task locks before recording its terminal clock boundary, so edits from
 older transactions cannot disappear between claim and completion.
+
+## Rollout
+
+The additive migration defaults all existing tasks to Run. Deploy dashboard and Mira together. Before rolling back to a worker that predates automatic-start revocation, cancel queued automatic task runs; older workers do not enforce the new mode-change fence.

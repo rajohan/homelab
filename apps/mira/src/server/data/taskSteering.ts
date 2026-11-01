@@ -1,7 +1,7 @@
 import type { SQL, TransactionSQL } from "bun";
 
 import { miraQueueAvailable } from "./capacity";
-import type { MiraQuery } from "./context";
+import { auditMira, type MiraQuery } from "./context";
 import { enqueueTurn } from "./conversations";
 import type { MiraClaim } from "./queue";
 import { unreviewedTaskRun } from "./taskRecovery";
@@ -80,10 +80,10 @@ export async function acknowledgeTaskSteering(
 }
 
 /**
- * Discover explicit unblock requests and late edits after the durable round-robin cursor.
+ * Discover automatic starts, explicit unblock requests and late edits after the durable round-robin cursor.
  * @param query - Scheduler transaction holding the global scheduler lock and a stable cursor.
  * @param now - Millisecond scheduler clock; include that entire clock bucket, with a one-day expiry.
- * @returns At most twenty already-started task requests, wrapping to older requests after the cursor.
+ * @returns At most twenty operator-authorized task requests, wrapping to older requests after the cursor.
  */
 export async function pendingTaskContinuations(query: MiraQuery, now: Date) {
     return query<
@@ -91,37 +91,42 @@ export async function pendingTaskContinuations(query: MiraQuery, now: Date) {
             id: string;
             owner: string;
             taskId: string;
-            runId: string;
-            conversationId: string;
+            runId: string | null;
+            conversationId: string | null;
             action: string;
             budget: number;
         }[]
     >`
         WITH edits AS (
-            SELECT DISTINCT ON (a.owner,a.target,a.action='task.resume_requested') a.id,a.owner,a.target,a.action,a.created_at
+            SELECT DISTINCT ON (a.owner,a.target,CASE WHEN a.action IN ('task.resume_requested','task.auto_start_requested') THEN a.action ELSE 'edit' END) a.id,a.owner,a.target,a.action,a.created_at
             FROM mira_audit a
             WHERE a.actor='human:'||a.owner
-                AND a.action IN ('task.resume_requested','task.updated','task.progress_added')
+                AND a.action IN ('task.auto_start_requested','task.resume_requested','task.updated','task.progress_added')
                 AND a.created_at>${new Date(now.getTime() - 86_400_000)} AND a.created_at<${new Date(now.getTime() + 1)}
-            ORDER BY a.owner,a.target,a.action='task.resume_requested',a.id DESC
+            ORDER BY a.owner,a.target,CASE WHEN a.action IN ('task.resume_requested','task.auto_start_requested') THEN a.action ELSE 'edit' END,a.id DESC
         )
-        SELECT a.id,a.owner,t.id AS "taskId",r.id AS "runId",r.conversation_id AS "conversationId",a.action,r.budget_seconds AS budget
+        SELECT a.id,a.owner,t.id AS "taskId",r.id AS "runId",t.conversation_id AS "conversationId",a.action,COALESCE(r.budget_seconds,300) AS budget
         FROM edits a JOIN mira_tasks t ON t.id::text=a.target AND t.owner=a.owner
-        JOIN LATERAL (
+        LEFT JOIN LATERAL (
             SELECT * FROM mira_runs WHERE owner=t.owner AND task_id=t.id AND manual
                 AND automation_id IS NULL AND conversation_id=t.conversation_id
             ORDER BY id DESC LIMIT 1
         ) r ON true
-        JOIN mira_conversations c ON c.id=r.conversation_id AND c.owner=r.owner
+        LEFT JOIN mira_conversations c ON c.id=t.conversation_id AND c.owner=t.owner
         WHERE t.deleted_at IS NULL AND t.assignee='mira' AND t.status NOT IN ('blocked','done')
-            AND c.deleted_at IS NULL AND c.archived_at IS NULL
-            AND r.created_at<=a.created_at
+            AND (t.conversation_id IS NULL OR (c.id IS NOT NULL AND c.deleted_at IS NULL AND c.archived_at IS NULL))
+            AND ((a.action='task.auto_start_requested' AND t.auto_start
+                AND (t.work_stopped_at IS NULL OR t.work_stopped_at<=a.created_at)
+                AND NOT EXISTS (SELECT 1 FROM mira_audit requested WHERE requested.owner=t.owner AND requested.target=t.id::text
+                    AND requested.actor='human:'||requested.owner AND requested.action='task.run_requested' AND requested.created_at>=a.created_at)
+                AND NOT EXISTS (SELECT 1 FROM mira_runs newer WHERE newer.owner=t.owner AND newer.task_id=t.id AND newer.manual AND newer.created_at>a.created_at))
+            OR (a.action<>'task.auto_start_requested' AND r.created_at<=a.created_at
             AND EXISTS (SELECT 1 FROM mira_audit started WHERE started.owner=t.owner AND started.target=t.id::text
-                AND started.actor='human:'||started.owner AND started.action='task.run_requested' AND started.created_at<=a.created_at)
+                AND ((started.actor='human:'||started.owner AND started.action='task.run_requested') OR (started.actor='mira:scheduler' AND started.action='task.auto_started')) AND started.created_at<=a.created_at)
             AND ((a.action='task.resume_requested' AND t.status='in_progress')
                 OR (r.state='completed' AND a.id>r.task_change_id
                     AND a.created_at>=r.started_at AND a.created_at<=r.finished_at
-                    AND (t.work_stopped_at IS NULL OR t.work_stopped_at<r.created_at)))
+                    AND (t.work_stopped_at IS NULL OR t.work_stopped_at<r.created_at)))))
             AND NOT EXISTS (SELECT 1 FROM mira_runs used WHERE used.request_key=a.owner||':'||a.id::text)
             AND NOT EXISTS (SELECT 1 FROM mira_audit stopped WHERE stopped.owner=a.owner
                 AND stopped.target=r.id::text AND stopped.action='run.cancel_requested' AND stopped.created_at>=a.created_at)
@@ -131,11 +136,11 @@ export async function pendingTaskContinuations(query: MiraQuery, now: Date) {
 }
 
 /**
- * Continue previously authorized task work once, in its existing conversation.
+ * Start or continue operator-authorized task work once, reusing its conversation.
  * @param query - Scheduler transaction with all candidate owners' controls locked first.
  * @param now - Scheduler clock used for bounded discovery.
  * @param owners - Owners already locked before task or conversation rows.
- * @returns The number of newly queued continuations, never new task starts.
+ * @returns The number of newly queued automatic starts and continuations.
  */
 export async function scheduleTaskContinuations(
     query: TransactionSQL,
@@ -153,14 +158,19 @@ export async function scheduleTaskContinuations(
         const [lock] = await query<{ acquired: boolean }[]>`
             SELECT pg_try_advisory_xact_lock(hashtextextended(${`mira:task:${input.owner}:${input.taskId}`},0)) AS acquired`;
         if (!lock?.acquired) continue;
-        const [conversation] = await query<{ id: string }[]>`
+        const [conversation] = input.conversationId
+            ? await query<{ id: string }[]>`
             SELECT id FROM mira_conversations WHERE id=${input.conversationId} AND owner=${input.owner}
-                AND deleted_at IS NULL AND archived_at IS NULL FOR UPDATE`;
-        if (!conversation) continue;
+                AND deleted_at IS NULL AND archived_at IS NULL FOR UPDATE`
+            : [];
+        if (input.conversationId && !conversation) continue;
         await query`SELECT id FROM mira_tasks WHERE id=${input.taskId} AND owner=${input.owner} FOR UPDATE`;
         const candidates = await pendingTaskContinuations(query, now);
         const current = candidates.find(
-            (row) => row.id === input.id && row.runId === input.runId
+            (row) =>
+                row.id === input.id &&
+                row.runId === input.runId &&
+                row.conversationId === input.conversationId
         );
         if (!current) continue;
         const [busy] = await query<{ id: string }[]>`
@@ -171,18 +181,35 @@ export async function scheduleTaskContinuations(
             !(await miraQueueAvailable(query, input.owner, false))
         )
             continue;
+        const automaticStart = input.action === "task.auto_start_requested";
+        const conversationId = input.conversationId ?? Bun.randomUUIDv7();
+        if (!input.conversationId) {
+            await query`INSERT INTO mira_conversations (id,owner,title) VALUES (${conversationId},${input.owner},${`Task ${input.taskId.slice(0, 8)}`})`;
+            await query`UPDATE mira_tasks SET conversation_id=${conversationId},version=version+1,updated_at=now() WHERE id=${input.taskId} AND owner=${input.owner}`;
+        }
         const run = await enqueueTurn(
             query,
             { owner: input.owner, actor: `human:${input.owner}` },
             {
-                conversationId: input.conversationId,
+                conversationId,
                 requestId: input.id,
                 attachmentIds: [],
-                text: `Continue the already started task ${input.taskId}. ${input.action === "task.resume_requested" ? "The operator moved it from Blocked to In progress." : "The operator changed the task while your previous turn was ending."} Read the current saved task and its latest progress before continuing. Preserve the existing work and reconcile verified results; do not restart or replay completed actions. This update grants no new external, computer, browser, spending, publication or deployment permissions.`,
+                text: automaticStart
+                    ? `Start or continue task ${input.taskId} using the automatic start selected by the operator. Read the current saved task and its progress before working. Reconcile existing results instead of replaying actions. Record verified progress and blockers. Keep task status separate from run outcome. This grants no new external, computer, browser, spending, publication or deployment permissions.`
+                    : `Continue the already started task ${input.taskId}. ${input.action === "task.resume_requested" ? "The operator moved it from Blocked to In progress." : "The operator changed the task while your previous turn was ending."} Read the current saved task and its latest progress before continuing. Preserve the existing work and reconcile verified results; do not restart or replay completed actions. This update grants no new external, computer, browser, spending, publication or deployment permissions.`,
             },
             { taskId: input.taskId, manual: true, budgetSeconds: input.budget }
         );
-        await query`UPDATE mira_runs SET task_resumed=true,priority=0 WHERE id=${run.id}`;
+        await query`UPDATE mira_runs SET task_resumed=true,task_auto_started=${automaticStart},priority=0,created_at=clock_timestamp() WHERE id=${run.id}`;
+        if (automaticStart) {
+            await auditMira(
+                query,
+                { owner: input.owner, actor: "mira:scheduler" },
+                "task.auto_started",
+                input.taskId
+            );
+            await query`INSERT INTO mira_progress(id,task_id,actor,content) VALUES (${Bun.randomUUIDv7()},${input.taskId},'mira:scheduler','Started work using the automatic start selected by the operator.')`;
+        }
         queued++;
     }
     const last = candidates.at(-1);

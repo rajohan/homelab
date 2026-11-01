@@ -38,6 +38,7 @@ export const miraHistoryReadSchema = v.strictObject({
 export const miraTaskStates = ["todo", "in_progress", "blocked", "done"] as const;
 export const miraTaskInputSchema = v.strictObject({
     title,
+    autoStart: v.optional(v.boolean()),
     description: body,
     status: v.picklist(miraTaskStates),
     assignee: v.picklist(["mira", "operator"]),

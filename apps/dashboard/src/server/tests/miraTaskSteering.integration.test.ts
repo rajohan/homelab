@@ -229,7 +229,9 @@ test("an unacknowledged edit at the end of work continues once instead of becomi
 test("a fully acknowledged edit does not queue duplicate work after completion", async () => {
     const f = await fixture();
     try {
-        await f.update(2);
+        await f.update(2, "in_progress", {
+            description: "Clarification acknowledged by the active turn.",
+        });
         const edit = await readTaskSteering(f.client, f.run);
         if (!edit) throw new Error("Expected edit.");
         await acknowledgeTaskSteering(f.client, f.run, edit.id);

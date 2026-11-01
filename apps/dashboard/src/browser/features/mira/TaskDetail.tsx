@@ -13,7 +13,7 @@ import {
     Textarea,
     SectionHeader,
 } from "@homelab/ui";
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
     Pencil,
@@ -39,17 +39,24 @@ import { TaskRunDialog } from "./TaskRunDialog";
  * @returns Task details, linked conversation and an append-only progress composer.
  */
 export function TaskDetail({
-    task,
+    task: initialTask,
     onEdit,
     onClose,
 }: {
     readonly task: MiraTask;
-    readonly onEdit: () => void;
+    readonly onEdit: (task: MiraTask) => void;
     readonly onClose: () => void;
 }) {
     const navigate = useNavigate();
+    const current = useQuery({
+        queryKey: ["operations", "mira", "task", initialTask.id, "detail"],
+        queryFn: ({ signal }) =>
+            api.mira.tasks.read.query({ id: initialTask.id }, { signal }),
+        refetchInterval: 5000,
+    });
+    const task = current.data ?? initialTask;
     const [progress, setProgress] = useState("");
-    const [deleting, setDeleting] = useState(false);
+    const [deleting, setDeleting] = useState<number>();
     const [starting, setStarting] = useState<{
         version: number;
         reviewRunId: string | null;
@@ -68,8 +75,8 @@ export function TaskDetail({
         () => api.mira.tasks.addProgress.mutate({ taskId: task.id, text: progress }),
         () => setProgress("")
     );
-    const remove = useOperation(() =>
-        api.mira.tasks.delete.mutate({ id: task.id, version: task.version })
+    const remove = useOperation((version: number) =>
+        api.mira.tasks.delete.mutate({ id: task.id, version })
     );
     if (starting)
         return (
@@ -88,15 +95,15 @@ export function TaskDetail({
                 }}
             />
         );
-    if (deleting)
+    if (deleting !== undefined)
         return (
             <ConfirmDialog
                 title="Delete task"
                 description="Remove task content and progress. Historical runs retain an audit reference."
-                onClose={() => setDeleting(false)}
+                onClose={() => setDeleting(undefined)}
                 confirmLabel="Delete task"
                 onConfirm={async () => {
-                    await remove.mutateAsync(undefined);
+                    await remove.mutateAsync(deleting);
                     onClose();
                 }}
             />
@@ -104,7 +111,12 @@ export function TaskDetail({
     return (
         <Modal
             title={task.title}
-            titleAccessory={<Badge>{taskStates[task.status].title}</Badge>}
+            titleAccessory={
+                <>
+                    <Badge>{taskStates[task.status].title}</Badge>
+                    {task.autoStart && <Badge>Auto start</Badge>}
+                </>
+            }
             onClose={onClose}
             size="wide"
         >
@@ -146,7 +158,11 @@ export function TaskDetail({
                     </div>
                 )}
                 <ActionGroup stretch={false}>
-                    <Button variant="secondary" onClick={onEdit}>
+                    <Button
+                        variant="secondary"
+                        onClick={() => onEdit(task)}
+                        disabled={current.isError}
+                    >
                         <Pencil size={16} aria-hidden="true" />
                         Edit task
                     </Button>
@@ -160,11 +176,16 @@ export function TaskDetail({
                             Open conversation
                         </Link>
                     )}
-                    <Button variant="secondary" onClick={() => setDeleting(true)}>
+                    <Button
+                        variant="secondary"
+                        onClick={() => setDeleting(task.version)}
+                        disabled={current.isError}
+                    >
                         <Trash2 size={16} aria-hidden="true" />
                         Delete task
                     </Button>
                 </ActionGroup>
+                {current.error && <ErrorNotice error={current.error} />}
                 <section className="space-y-3 border-t border-primary-700 pt-4">
                     <SectionHeader title="Description" icon={FileText} />
                     <Markdown>{task.description || "No description."}</Markdown>

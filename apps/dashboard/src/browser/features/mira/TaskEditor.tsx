@@ -34,6 +34,7 @@ export function TaskEditor({
         task
             ? {
                   title: task.title,
+                  autoStart: task.autoStart ?? false,
                   description: task.description,
                   status: task.status,
                   assignee: task.assignee,
@@ -45,6 +46,7 @@ export function TaskEditor({
               }
             : {
                   title: "",
+                  autoStart: false,
                   description: "",
                   status: "todo",
                   assignee: "mira",
@@ -77,7 +79,7 @@ export function TaskEditor({
             size="wide"
         >
             <form
-                className="space-y-4"
+                className="flex flex-col gap-4"
                 onSubmit={(event) => {
                     event.preventDefault();
                     void save
@@ -153,6 +155,26 @@ export function TaskEditor({
                         />
                     </Fieldset>
                 </div>
+                <FormField
+                    label="Start work"
+                    description={
+                        value.autoStart
+                            ? "Starts when you enable this on a ready task, assign it to Mira or move it out of Blocked or Done. Pauses and review requirements still apply."
+                            : "Start with Run. Changes can still steer ongoing work and resume a started task after you unblock it."
+                    }
+                >
+                    <Select
+                        label="Task start mode"
+                        value={value.autoStart ? "automatic" : "manual"}
+                        options={[
+                            { value: "manual", label: "Run manually" },
+                            { value: "automatic", label: "Start automatically" },
+                        ]}
+                        onChange={(mode) =>
+                            setValue({ ...value, autoStart: mode === "automatic" })
+                        }
+                    />
+                </FormField>
                 <FormField label="Completion criteria">
                     <Textarea
                         value={value.completionCriteria}

@@ -8,7 +8,7 @@ import { MiraRunTable } from "./MiraRunTable";
 
 /**
  * Present task-scoped runs and explicit execution controls using the shared run table.
- * @returns Independently refreshed execution history; board movement never starts work.
+ * @returns Independently refreshed execution history and explicit Run/review controls.
  */
 export function TaskExecution({
     id,
