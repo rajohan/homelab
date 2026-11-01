@@ -38,9 +38,11 @@ internal static class DesktopWebViewTests
     internal static void Browser(string root)
     {
         int received = 0, denied = 0, external = 0;
+        bool inWebViewCallback = false;
         using (var form = new Form { ShowInTaskbar = false })
         using (var web = new WebView2 { Dock = DockStyle.Fill })
         using (var policy = new DesktopWebView(root, delegate(string source, string json) {
+            Check(!inWebViewCallback);
             var request = DesktopBridge.Read(source, web.CoreWebView2.Source, json);
             received++;
             return new JavaScriptSerializer().Serialize(new { type = "fixture-reply", id = request["id"] });
@@ -56,7 +58,9 @@ internal static class DesktopWebViewTests
                 if (!DesktopBridge.ApplicationUrl(args.Request.Uri)) html = "Blocked fixture request";
                 args.Response = environment.CreateWebResourceResponse(new MemoryStream(Encoding.UTF8.GetBytes(html)), 200, "OK", "Content-Type: text/html; charset=utf-8");
             };
+            core.WebMessageReceived += delegate { inWebViewCallback = true; };
             policy.Configure(core);
+            core.WebMessageReceived += delegate { inWebViewCallback = false; };
             core.WebResourceRequested += delegate(object sender, CoreWebView2WebResourceRequestedEventArgs args) {
                 if (!DesktopBridge.ApplicationUrl(args.Request.Uri)) { Check(args.Response.StatusCode == 403); denied++; }
             };

@@ -68,7 +68,7 @@ jobs:
         run: bun --no-env-file scripts/buildWindowsConsent.ts
       - name: Compile the actual Windows worker supervisor without third-party restore
         run: bun --no-env-file scripts/buildWindowsWorkerHost.ts
-      - name: Compile the actual Windows connection manager without third-party restore
+      - name: Compile the shared Windows app with the verified WebView2 SDK
         run: bun --no-env-file scripts/buildWindowsDesktop.ts
       - name: Analyze and upload results
         uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1

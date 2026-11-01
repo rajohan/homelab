@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.Core;
@@ -90,8 +91,16 @@ internal sealed class DesktopWebView : UserControl
         core.WebMessageReceived += delegate(object sender, CoreWebView2WebMessageReceivedEventArgs args) {
             try {
                 if (!DesktopBridge.SameOrigin(args.Source, DesktopBridge.Dashboard) || !DesktopBridge.SameOrigin(core.Source, DesktopBridge.Dashboard)) return;
-                string reply = message(args.Source, args.WebMessageAsJson);
-                if (reply != null && DesktopBridge.SameOrigin(core.Source, DesktopBridge.Dashboard)) core.PostWebMessageAsJson(reply);
+                string source = args.Source, json = args.WebMessageAsJson;
+                if (json.Length > 4096) return;
+                // Native confirmation must run after the WebView event returns, never in its callback stack.
+                SynchronizationContext.Current.Post(delegate {
+                    try {
+                        if (IsDisposed || !DesktopBridge.SameOrigin(core.Source, DesktopBridge.Dashboard)) return;
+                        string reply = message(source, json);
+                        if (reply != null && DesktopBridge.SameOrigin(core.Source, DesktopBridge.Dashboard)) core.PostWebMessageAsJson(reply);
+                    } catch { /* Navigated/disposed views cannot receive a stale reply. */ }
+                }, null);
             } catch { /* Invalid messages never reach operations or diagnostics. */ }
         };
         core.NavigationCompleted += delegate(object sender, CoreWebView2NavigationCompletedEventArgs args) {
