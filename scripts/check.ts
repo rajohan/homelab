@@ -1,11 +1,8 @@
-import { checkTimings } from "./testing/inventory";
-
 /**
- * Require complete test timings, formatting, lint and TypeScript checks.
+ * Check formatting, lint and TypeScript without changing source files.
  * @returns Completion after checks finish; the first failing status is preserved.
  */
 export async function main(): Promise<void> {
-    await checkTimings();
     for (const command of ["format:check", "lint", "typecheck"]) {
         const child = Bun.spawn([process.execPath, "run", command], {
             stdin: "inherit",

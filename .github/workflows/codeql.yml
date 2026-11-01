@@ -65,7 +65,7 @@ jobs:
           build-mode: manual
           queries: security-extended
       - name: Compile the actual Windows host without third-party restore
-        run: bun run build:computer:windows-host
+        run: bun --no-env-file scripts/buildWindowsConsent.ts
       - name: Compile the actual Windows worker supervisor without third-party restore
         run: bun --no-env-file scripts/buildWindowsWorkerHost.ts
       - name: Compile the actual Windows connection manager without third-party restore

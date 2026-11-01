@@ -1,80 +1,38 @@
-import { unlink } from "node:fs/promises";
-
 import { testArguments } from "./testing/command";
-import {
-    assertTimings,
-    discoverTests,
-    timingFiles,
-    type TestGroup,
-} from "./testing/inventory";
+import { discoverTests, type TestGroup } from "./testing/inventory";
 
 /**
- * Run the selected test partitions with enforced parallelism and timing inventories.
- * @returns Completion after all selected test commands finish.
+ * Run complete test partitions, keeping DOM emulation out of real HTTP tests.
+ * @returns Completion after the selected tests; preserves the first failing exit code.
  */
 export async function main(): Promise<void> {
-    const mode = process.argv[2];
-    const allowed = [
-        "coverage",
-        "integration",
-        "integration-coverage",
-        "timings",
-        "integration-timings",
-    ];
-    if (process.argv.length > 3 || (mode && !allowed.includes(mode)))
-        throw new Error(
-            "Use the documented test scripts; arbitrary runner overrides are not allowed."
-        );
-    const integration = mode?.startsWith("integration") ?? false;
-    const coverage = mode?.endsWith("coverage") ?? false;
-    const update = mode?.endsWith("timings") ?? false;
+    const args = process.argv.slice(2);
+    if (args.some((arg) => arg !== "integration" && arg !== "--coverage"))
+        throw new Error("Usage: bun run test [integration] [--coverage]");
+    const coverage = args.includes("--coverage");
     const inventory = discoverTests();
-    const groups: TestGroup[] = integration ? ["integration"] : ["unit", "component"];
+    const groups: TestGroup[] = args.includes("integration")
+        ? ["integration"]
+        : ["unit", "component"];
     for (const group of groups) {
-        const files = inventory[group];
-        const target = timingFiles[group];
-        const staged = update ? `${target}.${crypto.randomUUID()}.tmp` : target;
-        try {
-            if (update) {
-                await Bun.write(staged, JSON.stringify({ version: 1, files: {} }));
-            } else {
-                assertTimings(await Bun.file(target).json(), files, group);
+        const report = Bun.file(`coverage/${group}/lcov.info`);
+        if (coverage && (await report.exists())) await report.delete();
+        const child = Bun.spawn(
+            [process.execPath, ...testArguments(group, inventory[group], coverage)],
+            {
+                stdin: "inherit",
+                stdout: "inherit",
+                stderr: "inherit",
+                env: { ...process.env, HOMELAB_COVERAGE_GROUP: group },
             }
-            if (coverage) {
-                const report = Bun.file(`coverage/${group}/lcov.info`);
-                if (await report.exists()) await report.delete();
-            }
-            const child = Bun.spawn(
-                [
-                    process.execPath,
-                    ...testArguments(group, files, coverage, staged, update),
-                ],
-                {
-                    stdin: "inherit",
-                    stdout: "inherit",
-                    stderr: "inherit",
-                    env: { ...process.env, HOMELAB_COVERAGE_GROUP: group },
-                }
-            );
-            const result = await child.exited;
-            if (result !== 0) {
-                process.exitCode = result;
-                break;
-            }
-            if (update) {
-                const measured = assertTimings(
-                    await Bun.file(staged).json(),
-                    files,
-                    group
-                );
-                await Bun.write(target, JSON.stringify(measured, null, 4) + "\n");
-            }
-            if (coverage && !(await Bun.file(`coverage/${group}/lcov.info`).exists()))
-                throw new Error(`The ${group} coverage report was not generated.`);
-        } finally {
-            if (update) await unlink(staged);
+        );
+        const result = await child.exited;
+        if (result !== 0) {
+            process.exitCode = result;
+            return;
         }
+        if (coverage && !(await report.exists()))
+            throw new Error(`The ${group} coverage report was not generated.`);
     }
 }
-
 if (import.meta.main) await main();

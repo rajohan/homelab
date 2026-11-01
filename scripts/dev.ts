@@ -6,17 +6,26 @@ export async function main(): Promise<void> {
     const requested = process.argv.slice(2);
     const apps = requested.length === 0 ? ["auth", "dashboard"] : requested;
 
-    if (apps.some((app) => app !== "auth" && app !== "dashboard")) {
-        throw new Error("Usage: bun run dev [auth|dashboard]");
+    if (apps.some((app) => !["auth", "dashboard", "mira", "worker"].includes(app))) {
+        throw new Error("Usage: bun run dev [auth|dashboard|mira|worker]");
     }
 
     const children = apps.map((app) =>
-        Bun.spawn([process.execPath, "--hot", `apps/${app}/src/server/index.ts`], {
-            env: { ...process.env, NODE_ENV: "development" },
-            stdin: "inherit",
-            stdout: "inherit",
-            stderr: "inherit",
-        })
+        Bun.spawn(
+            [
+                process.execPath,
+                ...(app === "mira" || app === "worker" ? ["--no-env-file"] : ["--hot"]),
+                app === "worker"
+                    ? "apps/dashboard/src/worker/worker.ts"
+                    : `apps/${app}/src/server/index.ts`,
+            ],
+            {
+                env: { ...process.env, NODE_ENV: "development" },
+                stdin: "inherit",
+                stdout: "inherit",
+                stderr: "inherit",
+            }
+        )
     );
 
     function stop() {

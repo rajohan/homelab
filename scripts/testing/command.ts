@@ -1,28 +1,22 @@
-import { timingFiles, type TestGroup } from "./inventory";
+import type { TestGroup } from "./inventory";
 
 /**
- * Build a test invocation that cannot omit parallelism, shared isolation or timing checks.
+ * Build a complete test partition with its own runtime and coverage directory.
  * @param group - The test partition to run.
  * @param files - The complete nonempty partition inventory.
  * @param coverage - Whether to emit coverage.
- * @param timingsPath - The committed timing inventory for this partition.
- * @param update - Whether this run explicitly updates timing measurements.
  * @returns Arguments for the pinned Bun test runner.
  */
 export function testArguments(
     group: TestGroup,
     files: readonly string[],
-    coverage: boolean,
-    timingsPath: string = timingFiles[group],
-    update = false
+    coverage: boolean
 ): string[] {
     if (files.length === 0) throw new Error("A test group cannot be empty");
     return [
         "test",
-        "--parallel=2",
+        group === "integration" ? "--parallel=4" : "--parallel=2",
         "--no-isolate",
-        `--timings=${timingsPath}`,
-        ...(update ? ["--update-timings"] : []),
         ...(group === "component" ? ["--preload", "./tests/dom.ts"] : []),
         ...(coverage && group !== "integration"
             ? ["--preload", "./tests/coverage.ts"]

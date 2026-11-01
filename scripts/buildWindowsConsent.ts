@@ -61,6 +61,6 @@ export async function buildWindowsConsent(outputRoot?: string, tests = false) {
 
 if (import.meta.main) {
     if (process.argv.length !== 2)
-        throw new Error("Usage: bun run build:computer:windows-host");
+        throw new Error("Usage: bun --no-env-file scripts/buildWindowsConsent.ts");
     console.info(await buildWindowsConsent());
 }

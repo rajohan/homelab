@@ -71,13 +71,13 @@ iPhone/NFC acceptance needs private HTTPS origins reachable by the actual device
 
 ```sh
 bun run check
-bun run test:coverage
+bun run test --coverage
 bun run db:check:auth
 export HOMELAB_TEST_DATABASE_URL=postgres://...@127.0.0.1:5432/homelab_auth_test
 bun run test:integration
 bun run build
 bun run test:smoke
-bun run test:docker
+bash scripts/testDocker.sh
 ```
 
 Integration tests require a **disposable** loopback database named exactly `homelab_auth_test`;
@@ -114,7 +114,10 @@ Auth can run on Edge and dashboard on Main. Shared packages compile into each bu
 neither app needs the other's source tree or process at runtime. Auth has no Docker socket,
 host SSH key, OpenClaw dependency or homelab administration privileges.
 
-Use `bun run start:auth` / `start:dashboard` after building, with scoped runtime environment.
+After building, start a service with its scoped runtime environment, for example
+`NODE_ENV=production bun --cwd apps/auth/dist --no-env-file index.js`.
+Use `apps/dashboard/dist` or `apps/mira/dist` for the other services; the dashboard
+worker entry point is `worker.js`. Containers already use these built entry points.
 Startup fails closed when production configuration is missing. These commands select the
 correct artifact directory and disable automatic `.env` loading. See [deployment](deploy/README.md).
 

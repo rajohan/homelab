@@ -7,6 +7,7 @@
 - Keep Effect at server workflow boundaries. Use Valibot for public validation and SuperJSON only for the private tRPC transport, not OIDC/JWT protocols.
 - Put each React component in its own named file. Group generic UI under `packages/ui/src/components` and account-specific behavior under `features/identity`; generic primitives must not depend on identity features. Keep app browser and server modules in separate subtrees.
 - Shared `packages/ui` and `packages/contracts` are browser-safe. They must not import application internals or server-only dependencies.
+- Web and Windows use the same dashboard React UI, shared components, contracts and server workflows. Keep Windows-specific code limited to OS integration (tray, startup, updates and local computer access); do not implement a second chat, task board or automation engine in the desktop client.
 - Unit tests use `*.test.ts`; Happy DOM component tests use `*.test.tsx`; real HTTP integration tests use `*.integration.test.ts`. Run them with `bun run test` and `bun run test:integration` so DOM emulation cannot replace backend network primitives.
 - Run `bun run check`, `bun run test`, `bun run test:integration`, `bun run build` and `bun run test:smoke` before delivery.
 - Do not read or modify production identity data in ordinary development. Live identity, routing and application-control changes require separate deployment qualification and approval. Use the disposable preview for development.

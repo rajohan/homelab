@@ -38,7 +38,7 @@ Store credentials in the existing scoped Doppler delivery, not in a committed `.
 
 1. Provision the dedicated role/database and scoped configuration separately.
 2. Stop old dashboard workers before a schema-changing deployment.
-3. Apply the shipped schema explicitly: `bun run dashboard:migrate --apply`, or
+3. Apply the shipped schema explicitly: `bun --no-env-file apps/dashboard/src/worker/migrate.ts --apply`, or
    `bun --no-env-file migrate.js --apply` from the built dashboard artifact.
 4. Start dashboard and worker from the **same pinned dashboard image digest**.
    `deploy/compose.worker.yaml` is the optional overlay for the existing deployment.

@@ -1,27 +1,56 @@
 # Testing and coverage
 
-Use `bun run test` for fast unit and Happy DOM component tests without coverage overhead. Use `bun run test:coverage` when inspecting coverage locally; CI uses the coverage command instead of running the same tests twice.
+## Common commands
 
-The runner uses `--parallel=2 --no-isolate` for every unit, component, integration and
-coverage group. Workers reuse globals and module caches between files. Happy DOM runs
-in a separate group from native Bun networking; each component test cleans its DOM.
-Tests must restore mocks, globals, servers and connections rather than relying on
-per-file isolation. The command regression test enforces these flags.
+Use `bun run dev [auth|dashboard|mira|worker]`, `bun run build [auth|dashboard|mira]`,
+`bun run check`, `bun run test`, `bun run test:integration` and `bun run test:smoke`.
+Add `--coverage` to either test command when needed. Uncommon platform qualification
+and packaging commands live next to their implementations under `scripts/` and are
+listed in the corresponding Computer, Browser and Daytona documentation.
 
-Every discovered test must have exactly one finite, nonnegative timing in its group's
-committed inventory. Missing, stale or invalid entries fail `bun run check` and normal
-test runs. Update measured values with `bun run test:timings` and
-`bun run test:integration:timings` (the latter requires the disposable PostgreSQL server).
-Updates use temporary files and are accepted only after successful tests and exact
-inventory validation. CI never regenerates timings automatically.
+## CI execution
+
+Formatting, lint, types, migration checks, unit/component coverage, HTTP/database
+coverage, builds and built-runtime smoke tests run for every PR. Docker/native PC
+tests run in a separate job rather than blocking the source checks. Coverage uploads
+wait only for successful source checks and retain the separate trusted upload runner.
+
+Windows, native Docker, isolated browser and Daytona qualification can be skipped only
+when a PR changes exclusively documentation or web UI TypeScript/CSS. Shared contracts,
+runtime/server code, assets (including the Windows icon), dependencies, build tools,
+workflows and unknown paths all require platform qualification. The aggregate `verify`
+check rejects unexpected skips, failures and cancellations. Main pushes and releases
+always run all platform qualifications.
+
+Daytona still runs the full suite inside its actual image when selected. Its release
+workflow no longer launches a second copy of the entire Windows/browser/source CI;
+the container release workflow already qualifies those release assets. Publishers
+still receive only the exact tested images/packages and run only for stable releases.
+Superseded PR image builds are cancelled; release publication is never cancelled by
+a newer push. Docker dependency layers are reusable across source-only changes.
+
+Before this change, PR #157's source job took 8m21s: 3m56s of integration coverage
+followed by 2m45s of Docker/PC qualification. The separate Daytona job took 7m14s.
+These are historical measurements, not guarantees for the new workflow.
+
+Use `bun run test` for fast unit and Happy DOM component tests without coverage overhead. Use `bun run test --coverage` when inspecting coverage locally; CI uses the coverage command instead of running the same tests twice.
+
+Unit and component tests use two Bun workers; database integration tests use four.
+Each integration suite owns its disposable database. Happy DOM remains in a separate
+process group from native Bun HTTP tests. Tests must restore mocks, globals, servers
+and connections because workers reuse module state (`--no-isolate`).
+
+Test files are discovered automatically. There are no committed duration inventories
+to update when adding, renaming or removing a test. Coverage still checks that every
+executable source module is represented; test discovery does not depend on coverage.
 
 Each group writes its own LCOV file:
 
 - `coverage/unit/lcov.info`
 - `coverage/component/lcov.info`
-- `coverage/integration/lcov.info` (from `bun run test:integration:coverage`)
+- `coverage/integration/lcov.info` (from `bun run test:integration --coverage`)
 
-Run `bun run test:coverage:check` after both coverage commands. It merges the three
+Run `bun scripts/testing/coverage.ts` after both coverage commands. It merges the three
 exact reports with the same LCOV library used by Mira-Dashboard, rejects missing
 executable source files and writes `coverage/lcov.info`. CI performs this check before
 uploading that one report with the `unit-component-integration` flag. Each group removes
@@ -32,7 +61,7 @@ Generated coverage reports are Git-ignored.
 
 ## Component assertions and interaction
 
-`bun run test:docker` requires a local Docker Engine, Compose and the cached
+`bash scripts/testDocker.sh` requires a local Docker Engine, Compose and the cached
 `postgres:18` image (CI's database service supplies it). It creates uniquely labelled,
 bounded disposable containers running only `sleep`, never production applications.
 The actual Docker HTTP transport and coordinator exercise start/stop/restart,
@@ -63,7 +92,7 @@ Codecov status checks are initially informative and compare against the measured
 
 ### Missing GitHub checks or comments
 
-The CI upload token authorizes sending reports to Codecov. It does not grant Codecov permission to post GitHub checks. If the upload succeeds and Codecov shows the report as processed, verify the separate GitHub App installation: **GitHub Settings → Applications → Installed GitHub Apps → Codecov → Configure**. The repository owner must include `rajohan/homelab` in the selected repositories, or grant access to all repositories, and review any pending permission update. Activating a repository inside Codecov alone is not this permission check.
+The CI upload token authorizes sending reports to Codecov. It does not grant Codecov permission to post GitHub checks. If the upload succeeds and Codecov shows the report as processed, verify the separate GitHub App installation: **GitHub Settings â†’ Applications â†’ Installed GitHub Apps â†’ Codecov â†’ Configure**. The repository owner must include `rajohan/homelab` in the selected repositories, or grant access to all repositories, and review any pending permission update. Activating a repository inside Codecov alone is not this permission check.
 
 Check the PR's base and head reports as well as the CI upload log. Missing base coverage prevents a useful comparison. This repository also sets `comment.require_changes: true`, so a PR with no coverage changes may receive no comment; that alone is not an upload failure. Informational coverage checks are still configured separately from comments.
 

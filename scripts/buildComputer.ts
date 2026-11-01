@@ -56,6 +56,8 @@ export async function buildComputer(
 if (import.meta.main) {
     const [platform, ...extra] = process.argv.slice(2);
     if (extra.length > 0 || (platform !== "linux-x64" && platform !== "windows-x64"))
-        throw new Error("Usage: bun run build:computer <linux-x64|windows-x64>");
+        throw new Error(
+            "Usage: bun --no-env-file scripts/buildComputer.ts <linux-x64|windows-x64>"
+        );
     console.info(await buildComputer(platform));
 }

@@ -1,42 +1,32 @@
 import { describe, expect, test } from "bun:test";
 
 import { testArguments } from "./command";
-import { assertTimings } from "./inventory";
+import { discoverTests } from "./inventory";
 
-describe("test policy", () => {
-    test("requires an exact measured inventory", () => {
-        const valid = { version: 1 as const, files: { "a.test.ts": 1 } };
-        expect(assertTimings(valid, ["a.test.ts"], "unit")).toEqual(valid);
-        expect(() => assertTimings(valid, ["a.test.ts", "b.test.ts"], "unit")).toThrow(
-            "Missing: b.test.ts"
-        );
-        expect(() => assertTimings(valid, ["b.test.ts"], "unit")).toThrow(
-            "Stale: a.test.ts"
-        );
-        for (const duration of [-1, Number.NaN, Infinity, "1"])
-            expect(() =>
-                assertTimings(
-                    { version: 1, files: { "a.test.ts": duration } },
-                    ["a.test.ts"],
-                    "unit"
-                )
-            ).toThrow();
+describe("test selection", () => {
+    test("discovers files without a manually maintained inventory", () => {
+        const groups = discoverTests();
+        expect(groups.unit).toContain("scripts/testing/inventory.test.ts");
+        expect(groups.integration.length).toBeGreaterThan(0);
+        expect(groups.component.length).toBeGreaterThan(0);
+        const all = Object.values(groups).flat();
+        expect(new Set(all).size).toBe(all.length);
+        expect(all.some((file) => /\/(dist|node_modules)\//.test(file))).toBe(false);
+        expect(groups.unit.some((file) => file.includes(".integration."))).toBe(false);
+        expect(groups.component.every((file) => file.endsWith(".tsx"))).toBe(true);
     });
-    test("enforces parallel execution without isolation in every mode", () => {
-        for (const group of ["unit", "component", "integration"] as const)
-            for (const coverage of [true, false])
-                for (const update of [true, false]) {
-                    const args = testArguments(
-                        group,
-                        ["a.test.ts"],
-                        coverage,
-                        undefined,
-                        update
-                    );
-                    expect(args).toContain("--parallel=2");
-                    expect(args).toContain("--no-isolate");
-                    expect(args).not.toContain("--isolate");
-                    expect(args.includes("./tests/dom.ts")).toBe(group === "component");
-                }
+    test("keeps DOM setup out of HTTP tests and separates coverage output", () => {
+        for (const group of ["unit", "component", "integration"] as const) {
+            for (const coverage of [true, false]) {
+                const args = testArguments(group, ["a.test.ts"], coverage);
+                expect(args.includes("./tests/dom.ts")).toBe(group === "component");
+                expect(args.includes("./tests/coverage.ts")).toBe(
+                    coverage && group !== "integration"
+                );
+                expect(args.includes(`--coverage-dir=coverage/${group}`)).toBe(coverage);
+                expect(args).toContain("./a.test.ts");
+            }
+            expect(() => testArguments(group, [], false)).toThrow("empty");
+        }
     });
 });
