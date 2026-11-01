@@ -1,0 +1,20 @@
+{
+    "id": "/",
+    "name": "Homelab",
+    "short_name": "Homelab",
+    "description": "Chat with Mira and manage your Homelab.",
+    "lang": "en",
+    "start_url": "/",
+    "scope": "/",
+    "display": "standalone",
+    "background_color": "#121316",
+    "theme_color": "#0B0B0C",
+    "icons": [
+        {
+            "src": "/app-icon.svg",
+            "sizes": "any",
+            "type": "image/svg+xml",
+            "purpose": "any"
+        }
+    ]
+}

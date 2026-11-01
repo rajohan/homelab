@@ -9,6 +9,7 @@ import {
     dashboardOperationsConfiguration,
 } from "./config/environment";
 import { assertDashboardSchema } from "./database/migrations";
+import { dashboardAppIcon } from "./http/appIcon";
 import { boundedDashboardRequest, dashboardTransportBodyLimit } from "./http/requestBody";
 import { isSameOriginApiRequest } from "./http/requestOrigin";
 import {
@@ -211,6 +212,7 @@ export function startDashboardServer(options: DashboardServerOptions = {}) {
         development: options.development ?? dashboardDevelopment(),
         maxRequestBodySize: dashboardTransportBodyLimit,
         routes: {
+            "/app-icon.svg": dashboardAppIcon,
             "/health/live": { GET: dashboardHealthResponse },
             "/health/ready": api,
             "/login": api,

@@ -30,6 +30,7 @@ import { syntheticPdf } from "../../../../mira/src/server/testing/document";
 import index from "../../index.html";
 import { connectDashboardDatabase } from "../database/connection";
 import { migrateDashboard } from "../database/migrations";
+import { dashboardAppIcon } from "../http/appIcon";
 import { isSameOriginApiRequest } from "../http/requestOrigin";
 import { dashboardApiRequest } from "../http/responses";
 import { createJobRegistry } from "../jobs/registry";
@@ -551,6 +552,7 @@ export function serveMiraPreview({
         development: true,
         maxRequestBodySize: 26_214_400,
         routes: {
+            "/app-icon.svg": dashboardAppIcon,
             "/preview": miraViewport,
             "/api/account": {
                 GET: () =>
