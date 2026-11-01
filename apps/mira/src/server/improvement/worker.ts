@@ -34,7 +34,7 @@ async function lock(query: MiraQuery, owner: string) {
 /**
  * Advance one explicitly authorized improvement through source verification, fixed checks and draft publication.
  * @param client - Durable product database, independent of the originating model turn.
- * @param configuration - Qualified cloud and fixed Mira GitHub settings, never exposed to model/sandbox code.
+ * @param configuration - Qualified execution targets and fixed Mira GitHub settings, never exposed to model/sandbox code.
  * @param stopping - Executor shutdown signal; repeatable local/read phases retain their lease for recovery.
  * @param directory - Private immutable attachment store.
  * @param request - Synthetic provider replacement for qualification.

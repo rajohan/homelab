@@ -56,7 +56,7 @@ export function createImprovementTools(
             automatic: true,
             transactional: true,
             description:
-                "Submit at most one bounded frontend change from this improvement automation. Inspect existing tasks/PRs, current main and applicable AGENTS.md first. Supply commit, conventional PR title, body and plan {version:1,commit,files:[{path,beforeSha256,content}]}; use null fingerprint for a new file, null content for deletion, complete replacement text otherwise. At most ten .ts/.tsx/.css files in apps/dashboard/src/browser/ or packages/ui/src/components/, 64 KiB each and 256 KiB total. The service checks current source and competing Mira PRs, runs one fixed ten-minute check on the selected execution target, then opens one draft PR only on success. It never merges, deploys or retries uncertain writes. Explicit policy and integration permission are required; this queued workflow continues on the server after this model turn. Report only the returned queued status; later results appear in Code jobs, Code changes and Reports.",
+                "Submit at most one bounded repository change from this improvement automation. Inspect existing tasks/PRs, current main and applicable AGENTS.md first. Supply commit, conventional PR title, body and plan {version:1,commit,files:[{path,beforeSha256,content}]}; use null fingerprint for a new file, null content for deletion, complete replacement text otherwise. Any area of the Homelab repository, including web, Windows, backend, tests, CI workflows, deployment and documentation. At most ten text files, 64 KiB each and 256 KiB total. The service checks current source and competing Mira PRs, runs one fixed ten-minute check on the selected execution target, then opens one draft PR only on success. It never merges, deploys or retries uncertain writes. Explicit policy and integration permission are required; this queued workflow continues on the server after this model turn. Report only the returned queued status; later results appear in Code jobs, Code changes and Reports.",
             inputSchema: {
                 type: "object",
                 additionalProperties: false,
@@ -107,7 +107,7 @@ export function createImprovementTools(
                 } catch {
                     throw new MiraFailure(
                         "BAD_REQUEST",
-                        "Choose a valid bounded frontend edit plan with exact original fingerprints."
+                        "Choose a valid bounded repository edit plan with exact original fingerprints."
                     );
                 }
                 const query = context.transaction;

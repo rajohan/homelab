@@ -79,7 +79,7 @@ const executeLocal: typeof executeLocalCodeCheck = async (
     stopping
 ) => {
     const selected = parseLocalCheckInput(input);
-    expect(JSON.parse(selected.input!)).toEqual(inputPlan);
+    expect(JSON.parse(selected.input!)).toMatchObject({ version: 1, commit: base });
     await journal.creating(stopping);
     await journal.created("e".repeat(64), stopping);
     await journal.starting(stopping);
@@ -103,8 +103,6 @@ const input = {
         ],
     },
 };
-
-const inputPlan = input.plan;
 
 const provider = (id: string) =>
     githubProvider(id, (url, _init, reply) =>
@@ -191,7 +189,7 @@ async function fixture(target: "main" | "daytona" = "daytona") {
             automationVersion: 1,
             version,
             enabled,
-            policyVersion: 1,
+            policyVersion: 2,
         });
     const start = async () => {
         await api.automations.run({ id: automation.id, requestId: crypto.randomUUID() });
@@ -280,7 +278,7 @@ async function fixture(target: "main" | "daytona" = "daytona") {
 }
 
 test.each(["main", "daytona"] as const)(
-    "automatic frontend work on %s continues after the model turn and publishes one verified draft with a report",
+    "repository work on %s continues after the model turn and publishes one verified draft with a report",
     async (target) => {
         const f = await fixture(target);
         try {
@@ -293,12 +291,45 @@ test.each(["main", "daytona"] as const)(
                 }
             );
             await f.grant(true);
+            const proposal = {
+                ...input,
+                plan: {
+                    ...input.plan,
+                    files: [
+                        {
+                            path: "apps/auth/src/server/example.ts",
+                            beforeSha256: null,
+                            content: "export const example = 1;\n",
+                        },
+                        {
+                            path: "apps/computer/native/Example.cs",
+                            beforeSha256: null,
+                            content: "internal class Example {}\n",
+                        },
+                        {
+                            path: "deploy/example.yaml",
+                            beforeSha256: null,
+                            content: "services: {}\n",
+                        },
+                        {
+                            path: ".github/workflows/improvement-fixture.yml",
+                            beforeSha256: null,
+                            content: "name: Fixture\non: workflow_dispatch\njobs: {}\n",
+                        },
+                        {
+                            path: ".github/actions/example/action.yml",
+                            beforeSha256: null,
+                            content: "name: Fixture action\n",
+                        },
+                    ],
+                },
+            };
             const { run, submit } = await f.start(),
-                submitted = await submit();
+                submitted = await submit(proposal);
             expect(submitted.ok).toBe(true);
             const id = submitted.result!.id,
                 provider = f.provider(id);
-            expect(await submit()).toMatchObject({
+            expect(await submit(proposal)).toMatchObject({
                 ok: true,
                 result: { id, state: "queued" },
             });
@@ -346,6 +377,17 @@ test.each(["main", "daytona"] as const)(
                 state: "published",
                 number: 123,
             });
+            const treeWrite = provider.calls.find(
+                (call) =>
+                    call.init.method === "POST" &&
+                    call.url.pathname.endsWith("/git/trees")
+            );
+            const publishedTree = JSON.parse(treeWrite!.init.body as string) as {
+                tree: { path: string }[];
+            };
+            expect(publishedTree.tree.map((file) => file.path)).toEqual(
+                proposal.plan.files.map((file) => file.path)
+            );
             const count = provider.calls.length;
             expect(await f.dispatch(provider.request)).toBe(false);
             expect(provider.calls).toHaveLength(count);
@@ -386,7 +428,7 @@ test("coding grant is human-only, owner-scoped, versioned and invalidated by def
                     automationVersion: 1,
                     version: 0,
                     enabled: true,
-                    policyVersion: 1,
+                    policyVersion: 2,
                 },
                 bindings
             ),
@@ -416,8 +458,67 @@ test("coding grant is human-only, owner-scoped, versioned and invalidated by def
             automationVersion: 2,
             version: 1,
             enabled: false,
-            policyVersion: 1,
+            policyVersion: 2,
         });
+    } finally {
+        await f.close();
+    }
+});
+
+test("frontend-only permission cannot silently authorize repository-wide changes", async () => {
+    const f = await fixture();
+    try {
+        await f.grant(true);
+        const legacy = new Bun.CryptoHasher("sha256")
+            .update(
+                JSON.stringify([
+                    {
+                        version: 1,
+                        paths: [
+                            "apps/dashboard/src/browser/",
+                            "packages/ui/src/components/",
+                        ],
+                        maximumFiles: 10,
+                        maximumFileBytes: 65_536,
+                        maximumPlanBytes: 262_144,
+                        attemptsPerDay: 2,
+                        minutesPerCheck: 10,
+                    },
+                    daytonaBindingHash(daytona),
+                    githubBindingHash(github),
+                ])
+            )
+            .digest("hex");
+        await f.client`UPDATE mira_improvement_grants SET binding_hash=${legacy} WHERE automation_id=${f.automation.id}`;
+        expect(await f.api.improvements.grant({ id: f.automation.id })).toMatchObject({
+            enabled: true,
+            current: false,
+        });
+        await rejects(
+            f.api.improvements.allow({
+                automationId: f.automation.id,
+                automationVersion: 1,
+                version: 1,
+                enabled: true,
+                policyVersion: 1 as never,
+            })
+        );
+        const { submit } = await f.start();
+        expect(
+            await submit({
+                ...input,
+                plan: {
+                    ...input.plan,
+                    files: [
+                        {
+                            ...input.plan.files[0],
+                            path: "apps/auth/src/server/fixture.ts",
+                        },
+                    ],
+                },
+            })
+        ).toMatchObject({ ok: false });
+        expect(await f.client`SELECT id FROM mira_improvements`).toHaveLength(0);
     } finally {
         await f.close();
     }
@@ -874,7 +975,7 @@ test("silent automation delivery retains durable outcome reports without a notif
             automationVersion: 2,
             version: 0,
             enabled: true,
-            policyVersion: 1,
+            policyVersion: 2,
         });
         const { submit } = await f.start(),
             result = await submit(),
@@ -1052,7 +1153,7 @@ test("Main selection never authorizes a Daytona improvement grant or falls back 
                 automationVersion: 2,
                 version: 0,
                 enabled: true,
-                policyVersion: 1,
+                policyVersion: 2,
             }),
             /selected execution target/
         );
@@ -1230,7 +1331,7 @@ test("changing an automation target requires a fresh grant and does not upgrade 
             automationVersion: 2,
             version: 1,
             enabled: true,
-            policyVersion: 1,
+            policyVersion: 2,
         });
         expect(await submit()).toMatchObject({ ok: false });
         expect(await f.client`SELECT id FROM mira_improvements`).toHaveLength(0);

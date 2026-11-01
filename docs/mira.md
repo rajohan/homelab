@@ -213,7 +213,7 @@ not active replacement schedules. All times are Europe/Oslo:
 
 Dashboard improvement uses an isolated worktree, Mira's verified GitHub identity,
 current Bun pin, shared components and required checks. It checks existing tasks/PRs
-before starting. The [automatic frontend policy](mira-improvements.md) requires explicit per-automation permission for a bounded fixed cloud check and draft PR. It cannot automatically merge, deploy, restart, change secrets or send unrelated external messages. Each job can be disabled independently.
+before starting. The [automatic repository policy](mira-improvements.md) requires explicit per-automation permission for a bounded fixed Main or Daytona check and draft PR. It cannot automatically merge, deploy, restart, change secrets or send unrelated external messages. Each job can be disabled independently.
 
 AgentMail keeps Mira's existing inbox. Replace the old custom signature transform
 with raw-body Svix verification, durable event acceptance, deduplication and missed

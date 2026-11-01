@@ -75,15 +75,17 @@ export function ImprovementPermission({
                     <Badge>{active ? "Allowed" : "Requires permission"}</Badge>
                 </div>
                 <p className="text-sm leading-6 text-primary-300">
-                    Allow this automation to test a small frontend improvement and open a
+                    Allow this automation to test a small Homelab improvement and open a
                     draft PR with Mira. Each change still needs GitHub reviews and your
                     approval before merge.
                 </p>
                 <Fieldset legend="Scope and limits">
                     <ul className="list-disc space-y-2 pl-5 text-sm leading-6 text-primary-300">
                         <li>
-                            Dashboard browser code and shared UI components only. Up to
-                            ten TypeScript or CSS files, 64 KiB each and 256 KiB total.
+                            The whole Homelab repository: web, Windows app, backend,
+                            shared packages, tests, CI workflows, configuration and
+                            documentation. Up to ten text files, 64 KiB each and 256 KiB
+                            total.
                         </li>
                         <li>
                             One fixed {target} check per run, up to ten minutes. At most
