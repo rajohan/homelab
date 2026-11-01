@@ -201,7 +201,7 @@ export async function dispatchMiraMail(
         return true;
     }
     if (!(await miraActionApproval(client, configuration.owner, "mail", claimed.id))) {
-        await client`UPDATE mira_mail_drafts SET state='draft',approval_run_id=NULL,approval_run_id=NULL,approved_version=NULL,approved_by=NULL,approved_at=NULL,control_version=NULL,attempt_token=NULL,started_at=NULL,message='Chat permission changed. Review this email again.',version=version+1,updated_at=now() WHERE id=${claimed.id} AND owner=${configuration.owner} AND attempt_token=${claimed.token} AND state='sending'`;
+        await client`UPDATE mira_mail_drafts SET state='draft',approval_run_id=NULL,approved_version=NULL,approved_by=NULL,approved_at=NULL,control_version=NULL,attempt_token=NULL,started_at=NULL,message='Chat permission changed. Review this email again.',version=version+1,updated_at=now() WHERE id=${claimed.id} AND owner=${configuration.owner} AND attempt_token=${claimed.token} AND state='sending'`;
         return true;
     }
     let acknowledgement: { message_id: string; thread_id: string } | null = null;

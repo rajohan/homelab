@@ -270,6 +270,61 @@ for (const revoke of ["settings", "archive", "failed", "cancel"] as const)
         }
     });
 
+test("mail revoked after claiming returns to draft without contacting the provider", async () => {
+    const f = await fixture("full_access");
+    try {
+        const draft = await f.draft();
+        expect(
+            await f.execute("mira_action_execute", {
+                kind: "mail",
+                id: draft.id,
+                version: draft.version,
+                contentHash: draft.contentHash,
+            })
+        ).toMatchObject({ ok: true });
+        await finishMiraRun(f.client, f.run, {
+            state: "completed",
+            text: "Queued",
+            message: null,
+        });
+        // Revoke at the claim boundary, before the dispatcher's final permission check.
+        await f.client`CREATE FUNCTION revoke_claimed_mail() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.state='sending' AND OLD.state='queued' THEN UPDATE mira_runs SET approval_revoked_at=clock_timestamp() WHERE id=NEW.approval_run_id; END IF; RETURN NEW; END $$`;
+        await f.client`CREATE TRIGGER revoke_claimed_mail AFTER UPDATE ON mira_mail_drafts FOR EACH ROW EXECUTE FUNCTION revoke_claimed_mail()`;
+        let writes = 0;
+        const request = Object.assign(
+            () => {
+                writes++;
+                return Promise.resolve(Response.json({}));
+            },
+            { preconnect: fetch.preconnect }
+        );
+        expect(await dispatchMiraMail(f.client, f.configuration, signal, request)).toBe(
+            true
+        );
+        expect(writes).toBe(0);
+        const [row] = await f.client<
+            {
+                state: string;
+                origin: string | null;
+                attempt: string | null;
+                started: Date | null;
+            }[]
+        >`SELECT state,approval_run_id AS origin,attempt_token AS attempt,started_at AS started FROM mira_mail_drafts WHERE id=${draft.id}`;
+        expect(row).toEqual({
+            state: "draft",
+            origin: null,
+            attempt: null,
+            started: null,
+        });
+        await reconcileMiraMail(f.client, f.configuration);
+        expect(await readMiraMail(f.client, "operator", draft.id)).toMatchObject({
+            state: "draft",
+        });
+    } finally {
+        await f.close();
+    }
+});
+
 test("automation runs do not inherit Chat delegation and explicit human approval remains independent", async () => {
     const f = await fixture("full_access");
     try {
