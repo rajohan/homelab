@@ -1,6 +1,7 @@
 import type { MiraActivity, MiraRunSummary, MiraSchedule } from "@homelab/contracts/mira";
 import type { SQL, TransactionSQL } from "bun";
 
+import { isSyntheticModel } from "../runtime/syntheticCatalog";
 import {
     miraDependenciesAllowed,
     miraRunAllowed,
@@ -23,6 +24,7 @@ import {
 export interface MiraRunCatalog {
     models: string[];
     defaultModel: string | null;
+    nativeDefaultModel?: string | null;
     syntheticOwner?: string | undefined;
 }
 
@@ -97,7 +99,7 @@ export async function claimMiraRun(
         for (let skipped = 0; skipped < 20; skipped++) {
             const [run] = await query<
                 Omit<MiraClaim, "leaseToken">[]
-            >`SELECT id, owner, conversation_id AS "conversationId", user_message_id AS "userMessageId", assistant_message_id AS "assistantMessageId", automation_id AS "automationId", task_id AS "taskId", budget_seconds AS "budgetSeconds", manual, task_resumed AS "taskResumed" FROM mira_runs WHERE state = 'queued' AND NOT cancel_requested AND (${lane === "general"} OR (manual AND NOT task_resumed)) AND (NOT task_resumed OR NOT EXISTS (SELECT 1 FROM mira_switches WHERE owner=mira_runs.owner AND key='autonomy' AND NOT enabled)) AND (${catalog === undefined} OR (COALESCE(settings->>'model',${catalog?.defaultModel ?? null}) IN (SELECT jsonb_array_elements_text(${JSON.stringify(catalog?.models ?? [])}::text::jsonb)) AND (COALESCE(settings->>'model',${catalog?.defaultModel ?? null}) NOT LIKE 'syn:%' OR owner=${catalog?.syntheticOwner ?? null}))) ORDER BY priority DESC, id LIMIT 1 FOR UPDATE SKIP LOCKED`;
+            >`SELECT id, owner, conversation_id AS "conversationId", user_message_id AS "userMessageId", assistant_message_id AS "assistantMessageId", automation_id AS "automationId", task_id AS "taskId", budget_seconds AS "budgetSeconds", manual, task_resumed AS "taskResumed" FROM mira_runs WHERE state = 'queued' AND NOT cancel_requested AND (${lane === "general"} OR (manual AND NOT task_resumed)) AND (NOT task_resumed OR NOT EXISTS (SELECT 1 FROM mira_switches WHERE owner=mira_runs.owner AND key='autonomy' AND NOT enabled)) AND (${catalog === undefined} OR (COALESCE(settings->>'model',CASE WHEN ${!isSyntheticModel(catalog?.defaultModel)} OR owner=${catalog?.syntheticOwner ?? null} THEN ${catalog?.defaultModel ?? null} ELSE ${catalog?.nativeDefaultModel ?? null} END) IN (SELECT jsonb_array_elements_text(${JSON.stringify(catalog?.models ?? [])}::text::jsonb)) AND (COALESCE(settings->>'model',CASE WHEN ${!isSyntheticModel(catalog?.defaultModel)} OR owner=${catalog?.syntheticOwner ?? null} THEN ${catalog?.defaultModel ?? null} ELSE ${catalog?.nativeDefaultModel ?? null} END) NOT LIKE 'syn:%' OR owner=${catalog?.syntheticOwner ?? null}))) ORDER BY priority DESC, id LIMIT 1 FOR UPDATE SKIP LOCKED`;
             if (!run) return null;
             // A pause/delete may hold controls while waiting for this row. Never wait in reverse order.
             const [controls] = await query<
@@ -158,6 +160,16 @@ export async function claimMiraRun(
                 : null;
             const deadlineAt = Date.now() + run.budgetSeconds * 1000;
             const leaseToken = crypto.randomUUID();
+            // Freeze the owner-specific automatic model in the same transaction as the claim.
+            // The executor must not reinterpret null using a different global default.
+            if (catalog) {
+                const automatic =
+                    !isSyntheticModel(catalog.defaultModel) ||
+                    run.owner === catalog.syntheticOwner
+                        ? catalog.defaultModel
+                        : (catalog.nativeDefaultModel ?? null);
+                await query`UPDATE mira_runs SET settings=jsonb_set(settings,'{model}',to_jsonb(COALESCE(settings->>'model',${automatic}::text))) WHERE id=${run.id}`;
+            }
             await query`UPDATE mira_runs SET state = 'running', worker_id = ${workerId}, lease_token = ${leaseToken}, lease_expires_at = clock_timestamp() + interval '30 seconds', lane = ${lane}, started_at = clock_timestamp(), observation_hash = ${observationHash} WHERE id = ${run.id}`;
             await query`UPDATE mira_messages SET state = 'streaming' WHERE id = ${run.assistantMessageId}`;
             await auditMira(
@@ -277,9 +289,9 @@ async function lockScheduledOwners(
     // Snapshot bounded candidate owners before taking any task, automation or delivery locks.
     // New owners discovered on a later tick must not introduce control locks after row locks.
     const rows = await query<{ owner: string }[]>`
-        SELECT owner FROM (SELECT owner FROM mira_automations WHERE deleted_at IS NULL AND next_run_at<=${now} AND (${catalog === undefined} OR (COALESCE(settings->>'model',${catalog?.defaultModel ?? null}) IN (SELECT jsonb_array_elements_text(${JSON.stringify(catalog?.models ?? [])}::text::jsonb)) AND (COALESCE(settings->>'model',${catalog?.defaultModel ?? null}) NOT LIKE 'syn:%' OR owner=${catalog?.syntheticOwner ?? null}))) ORDER BY next_run_at LIMIT 20) recurring
+        SELECT owner FROM (SELECT owner FROM mira_automations WHERE deleted_at IS NULL AND next_run_at<=${now} AND (${catalog === undefined} OR (COALESCE(settings->>'model',CASE WHEN ${!isSyntheticModel(catalog?.defaultModel)} OR owner=${catalog?.syntheticOwner ?? null} THEN ${catalog?.defaultModel ?? null} ELSE ${catalog?.nativeDefaultModel ?? null} END) IN (SELECT jsonb_array_elements_text(${JSON.stringify(catalog?.models ?? [])}::text::jsonb)) AND (COALESCE(settings->>'model',CASE WHEN ${!isSyntheticModel(catalog?.defaultModel)} OR owner=${catalog?.syntheticOwner ?? null} THEN ${catalog?.defaultModel ?? null} ELSE ${catalog?.nativeDefaultModel ?? null} END) NOT LIKE 'syn:%' OR owner=${catalog?.syntheticOwner ?? null}))) ORDER BY next_run_at LIMIT 20) recurring
         UNION SELECT owner FROM (SELECT t.owner FROM mira_tasks t WHERE t.deleted_at IS NULL AND t.status<>'done' AND t.due_at<=${now} AND t.due_at>${new Date(now.getTime() - 86_400_000)} AND NOT EXISTS (SELECT 1 FROM mira_events e WHERE e.owner=t.owner AND e.kind='task_due' AND e.source_key=t.id::text || ':' || t.due_at::text) ORDER BY t.due_at LIMIT 20) tasks
-        UNION SELECT owner FROM (SELECT e.owner FROM mira_event_deliveries d JOIN mira_events e ON e.id=d.event_id JOIN mira_automations a ON a.id=d.automation_id AND a.owner=e.owner WHERE d.state='pending' AND d.next_attempt_at<=${now} AND (${catalog === undefined} OR (COALESCE(a.settings->>'model',${catalog?.defaultModel ?? null}) IN (SELECT jsonb_array_elements_text(${JSON.stringify(catalog?.models ?? [])}::text::jsonb)) AND (COALESCE(a.settings->>'model',${catalog?.defaultModel ?? null}) NOT LIKE 'syn:%' OR a.owner=${catalog?.syntheticOwner ?? null}))) ORDER BY d.next_attempt_at,e.id LIMIT 20) deliveries
+        UNION SELECT owner FROM (SELECT e.owner FROM mira_event_deliveries d JOIN mira_events e ON e.id=d.event_id JOIN mira_automations a ON a.id=d.automation_id AND a.owner=e.owner WHERE d.state='pending' AND d.next_attempt_at<=${now} AND (${catalog === undefined} OR (COALESCE(a.settings->>'model',CASE WHEN ${!isSyntheticModel(catalog?.defaultModel)} OR a.owner=${catalog?.syntheticOwner ?? null} THEN ${catalog?.defaultModel ?? null} ELSE ${catalog?.nativeDefaultModel ?? null} END) IN (SELECT jsonb_array_elements_text(${JSON.stringify(catalog?.models ?? [])}::text::jsonb)) AND (COALESCE(a.settings->>'model',CASE WHEN ${!isSyntheticModel(catalog?.defaultModel)} OR a.owner=${catalog?.syntheticOwner ?? null} THEN ${catalog?.defaultModel ?? null} ELSE ${catalog?.nativeDefaultModel ?? null} END) NOT LIKE 'syn:%' OR a.owner=${catalog?.syntheticOwner ?? null}))) ORDER BY d.next_attempt_at,e.id LIMIT 20) deliveries
         ORDER BY owner`;
     const changes = await pendingTaskChanges(query, now);
     const continuations = await pendingTaskContinuations(query, now);
@@ -317,7 +329,7 @@ export async function scheduleMiraRuns(
                 budgetSeconds: number;
                 nextRunAt: Date;
             }[]
-        >`SELECT id, owner, title, prompt, schedule, budget_seconds AS "budgetSeconds", next_run_at AS "nextRunAt" FROM mira_automations WHERE owner IN (SELECT jsonb_array_elements_text(${JSON.stringify(owners)}::text::jsonb)) AND deleted_at IS NULL AND next_run_at <= ${now} AND (${catalog === undefined} OR (COALESCE(settings->>'model',${catalog?.defaultModel ?? null}) IN (SELECT jsonb_array_elements_text(${JSON.stringify(catalog?.models ?? [])}::text::jsonb)) AND (COALESCE(settings->>'model',${catalog?.defaultModel ?? null}) NOT LIKE 'syn:%' OR owner=${catalog?.syntheticOwner ?? null}))) ORDER BY next_run_at LIMIT 20 FOR UPDATE SKIP LOCKED`;
+        >`SELECT id, owner, title, prompt, schedule, budget_seconds AS "budgetSeconds", next_run_at AS "nextRunAt" FROM mira_automations WHERE owner IN (SELECT jsonb_array_elements_text(${JSON.stringify(owners)}::text::jsonb)) AND deleted_at IS NULL AND next_run_at <= ${now} AND (${catalog === undefined} OR (COALESCE(settings->>'model',CASE WHEN ${!isSyntheticModel(catalog?.defaultModel)} OR owner=${catalog?.syntheticOwner ?? null} THEN ${catalog?.defaultModel ?? null} ELSE ${catalog?.nativeDefaultModel ?? null} END) IN (SELECT jsonb_array_elements_text(${JSON.stringify(catalog?.models ?? [])}::text::jsonb)) AND (COALESCE(settings->>'model',CASE WHEN ${!isSyntheticModel(catalog?.defaultModel)} OR owner=${catalog?.syntheticOwner ?? null} THEN ${catalog?.defaultModel ?? null} ELSE ${catalog?.nativeDefaultModel ?? null} END) NOT LIKE 'syn:%' OR owner=${catalog?.syntheticOwner ?? null}))) ORDER BY next_run_at LIMIT 20 FOR UPDATE SKIP LOCKED`;
         let queued = await scheduleTaskContinuations(query, now, owners);
         queued += await scheduleMiraEvents(query, now, owners, catalog);
         for (const automation of due) {

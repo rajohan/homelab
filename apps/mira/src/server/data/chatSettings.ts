@@ -11,6 +11,22 @@ import { isSyntheticModel } from "../runtime/syntheticCatalog";
 import { auditMira, MiraFailure, type MiraContext, type MiraQuery } from "./context";
 
 /**
+ * Resolve the automatic model for accounts without the owner-bound subscription.
+ * @param models - Current catalog, including the native provider's default marker.
+ * @param deploymentDefault - Configured default; an unavailable native choice remains unavailable.
+ * @returns The configured native model or the native provider default when Synthetic is owner-bound.
+ */
+export function miraNativeDefaultModel(
+    models: MiraModel[],
+    deploymentDefault: string | null
+): string | null {
+    return deploymentDefault && !isSyntheticModel(deploymentDefault)
+        ? deploymentDefault
+        : (models.find((entry) => entry.isDefault && !isSyntheticModel(entry.model))
+              ?.model ?? null);
+}
+
+/**
  * Resolve one turn from the current runtime catalog, rejecting unsupported combinations.
  * @param models - Validated catalog from this runtime instance.
  * @param requested - Human-selected conversation preferences, frozen when the turn was queued.
@@ -71,16 +87,14 @@ async function readCatalog(query: MiraQuery, owner: string) {
         v.pipe(v.array(miraModelSchema), v.maxLength(2100)),
         row?.models ?? []
     );
+    const models = parsed.success ? parsed.output : [];
     return {
-        models: parsed.success
-            ? parsed.output.filter(
-                  (entry) =>
-                      !isSyntheticModel(entry.model) || row?.syntheticOwner === owner
-              )
-            : [],
+        models: models.filter(
+            (entry) => !isSyntheticModel(entry.model) || row?.syntheticOwner === owner
+        ),
         defaultModel:
             row?.model && isSyntheticModel(row.model) && row.syntheticOwner !== owner
-                ? null
+                ? miraNativeDefaultModel(models, row.model)
                 : (row?.model ?? null),
         fresh: row?.fresh === true,
     };

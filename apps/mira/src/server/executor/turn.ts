@@ -161,8 +161,12 @@ export async function executeMiraTurn(
     }, 250);
     try {
         signal.throwIfAborted();
-        let record = await readMiraTurnInput(client, run);
-        const useSynthetic = isSyntheticModel(record.settings.model ?? config.model);
+        let record = await readMiraTurnInput(client, run, false, false);
+        const automaticModel =
+            isSyntheticModel(config.model) && synthetic?.owner !== run.owner
+                ? null
+                : config.model;
+        const useSynthetic = isSyntheticModel(record.settings.model ?? automaticModel);
         if (useSynthetic && (!synthetic || synthetic.owner !== run.owner))
             throw new MiraFailure(
                 "PRECONDITION_FAILED",
@@ -186,15 +190,20 @@ export async function executeMiraTurn(
             runtime instanceof CodexRuntime
                 ? await runtime.models()
                 : await loadSyntheticModels(synthetic!, signal);
-        const settings = resolveMiraChatSettings(models, record.settings, config.model);
+        const settings = resolveMiraChatSettings(models, record.settings, automaticModel);
         const selectedModel = models.find((entry) => entry.model === settings.model)!;
+        record = await readMiraTurnInput(
+            client,
+            run,
+            useSynthetic,
+            selectedModel.inputModalities.includes("image")
+        );
         if (useSynthetic) {
             // Keep native history for cleanup, but force product recovery if the user returns to ChatGPT.
             const cleared = await client<
                 { id: string }[]
             >`UPDATE mira_conversations SET provider_context_ready=false WHERE id=${run.conversationId} AND owner=${run.owner} AND EXISTS (SELECT 1 FROM mira_runs WHERE id=${run.id} AND state='running' AND NOT cancel_requested AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp()) RETURNING id`;
             if (!cleared[0]) throw new Error("Run lease lost during provider selection.");
-            record = await readMiraTurnInput(client, run, true);
         }
         if (
             runtime instanceof CodexRuntime &&
@@ -208,7 +217,12 @@ export async function executeMiraTurn(
                 { id: string }[]
             >`UPDATE mira_conversations SET provider_thread=NULL,provider_policy_hash=NULL,provider_context_ready=false WHERE id=${run.conversationId} AND owner=${run.owner} AND provider_thread=${record.providerThread} AND EXISTS (SELECT 1 FROM mira_runs WHERE id=${run.id} AND state='running' AND NOT cancel_requested AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp()) RETURNING id`;
             if (!cleared[0]) throw new Error("Run lease lost during policy renewal.");
-            record = await readMiraTurnInput(client, run);
+            record = await readMiraTurnInput(
+                client,
+                run,
+                false,
+                selectedModel.inputModalities.includes("image")
+            );
         }
         const tools = createMiraToolRouter(
             createMiraTools(
@@ -242,7 +256,12 @@ export async function executeMiraTurn(
                     throw new Error("Run lease lost during conversation recovery.", {
                         cause: error,
                     });
-                record = await readMiraTurnInput(client, run);
+                record = await readMiraTurnInput(
+                    client,
+                    run,
+                    false,
+                    selectedModel.inputModalities.includes("image")
+                );
                 threadId = null;
             }
         }

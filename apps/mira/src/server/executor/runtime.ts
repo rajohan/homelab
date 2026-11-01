@@ -5,6 +5,7 @@ import type { SQL } from "bun";
 
 import { runtimeEnvironment } from "../config/environment";
 import { reconcileMiraControls } from "../data/automations";
+import { miraNativeDefaultModel } from "../data/chatSettings";
 import { claimMiraRun, reconcileMiraRuns, scheduleMiraRuns } from "../data/queue";
 import { dispatchMiraImprovement } from "../improvement/worker";
 import {
@@ -219,6 +220,7 @@ export async function runMiraExecutor(options: {
                     await scheduleMiraRuns(client, new Date(), {
                         models: models.map((entry) => entry.model),
                         defaultModel: model,
+                        nativeDefaultModel: miraNativeDefaultModel(models, model),
                         syntheticOwner: options.synthetic?.owner,
                     });
             });
@@ -379,6 +381,7 @@ export async function runMiraExecutor(options: {
                     const run = await claimMiraRun(client, workerId, name, {
                         models: models.map((entry) => entry.model),
                         defaultModel: model,
+                        nativeDefaultModel: miraNativeDefaultModel(models, model),
                         syntheticOwner: options.synthetic?.owner,
                     });
                     if (run) {

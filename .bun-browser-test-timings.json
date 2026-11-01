@@ -15,7 +15,7 @@
     "apps/auth/src/browser/pages/SignInPage.test.tsx": 349,
     "packages/ui/src/features/identity/components/forms/PasswordForm.test.tsx": 306,
     "apps/dashboard/src/browser/features/infrastructure/ResourceComponents.test.tsx": 263,
-    "apps/dashboard/src/browser/features/mira/MiraControls.test.tsx": 4579,
+    "apps/dashboard/src/browser/features/mira/MiraControls.test.tsx": 4862,
     "apps/dashboard/src/browser/features/maintenance/MaintenancePanel.test.tsx": 218,
     "packages/ui/src/features/identity/components/dialogs/EnrollmentDialogs.test.tsx": 149,
     "packages/ui/src/components/DatePicker/DatePicker.test.tsx": 140,
