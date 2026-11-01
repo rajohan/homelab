@@ -50,7 +50,8 @@ def main():
                                  "proxyImageId": docker("inspect", "--format", "{{.Image}}", proxy)}}
             config_file = Path(directory) / "host.json"
             config_file.write_text(json.dumps(config))
-            subprocess.run(["bun", "--no-env-file", "apps/mira/src/server/testing/localCodeSmoke.ts", str(config_file), commit, *extra], cwd=root, env=env, check=True, timeout=750)
+            # Two sequential 650-second checks plus bounded setup, interruption and recovery.
+            subprocess.run(["bun", "--no-env-file", "apps/mira/src/server/testing/localCodeSmoke.ts", str(config_file), commit, *extra], cwd=root, env=env, check=True, timeout=2100)
         finally:
             # Include only this fixture's private network peers; never prune unrelated host resources.
             for network in networks[:1]:

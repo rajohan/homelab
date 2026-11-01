@@ -23,7 +23,8 @@ jobs:
       needs.platforms.outputs.required == 'true' &&
       (github.event_name != 'release' || !github.event.release.prerelease)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Build, the full shared harness and two sequential bounded local checks.
+    timeout-minutes: 60
     steps:
       - name: Check out the exact source commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

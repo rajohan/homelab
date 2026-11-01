@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, unlink } from "node:fs/promises";
 import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -8,7 +8,9 @@ import { Duplex } from "node:stream";
 import { setTimeout as delay } from "node:timers/promises";
 
 import type { BrowserDockerRequest } from "../browsing/docker";
+import type { BrowserEgress } from "../browsing/egress";
 import { sandboxProxyEnvironment } from "../config/environment";
+import { browserEgressFixture } from "../testing/browserEgressFixture";
 import {
     cleanupLocalCodeContainer,
     executeLocalCodeCheck,
@@ -44,7 +46,10 @@ async function fixture() {
     const socketPath = path.join(directory, "docker.sock");
     const socket = createServer();
     await new Promise<void>((resolve) => socket.listen(socketPath, resolve));
-    const config = { socketPath, imageId };
+    const config: { socketPath: string; imageId: string; egress?: BrowserEgress } = {
+        socketPath,
+        imageId,
+    };
     const events: string[] = [];
     const state = {
         exists: false,
@@ -427,6 +432,95 @@ test("the execution deadline starts after setup and still removes a stalled runn
         } finally {
             await f.close();
         }
+    }
+});
+
+test("socket loss still retires the durable attempt before cleanup becomes unavailable", async () => {
+    const f = await fixture();
+    const request = f.dependencies.request;
+    f.dependencies.request = async (method, route, body) => {
+        const reply = await request(method, route, body);
+        if (route.endsWith("/start")) await unlink(f.config.socketPath);
+        return reply;
+    };
+    f.state.reply = "hold";
+    try {
+        await assert.rejects(f.run());
+        expect(f.state.started).toBe(true);
+        expect(f.events.at(-1)).toBe("cleaning");
+        expect(f.events).not.toContain("confirmed");
+    } finally {
+        await f.close();
+    }
+});
+
+test("a result waits for pending egress verification and rejects lost isolation", async () => {
+    const f = await fixture();
+    const egress = browserEgressFixture();
+    f.config.egress = egress.config;
+    f.state.reply = "pending";
+    const request = f.dependencies.request;
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    let checks = 0;
+    f.dependencies.request = async (method, route, body) => {
+        if (method === "GET" && route in egress.replies) {
+            if (route.startsWith("/networks/") && ++checks === 3) {
+                entered.resolve();
+                await release.promise;
+            }
+            return {
+                status: 200,
+                body:
+                    route === `/containers/${containerId}/json`
+                        ? {
+                              ...egress.browser,
+                              Image: imageId,
+                              Config: { Labels: { "io.homelab.mira.code-owner": owner } },
+                          }
+                        : egress.replies[route],
+            };
+        }
+        const reply = await request(method, route, body);
+        if (route.startsWith("/containers/create?"))
+            egress.network.Containers[containerId] = {};
+        if (method === "DELETE") {
+            delete egress.network.Containers[containerId];
+            delete egress.replies[`/containers/${containerId}/json`];
+        }
+        return reply;
+    };
+    const attach = f.dependencies.attach;
+    let channel: Duplex | undefined;
+    f.dependencies.attach = async () => {
+        channel = await attach();
+        return channel;
+    };
+    let settled = false;
+    const running = f.run().finally(() => {
+        settled = true;
+    });
+    const rejected = assert.rejects(running);
+    try {
+        await entered.promise;
+        const body = Buffer.from(JSON.stringify(result) + "\n");
+        const header = Buffer.alloc(8);
+        header[0] = 1;
+        header.writeUInt32BE(body.length, 4);
+        channel!.push(Buffer.concat([header, body]));
+        await delay(10);
+        expect(settled).toBe(false);
+        expect(f.events).not.toContain("remove");
+        egress.proxy.State.Health.Status = "unhealthy";
+        release.resolve();
+        await rejected;
+        expect(f.state.exists).toBe(false);
+        expect(f.events.at(-1)).toBe("confirmed");
+    } finally {
+        release.resolve();
+        f.controller.abort();
+        await rejected;
+        await f.close();
     }
 });
 

@@ -186,7 +186,6 @@ export async function cleanupLocalCodeContainer(
     transport?: BrowserDockerRequest,
     journalTimeoutMs = 10_000
 ): Promise<void> {
-    const { config, call } = await engine(configuration, transport);
     v.parse(id, record.id);
     if (record.containerId) v.parse(containerId, record.containerId);
     // Each write gets a fresh budget; Docker I/O must not consume the final acknowledgement's time.
@@ -198,6 +197,8 @@ export async function cleanupLocalCodeContainer(
     } catch {
         journalFailed = true;
     }
+    // Retire execution before any socket-dependent work, including recovery after socket loss.
+    const { config, call } = await engine(configuration, transport);
     const found = await inspect(
         call,
         config,
@@ -270,7 +271,7 @@ export async function executeLocalCodeCheck(
     let stream: Duplex | undefined;
     let monitoring: ReturnType<typeof setInterval> | undefined;
     let executionDeadline: ReturnType<typeof setTimeout> | undefined;
-    let checking = false;
+    let checking: Promise<void> | undefined;
     const verify = () =>
         config.egress
             ? verifyBrowserEgress(call, config.egress, created)
@@ -346,11 +347,10 @@ export async function executeLocalCodeCheck(
         await verify();
         monitoring = setInterval(() => {
             if (checking || signal.aborted) return;
-            checking = true;
-            void verify()
+            checking = verify()
                 .catch(() => controller.abort())
                 .finally(() => {
-                    checking = false;
+                    checking = undefined;
                 });
         }, 2000);
         monitoring.unref();
@@ -359,6 +359,8 @@ export async function executeLocalCodeCheck(
             if (error) controller.abort();
         });
         const output = await result;
+        clearInterval(monitoring);
+        await checking;
         signal.throwIfAborted();
         return output;
     } finally {
@@ -366,6 +368,7 @@ export async function executeLocalCodeCheck(
         clearTimeout(executionDeadline);
         controller.abort();
         stream?.destroy();
+        await checking;
         if (issued)
             await cleanupLocalCodeContainer(
                 config,
