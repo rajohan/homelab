@@ -1366,3 +1366,54 @@ test("cancellation while waiting for file storage cannot commit download readine
         await rm(directory, { recursive: true, force: true });
     }
 });
+
+test("browser tabs use the existing tool queue, owner checks and exclusive human controller", async () => {
+    const f = await fixture("view");
+    try {
+        const grant = await f.grant();
+        void f.start();
+        const observed = frame(await f.invoke("mira_browser_tabs", { action: "list" }));
+        expect(observed.observationId).toBeTruthy();
+        const state = await f.api.browser.console({ id: grant.id });
+        expect(state.preview?.tabs?.items).toHaveLength(1);
+        const count = f.engine.events.filter((event) => event === "tabs").length;
+        expect(
+            text(
+                await f.invoke("mira_browser_tabs", {
+                    action: "open",
+                    url: "https://foreign.test/",
+                })
+            ).ok
+        ).toBe(false);
+        expect(f.engine.events.filter((event) => event === "tabs").length).toBe(count);
+        await rejects(f.caller("other").browser.console({ id: grant.id }));
+        await f.api.browser.transfer({
+            id: grant.id,
+            epoch: state.epoch,
+            controller: "human",
+        });
+        expect(text(await f.invoke("mira_browser_tabs", { action: "list" })).ok).toBe(
+            false
+        );
+        const operator = await operatorCommand(f, grant.id, {
+            method: "tabs",
+            input: { action: "list" },
+        });
+        expect(operator.preview?.tabs?.selectedId).toBe(state.preview?.tabs?.selectedId);
+        await rejects(
+            f.api.browser.command({
+                id: grant.id,
+                epoch: operator.epoch,
+                commandId: crypto.randomUUID(),
+                operation: {
+                    method: "tabs",
+                    input: { action: "open", url: "https://foreign.test/" },
+                },
+            })
+        );
+        await f.api.browser.stop({ id: grant.id });
+        await until(() => !f.engine.exists);
+    } finally {
+        await f.close();
+    }
+});

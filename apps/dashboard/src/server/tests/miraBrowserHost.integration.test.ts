@@ -16,6 +16,8 @@ function runtime() {
     const open = () =>
         Promise.resolve({
             signal: controller.signal,
+            tabs: (): Promise<never> =>
+                Promise.reject(new Error("No tab fixture selected.")),
             observe: (): Promise<never> =>
                 Promise.reject(new Error("No image fixture is needed.")),
             navigate: (url: unknown) => {

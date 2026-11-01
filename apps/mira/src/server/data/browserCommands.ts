@@ -172,9 +172,13 @@ export async function enqueueMiraBrowserCommand(
               })
             : undefined;
         if (!access?.policy) return null;
-        if (operation.method === "navigate") {
+        let destination: string | null = null;
+        if (operation.method === "navigate") destination = operation.url;
+        if (operation.method === "tabs" && operation.input.action === "open")
+            destination = operation.input.url;
+        if (destination) {
             try {
-                browserUrl(operation.url, access.policy.origins);
+                browserUrl(destination, access.policy.origins);
             } catch {
                 throw new MiraFailure(
                     "BAD_REQUEST",
@@ -346,7 +350,8 @@ export async function finishMiraBrowserCommand(
         if (updated.length === 0)
             await retireBrowserCommands(query, context.owner, accessId);
         if (updated.length === 1) {
-            await (row.method === "observe" && "content" in parsed
+            await ((row.method === "observe" || row.method === "tabs") &&
+            "content" in parsed
                 ? saveBrowserPreview(query, accessId, parsed)
                 : query`UPDATE mira_browser_consoles SET frame=NULL,frame_at=NULL WHERE access_id=${accessId}`);
         }

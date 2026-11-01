@@ -96,6 +96,12 @@ export async function runMiraBrowserHost(
                 let result: unknown;
                 if (command.operation.method === "observe")
                     result = await current.observe(operation, Boolean(humanCommand));
+                else if (command.operation.method === "tabs")
+                    result = await current.tabs(
+                        command.operation.input,
+                        operation,
+                        Boolean(humanCommand)
+                    );
                 else if (command.operation.method === "navigate")
                     result = await current.navigate(command.operation.url, operation);
                 else if (command.operation.method === "download") {

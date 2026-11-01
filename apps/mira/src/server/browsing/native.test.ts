@@ -683,3 +683,154 @@ test("native downloads require explicit authority, operator link refs and one un
         await browser.close();
     }
 });
+
+async function tabFixture() {
+    const f = await fixture();
+    const pages = new Map([["initial", `${origin}/`]]);
+    const bindings = new Map([["tab", "initial"]]);
+    let next = 0;
+    let ambiguous = false;
+    const base = f.native.callTool;
+    f.native.callTool = (name, args, signal) => {
+        if (name === "get_browser_state" && args.pid && pages.size > 1) {
+            const tabs = [...pages].map(([raw, url]) => {
+                const id = `tab-${++next}`;
+                bindings.set(id, raw);
+                return { tab_id: id, url: ambiguous ? "about:blank" : url };
+            });
+            return Promise.resolve(
+                response({
+                    ...JSON.parse(f.results.bind!.structuredJson!),
+                    target_id: `target-${next}`,
+                    tabs,
+                })
+            );
+        }
+        const raw = bindings.get(String(args.tab_id));
+        if (name === "browser_navigate" && raw) {
+            pages.set(raw, String(args.url));
+            return Promise.resolve(
+                response({ status: "ok", ...args, refs_invalidated: true })
+            );
+        }
+        if (name === "get_browser_state" && raw)
+            return Promise.resolve(
+                response(
+                    {
+                        ...snapshot(),
+                        target_id: args.target_id,
+                        tab_id: args.tab_id,
+                        page: { url: pages.get(raw), title: raw },
+                    },
+                    [image()]
+                )
+            );
+        return base(name, args, signal);
+    };
+    const lifecycle = {
+        pages: () =>
+            Promise.resolve(
+                [...pages].map(([targetId, url]) => ({ targetId, url, type: "page" }))
+            ),
+        create: () => {
+            const id = `raw-${++next}`;
+            pages.set(id, "about:blank");
+            return Promise.resolve(id);
+        },
+        close: (id: string) => {
+            if (!pages.delete(id)) throw new Error("Unknown target");
+            return Promise.resolve();
+        },
+    };
+    const browser = await openNativeBrowser(
+        f.grant,
+        f.owner.signal,
+        () => Promise.resolve(f.native),
+        () => 0,
+        () => Promise.resolve(lifecycle)
+    );
+    return {
+        ...f,
+        browser,
+        pages,
+        ambiguous: () => {
+            ambiguous = true;
+        },
+    };
+}
+
+test("tabs keep their original bindings when duplicate URLs are opened and selected", async () => {
+    const f = await tabFixture();
+    try {
+        const first = await f.browser.tabs({ action: "list" }, signal());
+        const firstId = first.tabs!.selectedId;
+        const second = await f.browser.tabs(
+            { action: "open", url: `${origin}/` },
+            signal()
+        );
+        expect(second.tabs!.items).toHaveLength(2);
+        expect(second.tabs!.selectedId).not.toBe(firstId);
+        const back = await f.browser.tabs({ action: "select", tabId: firstId }, signal());
+        expect(back.title).toBe("initial");
+        await f.browser.act(
+            {
+                action: "type",
+                observationId: back.observationId,
+                ref: "p1:0",
+                text: "original",
+                replace: true,
+            },
+            signal()
+        );
+        expect(
+            f.calls.findLast((call) => call.name === "browser_type")!.args.tab_id
+        ).toBe("tab");
+        const remaining = await f.browser.tabs(
+            { action: "close", tabId: firstId },
+            signal()
+        );
+        expect(remaining.tabs!.selectedId).toBe(second.tabs!.selectedId);
+        expect(remaining.tabs!.items).toHaveLength(1);
+        expect(f.pages.has("initial")).toBe(false);
+    } finally {
+        await f.browser.close();
+    }
+});
+
+test("a tab change invalidates old refs even when both pages use the same URL and ref", async () => {
+    const f = await tabFixture();
+    const first = await f.browser.tabs({ action: "list" }, signal());
+    await f.browser.tabs({ action: "open", url: `${origin}/` }, signal());
+    await assert.rejects(
+        f.browser.act(
+            { action: "click", observationId: first.observationId, ref: "p1:1" },
+            signal()
+        ),
+        /fresh/
+    );
+    expect(f.calls.some((call) => call.name === "browser_click")).toBe(false);
+    expect(f.shuts()).toBe(1);
+});
+
+test("tab operations refuse unknown IDs, foreign origins, ambiguous binding and unexpected windows", async () => {
+    for (const scenario of ["unknown", "origin", "ambiguous", "popup", "last", "limit"]) {
+        const f = await tabFixture();
+        const first = await f.browser.tabs({ action: "list" }, signal());
+        if (scenario === "ambiguous") f.ambiguous();
+        if (scenario === "popup") f.pages.set("unowned", `${origin}/`);
+        if (scenario === "limit")
+            for (let count = 1; count < 8; count++)
+                await f.browser.tabs({ action: "open", url: `${origin}/` }, signal());
+        let command: unknown = {
+            action: "open",
+            url: scenario === "origin" ? "https://other.invalid/" : `${origin}/`,
+        };
+        if (scenario === "unknown")
+            command = { action: "select", tabId: crypto.randomUUID() };
+        if (scenario === "last")
+            command = { action: "close", tabId: first.tabs!.selectedId };
+        await assert.rejects(f.browser.tabs(command, signal()));
+        expect(f.shuts()).toBe(1);
+        if (scenario === "origin") expect(f.pages.size).toBe(1);
+    }
+});

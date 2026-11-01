@@ -1,3 +1,4 @@
+import { miraBrowserTabCommandSchema } from "@homelab/contracts/miraBrowser";
 import * as v from "valibot";
 
 import { runtimeContentItems, type RuntimeToolResult } from "../runtime/toolResult";
@@ -6,6 +7,7 @@ import { browserActionSchema, browserWorkerFrame } from "./wire";
 
 export const browserCommandSchema = v.variant("method", [
     v.strictObject({ method: v.literal("observe") }),
+    v.strictObject({ method: v.literal("tabs"), input: miraBrowserTabCommandSchema }),
     v.strictObject({
         method: v.literal("navigate"),
         url: v.pipe(v.string(), v.minLength(1), v.maxLength(2048)),
@@ -26,7 +28,7 @@ export function browserCommandResult(
     input: unknown,
     origins: readonly string[]
 ) {
-    if (method === "observe") {
+    if (method === "observe" || method === "tabs") {
         let frame = browserWorkerFrame(input, origins);
         for (;;) {
             try {
