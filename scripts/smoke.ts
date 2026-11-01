@@ -87,6 +87,43 @@ async function checkDashboard(origin: string) {
     assert.match(html, /<title>Homelab<\/title>/);
     assert.match(html, /id=["']root["']/);
 
+    const links = [...html.matchAll(/<link\b[^>]*>/gi)].map((match) => match[0]);
+    for (const relation of ["manifest", "apple-touch-icon"]) {
+        const link = links.find((tag) => tag.includes(`rel="${relation}"`));
+        assert.ok(link, `The dashboard must advertise its ${relation}.`);
+        const href = /\bhref="([^"]+)"/.exec(link)?.[1];
+        assert.ok(href);
+        // Installing from Chat must still find app assets and launch the site root.
+        const asset = await get(origin, new URL(href, `${origin}/mira/example`).href);
+        assert.equal(asset.status, 200);
+        assert.equal(asset.headers.get("Set-Cookie"), null);
+        if (relation === "manifest") {
+            assert.match(link, /crossorigin="use-credentials"/);
+            assert.match(asset.headers.get("Content-Type") ?? "", /manifest\+json/);
+            const manifest: unknown = await asset.json();
+            assert.ok(record(manifest));
+            assert.equal(manifest.id, "/");
+            assert.equal(manifest.start_url, "/");
+            assert.equal(manifest.scope, "/");
+            assert.equal(manifest.display, "standalone");
+            assert.ok(Array.isArray(manifest.icons) && manifest.icons.length > 0);
+            for (const icon of manifest.icons as unknown[]) {
+                assert.ok(record(icon) && typeof icon.src === "string");
+                const image = await get(origin, icon.src);
+                assert.equal(image.status, 200);
+                assert.match(image.headers.get("Content-Type") ?? "", /image\/svg\+xml/);
+                assert.equal(image.headers.get("Cache-Control"), "no-cache");
+                assert.match(await image.text(), /<svg\b/);
+            }
+        } else {
+            assert.match(asset.headers.get("Content-Type") ?? "", /image\/png/);
+            const png = Buffer.from(await asset.arrayBuffer());
+            assert.equal(png.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
+            assert.equal(png.readUInt32BE(16), 180);
+            assert.equal(png.readUInt32BE(20), 180);
+        }
+    }
+
     const scripts = [
         ...html.matchAll(/<script\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/gi),
     ].map((match) => match[1]);
@@ -135,7 +172,7 @@ async function checkDashboard(origin: string) {
     const missingApi = await get(origin, "/api/missing");
     assert.equal(missingApi.status, 503);
     console.info(
-        "PASS: built dashboard HTML, linked assets, deep links and fail-closed private API."
+        "PASS: built dashboard HTML, home-screen installation assets, deep links and fail-closed private API."
     );
 }
 

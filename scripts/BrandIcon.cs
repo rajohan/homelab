@@ -34,7 +34,7 @@ internal static class BrandIcon
             throw new InvalidDataException("Requalify changes to the shared icon artwork.");
         int[] sizes = { 16, 20, 24, 32, 40, 48, 64, 128, 256 };
         var images = new List<byte[]>();
-        foreach (int size in sizes)
+        foreach (int size in sizes.Concat(new[] { 180 }))
         {
             using (var large = new Bitmap(size * 4, size * 4, PixelFormat.Format32bppArgb))
             using (var graphics = Graphics.FromImage(large))
@@ -53,7 +53,8 @@ internal static class BrandIcon
                 output.PixelOffsetMode = PixelOffsetMode.HighQuality;
                 output.DrawImage(large, new Rectangle(0, 0, size, size));
                 small.Save(stream, ImageFormat.Png);
-                images.Add(stream.ToArray());
+                if (size != 180) images.Add(stream.ToArray());
+                if (size == 180) small.Save(Path.Combine(Path.GetDirectoryName(args[1]), Path.GetFileNameWithoutExtension(args[1]) + "-180.png"), ImageFormat.Png);
                 if (size == 256) small.Save(Path.ChangeExtension(args[1], ".png"), ImageFormat.Png);
             }
         }

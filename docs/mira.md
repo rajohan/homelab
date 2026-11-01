@@ -20,6 +20,19 @@ full Windows client uses the same server APIs, permissions and persisted state;
 features must not become Windows-only. Local PC control, pairing and the system
 tray are companion capabilities. Closing either client does not stop server work.
 
+On iPhone, open the dashboard in Safari, use **Share → Add to Home Screen**, keep
+**Open as Web App** enabled if shown, and tap **Add**. The installed Homelab icon
+opens the same website in a standalone window. Sign in inside that window if
+requested: iOS can keep its session separate from Safari. The manifest starts at
+the dashboard root, so installing from a conversation does not pin a private chat
+URL. The browser keeps its default safe-area insets around system controls.
+
+The home-screen app needs access to the server through the home network or
+Meshnet, just like the website. Installation does not add offline execution, push
+notifications or local PC control to iOS. No service worker stores private API
+responses or an outdated application shell; reopening loads the deployed UI while
+server-side jobs continue independently.
+
 The dashboard, Mira executor, durable state, scheduler, integrations and files run
 on the server. A browser closing or a personal computer going offline must not stop
 server-side work. OpenAI inference remains provider-hosted.
