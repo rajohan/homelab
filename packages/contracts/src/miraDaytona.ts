@@ -47,6 +47,7 @@ export const miraDaytonaSaveSchema = v.strictObject({
 });
 export const miraDaytonaApproveSchema = v.strictObject({
     ...versionedIdSchema.entries,
+    executionTarget: v.optional(v.picklist(["daytona", "main"])),
     contentHash: hash,
     reviewedContent: miraDaytonaContentSchema,
 });
@@ -59,6 +60,7 @@ export type MiraDaytonaSave = v.InferOutput<typeof miraDaytonaSaveSchema>;
 export type MiraDaytonaApprove = v.InferOutput<typeof miraDaytonaApproveSchema>;
 export interface MiraDaytonaJob {
     id: string;
+    executionTarget: "daytona" | "main";
     version: number;
     content: MiraDaytonaContent;
     contentHash: string;

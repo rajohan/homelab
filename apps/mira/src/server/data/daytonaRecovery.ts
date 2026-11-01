@@ -37,7 +37,7 @@ async function read(
         coalesce(deadline+interval '5 minutes'<=clock_timestamp(),false) AS expired,
         coalesce(lease_expires_at>clock_timestamp(),false) AS leased,
         EXISTS(SELECT 1 FROM mira_switches WHERE owner=${owner} AND key='integration:daytona' AND NOT enabled AND until IS NULL) AS paused,
-        cleanup_resolution AS resolution FROM mira_daytona_jobs WHERE id=${id} AND owner=${owner}`;
+        cleanup_resolution AS resolution FROM mira_daytona_jobs WHERE id=${id} AND owner=${owner} AND execution_target='daytona'`;
     if (!row) throw new MiraFailure("NOT_FOUND", "Daytona job not found.");
     const sandboxName = daytonaSandboxName(row.binding, id, row.bindingHash);
     const identityHash = new Bun.CryptoHasher("sha256")

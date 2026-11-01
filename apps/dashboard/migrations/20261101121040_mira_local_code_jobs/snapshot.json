@@ -1,0 +1,156 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "a7185e57-c144-4cdb-b13d-9342024c8084",
+    "prevIds": ["479de76c-a65a-44ea-aae3-5b2b66897b9a"],
+    "footprints": [
+        {
+            "statementType": "add_column",
+            "statementTarget": [
+                "column",
+                "public",
+                "mira_daytona_jobs",
+                "execution_target"
+            ],
+            "writes": [
+                "s|col|public.mira_daytona_jobs.execution_target",
+                "n|col|public.mira_daytona_jobs.execution_target",
+                "e|col|public.mira_daytona_jobs.execution_target"
+            ],
+            "reads": ["n|tbl|public.mira_daytona_jobs", "n|sch|public"]
+        },
+        {
+            "statementType": "add_column",
+            "statementTarget": [
+                "column",
+                "public",
+                "mira_daytona_jobs",
+                "local_container_id"
+            ],
+            "writes": [
+                "s|col|public.mira_daytona_jobs.local_container_id",
+                "n|col|public.mira_daytona_jobs.local_container_id",
+                "e|col|public.mira_daytona_jobs.local_container_id"
+            ],
+            "reads": ["n|tbl|public.mira_daytona_jobs", "n|sch|public"]
+        },
+        {
+            "statementType": "add_column",
+            "statementTarget": [
+                "column",
+                "public",
+                "mira_daytona_jobs",
+                "local_creation_settled"
+            ],
+            "writes": [
+                "s|col|public.mira_daytona_jobs.local_creation_settled",
+                "n|col|public.mira_daytona_jobs.local_creation_settled",
+                "e|col|public.mira_daytona_jobs.local_creation_settled"
+            ],
+            "reads": ["n|tbl|public.mira_daytona_jobs", "n|sch|public"]
+        },
+        {
+            "statementType": "add_check",
+            "statementTarget": ["table", "public", "mira_daytona_jobs"],
+            "writes": [
+                "s|ck|public.mira_daytona_jobs.mira_code_target",
+                "n|ck|public.mira_daytona_jobs.mira_code_target",
+                "e|ck|public.mira_daytona_jobs.mira_code_target",
+                "n|con|public.mira_daytona_jobs.mira_code_target"
+            ],
+            "reads": [
+                "n|tbl|public.mira_daytona_jobs",
+                "n|sch|public",
+                "n|col|public.mira_daytona_jobs.execution_target"
+            ]
+        },
+        {
+            "statementType": "add_check",
+            "statementTarget": ["table", "public", "mira_daytona_jobs"],
+            "writes": [
+                "s|ck|public.mira_daytona_jobs.mira_code_local_receipt",
+                "n|ck|public.mira_daytona_jobs.mira_code_local_receipt",
+                "e|ck|public.mira_daytona_jobs.mira_code_local_receipt",
+                "n|con|public.mira_daytona_jobs.mira_code_local_receipt"
+            ],
+            "reads": [
+                "n|tbl|public.mira_daytona_jobs",
+                "n|sch|public",
+                "n|col|public.mira_daytona_jobs.local_container_id",
+                "n|col|public.mira_daytona_jobs.execution_target",
+                "n|col|public.mira_daytona_jobs.local_creation_settled"
+            ]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_daytona_jobs",
+                "name": "execution_target",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "'daytona'",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_daytona_jobs",
+                "name": "local_container_id",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_daytona_jobs",
+                "name": "local_creation_settled",
+                "type": "boolean",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "false",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_daytona_jobs",
+                "name": "mira_code_target",
+                "value": "\"execution_target\" IN ('daytona','main')",
+                "entityType": "checks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_daytona_jobs",
+                "name": "mira_code_local_receipt",
+                "value": "(\"local_container_id\" IS NULL OR \"local_container_id\" ~ '^[a-f0-9]{64}$') AND (\"execution_target\"='main' OR (\"local_container_id\" IS NULL AND NOT \"local_creation_settled\"))",
+                "entityType": "checks"
+            }
+        }
+    ]
+}

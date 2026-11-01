@@ -26,7 +26,7 @@ import {
     uuid,
 } from "drizzle-orm/pg-core";
 
-import type { DaytonaBinding } from "../integrations/daytona/configuration";
+import type { CodeJobBinding } from "../sandbox/localBinding";
 
 const time = (name: string) => timestamp(name, { withTimezone: true });
 export const miraConversations = pgTable(
@@ -663,7 +663,10 @@ export const miraDaytonaJobs = pgTable(
         owner: text().notNull(),
         conversationId: uuid("conversation_id").references(() => miraConversations.id),
         taskId: uuid("task_id").references(() => miraTasks.id),
-        binding: jsonb().$type<DaytonaBinding>().notNull(),
+        binding: jsonb().$type<CodeJobBinding>().notNull(),
+        executionTarget: text("execution_target").notNull().default("daytona"),
+        localContainerId: text("local_container_id"),
+        localCreationSettled: boolean("local_creation_settled").notNull().default(false),
         bindingHash: text("binding_hash").notNull(),
         version: integer().notNull().default(1),
         content: jsonb().$type<MiraDaytonaContent>().notNull(),
@@ -700,6 +703,11 @@ export const miraDaytonaJobs = pgTable(
     },
     (t) => [
         index("mira_daytona_owner").on(t.owner, t.createdAt, t.id),
+        check("mira_code_target", sql`${t.executionTarget} IN ('daytona','main')`),
+        check(
+            "mira_code_local_receipt",
+            sql`(${t.localContainerId} IS NULL OR ${t.localContainerId} ~ '^[a-f0-9]{64}$') AND (${t.executionTarget}='main' OR (${t.localContainerId} IS NULL AND NOT ${t.localCreationSettled}))`
+        ),
         index("mira_daytona_dispatch").on(t.cleanup, t.state, t.retryAt),
         index("mira_daytona_admission").on(t.startedAt),
         uniqueIndex("mira_daytona_single_active")
