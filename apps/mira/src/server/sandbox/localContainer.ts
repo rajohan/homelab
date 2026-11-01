@@ -24,22 +24,54 @@ export const localCodeConfigurationSchema = v.strictObject({
 });
 type Configuration = v.InferOutput<typeof localCodeConfigurationSchema>;
 
-/** Durable callbacks supplied by the trusted queue owner, never the model or sandbox. */
+/**
+ * Durable callbacks supplied by the trusted queue owner, never the model or sandbox.
+ * Writes must use the supplied deadline and conditional phase/lease checks: a late
+ * database acknowledgement cannot move a cleaning or closed attempt back to execution.
+ */
 export interface LocalCodeJournal {
     /** Persist creation intent and verify current authority before Docker is contacted. */
-    creating: () => Promise<void>;
+    creating: (signal: AbortSignal) => Promise<void>;
     /** Persist the immutable container receipt before it can start. */
-    created: (containerId: string) => Promise<void>;
+    created: (containerId: string, signal: AbortSignal) => Promise<void>;
     /** Record a settled Engine rejection, permitting recovery to prove non-creation. */
-    rejected: () => Promise<void>;
+    rejected: (signal: AbortSignal) => Promise<void>;
     /** Recheck current ownership, cancellation and approval immediately before startup. */
-    starting: () => Promise<void>;
+    starting: (signal: AbortSignal) => Promise<void>;
     /** Revoke execution and record cleanup intent, even when the command failed. */
-    cleaning: () => Promise<void>;
+    cleaning: (signal: AbortSignal) => Promise<void>;
     /** Record an ownership-verified discovery before removal makes it unobservable. */
-    discovered: (containerId: string) => Promise<void>;
+    discovered: (containerId: string, signal: AbortSignal) => Promise<void>;
     /** Release capacity only after confirmed absence or settled non-creation. */
-    cleaned: () => Promise<void>;
+    cleaned: (signal: AbortSignal) => Promise<void>;
+}
+
+function journalDeadline(milliseconds: number, parent?: AbortSignal) {
+    if (!Number.isInteger(milliseconds) || milliseconds < 1 || milliseconds > 10_000)
+        throw new Error(
+            "Journal deadlines must be between one and ten thousand milliseconds."
+        );
+    const deadline = AbortSignal.timeout(milliseconds);
+    return parent ? AbortSignal.any([parent, deadline]) : deadline;
+}
+
+function writeJournal(
+    operation: (signal: AbortSignal) => Promise<void>,
+    signal: AbortSignal
+): Promise<void> {
+    signal.throwIfAborted();
+    return new Promise((resolve, reject) => {
+        const stopped = () =>
+            reject(new Error("Local code journal was interrupted or timed out."));
+        signal.addEventListener("abort", stopped, { once: true });
+        void Promise.resolve()
+            .then(() => {
+                signal.throwIfAborted();
+                return operation(signal);
+            })
+            .then(resolve, reject)
+            .finally(() => signal.removeEventListener("abort", stopped));
+    });
 }
 
 /**
@@ -144,20 +176,24 @@ async function inspect(
  * @param record - Persisted attempt identity and optional creation receipt or settled rejection.
  * @param journal - Durable cleanup records; database errors never prevent ownership-verified removal.
  * @param transport - Synthetic Engine boundary for tests only.
+ * @param journalTimeoutMs - Trusted journal bound, at most ten seconds; tests may shorten it.
  * @returns Confirmed removal; an uncertain create with no visible receipt retains capacity.
  */
 export async function cleanupLocalCodeContainer(
     configuration: unknown,
     record: { id: string; containerId?: string | undefined; settled: boolean },
     journal: Pick<LocalCodeJournal, "cleaning" | "discovered" | "cleaned">,
-    transport?: BrowserDockerRequest
+    transport?: BrowserDockerRequest,
+    journalTimeoutMs = 10_000
 ): Promise<void> {
     const { config, call } = await engine(configuration, transport);
     v.parse(id, record.id);
     if (record.containerId) v.parse(containerId, record.containerId);
+    // Cleanup has its own budget and must proceed after caller cancellation or a stalled database.
+    const deadline = journalDeadline(journalTimeoutMs);
     let journalFailed = false;
     try {
-        await journal.cleaning();
+        await writeJournal((signal) => journal.cleaning(signal), deadline);
     } catch {
         journalFailed = true;
     }
@@ -169,7 +205,7 @@ export async function cleanupLocalCodeContainer(
     );
     if (found) {
         try {
-            await journal.discovered(found);
+            await writeJournal((signal) => journal.discovered(found, signal), deadline);
         } catch {
             journalFailed = true;
         }
@@ -184,7 +220,7 @@ export async function cleanupLocalCodeContainer(
             "Local code creation is uncertain; recovery must retain capacity."
         );
     if (journalFailed) throw new Error("Local code cleanup could not be recorded.");
-    await journal.cleaned();
+    await writeJournal((signal) => journal.cleaned(signal), deadline);
 }
 
 /**
@@ -204,6 +240,7 @@ export async function executeLocalCodeCheck(
     dependencies: {
         request?: BrowserDockerRequest;
         attach?: typeof attachBrowserContainer;
+        journalTimeoutMs?: number;
     } = {}
 ): Promise<LocalCheckResult> {
     const input = parseLocalCheckInput(value);
@@ -215,6 +252,10 @@ export async function executeLocalCodeCheck(
         controller.signal,
         AbortSignal.timeout(650_000),
     ]);
+    const journalTimeoutMs = dependencies.journalTimeoutMs ?? 10_000;
+    journalDeadline(journalTimeoutMs, signal);
+    const record = (operation: (deadline: AbortSignal) => Promise<void>) =>
+        writeJournal(operation, journalDeadline(journalTimeoutMs, signal));
     const name = `mira-code-${input.request.id}`;
     let created: string | undefined;
     let issued = false,
@@ -229,7 +270,7 @@ export async function executeLocalCodeCheck(
     try {
         await verify();
         signal.throwIfAborted();
-        await journal.creating();
+        await record((deadline) => journal.creating(deadline));
         issued = true;
         const reply = await call(
             "POST",
@@ -238,12 +279,12 @@ export async function executeLocalCodeCheck(
         );
         if (reply.status !== 201) {
             settled = [400, 404, 409].includes(reply.status);
-            if (settled) await journal.rejected();
+            if (settled) await record((deadline) => journal.rejected(deadline));
             throw new Error("Local code container creation failed.");
         }
         created = v.parse(v.object({ Id: containerId }), reply.body).Id;
         settled = true;
-        await journal.created(created);
+        await record((deadline) => journal.created(created!, deadline));
         if ((await inspect(call, config, input.request.id, created)) !== created)
             throw new Error("Local container disappeared.");
         signal.throwIfAborted();
@@ -286,7 +327,7 @@ export async function executeLocalCodeCheck(
         });
         // A failed startup still has an attached promise; observe it before awaiting I/O.
         void result.catch(() => {});
-        await journal.starting();
+        await record((deadline) => journal.starting(deadline));
         signal.throwIfAborted();
         const started = await call("POST", `/containers/${created}/start`);
         if (started.status !== 204)
@@ -318,7 +359,8 @@ export async function executeLocalCodeCheck(
                 config,
                 { id: input.request.id, containerId: created, settled },
                 journal,
-                call
+                call,
+                journalTimeoutMs
             );
     }
 }

@@ -120,6 +120,7 @@ async function fixture() {
     };
     const dependencies = {
         request,
+        journalTimeoutMs: 100,
         attach: () =>
             Promise.resolve(
                 new Duplex({
@@ -338,6 +339,50 @@ test("cleanup removes owned work even when its database journal fails, but never
             expect(f.events).not.toContain("confirmed");
             expect(f.state.exists).toBe(failure === "owner");
             expect(f.events.includes("remove")).toBe(failure === "journal");
+        } finally {
+            await f.close();
+        }
+    }
+});
+
+test("stalled lifecycle writes cannot hold resources or ignore cancellation", async () => {
+    for (const phase of [
+        "creating",
+        "created",
+        "starting",
+        "cleaning",
+        "discovered",
+        "cleaned",
+    ] as const) {
+        const f = await fixture();
+        let deadline: AbortSignal | undefined;
+        const stalled = (signal: AbortSignal) => {
+            deadline = signal;
+            if (phase === "created") setTimeout(() => f.controller.abort(), 5);
+            return new Promise<void>(() => {});
+        };
+        switch (phase) {
+            case "created":
+            case "discovered": {
+                f.journal[phase] = (_id, signal) => stalled(signal);
+                break;
+            }
+            default: {
+                f.journal[phase] = stalled;
+            }
+        }
+        try {
+            await assert.rejects(f.run());
+            expect(deadline?.aborted).toBe(true);
+            expect(f.state.exists).toBe(false);
+            if (phase === "creating") expect(f.events).not.toContain("create");
+            else expect(f.events).toContain("remove");
+            if (["created", "starting"].includes(phase)) {
+                expect(f.state.started).toBe(false);
+                expect(f.events).toContain("confirmed");
+            }
+            if (["cleaning", "discovered", "cleaned"].includes(phase))
+                expect(f.events).not.toContain("confirmed");
         } finally {
             await f.close();
         }
