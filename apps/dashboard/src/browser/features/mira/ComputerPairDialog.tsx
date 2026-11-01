@@ -1,8 +1,17 @@
-import { Button, CopyTextButton, FieldsForm, Modal, formatDateTime } from "@homelab/ui";
+import {
+    Button,
+    CopyTextButton,
+    ErrorNotice,
+    FieldsForm,
+    Modal,
+    formatDateTime,
+} from "@homelab/ui";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
+import { hasDesktopBridge, requestDesktop } from "./desktopClient";
 
 /**
  * Issue a short-lived ticket through fresh human verification and keep it only in dialog state.
@@ -10,6 +19,15 @@ import { useOperation } from "../operations/useOperation";
  */
 export function ComputerPairDialog({ onClose }: { readonly onClose: () => void }) {
     const [ticket, setTicket] = useState<{ token: string; expiresAt: string }>();
+    const queryClient = useQueryClient();
+    const localPair = useMutation({
+        mutationFn: (token: string) => requestDesktop({ action: "pair", ticket: token }),
+        onSuccess: (value) => {
+            queryClient.setQueryData(["mira", "desktop"], value);
+            onClose();
+        },
+        gcTime: 0,
+    });
     const pair = useOperation(async (label: string, signal) => {
         const result = await api.mira.computers.pair.mutate({ label }, { signal });
         setTicket({ token: result.token, expiresAt: result.expiresAt });
@@ -24,10 +42,26 @@ export function ComputerPairDialog({ onClose }: { readonly onClose: () => void }
                     : "Give this computer a name you will recognize."
             }
             onClose={onClose}
-            dismissible={!pair.isPending}
+            dismissible={!pair.isPending && !localPair.isPending}
         >
             {ticket ? (
                 <div className="space-y-4">
+                    {hasDesktopBridge() && (
+                        <Button
+                            fullWidth
+                            disabled={localPair.isPending}
+                            onClick={() => {
+                                if (Date.parse(ticket.expiresAt) <= Date.now()) {
+                                    setTicket(undefined);
+                                    return;
+                                }
+                                localPair.mutate(ticket.token);
+                            }}
+                        >
+                            Pair this Windows PC
+                        </Button>
+                    )}
+                    {localPair.error && <ErrorNotice error={localPair.error} />}
                     <div className="flex items-start gap-2 rounded-lg border border-primary-700 bg-primary-950/40 p-3">
                         <code className="min-w-0 flex-1 text-sm break-all">
                             {ticket.token}

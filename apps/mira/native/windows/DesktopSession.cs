@@ -11,6 +11,8 @@ internal sealed class DesktopResult
     internal bool Clean;
     internal bool Success;
     internal bool Stopped;
+    internal string ComputerId;
+    internal bool PairingMissing;
 }
 
 // The visible launcher owns the companion and its entire native process tree.
@@ -46,6 +48,8 @@ internal sealed class DesktopSession : IDisposable
         var pipeLost = new ManualResetEvent(false);
         bool success = false, clean = true;
         int failed = 0;
+        string computerId = null;
+        bool pairingMissing = false;
         Thread stdout = null, stderr = null;
         try
         {
@@ -70,6 +74,8 @@ internal sealed class DesktopSession : IDisposable
                             line.Clear();
                             if (message == "Connected. Press Ctrl+C to stop.") status("Connected");
                             if (message == "Connection interrupted. Retrying in 30 seconds.") status("Reconnecting");
+                            if (message == "Pairing required.") { pairingMissing = true; status(message); }
+                            if (Regex.IsMatch(message, @"\APaired: [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z")) { computerId = message.Substring(8); status(message); }
                         }
                         else { if (line.Length >= 1024) throw new InvalidDataException(); line.Append((char)character); }
                     }
@@ -105,7 +111,7 @@ internal sealed class DesktopSession : IDisposable
             // Readers may still be leaving their pipes; their completion catches disposal.
             pipeLost.Dispose();
         }
-        return new DesktopResult { Clean = clean, Success = success && clean && Volatile.Read(ref failed) == 0, Stopped = stop.WaitOne(0) };
+        return new DesktopResult { Clean = clean, Success = success && clean && Volatile.Read(ref failed) == 0, Stopped = stop.WaitOne(0), ComputerId = computerId, PairingMissing = pairingMissing };
     }
 
     private static Thread StartReader(Action read, ManualResetEvent completed, Action failed)
