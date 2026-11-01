@@ -20,6 +20,16 @@ export const miraConversationPageSchema = v.strictObject({
     ...miraPageSchema.entries,
     before: v.optional(miraConversationCursorSchema),
 });
+export const miraHistorySearchSchema = v.strictObject({
+    query: v.pipe(text(160), v.minLength(2)),
+});
+export const miraHistoryReadSchema = v.strictObject({
+    messageId: idSchema,
+    offset: v.optional(
+        v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(256_000)),
+        0
+    ),
+});
 export const miraTaskStates = ["todo", "in_progress", "blocked", "done"] as const;
 export const miraTaskInputSchema = v.strictObject({
     title,
@@ -127,6 +137,8 @@ export const miraChatSettingsSchema = v.strictObject({
     model: v.nullable(modelIdentifier),
     effort: v.nullable(modelIdentifier),
     serviceTier: v.nullable(modelIdentifier),
+    useMemory: v.optional(v.boolean()),
+    useHistory: v.optional(v.boolean()),
 });
 export const miraDefaultChatSettings = { model: null, effort: null, serviceTier: null };
 export type MiraChatSettings = v.InferOutput<typeof miraChatSettingsSchema>;

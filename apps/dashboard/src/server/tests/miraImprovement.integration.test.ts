@@ -585,7 +585,7 @@ test("improvement runs cannot read private memory even with a coding grant", asy
             });
         const denied = JSON.parse(result) as { ok: boolean; message: string };
         expect(denied.ok).toBe(false);
-        expect(denied.message).toContain("Private inbox");
+        expect(denied.message).toBe("Saved memory is disabled for this run.");
         expect(await f.client`SELECT id FROM mira_tool_receipts`).toHaveLength(0);
     } finally {
         await f.close();

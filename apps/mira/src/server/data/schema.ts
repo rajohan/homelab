@@ -72,6 +72,9 @@ export const miraMessages = pgTable(
     },
     (t) => [
         index("mira_messages_conversation").on(t.conversationId, t.id),
+        index("mira_messages_search")
+            .using("gin", sql`to_tsvector('simple', ${t.content})`)
+            .where(sql`${t.state} = 'completed'`),
         check("mira_messages_role", sql`${t.role} in ('user','assistant')`),
         check(
             "mira_messages_state",

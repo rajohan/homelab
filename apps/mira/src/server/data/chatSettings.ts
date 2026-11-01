@@ -112,8 +112,8 @@ export async function saveMiraChatSettings(
 ): Promise<void> {
     await context.client.begin(async (query) => {
         const [conversation] = await query<
-            { id: string }[]
-        >`SELECT id FROM mira_conversations WHERE id = ${input.id} AND owner = ${context.owner} AND version = ${input.version} AND deleted_at IS NULL AND archived_at IS NULL FOR UPDATE`;
+            { id: string; settings: MiraChatSettings }[]
+        >`SELECT id,settings FROM mira_conversations WHERE id = ${input.id} AND owner = ${context.owner} AND version = ${input.version} AND deleted_at IS NULL AND archived_at IS NULL FOR UPDATE`;
         if (!conversation)
             throw new MiraFailure(
                 "CONFLICT",
@@ -127,13 +127,19 @@ export async function saveMiraChatSettings(
                 "CONFLICT",
                 "Wait for the reply or stop it before changing chat settings."
             );
-        const catalog = await readCatalog(query, context.owner);
-        if (!catalog.fresh)
-            throw new MiraFailure(
-                "PRECONDITION_FAILED",
-                "Reconnect Mira before changing model settings."
-            );
-        resolveMiraChatSettings(catalog.models, input.settings, catalog.defaultModel);
+        if (
+            conversation.settings.model !== input.settings.model ||
+            conversation.settings.effort !== input.settings.effort ||
+            conversation.settings.serviceTier !== input.settings.serviceTier
+        ) {
+            const catalog = await readCatalog(query, context.owner);
+            if (!catalog.fresh)
+                throw new MiraFailure(
+                    "PRECONDITION_FAILED",
+                    "Reconnect Mira before changing model settings."
+                );
+            resolveMiraChatSettings(catalog.models, input.settings, catalog.defaultModel);
+        }
         await query`UPDATE mira_conversations SET settings = ${JSON.stringify(input.settings)}::text::jsonb, version = version + 1, updated_at = now() WHERE id = ${input.id}`;
         await auditMira(query, context, "conversation.settings_changed", input.id);
     });
@@ -152,7 +158,8 @@ export async function validateMiraAutomationSettings(
     settings: MiraChatSettings
 ): Promise<void> {
     const parsed = v.parse(miraChatSettingsSchema, settings);
-    if (Object.values(parsed).every((value) => value === null)) return;
+    if (parsed.model === null && parsed.effort === null && parsed.serviceTier === null)
+        return;
     const catalog = await readCatalog(query, owner);
     if (!catalog.fresh)
         throw new MiraFailure(

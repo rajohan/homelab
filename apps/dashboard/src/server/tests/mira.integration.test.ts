@@ -498,7 +498,11 @@ test("conversation settings validate model capabilities, isolate owners and rema
         });
         await database.client`UPDATE mira_runtime_status SET heartbeat_at = now() - interval '1 minute'`;
         await rejects(
-            api.conversations.settings({ id: chat.id, version: 3, settings }),
+            api.conversations.settings({
+                id: chat.id,
+                version: 3,
+                settings: { ...settings, effort: "low" },
+            }),
             /Reconnect/
         );
     } finally {

@@ -1,0 +1,1 @@
+CREATE INDEX "mira_messages_search" ON "mira_messages" USING gin (to_tsvector('simple', "content")) WHERE "state" = 'completed';

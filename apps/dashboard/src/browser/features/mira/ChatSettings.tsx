@@ -6,6 +6,7 @@ import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
 import type { ChatDisplaySettings } from "./chatDisplay";
 import { ModelSettings } from "./ModelSettings";
+import { RecallSettings } from "./RecallSettings";
 
 /**
  * Edit durable conversation preferences using the runtime's advertised model capabilities.
@@ -33,6 +34,10 @@ export function ChatSettings({
     readonly onDisplayChange: (display: ChatDisplaySettings) => void;
 }) {
     const [draft, setDraft] = useState(settings);
+    const modelChanged =
+        draft.model !== settings.model ||
+        draft.effort !== settings.effort ||
+        draft.serviceTier !== settings.serviceTier;
     const selected =
         models.find((model) => model.model === (draft.model ?? defaultModel)) ??
         (draft.model ? undefined : models.find((model) => model.isDefault));
@@ -53,7 +58,8 @@ export function ChatSettings({
             >
                 {!fresh && (
                     <p className="text-sm text-primary-300">
-                        Reconnect Mira to load current model choices and save settings.
+                        Reconnect Mira to change model choices. Context settings remain
+                        available.
                     </p>
                 )}
                 <ModelSettings
@@ -62,6 +68,11 @@ export function ChatSettings({
                     models={models}
                     defaultModel={defaultModel}
                     fresh={fresh}
+                    disabled={save.isPending}
+                />
+                <RecallSettings
+                    settings={draft}
+                    onChange={setDraft}
                     disabled={save.isPending}
                 />
                 <div className="space-y-3 border-t border-primary-700 pt-4">
@@ -108,7 +119,7 @@ export function ChatSettings({
                     <Button
                         type="submit"
                         busy={save.isPending}
-                        disabled={!fresh || !selected}
+                        disabled={modelChanged && (!fresh || !selected)}
                     >
                         Save settings
                     </Button>
