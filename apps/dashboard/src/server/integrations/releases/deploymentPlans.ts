@@ -30,11 +30,16 @@ export function deploymentRelease(
     release: Awaited<ReturnType<typeof readHomelabRelease>>,
     target: ReleaseDeploymentTarget
 ) {
-    if (!release.verified || (target.browserConfigFile && !release.browser))
+    if (
+        !release.verified ||
+        (target.browserConfigFile && !release.browser) ||
+        (target.localCodeConfigFile && !release.code)
+    )
         throw new Error("A complete verified release is required");
     const images = [
         ...release.images,
         ...(target.browserConfigFile ? release.browser!.images : []),
+        ...(target.localCodeConfigFile ? release.code!.images : []),
     ];
     if (
         deploymentHosts(target)

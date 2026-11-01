@@ -1,0 +1,26 @@
+# Optional shared configuration for Main code execution. Include with compose.browser.yaml
+# and --profile local-code after provisioning the dedicated code network and proxy.
+x-local-code: &local-code
+  type: bind
+  source: ${HOMELAB_MIRA_LOCAL_CODE_FILE:?Set the nonsecret local code JSON path}
+  target: /etc/homelab-mira/code.json
+  read_only: true
+  bind:
+    create_host_path: false
+
+services:
+  dashboard:
+    environment:
+      HOMELAB_MIRA_LOCAL_CODE: ""
+      HOMELAB_MIRA_LOCAL_CODE_FILE: /etc/homelab-mira/code.json
+    volumes: [*local-code]
+  mira:
+    environment:
+      HOMELAB_MIRA_LOCAL_CODE: ""
+      HOMELAB_MIRA_LOCAL_CODE_FILE: /etc/homelab-mira/code.json
+    volumes: [*local-code]
+  mira-browser-host:
+    environment:
+      HOMELAB_MIRA_LOCAL_CODE: ""
+      HOMELAB_MIRA_LOCAL_CODE_FILE: /etc/homelab-mira/code.json
+    volumes: [*local-code]

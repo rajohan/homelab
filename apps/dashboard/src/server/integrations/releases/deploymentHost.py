@@ -227,13 +227,24 @@ def unit_state(target, unit):
     return {"active": fields.get("ActiveState"), "invocation": fields.get("InvocationID")}
 
 
-def browser_bindings(target, configuration, observed):
+def browser_bindings(target, configuration, observed, code=None):
     """Bind each saved network slot to exactly one explicitly managed proxy service."""
     if not isinstance(configuration, dict) or not isinstance(configuration.get("imageId"), str) or not re.fullmatch("sha256:[a-f0-9]{64}", configuration["imageId"]):
         raise Refusal("browser_configuration")
     slots = configuration.get("networks", [])
     if not isinstance(slots, list) or len(slots) > 2 or ("networks" in configuration and not slots):
         raise Refusal("browser_configuration")
+    slots = list(slots)
+    if bool(target.get("localCodeConfigFile")) != (code is not None):
+        raise Refusal("code_configuration")
+    if code is not None:
+        if (not isinstance(code, dict) or set(code) != {"kind", "owner", "hostId", "imageId", "egress"} or
+                code["kind"] != "main" or not isinstance(code["owner"], str) or not 1 <= len(code["owner"]) <= 320 or
+                code["hostId"] != configuration.get("hostId") or
+                not isinstance(code["hostId"], str) or not re.fullmatch(r"[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}", code["hostId"]) or
+                not isinstance(code["imageId"], str) or not re.fullmatch("sha256:[a-f0-9]{64}", code["imageId"])):
+            raise Refusal("code_configuration")
+        slots.append(code["egress"])
     if not slots:
         if target.get("browserProxyUnits"):
             raise Refusal("browser_proxy_units")
@@ -282,22 +293,39 @@ def browser_slots(target, bindings, observed):
     return slots
 
 
+def runtime_paths(target):
+    """Select only the optional nonsecret runtime files in the approved recipe."""
+    return {name: Path(target[field]) for name, field in
+            [("browser", "browserConfigFile"), ("code", "localCodeConfigFile")] if target.get(field)}
+
+
+def refreshed_runtimes(configurations, slots):
+    """Preserve all runtime settings while rebinding their distinct managed proxies."""
+    result = copy.deepcopy(configurations)
+    browser = result.get("browser")
+    if browser and "networks" in browser:
+        browser["networks"] = slots[:len(browser["networks"])]
+    if "code" in result:
+        result["code"]["egress"] = slots[-1]
+    return result
+
+
 def verify_browser_recovery(target, directory, before, observed):
-    """Accept only the original browser configuration plus verified replacement proxy IDs."""
-    if not target.get("browserConfigFile"):
+    """Accept original runtime configurations plus verified replacement proxy IDs."""
+    paths = runtime_paths(target)
+    if not paths:
         return
-    current = read_file(Path(target["browserConfigFile"]))
-    backup = directory / "browser.before"
-    source = read_file(backup) if backup.exists() else current
-    if digest(source) != before["browserHash"]:
-        raise Refusal("configuration_changed")
-    original = json.loads(source)
-    bindings = browser_bindings(target, original, before["containers"])
-    if bindings:
-        original["networks"] = browser_slots(target, bindings, observed)
-        if json.loads(current) != original:
+    originals, current = {}, {}
+    for name, path in paths.items():
+        current[name] = read_file(path)
+        backup = directory / (name + ".before")
+        source = read_file(backup) if backup.exists() else current[name]
+        if digest(source) != before.get(name + "Hash"):
             raise Refusal("configuration_changed")
-    elif digest(current) != before["browserHash"]:
+        originals[name] = json.loads(source)
+    bindings = browser_bindings(target, originals["browser"], before["containers"], originals.get("code"))
+    restored = refreshed_runtimes(originals, browser_slots(target, bindings, observed)) if bindings else originals
+    if any(json.loads(current[name]) != value for name, value in restored.items()):
         raise Refusal("configuration_changed")
 
 
@@ -311,7 +339,7 @@ def release_images(release):
     for image in release["images"]:
         app, reference = image["app"], image["reference"]
         prefix = "ghcr.io/" + repository + "/" + app + ":" + version + "@sha256:"
-        if app not in {"auth", "dashboard", "mira", "mira-browser", "mira-browser-proxy"} or app in images or not reference.startswith(prefix) or not re.fullmatch("[a-f0-9]{64}", reference[len(prefix):]):
+        if app not in {"auth", "dashboard", "mira", "mira-browser", "mira-browser-proxy", "daytona-check"} or app in images or not reference.startswith(prefix) or not re.fullmatch("[a-f0-9]{64}", reference[len(prefix):]):
             raise Refusal("release_invalid")
         images[app] = reference
     if "dashboard" not in images:
@@ -344,17 +372,24 @@ def inspect(target, release, allow_current=False, drained=False):
     units = {unit: unit_state(target, unit) for unit in target["units"]}
     if any(value["active"] != "active" or not re.fullmatch("[a-f0-9]{32}", value["invocation"] or "") for value in units.values()):
         raise Refusal("service_unavailable")
-    browser_hash = None
+    browser_hash, code_hash = None, {}
     if target.get("browserConfigFile"):
         if "mira-browser" not in images or "mira-browser-proxy" not in images:
             raise Refusal("release_incomplete")
         browser_source = read_file(Path(target["browserConfigFile"]))
         browser_hash = digest(browser_source)
-        bindings = browser_bindings(target, json.loads(browser_source), observed)
+        code = None
+        if target.get("localCodeConfigFile"):
+            if "daytona-check" not in images:
+                raise Refusal("release_incomplete")
+            code_source = read_file(Path(target["localCodeConfigFile"]))
+            code_hash = {"codeHash": digest(code_source)}
+            code = json.loads(code_source)
+        bindings = browser_bindings(target, json.loads(browser_source), observed, code)
         if drained:
             browser_slots(target, bindings, observed)
     return {"targetHash": digest(encoded(target)), "composeHash": digest(source), "configHash": digest(encoded(config)),
-            "browserHash": browser_hash, "containers": observed, "units": units}
+            "browserHash": browser_hash, **code_hash, "containers": observed, "units": units}
 
 
 def operation_directory(target, identity):
@@ -486,8 +521,8 @@ def verify_services(target, references, identities, timeout=120):
         time.sleep(1)
 
 
-def start_browser_proxies(target, bindings, path, configuration, previous, references, identities):
-    """Start only selected proxies and atomically bind their verified replacement identities."""
+def start_browser_proxies(target, bindings, configurations, previous, references, identities):
+    """Start selected proxies and bind both runtime files before any consumer starts."""
     proxy_target = {**target, "services": [service for service in target["services"] if service["app"] == "mira-browser-proxy"],
                     "units": target["browserProxyUnits"]}
     command(["/usr/bin/systemctl", "start", *proxy_target["units"]], target["directory"], timeout=120)
@@ -496,10 +531,13 @@ def start_browser_proxies(target, bindings, path, configuration, previous, refer
         {service["name"]: identities[service["name"]] for service in proxy_target["services"]})
     if any(container(target, service["name"])["running"] for service in target["services"] if service["app"] != "mira-browser-proxy"):
         raise Refusal("browser_proxy_units")
-    refreshed = {**configuration, "networks": browser_slots(target, bindings, proxies)}
-    replacement = encoded(refreshed)
-    replace_file(path, replacement, previous)
-    return replacement, refreshed
+    refreshed = refreshed_runtimes(configurations, browser_slots(target, bindings, proxies))
+    replacements = {}
+    for name, path in runtime_paths(target).items():
+        replacement = encoded(refreshed[name])
+        replace_file(path, replacement, previous[path])
+        replacements[path] = replacement
+    return replacements, refreshed
 
 
 def recipe(arguments, directory, images):
@@ -535,6 +573,8 @@ def run(directory):
             apps = {service["app"] for service in target["services"]}
             if target.get("browserConfigFile"):
                 apps.add("mira-browser")
+            if target.get("localCodeConfigFile"):
+                apps.add("daytona-check")
             phase("pulling")
             identities = {}
             for app in sorted(apps):
@@ -546,15 +586,16 @@ def run(directory):
             sources[compose_path] = read_file(compose_path)
             replacement, expected_config = compose_replacement(sources[compose_path], config, target, images)
             replace_file(directory / "compose.before", sources[compose_path])
-            browser_path, browser_replacement, bindings = None, None, []
-            if target.get("browserConfigFile"):
-                browser_path = Path(target["browserConfigFile"])
-                sources[browser_path] = read_file(browser_path)
-                browser_config = json.loads(sources[browser_path])
-                bindings = browser_bindings(target, browser_config, intent["expected"]["containers"])
-                browser_config["imageId"] = identities["mira-browser"]
-                browser_replacement = encoded(browser_config)
-                replace_file(directory / "browser.before", sources[browser_path])
+            paths, configurations, bindings = runtime_paths(target), {}, []
+            for name, path in paths.items():
+                sources[path] = read_file(path)
+                configurations[name] = json.loads(sources[path])
+                replace_file(directory / (name + ".before"), sources[path])
+            if configurations:
+                bindings = browser_bindings(target, configurations["browser"], intent["expected"]["containers"], configurations.get("code"))
+                configurations["browser"]["imageId"] = identities["mira-browser"]
+                if "code" in configurations:
+                    configurations["code"]["imageId"] = identities["daytona-check"]
             phase("stopping", changesStarted=True)
             command(["/usr/bin/systemctl", "stop", *target["units"]], target["directory"], timeout=120)
             if any(container(target, service["name"])["running"] for service in target["services"]):
@@ -573,9 +614,10 @@ def run(directory):
             phase("configuring")
             replace_file(compose_path, replacement, sources[compose_path])
             written[compose_path] = replacement
-            if browser_path is not None:
-                replace_file(browser_path, browser_replacement, sources[browser_path])
-                written[browser_path] = browser_replacement
+            for name, path in paths.items():
+                runtime_replacement = encoded(configurations[name])
+                replace_file(path, runtime_replacement, sources[path])
+                written[path] = runtime_replacement
             if configured(target) != expected_config:
                 raise Refusal("configuration_changed")
             # Persist this boundary before invoking the migrator, including when its exit is unknown.
@@ -585,13 +627,13 @@ def run(directory):
             references = {service["name"]: images[service["app"]] for service in target["services"]}
             expected_ids = {service["name"]: identities[service["app"]] for service in target["services"]}
             if bindings:
-                refreshed, browser_config = start_browser_proxies(target, bindings, browser_path, browser_config,
-                    written[browser_path], references, expected_ids)
-                written[browser_path] = refreshed
+                replacements, configurations = start_browser_proxies(target, bindings, configurations,
+                    written, references, expected_ids)
+                written.update(replacements)
             command(["/usr/bin/systemctl", "start", *target["units"]], target["directory"], timeout=120)
             phase("verifying")
             observed = verify_services(target, references, expected_ids)
-            if bindings and browser_slots(target, bindings, observed) != browser_config["networks"]:
+            if bindings and refreshed_runtimes(configurations, browser_slots(target, bindings, observed)) != configurations:
                 raise Refusal("browser_proxy_verification")
             if configured(target) != expected_config or any(read_file(path) != content for path, content in written.items()):
                 raise Refusal("configuration_changed")
@@ -611,8 +653,8 @@ def run(directory):
                     references = {name: value["image"] for name, value in previous.items()}
                     previous_ids = {name: value["imageId"] for name, value in previous.items()}
                     if bindings:
-                        start_browser_proxies(target, bindings, browser_path, json.loads(sources[browser_path]),
-                            sources[browser_path], references, previous_ids)
+                        original = {name: json.loads(sources[path]) for name, path in paths.items()}
+                        start_browser_proxies(target, bindings, original, sources, references, previous_ids)
                     command(["/usr/bin/systemctl", "start", *target["units"]], target["directory"], timeout=120)
                     observed = verify_services(target, references, previous_ids)
                     verify_browser_recovery(target, directory, intent["expected"], observed)

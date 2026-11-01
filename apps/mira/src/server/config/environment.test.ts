@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { localCodeEnvironment } from "../sandbox/localBinding";
@@ -60,6 +62,29 @@ test("local target configuration accepts only nonsecret immutable deployment ide
         },
     };
     expect(localCodeEnvironment({})).toBeUndefined();
+    const directory = mkdtempSync(path.join(tmpdir(), "local-binding-"));
+    const file = path.join(directory, "code.json");
+    try {
+        writeFileSync(file, JSON.stringify(binding));
+        expect(localCodeEnvironment({ HOMELAB_MIRA_LOCAL_CODE_FILE: file })).toEqual(
+            binding
+        );
+        expect(() =>
+            localCodeEnvironment({
+                HOMELAB_MIRA_LOCAL_CODE_FILE: file,
+                HOMELAB_MIRA_LOCAL_CODE: JSON.stringify(binding),
+            })
+        ).toThrow("one explicit");
+        expect(() =>
+            localCodeEnvironment({ HOMELAB_MIRA_LOCAL_CODE_FILE: "relative.json" })
+        ).toThrow("one explicit");
+        writeFileSync(file, "invalid");
+        expect(() =>
+            localCodeEnvironment({ HOMELAB_MIRA_LOCAL_CODE_FILE: file })
+        ).toThrow();
+    } finally {
+        rmSync(directory, { recursive: true, force: true });
+    }
     expect(
         browserHostEnvironment({
             ...environment,

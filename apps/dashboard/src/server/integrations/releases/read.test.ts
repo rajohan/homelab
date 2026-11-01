@@ -33,6 +33,9 @@ function fixture(
         browser?: unknown;
         browserAssets?: unknown[];
         browserEvidence?: unknown[];
+        code?: unknown;
+        codeAssets?: unknown[];
+        codeEvidence?: unknown[];
     } = {}
 ) {
     const requests: { url: string; authorization: string | null }[] = [];
@@ -54,10 +57,14 @@ function fixture(
                     { id: 42, name: "container-images.json" },
                     ...(options.windowsAssets ?? []),
                     ...(options.browserAssets ?? []),
+                    ...(options.codeAssets ?? []),
                 ],
             });
         if (url.endsWith("/releases/assets/43")) return Response.json(options.windows);
         if (url.endsWith("/releases/assets/45")) return Response.json(options.browser);
+        if (url.endsWith("/releases/assets/46")) return Response.json(options.code);
+        if (url.includes("name=daytona-manifest-"))
+            return Response.json({ artifacts: options.codeEvidence ?? [] });
         if (url.includes("name=browser-manifest-"))
             return Response.json({ artifacts: options.browserEvidence ?? [] });
         if (url.includes("name=computer-manifest-"))
@@ -383,6 +390,77 @@ const browser = {
         reference: `ghcr.io/demo/homelab/${app}:0.8.0@sha256:${"f".repeat(64)}`,
     })),
 };
+
+test("Main check image requires matching release and workflow evidence independently of browser publication", async () => {
+    const code = {
+        ...browser,
+        platform: "linux/amd64" as const,
+        images: [
+            {
+                app: "daytona-check" as const,
+                reference: `ghcr.io/demo/homelab/daytona-check:0.8.0@sha256:${"d".repeat(64)}`,
+            },
+        ],
+    };
+    const codeAssets = [{ id: 46, name: "daytona-image.json" }];
+    const codeEvidence = [
+        {
+            ...evidence,
+            name: "daytona-manifest-1.json",
+            digest: `sha256:${new Bun.CryptoHasher("sha256").update(JSON.stringify(code)).digest("hex")}`,
+        },
+    ];
+    const read = (changed: Parameters<typeof fixture>[0] = {}) =>
+        readHomelabRelease(
+            "demo/homelab",
+            undefined,
+            AbortSignal.timeout(1000),
+            fixture({ code, codeAssets, codeEvidence, ...changed }).request
+        );
+    expect(await read()).toMatchObject({ code, browser: null });
+    for (const changed of [
+        { codeAssets: [] },
+        { codeAssets: [...codeAssets, ...codeAssets] },
+        { codeEvidence: [] },
+        { codeEvidence: [{ ...codeEvidence[0], expired: true }] },
+        {
+            codeEvidence: [
+                { ...codeEvidence[0], workflow_run: { id: 101, head_sha: revision } },
+            ],
+        },
+        { codeEvidence: [{ ...codeEvidence[0], digest: "sha256:" + "0".repeat(64) }] },
+        { attempt: 2 },
+        { conclusion: "failure" },
+    ])
+        expect(await read(changed)).toMatchObject({ code: null });
+    for (const invalid of [
+        { ...code, revision: "f".repeat(40) },
+        { ...code, version: "0.8.1" },
+        { ...code, platform: "linux/arm64" },
+        { ...code, images: browser.images },
+        { ...code, images: [...code.images, ...code.images] },
+        {
+            ...code,
+            images: [
+                {
+                    ...code.images[0],
+                    reference: "ghcr.io/demo/homelab/daytona-check:latest",
+                },
+            ],
+        },
+    ])
+        expect(
+            await read({
+                code: invalid,
+                codeEvidence: [
+                    {
+                        ...codeEvidence[0],
+                        digest: `sha256:${new Bun.CryptoHasher("sha256").update(JSON.stringify(invalid)).digest("hex")}`,
+                    },
+                ],
+            })
+        ).toMatchObject({ code: null });
+});
 const browserAssets = [{ id: 45, name: "browser-image.json" }];
 const browserEvidence = [
     {

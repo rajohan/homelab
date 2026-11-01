@@ -98,6 +98,15 @@ async function claim(
         if (original.hostId !== binding.hostId || original.owner !== row.owner)
             throw new Error("Local code recovery belongs to a different host or owner.");
         if (row.state === "queued") {
+            // Serialize admission with the release controller without reversing owner locks.
+            const [admission] = await query<
+                { locked: boolean }[]
+            >`SELECT pg_try_advisory_xact_lock(1869440354, 1) AS locked`;
+            if (!admission?.locked) return null;
+            const [deployment] = await query<
+                { id: string }[]
+            >`SELECT id FROM release_deployments WHERE finished_at IS NULL LIMIT 1`;
+            if (deployment) return null;
             try {
                 const [fresh] = await query<
                     { allowed: boolean }[]

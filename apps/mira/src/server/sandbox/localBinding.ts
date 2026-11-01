@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import * as v from "valibot";
 
 import { browserEgressSchema } from "../browsing/egress";
@@ -22,7 +25,11 @@ export type CodeJobBinding = DaytonaBinding | LocalCodeBinding;
 export function localCodeEnvironment(
     environment: Readonly<Record<string, string | undefined>>
 ): LocalCodeBinding | undefined {
-    const value = environment.HOMELAB_MIRA_LOCAL_CODE;
+    const inline = environment.HOMELAB_MIRA_LOCAL_CODE;
+    const file = environment.HOMELAB_MIRA_LOCAL_CODE_FILE;
+    if (file && (inline || !path.isAbsolute(file)))
+        throw new Error("Local code requires one explicit configuration source.");
+    const value = file ? readFileSync(file, "utf8") : inline;
     return value ? v.parse(localCodeBindingSchema, JSON.parse(value)) : undefined;
 }
 

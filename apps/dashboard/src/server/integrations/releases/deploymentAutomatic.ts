@@ -150,12 +150,16 @@ export function automaticDeploymentJobs(options: {
                         ...(target.browserConfigFile
                             ? (published.browser?.images ?? [])
                             : []),
+                        ...(target.localCodeConfigFile
+                            ? (published.code?.images ?? [])
+                            : []),
                     ];
                     if (
                         !published.verified ||
                         !published.dashboardSchema ||
                         (target.auth !== undefined && !published.authSchema) ||
                         (target.browserConfigFile && !published.browser) ||
+                        (target.localCodeConfigFile && !published.code) ||
                         deploymentHosts(target)
                             .flatMap((entry) => entry.services)
                             .some(

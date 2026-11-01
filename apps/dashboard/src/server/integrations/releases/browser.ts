@@ -9,11 +9,12 @@ const manifestSchema = v.object({
     images: v.pipe(
         v.array(
             v.object({
-                app: v.picklist(["mira-browser", "mira-browser-proxy"]),
+                app: v.picklist(["mira-browser", "mira-browser-proxy", "daytona-check"]),
                 reference: v.string(),
             })
         ),
-        v.length(2)
+        v.minLength(1),
+        v.maxLength(2)
     ),
 });
 const evidenceSchema = v.object({
@@ -31,11 +32,12 @@ const evidenceSchema = v.object({
 });
 
 /**
- * Read browser and proxy images only when both belong to the verified release workflow attempt.
+ * Read optional runtime images only when they belong to the verified release workflow attempt.
  * @param options - Trusted release identity and bounded transport; no browser-supplied URL or tag.
- * @returns Both immutable images, or null for absent, incomplete or unverifiable browser publication.
+ * @returns Exact immutable runtime images, or null for an absent or unverifiable publication.
  */
-export async function readBrowserRelease(options: {
+export async function readRuntimeRelease(options: {
+    kind: "browser" | "daytona";
     repository: string;
     version: string;
     revision: string;
@@ -47,8 +49,10 @@ export async function readBrowserRelease(options: {
     request: typeof fetch;
     signal: AbortSignal;
 }) {
-    const { repository, version, revision, build, signal } = options;
-    const assets = options.assets.filter((asset) => asset.name === "browser-image.json");
+    const { repository, version, revision, build, signal, kind } = options;
+    const apps =
+        kind === "browser" ? ["mira-browser", "mira-browser-proxy"] : ["daytona-check"];
+    const assets = options.assets.filter((asset) => asset.name === `${kind}-image.json`);
     if (assets.length !== 1) return null;
     try {
         const bytes = await readReleaseAsset(
@@ -66,7 +70,9 @@ export async function readBrowserRelease(options: {
         if (
             manifest.version !== version ||
             manifest.revision !== revision ||
-            new Set(manifest.images.map((image) => image.app)).size !== 2 ||
+            manifest.images.length !== apps.length ||
+            new Set(manifest.images.map((image) => image.app)).size !== apps.length ||
+            !manifest.images.every((image) => apps.includes(image.app)) ||
             !manifest.images.every((image) => {
                 const prefix = `ghcr.io/${repository.toLowerCase()}/${image.app}:${version}@sha256:`;
                 return (
@@ -76,7 +82,7 @@ export async function readBrowserRelease(options: {
             })
         )
             return null;
-        const name = `browser-manifest-${build.run_attempt}.json`;
+        const name = `${kind}-manifest-${build.run_attempt}.json`;
         const evidence = v.parse(
             evidenceSchema,
             await options.read(

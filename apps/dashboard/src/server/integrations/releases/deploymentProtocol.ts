@@ -22,6 +22,7 @@ export const deploymentObservationSchema = v.strictObject({
     composeHash: hash,
     configHash: hash,
     browserHash: v.nullable(hash),
+    codeHash: v.optional(hash),
     containers: v.record(v.string(), containerSchema),
     units: v.record(
         v.string(),
@@ -49,12 +50,13 @@ export const deploymentReleaseSchema = v.strictObject({
                     "mira",
                     "mira-browser",
                     "mira-browser-proxy",
+                    "daytona-check",
                 ]),
                 reference: v.pipe(v.string(), v.maxLength(500)),
             })
         ),
         v.minLength(2),
-        v.maxLength(5)
+        v.maxLength(6)
     ),
 });
 export const deploymentPlanSchema = v.strictObject({

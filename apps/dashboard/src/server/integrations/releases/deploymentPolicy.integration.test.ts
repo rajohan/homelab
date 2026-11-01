@@ -40,6 +40,7 @@ async function fixture(selectedTarget = target, selectedConnections = connection
         return {
             ...plan.release,
             browser: null,
+            code: null,
             computer: null,
             tests: "success",
             verified,
