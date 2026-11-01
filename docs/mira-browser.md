@@ -2,13 +2,21 @@
 
 Chat now declares browser wait, observation, navigation and input tools. The separate trusted browser host consumes their durable commands and owns Docker cleanup. Chat includes human origin/mode selection and a direct stop control using the shared responsive components.
 
+## Browser tabs
+
+Use **Open in new tab** while you have control to add a page from the already approved origins. The tab bar lets you select or close pages and scrolls horizontally on narrow screens. Mira uses `mira_browser_tabs` for the same list/open/select/close operations. Each operation returns the selected page and a fresh observation; previous input references become invalid. Passive dashboard polling does not select tabs or create observations.
+
+Up to eight tabs share the same isolated browser profile, cookies, origin ceiling and access lifetime. Keep one tab open, or use Stop access to close the browser. Closing the selected tab selects the first remaining tab. Stable product IDs retain the original native bindings even when several tabs have identical URLs. Titles and URLs for background tabs describe their last observation, not a continuously monitored page. Only explicitly opened tabs are supported: unexpected page-created windows or independently closed tabs retire access rather than silently switching targets. Tabs belong to this running browser grant; saved profiles retain site data, not the tab list.
+
+The pinned driver still handles page observation, navigation, input and file transfers. A private helper uses only fixed `Target.getTargets`, blank `Target.createTarget` and exact `Target.closeTarget` lifecycle commands against the driver-attested process's local endpoint. PID/start-time checks, owned profile markers, bounded replies and cancellation exclude external endpoints and arbitrary CDP calls. No native IDs, process paths or endpoint URLs enter the model or dashboard APIs.
+
 **Deployment is explicit and independent of the account switch.** Offline sessions use `NetworkDisabled` and `NetworkMode: none`. Explicitly configured public sessions use one isolated Docker slot and its verified Squid/nft proxy, as documented in `deploy/README.md`. Real Chromium, synthetic public DNS/HTTP/TLS and direct/private destination refusal are qualified. Provision and qualify the live host before enabling the account switch. A website origin grant is not a network firewall.
 
 ## Human authority
 
 - The independent `computer:browser` switch defaults off. Manage it in **Automations → Browser**, with the same reason and optional resume time as other controls. Enabling the switch does not grant a website or start a session. Pausing it invalidates current browser access; resuming requires a fresh grant in Chat. A freshly verified signed-in operator grants exact canonical HTTP(S) origins, an initial URL and view/control mode for an owned running manual job. Models cannot create, broaden, renew or approve grants.
 - Grants expire within five minutes and the run budget. One unclosed grant per account and twenty requests per hour bound admission. Control-generation changes, cancellation, expired worker leases and deleted conversations permanently invalidate existing authority.
-- Chat defaults to View only. Image-capable models get the four browser tools; text-only and automatic runs cannot use them. `mira_browser_wait` holds a manual run for up to sixty seconds while the operator decides; it does not request access.
+- Chat defaults to View only. Image-capable models get the five browser tools; text-only and automatic runs cannot use them. `mira_browser_wait` holds a manual run for up to sixty seconds while the operator decides; it does not request access.
 - Stopping pending access closes it immediately. Stopping claimed access revokes authority and erases transient command content, but retains its capacity until the trusted host confirms container absence. Stale UI status cannot authorize execution and does not hide the stop control.
 - Browser content, labels and pixels are untrusted data. Input requires an observed ref and a fresh, ten-second, single-use observation ID. There is no arbitrary JavaScript, CDP, shell, existing-profile selection or operator-PC access.
 
@@ -36,9 +44,9 @@ Bun 1.4.4 and the unmodified official CUA CLI 0.38.0 are pinned. `driverRelease.
 
 The fixed container runs as UID/GID 1000 with a read-only root, no host mounts or published ports, no capabilities, no-new-privileges, bounded temporary filesystems, 1536 MiB RAM, two CPUs and 256 PIDs. Docker init, automatic removal and `/usr/bin/timeout --signal=KILL 305s` bound descendants independently of native cleanup. The upstream browser no-sandbox setting is confined to this outer container boundary; do not run the worker outside it.
 
-The private Docker connection attaches before startup and validates non-TTY framing, UTF-8, increasing request IDs and bounded JSONL. Requests are at most 64 KiB; replies at most 4 MiB. Interactive requests accept initialize, observe, navigate and act; operator-confirmed uploads use separate bounded begin/part/finish messages. Saved workers additionally accept private profile chunks before initialization; these are unavailable to model tools. The first handshake has sixty seconds for sequential native startup; subsequent calls have thirty seconds, with ten-second native operation limits. Invalid output, overlap, EOF or cancellation permanently retires the connection. There is no reconnect or input replay.
+The private Docker connection attaches before startup and validates non-TTY framing, UTF-8, increasing request IDs and bounded JSONL. Requests are at most 64 KiB; replies at most 4 MiB. Interactive requests accept initialize, observe, tabs, navigate and act; operator-confirmed uploads use separate bounded begin/part/finish messages. Saved workers additionally accept private profile chunks before initialization; these are unavailable to model tools. The first handshake has sixty seconds for sequential native startup; subsequent calls have thirty seconds, with ten-second native operation limits. Invalid output, overlap, EOF or cancellation permanently retires the connection. There is no reconnect or input replay.
 
-The origin ceiling limits observation and input, not subresource requests or page-driven navigation. External egress must be separately enforced before live websites are enabled. Download delivery to Chat and additional tabs remain separate work.
+The origin ceiling limits observation and input, not subresource requests or page-driven navigation. External egress must be separately enforced before live websites are enabled.
 
 ## Confirmed attachment uploads
 

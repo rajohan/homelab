@@ -195,8 +195,43 @@ export async function qualifyBrowserFixture() {
             const processes = await chromiumProcesses();
             return processes.length === 0;
         });
-        assert.equal(freshProfiles, 4);
         assert.equal(count, 1);
+        const tabbed = await open();
+        active.push(tabbed);
+        await tabbed.observe(owner);
+        const initial = await tabbed.tabs({ action: "list" }, owner);
+        const initialId = initial.tabs!.selectedId;
+        const type = async (value: typeof initial, text: string, replace = true) => {
+            const ref = value.refs.find((item) => item.role === "textbox")!.ref;
+            await tabbed.act(
+                {
+                    action: "type",
+                    observationId: value.observationId,
+                    ref,
+                    text,
+                    replace,
+                },
+                owner
+            );
+        };
+        await type(initial, "first tab");
+        await eventually(() => text === "first tab");
+        const added = await tabbed.tabs({ action: "open", url: server.url.href }, owner);
+        assert.equal(added.tabs!.items.length, 2);
+        await type(added, "second tab");
+        await eventually(() => text === "second tab");
+        const original = await tabbed.tabs({ action: "select", tabId: initialId }, owner);
+        await type(original, " continued", false);
+        await eventually(() => text === "first tab continued");
+        const remaining = await tabbed.tabs({ action: "close", tabId: initialId }, owner);
+        assert.equal(remaining.tabs!.selectedId, added.tabs!.selectedId);
+        assert.equal(remaining.tabs!.items.length, 1);
+        await tabbed.close();
+        await eventually(async () => {
+            const processes = await chromiumProcesses();
+            return processes.length === 0;
+        });
+        assert.equal(freshProfiles, 5);
         return {
             driver: "0.38.0",
             platform: "linux-chromium",
@@ -208,6 +243,7 @@ export async function qualifyBrowserFixture() {
             deniedOrigin: true,
             redirectDenied: true,
             freshProfiles: true,
+            duplicateUrlTabs: true,
             stopped: true,
         };
     } finally {

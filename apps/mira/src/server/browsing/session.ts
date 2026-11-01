@@ -177,6 +177,10 @@ export async function openBrowserSession(
         closed: completion.promise,
         observe: (operation: AbortSignal, operator = false) =>
             run("view", operation, (s) => active.observe(s, operator)),
+        tabs: (input: unknown, operation: AbortSignal, operator = false) => {
+            const command = structuredClone(input);
+            return run("view", operation, (s) => active.tabs(command, s, operator));
+        },
         navigate: (url: unknown, operation: AbortSignal) =>
             run("view", operation, (s) => active.navigate(url, s)),
         act: (input: unknown, operation: AbortSignal) => {

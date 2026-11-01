@@ -2,6 +2,27 @@ import * as v from "valibot";
 
 const id = v.pipe(v.string(), v.uuid());
 const address = v.pipe(v.string(), v.minLength(1), v.maxLength(2048));
+export const miraBrowserTabCommandSchema = v.variant("action", [
+    v.strictObject({ action: v.literal("list") }),
+    v.strictObject({ action: v.literal("open"), url: address }),
+    v.strictObject({ action: v.literal("select"), tabId: id }),
+    v.strictObject({ action: v.literal("close"), tabId: id }),
+]);
+export const miraBrowserTabsSchema = v.strictObject({
+    selectedId: id,
+    items: v.pipe(
+        v.array(
+            v.strictObject({
+                id,
+                url: address,
+                title: v.pipe(v.string(), v.maxLength(2048)),
+            })
+        ),
+        v.minLength(1),
+        v.maxLength(8)
+    ),
+});
+export type MiraBrowserTabs = v.InferOutput<typeof miraBrowserTabsSchema>;
 export const miraBrowserAccessRequestSchema = v.strictObject({
     runId: id,
     origins: v.pipe(v.array(address), v.minLength(1), v.maxLength(16)),
@@ -71,6 +92,7 @@ export const miraBrowserDownloadNameSchema = v.pipe(
 );
 export const miraBrowserHumanOperationSchema = v.variant("method", [
     v.strictObject({ method: v.literal("observe") }),
+    v.strictObject({ method: v.literal("tabs"), input: miraBrowserTabCommandSchema }),
     v.strictObject({ method: v.literal("navigate"), url: address }),
     v.strictObject({ method: v.literal("act"), input: miraBrowserActionSchema }),
     v.strictObject({
@@ -93,6 +115,7 @@ export const miraBrowserHumanCommandSchema = v.strictObject({
     operation: miraBrowserHumanOperationSchema,
 });
 export interface MiraBrowserPreview {
+    tabs?: MiraBrowserTabs;
     observationId: string;
     url: string;
     title: string;

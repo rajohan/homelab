@@ -1,4 +1,8 @@
-import { miraBrowserActionSchema } from "@homelab/contracts/miraBrowser";
+import {
+    miraBrowserActionSchema,
+    miraBrowserTabCommandSchema,
+    miraBrowserTabsSchema,
+} from "@homelab/contracts/miraBrowser";
 import { imageSize } from "image-size";
 import * as v from "valibot";
 
@@ -39,6 +43,13 @@ export const browserWorkerRequestSchema = v.strictObject({
             params: v.strictObject({ operator: v.optional(v.boolean()) }),
         }),
         v.strictObject({
+            method: v.literal("tabs"),
+            params: v.strictObject({
+                input: miraBrowserTabCommandSchema,
+                operator: v.optional(v.boolean()),
+            }),
+        }),
+        v.strictObject({
             method: v.literal("navigate"),
             params: v.strictObject({ url: address }),
         }),
@@ -74,6 +85,7 @@ const actionsSchema = v.pipe(
     v.maxLength(3)
 );
 const frameSchema = v.strictObject({
+    tabs: v.optional(miraBrowserTabsSchema),
     observationId,
     url: address,
     title: bounded(2048),
@@ -126,6 +138,15 @@ export function browserWorkerGrant(input: unknown) {
 export function browserWorkerFrame(input: unknown, origins: readonly string[]) {
     const frame = v.parse(frameSchema, input);
     browserUrl(frame.url, origins);
+    if (frame.tabs) {
+        const { items, selectedId } = frame.tabs;
+        if (
+            new Set(items.map((tab) => tab.id)).size !== items.length ||
+            items.find((tab) => tab.id === selectedId)?.url !== frame.url
+        )
+            throw new Error("Invalid browser tab inventory.");
+        for (const tab of items) browserUrl(tab.url, origins);
+    }
     runtimeContentItems(frame.content);
     const dimensions = imageSize(Buffer.from(frame.content.content[0]!.data, "base64"));
     if (

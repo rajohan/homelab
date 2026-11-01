@@ -3,6 +3,7 @@ import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import { miraBrowserTabCommandSchema } from "@homelab/contracts/miraBrowser";
 import * as v from "valibot";
 
 import { createBrowserDownloads } from "./download";
@@ -19,7 +20,9 @@ import {
     browserSnapshot,
     preparedSchema,
     windowsSchema,
+    tabBindingSchema,
 } from "./protocol";
+import { openBrowserTabLifecycle } from "./tabLifecycle";
 import {
     browserUploadActionSchema,
     createBrowserUploads,
@@ -41,18 +44,20 @@ const actionSchema = v.object({
 });
 
 /**
- * Open one fresh, isolated browser and retain the only selected tab internally.
+ * Open one isolated browser and retain driver bindings for its explicitly managed tabs.
  * @param input - Host-owned executable, origin ceiling, initial URL and input permission.
  * @param signal - Owner cancellation for the entire lifetime, including startup.
  * @param openDriver - Pinned bounded MCP driver factory; synthetic replacements are for unit tests only.
  * @param now - Monotonic clock for observation, idle and total lifetime deadlines.
+ * @param openTabs - Fixed tab lifecycle factory; synthetic replacement is only for qualification.
  * @returns A serialized browser port. The host must supervise its process and await close.
  */
 export async function openNativeBrowser(
     input: unknown,
     signal: AbortSignal,
     openDriver: BrowserDriverFactory = openBrowserDriver,
-    now: () => number = () => performance.now()
+    now: () => number = () => performance.now(),
+    openTabs = openBrowserTabLifecycle
 ) {
     signal.throwIfAborted();
     const grant = browserGrant(input);
@@ -72,6 +77,13 @@ export async function openNativeBrowser(
     let downloads: Awaited<ReturnType<typeof createBrowserDownloads>> | undefined;
     let uploads: Awaited<ReturnType<typeof createBrowserUploads>> | undefined;
     let target: { targetId: string; tabId: string; origins: string[] };
+    let pid: number, windowId: number;
+    let lifecycle: Awaited<ReturnType<typeof openTabs>> | undefined;
+    const tabs = new Map<
+        string,
+        { nativeId: string; target: typeof target; url: string; title: string }
+    >();
+    let selectedId = randomUUID() as string;
     let observed:
         | {
               id: string;
@@ -166,6 +178,7 @@ export async function openNativeBrowser(
         busy = true;
         try {
             check(operation);
+            if (lifecycle) await inventory(operation);
             const value = await work();
             check(operation);
             touched = now();
@@ -177,6 +190,75 @@ export async function openNativeBrowser(
         } finally {
             busy = false;
         }
+    };
+    const snapshot = async (operation: AbortSignal, operator = false) => {
+        observed = undefined;
+        const frame = browserSnapshot(
+            await call(
+                "get_browser_state",
+                {
+                    ...tabArgs(),
+                    snapshot_format: "semantic_v2",
+                    include_screenshot: true,
+                },
+                operation
+            ),
+            target,
+            Boolean(uploads)
+        );
+        const id = randomUUID();
+        observed = {
+            id,
+            time: now(),
+            maxAge: operator ? 60_000 : 10_000,
+            downloads: new Set(
+                operator
+                    ? frame.refs
+                          .filter(
+                              (item) =>
+                                  item.role === "link" && item.actions.includes("click")
+                          )
+                          .map((item) => item.ref)
+                    : []
+            ),
+            refs: new Map(frame.refs.map((item) => [item.ref, item.actions])),
+        };
+        const selected = tabs.get(selectedId);
+        if (selected) {
+            selected.url = frame.url;
+            selected.title = frame.title;
+        }
+        return {
+            observationId: id,
+            ...frame,
+            ...(tabs.size > 0
+                ? {
+                      tabs: {
+                          selectedId,
+                          items: [...tabs].map(([id, tab]) => ({
+                              id,
+                              url: tab.url,
+                              title: tab.title,
+                          })),
+                      },
+                  }
+                : {}),
+        };
+    };
+    const inventory = async (operation: AbortSignal) => {
+        const pages = await lifecycle!.pages(operation);
+        if (
+            pages.length !== tabs.size ||
+            pages.some(
+                (page) =>
+                    ![...tabs.values()].some((tab) => tab.nativeId === page.targetId)
+            )
+        )
+            throw new Error(
+                "Browser tabs changed outside this session. Reopen browser access."
+            );
+        for (const page of pages) browserUrl(page.url, grant.origins);
+        return pages;
     };
     try {
         if (grant.uploads) uploads = await createBrowserUploads(directory);
@@ -227,6 +309,8 @@ export async function openNativeBrowser(
             )
         );
         const window = windows.windows[0]!;
+        pid = prepared.prepared_pid;
+        windowId = window.window_id;
         if (window.pid !== prepared.prepared_pid)
             throw new Error("The browser window belongs to a different process.");
         const binding = v.parse(
@@ -250,39 +334,110 @@ export async function openNativeBrowser(
         return {
             observe: (operation: AbortSignal, operator = false) =>
                 run(operation, async () => {
+                    return snapshot(operation, operator);
+                }),
+            tabs: (input: unknown, operation: AbortSignal, operator = false) =>
+                run(operation, async () => {
                     observed = undefined;
-                    const frame = browserSnapshot(
-                        await call(
-                            "get_browser_state",
-                            {
-                                ...tabArgs(),
-                                snapshot_format: "semantic_v2",
-                                include_screenshot: true,
-                            },
-                            operation
-                        ),
-                        target,
-                        Boolean(uploads)
-                    );
-                    const id = randomUUID();
-                    observed = {
-                        id,
-                        time: now(),
-                        maxAge: operator ? 60_000 : 10_000,
-                        downloads: new Set(
-                            operator
-                                ? frame.refs
-                                      .filter(
-                                          (item) =>
-                                              item.role === "link" &&
-                                              item.actions.includes("click")
-                                      )
-                                      .map((item) => item.ref)
-                                : []
-                        ),
-                        refs: new Map(frame.refs.map((item) => [item.ref, item.actions])),
-                    };
-                    return { observationId: id, ...frame };
+                    const command = v.parse(miraBrowserTabCommandSchema, input);
+                    if (command.action === "open") browserUrl(command.url, grant.origins);
+                    if (!lifecycle) {
+                        lifecycle = await openTabs(
+                            pid,
+                            AbortSignal.any([signal, stop.signal])
+                        );
+                        const pages = await lifecycle.pages(operation);
+                        if (pages.length !== 1)
+                            throw new Error("Browser must start with one owned tab.");
+                        tabs.set(selectedId, {
+                            nativeId: pages[0]!.targetId,
+                            target,
+                            url: browserUrl(pages[0]!.url, grant.origins),
+                            title: "",
+                        });
+                    }
+                    await inventory(operation);
+                    if (command.action === "open") {
+                        if (tabs.size >= 8)
+                            throw new Error(
+                                "Close a tab before opening another (maximum eight)."
+                            );
+                        const nativeId = await lifecycle.create(operation);
+                        // Existing driver bindings remain valid. Bind only the new blank tab:
+                        // duplicate destination URLs never participate in identity matching.
+                        const pages = await lifecycle.pages(operation);
+                        if (
+                            pages.length !== tabs.size + 1 ||
+                            pages.filter((p) => p.url === "about:blank").length !== 1 ||
+                            !pages.some(
+                                (p) => p.targetId === nativeId && p.url === "about:blank"
+                            ) ||
+                            pages.some(
+                                (p) =>
+                                    p.targetId !== nativeId &&
+                                    ![...tabs.values()].some(
+                                        (t) => t.nativeId === p.targetId
+                                    )
+                            )
+                        )
+                            throw new Error(
+                                "The new browser tab could not be identified."
+                            );
+                        const binding = v.parse(
+                            tabBindingSchema,
+                            browserMetadata(
+                                await call(
+                                    "get_browser_state",
+                                    { pid, window_id: windowId },
+                                    operation
+                                )
+                            )
+                        );
+                        const blank = binding.tabs.filter(
+                            (tab) => tab.url === "about:blank"
+                        );
+                        if (binding.tabs.length !== pages.length || blank.length !== 1)
+                            throw new Error("Browser tab binding is ambiguous.");
+                        selectedId = randomUUID();
+                        target = {
+                            targetId: binding.target_id,
+                            tabId: blank[0]!.tab_id,
+                            origins: grant.origins,
+                        };
+                        const destination = browserUrl(command.url, grant.origins);
+                        tabs.set(selectedId, {
+                            nativeId,
+                            target,
+                            url: destination,
+                            title: "",
+                        });
+                        await navigate(destination, operation);
+                    } else if (
+                        command.action === "select" ||
+                        command.action === "close"
+                    ) {
+                        const tab = tabs.get(command.tabId);
+                        if (!tab)
+                            throw new Error(
+                                "Choose a tab from the current browser observation."
+                            );
+                        if (command.action === "select") {
+                            selectedId = command.tabId;
+                            target = tab.target;
+                        } else {
+                            if (tabs.size === 1)
+                                throw new Error(
+                                    "Keep one browser tab open, or stop browser access."
+                                );
+                            await lifecycle.close(tab.nativeId, operation);
+                            tabs.delete(command.tabId);
+                            if (selectedId === command.tabId) {
+                                selectedId = tabs.keys().next().value!;
+                                target = tabs.get(selectedId)!.target;
+                            }
+                        }
+                    }
+                    return snapshot(operation, operator);
                 }),
             navigate: (url: unknown, operation: AbortSignal) =>
                 run(operation, async () => {

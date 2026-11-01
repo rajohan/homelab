@@ -236,8 +236,25 @@ export async function browserHostFixture(enabled = true) {
                     result = { effect: "unverified" };
                 } else if (message.body.method === "initialize")
                     result = { version: 1, driver: "0.38.0" };
-                else if (message.body.method === "observe")
+                else if (
+                    message.body.method === "observe" ||
+                    message.body.method === "tabs"
+                )
                     result = {
+                        ...(message.body.method === "tabs"
+                            ? {
+                                  tabs: {
+                                      selectedId: "00000000-0000-4000-8000-000000000001",
+                                      items: [
+                                          {
+                                              id: "00000000-0000-4000-8000-000000000001",
+                                              url: "https://example.test/start",
+                                              title: "Synthetic page",
+                                          },
+                                      ],
+                                  },
+                              }
+                            : {}),
                         observationId: crypto.randomUUID(),
                         url: "https://example.test/start",
                         title: "Synthetic page",

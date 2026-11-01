@@ -7,7 +7,7 @@ import { browserUrl } from "./policy";
 const bounded = (maximum: number) => v.pipe(v.string(), v.maxLength(maximum));
 const positive = v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(16_384));
 const opaque = v.pipe(v.string(), v.minLength(1), v.maxLength(128));
-export const bindingSchema = v.object({
+export const tabBindingSchema = v.object({
     status: v.literal("ok"),
     mode: v.literal("bind"),
     binding_quality: v.literal("exact"),
@@ -15,10 +15,17 @@ export const bindingSchema = v.object({
     mutation_allowed: v.literal(true),
     target_id: opaque,
     tabs: v.pipe(
-        v.array(v.object({ tab_id: opaque, url: v.literal("about:blank") })),
-        v.length(1)
+        v.array(v.object({ tab_id: opaque, url: bounded(2048) })),
+        v.minLength(1),
+        v.maxLength(8)
     ),
 });
+export const bindingSchema = v.pipe(
+    tabBindingSchema,
+    v.check(
+        (binding) => binding.tabs.length === 1 && binding.tabs[0]!.url === "about:blank"
+    )
+);
 export const preparedSchema = v.object({
     status: v.literal("ok"),
     prepared: v.literal(true),

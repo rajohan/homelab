@@ -91,6 +91,7 @@ export async function readMiraBrowserConsole(
             busy: console.state !== "idle" || (await modelBusy(query, id)),
             preview: frame
                 ? {
+                      ...(frame.tabs ? { tabs: frame.tabs } : {}),
                       observationId: frame.observationId,
                       url: frame.url,
                       title: frame.title,
@@ -212,9 +213,13 @@ export async function enqueueMiraBrowserHumanCommand(
             await requireBrowserDownload(query, context.owner, request.id, operation);
         if (operation.method === "upload")
             await requireBrowserUpload(query, context.owner, request.id, operation);
-        if (operation.method === "navigate") {
+        let destination: string | null = null;
+        if (operation.method === "navigate") destination = operation.url;
+        if (operation.method === "tabs" && operation.input.action === "open")
+            destination = operation.input.url;
+        if (destination) {
             try {
-                browserUrl(operation.url, access.policy!.origins);
+                browserUrl(destination, access.policy!.origins);
             } catch {
                 throw new MiraFailure(
                     "BAD_REQUEST",

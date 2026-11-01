@@ -32,6 +32,10 @@ function fixture() {
     let input: unknown;
     const port: Port = {
         signal: runtime.signal,
+        tabs: () => {
+            calls.push("tabs");
+            return Promise.resolve(frame);
+        },
         observe: () => {
             calls.push("observe");
             return observing ?? Promise.resolve(frame);

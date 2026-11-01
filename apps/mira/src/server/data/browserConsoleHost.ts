@@ -96,7 +96,11 @@ export async function finishBrowserHumanCommand(
             WHERE access_id=${accessId} AND controller='human' AND epoch=${command.epoch} AND command_id=${command.id} AND state='claimed' AND expires_at>clock_timestamp()
             RETURNING access_id AS "accessId"`;
         if (updated.length !== 1) return false;
-        if (command.operation.method === "observe" && "content" in parsed)
+        if (
+            (command.operation.method === "observe" ||
+                command.operation.method === "tabs") &&
+            "content" in parsed
+        )
             await saveBrowserPreview(query, accessId, parsed);
         return true;
     });

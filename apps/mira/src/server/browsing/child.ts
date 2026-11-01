@@ -193,12 +193,19 @@ export function serveBrowserWorker(
                     );
                     break;
                 }
+                case "tabs":
                 case "observe": {
                     const frame = browserWorkerFrame(
-                        await port.observe(
-                            owner.signal,
-                            command.params.operator ?? false
-                        ),
+                        command.method === "tabs"
+                            ? await port.tabs(
+                                  command.params.input,
+                                  owner.signal,
+                                  command.params.operator ?? false
+                              )
+                            : await port.observe(
+                                  owner.signal,
+                                  command.params.operator ?? false
+                              ),
                         grant.origins
                     );
                     result = command.params.operator

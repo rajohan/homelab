@@ -22,6 +22,7 @@ import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
 import { BrowserDownloadControls } from "./BrowserDownloadControls";
 import { BrowserPageControls } from "./BrowserPageControls";
+import { BrowserTabBar } from "./BrowserTabBar";
 import { BrowserUploadControls } from "./BrowserUploadControls";
 import { useBrowserCommand } from "./useBrowserCommand";
 
@@ -146,6 +147,13 @@ export function BrowserConsoleDialog({
                     className="overflow-hidden rounded-lg border border-primary-700 bg-primary-950/40"
                     aria-label="Browser image"
                 >
+                    {preview?.tabs && (
+                        <BrowserTabBar
+                            tabs={preview.tabs}
+                            disabled={!human || Boolean(busy)}
+                            onCommand={(input) => send({ method: "tabs", input })}
+                        />
+                    )}
                     {preview ? (
                         <>
                             <div className="border-b border-primary-700 px-4 py-2 text-sm wrap-anywhere text-primary-300">
@@ -177,7 +185,9 @@ export function BrowserConsoleDialog({
                             <Button
                                 variant="secondary"
                                 disabled={Boolean(busy)}
-                                onClick={() => send({ method: "observe" })}
+                                onClick={() =>
+                                    send({ method: "tabs", input: { action: "list" } })
+                                }
                             >
                                 <RefreshCw size={14} aria-hidden="true" />
                                 Refresh view
@@ -201,6 +211,22 @@ export function BrowserConsoleDialog({
                                 onClick={() => send({ method: "navigate", url })}
                             >
                                 Go to address
+                            </Button>
+                            <Button
+                                variant="secondary"
+                                disabled={
+                                    Boolean(busy) ||
+                                    !url ||
+                                    (preview?.tabs?.items.length ?? 1) >= 8
+                                }
+                                onClick={() =>
+                                    send({
+                                        method: "tabs",
+                                        input: { action: "open", url },
+                                    })
+                                }
+                            >
+                                Open in new tab
                             </Button>
                         </ActionGroup>
                         {access.mode === "control" && (

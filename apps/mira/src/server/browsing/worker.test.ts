@@ -60,6 +60,10 @@ function childFixture(profile?: BrowserWorkerProfile) {
     const port = {
         download: (_input: unknown, _signal: AbortSignal): Promise<BrowserDownloadFile> =>
             Promise.reject(new Error("No download fixture selected.")),
+        tabs: () => {
+            calls.push("tabs");
+            return Promise.resolve(frame());
+        },
         observe: (_signal: AbortSignal) => {
             calls.push("observe");
             return Promise.resolve(frame());
@@ -851,5 +855,36 @@ test("downloads reject model observations, unavailable capability and interrupte
         }
         await f.done;
         expect(f.closes()).toBe(1);
+    }
+});
+
+test("tab observations cross the worker protocol with operator scope and invalidate previous refs", async () => {
+    const f = childFixture();
+    try {
+        await f.send(1, "initialize", grant);
+        const result = await f.send(2, "tabs", {
+            input: { action: "open", url: grant.initialUrl },
+            operator: false,
+        });
+        expect(browserWorkerFrame(result, grant.origins).observationId).toBeTruthy();
+        expect(f.calls).toContain("tabs");
+        const value = frame();
+        const id = crypto.randomUUID();
+        const tabs = {
+            selectedId: id,
+            items: [{ id, url: grant.initialUrl, title: "Page" }],
+        };
+        expect(browserWorkerFrame({ ...value, tabs }, grant.origins).tabs).toEqual(tabs);
+        for (const change of [
+            { ...tabs, selectedId: crypto.randomUUID() },
+            { ...tabs, items: [...tabs.items, ...tabs.items] },
+            { ...tabs, items: [{ ...tabs.items[0]!, url: "https://outside.test/" }] },
+        ])
+            expect(() =>
+                browserWorkerFrame({ ...value, tabs: change }, grant.origins)
+            ).toThrow();
+    } finally {
+        f.input.end();
+        await f.done;
     }
 });

@@ -1,3 +1,4 @@
+import { miraBrowserTabCommandSchema } from "@homelab/contracts/miraBrowser";
 import * as v from "valibot";
 
 import { openBrowserConnection } from "./connection";
@@ -94,38 +95,53 @@ export async function openBrowserWorker(
             )
         )
     );
+    const observe = async (
+        request: unknown,
+        operation: AbortSignal,
+        operator: boolean
+    ) => {
+        observed = undefined;
+        const frame = browserWorkerFrame(
+            await connection.request(request, operation),
+            grant.origins
+        );
+        observed = {
+            id: frame.observationId,
+            refs: new Map(frame.refs.map((item) => [item.ref, [...item.actions]])),
+            time: now(),
+            maxAge: operator ? 60_000 : 10_000,
+            downloads: new Set(
+                operator
+                    ? frame.refs
+                          .filter(
+                              (item) =>
+                                  item.role === "link" && item.actions.includes("click")
+                          )
+                          .map((item) => item.ref)
+                    : []
+            ),
+        };
+        return frame;
+    };
     return {
         signal: connection.signal,
         observe: (operation: AbortSignal, operator = false) =>
             run(operation, async () => {
-                observed = undefined;
-                const frame = browserWorkerFrame(
-                    await connection.request(
-                        { method: "observe", params: operator ? { operator: true } : {} },
-                        operation
-                    ),
-                    grant.origins
+                return observe(
+                    { method: "observe", params: operator ? { operator: true } : {} },
+                    operation,
+                    operator
                 );
-                observed = {
-                    id: frame.observationId,
-                    refs: new Map(
-                        frame.refs.map((item) => [item.ref, [...item.actions]])
-                    ),
-                    time: now(),
-                    maxAge: operator ? 60_000 : 10_000,
-                    downloads: new Set(
-                        operator
-                            ? frame.refs
-                                  .filter(
-                                      (item) =>
-                                          item.role === "link" &&
-                                          item.actions.includes("click")
-                                  )
-                                  .map((item) => item.ref)
-                            : []
-                    ),
-                };
-                return frame;
+            }),
+        tabs: (input: unknown, operation: AbortSignal, operator = false) =>
+            run(operation, async () => {
+                const command = v.parse(miraBrowserTabCommandSchema, input);
+                if (command.action === "open") browserUrl(command.url, grant.origins);
+                return observe(
+                    { method: "tabs", params: { input: command, operator } },
+                    operation,
+                    operator
+                );
             }),
         navigate: (url: unknown, operation: AbortSignal) =>
             run(operation, async () => {
