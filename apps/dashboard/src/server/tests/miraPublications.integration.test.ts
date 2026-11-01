@@ -770,6 +770,57 @@ for (const removed of ["configuration", "publishing-key"] as const)
         }
     });
 
+test("here.now revocation after claim restores an unsent draft", async () => {
+    const f = await fixture();
+    try {
+        const { run } = await permissionRun(f.client, f.api, "full_access");
+        const draft = await f.api.publications.save({
+            id: crypto.randomUUID(),
+            version: 0,
+            conversationId: run.conversationId,
+            content: {
+                title: "Claim boundary",
+                target: null,
+                visibility: "anyone_with_link",
+                files: [{ id: f.file.id, path: "index.html" }],
+            },
+        });
+        const tools = createMiraTools(
+            f.client,
+            run,
+            f.directory,
+            undefined,
+            undefined,
+            configuration
+        );
+        expect(await permissionAction(tools, "publication", draft)).toMatchObject({
+            ok: true,
+        });
+        await f.client`CREATE FUNCTION revoke_claimed_publication() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.state='publishing' AND OLD.state='queued' THEN UPDATE mira_runs SET approval_revoked_at=clock_timestamp() WHERE id=NEW.approval_run_id; END IF; RETURN NEW; END $$`;
+        await f.client`CREATE TRIGGER revoke_claimed_publication AFTER UPDATE ON mira_publications FOR EACH ROW EXECUTE FUNCTION revoke_claimed_publication()`;
+        const mock = publicationProvider(draft.content);
+        expect(
+            await dispatchMiraPublication(
+                f.client,
+                configuration,
+                signal,
+                f.directory,
+                mock.request
+            )
+        ).toBe(true);
+        expect(mock.calls.filter((call) => call.method !== "GET")).toHaveLength(0);
+        expect(await f.read(draft.id)).toMatchObject({ state: "draft" });
+        const [row] = await f.client<
+            { origin: string | null; attempt: string | null; phase: string | null }[]
+        >`SELECT approval_run_id AS origin,attempt_token AS attempt,phase FROM mira_publications WHERE id=${draft.id}`;
+        expect(row).toEqual({ origin: null, attempt: null, phase: null });
+        await reconcileMiraPublications(f.client, configuration);
+        expect(await f.read(draft.id)).toMatchObject({ state: "draft" });
+    } finally {
+        await f.close();
+    }
+});
+
 for (const mode of ["approve_for_me", "full_access"] as const)
     test(`here.now ${mode} checks content and stops publication after delegated revocation`, async () => {
         const f = await fixture();

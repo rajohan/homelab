@@ -679,6 +679,103 @@ test("Moltbook model drafts are conversation scoped, receipt-idempotent and cann
     }
 });
 
+test("Moltbook revocation after claim restores an unsent draft", async () => {
+    const f = await fixture();
+    try {
+        const { run } = await permissionRun(f.client, f.api, "full_access");
+        const draft = await f.api.social.save({
+            id: crypto.randomUUID(),
+            version: 0,
+            conversationId: run.conversationId,
+            content: {
+                kind: "post",
+                community: "testing",
+                title: "Claim boundary",
+                text: "Synthetic",
+            },
+        });
+        const tools = createMiraTools(f.client, run, undefined, undefined, configuration);
+        expect(await permissionAction(tools, "social", draft)).toMatchObject({
+            ok: true,
+        });
+        await f.client`CREATE FUNCTION revoke_claimed_social() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.state='publishing' AND OLD.state='queued' THEN UPDATE mira_runs SET approval_revoked_at=clock_timestamp() WHERE id=NEW.approval_run_id; END IF; RETURN NEW; END $$`;
+        await f.client`CREATE TRIGGER revoke_claimed_social AFTER UPDATE ON mira_social_drafts FOR EACH ROW EXECUTE FUNCTION revoke_claimed_social()`;
+        const mock = provider();
+        expect(
+            await dispatchMiraSocial(f.client, configuration, signal, mock.request)
+        ).toBe(true);
+        expect(mock.writes()).toHaveLength(0);
+        expect(await f.read(draft.id)).toMatchObject({ state: "draft" });
+        const [row] = await f.client<
+            { origin: string | null; attempt: string | null }[]
+        >`SELECT approval_run_id AS origin,attempt_token AS attempt FROM mira_social_drafts WHERE id=${draft.id}`;
+        expect(row).toEqual({ origin: null, attempt: null });
+        await reconcileMiraSocial(f.client, configuration);
+        expect(await f.read(draft.id)).toMatchObject({ state: "draft" });
+    } finally {
+        await f.close();
+    }
+});
+
+for (const timing of ["before", "after"] as const)
+    test(`human Moltbook verification remains independent when delegation is revoked ${timing} the answer`, async () => {
+        const f = await fixture();
+        try {
+            const { run } = await permissionRun(f.client, f.api, "full_access");
+            const draft = await f.api.social.save({
+                id: crypto.randomUUID(),
+                version: 0,
+                conversationId: run.conversationId,
+                content: {
+                    kind: "post",
+                    community: "testing",
+                    title: "Human verification",
+                    text: "Synthetic",
+                },
+            });
+            const tools = createMiraTools(
+                f.client,
+                run,
+                undefined,
+                undefined,
+                configuration
+            );
+            expect(await permissionAction(tools, "social", draft)).toMatchObject({
+                ok: true,
+            });
+            const mock = provider({ pending: true });
+            await dispatchMiraSocial(f.client, configuration, signal, mock.request);
+            if (timing === "before") {
+                await f.client`UPDATE mira_runs SET approval_revoked_at=clock_timestamp() WHERE id=${run.id}`;
+                await reconcileMiraSocial(f.client, configuration);
+            }
+            const pending = await f.read(draft.id);
+            expect(pending.state).toBe("verification_required");
+            await f.api.social.verify({
+                id: pending.id,
+                version: pending.version,
+                answer: "15.00",
+            });
+            if (timing === "after")
+                await f.client`UPDATE mira_runs SET approval_revoked_at=clock_timestamp() WHERE id=${run.id}`;
+            await reconcileMiraSocial(f.client, configuration);
+            const [row] = await f.client<
+                { origin: string | null; actor: string }[]
+            >`SELECT approval_run_id AS origin,approved_by AS actor FROM mira_social_drafts WHERE id=${draft.id}`;
+            expect(row).toEqual({ origin: null, actor: "human:operator" });
+            expect(
+                await dispatchMiraSocial(f.client, configuration, signal, mock.request)
+            ).toBe(true);
+            expect(await f.read(draft.id)).toMatchObject({ state: "submitted" });
+            expect(mock.writes().map((call) => call.url.pathname)).toEqual([
+                "/api/v1/posts",
+                "/api/v1/verify",
+            ]);
+        } finally {
+            await f.close();
+        }
+    });
+
 for (const mode of ["approve_for_me", "full_access"] as const)
     test(`Moltbook ${mode} uses exact delegated drafts and revoked origins never publish`, async () => {
         const f = await fixture();

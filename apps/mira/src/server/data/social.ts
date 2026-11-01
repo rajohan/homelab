@@ -249,7 +249,7 @@ export async function verifyMiraSocial(
             );
         const rows = await query<
             { id: string }[]
-        >`UPDATE mira_social_drafts SET state='queued_verification',answer=${input.answer},version=version+1,updated_at=now() WHERE id=${input.id} AND owner=${context.owner} AND version=${input.version} AND state='verification_required' AND expires_at>clock_timestamp() AND approved_at>clock_timestamp()-interval '15 minutes' AND binding_hash=${moltbookBindingHash(configured)} AND control_stamp=${stamp} RETURNING id`;
+        >`UPDATE mira_social_drafts SET state='queued_verification',answer=${input.answer},approval_run_id=NULL,approved_by=${context.actor},approved_version=version,approved_at=clock_timestamp(),version=version+1,updated_at=now() WHERE id=${input.id} AND owner=${context.owner} AND version=${input.version} AND state='verification_required' AND expires_at>clock_timestamp() AND approved_at>clock_timestamp()-interval '15 minutes' AND binding_hash=${moltbookBindingHash(configured)} AND control_stamp=${stamp} RETURNING id`;
         if (!rows[0])
             throw new MiraFailure(
                 "CONFLICT",

@@ -195,6 +195,7 @@ export async function dispatchMiraPublication(
         return true;
     }
     const signal = AbortSignal.any([stopping, AbortSignal.timeout(120_000)]);
+    let writeAllowed = false;
     const guard = async () => {
         signal.throwIfAborted();
         await client.begin(async (query) => {
@@ -221,6 +222,7 @@ export async function dispatchMiraPublication(
             );
         });
         signal.throwIfAborted();
+        writeAllowed = true;
     };
     let result: { slug: string; versionId: string; expiresAt: string | null } | null =
         null;
@@ -242,6 +244,10 @@ export async function dispatchMiraPublication(
         /* Retain known references and require inspection for every uncertain write. */
     }
     await client.begin(async (query) => {
+        if (!writeAllowed) {
+            await query`UPDATE mira_publications SET state='draft',approval_run_id=NULL,approved_version=NULL,approved_by=NULL,approved_at=NULL,control_version=NULL,attempt_token=NULL,started_at=NULL,phase=NULL,message=${reviewMessage},version=version+1,updated_at=now() WHERE id=${candidate.id} AND owner=${configuration.owner} AND attempt_token=${claimed.token} AND state='publishing'`;
+            return;
+        }
         let message = uncertainMessage;
         if (result)
             message = result.expiresAt

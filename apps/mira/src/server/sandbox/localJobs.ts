@@ -321,6 +321,16 @@ export async function dispatchMiraLocalCode(
         });
     } catch {
         controller.abort();
+        // An admitted attempt has never passed the durable pre-create boundary.
+        const reset = await transaction(
+            client,
+            AbortSignal.timeout(10_000),
+            (query) =>
+                query<
+                    { id: string }[]
+                >`UPDATE mira_daytona_jobs SET state=CASE WHEN cancel_requested THEN 'cancelled' ELSE 'draft' END,outcome=CASE WHEN cancel_requested THEN 'cancelled' ELSE NULL END,phase=CASE WHEN cancel_requested THEN 'closed' ELSE 'idle' END,cleanup='not_needed',approval_run_id=NULL,approved_at=NULL,control_version=NULL,started_at=NULL,deadline=NULL,retry_at=NULL,message='Local execution did not start. Review this job again.',version=version+1,updated_at=clock_timestamp() WHERE id=${job.id} AND lease_token=${job.token} AND lease_expires_at>clock_timestamp() AND state='running' AND phase='admitted' AND local_container_id IS NULL AND NOT local_creation_settled RETURNING id`
+        ).catch(() => []); // A database failure must not prevent independent container cleanup.
+        if (reset[0]) return true;
         try {
             await cleanup();
         } catch {
