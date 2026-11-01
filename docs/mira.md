@@ -291,6 +291,16 @@ The control-plane adapter, bounded command/file toolbox, durable queue and dashb
 
 Cloud jobs are available from Chat and Jobs with local drafts, exact operator review, durable execution phases, bounded logs, selected file transfers and independently confirmed cleanup. The model can propose a command and read recorded results, but cannot approve cloud spending. Daytona has its own pause control; cleanup remains active while paused. See [Daytona qualification](mira-daytona.md) for admission limits, explicit environment settings and the required live qualification before activation.
 
+### Local code execution adapter
+
+The same check image now includes a local Docker transport for fixed Homelab source inspection, patches and structured edits. It reuses the Daytona verification harness, Bun version, PostgreSQL fixture and result format. This adapter is not yet connected to the product queue or enabled in production; the follow-up queue binding will expose Main and Daytona through the same code-work controls.
+
+The trusted host selects an immutable image and a dedicated isolated network using the existing public-egress proxy. The model and dashboard never receive the Docker socket. A check has no host mounts, published ports or provider credentials, runs as the image's non-root PostgreSQL user, and uses bounded CPU, memory, temporary storage and processes. The existing fixed check profile has a ten-minute deadline; the container's eleven-minute outer limit includes setup and transfer. This does not change Daytona's renewable idle lifetime for ordinary cloud jobs.
+
+Input and output pass over bounded private stdio. The host journals creation before contacting Docker, records its immutable receipt before startup, rechecks authority through the caller's startup fence, and removes the container before returning output. Lost acknowledgements are never replayed. Recovery checks the original image and owner before removal; uncertain absence retains capacity. A failed database journal still permits removal of a verified owned container but cannot report cleanup as recorded.
+
+`scripts/smokeLocalCode.py` qualifies the actual image, proxy, source retrieval, input/output transfer, interruption and recovery without Daytona access. The image CI reuses its existing full harness test and adds this short transport qualification. Optional `--full` also runs the full verification profile locally when qualifying the adapter or its network path.
+
 ### Browser host supervision
 
 The private `openMiraBrowserSession` binding consumes an owned manual-run grant and snapshots its owner and executor lease. The returned port contains no private host token. It checks authority before and after every operation, polls while starting or idle, and expires the last permit independently when a database check stalls. Query time consumes the permit; no reply can renew expired or permanently cancelled access. Commands are serial and uncertain input is never replayed.

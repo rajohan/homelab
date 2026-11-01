@@ -56,6 +56,24 @@ export function sandboxProfileEnvironment(): string | undefined {
 }
 
 /**
+ * Select the fixed public-egress proxy inside a locally isolated check container.
+ * @returns Only constant proxy variables when explicitly enabled; inherited proxy URLs are never used.
+ */
+export function sandboxProxyEnvironment(): Record<string, string> {
+    const mode = process.env.HOMELAB_MIRA_LOCAL_EGRESS;
+    if (mode === undefined) return {};
+    if (mode !== "public") throw new Error("Invalid local check network mode.");
+    return {
+        HTTP_PROXY: "http://mira-egress:3128",
+        HTTPS_PROXY: "http://mira-egress:3128",
+        http_proxy: "http://mira-egress:3128",
+        https_proxy: "http://mira-egress:3128",
+        NO_PROXY: "127.0.0.1,localhost,::1",
+        no_proxy: "127.0.0.1,localhost,::1",
+    };
+}
+
+/**
  * Allow only executable lookup for local Docker smoke commands, not registry credentials or remote contexts.
  * @returns Minimal host CLI environment; none of it is passed into the disposable container.
  */

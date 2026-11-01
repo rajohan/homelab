@@ -3,6 +3,7 @@ import path from "node:path";
 
 import * as v from "valibot";
 
+import { sandboxProxyEnvironment } from "../config/environment";
 import { buildSandboxEdits, readSandboxSources } from "./edits";
 import { createSandboxDirectory, readSandboxPatch, writeSandboxArtifact } from "./files";
 import { runSandboxProcess, type SandboxProcessResult } from "./process";
@@ -38,6 +39,7 @@ interface Step {
  */
 export function sandboxEnvironment(directory: string): Record<string, string> {
     return {
+        ...sandboxProxyEnvironment(),
         PATH: "/usr/local/bin:/usr/lib/postgresql/18/bin:/usr/bin:/bin",
         HOME: path.join(directory, "home"),
         TMPDIR: path.join(directory, "tmp"),
@@ -56,13 +58,17 @@ export function sandboxEnvironment(directory: string): Record<string, string> {
  * @param attempt - Canonical disposable attempt directory provisioned by the image entry point.
  * @param stopping - Cancellation signal for this invocation.
  * @param execute - Subprocess boundary; tests substitute failures without touching host services.
+ * @param announce - Status sink, defaulting to stdout outside the local JSON transport.
  * @returns Exit status after recording steps and local database shutdown evidence.
  */
 export async function executeDaytonaChecks(
     request: DaytonaSandboxRequest,
     attempt: string,
     stopping: AbortSignal,
-    execute: typeof runSandboxProcess = runSandboxProcess
+    execute: typeof runSandboxProcess = runSandboxProcess,
+    announce: (message: string) => void = (message) => {
+        process.stdout.write(message);
+    }
 ): Promise<number> {
     const input = v.parse(daytonaSandboxSchema, request);
     const editHash = "editsSha256" in input ? input.editsSha256 : null;
@@ -401,7 +407,7 @@ export async function executeDaytonaChecks(
         ) + "\n"
     );
     const operation = inspecting ? "source inspection" : "checks";
-    process.stdout.write(
+    announce(
         `Homelab ${operation} ${ok ? "completed" : "failed or was incomplete"}; retrieve the recorded results.\n`
     );
     return ok ? 0 : 1;
