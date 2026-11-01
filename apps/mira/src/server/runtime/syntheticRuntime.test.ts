@@ -76,17 +76,20 @@ test("Synthetic keeps aliases while their current target and capabilities change
     expect(() => syntheticModels({ data: [model, model] })).toThrow("duplicate");
 });
 
-test("Synthetic credentials require an explicit owner and are never sent to catalog discovery", async () => {
+test("Synthetic catalog authenticates its owner-bound credential only at the fixed origin", async () => {
     expect(syntheticConfiguration({})).toBeUndefined();
     expect(() =>
         syntheticConfiguration({ HOMELAB_MIRA_SYNTHETIC_API_KEY: configuration.apiKey })
     ).toThrow("owner");
     expect(() => new SyntheticRuntime(configuration, "someone-else")).toThrow("account");
     const models = await loadSyntheticModels(
+        configuration,
         signal,
         transport((url, init) => {
             expect(url).toBe("https://api.synthetic.new/openai/v1/models");
-            expect(init.headers).toBeUndefined();
+            expect(new Headers(init.headers).get("authorization")).toBe(
+                `Bearer ${configuration.apiKey}`
+            );
             expect(init.redirect).toBe("error");
             return Response.json({ data: [model] });
         })
@@ -201,6 +204,100 @@ test("Synthetic uses the selected alias, streams text and calls only acknowledge
     expect(JSON.stringify(bodies)).not.toContain(configuration.apiKey);
     await runtime.close();
 });
+
+test.each(["", "\n", "\r\n"])(
+    "Synthetic accepts an explicit final marker at EOF (%s) and nullable tool fragments",
+    async (ending) => {
+        let requests = 0;
+        let executed = 0;
+        const runtime = new SyntheticRuntime(
+            configuration,
+            "operator",
+            transport((_url, init) => {
+                requests++;
+                if (requests === 2) {
+                    expect(v.parse(v.string(), init.body)).toContain(
+                        "private test reasoning"
+                    );
+                    return new Response(
+                        `data: ${JSON.stringify(chunk({ content: "Verified" }, "stop"))}\n\ndata: {"choices":[]}\n\ndata: [DONE]${ending}`,
+                        { headers: { "content-type": "text/event-stream" } }
+                    );
+                }
+                return new Response(
+                    [
+                        chunk({ reasoning: "private test reasoning" }),
+                        chunk({
+                            tool_calls: [
+                                {
+                                    index: 0,
+                                    id: "fixture-call",
+                                    type: "function",
+                                    function: { name: "fixture_echo", arguments: "" },
+                                },
+                            ],
+                        }),
+                        chunk(
+                            {
+                                tool_calls: [
+                                    {
+                                        index: 0,
+                                        id: null,
+                                        type: null,
+                                        function: { name: null, arguments: "{}" },
+                                    },
+                                ],
+                            },
+                            "tool_calls"
+                        ),
+                    ]
+                        .map((event) => `data: ${JSON.stringify(event)}\n\n`)
+                        .join("") + `data: [DONE]${ending}`,
+                    { headers: { "content-type": "text/event-stream" } }
+                );
+            })
+        );
+        try {
+            const thread = await runtime.startThread(
+                settings.model,
+                "/unused",
+                [
+                    {
+                        name: "fixture_echo",
+                        description: "Test receipt",
+                        inputSchema: { type: "object" },
+                        execute: () => {
+                            executed++;
+                            return Promise.resolve("Receipt");
+                        },
+                    },
+                ],
+                "Fixture"
+            );
+            const result = await runtime.turn(thread, "Run fixture", { settings });
+            expect(result.status).toBe("completed");
+            expect(result.text).toBe("Verified");
+            expect(executed).toBe(1);
+        } finally {
+            await runtime.close();
+        }
+    }
+);
+
+test.each(["data: [DON", "data: [DONE]truncated", 'data: {"choices":[]}\n'])(
+    "Synthetic rejects an incomplete stream terminator (%s)",
+    async (tail) => {
+        const consume = async () => {
+            const response = new Response(tail, {
+                headers: { "content-type": "text/event-stream" },
+            });
+            for await (const _event of syntheticEvents(response, signal)) {
+                /* Consume the incomplete fixture. */
+            }
+        };
+        await rejects(consume(), /disconnected/);
+    }
+);
 
 test.each(["disconnect", "length", "duplicate", "unregistered", "tool_failure"])(
     "Synthetic refuses %s without replaying side effects",
@@ -353,43 +450,128 @@ test("Synthetic cancellation stops a stalled response without invoking a tool", 
     await runtime.close();
 });
 
-test.each(["exhausted", "rejected", "malformed"])(
-    "Synthetic refuses %s subscription allowance before inference",
-    async (mode) => {
-        const request: typeof fetch = Object.assign(
-            (input: string | URL | Request, init?: RequestInit) => {
-                const url = input instanceof Request ? input.url : input.toString();
-                expect(url).toBe("https://api.synthetic.new/v2/quotas");
-                expect(new Headers(init?.headers).get("authorization")).toBe(
-                    `Bearer ${configuration.apiKey}`
-                );
-                expect(init?.redirect).toBe("error");
+test.each([
+    "exhausted",
+    "fractional",
+    "weekly-exhausted",
+    "weekly-malformed",
+    "rejected",
+    "malformed",
+])("Synthetic refuses %s subscription allowance before inference", async (mode) => {
+    const requests: { url: string; init: RequestInit | undefined }[] = [];
+    const request: typeof fetch = Object.assign(
+        (input: string | URL | Request, init?: RequestInit) => {
+            const url = input instanceof Request ? input.url : input.toString();
+            requests.push({ url, init });
+            if (url.endsWith("/chat/completions"))
                 return Promise.resolve(
-                    mode === "rejected"
-                        ? new Response(null, { status: 401 })
-                        : Response.json(
-                              mode === "exhausted"
-                                  ? { subscription: { limit: 100, requests: 100 } }
-                                  : { subscription: { limit: "100", requests: 0 } }
-                          )
+                    stream([chunk({ content: "Unexpected inference" }, "stop")])
                 );
-            },
-            { preconnect: fetch.preconnect }
-        );
-        const runtime = new SyntheticRuntime(configuration, "operator", request);
-        try {
-            const thread = await runtime.startThread(
-                settings.model,
-                "/unused",
-                [],
-                "Fixture"
+            const quota: Record<string, unknown> = {
+                subscription: { limit: 100, requests: 0 },
+            };
+            if (mode === "exhausted") quota.subscription = { limit: 100, requests: 100 };
+            if (mode === "fractional")
+                quota.subscription = { limit: 100, requests: 99.5 };
+            if (mode === "malformed") quota.subscription = { limit: "100", requests: 0 };
+            if (mode === "weekly-exhausted")
+                quota.planWeeklyLimit = { percentRemaining: 0 };
+            if (mode === "weekly-malformed")
+                quota.planWeeklyLimit = { percentRemaining: "100" };
+            return Promise.resolve(
+                mode === "rejected"
+                    ? new Response(null, { status: 401 })
+                    : Response.json(quota)
             );
-            await rejects(runtime.turn(thread, "Fixture", { settings }));
-        } finally {
-            await runtime.close();
-        }
+        },
+        { preconnect: fetch.preconnect }
+    );
+    const runtime = new SyntheticRuntime(configuration, "operator", request);
+    try {
+        const thread = await runtime.startThread(
+            settings.model,
+            "/unused",
+            [],
+            "Fixture"
+        );
+        await rejects(runtime.turn(thread, "Fixture", { settings }));
+        expect(requests.map((entry) => entry.url)).toEqual([
+            "https://api.synthetic.new/v2/quotas",
+        ]);
+        expect(new Headers(requests[0]?.init?.headers).get("authorization")).toBe(
+            `Bearer ${configuration.apiKey}`
+        );
+        expect(requests[0]?.init?.redirect).toBe("error");
+    } finally {
+        await runtime.close();
     }
-);
+});
+
+test("Synthetic serializes quota and stream consumption across runs and releases an aborted waiter", async () => {
+    const started = Promise.withResolvers<void>();
+    const finished = Promise.withResolvers<void>();
+    let quotaReads = 0;
+    let posts = 0;
+    const request: typeof fetch = Object.assign(
+        async (input: string | URL | Request, init?: RequestInit) => {
+            const url = input instanceof Request ? input.url : input.toString();
+            if (url.endsWith("/v2/quotas")) {
+                quotaReads++;
+                return Response.json({
+                    subscription: { limit: 1, requests: posts },
+                    planWeeklyLimit: { percentRemaining: 100 },
+                });
+            }
+            posts++;
+            const body = JSON.parse(v.parse(v.string(), init?.body)) as Record<
+                string,
+                unknown
+            >;
+            expect(body.tools).toBeUndefined();
+            expect(body.parallel_tool_calls).toBeUndefined();
+            started.resolve();
+            await finished.promise;
+            return stream([chunk({ content: "Completed within quota" }, "stop")]);
+        },
+        { preconnect: fetch.preconnect }
+    );
+    const runtimes = [0, 1, 2].map(
+        () => new SyntheticRuntime(configuration, "operator", request)
+    );
+    const threads = await Promise.all(
+        runtimes.map((runtime) =>
+            runtime.startThread(settings.model, "/unused", [], "Fixture")
+        )
+    );
+    try {
+        const first = runtimes[0]!.turn(threads[0]!, "Fixture", { settings });
+        await started.promise;
+        const controller = new AbortController();
+        const cancelled = runtimes[1]!.turn(threads[1]!, "Fixture", {
+            settings,
+            signal: controller.signal,
+        });
+        controller.abort();
+        const cancelledResult = await cancelled;
+        expect(cancelledResult.status).toBe("interrupted");
+        const last = rejects(
+            runtimes[2]!.turn(threads[2]!, "Fixture", { settings }),
+            /allowance/
+        );
+        await Bun.sleep(10);
+        expect(quotaReads).toBe(1);
+        expect(posts).toBe(1);
+        finished.resolve();
+        const firstResult = await first;
+        expect(firstResult.status).toBe("completed");
+        await last;
+        expect(quotaReads).toBe(2);
+        expect(posts).toBe(1);
+    } finally {
+        finished.resolve();
+        await Promise.all(runtimes.map((runtime) => runtime.close()));
+    }
+});
 
 test("Synthetic sends selected WebP attachments and keeps all tool replies before screenshot inputs", async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "synthetic-visual-"));

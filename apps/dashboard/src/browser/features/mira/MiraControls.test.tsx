@@ -39,6 +39,7 @@ import { MailEditor } from "./MailEditor";
 import { MailReview } from "./MailReview";
 import { MiraRunTable } from "./MiraRunTable";
 import { MiraSkills } from "./MiraSkills";
+import { ModelSettings } from "./ModelSettings";
 import { ProposalReview } from "./ProposalReview";
 import { PublicationEditor } from "./PublicationEditor";
 import { PublicationReview } from "./PublicationReview";
@@ -236,6 +237,53 @@ test("automation editor uses current Synthetic aliases and resets unsupported th
         cleanup();
     }
 });
+
+test.each(["configured-native", "syn:large:text"])(
+    "returning to ChatGPT follows its deployment default (%s)",
+    async (defaultModel) => {
+        const choices: unknown[] = [];
+        const cleanup = fixture(
+            <ModelSettings
+                draft={{ model: "syn:large:text", effort: "high", serviceTier: null }}
+                setDraft={(value) => {
+                    choices.push(value);
+                }}
+                models={[
+                    v.parse(miraModelSchema, {
+                        model: "catalog-native",
+                        isDefault: true,
+                    }),
+                    v.parse(miraModelSchema, {
+                        model: "configured-native",
+                        isDefault: false,
+                    }),
+                    v.parse(miraModelSchema, {
+                        model: "syn:large:text",
+                        isDefault: false,
+                    }),
+                ]}
+                defaultModel={defaultModel}
+                fresh
+            />
+        );
+        try {
+            const user = userEvent.setup();
+            await user.click(screen.getByRole("button", { name: /Model provider/ }));
+            await user.click(
+                screen.getByRole("option", { name: "ChatGPT subscription" })
+            );
+            expect(choices).toEqual([
+                {
+                    model: defaultModel === "configured-native" ? null : "catalog-native",
+                    effort: null,
+                    serviceTier: null,
+                },
+            ]);
+        } finally {
+            cleanup();
+        }
+    }
+);
 
 test.each([false, true])(
     "chat keyboard submission respects an active upload (%s)",

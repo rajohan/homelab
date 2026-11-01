@@ -15,17 +15,30 @@ API at `https://api.synthetic.new/openai/v1`. It does not modify the Codex runti
 reuse ChatGPT credentials. The four supported subscription aliases are
 `syn:large:text`, `syn:small:text`, `syn:large:vision` and `syn:small:vision`.
 The stored and transmitted selection remains the alias. Target names, image support
-and reasoning levels come from Synthetic's current public catalog; no underlying
+and reasoning levels come from Synthetic's current catalog; no underlying
 model or capability is pinned. Unsupported saved settings fail with a visible outcome
 instead of silently choosing another model or thinking level.
 
 Provision `HOMELAB_MIRA_SYNTHETIC_OWNER` (the existing Homelab account ID) and
 `HOMELAB_MIRA_SYNTHETIC_API_KEY` through the deployment's secret manager. Both are
 required together, and Compose passes the credential only to the Mira service.
-Other accounts cannot discover or use this subscription. The public catalog request
-does not carry credentials. Subscription allowance is checked through `/v2/quotas`
-before inference; an absent, invalid or exhausted allowance stops the request.
-There is no fallback to paid model IDs, another account or another provider.
+Other accounts cannot discover or use this subscription. Catalog, quota and inference
+requests authenticate only at the fixed Synthetic origin and reject redirects.
+Subscription requests across both executor lanes are serialized per credential until
+the streamed response ends. Each request checks `/v2/quotas` for at least one remaining
+request and, when supplied, positive weekly credits. Missing, invalid or exhausted
+allowance stops inference. The new weekly-credit plan and legacy request quota are
+both supported; no five-hour reset schedule is assumed.
+
+Before activating this binding, verify that **Enable usage-based fallbacks** and
+**Enable auto-reload** are off in [Synthetic Usage & Billing](https://dev.synthetic.new/usage).
+Keep them off while Mira uses the subscription. Synthetic then returns HTTP 429 when
+the subscription cannot cover a request. Quota inspection is an availability check,
+not a billing reservation: other clients and model-weighted token usage can consume
+allowance after inspection, and the public quota API does not expose the fallback
+setting. The provider-side setting is the billing boundary and must be rechecked
+after account changes. Mira never retries a rejected request or switches to a paid
+model ID, another account or another provider.
 
 The inspector refreshes both catalogs independently. A provider outage removes its
 currently available choices but leaves the other provider usable. Due automations

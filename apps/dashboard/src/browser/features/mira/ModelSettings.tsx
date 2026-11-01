@@ -71,7 +71,16 @@ export function ModelSettings({
                             ? [{ value: "synthetic", label: "Synthetic subscription" }]
                             : []),
                     ]}
-                    onChange={(next) =>
+                    onChange={(next) => {
+                        if (
+                            next === "chatgpt" &&
+                            defaultModel &&
+                            !defaultModel.startsWith("syn:") &&
+                            models.some((entry) => entry.model === defaultModel)
+                        ) {
+                            setDraft({ model: null, effort: null, serviceTier: null });
+                            return;
+                        }
                         setDraft({
                             model:
                                 next === "synthetic"
@@ -93,8 +102,8 @@ export function ModelSettings({
                                       null),
                             effort: null,
                             serviceTier: null,
-                        })
-                    }
+                        });
+                    }}
                 />
             </FormField>
             <FormField label="Model">

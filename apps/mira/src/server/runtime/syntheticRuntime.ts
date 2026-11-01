@@ -14,10 +14,20 @@ const quotaSchema = v.object({
         limit: v.pipe(v.number(), v.finite(), v.minValue(0)),
         requests: v.pipe(v.number(), v.finite(), v.minValue(0)),
     }),
+    planWeeklyLimit: v.optional(
+        v.object({
+            percentRemaining: v.pipe(
+                v.number(),
+                v.finite(),
+                v.minValue(0),
+                v.maxValue(100)
+            ),
+        })
+    ),
 });
 
 /**
- * Verify an active subscription allowance without silently moving to usage-based billing.
+ * Inspect remaining request and weekly-credit allowance; provider billing settings remain authoritative.
  * @param configuration - Server-only account credential.
  * @param signal - Inspection or turn cancellation.
  * @param request - Fixed-origin HTTP transport, injectable by trusted tests.
@@ -58,10 +68,72 @@ export async function syntheticSubscriptionAvailable(
             quotaSchema,
             JSON.parse(Buffer.concat(chunks).toString("utf8"))
         );
-        return quota.subscription.limit > quota.subscription.requests;
+        return (
+            quota.subscription.limit - quota.subscription.requests >= 1 &&
+            (quota.planWeeklyLimit === undefined ||
+                quota.planWeeklyLimit.percentRemaining > 0)
+        );
     } finally {
         await reader.cancel().catch(() => {});
         reader.releaseLock();
+    }
+}
+
+// Both executor lanes share this credential queue. Only Synthetic requests wait here;
+// tool execution and the native provider retain their independent capacity.
+const subscriptionRequests = new Map<string, Promise<void>>();
+
+async function* subscriptionCompletion(
+    configuration: SyntheticConfiguration,
+    signal: AbortSignal,
+    request: typeof fetch,
+    body: object
+): AsyncGenerator<unknown> {
+    const preceding = subscriptionRequests.get(configuration.apiKey) ?? Promise.resolve();
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    const queued = preceding.then(() => held);
+    subscriptionRequests.set(configuration.apiKey, queued);
+    try {
+        await new Promise<void>((resolve, reject) => {
+            const aborted = () => reject(new Error("Synthetic request interrupted."));
+            signal.addEventListener("abort", aborted, { once: true });
+            if (signal.aborted) aborted();
+            void preceding.then(() => {
+                signal.removeEventListener("abort", aborted);
+                return resolve();
+            });
+        });
+        signal.throwIfAborted();
+        if (!(await syntheticSubscriptionAvailable(configuration, signal, request)))
+            throw new Error("Synthetic subscription allowance is unavailable.");
+        const response = await request(`${syntheticBaseUrl}/chat/completions`, {
+            method: "POST",
+            redirect: "error",
+            signal,
+            headers: {
+                Authorization: `Bearer ${configuration.apiKey}`,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify(body),
+        });
+        if (!response.ok) {
+            await response.body?.cancel();
+            throw new Error(
+                "Synthetic could not complete the request. No request was replayed."
+            );
+        }
+        yield* syntheticEvents(response, signal);
+    } finally {
+        release();
+        // An aborted waiter cannot let a later request overtake an active predecessor.
+        void queued.then(() => {
+            if (subscriptionRequests.get(configuration.apiKey) === queued)
+                subscriptionRequests.delete(configuration.apiKey);
+            return;
+        });
     }
 }
 
@@ -81,20 +153,22 @@ interface Message {
     tool_call_id?: string;
     reasoning_content?: string;
 }
+const functionNameSchema = v.optional(v.nullable(v.pipe(v.string(), v.maxLength(160))));
 const toolDeltaSchema = v.object({
     index: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(31)),
-    id: v.optional(v.pipe(v.string(), v.maxLength(256))),
-    type: v.optional(v.literal("function")),
+    id: v.optional(v.nullable(v.pipe(v.string(), v.maxLength(256)))),
+    type: v.optional(v.nullable(v.literal("function"))),
     function: v.optional(
         v.object({
-            name: v.optional(v.pipe(v.string(), v.maxLength(160))),
-            arguments: v.optional(v.string()),
+            name: functionNameSchema,
+            arguments: v.optional(v.nullable(v.string())),
         })
     ),
 });
 const deltaSchema = v.object({
     content: v.optional(v.nullable(v.string())),
     reasoning_content: v.optional(v.nullable(v.string())),
+    reasoning: v.optional(v.nullable(v.string())),
     tool_calls: v.optional(v.pipe(v.array(toolDeltaSchema), v.maxLength(32))),
 });
 const choiceSchema = v.object({
@@ -107,16 +181,19 @@ const choiceSchema = v.object({
 const chunkSchema = v.object({ choices: v.pipe(v.array(choiceSchema), v.maxLength(1)) });
 
 /**
- * Read the public alias catalog through the fixed Synthetic origin, without transmitting credentials.
+ * Read the alias catalog with the owner-bound credential through the fixed Synthetic origin.
+ * @param configuration - Server-only account credential.
  * @param signal - Inspector shutdown or turn deadline.
  * @param request - HTTP transport, injectable only by trusted server tests.
  * @returns Validated current capabilities for the supported subscription aliases.
  */
 export async function loadSyntheticModels(
+    configuration: SyntheticConfiguration,
     signal: AbortSignal,
     request: typeof fetch = fetch
 ) {
     const response = await request(`${syntheticBaseUrl}/models`, {
+        headers: { Authorization: `Bearer ${configuration.apiKey}` },
         redirect: "error",
         signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
     });
@@ -289,61 +366,44 @@ export class SyntheticRuntime {
             await options.onStarted?.(active.id);
             for (let step = 0; step < 40; step++) {
                 signal.throwIfAborted();
-                if (
-                    !(await syntheticSubscriptionAvailable(
-                        this.configuration,
-                        signal,
-                        this.request
-                    ))
-                )
-                    throw new Error("Synthetic subscription allowance is unavailable.");
                 for (const guidance of active.guidance.splice(0))
                     messages.push({ role: "user", content: guidance });
                 if (Buffer.byteLength(JSON.stringify(messages)) > 24 * 1024 * 1024)
                     throw new Error("Synthetic turn context exceeds its limit.");
                 options.onActivity?.({ phase: "thinking", tool: null });
-                const response = await this.request(
-                    `${syntheticBaseUrl}/chat/completions`,
+                const events = subscriptionCompletion(
+                    this.configuration,
+                    signal,
+                    this.request,
                     {
-                        method: "POST",
-                        redirect: "error",
-                        signal,
-                        headers: {
-                            Authorization: `Bearer ${this.configuration.apiKey}`,
-                            "Content-Type": "application/json",
-                        },
-                        body: JSON.stringify({
-                            model: options.settings!.model,
-                            ...(options.settings!.effort
-                                ? { reasoning_effort: options.settings!.effort }
-                                : {}),
-                            messages,
-                            stream: true,
-                            n: 1,
-                            parallel_tool_calls: false,
-                            tools: thread.tools.map((tool) => ({
-                                type: "function",
-                                function: {
-                                    name: tool.name,
-                                    description: tool.description,
-                                    parameters: tool.inputSchema,
-                                },
-                            })),
-                        }),
+                        model: options.settings!.model,
+                        ...(options.settings!.effort
+                            ? { reasoning_effort: options.settings!.effort }
+                            : {}),
+                        messages,
+                        stream: true,
+                        n: 1,
+                        ...(thread.tools.length > 0
+                            ? {
+                                  parallel_tool_calls: false,
+                                  tools: thread.tools.map((tool) => ({
+                                      type: "function",
+                                      function: {
+                                          name: tool.name,
+                                          description: tool.description,
+                                          parameters: tool.inputSchema,
+                                      },
+                                  })),
+                              }
+                            : {}),
                     }
                 );
-                if (!response.ok) {
-                    await response.body?.cancel();
-                    throw new Error(
-                        "Synthetic could not complete the request. No request was replayed."
-                    );
-                }
                 const collected = new Map<number, ToolCall>();
                 let reply = "",
                     reasoning = "";
                 let finish: string | null = null;
                 let separated = false;
-                for await (const event of syntheticEvents(response, signal)) {
+                for await (const event of events) {
                     const chunk = v.parse(chunkSchema, event);
                     const choice = chunk.choices[0];
                     if (!choice) continue;
@@ -360,7 +420,8 @@ export class SyntheticRuntime {
                         options.onActivity?.({ phase: "replying", tool: null });
                         options.onDelta?.(delta);
                     }
-                    reasoning += choice.delta.reasoning_content ?? "";
+                    reasoning +=
+                        choice.delta.reasoning_content ?? choice.delta.reasoning ?? "";
                     if (reasoning.length > 512_000)
                         throw new Error("Synthetic reasoning exceeds its limit.");
                     for (const delta of choice.delta.tool_calls ?? []) {

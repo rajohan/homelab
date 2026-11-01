@@ -32,8 +32,17 @@ export async function* syntheticEvents(
             signal.throwIfAborted();
             const chunk = await reader.read();
             signal.throwIfAborted();
-            if (chunk.done)
+            if (chunk.done) {
+                buffer += decoder.decode();
+                // Some Synthetic backends terminate the stream immediately after
+                // the explicit marker, without SSE's final newline or blank line.
+                if (
+                    (data.length === 0 && buffer.replace(/\r$/, "") === "data: [DONE]") ||
+                    (buffer === "" && data.length === 1 && data[0] === "[DONE]")
+                )
+                    return;
                 throw new Error("Synthetic disconnected before completing its response.");
+            }
             const value: unknown = chunk.value;
             if (!(value instanceof Uint8Array))
                 throw new Error("Synthetic returned an invalid stream chunk.");

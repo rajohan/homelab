@@ -185,7 +185,7 @@ export async function executeMiraTurn(
         const models =
             runtime instanceof CodexRuntime
                 ? await runtime.models()
-                : await loadSyntheticModels(signal);
+                : await loadSyntheticModels(synthetic!, signal);
         const settings = resolveMiraChatSettings(models, record.settings, config.model);
         const selectedModel = models.find((entry) => entry.model === settings.model)!;
         if (useSynthetic) {

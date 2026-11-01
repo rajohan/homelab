@@ -258,7 +258,10 @@ export async function runMiraExecutor(options: {
                                 signal
                             )
                         )
-                            aliases = await loadSyntheticModels(signal);
+                            aliases = await loadSyntheticModels(
+                                options.synthetic,
+                                signal
+                            );
                     } catch {
                         /* One provider outage must not stop the other provider. */
                     }
