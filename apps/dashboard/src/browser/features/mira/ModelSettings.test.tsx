@@ -17,6 +17,7 @@ test("switching provider and model preserves explicit context opt-outs", async (
         ...miraDefaultChatSettings,
         useMemory: false,
         useHistory: false,
+        executionTarget: "main",
     };
     function Fixture() {
         const [draft, setDraft] = useState(latest);
@@ -56,7 +57,12 @@ test("switching provider and model preserves explicit context opt-outs", async (
             model: "syn:small:text",
             useMemory: false,
             useHistory: false,
+            executionTarget: "main",
         });
+        fireEvent.click(screen.getByLabelText("Code execution"));
+        fireEvent.click(await screen.findByRole("option", { name: "Daytona · cloud" }));
+        expect(latest.executionTarget).toBe("daytona");
+        expect(latest.model).toBe("syn:small:text");
         expect(
             screen.getByRole("switch", { name: "Use saved memory" })
         ).not.toBeChecked();

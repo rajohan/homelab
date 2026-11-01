@@ -1,6 +1,8 @@
 import type { MiraChatSettings, MiraModel } from "@homelab/contracts/mira";
 import { FormField, Select } from "@homelab/ui";
 
+import { CodeTargetSettings } from "./CodeTargetSettings";
+
 /**
  * Share current provider, model and capability choices between Chat and Automations.
  * @returns Controlled fields; alias IDs remain unchanged when their underlying model rotates.
@@ -196,6 +198,11 @@ export function ModelSettings({
                     )}
                 </FormField>
             </div>
+            <CodeTargetSettings
+                value={draft.executionTarget}
+                disabled={disabled}
+                onChange={(executionTarget) => setDraft({ ...draft, executionTarget })}
+            />
         </>
     );
 }

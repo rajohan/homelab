@@ -188,6 +188,11 @@ export async function saveMiraDaytona(
         hash = miraDaytonaHash(content),
         targetHash = bindingHash(account);
     const local = isLocalCodeBinding(account);
+    if (input.executionTarget && input.executionTarget !== (local ? "main" : "daytona"))
+        throw new MiraFailure(
+            "CONFLICT",
+            "The selected code target is unavailable. No fallback was used."
+        );
     if (local) localCodeRequest(input.id, content);
     return miraTransaction(context, async (query) => {
         await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${context.owner}`},0))`;

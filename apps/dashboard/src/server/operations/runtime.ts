@@ -4,6 +4,7 @@ import { type DaytonaBinding } from "@homelab/mira/integrations/daytona/configur
 import type { GitHubBinding } from "@homelab/mira/integrations/github/configuration";
 import type { HereNowBinding } from "@homelab/mira/integrations/herenow/configuration";
 import type { MoltbookBinding } from "@homelab/mira/integrations/moltbook/configuration";
+import type { LocalCodeBinding } from "@homelab/mira/sandbox/localBinding";
 
 import type { OperationsConfiguration } from "../config/operations";
 import { connectDashboardDatabase } from "../database/connection";
@@ -175,6 +176,7 @@ export function createOperationsRuntime(
         hereNowBinding: configuration.hereNowBinding,
         githubBinding: configuration.githubBinding,
         daytonaBinding: configuration.daytonaBinding,
+        localCodeBinding: configuration.localCodeBinding,
         maintenanceTargets: configuration.maintenanceTargets ?? [],
         releaseRepository: configuration.releaseRepository,
         updateTargets: configuration.updateTargets ?? [],
@@ -198,6 +200,7 @@ export type OperationsRuntime = ReturnType<typeof connectDashboardDatabase> & {
     readonly hereNowBinding?: HereNowBinding | undefined;
     readonly githubBinding?: GitHubBinding | undefined;
     readonly daytonaBinding?: DaytonaBinding | undefined;
+    readonly localCodeBinding?: LocalCodeBinding | undefined;
     readonly maintenanceTargets?: readonly MaintenanceTarget[];
     readonly releaseRepository?: string | undefined;
     readonly updateTargets?: readonly UpdateTarget[];

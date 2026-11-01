@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import path from "node:path";
 
+import { localCodeEnvironment } from "../sandbox/localBinding";
 import { browserHostEnvironment } from "./environment";
 
 const environment = {
@@ -15,6 +16,7 @@ test("browser host requires explicit absolute attachment storage before starting
         databaseUrl: environment.HOMELAB_DASHBOARD_DATABASE_URL,
         port: 3441,
         filesDirectory: environment.HOMELAB_MIRA_FILES_DIR,
+        localCode: undefined,
     });
     for (const filesDirectory of [undefined, "", "relative/files"])
         expect(() =>
@@ -43,4 +45,35 @@ test("browser host rejects invalid service settings before advertising readiness
             HOMELAB_MIRA_BROWSER_HEALTH_PORT: "3442",
         }).port
     ).toBe(3442);
+});
+
+test("local target configuration accepts only nonsecret immutable deployment identities", () => {
+    const binding = {
+        kind: "main" as const,
+        owner: "operator",
+        hostId: "11111111-1111-4111-8111-111111111111",
+        imageId: `sha256:${"a".repeat(64)}`,
+        egress: {
+            networkId: "b".repeat(64),
+            proxyId: "c".repeat(64),
+            proxyImageId: `sha256:${"d".repeat(64)}`,
+        },
+    };
+    expect(localCodeEnvironment({})).toBeUndefined();
+    expect(
+        browserHostEnvironment({
+            ...environment,
+            HOMELAB_MIRA_LOCAL_CODE: JSON.stringify(binding),
+        }).localCode
+    ).toEqual(binding);
+    for (const changed of [
+        { ...binding, imageId: "latest" },
+        { ...binding, socketPath: "/var/run/docker.sock" },
+        { ...binding, apiKey: "synthetic" },
+        { ...binding, egress: undefined },
+    ]) {
+        expect(() =>
+            localCodeEnvironment({ HOMELAB_MIRA_LOCAL_CODE: JSON.stringify(changed) })
+        ).toThrow();
+    }
 });

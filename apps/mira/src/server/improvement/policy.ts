@@ -70,11 +70,13 @@ export async function readImprovementGrant(
             bound: string | null;
             definition: number | null;
             automationVersion: number;
+            executionTarget: string;
         }[]
-    >`SELECT coalesce(g.version,0) AS version,coalesce(g.enabled,false) AS enabled,g.binding_hash AS bound,g.automation_version AS definition,a.version AS "automationVersion" FROM mira_automations a LEFT JOIN mira_improvement_grants g ON g.automation_id=a.id AND g.owner=a.owner WHERE a.id=${automationId} AND a.owner=${context.owner} AND a.kind='improvement' AND a.deleted_at IS NULL`;
+    >`SELECT coalesce(g.version,0) AS version,coalesce(g.enabled,false) AS enabled,g.binding_hash AS bound,g.automation_version AS definition,a.version AS "automationVersion",coalesce(a.settings->>'executionTarget','daytona') AS "executionTarget" FROM mira_automations a LEFT JOIN mira_improvement_grants g ON g.automation_id=a.id AND g.owner=a.owner WHERE a.id=${automationId} AND a.owner=${context.owner} AND a.kind='improvement' AND a.deleted_at IS NULL`;
     if (!row) throw new MiraFailure("NOT_FOUND", "Improvement automation not found.");
     const binding = improvementBinding(context.owner, bindings);
     const available =
+        row.executionTarget === "daytona" &&
         !!binding &&
         (await daytonaPermission(query, bindings.daytona!)) !== null &&
         (await codePermission(query, bindings.github!)) !== null;
@@ -85,6 +87,7 @@ export async function readImprovementGrant(
         version: row.version,
         enabled: row.enabled,
         current:
+            row.executionTarget === "daytona" &&
             !!binding &&
             row.bound === binding &&
             row.definition === row.automationVersion,
@@ -131,7 +134,7 @@ export async function saveImprovementGrant(
         if (input.enabled && !current.available)
             throw new MiraFailure(
                 "PRECONDITION_FAILED",
-                "Enable qualified Daytona and GitHub integrations before allowing automatic code changes."
+                "Automatic code changes currently require the Daytona target and qualified Daytona and GitHub integrations."
             );
         await query`INSERT INTO mira_improvement_grants(automation_id,owner,enabled,version,automation_version,binding_hash,approved_by) VALUES (${input.automationId},${context.owner},${input.enabled},1,${input.automationVersion},${improvementBinding(context.owner, bindings)},${context.actor}) ON CONFLICT(automation_id) DO UPDATE SET enabled=EXCLUDED.enabled,version=mira_improvement_grants.version+1,automation_version=EXCLUDED.automation_version,binding_hash=EXCLUDED.binding_hash,approved_by=EXCLUDED.approved_by,updated_at=clock_timestamp()`;
         await auditMira(
@@ -161,7 +164,7 @@ export async function improvementJobAllowed(
 ): Promise<boolean> {
     const [row] = await query<
         { allowed: boolean }[]
-    >`SELECT (i.state IN ('queued','checking','publishing') AND i.policy_version=${miraImprovementPolicy.version} AND i.created_at>clock_timestamp()-interval '1 hour' AND g.enabled AND g.version=i.grant_version AND g.binding_hash=i.binding_hash AND a.kind='improvement' AND a.version=g.automation_version AND a.deleted_at IS NULL AND s.enabled AND s.version=i.automation_control AND coalesce(u.enabled,true) AND coalesce(u.version,1)=i.autonomy_control AND NOT r.cancel_requested AND r.state IN ('running','completed','failed','interrupted','needs_attention') AND c.deleted_at IS NULL AND EXISTS(SELECT 1 FROM mira_switches d WHERE d.owner=i.owner AND d.key='integration:daytona' AND d.enabled AND d.version=i.daytona_control) AND EXISTS(SELECT 1 FROM mira_switches h WHERE h.owner=i.owner AND h.key='integration:github' AND h.enabled AND h.version=i.github_control) AND (${kind ?? null}::text IS NULL OR (${kind ?? null}='cloud' AND EXISTS(SELECT 1 FROM mira_daytona_jobs j WHERE j.id=i.id AND j.owner=i.owner AND j.content_hash=i.cloud_hash)) OR (${kind ?? null}='publication' AND EXISTS(SELECT 1 FROM mira_code_publications p WHERE p.id=i.id AND p.owner=i.owner AND p.content_hash=i.publication_hash)))) AS allowed FROM mira_improvements i JOIN mira_improvement_grants g ON g.automation_id=i.automation_id AND g.owner=i.owner JOIN mira_automations a ON a.id=i.automation_id AND a.owner=i.owner JOIN mira_switches s ON s.owner=i.owner AND s.key='automation:'||i.automation_id::text LEFT JOIN mira_switches u ON u.owner=i.owner AND u.key='autonomy' JOIN mira_runs r ON r.id=i.run_id AND r.owner=i.owner JOIN mira_conversations c ON c.id=i.conversation_id AND c.owner=i.owner WHERE i.id=${id}`;
+    >`SELECT (i.state IN ('queued','checking','publishing') AND i.policy_version=${miraImprovementPolicy.version} AND i.created_at>clock_timestamp()-interval '1 hour' AND g.enabled AND g.version=i.grant_version AND g.binding_hash=i.binding_hash AND a.kind='improvement' AND coalesce(a.settings->>'executionTarget','daytona')='daytona' AND a.version=g.automation_version AND a.deleted_at IS NULL AND s.enabled AND s.version=i.automation_control AND coalesce(u.enabled,true) AND coalesce(u.version,1)=i.autonomy_control AND NOT r.cancel_requested AND r.state IN ('running','completed','failed','interrupted','needs_attention') AND c.deleted_at IS NULL AND EXISTS(SELECT 1 FROM mira_switches d WHERE d.owner=i.owner AND d.key='integration:daytona' AND d.enabled AND d.version=i.daytona_control) AND EXISTS(SELECT 1 FROM mira_switches h WHERE h.owner=i.owner AND h.key='integration:github' AND h.enabled AND h.version=i.github_control) AND (${kind ?? null}::text IS NULL OR (${kind ?? null}='cloud' AND EXISTS(SELECT 1 FROM mira_daytona_jobs j WHERE j.id=i.id AND j.owner=i.owner AND j.content_hash=i.cloud_hash)) OR (${kind ?? null}='publication' AND EXISTS(SELECT 1 FROM mira_code_publications p WHERE p.id=i.id AND p.owner=i.owner AND p.content_hash=i.publication_hash)))) AS allowed FROM mira_improvements i JOIN mira_improvement_grants g ON g.automation_id=i.automation_id AND g.owner=i.owner JOIN mira_automations a ON a.id=i.automation_id AND a.owner=i.owner JOIN mira_switches s ON s.owner=i.owner AND s.key='automation:'||i.automation_id::text LEFT JOIN mira_switches u ON u.owner=i.owner AND u.key='autonomy' JOIN mira_runs r ON r.id=i.run_id AND r.owner=i.owner JOIN mira_conversations c ON c.id=i.conversation_id AND c.owner=i.owner WHERE i.id=${id}`;
     if (row) return row.allowed === true;
     const [exists] = await query<
         { id: string }[]

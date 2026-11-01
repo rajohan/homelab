@@ -21,6 +21,10 @@ import {
     moltbookBinding,
     type MoltbookBinding,
 } from "@homelab/mira/integrations/moltbook/configuration";
+import {
+    localCodeEnvironment,
+    type LocalCodeBinding,
+} from "@homelab/mira/sandbox/localBinding";
 import * as v from "valibot";
 
 import type { RulesConfiguration } from "../integrations/alerts/rules";
@@ -69,6 +73,7 @@ export interface OperationsConfiguration {
     readonly hereNowBinding?: HereNowBinding | undefined;
     readonly githubBinding?: GitHubBinding | undefined;
     readonly daytonaBinding?: DaytonaBinding | undefined;
+    readonly localCodeBinding?: LocalCodeBinding | undefined;
     readonly maintenanceTargets?: readonly MaintenanceTarget[];
     readonly releaseRepository?: string | undefined;
     readonly dockerHub?: DockerHubCredential | undefined;
@@ -276,6 +281,7 @@ export function parseOperationsConfiguration(
         hereNowBinding: hereNowBinding(environment),
         githubBinding: githubBinding(environment),
         daytonaBinding: daytonaBinding(environment),
+        localCodeBinding: localCodeEnvironment(environment),
         maintenanceTargets: parseMaintenanceTargets(
             environment.HOMELAB_DASHBOARD_MAINTENANCE_TARGETS,
             updateTargets

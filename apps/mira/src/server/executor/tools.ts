@@ -57,6 +57,7 @@ import type { MoltbookReadConfiguration } from "../integrations/moltbook/configu
 import { createMoltbookTools } from "../integrations/moltbook/tools";
 import type { RuntimeTool } from "../runtime/protocol";
 import { runtimeContentItems, type RuntimeToolResult } from "../runtime/toolResult";
+import type { LocalCodeBinding } from "../sandbox/localBinding";
 import { createMiraSkillTools } from "../skills/tools";
 import { createMiraBrowserTools } from "./browserTools";
 import { createMiraComputerTools } from "./computerTools";
@@ -124,6 +125,7 @@ const object = (properties: Record<string, unknown>, required: string[] = []) =>
  * @param hereNow - Optional scoped website metadata settings; credentials stay in the executor.
  * @param moltbook - Optional social read settings, retained only by the service.
  * @param github - Optional GitHub mapping and dedicated read credential, retained only in the service closure.
+ * @param localCode - Optional Main mapping; the run freezes its target before inference.
  * @param daytona - Nonsecret cloud job mapping; model tools cannot execute or approve.
  * @returns The fixed tool declarations for this conversation and their checked handlers.
  */
@@ -135,7 +137,8 @@ export function createMiraTools(
     moltbook?: MoltbookReadConfiguration,
     hereNow?: HereNowReadConfiguration,
     daytona?: DaytonaBinding,
-    github?: GitHubBinding | GitHubConfiguration
+    github?: GitHubBinding | GitHubConfiguration,
+    localCode?: LocalCodeBinding
 ): RuntimeTool<RuntimeToolResult>[] {
     const context: MiraContext = {
         client,
@@ -511,10 +514,17 @@ export function createMiraTools(
         ...createMiraSkillTools(client, run),
         ...createAgentMailTools(client, run, agentMail, fetch, filesDirectory),
         ...createMoltbookTools(client, run, moltbook),
-        ...createDaytonaTools(client, run, daytona),
+        ...createDaytonaTools(
+            client,
+            run,
+            run.executionTarget === "main" ? localCode : daytona
+        ),
         ...createHereNowTools(client, run, hereNow),
         ...createGitHubTools(client, run, github),
-        ...createImprovementTools(client, run, { daytona, github }),
+        ...createImprovementTools(client, run, {
+            daytona: run.executionTarget === "main" ? undefined : daytona,
+            github,
+        }),
         ...createGitHubReadTools(
             client,
             run,

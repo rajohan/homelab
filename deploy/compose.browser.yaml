@@ -21,6 +21,16 @@ x-browser-proxy: &browser-proxy
       max-file: "2"
 
 services:
+  mira-code-proxy:
+    <<: *browser-proxy
+    profiles: [local-code]
+    networks:
+      mira-code:
+        aliases: [mira-egress]
+        interface_name: browser
+      mira-browser-outbound:
+        interface_name: external
+        gw_priority: 1
   mira-browser-proxy-a:
     <<: *browser-proxy
     networks:
@@ -46,6 +56,7 @@ services:
     environment:
       NODE_ENV: production
       HOMELAB_DASHBOARD_DATABASE_URL:
+      HOMELAB_MIRA_LOCAL_CODE:
       HOMELAB_MIRA_BROWSER_CONFIG: /etc/homelab-mira/browser.json
       HOMELAB_MIRA_BROWSER_HEALTH_PORT: "3441"
       HOMELAB_MIRA_FILES_DIR: /var/lib/mira/files
@@ -103,6 +114,11 @@ services:
         max-file: "2"
 
 networks:
+  mira-code:
+    internal: true
+    enable_ipv6: false
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
   mira-browser-a:
     internal: true
     enable_ipv6: false

@@ -198,7 +198,7 @@ export function ChatPanel({
                                 },
                                 {
                                     id: "daytona",
-                                    label: "Cloud jobs",
+                                    label: "Code jobs",
                                     icon: Cloud,
                                     onSelect: () => onLibrary("daytona"),
                                 },

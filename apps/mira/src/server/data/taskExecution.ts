@@ -133,6 +133,8 @@ export async function runMiraTask(
         const conversationId = link.conversationId ?? Bun.randomUUIDv7();
         if (!link.conversationId)
             await query`INSERT INTO mira_conversations (id, owner, title) VALUES (${conversationId}, ${context.owner}, ${`Task ${task.id.slice(0, 8)}`})`;
+        if (input.executionTarget)
+            await query`UPDATE mira_conversations SET settings=settings || ${JSON.stringify({ executionTarget: input.executionTarget })}::text::jsonb WHERE id=${conversationId} AND owner=${context.owner}`;
         const text = [
             `Task reference: ${task.id}`,
             "Read this saved task with mira_task_read before working. Use its current title, description and completion criteria; do not rely on stale copies from earlier turns.",

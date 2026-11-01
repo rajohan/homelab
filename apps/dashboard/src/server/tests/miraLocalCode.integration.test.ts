@@ -3,7 +3,10 @@ import { rejects } from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
+import { capabilities } from "@homelab/contracts/operations";
+import { resumeMiraControls } from "@homelab/mira/data/automations";
 import { captureCodeSource } from "@homelab/mira/data/codeSource";
 import {
     approveMiraDaytona,
@@ -13,11 +16,13 @@ import {
 } from "@homelab/mira/data/daytona";
 import { readMiraDaytonaRecovery } from "@homelab/mira/data/daytonaRecovery";
 import { readMiraFile, saveMiraFile } from "@homelab/mira/data/files";
+import { claimMiraRun } from "@homelab/mira/data/queue";
 import { dispatchMiraDaytona } from "@homelab/mira/integrations/daytona/jobs";
 import {
     localCodeBindingHash,
     publishLocalCodeBinding,
     type LocalCodeBinding,
+    localCodePermission,
 } from "@homelab/mira/sandbox/localBinding";
 import type {
     LocalCodeJournal,
@@ -29,6 +34,7 @@ import {
     localCodeRequest,
     type LocalCheckResult,
 } from "@homelab/mira/sandbox/localProtocol";
+import { runMiraLocalCodeHost } from "@homelab/mira/sandbox/localService";
 import {
     daytonaCheckContent,
     daytonaEditContent,
@@ -36,6 +42,8 @@ import {
 } from "@homelab/mira/sandbox/profile";
 import type { TransactionSQL } from "bun";
 
+import { appRouter } from "../api/router";
+import { createMiraTextTestTools } from "../testing/miraTools";
 import { operationFixture } from "../testing/operations";
 
 const binding: LocalCodeBinding = {
@@ -557,6 +565,225 @@ test("uncertain creation reserves shared capacity and late callbacks cannot revi
         expect(await dispatchMiraLocalCode(f.options, { execute, cleanup })).toBe(true);
         const completed = await f.read(next.id);
         expect(completed.state).toBe("completed");
+    } finally {
+        await f.close();
+    }
+});
+
+test("Main API needs no Daytona account and binds availability, approval and timed resume to its host", async () => {
+    const f = await operationFixture();
+    const operations = { ...f, localCodeBinding: binding };
+    const api = appRouter.createCaller({
+        operations,
+        principal: { kind: "human", id: binding.owner, capabilities },
+    }).mira;
+    const control = async (enabled: boolean, until: string | null = null) => {
+        const controls = await api.controls.list();
+        const row = controls.find((item) => item.key === "code:main")!;
+        return api.controls.setEnabled({
+            key: row.key,
+            version: row.version,
+            enabled,
+            reason: enabled ? null : "Maintenance",
+            until,
+        });
+    };
+    try {
+        const statuses = await api.integrations();
+        expect(statuses.find((item) => item.key === "code:main")).toMatchObject({
+            configured: true,
+            ready: false,
+        });
+        await rejects(control(true), /offline/);
+        await publishLocalCodeBinding(f.client, binding);
+        await control(true);
+        expect(await localCodePermission(f.client, binding)).toBeNumber();
+        const foreign = appRouter.createCaller({
+            operations,
+            principal: { kind: "human", id: "other", capabilities },
+        }).mira;
+        const foreignStatuses = await foreign.integrations();
+        expect(foreignStatuses.find((item) => item.key === "code:main")).toMatchObject({
+            configured: false,
+            ready: false,
+        });
+        const id = crypto.randomUUID();
+        const input = {
+            id,
+            version: 0,
+            conversationId: null,
+            taskId: null,
+            content: daytonaSourceContent({ id, commit, paths: [] }),
+        };
+        await rejects(api.daytona.save(input), /configured/);
+        const job = await api.daytona.save({ ...input, executionTarget: "main" });
+        const review = {
+            id,
+            version: job.version,
+            contentHash: job.contentHash,
+            reviewedContent: job.content,
+        };
+        await rejects(api.daytona.approve(review), /configured|target/);
+        await rejects(
+            foreign.daytona.approve({ ...review, executionTarget: "main" }),
+            /configured|owner|found/
+        );
+        expect(
+            await api.daytona.approve({ ...review, executionTarget: "main" })
+        ).toMatchObject({ state: "queued", executionTarget: "main" });
+        await control(false, new Date(Date.now() + 60_000).toISOString());
+        await f.client`UPDATE mira_switches SET until=clock_timestamp()-interval '1 second' WHERE key='code:main'`;
+        await publishLocalCodeBinding(f.client, {
+            ...binding,
+            imageId: `sha256:${"1".repeat(64)}`,
+        });
+        await f.client.begin((query) => resumeMiraControls(query, new Date()));
+        expect(await localCodePermission(f.client, binding)).toBeNull();
+        await publishLocalCodeBinding(f.client, binding);
+        await f.client.begin((query) => resumeMiraControls(query, new Date()));
+        expect(await localCodePermission(f.client, binding)).toBeNumber();
+        await f.client`UPDATE mira_integration_receivers SET heartbeat_at=clock_timestamp()-interval '46 seconds' WHERE key='code:main'`;
+        expect(await localCodePermission(f.client, binding)).toBeNull();
+    } finally {
+        await f.close();
+    }
+});
+
+test("trusted Main host keeps heartbeats during active work, cancels on shutdown and preserves a newer publisher", async () => {
+    const f = await operationFixture();
+    const stop = new AbortController();
+    const started = Promise.withResolvers<void>();
+    const finished = Promise.withResolvers<void>();
+    let calls = 0;
+    const work = runMiraLocalCodeHost(
+        {
+            client: f.client,
+            binding,
+            socketPath: "/synthetic/socket",
+            filesDirectory: undefined,
+            signal: stop.signal,
+        },
+        async (options) => {
+            calls++;
+            started.resolve();
+            await delay(30_000, undefined, { signal: options.signal }).catch(() => {});
+            finished.resolve();
+            return true;
+        }
+    );
+    try {
+        await started.promise;
+        const [before] = await f.client<
+            { stamp: string }[]
+        >`SELECT heartbeat_at::text AS stamp FROM mira_integration_receivers WHERE key='code:main'`;
+        await delay(5600);
+        const [after] = await f.client<
+            { stamp: string }[]
+        >`SELECT heartbeat_at::text AS stamp FROM mira_integration_receivers WHERE key='code:main'`;
+        expect(after!.stamp).not.toBe(before!.stamp);
+        expect(calls).toBe(1);
+        await publishLocalCodeBinding(f.client, binding);
+        stop.abort();
+        await work;
+        await finished.promise;
+        const [retained] = await f.client<
+            { binding: string | null }[]
+        >`SELECT binding_hash AS binding FROM mira_integration_receivers WHERE key='code:main'`;
+        expect(retained!.binding).toBe(localCodeBindingHash(binding));
+    } finally {
+        stop.abort();
+        await work;
+        await f.close();
+    }
+}, 15_000);
+
+test("trusted Main host retires its heartbeat after a dispatcher failure", async () => {
+    const f = await operationFixture();
+    try {
+        await rejects(
+            runMiraLocalCodeHost(
+                {
+                    client: f.client,
+                    binding,
+                    socketPath: "/synthetic/socket",
+                    filesDirectory: undefined,
+                    signal,
+                },
+                () => Promise.reject(new Error("Synthetic dispatcher failure"))
+            ),
+            /Local code host failed/
+        );
+        const [row] = await f.client<
+            { binding: string | null }[]
+        >`SELECT binding_hash AS binding FROM mira_integration_receivers WHERE key='code:main'`;
+        expect(row!.binding).toBeNull();
+    } finally {
+        await f.close();
+    }
+});
+
+test("Main model drafts use the frozen target and cannot fall back when its mapping is absent", async () => {
+    const f = await fixture();
+    const api = appRouter.createCaller({
+        operations: f,
+        principal: { kind: "human", id: binding.owner, capabilities },
+    }).mira;
+    try {
+        const chat = await api.conversations.create({ title: "Local proposal" });
+        await api.conversations.settings({
+            id: chat.id,
+            version: 1,
+            settings: {
+                model: null,
+                effort: null,
+                serviceTier: null,
+                executionTarget: "main",
+            },
+        });
+        await api.conversations.send({
+            conversationId: chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Inspect public Homelab source on Main.",
+        });
+        const run = await claimMiraRun(f.client, crypto.randomUUID(), "foreground");
+        expect(run?.executionTarget).toBe("main");
+        const cloud = {
+            owner: binding.owner,
+            trustBoundary: "dedicated-organization" as const,
+            networkAccess: "provider-default" as const,
+            organizationId: crypto.randomUUID(),
+            snapshotId: crypto.randomUUID(),
+            target: "eu",
+        };
+        for (const local of [undefined, binding]) {
+            const tool = createMiraTextTestTools(
+                f.client,
+                run!,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                cloud,
+                undefined,
+                local
+            ).find((entry) => entry.name === "mira_daytona_source_draft")!;
+            expect(tool.description).toContain("Main (local");
+            const response: unknown = JSON.parse(
+                await tool.execute(
+                    { id: crypto.randomUUID(), version: 0, commit, paths: [] },
+                    signal,
+                    {
+                        callId: crypto.randomUUID(),
+                        threadId: "synthetic",
+                        turnId: "synthetic",
+                    }
+                )
+            );
+            expect(response).toMatchObject({ ok: !!local });
+        }
+        const jobs = await api.daytona.list({ conversationId: chat.id });
+        expect(jobs.rows).toHaveLength(1);
+        expect(jobs.rows[0]).toMatchObject({ state: "draft", executionTarget: "main" });
     } finally {
         await f.close();
     }
