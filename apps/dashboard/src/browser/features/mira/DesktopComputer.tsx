@@ -1,6 +1,13 @@
-import { Button, ErrorNotice, LoadingState, SectionHeader } from "@homelab/ui";
+import {
+    Button,
+    ConfirmDialog,
+    ErrorNotice,
+    LoadingState,
+    SectionHeader,
+} from "@homelab/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Monitor, Plug, Square, Download, Unplug } from "lucide-react";
+import { useState } from "react";
 
 import { hasDesktopBridge, requestDesktop } from "./desktopClient";
 
@@ -9,6 +16,7 @@ import { hasDesktopBridge, requestDesktop } from "./desktopClient";
  * @returns Local connection controls, or nothing in a normal browser.
  */
 export function DesktopComputer() {
+    const [forgetting, setForgetting] = useState(false);
     const queryClient = useQueryClient();
     const state = useQuery({
         queryKey: ["mira", "desktop"],
@@ -79,7 +87,7 @@ export function DesktopComputer() {
                                 !current.computerId ||
                                 action.isPending
                             }
-                            onClick={() => action.mutate("forget")}
+                            onClick={() => setForgetting(true)}
                         >
                             <Unplug size={16} aria-hidden="true" />
                             Remove pairing
@@ -90,6 +98,19 @@ export function DesktopComputer() {
                         connection leaves server work running.
                     </p>
                 </>
+            )}
+            {forgetting && (
+                <ConfirmDialog
+                    title="Remove this PC's pairing?"
+                    description="This removes the saved pairing from Windows. Revoke the computer in Settings to end server access too."
+                    confirmLabel="Remove pairing"
+                    confirmDisabled={!current?.canStart || !current.computerId}
+                    onClose={() => setForgetting(false)}
+                    onConfirm={async () => {
+                        await action.mutateAsync("forget");
+                        setForgetting(false);
+                    }}
+                />
             )}
         </section>
     );

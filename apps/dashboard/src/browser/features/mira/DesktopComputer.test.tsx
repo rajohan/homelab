@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { hasDesktopBridge, requestDesktop, type DesktopState } from "./desktopClient";
@@ -38,6 +38,12 @@ function host(reply = true) {
                             canStart: true,
                             canStop: false,
                             canUpdate: true,
+                        };
+                    if (value.action === "forget")
+                        state = {
+                            ...state,
+                            computerId: null,
+                            message: "Local pairing removed.",
                         };
                     if (reply)
                         queueMicrotask(() => {
@@ -165,6 +171,47 @@ test("the bridge ignores unrelated and malformed replies, then releases listener
     abort.abort();
     expect(await result.catch((error: unknown) => error)).toBeInstanceOf(Error);
     expect(native.listeners.size).toBe(0);
+});
+
+test("pairing removal waits for shared confirmation before starting a timed native request", async () => {
+    const native = host();
+    const query = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const view = render(
+        <QueryClientProvider client={query}>
+            <DesktopComputer />
+        </QueryClientProvider>
+    );
+    try {
+        const user = userEvent.setup();
+        await screen.findByText("Connected");
+        await user.click(screen.getByRole("button", { name: "Stop connection" }));
+        await screen.findByText("Disconnected");
+        await user.click(screen.getByRole("button", { name: "Remove pairing" }));
+        const dialog = screen.getByRole("dialog");
+        expect(within(dialog).getByText("Remove this PC's pairing?")).toBeInTheDocument();
+        expect(
+            native.requests.filter((request) => request.action === "forget")
+        ).toHaveLength(0);
+        expect(native.listeners.size).toBe(0);
+        await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+        expect(
+            native.requests.filter((request) => request.action === "forget")
+        ).toHaveLength(0);
+        await user.click(screen.getByRole("button", { name: "Remove pairing" }));
+        await user.click(
+            within(screen.getByRole("dialog")).getByRole("button", {
+                name: "Remove pairing",
+            })
+        );
+        await screen.findByText("Local pairing removed.");
+        expect(
+            native.requests.filter((request) => request.action === "forget")
+        ).toHaveLength(1);
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    } finally {
+        view.unmount();
+        query.clear();
+    }
 });
 
 test("pairing sends the one-use code once and does not retry after cancellation", async () => {

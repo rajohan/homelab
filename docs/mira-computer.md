@@ -17,7 +17,9 @@ Remove pairing. After creating a pairing code with the existing fresh verificati
 **Pair this Windows PC** passes that one-use code directly to the local companion;
 successful pairing starts the connection. Existing pairings reconnect when the app
 opens. The web version retains code copying for pairing another PC. Removing local
-pairing still requires the Windows confirmation; revoke the server entry too.
+pairing requires confirmation in shared Settings before sending the local command;
+there is no bridge timeout while the user considers the dialog. Revoke the server
+entry too.
 No pairing form covers the chat when an already paired app starts.
 
 Minimizing keeps the app in the system tray. Open Mira and Settings restore the same

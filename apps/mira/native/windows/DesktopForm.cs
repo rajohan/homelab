@@ -12,7 +12,6 @@ internal sealed class DesktopForm : Form
     private readonly ContextMenuStrip trayMenu = new ContextMenuStrip();
     private readonly ToolStripMenuItem trayStop = new ToolStripMenuItem("Stop computer connection");
     private bool opened;
-    private bool confirming;
 
     internal DesktopForm(string package, string settings) : this(package, settings, null, false) { }
     internal DesktopForm(string package, string settings, Action<bool> installation) : this(package, settings, installation, false) { }
@@ -57,20 +56,14 @@ internal sealed class DesktopForm : Form
     {
         var request = DesktopBridge.Read(source, web.Source, json);
         string action = (string)request["action"];
-        if (action != "state" && (confirming || ((action == "connect" || action == "pair" || action == "forget") && !connection.CanStart) || (action == "update" && !connection.CanUpdate)))
+        if (action != "state" && (((action == "connect" || action == "pair" || action == "forget") && !connection.CanStart) || (action == "update" && !connection.CanUpdate)))
             return DesktopBridge.Reply((string)request["id"], connection, "Finish or stop the current computer operation first.");
         if (action == "pair" && connection.ComputerId != null)
             return DesktopBridge.Reply((string)request["id"], connection, "Remove the existing local pairing before pairing this PC again.");
         if (action == "connect") Observe(connection.Start("run"));
         else if (action == "pair") Observe(connection.Start("pair", (string)request["ticket"]));
         else if (action == "stop") connection.Stop();
-        else if (action == "forget") {
-            confirming = true;
-            try {
-                if (MessageBox.Show(this, "Remove this computer's saved pairing? Revoke the computer in Settings to end server access.", "Remove pairing", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) == DialogResult.OK)
-                    Observe(connection.Start("forget"));
-            } finally { confirming = false; }
-        }
+        else if (action == "forget") Observe(connection.Start("forget"));
         else if (action == "update") Observe(connection.UpdateApp(this));
         return DesktopBridge.Reply((string)request["id"], connection);
     }
