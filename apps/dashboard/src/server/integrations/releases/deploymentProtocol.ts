@@ -11,6 +11,7 @@ const containerSchema = v.strictObject({
     dashboardSchema: v.optional(v.nullable(hash)),
     authSchema: v.optional(v.nullable(hash)),
     id: hash,
+    name: v.optional(v.pipe(v.string(), v.regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,199}$/))),
     imageId,
     image: v.pipe(v.string(), v.maxLength(500)),
     running: v.boolean(),

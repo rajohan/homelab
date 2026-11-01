@@ -38,6 +38,7 @@ async function fixture() {
     const seed = async (selected = target, version = "1.2.3", updatedAt = observedAt) => {
         const id = Bun.randomUUIDv7();
         const plan = deploymentTestPlan(selected, connections);
+        plan.authExpected!.containers.auth!.name = "custom-auth";
         plan.release.version = version;
         plan.release.images = plan.release.images.map((image) => ({
             ...image,
@@ -148,6 +149,39 @@ test("shared Auth hosts use receipt time regardless of target order and replaced
             expect(items.map((item) => item.version)).toEqual(["1.2.4"]);
             expect(Object.keys(items[0]!)).not.toContain("service");
         }
+    } finally {
+        await state.close();
+    }
+});
+
+test("a recreated Auth container replaces its old inventory entry without hiding other Auth services", async () => {
+    const state = await fixture();
+    try {
+        const report: UpdateReport = {
+            capturedAt: new Date((state.observedAt - 60) * 1000).toISOString(),
+            repositoryMetadataAt: null,
+            complete: true,
+            coveredKinds: ["container"],
+            items: ["custom-auth", "other-auth"].map((name) => ({
+                id: `docker:${name === "custom-auth" ? "d".repeat(64) : "e".repeat(64)}`,
+                name,
+                kind: "container",
+                installed: "old",
+                available: null,
+                status: "unknown",
+                security: false,
+                held: false,
+                image: "ghcr.io/demo/homelab/auth:1.2.2",
+                installedVersion: "1.2.2",
+            })),
+        };
+        await state.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES ('updates:edge',${JSON.stringify(report)}::text::jsonb,now())`;
+        await state.seed();
+        const observations = await state.read();
+        expect(observations.map((item) => [item.name, item.version])).toEqual([
+            ["other-auth", "1.2.2"],
+            ["auth", "1.2.3"],
+        ]);
     } finally {
         await state.close();
     }

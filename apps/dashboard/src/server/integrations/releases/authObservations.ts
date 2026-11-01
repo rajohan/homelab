@@ -81,7 +81,7 @@ export async function authReleaseObservations(options: {
             SELECT id,configuration,plan,receipt FROM release_deployments
             WHERE target=${target.id} AND configuration=${configuration}
               AND receipt->'auth'->>'state'='succeeded'
-            ORDER BY id`;
+            ORDER BY id DESC LIMIT 32`;
         for (const row of rows) {
             const plan = v.safeParse(deploymentPlanSchema, row.plan);
             const progress = v.safeParse(deploymentProgressSchema, row.receipt);
@@ -136,6 +136,10 @@ export async function authReleaseObservations(options: {
                 const current = observations.get(source) ?? [];
                 const matches = (item: (typeof current)[number]) =>
                     item.service === key ||
+                    (authExpected.containers[service.name]?.name !== undefined &&
+                        item.name === authExpected.containers[service.name]?.name) ||
+                    (receipt.containers?.[service.name]?.name !== undefined &&
+                        item.name === receipt.containers?.[service.name]?.name) ||
                     item.container ===
                         `docker:${authExpected.containers[service.name]?.id}` ||
                     item.container === `docker:${receipt.containers?.[service.name]?.id}`;
