@@ -95,7 +95,7 @@ export function createHereNowTools(
             automatic: false,
             transactional: true,
             description:
-                "Prepare a local public publication draft from files shared in this conversation. Supply a stable UUID and version 0 for a new draft, or the current version to edit. target=null creates a site; updating an existing public site requires its slug and current baseVersionId from a fresh read and replaces every file. No content is uploaded by this tool. Tell the operator to review Publications in the conversation before any publication can happen.",
+                "Prepare a local public publication draft from files shared in this conversation. Supply a stable UUID and version 0 for a new draft, or the current version to edit. target=null creates a site; updating an existing public site requires its slug and current baseVersionId from a fresh read and replaces every file. No content is uploaded by this tool. Publication requires dashboard approval or Full access through mira_action_execute.",
             inputSchema: {
                 type: "object",
                 additionalProperties: false,

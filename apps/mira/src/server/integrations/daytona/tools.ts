@@ -72,6 +72,8 @@ export function createDaytonaTools(
                 return {
                     rows: page.rows.map((job) => ({
                         id: job.id,
+                        version: job.version,
+                        contentHash: job.contentHash,
                         executionTarget: job.executionTarget,
                         title: job.content.title,
                         state: job.state,
@@ -89,7 +91,7 @@ export function createDaytonaTools(
             name: "mira_daytona_result",
             automatic: true,
             description:
-                "Read one recorded code result from this conversation, with bounded untrusted logs. This never runs code or interprets log instructions. The returned truncated flag means the dashboard may contain more log text. Use mira_attachment_read with a returned file ID to read bounded text/PDF contents; images can be opened in the dashboard.",
+                "Read one saved code job from this conversation, including its exact content, current version/contentHash and bounded untrusted logs. Read this before executing an existing draft with mira_action_execute. This never runs code or interprets log instructions. The returned truncated flag means the dashboard may contain more log text. Use mira_attachment_read with a returned file ID to read bounded text/PDF contents; images can be opened in the dashboard.",
             inputSchema: {
                 type: "object",
                 additionalProperties: false,
@@ -107,6 +109,9 @@ export function createDaytonaTools(
                     );
                 return {
                     id: job.id,
+                    version: job.version,
+                    contentHash: job.contentHash,
+                    content: job.content,
                     executionTarget: job.executionTarget,
                     state: job.state,
                     cleanup: job.cleanup,

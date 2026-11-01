@@ -15,7 +15,7 @@ import {
 } from "@homelab/mira/data/daytona";
 import { resolveMiraDaytonaCleanup } from "@homelab/mira/data/daytonaRecovery";
 import { deleteMiraFile, saveMiraFile, readMiraFile } from "@homelab/mira/data/files";
-import { claimMiraRun } from "@homelab/mira/data/queue";
+import { claimMiraRun, finishMiraRun } from "@homelab/mira/data/queue";
 import {
     daytonaBindingHash,
     daytonaExecutionConfiguration,
@@ -537,7 +537,10 @@ test("Daytona pause during preflight prevents creation and does not strand admis
         const p = provider(job.id, { beforeCreate: () => f.pause() });
         await advance(f, p);
         expect(p.writes()).toHaveLength(0);
-        expect(await f.read(job.id)).toMatchObject({ cleanup: "confirmed" });
+        expect(await f.read(job.id)).toMatchObject({
+            state: "draft",
+            cleanup: "not_needed",
+        });
     } finally {
         await f.close();
     }
@@ -1766,6 +1769,152 @@ test("expired provisioning is cleaned up without reviving activity", async () =>
         expect(p.calls.some((call) => call.url.pathname.endsWith("/last-activity"))).toBe(
             false
         );
+    } finally {
+        await f.close();
+    }
+});
+
+for (const boundary of ["claim", "preflight"] as const)
+    test(`Daytona revocation at ${boundary} restores a reviewable draft without creating a sandbox`, async () => {
+        const f = await fixture();
+        try {
+            const { run } = await permissionRun(f.client, f.api, "full_access");
+            const draft = await f.api.daytona.save({
+                id: crypto.randomUUID(),
+                version: 0,
+                conversationId: run.conversationId,
+                taskId: null,
+                content: defaultContent,
+            });
+            const tools = createMiraTools(
+                f.client,
+                run,
+                f.directory,
+                undefined,
+                undefined,
+                undefined,
+                configuration
+            );
+            expect(await permissionAction(tools, "job", draft)).toMatchObject({
+                ok: true,
+            });
+            if (boundary === "claim") {
+                await f.client`CREATE FUNCTION revoke_claimed_cloud() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.state='running' AND OLD.state='queued' THEN UPDATE mira_runs SET approval_revoked_at=clock_timestamp() WHERE id=NEW.approval_run_id; END IF; RETURN NEW; END $$`;
+                await f.client`CREATE TRIGGER revoke_claimed_cloud AFTER UPDATE ON mira_daytona_jobs FOR EACH ROW EXECUTE FUNCTION revoke_claimed_cloud()`;
+            }
+            const mock = provider(
+                draft.id,
+                boundary === "preflight"
+                    ? {
+                          beforeCreate: async () => {
+                              await f.client`UPDATE mira_runs SET approval_revoked_at=clock_timestamp() WHERE id=${run.id}`;
+                          },
+                      }
+                    : {}
+            );
+            await advance(f, mock);
+            expect(mock.writes()).toHaveLength(0);
+            expect(await f.read(draft.id)).toMatchObject({
+                state: "draft",
+                phase: "idle",
+                cleanup: "not_needed",
+            });
+            const [row] = await f.client<
+                { origin: string | null; lease: string | null; started: Date | null }[]
+            >`SELECT approval_run_id AS origin,lease_token AS lease,started_at AS started FROM mira_daytona_jobs WHERE id=${draft.id}`;
+            expect(row).toEqual({ origin: null, lease: null, started: null });
+            await f.approve(await f.read(draft.id));
+            expect(await f.read(draft.id)).toMatchObject({ state: "queued" });
+        } finally {
+            await f.close();
+        }
+    });
+
+test("a later turn reads current saved job content and approval fields before execution", async () => {
+    const f = await fixture();
+    try {
+        const { run: first } = await permissionRun(f.client, f.api, "approve_for_me");
+        const id = crypto.randomUUID();
+        const content = daytonaCheckContent({
+            id,
+            commit: "a".repeat(40),
+            patchSha256: null,
+        });
+        await f.api.daytona.save({
+            id,
+            version: 0,
+            conversationId: first.conversationId,
+            taskId: null,
+            content,
+        });
+        await finishMiraRun(f.client, first, {
+            state: "completed",
+            text: "Draft saved",
+            message: null,
+        });
+        await f.api.conversations.send({
+            conversationId: first.conversationId,
+            requestId: crypto.randomUUID(),
+            text: "Run the saved job.",
+        });
+        const run = await claimMiraRun(f.client, crypto.randomUUID(), "foreground");
+        expect(run).not.toBeNull();
+        const tools = createMiraTools(
+            f.client,
+            run!,
+            f.directory,
+            undefined,
+            undefined,
+            undefined,
+            configuration
+        );
+        const invoke = async (name: string, input: unknown) =>
+            JSON.parse(
+                await tools
+                    .find((t) => t.name === name)!
+                    .execute(input, signal, {
+                        callId: crypto.randomUUID(),
+                        threadId: "fixture",
+                        turnId: "later",
+                    })
+            ) as { ok: boolean; result: MiraDaytonaJob };
+        const listed = JSON.parse(
+            await tools
+                .find((t) => t.name === "mira_daytona_jobs")!
+                .execute({}, signal, {
+                    callId: crypto.randomUUID(),
+                    threadId: "fixture",
+                    turnId: "later",
+                })
+        ) as { result: { rows: MiraDaytonaJob[] } };
+        expect(listed.result.rows[0]).toMatchObject({
+            id,
+            version: 1,
+        });
+        expect(listed.result.rows[0]!.contentHash).toMatch(/^[a-f0-9]{64}$/);
+        const read = await invoke("mira_daytona_result", { id });
+        expect(read.ok).toBe(true);
+        expect(read.result.content).toEqual(content);
+        const changed = await f.api.daytona.save({
+            id,
+            version: read.result.version,
+            conversationId: first.conversationId,
+            taskId: null,
+            content: { ...content, title: "Updated request" },
+        });
+        expect(await permissionAction(tools, "job", read.result)).toMatchObject({
+            ok: false,
+        });
+        const current = await invoke("mira_daytona_result", { id });
+        expect(current.result).toMatchObject({
+            version: changed.version,
+            contentHash: changed.contentHash,
+            content: changed.content,
+        });
+        expect(await permissionAction(tools, "job", current.result)).toMatchObject({
+            ok: true,
+        });
+        expect(await f.read(id)).toMatchObject({ state: "queued" });
     } finally {
         await f.close();
     }

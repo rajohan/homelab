@@ -97,6 +97,9 @@ async function update(client: SQL, job: Job, phase: string): Promise<void> {
     if (!row) throw new MiraFailure("CONFLICT", "Daytona lease expired.");
     job.phase = phase;
 }
+async function resetUnstarted(client: SQL, job: Job): Promise<void> {
+    await client`UPDATE mira_daytona_jobs SET state=CASE WHEN cancel_requested THEN 'cancelled' ELSE 'draft' END,phase=CASE WHEN cancel_requested THEN 'closed' ELSE 'idle' END,cleanup='not_needed',outcome=CASE WHEN cancel_requested THEN 'cancelled' ELSE NULL END,approval_run_id=NULL,approved_at=NULL,control_version=NULL,started_at=NULL,deadline=NULL,retry_at=NULL,message='No sandbox was requested. Review this job again.',version=version+1,updated_at=clock_timestamp() WHERE id=${job.id} AND lease_token=${job.token} AND lease_expires_at>clock_timestamp() AND state='running' AND phase='admitted' AND sandbox_id IS NULL`;
+}
 async function cleanup(
     client: SQL,
     job: Job,
@@ -247,7 +250,7 @@ export async function dispatchMiraDaytona(
         } catch (error) {
             if (!(error instanceof MiraFailure)) throw error;
             await (job.phase === "admitted"
-                ? client`UPDATE mira_daytona_jobs SET state='cancelled',phase='closed',cleanup='confirmed',outcome='cancelled',message='Cancelled before a sandbox was requested.',version=version+1 WHERE id=${job.id} AND lease_token=${job.token}`
+                ? resetUnstarted(client, job)
                 : cleanup(
                       client,
                       job,
@@ -264,7 +267,6 @@ export async function dispatchMiraDaytona(
             await client.begin(async (query) => {
                 await lock(query, job.owner);
                 await guard(query, job, configuration);
-                job.phase = phase;
                 const [row] = await query<
                     { id: string }[]
                 >`UPDATE mira_daytona_jobs SET phase=${phase},version=version+1,updated_at=now() WHERE id=${job.id} AND lease_token=${job.token} AND phase=${previous} RETURNING id`;
@@ -400,7 +402,7 @@ export async function dispatchMiraDaytona(
                 "Stopped before dispatch because the sandbox activity window expired."
             );
         } else if (job.phase === "admitted") {
-            await client`UPDATE mira_daytona_jobs SET state='failed',phase='closed',cleanup='confirmed',outcome='failed',message='Preflight failed before creating a sandbox.',version=version+1 WHERE id=${job.id} AND lease_token=${job.token} AND lease_expires_at>clock_timestamp()`;
+            await resetUnstarted(client, job);
         } else if (job.phase === "cleaning") {
             await client`UPDATE mira_daytona_jobs SET state='needs_attention',message='Sandbox cleanup could not be confirmed. Mira will keep checking.',retry_at=clock_timestamp()+interval '30 seconds',version=version+1 WHERE id=${job.id} AND lease_token=${job.token}`;
         } else await cleanup(client, job, "needs_attention", unknownMessage);
