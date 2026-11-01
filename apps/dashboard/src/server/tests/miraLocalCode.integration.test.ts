@@ -6,6 +6,7 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { capabilities } from "@homelab/contracts/operations";
+import { miraActionApproval } from "@homelab/mira/data/approvalPolicy";
 import { resumeMiraControls } from "@homelab/mira/data/automations";
 import { captureCodeSource } from "@homelab/mira/data/codeSource";
 import {
@@ -43,6 +44,7 @@ import {
 import type { TransactionSQL } from "bun";
 
 import { appRouter } from "../api/router";
+import { permissionRun, permissionAction } from "../testing/miraPermissions";
 import { createMiraTextTestTools } from "../testing/miraTools";
 import { operationFixture } from "../testing/operations";
 
@@ -784,6 +786,121 @@ test("Main model drafts use the frozen target and cannot fall back when its mapp
         const jobs = await api.daytona.list({ conversationId: chat.id });
         expect(jobs.rows).toHaveLength(1);
         expect(jobs.rows[0]).toMatchObject({ state: "draft", executionTarget: "main" });
+    } finally {
+        await f.close();
+    }
+});
+
+test("Main revocation after admission returns to draft without creating or cleaning a container", async () => {
+    const f = await fixture();
+    try {
+        const api = appRouter.createCaller({
+            operations: f,
+            principal: { kind: "human", id: "operator", capabilities },
+        }).mira;
+        const { run } = await permissionRun(f.client, api, "approve_for_me", "main");
+        const id = crypto.randomUUID();
+        const draft = await saveMiraDaytona(
+            f.context,
+            {
+                id,
+                version: 0,
+                conversationId: run.conversationId,
+                taskId: null,
+                content: daytonaCheckContent({ id, commit, patchSha256: null }),
+                executionTarget: "main",
+            },
+            binding
+        );
+        const tools = createMiraTextTestTools(
+            f.client,
+            run,
+            f.options.filesDirectory,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            binding
+        );
+        expect(await permissionAction(tools, "job", draft)).toMatchObject({ ok: true });
+        let creates = 0,
+            cleanups = 0;
+        expect(
+            await dispatchMiraLocalCode(f.options, {
+                execute: async (_config, _input, journal, stopping) => {
+                    await f.client`UPDATE mira_runs SET approval_revoked_at=clock_timestamp() WHERE id=${run.id}`;
+                    await journal.creating(stopping);
+                    creates++;
+                    return result;
+                },
+                cleanup: async (...args) => {
+                    cleanups++;
+                    await cleanup(...args);
+                },
+            })
+        ).toBe(true);
+        expect(creates).toBe(0);
+        expect(cleanups).toBe(0);
+        expect(await f.read(id)).toMatchObject({
+            state: "draft",
+            phase: "idle",
+            cleanup: "not_needed",
+        });
+        const [row] = await f.client<
+            { origin: string | null; lease: string | null; started: Date | null }[]
+        >`SELECT approval_run_id AS origin,lease_token AS lease,started_at AS started FROM mira_daytona_jobs WHERE id=${id}`;
+        expect(row).toEqual({ origin: null, lease: null, started: null });
+    } finally {
+        await f.close();
+    }
+});
+
+test("Approve for me queues Main checks and revocation prevents container creation", async () => {
+    const f = await fixture();
+    try {
+        const api = appRouter.createCaller({
+            operations: f,
+            principal: { kind: "human", id: "operator", capabilities },
+        }).mira;
+        const { run } = await permissionRun(f.client, api, "approve_for_me", "main");
+        const id = crypto.randomUUID();
+        const draft = await saveMiraDaytona(
+            f.context,
+            {
+                id,
+                version: 0,
+                conversationId: run.conversationId,
+                taskId: null,
+                content: daytonaCheckContent({ id, commit, patchSha256: null }),
+                executionTarget: "main",
+            },
+            binding
+        );
+        const tools = createMiraTextTestTools(
+            f.client,
+            run,
+            f.options.filesDirectory,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            binding
+        );
+        expect(await permissionAction(tools, "job", draft)).toMatchObject({ ok: true });
+        expect(await miraActionApproval(f.client, "operator", "job", id)).toBe(true);
+        await f.client`UPDATE mira_runs SET cancel_requested=true WHERE id=${run.id}`;
+        let executions = 0;
+        await dispatchMiraLocalCode(f.options, {
+            execute: async (...args) => {
+                executions++;
+                return execute(...args);
+            },
+            cleanup,
+        });
+        expect(executions).toBe(0);
+        expect(await f.read(id)).toMatchObject({ state: "draft", cleanup: "not_needed" });
     } finally {
         await f.close();
     }

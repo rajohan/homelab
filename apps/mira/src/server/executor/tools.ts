@@ -13,6 +13,7 @@ import { idSchema, versionedIdSchema } from "@homelab/contracts/operations";
 import type { SQL, TransactionSQL } from "bun";
 import * as v from "valibot";
 
+import { miraModeAllows, miraRunPermission } from "../data/approvalPolicy";
 import { readMiraControlPage } from "../data/automations";
 import {
     lockMiraProposals,
@@ -59,6 +60,7 @@ import type { RuntimeTool } from "../runtime/protocol";
 import { runtimeContentItems, type RuntimeToolResult } from "../runtime/toolResult";
 import type { LocalCodeBinding } from "../sandbox/localBinding";
 import { createMiraSkillTools } from "../skills/tools";
+import { createMiraActionTools } from "./actionTools";
 import { createMiraBrowserTools } from "./browserTools";
 import { createMiraComputerTools } from "./computerTools";
 import { saveGeneratedMiraFile } from "./generatedFiles";
@@ -473,7 +475,7 @@ export function createMiraTools(
         {
             name: "mira_mail_drafts_list",
             description:
-                "Read local email drafts and delivery outcomes for this conversation. These are separate from received mail. There is no send tool.",
+                "Read local email drafts and delivery outcomes for this conversation. These are separate from received mail. Execution uses mira_action_execute when the conversation permission allows it.",
             inputSchema: object({ before: uuid }),
             automatic: true,
             action: (input) =>
@@ -487,7 +489,7 @@ export function createMiraTools(
             transactional: true,
             automatic: false,
             description:
-                "Prepare a local plain-text email draft when the operator requests it. Specify every recipient explicitly. The operator must review and confirm it in the dashboard before anything is sent. Optional attachments must be files already shared in this conversation; at most five files totaling 4 MiB. Threaded replies are not supported by this draft tool.",
+                "Prepare a local plain-text email draft when the operator requests it. Specify every recipient explicitly. Sending requires dashboard approval or Full access through mira_action_execute. Optional attachments must be files already shared in this conversation; at most five files totaling 4 MiB. Threaded replies are not supported by this draft tool.",
             inputSchema: object(
                 {
                     to: { type: "array", items: string },
@@ -511,6 +513,14 @@ export function createMiraTools(
                     agentMail
                 ),
         },
+        ...createMiraActionTools(run, {
+            mail: agentMail,
+            publication: hereNow,
+            social: moltbook,
+            code: github,
+            job: run.executionTarget === "main" ? localCode : daytona,
+            directory: filesDirectory,
+        }),
         ...createMiraSkillTools(client, run),
         ...createAgentMailTools(client, run, agentMail, fetch, filesDirectory),
         ...createMoltbookTools(client, run, moltbook),
@@ -549,7 +559,7 @@ export function createMiraTools(
         }) => ({
             ...definition,
             description: confirmation
-                ? `${definition.description} This tool only proposes a change. The operator must review and approve its exact fields in the conversation; never report it as applied before approval.`
+                ? `${definition.description} In Ask for approval mode this proposes a change for operator review. Approve for me and Full access allow task changes directly. Inspect the returned state before reporting a change as applied.`
                 : definition.description,
             execute: async (input, signal, call) => {
                 signal.throwIfAborted();
@@ -604,6 +614,18 @@ export function createMiraTools(
                     const invoke = async (query?: TransactionSQL) => {
                         signal.throwIfAborted();
                         if (confirmation) {
+                            const connection = query ?? client;
+                            await connection`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${run.owner}`},0))`;
+                            await lockMiraProposals(connection, run.owner);
+                            await connection`SELECT id FROM mira_conversations WHERE id=${run.conversationId} AND owner=${run.owner} FOR UPDATE`;
+                        }
+                        if (
+                            confirmation &&
+                            !miraModeAllows(
+                                await miraRunPermission(query ?? client, context),
+                                "task"
+                            )
+                        ) {
                             const connection = query ?? client;
                             await lockMiraProposals(connection, run.owner);
                             await connection`SELECT id FROM mira_runs WHERE id=${run.id} FOR UPDATE`;

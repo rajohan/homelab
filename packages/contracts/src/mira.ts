@@ -139,6 +139,12 @@ const modelIdentifier = v.pipe(
     v.maxLength(160),
     v.regex(/^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/)
 );
+export const miraPermissionModeSchema = v.picklist([
+    "ask",
+    "approve_for_me",
+    "full_access",
+]);
+export type MiraPermissionMode = v.InferOutput<typeof miraPermissionModeSchema>;
 export const miraChatSettingsSchema = v.strictObject({
     model: v.nullable(modelIdentifier),
     effort: v.nullable(modelIdentifier),
@@ -146,6 +152,7 @@ export const miraChatSettingsSchema = v.strictObject({
     useMemory: v.optional(v.boolean()),
     useHistory: v.optional(v.boolean()),
     executionTarget: v.optional(miraCodeTargetSchema),
+    permissionMode: v.optional(miraPermissionModeSchema),
 });
 export const miraDefaultChatSettings = { model: null, effort: null, serviceTier: null };
 export type MiraChatSettings = v.InferOutput<typeof miraChatSettingsSchema>;

@@ -6,6 +6,7 @@ import { publishNotification } from "@homelab/notifications";
 import type { SQL } from "bun";
 import * as v from "valibot";
 
+import { miraActionApproval } from "../../data/approvalPolicy";
 import { MiraFailure } from "../../data/context";
 import { miraSocialHash, socialPermission } from "../../data/social";
 import { moltbookBindingHash, type MoltbookReadConfiguration } from "./configuration";
@@ -66,11 +67,25 @@ export async function reconcileMiraSocial(
                 configuration?.owner === candidate.owner &&
                 configuration.publishApiKey &&
                 row.binding === moltbookBindingHash(configuration);
+            // A displayed challenge awaits fresh human consent, not another model write.
+            const delegated =
+                row.state === "verification_required" ||
+                (await miraActionApproval(
+                    query,
+                    candidate.owner,
+                    "social",
+                    candidate.id
+                ));
             const stamp = matches ? await socialPermission(query, configuration) : null;
-            if (row.fresh && stamp === row.stamp && (row.state === "queued" || row.live))
+            if (
+                delegated &&
+                row.fresh &&
+                stamp === row.stamp &&
+                (row.state === "queued" || row.live)
+            )
                 return;
             await (row.state === "queued"
-                ? query`UPDATE mira_social_drafts SET state='draft',approved_version=NULL,approved_by=NULL,approved_at=NULL,control_stamp=NULL,retry_after=NULL,message=${review},version=version+1,updated_at=now() WHERE id=${candidate.id}`
+                ? query`UPDATE mira_social_drafts SET state='draft',approval_run_id=NULL,approved_version=NULL,approved_by=NULL,approved_at=NULL,control_stamp=NULL,retry_after=NULL,message=${review},version=version+1,updated_at=now() WHERE id=${candidate.id}`
                 : query`UPDATE mira_social_drafts SET state='needs_attention',answer=NULL,verification_code=NULL,message='Verification expired or access changed. Existing content was not reposted. Inspect it in Moltbook.',version=version+1,updated_at=now() WHERE id=${candidate.id}`);
         });
 }
@@ -121,7 +136,16 @@ export async function dispatchMiraSocial(
         const [active] = await query<
             { id: string }[]
         >`SELECT id FROM mira_social_drafts WHERE owner=${configuration.owner} AND state IN ('publishing','verifying') LIMIT 1`;
-        if (active || (await socialPermission(query, configuration)) !== candidate.stamp)
+        if (
+            active ||
+            !(await miraActionApproval(
+                query,
+                configuration.owner,
+                "social",
+                candidate.id
+            )) ||
+            (await socialPermission(query, configuration)) !== candidate.stamp
+        )
             return null;
         const token = crypto.randomUUID();
         const [row] = await query<
@@ -132,6 +156,7 @@ export async function dispatchMiraSocial(
     if (!claimed) return false;
     const verifying = candidate.state === "queued_verification";
     const signal = AbortSignal.any([stopping, AbortSignal.timeout(30_000)]);
+    let writeAllowed = false;
     const guard = async () => {
         signal.throwIfAborted();
         await client.begin(async (query) => {
@@ -141,11 +166,18 @@ export async function dispatchMiraSocial(
             >`SELECT id FROM mira_social_drafts WHERE id=${candidate.id} AND owner=${configuration.owner} AND attempt_token=${claimed.token} AND state=${verifying ? "verifying" : "publishing"} AND content_hash=${candidate.hash} AND approved_at>clock_timestamp()-interval '15 minutes' AND (${!verifying} OR expires_at>clock_timestamp()) FOR UPDATE`;
             if (
                 !row ||
+                !(await miraActionApproval(
+                    query,
+                    configuration.owner,
+                    "social",
+                    candidate.id
+                )) ||
                 (await socialPermission(query, configuration)) !== candidate.stamp
             )
                 throw new MiraFailure("FORBIDDEN", "Moltbook consent changed.");
         });
         signal.throwIfAborted();
+        writeAllowed = true;
     };
     let receipt: MoltbookWriteReceipt | null = null;
     let verified = false,
@@ -171,6 +203,10 @@ export async function dispatchMiraSocial(
     }
     await client.begin(async (query) => {
         await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${configuration.owner}`},0))`;
+        if (!writeAllowed && !verifying) {
+            await query`UPDATE mira_social_drafts SET state='draft',approval_run_id=NULL,approved_version=NULL,approved_by=NULL,approved_at=NULL,control_stamp=NULL,attempt_token=NULL,started_at=NULL,message=${review},version=version+1,updated_at=now() WHERE id=${candidate.id} AND owner=${configuration.owner} AND attempt_token=${claimed.token} AND state='publishing'`;
+            return;
+        }
         if (limited)
             await query`INSERT INTO mira_social_cooldowns(owner,until) VALUES(${configuration.owner},${limited.retryAt}) ON CONFLICT(owner) DO UPDATE SET until=GREATEST(mira_social_cooldowns.until,EXCLUDED.until)`;
         if (limited && !verifying) {

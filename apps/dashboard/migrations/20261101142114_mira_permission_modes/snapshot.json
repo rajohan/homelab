@@ -1,0 +1,367 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "32270b36-a801-40a0-b682-9de0c58fd349",
+    "prevIds": ["a7185e57-c144-4cdb-b13d-9342024c8084"],
+    "footprints": [
+        {
+            "statementType": "add_column",
+            "statementTarget": [
+                "column",
+                "public",
+                "mira_code_publications",
+                "approval_run_id"
+            ],
+            "writes": [
+                "s|col|public.mira_code_publications.approval_run_id",
+                "n|col|public.mira_code_publications.approval_run_id",
+                "e|col|public.mira_code_publications.approval_run_id"
+            ],
+            "reads": ["n|tbl|public.mira_code_publications", "n|sch|public"]
+        },
+        {
+            "statementType": "add_column",
+            "statementTarget": [
+                "column",
+                "public",
+                "mira_daytona_jobs",
+                "approval_run_id"
+            ],
+            "writes": [
+                "s|col|public.mira_daytona_jobs.approval_run_id",
+                "n|col|public.mira_daytona_jobs.approval_run_id",
+                "e|col|public.mira_daytona_jobs.approval_run_id"
+            ],
+            "reads": ["n|tbl|public.mira_daytona_jobs", "n|sch|public"]
+        },
+        {
+            "statementType": "add_column",
+            "statementTarget": [
+                "column",
+                "public",
+                "mira_mail_drafts",
+                "approval_run_id"
+            ],
+            "writes": [
+                "s|col|public.mira_mail_drafts.approval_run_id",
+                "n|col|public.mira_mail_drafts.approval_run_id",
+                "e|col|public.mira_mail_drafts.approval_run_id"
+            ],
+            "reads": ["n|tbl|public.mira_mail_drafts", "n|sch|public"]
+        },
+        {
+            "statementType": "add_column",
+            "statementTarget": [
+                "column",
+                "public",
+                "mira_publications",
+                "approval_run_id"
+            ],
+            "writes": [
+                "s|col|public.mira_publications.approval_run_id",
+                "n|col|public.mira_publications.approval_run_id",
+                "e|col|public.mira_publications.approval_run_id"
+            ],
+            "reads": ["n|tbl|public.mira_publications", "n|sch|public"]
+        },
+        {
+            "statementType": "add_column",
+            "statementTarget": ["column", "public", "mira_runs", "approval_revoked_at"],
+            "writes": [
+                "s|col|public.mira_runs.approval_revoked_at",
+                "n|col|public.mira_runs.approval_revoked_at",
+                "e|col|public.mira_runs.approval_revoked_at"
+            ],
+            "reads": ["n|tbl|public.mira_runs", "n|sch|public"]
+        },
+        {
+            "statementType": "add_column",
+            "statementTarget": [
+                "column",
+                "public",
+                "mira_social_drafts",
+                "approval_run_id"
+            ],
+            "writes": [
+                "s|col|public.mira_social_drafts.approval_run_id",
+                "n|col|public.mira_social_drafts.approval_run_id",
+                "e|col|public.mira_social_drafts.approval_run_id"
+            ],
+            "reads": ["n|tbl|public.mira_social_drafts", "n|sch|public"]
+        },
+        {
+            "statementType": "create_fk",
+            "statementTarget": ["table", "public", "mira_code_publications"],
+            "writes": [
+                "s|fk|public.mira_code_publications.mira_code_publications_approval_run_id_mira_runs_id_fkey",
+                "n|fk|public.mira_code_publications.mira_code_publications_approval_run_id_mira_runs_id_fkey",
+                "e|fk|public.mira_code_publications.mira_code_publications_approval_run_id_mira_runs_id_fkey",
+                "n|con|public.mira_code_publications.mira_code_publications_approval_run_id_mira_runs_id_fkey"
+            ],
+            "reads": [
+                "n|tbl|public.mira_code_publications",
+                "n|sch|public",
+                "n|tbl|public.mira_runs",
+                "n|sch|public",
+                "n|col|public.mira_code_publications.approval_run_id",
+                "n|col|public.mira_runs.id",
+                "e|uniqueness|public.mira_runs.id"
+            ]
+        },
+        {
+            "statementType": "create_fk",
+            "statementTarget": ["table", "public", "mira_daytona_jobs"],
+            "writes": [
+                "s|fk|public.mira_daytona_jobs.mira_daytona_jobs_approval_run_id_mira_runs_id_fkey",
+                "n|fk|public.mira_daytona_jobs.mira_daytona_jobs_approval_run_id_mira_runs_id_fkey",
+                "e|fk|public.mira_daytona_jobs.mira_daytona_jobs_approval_run_id_mira_runs_id_fkey",
+                "n|con|public.mira_daytona_jobs.mira_daytona_jobs_approval_run_id_mira_runs_id_fkey"
+            ],
+            "reads": [
+                "n|tbl|public.mira_daytona_jobs",
+                "n|sch|public",
+                "n|tbl|public.mira_runs",
+                "n|sch|public",
+                "n|col|public.mira_daytona_jobs.approval_run_id",
+                "n|col|public.mira_runs.id",
+                "e|uniqueness|public.mira_runs.id"
+            ]
+        },
+        {
+            "statementType": "create_fk",
+            "statementTarget": ["table", "public", "mira_mail_drafts"],
+            "writes": [
+                "s|fk|public.mira_mail_drafts.mira_mail_drafts_approval_run_id_mira_runs_id_fkey",
+                "n|fk|public.mira_mail_drafts.mira_mail_drafts_approval_run_id_mira_runs_id_fkey",
+                "e|fk|public.mira_mail_drafts.mira_mail_drafts_approval_run_id_mira_runs_id_fkey",
+                "n|con|public.mira_mail_drafts.mira_mail_drafts_approval_run_id_mira_runs_id_fkey"
+            ],
+            "reads": [
+                "n|tbl|public.mira_mail_drafts",
+                "n|sch|public",
+                "n|tbl|public.mira_runs",
+                "n|sch|public",
+                "n|col|public.mira_mail_drafts.approval_run_id",
+                "n|col|public.mira_runs.id",
+                "e|uniqueness|public.mira_runs.id"
+            ]
+        },
+        {
+            "statementType": "create_fk",
+            "statementTarget": ["table", "public", "mira_publications"],
+            "writes": [
+                "s|fk|public.mira_publications.mira_publications_approval_run_id_mira_runs_id_fkey",
+                "n|fk|public.mira_publications.mira_publications_approval_run_id_mira_runs_id_fkey",
+                "e|fk|public.mira_publications.mira_publications_approval_run_id_mira_runs_id_fkey",
+                "n|con|public.mira_publications.mira_publications_approval_run_id_mira_runs_id_fkey"
+            ],
+            "reads": [
+                "n|tbl|public.mira_publications",
+                "n|sch|public",
+                "n|tbl|public.mira_runs",
+                "n|sch|public",
+                "n|col|public.mira_publications.approval_run_id",
+                "n|col|public.mira_runs.id",
+                "e|uniqueness|public.mira_runs.id"
+            ]
+        },
+        {
+            "statementType": "create_fk",
+            "statementTarget": ["table", "public", "mira_social_drafts"],
+            "writes": [
+                "s|fk|public.mira_social_drafts.mira_social_drafts_approval_run_id_mira_runs_id_fkey",
+                "n|fk|public.mira_social_drafts.mira_social_drafts_approval_run_id_mira_runs_id_fkey",
+                "e|fk|public.mira_social_drafts.mira_social_drafts_approval_run_id_mira_runs_id_fkey",
+                "n|con|public.mira_social_drafts.mira_social_drafts_approval_run_id_mira_runs_id_fkey"
+            ],
+            "reads": [
+                "n|tbl|public.mira_social_drafts",
+                "n|sch|public",
+                "n|tbl|public.mira_runs",
+                "n|sch|public",
+                "n|col|public.mira_social_drafts.approval_run_id",
+                "n|col|public.mira_runs.id",
+                "e|uniqueness|public.mira_runs.id"
+            ]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "approval_run_id",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_daytona_jobs",
+                "name": "approval_run_id",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_mail_drafts",
+                "name": "approval_run_id",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_publications",
+                "name": "approval_run_id",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_runs",
+                "name": "approval_revoked_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_drafts",
+                "name": "approval_run_id",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_code_publications",
+                "name": "mira_code_publications_approval_run_id_mira_runs_id_fkey",
+                "nameExplicit": false,
+                "columns": ["approval_run_id"],
+                "schemaTo": "public",
+                "tableTo": "mira_runs",
+                "columnsTo": ["id"],
+                "onUpdate": "NO ACTION",
+                "onDelete": "NO ACTION",
+                "entityType": "fks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_daytona_jobs",
+                "name": "mira_daytona_jobs_approval_run_id_mira_runs_id_fkey",
+                "nameExplicit": false,
+                "columns": ["approval_run_id"],
+                "schemaTo": "public",
+                "tableTo": "mira_runs",
+                "columnsTo": ["id"],
+                "onUpdate": "NO ACTION",
+                "onDelete": "NO ACTION",
+                "entityType": "fks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_mail_drafts",
+                "name": "mira_mail_drafts_approval_run_id_mira_runs_id_fkey",
+                "nameExplicit": false,
+                "columns": ["approval_run_id"],
+                "schemaTo": "public",
+                "tableTo": "mira_runs",
+                "columnsTo": ["id"],
+                "onUpdate": "NO ACTION",
+                "onDelete": "NO ACTION",
+                "entityType": "fks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_publications",
+                "name": "mira_publications_approval_run_id_mira_runs_id_fkey",
+                "nameExplicit": false,
+                "columns": ["approval_run_id"],
+                "schemaTo": "public",
+                "tableTo": "mira_runs",
+                "columnsTo": ["id"],
+                "onUpdate": "NO ACTION",
+                "onDelete": "NO ACTION",
+                "entityType": "fks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_social_drafts",
+                "name": "mira_social_drafts_approval_run_id_mira_runs_id_fkey",
+                "nameExplicit": false,
+                "columns": ["approval_run_id"],
+                "schemaTo": "public",
+                "tableTo": "mira_runs",
+                "columnsTo": ["id"],
+                "onUpdate": "NO ACTION",
+                "onDelete": "NO ACTION",
+                "entityType": "fks"
+            }
+        }
+    ]
+}

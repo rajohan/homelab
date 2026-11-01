@@ -101,7 +101,7 @@ export function createMoltbookTools(
             automatic: false,
             transactional: true,
             description:
-                "Prepare a local text post or reply requested by the operator. Supply a stable UUID and version 0 for a new draft or the current version to edit. The operator must review the exact text and destination in Moltbook drafts before any send. This tool cannot publish, approve or solve provider verification.",
+                "Prepare a local text post or reply requested by the operator. Supply a stable UUID and version 0 for a new draft or the current version to edit. Execution requires dashboard approval or Full access through mira_action_execute. This tool cannot publish, approve or solve provider verification.",
             inputSchema: {
                 type: "object",
                 additionalProperties: false,

@@ -12,6 +12,7 @@ import {
     hereNowBindingHash,
     type HereNowBinding,
 } from "../integrations/herenow/configuration";
+import { requireMiraApproval } from "./approvalPolicy";
 import {
     auditMira,
     MiraFailure,
@@ -43,7 +44,14 @@ function bindingFor(context: MiraContext, binding?: HereNowBinding): HereNowBind
     return binding;
 }
 
-async function readDraft(
+/**
+ * Read an owned draft and its exact saved content for review or delegated execution.
+ * @param query - Product read or enclosing transaction.
+ * @param owner - Authenticated account.
+ * @param id - Selected draft identity.
+ * @returns Current draft, or a non-disclosing not-found error.
+ */
+export async function readMiraPublication(
     query: MiraQuery,
     owner: string,
     id: string
@@ -123,7 +131,7 @@ export async function saveMiraPublication(
                 existing.binding === hash &&
                 existing.conversationId === input.conversationId
             )
-                return readDraft(query, context.owner, input.id);
+                return readMiraPublication(query, context.owner, input.id);
             if (
                 existing.version !== input.version ||
                 existing.state !== "draft" ||
@@ -149,7 +157,7 @@ export async function saveMiraPublication(
             ? query`UPDATE mira_publications SET content=${JSON.stringify(content)}::text::jsonb,content_hash=${contentHash},conversation_id=${input.conversationId},message=NULL,version=version+1,updated_at=now() WHERE id=${input.id}`
             : query`INSERT INTO mira_publications(id,owner,conversation_id,account_id,binding_hash,content,content_hash) VALUES (${input.id},${context.owner},${input.conversationId},${configured.accountId},${hash},${JSON.stringify(content)}::text::jsonb,${contentHash})`);
         await auditMira(query, context, "publication.draft_saved", input.id);
-        return readDraft(query, context.owner, input.id);
+        return readMiraPublication(query, context.owner, input.id);
     });
 }
 
@@ -170,8 +178,8 @@ export async function listMiraPublications(
 }
 
 /**
- * Queue only an exact human-reviewed public publication after verifying its files.
- * @param context - Signed-in human; model contexts cannot approve their own work.
+ * Queue an exact authorized publication after verifying its selected files.
+ * @param context - Human owner or fenced model context with Full access delegation.
  * @param input - Displayed version, content hash and full review snapshot.
  * @param binding - Dashboard account mapping, matched with a fresh publishing executor.
  * @param directory - Shared private file store used to verify every reviewed byte.
@@ -183,16 +191,12 @@ export async function approveMiraPublication(
     binding?: HereNowBinding,
     directory?: string
 ): Promise<MiraPublication> {
-    if (context.run || context.actor !== `human:${context.owner}`)
-        throw new MiraFailure(
-            "FORBIDDEN",
-            "Publishing requires the operator's confirmation."
-        );
     const configured = bindingFor(context, binding);
-    return context.client.begin(async (query) => {
+    return miraTransaction(context, async (query) => {
         await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${context.owner}`},0))`;
         const [row] = await query<
             {
+                conversationId: string | null;
                 version: number;
                 state: string;
                 hash: string;
@@ -200,8 +204,14 @@ export async function approveMiraPublication(
                 approvedVersion: number | null;
                 content: MiraPublicationContent;
             }[]
-        >`SELECT version,state,content,content_hash AS hash,binding_hash AS binding,approved_version AS "approvedVersion" FROM mira_publications WHERE id=${input.id} AND owner=${context.owner} FOR UPDATE`;
+        >`SELECT conversation_id AS "conversationId",version,state,content,content_hash AS hash,binding_hash AS binding,approved_version AS "approvedVersion" FROM mira_publications WHERE id=${input.id} AND owner=${context.owner} FOR UPDATE`;
         if (!row) throw new MiraFailure("NOT_FOUND", "Publication draft not found.");
+        const approvalRunId = await requireMiraApproval(
+            query,
+            context,
+            row.conversationId,
+            "external"
+        );
         if (
             row.hash !== input.contentHash ||
             miraPublicationHash(row.content) !== row.hash ||
@@ -212,7 +222,7 @@ export async function approveMiraPublication(
                 "The publication changed. Review its current files, destination and visibility."
             );
         if (row.approvedVersion === input.version)
-            return readDraft(query, context.owner, input.id);
+            return readMiraPublication(query, context.owner, input.id);
         if (
             row.state !== "draft" ||
             row.version !== input.version ||
@@ -233,9 +243,9 @@ export async function approveMiraPublication(
                 "PRECONDITION_FAILED",
                 "here.now must be enabled and connected with a publishing credential before publication."
             );
-        await query`UPDATE mira_publications SET state='queued',message=NULL,retry_after=NULL,approved_version=version,approved_by=${context.actor},approved_at=clock_timestamp(),control_version=${control},version=version+1,updated_at=now() WHERE id=${input.id}`;
+        await query`UPDATE mira_publications SET state='queued',approval_run_id=${approvalRunId},message=NULL,retry_after=NULL,approved_version=version,approved_by=${context.actor},approved_at=clock_timestamp(),control_version=${control},version=version+1,updated_at=now() WHERE id=${input.id}`;
         await auditMira(query, context, "publication.approved", input.id);
-        return readDraft(query, context.owner, input.id);
+        return readMiraPublication(query, context.owner, input.id);
     });
 }
 

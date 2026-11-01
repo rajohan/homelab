@@ -6,6 +6,7 @@ import path from "node:path";
 
 import type { MiraCodePublication } from "@homelab/contracts/miraCode";
 import { capabilities } from "@homelab/contracts/operations";
+import { miraActionApproval } from "@homelab/mira/data/approvalPolicy";
 import { approveMiraCode } from "@homelab/mira/data/code";
 import { saveMiraFile, deleteMiraFile } from "@homelab/mira/data/files";
 import { publishGitHubBinding } from "@homelab/mira/data/github";
@@ -25,6 +26,7 @@ import {
     githubProvider,
 } from "../../../../mira/src/server/testing/github";
 import { appRouter } from "../api/router";
+import { permissionRun, permissionAction } from "../testing/miraPermissions";
 import { createMiraTextTestTools as createMiraTools } from "../testing/miraTools";
 import { operationFixture } from "../testing/operations";
 
@@ -538,3 +540,46 @@ test("conversation deletion waits for queued publication and then scrubs local p
         await f.close();
     }
 });
+
+for (const mode of ["approve_for_me", "full_access"] as const)
+    test(`GitHub ${mode} publishes only tested drafts and observes delegated revocation`, async () => {
+        const f = await fixture();
+        try {
+            const { run } = await permissionRun(f.client, f.api, mode);
+            await f.client`UPDATE mira_daytona_jobs SET conversation_id=${run.conversationId} WHERE id=${f.checkId}`;
+            const draft = await f.api.code.save({
+                id: crypto.randomUUID(),
+                version: 0,
+                conversationId: run.conversationId,
+                content: f.content,
+            });
+            const tools = createMiraTools(
+                f.client,
+                run,
+                f.directory,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                binding
+            );
+            expect(await permissionAction(tools, "code", draft)).toMatchObject({
+                ok: mode === "full_access",
+            });
+            if (mode === "full_access") {
+                expect(
+                    await miraActionApproval(f.client, "operator", "code", draft.id)
+                ).toBe(true);
+                await f.client`UPDATE mira_runs SET cancel_requested=true WHERE id=${run.id}`;
+                const mock = githubProvider(draft.id);
+                expect(await f.dispatch(mock)).toBe(false);
+                expect(mock.calls).toHaveLength(0);
+                await reconcileMiraCode(f.client, configuration);
+                expect(await f.api.code.read({ id: draft.id })).toMatchObject({
+                    state: "draft",
+                });
+            }
+        } finally {
+            await f.close();
+        }
+    });

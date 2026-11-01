@@ -352,6 +352,8 @@ export async function changeConversation(
                 "CONFLICT",
                 "Stop the active run before changing the conversation."
             );
+        if (input.action !== "restore")
+            await query`UPDATE mira_runs SET approval_revoked_at=clock_timestamp() WHERE conversation_id=${input.id} AND owner=${context.owner} AND approval_revoked_at IS NULL`;
         await query`UPDATE mira_conversations SET archived_at = ${input.action === "archive" ? new Date() : null}, deleted_at = ${input.action === "delete" ? new Date() : null}, title = CASE WHEN ${input.action === "delete"} THEN 'Deleted conversation' ELSE title END, version = version + 1, updated_at = now() WHERE id = ${input.id}`;
         if (input.action === "delete") {
             await query`UPDATE mira_browser_access SET policy=NULL,state=CASE WHEN state='pending' THEN 'closed' ELSE 'stopping' END,

@@ -9,6 +9,7 @@ import type {
     MiraPublicationInput,
 } from "@homelab/contracts/miraPublication";
 import { capabilities } from "@homelab/contracts/operations";
+import { miraActionApproval } from "@homelab/mira/data/approvalPolicy";
 import { saveMiraFile, deleteMiraFile } from "@homelab/mira/data/files";
 import { publishHereNowBinding } from "@homelab/mira/data/herenow";
 import { approveMiraPublication } from "@homelab/mira/data/publications";
@@ -21,6 +22,7 @@ import {
 
 import { publicationProvider } from "../../../../mira/src/server/testing/herenow";
 import { appRouter } from "../api/router";
+import { permissionRun, permissionAction } from "../testing/miraPermissions";
 import { createMiraTextTestTools as createMiraTools } from "../testing/miraTools";
 import { operationFixture } from "../testing/operations";
 
@@ -763,6 +765,113 @@ for (const removed of ["configuration", "publishing-key"] as const)
                 )
             ).toBe(true);
             expect(await f.read(draft.id)).toMatchObject({ state: "published" });
+        } finally {
+            await f.close();
+        }
+    });
+
+test("here.now revocation after claim restores an unsent draft", async () => {
+    const f = await fixture();
+    try {
+        const { run } = await permissionRun(f.client, f.api, "full_access");
+        const draft = await f.api.publications.save({
+            id: crypto.randomUUID(),
+            version: 0,
+            conversationId: run.conversationId,
+            content: {
+                title: "Claim boundary",
+                target: null,
+                visibility: "anyone_with_link",
+                files: [{ id: f.file.id, path: "index.html" }],
+            },
+        });
+        const tools = createMiraTools(
+            f.client,
+            run,
+            f.directory,
+            undefined,
+            undefined,
+            configuration
+        );
+        expect(await permissionAction(tools, "publication", draft)).toMatchObject({
+            ok: true,
+        });
+        await f.client`CREATE FUNCTION revoke_claimed_publication() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.state='publishing' AND OLD.state='queued' THEN UPDATE mira_runs SET approval_revoked_at=clock_timestamp() WHERE id=NEW.approval_run_id; END IF; RETURN NEW; END $$`;
+        await f.client`CREATE TRIGGER revoke_claimed_publication AFTER UPDATE ON mira_publications FOR EACH ROW EXECUTE FUNCTION revoke_claimed_publication()`;
+        const mock = publicationProvider(draft.content);
+        expect(
+            await dispatchMiraPublication(
+                f.client,
+                configuration,
+                signal,
+                f.directory,
+                mock.request
+            )
+        ).toBe(true);
+        expect(mock.calls.filter((call) => call.method !== "GET")).toHaveLength(0);
+        expect(await f.read(draft.id)).toMatchObject({ state: "draft" });
+        const [row] = await f.client<
+            { origin: string | null; attempt: string | null; phase: string | null }[]
+        >`SELECT approval_run_id AS origin,attempt_token AS attempt,phase FROM mira_publications WHERE id=${draft.id}`;
+        expect(row).toEqual({ origin: null, attempt: null, phase: null });
+        await reconcileMiraPublications(f.client, configuration);
+        expect(await f.read(draft.id)).toMatchObject({ state: "draft" });
+    } finally {
+        await f.close();
+    }
+});
+
+for (const mode of ["approve_for_me", "full_access"] as const)
+    test(`here.now ${mode} checks content and stops publication after delegated revocation`, async () => {
+        const f = await fixture();
+        try {
+            const { run } = await permissionRun(f.client, f.api, mode);
+            const draft = await f.api.publications.save({
+                id: crypto.randomUUID(),
+                version: 0,
+                conversationId: run.conversationId,
+                content: {
+                    title: "Permission fixture",
+                    target: null,
+                    visibility: "anyone_with_link",
+                    files: [{ id: f.file.id, path: "index.html" }],
+                },
+            });
+            const tools = createMiraTools(
+                f.client,
+                run,
+                f.directory,
+                undefined,
+                undefined,
+                configuration
+            );
+            expect(await permissionAction(tools, "publication", draft)).toMatchObject({
+                ok: mode === "full_access",
+            });
+            if (mode === "full_access") {
+                expect(
+                    await miraActionApproval(
+                        f.client,
+                        "operator",
+                        "publication",
+                        draft.id
+                    )
+                ).toBe(true);
+                await f.client`UPDATE mira_runs SET cancel_requested=true WHERE id=${run.id}`;
+                await reconcileMiraPublications(f.client, configuration);
+                const mock = publicationProvider(draft.content);
+                expect(
+                    await dispatchMiraPublication(
+                        f.client,
+                        configuration,
+                        signal,
+                        f.directory,
+                        mock.request
+                    )
+                ).toBe(false);
+                expect(mock.calls).toHaveLength(0);
+                expect(await f.read(draft.id)).toMatchObject({ state: "draft" });
+            }
         } finally {
             await f.close();
         }

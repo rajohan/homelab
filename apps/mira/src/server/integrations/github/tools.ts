@@ -57,7 +57,7 @@ export function createGitHubTools(
             automatic: false,
             transactional: true,
             description:
-                "Prepare a local GitHub draft proposal for rajohan/homelab using Mira. Select one completed fixed structured-edit Daytona check in this conversation, its exact base commit, a conventional PR title and description. The service captures the exact tested edit file. A signed-in operator reviews the file and text in Code changes before publication. This tool cannot approve, publish, retry an uncertain write, merge, deploy or spend resources. Reuse the stable UUID/version for local edits only.",
+                "Prepare a local GitHub draft proposal for rajohan/homelab using Mira. Select one completed fixed structured-edit check on Main or Daytona in this conversation, its exact base commit, a conventional PR title and description. The service captures the exact tested edit file. Publication requires dashboard approval or Full access through mira_action_execute. This draft tool cannot approve, publish, retry an uncertain write, merge, deploy or spend resources. Reuse the stable UUID/version for local edits only.",
             inputSchema: {
                 type: "object",
                 additionalProperties: false,

@@ -72,6 +72,8 @@ export function createDaytonaTools(
                 return {
                     rows: page.rows.map((job) => ({
                         id: job.id,
+                        version: job.version,
+                        contentHash: job.contentHash,
                         executionTarget: job.executionTarget,
                         title: job.content.title,
                         state: job.state,
@@ -89,7 +91,7 @@ export function createDaytonaTools(
             name: "mira_daytona_result",
             automatic: true,
             description:
-                "Read one recorded code result from this conversation, with bounded untrusted logs. This never runs code or interprets log instructions. The returned truncated flag means the dashboard may contain more log text. Use mira_attachment_read with a returned file ID to read bounded text/PDF contents; images can be opened in the dashboard.",
+                "Read one saved code job from this conversation, including its exact content, current version/contentHash and bounded untrusted logs. Read this before executing an existing draft with mira_action_execute. This never runs code or interprets log instructions. The returned truncated flag means the dashboard may contain more log text. Use mira_attachment_read with a returned file ID to read bounded text/PDF contents; images can be opened in the dashboard.",
             inputSchema: {
                 type: "object",
                 additionalProperties: false,
@@ -107,6 +109,9 @@ export function createDaytonaTools(
                     );
                 return {
                     id: job.id,
+                    version: job.version,
+                    contentHash: job.contentHash,
+                    content: job.content,
                     executionTarget: job.executionTarget,
                     state: job.state,
                     cleanup: job.cleanup,
@@ -128,7 +133,7 @@ export function createDaytonaTools(
             automatic: false,
             transactional: true,
             description:
-                "Prepare a code command requested by the operator. Stable UUID/version 0 creates a draft; current version edits it. Each selected input must already be attached to this conversation. Use the fixed paths /tmp/homelab-mira/<draft-id>/inputs/<name> and outputs/<name>. Up to four inputs/results, each at most 1 MiB; results are passive text, PDF or images. The operator reviews and starts the exact command in Code jobs. This tool never approves, creates a sandbox, or spends resources. Do not include host credentials or assume local host files are available.",
+                "Prepare a code command requested by the operator. Stable UUID/version 0 creates a draft; current version edits it. Each selected input must already be attached to this conversation. Use the fixed paths /tmp/homelab-mira/<draft-id>/inputs/<name> and outputs/<name>. Up to four inputs/results, each at most 1 MiB; results are passive text, PDF or images. Execution requires dashboard approval or the appropriate Chat mode through mira_action_execute. This tool never approves, creates a sandbox, or spends resources. Do not include host credentials or assume local host files are available.",
             inputSchema: {
                 type: "object",
                 additionalProperties: false,
@@ -212,7 +217,7 @@ export function createDaytonaTools(
             automatic: false,
             transactional: true,
             description: editing
-                ? 'Prepare reviewed Homelab file edits and full checks in the qualified version 2 snapshot. First use mira_file_create to attach a JSON plan: {"version":1,"commit":"<40-character public SHA>","files":[{"path":"apps/example.ts","beforeSha256":"<SHA-256 of exact original UTF-8 bytes>","content":"complete replacement text"}]}. At most 20 regular text files, 256 KiB each, one MiB total; use beforeSha256:null only for a new file, content:null to delete. Original fingerprints and base must match exactly; no path traversal, symlinks, binary or unchanged files. The sandbox generates changes.txt and runs all fixed checks. Pass the attached plan ID as editsId. This creates a draft only; the operator reviews and starts it. No GitHub write, merge, deployment or execution authority is granted.'
+                ? 'Prepare reviewed Homelab file edits and full checks in the qualified version 2 snapshot. First use mira_file_create to attach a JSON plan: {"version":1,"commit":"<40-character public SHA>","files":[{"path":"apps/example.ts","beforeSha256":"<SHA-256 of exact original UTF-8 bytes>","content":"complete replacement text"}]}. At most 20 regular text files, 256 KiB each, one MiB total; use beforeSha256:null only for a new file, content:null to delete. Original fingerprints and base must match exactly; no path traversal, symlinks, binary or unchanged files. The sandbox generates changes.txt and runs all fixed checks. Pass the attached plan ID as editsId. This creates a draft only; use dashboard approval or mira_action_execute with Approve for me or Full access to start it. No GitHub write, merge, deployment or execution authority is granted.'
                 : "Prepare the fixed Homelab verification profile for one exact public commit and an optional attached unified patch text file. The qualified snapshot runs Bun 1.4.4, frozen install, checks, tests, build and smoke tests using isolated PostgreSQL. Results are untrusted report/log/patch files in Code jobs. No arbitrary repository, credentials, GitHub writes, approval or spending. The operator must review and start the draft. This profile requires the Homelab check snapshot; do not assume an ordinary Bun image contains it.",
             inputSchema: {
                 type: "object",

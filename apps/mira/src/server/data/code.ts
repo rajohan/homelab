@@ -12,6 +12,7 @@ import {
     githubBindingHash,
     type GitHubBinding,
 } from "../integrations/github/configuration";
+import { requireMiraApproval } from "./approvalPolicy";
 import { captureCodeSource, readCodeSource } from "./codeSource";
 import {
     auditMira,
@@ -188,14 +189,19 @@ export async function approveMiraCode(
     binding?: GitHubBinding,
     directory?: string
 ): Promise<MiraCodePublication> {
-    human(context);
     const configured = bindingFor(context, binding);
-    return context.client.begin(async (query) => {
+    return miraTransaction(context, async (query) => {
         await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${context.owner}`},0))`;
         const [locked] = await query<
             { binding: string; approvedVersion: number | null }[]
         >`SELECT binding_hash AS binding,approved_version AS "approvedVersion" FROM mira_code_publications WHERE id=${input.id} AND owner=${context.owner} FOR UPDATE`;
         const row = await readMiraCode(query, context.owner, input.id);
+        const approvalRunId = await requireMiraApproval(
+            query,
+            context,
+            row.conversationId,
+            "external"
+        );
         if (
             row.contentHash !== input.contentHash ||
             miraCodeHash(row.content) !== row.contentHash ||
@@ -235,7 +241,7 @@ export async function approveMiraCode(
                 "CONFLICT",
                 "This check already has a queued or attempted publication. Inspect that proposal."
             );
-        await query`UPDATE mira_code_publications SET state='queued',message=NULL,approved_version=version,approved_by=${context.actor},approved_at=clock_timestamp(),control_version=${permission},version=version+1,updated_at=now() WHERE id=${input.id}`;
+        await query`UPDATE mira_code_publications SET state='queued',approval_run_id=${approvalRunId},message=NULL,approved_version=version,approved_by=${context.actor},approved_at=clock_timestamp(),control_version=${permission},version=version+1,updated_at=now() WHERE id=${input.id}`;
         await auditMira(query, context, "code.approved", input.id);
         return readMiraCode(query, context.owner, input.id);
     });
