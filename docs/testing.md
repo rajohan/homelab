@@ -29,6 +29,8 @@ checks succeed. A failed source, native, Windows or browser check prevents that 
 still receive only the exact tested images/packages and run only for stable releases.
 Superseded PR image builds are cancelled; release publication is never cancelled by
 a newer push. Docker dependency layers are reusable across source-only changes.
+The disposable check container uses four CPUs and 8 GiB, matching the configured
+sandbox size and using the public GitHub runner's available CPUs.
 
 Before this change, PR #157's source job took 8m21s: 3m56s of integration coverage
 followed by 2m45s of Docker/PC qualification. The separate Daytona job took 7m14s.
