@@ -7,6 +7,7 @@ import {
     SearchInput,
     SectionHeader,
     Switch,
+    queryRefresh,
 } from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -40,6 +41,7 @@ export function ConversationList({
                 { signal }
             ),
         getNextPageParam: (page) => page.nextCursor ?? undefined,
+        ...queryRefresh("fast"),
     });
     return (
         <Card

@@ -9,6 +9,7 @@ import { setWorkerControl } from "../../jobs/control";
 import { enqueueJob, lockQueue } from "../../jobs/queue";
 import { createJobRegistry } from "../../jobs/registry";
 import { operationFixture, expectOperationFailure } from "../../testing/operations";
+import { authReleaseObservations } from "./authObservations";
 import { coordinateDeployment } from "./deploymentCoordinator";
 import {
     deploymentTestConnections,
@@ -25,6 +26,75 @@ import {
 import type { readHomelabRelease } from "./read";
 
 const target = deploymentTestTarget;
+
+test("Auth version uses a verified deployment before inventory catches up, including Main failure", async () => {
+    const state = await fixture(true);
+    try {
+        const source = state.operations.updateTargets.find(
+            (entry) => entry.id === "edge"
+        )!.source;
+        const report = {
+            capturedAt: new Date(Date.now() - 60_000).toISOString(),
+            repositoryMetadataAt: null,
+            complete: true,
+            coveredKinds: ["container"],
+            items: [
+                {
+                    id: `docker:${state.plan.authExpected!.containers.auth!.id}`,
+                    name: "Auth",
+                    kind: "container",
+                    installed: "old",
+                    available: null,
+                    status: "unknown",
+                    image: "ghcr.io/demo/homelab/auth:1.2.2",
+                    installedVersion: "1.2.2",
+                },
+            ],
+        };
+        await state.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES (${`updates:${source}`},${JSON.stringify(report)}::text::jsonb,now())`;
+        const read = async () => {
+            const observations = await authReleaseObservations({
+                client: state.client,
+                repository: "demo/homelab",
+                sources: [{ id: source, label: "Auth host", publisher: "test" }],
+                targets: [state.target],
+                connections: state.operations.updateTargets,
+            });
+            return observations.map((item) => item.version);
+        };
+        expect(await read()).toEqual(["1.2.2"]);
+        const { id } = await state.request();
+        await state.drained(id);
+        await state.coordinate();
+        expect(await read()).toEqual(["1.2.2"]);
+        completeHost(state, true);
+        await state.coordinate();
+        expect(await read()).toEqual(["1.2.3"]);
+        await state.coordinate();
+        state.setReceipt({ state: "failed", phase: "failed", recovered: true });
+        await state.coordinate();
+        const record = await state.record();
+        expect(record.state).toBe("failed");
+        expect(await read()).toEqual(["1.2.3"]);
+        const [row] = await state.client<
+            { receipt: unknown; configuration: string }[]
+        >`SELECT receipt,configuration FROM release_deployments WHERE id=${id}`;
+        for (const field of ["requestHash", "version", "state"]) {
+            await state.client`UPDATE release_deployments SET receipt=jsonb_set(receipt,${`{auth,${field}}`}::text[],'"invalid"'::jsonb) WHERE id=${id}`;
+            expect(await read()).toEqual(["1.2.2"]);
+            await state.client`UPDATE release_deployments SET receipt=${JSON.stringify(row!.receipt)}::text::jsonb WHERE id=${id}`;
+        }
+        await state.client`UPDATE release_deployments SET configuration=${"f".repeat(64)} WHERE id=${id}`;
+        expect(await read()).toEqual(["1.2.2"]);
+        await state.client`UPDATE release_deployments SET configuration=${row!.configuration} WHERE id=${id}`;
+        report.capturedAt = new Date().toISOString();
+        report.items[0]!.installedVersion = "1.2.4";
+        await state.client`UPDATE operation_snapshots SET value=${JSON.stringify(report)}::text::jsonb WHERE key=${`updates:${source}`}`;
+        expect(await read()).toEqual(["1.2.4"]);
+    } finally {
+        await state.close();
+    }
+});
 
 function completeHost(state: Awaited<ReturnType<typeof fixture>>, auth = false) {
     const selected = auth ? state.target.auth! : state.target;
