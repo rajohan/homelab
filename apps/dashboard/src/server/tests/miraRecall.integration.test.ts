@@ -9,12 +9,14 @@ import { miraDefaultChatSettings } from "@homelab/contracts/mira";
 import { capabilities } from "@homelab/contracts/operations";
 import { claimMiraRun } from "@homelab/mira/data/queue";
 import {
+    readMiraConversationHistory,
     readMiraHistory,
     readMiraRecallContext,
     readMiraRecallPolicy,
     searchMiraHistory,
 } from "@homelab/mira/data/recall";
 
+import { readMiraTurnInput } from "../../../../mira/src/server/executor/context";
 import {
     executeMiraTurn,
     miraInstructionsHash,
@@ -141,6 +143,160 @@ test("recall bounds search, Unicode message chunks and memory snapshots without 
     }
 });
 
+test("same-chat recall reaches beyond the recovery window with paging, search and Unicode chunks while cross-chat history is off", async () => {
+    const f = await fixture();
+    try {
+        await f.api.conversations.settings({
+            id: f.chat.id,
+            version: 1,
+            settings: { ...miraDefaultChatSettings, useMemory: false, useHistory: false },
+        });
+        const foreign = await f.source();
+        const ids: string[] = [];
+        const content = "🦊".repeat(6000) + "Fjordplan original decision";
+        for (let index = 0; index < 40; index++) {
+            const id = Bun.randomUUIDv7();
+            ids.push(id);
+            await f.client`INSERT INTO mira_messages(id,conversation_id,role,content,state) VALUES(${id},${f.chat.id},'assistant',${index === 0 ? content : `Previous response ${index}`},${index === 0 ? "interrupted" : "completed"})`;
+        }
+        const run = await f.start();
+        const future = Bun.randomUUIDv7();
+        await f.client`INSERT INTO mira_messages(id,conversation_id,role,content,state) VALUES(${future},${f.chat.id},'user','Fjordplan later steering','completed')`;
+        const restored = await readMiraTurnInput(f.client, run, true);
+        expect(restored.content).toContain("Earlier entries were omitted");
+        expect(restored.content).toContain(ids[39]!);
+        expect(restored.content).not.toContain("original decision");
+        expect(restored.content).not.toContain("later steering");
+        expect(restored.content).toContain("mira_conversation_history");
+
+        const seen: string[] = [];
+        let beforeMessageId: string | undefined;
+        do {
+            const page = await readMiraConversationHistory(f.client, run, {
+                beforeMessageId,
+            });
+            expect(page.rows.length).toBeLessThanOrEqual(8);
+            expect(page.rows.every((row) => row.excerpt.length <= 4800)).toBe(true);
+            seen.push(...page.rows.map((row) => row.messageId));
+            beforeMessageId = page.nextBeforeMessageId ?? undefined;
+        } while (beforeMessageId);
+        expect(seen).toEqual(ids.toReversed());
+        const found = await readMiraConversationHistory(f.client, run, {
+            query: "fjordplan",
+        });
+        expect(found.rows).toHaveLength(1);
+        expect(found.rows[0]).toMatchObject({
+            messageId: ids[0],
+            state: "interrupted",
+            truncated: true,
+        });
+        const first = await readMiraHistory(f.client, run, {
+            messageId: ids[0]!,
+            offset: 0,
+        });
+        expect(first.content).toBe("🦊".repeat(6000));
+        expect(first.state).toBe("interrupted");
+        const last = await readMiraHistory(f.client, run, {
+            messageId: ids[0]!,
+            offset: first.nextOffset!,
+        });
+        expect(last.content).toBe("Fjordplan original decision");
+        expect(last.nextOffset).toBeNull();
+        for (const messageId of [foreign.messageId, run.userMessageId, future])
+            await rejects(
+                readMiraHistory(f.client, run, { messageId, offset: 0 }),
+                /not found/
+            );
+        await rejects(
+            searchMiraHistory(f.client, run, { query: "fjordplan" }),
+            /disabled/
+        );
+        await rejects(
+            readMiraConversationHistory(f.client, { ...run, owner: "other" }, {}),
+            /no longer available/
+        );
+        await f.client`UPDATE mira_runs SET lease_expires_at=now()-interval '1 second' WHERE id=${run.id}`;
+        await rejects(
+            readMiraConversationHistory(f.client, run, {}),
+            /no longer available/
+        );
+        await rejects(
+            readMiraHistory(f.client, run, { messageId: ids[0]!, offset: 0 }),
+            /no longer available/
+        );
+    } finally {
+        await f.close();
+    }
+});
+
+test("same-chat tools validate cursors and recheck restricted runs, archival, deletion and cancellation", async () => {
+    const f = await fixture();
+    try {
+        const id = Bun.randomUUIDv7();
+        await f.client`INSERT INTO mira_messages(id,conversation_id,role,content,state) VALUES(${id},${f.chat.id},'user','Private earlier detail','completed')`;
+        const run = await f.start();
+        const tools = createMiraTextTestTools(f.client, run);
+        const browse = tools.find((tool) => tool.name === "mira_conversation_history")!;
+        const invoke = (input: unknown) =>
+            browse.execute(input, new AbortController().signal, {
+                callId: crypto.randomUUID(),
+                threadId: "fixture",
+                turnId: "fixture",
+            });
+        expect(JSON.parse(await invoke({}))).toMatchObject({
+            ok: true,
+            result: { rows: [{ messageId: id }] },
+        });
+        expect(JSON.parse(await invoke({ beforeMessageId: "invalid" }))).toMatchObject({
+            ok: false,
+        });
+        expect(JSON.parse(await invoke({ query: "x".repeat(161) }))).toMatchObject({
+            ok: false,
+        });
+        expect(
+            JSON.parse(await invoke({ conversationId: crypto.randomUUID() }))
+        ).toMatchObject({ ok: false });
+        await rejects(
+            readMiraConversationHistory(f.client, { ...run, taskAssessment: true }, {}),
+            /disabled/
+        );
+        const automation = await f.api.automations.create({
+            title: "Restricted",
+            kind: "improvement",
+            prompt: "Inspect repository",
+            schedule: { kind: "interval", intervalSeconds: 60 },
+            budgetSeconds: 60,
+        });
+        await f.client`UPDATE mira_runs SET automation_id=${automation.id},automation_kind='improvement' WHERE id=${run.id}`;
+        await rejects(readMiraConversationHistory(f.client, run, {}), /disabled/);
+        await rejects(
+            readMiraHistory(f.client, run, { messageId: id, offset: 0 }),
+            /disabled/
+        );
+        await f.client`UPDATE mira_runs SET automation_id=NULL,automation_kind=NULL WHERE id=${run.id}`;
+        await f.client`UPDATE mira_conversations SET archived_at=now() WHERE id=${f.chat.id}`;
+        const archived = await readMiraConversationHistory(f.client, run, {});
+        expect(archived.rows).toEqual([]);
+        await rejects(
+            readMiraHistory(f.client, run, { messageId: id, offset: 0 }),
+            /not found/
+        );
+        await f.client`UPDATE mira_conversations SET archived_at=NULL,deleted_at=now() WHERE id=${f.chat.id}`;
+        await rejects(
+            readMiraConversationHistory(f.client, run, {}),
+            /no longer available/
+        );
+        await f.client`UPDATE mira_conversations SET deleted_at=NULL WHERE id=${f.chat.id}`;
+        await f.client`UPDATE mira_runs SET cancel_requested=true WHERE id=${run.id}`;
+        await rejects(
+            readMiraConversationHistory(f.client, run, {}),
+            /no longer available/
+        );
+    } finally {
+        await f.close();
+    }
+});
+
 test("context preferences stay editable offline, freeze per run and fence disabled tools and stale leases", async () => {
     const f = await fixture();
     try {
@@ -162,6 +318,7 @@ test("context preferences stay editable offline, freeze per run and fence disabl
         await f.client`UPDATE mira_runtime_status SET ready=true WHERE id=1`;
         const run = await f.start();
         expect(await readMiraRecallPolicy(f.client, run)).toEqual({
+            conversation: true,
             memory: false,
             history: false,
         });
@@ -176,6 +333,7 @@ test("context preferences stay editable offline, freeze per run and fence disabl
         // The queued snapshot, not a later preference edit, controls the running turn.
         await f.client`UPDATE mira_conversations SET settings=${JSON.stringify(miraDefaultChatSettings)}::text::jsonb WHERE id=${f.chat.id}`;
         expect(await readMiraRecallPolicy(f.client, run)).toEqual({
+            conversation: true,
             memory: false,
             history: false,
         });
@@ -185,7 +343,7 @@ test("context preferences stay editable offline, freeze per run and fence disabl
         );
         await rejects(
             readMiraHistory(f.client, run, { messageId: source.messageId, offset: 0 }),
-            /disabled/
+            /not found/
         );
         const tools = createMiraTextTestTools(f.client, run);
         for (const [name, input] of [
@@ -327,12 +485,13 @@ test("legacy defaults enable recall while task assessments and improvement work 
     try {
         const run = await f.start();
         expect(await readMiraRecallPolicy(f.client, run)).toEqual({
+            conversation: true,
             memory: true,
             history: true,
         });
         expect(
             await readMiraRecallPolicy(f.client, { ...run, taskAssessment: true })
-        ).toEqual({ memory: false, history: false });
+        ).toEqual({ conversation: false, memory: false, history: false });
         for (const kind of ["custom", "improvement"] as const) {
             const automation = await f.api.automations.create({
                 title: "Context fixture",
@@ -348,6 +507,7 @@ test("legacy defaults enable recall while task assessments and improvement work 
             });
             await f.client`UPDATE mira_runs SET automation_id=${automation.id},automation_kind=${kind} WHERE id=${run.id}`;
             expect(await readMiraRecallPolicy(f.client, run)).toEqual({
+                conversation: kind === "custom",
                 memory: kind === "custom",
                 history: kind === "custom",
             });
@@ -360,6 +520,7 @@ test("legacy defaults enable recall while task assessments and improvement work 
         );
         await f.client`UPDATE mira_runs SET automation_kind=NULL WHERE id=${run.id}`;
         expect(await readMiraRecallPolicy(f.client, run)).toEqual({
+            conversation: false,
             memory: false,
             history: false,
         });
@@ -428,6 +589,8 @@ test.each([true, false])(
             );
             expect(names.includes("mira_memory_list")).toBe(enabled);
             expect(names.includes("mira_history_search")).toBe(enabled);
+            expect(names.includes("mira_conversation_history")).toBe(true);
+            expect(names.includes("mira_history_read")).toBe(true);
             const [stored] = await f.client<
                 { hash: string }[]
             >`SELECT provider_policy_hash AS hash FROM mira_conversations WHERE id=${f.chat.id}`;

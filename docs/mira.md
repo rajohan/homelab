@@ -116,6 +116,17 @@ isolated synthetic preview before production deployment.
   links and dates. History uses PostgreSQL word/phrase search, not semantic search
   or unlimited recall. Read tools recheck ownership, deletion, archival and source
   opt-outs. The current conversation is excluded from this search.
+  Same-conversation retrieval is separate: Mira can browse or search eight earlier
+  message excerpts at a time with `mira_conversation_history`, then read 6000-character
+  chunks with `mira_history_read`. This remains available when cross-conversation
+  history is off, but not in restricted improvement or assessment runs. Retrieval
+  stops before the current turn's user message and rechecks the owned live lease.
+  Provider recovery supplies at most 32 recent messages and 48,000 characters, with
+  message IDs, dates and explicit omissions. Older text stays in the database and
+  can be retrieved on demand; it is not all sent on every turn. Failed/interrupted
+  messages retain their state and are not proof that an action succeeded. Switching
+  back from Synthetic restores intervening product messages. Provider-private
+  reasoning is not transferred, and older images may need to be attached again.
   Relevant context goes to the provider selected for the run (ChatGPT or Synthetic);
   no separate embedding service or duplicate history store is added. Dashboard
   improvement and task-change assessments cannot retrieve private memory/history.
