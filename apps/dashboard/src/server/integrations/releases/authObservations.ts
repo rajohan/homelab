@@ -33,6 +33,7 @@ export async function authReleaseObservations(options: {
         string,
         {
             container: string;
+            service?: string;
             name: string;
             version: string;
             image: string;
@@ -73,79 +74,97 @@ export async function authReleaseObservations(options: {
         )?.source;
         if (!auth || !source || !options.sources.some((entry) => entry.id === source))
             continue;
-        const [row] = await client<
+        const configuration = releaseDeploymentRevision(target, options.connections);
+        const rows = await client<
             { id: string; configuration: string; plan: unknown; receipt: unknown }[]
         >`
-            SELECT id,configuration,plan,receipt FROM release_deployments WHERE target=${target.id} ORDER BY id DESC LIMIT 1`;
-        if (
-            !row ||
-            row.configuration !== releaseDeploymentRevision(target, options.connections)
-        )
-            continue;
-        const plan = v.safeParse(deploymentPlanSchema, row.plan);
-        const progress = v.safeParse(deploymentProgressSchema, row.receipt);
-        if (!plan.success || !progress.success) continue;
-        const { release, authExpected } = plan.output;
-        const receipt = progress.output.auth;
-        if (
-            !authExpected ||
-            release.repository !== repository ||
-            receipt?.state !== "succeeded" ||
-            receipt.phase !== "complete" ||
-            !receipt.migrationStarted ||
-            receipt.version !== release.version ||
-            receipt.revision !== release.revision ||
-            receipt.id !== row.id ||
-            receipt.requestHash !==
-                deploymentDigest({
-                    id: row.id,
-                    target: auth,
-                    release,
-                    expected: authExpected,
+            SELECT id,configuration,plan,receipt FROM release_deployments
+            WHERE target=${target.id} AND configuration=${configuration}
+              AND receipt->'auth'->>'state'='succeeded'
+            ORDER BY id`;
+        for (const row of rows) {
+            const plan = v.safeParse(deploymentPlanSchema, row.plan);
+            const progress = v.safeParse(deploymentProgressSchema, row.receipt);
+            if (!plan.success || !progress.success) continue;
+            const { release, authExpected } = plan.output;
+            const receipt = progress.output.auth;
+            if (
+                !authExpected ||
+                release.repository !== repository ||
+                receipt?.state !== "succeeded" ||
+                receipt.phase !== "complete" ||
+                !receipt.migrationStarted ||
+                receipt.version !== release.version ||
+                receipt.revision !== release.revision ||
+                receipt.id !== row.id ||
+                receipt.requestHash !==
+                    deploymentDigest({
+                        id: row.id,
+                        target: auth,
+                        release,
+                        expected: authExpected,
+                    })
+            )
+                continue;
+            const timestamp = new Date(receipt.updatedAt * 1000);
+            if (!Number.isFinite(timestamp.getTime())) continue;
+            const capturedAt = timestamp.toISOString();
+            const inventory = reports.find(
+                (entry) => entry.key === `updates:${source}`
+            )?.value;
+            if (
+                inventory?.complete &&
+                inventory.coveredKinds.includes("container") &&
+                Date.parse(inventory.capturedAt) >= timestamp.getTime()
+            )
+                continue;
+            const image = release.images.find((entry) => entry.app === "auth")?.reference;
+            if (
+                !image ||
+                auth.services.some((service) => {
+                    const observed = receipt.containers?.[service.name];
+                    return (
+                        !observed?.running ||
+                        observed.health !== "healthy" ||
+                        observed.image !== image
+                    );
                 })
-        )
-            continue;
-        const timestamp = new Date(receipt.updatedAt * 1000);
-        if (!Number.isFinite(timestamp.getTime())) continue;
-        const capturedAt = timestamp.toISOString();
-        const inventoryAt = reports.find((entry) => entry.key === `updates:${source}`)
-            ?.value.capturedAt;
-        if (inventoryAt && Date.parse(inventoryAt) >= Date.parse(capturedAt)) continue;
-        const image = release.images.find((entry) => entry.app === "auth")?.reference;
-        if (
-            !image ||
-            auth.services.some((service) => {
-                const observed = receipt.containers?.[service.name];
-                return (
-                    !observed?.running ||
-                    observed.health !== "healthy" ||
-                    observed.image !== image
-                );
-            })
-        )
-            continue;
-        observations.set(source, [
-            ...(observations.get(source) ?? []).filter(
-                (item) =>
-                    !auth.services.some(
-                        (service) =>
-                            item.container ===
-                                `docker:${authExpected.containers[service.name]?.id}` ||
-                            item.container ===
-                                `docker:${receipt.containers?.[service.name]?.id}`
+            )
+                continue;
+            for (const service of auth.services) {
+                const key = JSON.stringify([auth.connection, auth.project, service.name]);
+                const current = observations.get(source) ?? [];
+                const matches = (item: (typeof current)[number]) =>
+                    item.service === key ||
+                    item.container ===
+                        `docker:${authExpected.containers[service.name]?.id}` ||
+                    item.container === `docker:${receipt.containers?.[service.name]?.id}`;
+                if (
+                    current.some(
+                        (item) =>
+                            matches(item) &&
+                            Date.parse(item.capturedAt) >= timestamp.getTime()
                     )
-            ),
-            ...auth.services.map((service) => ({
-                container: `docker:${receipt.containers![service.name]!.id}`,
-                name: service.name,
-                version: release.version,
-                image,
-                capturedAt,
-                stale: Date.parse(capturedAt) < Date.now() - 26 * 3_600_000,
-            })),
-        ]);
+                )
+                    continue;
+                observations.set(source, [
+                    ...current.filter((item) => !matches(item)),
+                    {
+                        container: `docker:${receipt.containers![service.name]!.id}`,
+                        service: key,
+                        name: service.name,
+                        version: release.version,
+                        image,
+                        capturedAt,
+                        stale: Date.parse(capturedAt) < Date.now() - 26 * 3_600_000,
+                    },
+                ]);
+            }
+        }
     }
     return [...observations.values()]
         .flat()
-        .map(({ container: _container, ...observation }) => observation);
+        .map(
+            ({ container: _container, service: _service, ...observation }) => observation
+        );
 }
