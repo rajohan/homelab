@@ -43,6 +43,11 @@ import {
 import { dispatchMiraSocial, reconcileMiraSocial } from "../integrations/moltbook/outbox";
 import { CodexRuntime } from "../runtime/codexRuntime";
 import { pilotArguments, type PilotConfig } from "../runtime/configuration";
+import type { SyntheticConfiguration } from "../runtime/syntheticConfiguration";
+import {
+    loadSyntheticModels,
+    syntheticSubscriptionAvailable,
+} from "../runtime/syntheticRuntime";
 import { miraSkillCatalogHash } from "../skills/catalog";
 import { cleanupMiraResources } from "./cleanup";
 import { MaintenanceGate } from "./maintenanceGate";
@@ -72,6 +77,7 @@ export async function runMiraExecutor(options: {
     hereNow?: HereNowReadConfiguration | undefined;
     daytona?: DaytonaExecutionConfiguration | undefined;
     github?: GitHubConfiguration | undefined;
+    synthetic?: SyntheticConfiguration | undefined;
 }): Promise<void> {
     const { client, config, health } = options;
     const failed = new AbortController();
@@ -197,7 +203,7 @@ export async function runMiraExecutor(options: {
             if (deployment)
                 currentMessage =
                     "Mira is waiting for the Homelab deployment. Queued work is preserved.";
-            await client`INSERT INTO mira_runtime_status (id, worker_id, version, model, ready, message, heartbeat_at, models, integrations, skill_catalog_hash, skill_catalog_worker_id, deployment_drained_for) VALUES (1, ${workerId}, ${options.version}, ${model}, ${health.ready && !deployment}, ${currentMessage}, now(), ${JSON.stringify(models)}::text::jsonb, ${JSON.stringify(integrationsCatalog)}::text::jsonb, ${miraSkillCatalogHash}, ${workerId}, ${maintenance.drained}) ON CONFLICT (id) DO UPDATE SET worker_id = EXCLUDED.worker_id, version = EXCLUDED.version, model = EXCLUDED.model, ready = EXCLUDED.ready, message = EXCLUDED.message, heartbeat_at = EXCLUDED.heartbeat_at, models = EXCLUDED.models, integrations = EXCLUDED.integrations, skill_catalog_hash = EXCLUDED.skill_catalog_hash, skill_catalog_worker_id = EXCLUDED.skill_catalog_worker_id, deployment_drained_for = EXCLUDED.deployment_drained_for`;
+            await client`INSERT INTO mira_runtime_status (id, worker_id, version, model, ready, message, heartbeat_at, models, integrations, skill_catalog_hash, skill_catalog_worker_id, deployment_drained_for, synthetic_owner) VALUES (1, ${workerId}, ${options.version}, ${model}, ${health.ready && !deployment}, ${currentMessage}, now(), ${JSON.stringify(models)}::text::jsonb, ${JSON.stringify(integrationsCatalog)}::text::jsonb, ${miraSkillCatalogHash}, ${workerId}, ${maintenance.drained}, ${options.synthetic?.owner ?? null}) ON CONFLICT (id) DO UPDATE SET worker_id = EXCLUDED.worker_id, version = EXCLUDED.version, model = EXCLUDED.model, ready = EXCLUDED.ready, message = EXCLUDED.message, heartbeat_at = EXCLUDED.heartbeat_at, models = EXCLUDED.models, integrations = EXCLUDED.integrations, skill_catalog_hash = EXCLUDED.skill_catalog_hash, skill_catalog_worker_id = EXCLUDED.skill_catalog_worker_id, deployment_drained_for = EXCLUDED.deployment_drained_for, synthetic_owner = EXCLUDED.synthetic_owner`;
             health.heartbeatAt = Date.now();
             await Promise.race([wait(5000), changed]);
         }
@@ -209,7 +215,12 @@ export async function runMiraExecutor(options: {
             const changed = inspectionChanged.promise;
             await maintenance.run(async () => {
                 await reconcileMiraControls(client);
-                if (health.ready && defaultReady) await scheduleMiraRuns(client);
+                if (health.ready)
+                    await scheduleMiraRuns(client, new Date(), {
+                        models: models.map((entry) => entry.model),
+                        defaultModel: model,
+                        syntheticOwner: options.synthetic?.owner,
+                    });
             });
             await Promise.race([wait(5000), changed]);
         }
@@ -217,6 +228,7 @@ export async function runMiraExecutor(options: {
     const inspector = async () => {
         while (!signal.aborted) {
             let runtime: CodexRuntime | undefined;
+            let nativeModels: MiraModel[] = [];
             try {
                 runtime = await CodexRuntime.connect({
                     command: config.command,
@@ -230,20 +242,41 @@ export async function runMiraExecutor(options: {
                 const availableModels = account.authenticated
                     ? await runtime.models()
                     : [];
-                models = availableModels;
+                nativeModels = availableModels;
+            } catch {
+                nativeModels = [];
+            } finally {
+                await runtime?.close();
+            }
+            try {
+                let aliases: MiraModel[] = [];
+                if (options.synthetic) {
+                    try {
+                        if (
+                            await syntheticSubscriptionAvailable(
+                                options.synthetic,
+                                signal
+                            )
+                        )
+                            aliases = await loadSyntheticModels(signal);
+                    } catch {
+                        /* One provider outage must not stop the other provider. */
+                    }
+                }
+                models = [...nativeModels, ...aliases];
                 model =
                     config.model ??
                     models.find((entry) => entry.isDefault)?.model ??
                     null;
                 defaultReady = models.some((entry) => entry.model === model);
                 // Explicit available chats remain usable while default work waits.
-                health.ready = account.authenticated && models.length > 0;
+                health.ready = models.length > 0;
                 const defaultMessage = defaultReady
                     ? null
-                    : "The default model is unavailable. Automatic work is waiting; choose an available model in Chat settings.";
+                    : "The default model is unavailable. Work using it is waiting; choose an available model in Chat or Automation settings.";
                 message = health.ready
                     ? defaultMessage
-                    : "Mira needs its own ChatGPT sign-in and an available model.";
+                    : "Mira needs a connected provider and an available model.";
             } catch {
                 health.ready = false;
                 message =
@@ -251,7 +284,6 @@ export async function runMiraExecutor(options: {
             } finally {
                 inspectionChanged.resolve();
                 inspectionChanged = Promise.withResolvers<void>();
-                await runtime?.close();
             }
             await wait(30_000);
         }
@@ -344,6 +376,7 @@ export async function runMiraExecutor(options: {
                     const run = await claimMiraRun(client, workerId, name, {
                         models: models.map((entry) => entry.model),
                         defaultModel: model,
+                        syntheticOwner: options.synthetic?.owner,
                     });
                     if (run) {
                         health.active++;
@@ -358,7 +391,8 @@ export async function runMiraExecutor(options: {
                                 options.moltbook,
                                 options.hereNow,
                                 options.daytona,
-                                options.github
+                                options.github,
+                                options.synthetic
                             );
                         } finally {
                             health.active--;

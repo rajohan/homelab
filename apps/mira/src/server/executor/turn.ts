@@ -23,6 +23,9 @@ import type { MoltbookReadConfiguration } from "../integrations/moltbook/configu
 import { CodexRuntime } from "../runtime/codexRuntime";
 import { pilotArguments, type PilotConfig } from "../runtime/configuration";
 import { RuntimeResponseError } from "../runtime/responseError";
+import { isSyntheticModel } from "../runtime/syntheticCatalog";
+import type { SyntheticConfiguration } from "../runtime/syntheticConfiguration";
+import { SyntheticRuntime, loadSyntheticModels } from "../runtime/syntheticRuntime";
 import { createMiraToolRouter } from "../runtime/toolRouter";
 import { prepareMiraAttachments } from "./attachments";
 import { readMiraTurnInput } from "./context";
@@ -51,6 +54,7 @@ export const miraInstructionsHash = new Bun.CryptoHasher("sha256")
  * @param hereNow - Optional scoped website metadata settings; credentials stay in the executor.
  * @param moltbook - Optional social read settings, retained only by the service.
  * @param github - Optional GitHub mapping and dedicated read credential, retained only in the service closure.
+ * @param synthetic - Optional owner-bound Synthetic subscription credential, retained only by the server.
  * @param daytona - Nonsecret cloud mapping for local drafts and result reads.
  * @returns Completion after recording the observed terminal outcome and reaping the child.
  */
@@ -64,7 +68,8 @@ export async function executeMiraTurn(
     moltbook?: MoltbookReadConfiguration,
     hereNow?: HereNowReadConfiguration,
     daytona?: DaytonaBinding,
-    github?: GitHubBinding | GitHubConfiguration
+    github?: GitHubBinding | GitHubConfiguration,
+    synthetic?: SyntheticConfiguration
 ): Promise<void> {
     const controller = new AbortController();
     const deadline = new AbortController();
@@ -74,7 +79,7 @@ export async function executeMiraTurn(
         Math.max(0, deadlineAt - Date.now())
     );
     const signal = AbortSignal.any([stopping, controller.signal, deadline.signal]);
-    let runtime: CodexRuntime | undefined;
+    let runtime: CodexRuntime | SyntheticRuntime | undefined;
     let providerThread: string | undefined;
     let providerTurn: string | undefined;
     let steeringFailed = false;
@@ -157,20 +162,45 @@ export async function executeMiraTurn(
     try {
         signal.throwIfAborted();
         let record = await readMiraTurnInput(client, run);
-        runtime = await CodexRuntime.connect({
-            command: config.command,
-            args: pilotArguments(),
-            cwd: config.workspace,
-            env: runtimeEnvironment(config),
-            signal: transport.signal,
-        });
-        const account = await runtime.account();
-        if (!account.authenticated)
-            throw new Error("Runtime authentication unavailable.");
-        const models = await runtime.models();
+        const useSynthetic = isSyntheticModel(record.settings.model ?? config.model);
+        if (useSynthetic && (!synthetic || synthetic.owner !== run.owner))
+            throw new MiraFailure(
+                "PRECONDITION_FAILED",
+                "Synthetic is not connected for this account."
+            );
+        runtime = useSynthetic
+            ? new SyntheticRuntime(synthetic!, run.owner)
+            : await CodexRuntime.connect({
+                  command: config.command,
+                  args: pilotArguments(),
+                  cwd: config.workspace,
+                  env: runtimeEnvironment(config),
+                  signal: transport.signal,
+              });
+        if (runtime instanceof CodexRuntime) {
+            const account = await runtime.account();
+            if (!account.authenticated)
+                throw new Error("Runtime authentication unavailable.");
+        }
+        const models =
+            runtime instanceof CodexRuntime
+                ? await runtime.models()
+                : await loadSyntheticModels(signal);
         const settings = resolveMiraChatSettings(models, record.settings, config.model);
         const selectedModel = models.find((entry) => entry.model === settings.model)!;
-        if (record.providerThread && record.providerPolicyHash !== miraInstructionsHash) {
+        if (useSynthetic) {
+            // Keep native history for cleanup, but force product recovery if the user returns to ChatGPT.
+            const cleared = await client<
+                { id: string }[]
+            >`UPDATE mira_conversations SET provider_context_ready=false WHERE id=${run.conversationId} AND owner=${run.owner} AND EXISTS (SELECT 1 FROM mira_runs WHERE id=${run.id} AND state='running' AND NOT cancel_requested AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp()) RETURNING id`;
+            if (!cleared[0]) throw new Error("Run lease lost during provider selection.");
+            record = await readMiraTurnInput(client, run, true);
+        }
+        if (
+            runtime instanceof CodexRuntime &&
+            record.providerThread &&
+            record.providerPolicyHash !== miraInstructionsHash
+        ) {
             // Native cold resume can retain old instructions. Rebuild product context instead.
             signal.throwIfAborted();
             await runtime.deleteThread(record.providerThread);
@@ -196,10 +226,10 @@ export async function executeMiraTurn(
                     (!tool.name.startsWith("mira_computer_") &&
                         !tool.name.startsWith("mira_browser_"))
             ),
-            record.providerThread !== null
+            !useSynthetic && record.providerThread !== null
         );
-        let threadId = record.providerThread;
-        if (threadId) {
+        let threadId = useSynthetic ? null : record.providerThread;
+        if (threadId && runtime instanceof CodexRuntime) {
             try {
                 await runtime.resumeThread(threadId, tools, instructions);
             } catch (error) {
@@ -241,9 +271,11 @@ export async function executeMiraTurn(
                 tools,
                 instructions
             );
-            const stored = await client<
-                { id: string }[]
-            >`UPDATE mira_conversations SET provider_thread = ${threadId}, provider_policy_hash = ${miraInstructionsHash}, provider_context_ready = false, model = ${model} WHERE id = ${run.conversationId} AND EXISTS (SELECT 1 FROM mira_runs WHERE id = ${run.id} AND state = 'running' AND lease_token = ${run.leaseToken} AND lease_expires_at > now()) RETURNING id`;
+            const stored = useSynthetic
+                ? [{ id: run.conversationId }]
+                : await client<
+                      { id: string }[]
+                  >`UPDATE mira_conversations SET provider_thread = ${threadId}, provider_policy_hash = ${miraInstructionsHash}, provider_context_ready = false, model = ${model} WHERE id = ${run.conversationId} AND EXISTS (SELECT 1 FROM mira_runs WHERE id = ${run.id} AND state = 'running' AND lease_token = ${run.leaseToken} AND lease_expires_at > now()) RETURNING id`;
             if (!stored[0]) throw new Error("Run lease lost.");
         }
         const recorded = await client<
@@ -263,7 +295,8 @@ export async function executeMiraTurn(
                     >`UPDATE mira_runs SET provider_turn=${turnId} WHERE id=${run.id} AND state='running' AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp() RETURNING id`;
                     if (!accepted[0])
                         throw new Error("Run lease lost before turn acknowledgement.");
-                    await query`UPDATE mira_conversations SET provider_context_ready=true WHERE id=${run.conversationId} AND provider_thread=${threadId}`;
+                    if (!useSynthetic)
+                        await query`UPDATE mira_conversations SET provider_context_ready=true WHERE id=${run.conversationId} AND provider_thread=${threadId}`;
                 });
                 providerTurn = turnId;
             },

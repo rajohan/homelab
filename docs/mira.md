@@ -14,6 +14,12 @@ patches are part of this design.
 
 ## Deployment boundaries
 
+All product functionality must remain available in the website, including Chat,
+Tasks, Automations, files, model selection and the browser workspace. The planned
+full Windows client uses the same server APIs, permissions and persisted state;
+features must not become Windows-only. Local PC control, pairing and the system
+tray are companion capabilities. Closing either client does not stop server work.
+
 The dashboard, Mira executor, durable state, scheduler, integrations and files run
 on the server. A browser closing or a personal computer going offline must not stop
 server-side work. OpenAI inference remains provider-hosted.

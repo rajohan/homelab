@@ -232,6 +232,14 @@ export async function enqueueTurn(
         if (!files[0])
             throw new MiraFailure("NOT_FOUND", "An attachment is no longer available.");
     }
+    if (source.automationId) {
+        const [automation] = await query<
+            { settings: MiraChatSettings }[]
+        >`SELECT settings FROM mira_automations WHERE id=${source.automationId} AND owner=${context.owner} AND deleted_at IS NULL FOR SHARE`;
+        if (!automation) throw new MiraFailure("NOT_FOUND", "Automation not found.");
+        conversation.settings = automation.settings;
+        await query`UPDATE mira_conversations SET settings=${JSON.stringify(conversation.settings)}::text::jsonb WHERE id=${input.conversationId}`;
+    }
     const manual = source.manual ?? !source.automationId;
     if (!(await miraQueueAvailable(query, context.owner, manual)))
         throw new MiraFailure(

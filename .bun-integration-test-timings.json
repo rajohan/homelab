@@ -61,6 +61,7 @@
         "apps/dashboard/src/server/integrations/releases/deployment.integration.test.ts": 11200,
         "apps/dashboard/src/server/integrations/releases/deploymentPolicy.integration.test.ts": 1426,
         "apps/dashboard/src/server/tests/miraTaskChanges.integration.test.ts": 1989,
-        "apps/dashboard/src/server/tests/miraTaskSteering.integration.test.ts": 20056
+        "apps/dashboard/src/server/tests/miraTaskSteering.integration.test.ts": 20056,
+        "apps/dashboard/src/server/tests/miraProviders.integration.test.ts": 863
     }
 }

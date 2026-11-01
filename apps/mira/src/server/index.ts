@@ -93,6 +93,7 @@ export async function main(): Promise<void> {
                         hereNow: configuration.hereNow,
                         daytona: configuration.daytona,
                         github: configuration.github,
+                        synthetic: configuration.synthetic,
                     }),
                 catch: () => new Error("Mira executor failed."),
             })

@@ -117,7 +117,22 @@ export const miraScheduleSchema = v.union([
         event: v.picklist(["agentmail", "task_due", "task_changed"]),
     }),
 ]);
+const modelIdentifier = v.pipe(
+    v.string(),
+    v.minLength(1),
+    v.maxLength(160),
+    v.regex(/^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/)
+);
+export const miraChatSettingsSchema = v.strictObject({
+    model: v.nullable(modelIdentifier),
+    effort: v.nullable(modelIdentifier),
+    serviceTier: v.nullable(modelIdentifier),
+});
+export const miraDefaultChatSettings = { model: null, effort: null, serviceTier: null };
+export type MiraChatSettings = v.InferOutput<typeof miraChatSettingsSchema>;
+
 export const miraAutomationInputSchema = v.strictObject({
+    settings: v.optional(miraChatSettingsSchema),
     delivery: v.optional(v.picklist(["reports", "changes", "silent"]), "changes"),
     title,
     prompt: v.pipe(body, v.minLength(1)),
@@ -235,19 +250,6 @@ export interface MiraAttachment {
 }
 export type MiraSchedule = v.InferOutput<typeof miraScheduleSchema>;
 
-const modelIdentifier = v.pipe(
-    v.string(),
-    v.minLength(1),
-    v.maxLength(160),
-    v.regex(/^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/)
-);
-export const miraChatSettingsSchema = v.strictObject({
-    model: v.nullable(modelIdentifier),
-    effort: v.nullable(modelIdentifier),
-    serviceTier: v.nullable(modelIdentifier),
-});
-export const miraDefaultChatSettings = { model: null, effort: null, serviceTier: null };
-export type MiraChatSettings = v.InferOutput<typeof miraChatSettingsSchema>;
 export const miraChatSettingsUpdateSchema = v.strictObject({
     ...versionedIdSchema.entries,
     settings: miraChatSettingsSchema,

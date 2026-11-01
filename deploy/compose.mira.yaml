@@ -55,6 +55,8 @@ services:
       HOMELAB_MIRA_HERENOW_API_KEY:
       HOMELAB_MIRA_HERENOW_PUBLISH_API_KEY:
       HOMELAB_MIRA_GITHUB_TOKEN:
+      HOMELAB_MIRA_SYNTHETIC_OWNER:
+      HOMELAB_MIRA_SYNTHETIC_API_KEY:
     volumes:
       - type: bind
         source: ${HOMELAB_MIRA_CONFIG:?Set the nonsecret Mira runtime JSON path}

@@ -20,6 +20,12 @@ import {
     taskContinuationAllowed,
 } from "./taskSteering";
 
+export interface MiraRunCatalog {
+    models: string[];
+    defaultModel: string | null;
+    syntheticOwner?: string | undefined;
+}
+
 export interface MiraClaim {
     id: string;
     owner: string;
@@ -78,7 +84,7 @@ export async function claimMiraRun(
     client: SQL,
     workerId: string,
     lane: "foreground" | "general",
-    catalog?: { models: string[]; defaultModel: string | null }
+    catalog?: MiraRunCatalog
 ): Promise<MiraClaim | null> {
     return client.begin(async (query) => {
         await query`SELECT pg_advisory_xact_lock(hashtextextended('homelab:mira:claim', 0))`;
@@ -91,7 +97,7 @@ export async function claimMiraRun(
         for (let skipped = 0; skipped < 20; skipped++) {
             const [run] = await query<
                 Omit<MiraClaim, "leaseToken">[]
-            >`SELECT id, owner, conversation_id AS "conversationId", user_message_id AS "userMessageId", assistant_message_id AS "assistantMessageId", automation_id AS "automationId", task_id AS "taskId", budget_seconds AS "budgetSeconds", manual, task_resumed AS "taskResumed" FROM mira_runs WHERE state = 'queued' AND NOT cancel_requested AND (${lane === "general"} OR (manual AND NOT task_resumed)) AND (NOT task_resumed OR NOT EXISTS (SELECT 1 FROM mira_switches WHERE owner=mira_runs.owner AND key='autonomy' AND NOT enabled)) AND (${catalog === undefined} OR COALESCE(settings->>'model',${catalog?.defaultModel ?? null}) IN (SELECT jsonb_array_elements_text(${JSON.stringify(catalog?.models ?? [])}::text::jsonb))) ORDER BY priority DESC, id LIMIT 1 FOR UPDATE SKIP LOCKED`;
+            >`SELECT id, owner, conversation_id AS "conversationId", user_message_id AS "userMessageId", assistant_message_id AS "assistantMessageId", automation_id AS "automationId", task_id AS "taskId", budget_seconds AS "budgetSeconds", manual, task_resumed AS "taskResumed" FROM mira_runs WHERE state = 'queued' AND NOT cancel_requested AND (${lane === "general"} OR (manual AND NOT task_resumed)) AND (NOT task_resumed OR NOT EXISTS (SELECT 1 FROM mira_switches WHERE owner=mira_runs.owner AND key='autonomy' AND NOT enabled)) AND (${catalog === undefined} OR (COALESCE(settings->>'model',${catalog?.defaultModel ?? null}) IN (SELECT jsonb_array_elements_text(${JSON.stringify(catalog?.models ?? [])}::text::jsonb)) AND (COALESCE(settings->>'model',${catalog?.defaultModel ?? null}) NOT LIKE 'syn:%' OR owner=${catalog?.syntheticOwner ?? null}))) ORDER BY priority DESC, id LIMIT 1 FOR UPDATE SKIP LOCKED`;
             if (!run) return null;
             // A pause/delete may hold controls while waiting for this row. Never wait in reverse order.
             const [controls] = await query<
@@ -263,13 +269,17 @@ export async function finishMiraRun(
     });
 }
 
-async function lockScheduledOwners(query: TransactionSQL, now: Date): Promise<string[]> {
+async function lockScheduledOwners(
+    query: TransactionSQL,
+    now: Date,
+    catalog?: MiraRunCatalog
+): Promise<string[]> {
     // Snapshot bounded candidate owners before taking any task, automation or delivery locks.
     // New owners discovered on a later tick must not introduce control locks after row locks.
     const rows = await query<{ owner: string }[]>`
-        SELECT owner FROM (SELECT owner FROM mira_automations WHERE deleted_at IS NULL AND next_run_at<=${now} ORDER BY next_run_at LIMIT 20) recurring
+        SELECT owner FROM (SELECT owner FROM mira_automations WHERE deleted_at IS NULL AND next_run_at<=${now} AND (${catalog === undefined} OR (COALESCE(settings->>'model',${catalog?.defaultModel ?? null}) IN (SELECT jsonb_array_elements_text(${JSON.stringify(catalog?.models ?? [])}::text::jsonb)) AND (COALESCE(settings->>'model',${catalog?.defaultModel ?? null}) NOT LIKE 'syn:%' OR owner=${catalog?.syntheticOwner ?? null}))) ORDER BY next_run_at LIMIT 20) recurring
         UNION SELECT owner FROM (SELECT t.owner FROM mira_tasks t WHERE t.deleted_at IS NULL AND t.status<>'done' AND t.due_at<=${now} AND t.due_at>${new Date(now.getTime() - 86_400_000)} AND NOT EXISTS (SELECT 1 FROM mira_events e WHERE e.owner=t.owner AND e.kind='task_due' AND e.source_key=t.id::text || ':' || t.due_at::text) ORDER BY t.due_at LIMIT 20) tasks
-        UNION SELECT owner FROM (SELECT e.owner FROM mira_event_deliveries d JOIN mira_events e ON e.id=d.event_id WHERE d.state='pending' AND d.next_attempt_at<=${now} ORDER BY d.next_attempt_at,e.id LIMIT 20) deliveries
+        UNION SELECT owner FROM (SELECT e.owner FROM mira_event_deliveries d JOIN mira_events e ON e.id=d.event_id JOIN mira_automations a ON a.id=d.automation_id AND a.owner=e.owner WHERE d.state='pending' AND d.next_attempt_at<=${now} AND (${catalog === undefined} OR (COALESCE(a.settings->>'model',${catalog?.defaultModel ?? null}) IN (SELECT jsonb_array_elements_text(${JSON.stringify(catalog?.models ?? [])}::text::jsonb)) AND (COALESCE(a.settings->>'model',${catalog?.defaultModel ?? null}) NOT LIKE 'syn:%' OR a.owner=${catalog?.syntheticOwner ?? null}))) ORDER BY d.next_attempt_at,e.id LIMIT 20) deliveries
         ORDER BY owner`;
     const changes = await pendingTaskChanges(query, now);
     const continuations = await pendingTaskContinuations(query, now);
@@ -285,13 +295,18 @@ async function lockScheduledOwners(query: TransactionSQL, now: Date): Promise<st
  * Dispatch due recurring work once, with durable scheduling and no missed-run burst.
  * @param client - Dedicated agent executor database pool.
  * @param now - Clock supplied for deterministic scheduling tests.
+ * @param catalog - Current provider availability; unavailable selections wait without advancing their schedule.
  * @returns Number of newly queued runs.
  */
-export async function scheduleMiraRuns(client: SQL, now = new Date()): Promise<number> {
+export async function scheduleMiraRuns(
+    client: SQL,
+    now = new Date(),
+    catalog?: MiraRunCatalog
+): Promise<number> {
     return client.begin(async (query) => {
         await query`SELECT pg_advisory_xact_lock(hashtextextended('homelab:mira:scheduler', 0))`;
         await resumeMiraControls(query, now);
-        const owners = await lockScheduledOwners(query, now);
+        const owners = await lockScheduledOwners(query, now, catalog);
         const due = await query<
             {
                 id: string;
@@ -302,9 +317,9 @@ export async function scheduleMiraRuns(client: SQL, now = new Date()): Promise<n
                 budgetSeconds: number;
                 nextRunAt: Date;
             }[]
-        >`SELECT id, owner, title, prompt, schedule, budget_seconds AS "budgetSeconds", next_run_at AS "nextRunAt" FROM mira_automations WHERE owner IN (SELECT jsonb_array_elements_text(${JSON.stringify(owners)}::text::jsonb)) AND deleted_at IS NULL AND next_run_at <= ${now} ORDER BY next_run_at LIMIT 20 FOR UPDATE SKIP LOCKED`;
+        >`SELECT id, owner, title, prompt, schedule, budget_seconds AS "budgetSeconds", next_run_at AS "nextRunAt" FROM mira_automations WHERE owner IN (SELECT jsonb_array_elements_text(${JSON.stringify(owners)}::text::jsonb)) AND deleted_at IS NULL AND next_run_at <= ${now} AND (${catalog === undefined} OR (COALESCE(settings->>'model',${catalog?.defaultModel ?? null}) IN (SELECT jsonb_array_elements_text(${JSON.stringify(catalog?.models ?? [])}::text::jsonb)) AND (COALESCE(settings->>'model',${catalog?.defaultModel ?? null}) NOT LIKE 'syn:%' OR owner=${catalog?.syntheticOwner ?? null}))) ORDER BY next_run_at LIMIT 20 FOR UPDATE SKIP LOCKED`;
         let queued = await scheduleTaskContinuations(query, now, owners);
-        queued += await scheduleMiraEvents(query, now, owners);
+        queued += await scheduleMiraEvents(query, now, owners, catalog);
         for (const automation of due) {
             const next = nextMiraOccurrence(
                 automation.schedule,

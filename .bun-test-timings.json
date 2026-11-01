@@ -120,6 +120,7 @@
     "apps/dashboard/src/server/integrations/releases/deployment.test.ts": 93,
     "apps/mira/src/server/executor/maintenanceGate.test.ts": 3,
     "apps/dashboard/src/server/integrations/releases/deploymentPolicy.test.ts": 11,
-    "scripts/releaseSchema.test.ts": 3
+    "scripts/releaseSchema.test.ts": 3,
+    "apps/mira/src/server/runtime/syntheticRuntime.test.ts": 25
   }
 }

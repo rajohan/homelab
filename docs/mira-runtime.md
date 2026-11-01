@@ -4,7 +4,50 @@
 by the separate Mira executor. The product core adds authenticated dashboard APIs,
 durable state, scheduling and explicit product tools; see [Mira](mira.md). Production
 cutover has not occurred. The runtime's stdio connection is private, and auth and
-dashboard builds remain independent.
+dashboard builds remain independent. This document retains the original qualification
+procedure; see the provider extension below for the current shared executor behavior.
+
+## Synthetic subscription provider
+
+Chat and Automations share the same server-backed model settings and UI controls.
+The optional Synthetic adapter uses the documented OpenAI-compatible Chat Completions
+API at `https://api.synthetic.new/openai/v1`. It does not modify the Codex runtime or
+reuse ChatGPT credentials. The four supported subscription aliases are
+`syn:large:text`, `syn:small:text`, `syn:large:vision` and `syn:small:vision`.
+The stored and transmitted selection remains the alias. Target names, image support
+and reasoning levels come from Synthetic's current public catalog; no underlying
+model or capability is pinned. Unsupported saved settings fail with a visible outcome
+instead of silently choosing another model or thinking level.
+
+Provision `HOMELAB_MIRA_SYNTHETIC_OWNER` (the existing Homelab account ID) and
+`HOMELAB_MIRA_SYNTHETIC_API_KEY` through the deployment's secret manager. Both are
+required together, and Compose passes the credential only to the Mira service.
+Other accounts cannot discover or use this subscription. The public catalog request
+does not carry credentials. Subscription allowance is checked through `/v2/quotas`
+before inference; an absent, invalid or exhausted allowance stops the request.
+There is no fallback to paid model IDs, another account or another provider.
+
+The inspector refreshes both catalogs independently. A provider outage removes its
+currently available choices but leaves the other provider usable. Due automations
+with an unavailable selection wait without advancing their occurrence. Explicit
+available selections can run even while the deployment default is unavailable.
+Automation preferences are copied into each conversation and queued run, including
+event and Run now executions; later edits cannot change already queued work.
+Existing automations retain the deployment default until edited.
+
+Synthetic restores bounded conversation history from Homelab on every turn, including
+when switching providers. This is conversation continuity, not cross-conversation
+memory. Tool permissions, ownership, receipts, task steering and cancellation remain
+enforced by the same server services. Streaming does not expose private reasoning.
+Uncertain provider/tool outcomes are never automatically replayed. Images selected
+for the turn support PNG, JPEG and WebP up to 8 MiB each, with a 24 MiB encoded turn
+context limit; tool screenshots use the existing validated image boundary.
+
+Qualification tests use an isolated database and local HTTP fixtures, never a real
+provider account. Live subscription qualification is a separate deployment step.
+Relevant upstream contracts: [models](https://dev.synthetic.new/docs/api/models),
+[Chat Completions](https://dev.synthetic.new/docs/openai/chat-completions) and
+[subscription quotas](https://dev.synthetic.new/docs/synthetic/quotas).
 
 The [official app-server protocol](https://learn.chatgpt.com/docs/app-server) provides
 authentication, streaming, thread restoration, host tools and interruption over a

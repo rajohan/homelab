@@ -181,6 +181,62 @@ test("automation editor preserves delivery policy and exposes event and one-time
     }
 });
 
+test("automation editor uses current Synthetic aliases and resets unsupported thinking and speed", async () => {
+    const query = new QueryClient({
+        defaultOptions: { queries: { enabled: false, retry: false } },
+    });
+    const models = [
+        v.parse(miraModelSchema, {
+            model: "native-fixture",
+            isDefault: true,
+            supportedReasoningEfforts: [
+                { reasoningEffort: "high", description: "Native high" },
+            ],
+        }),
+        v.parse(miraModelSchema, {
+            model: "syn:large:text",
+            isDefault: false,
+            description:
+                "Currently Fixture A. Synthetic updates this alias automatically.",
+            supportedReasoningEfforts: [
+                { reasoningEffort: "max", description: "Current alias capability" },
+            ],
+        }),
+        v.parse(miraModelSchema, { model: "syn:small:text", isDefault: false }),
+    ];
+    query.setQueryData(["operations", "mira", "models"], {
+        models,
+        defaultModel: "native-fixture",
+        fresh: true,
+    });
+    const cleanup = fixture(<AutomationEditor onClose={() => {}} />, false, query);
+    try {
+        const user = userEvent.setup();
+        await user.click(screen.getByRole("button", { name: /Model provider/ }));
+        await user.click(screen.getByRole("option", { name: "Synthetic subscription" }));
+        expect(
+            screen.getByRole("button", { name: /Automation model/ })
+        ).toHaveTextContent("syn:large:text");
+        expect(screen.getByText(/Currently Fixture A/)).toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: /Thinking level/ }));
+        expect(screen.queryByRole("option", { name: "High" })).not.toBeInTheDocument();
+        await user.click(screen.getByRole("option", { name: "Max" }));
+        await user.click(screen.getByRole("button", { name: /Automation model/ }));
+        await user.click(screen.getByRole("option", { name: "syn:small:text" }));
+        expect(screen.getByRole("button", { name: /Thinking level/ })).toHaveTextContent(
+            "Default"
+        );
+        expect(screen.getByRole("button", { name: /Response speed/ })).toHaveTextContent(
+            "Standard"
+        );
+        expect(
+            screen.queryByRole("option", { name: "Fixture A" })
+        ).not.toBeInTheDocument();
+    } finally {
+        cleanup();
+    }
+});
+
 test.each([false, true])(
     "chat keyboard submission respects an active upload (%s)",
     (uploading) => {
