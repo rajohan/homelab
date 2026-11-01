@@ -1513,6 +1513,7 @@ test("Moltbook library opens the selected review and returns to its owned drafts
 
 function cloudJob(): MiraDaytonaJob {
     return {
+        executionTarget: "daytona",
         id: "11111111-1111-4111-8111-111111111111",
         version: 1,
         content: {

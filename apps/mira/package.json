@@ -8,6 +8,7 @@
         "./runtime/*": "./src/server/runtime/*.ts",
         "./integrations/*": "./src/server/integrations/*.ts",
         "./improvement/*": "./src/server/improvement/*.ts",
+        "./sandbox/*": "./src/server/sandbox/*.ts",
         "./skills/*": "./src/server/skills/*.ts"
     },
     "dependencies": {

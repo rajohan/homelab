@@ -12,6 +12,14 @@ import {
     type DaytonaBinding,
 } from "../integrations/daytona/configuration";
 import {
+    isLocalCodeBinding,
+    localCodeBindingHash,
+    localCodeBindingSchema,
+    localCodePermission,
+    type CodeJobBinding,
+} from "../sandbox/localBinding";
+import { localCodeRequest } from "../sandbox/localProtocol";
+import {
     auditMira,
     MiraFailure,
     miraTransaction,
@@ -111,7 +119,7 @@ export async function readMiraDaytona(
 ): Promise<MiraDaytonaJob> {
     const [row] = await query<
         MiraDaytonaJob[]
-    >`SELECT id,version,content,content_hash AS "contentHash",conversation_id AS "conversationId",task_id AS "taskId",state,phase,cleanup,cancel_requested AS "cancelRequested",exit_code AS "exitCode",stdout,stderr,output,files,message,created_at::text AS "createdAt",updated_at::text AS "updatedAt" FROM mira_daytona_jobs WHERE id=${id} AND owner=${owner}`;
+    >`SELECT id,execution_target AS "executionTarget",version,content,content_hash AS "contentHash",conversation_id AS "conversationId",task_id AS "taskId",state,phase,cleanup,cancel_requested AS "cancelRequested",exit_code AS "exitCode",stdout,stderr,output,files,message,created_at::text AS "createdAt",updated_at::text AS "updatedAt" FROM mira_daytona_jobs WHERE id=${id} AND owner=${owner}`;
     if (!row) throw new MiraFailure("NOT_FOUND", "Daytona job not found.");
     return row;
 }
@@ -138,13 +146,23 @@ export async function validateDaytonaInputs(
             );
     }
 }
-function configured(context: MiraContext, binding?: DaytonaBinding): DaytonaBinding {
+function configured(context: MiraContext, binding?: CodeJobBinding): CodeJobBinding {
     if (!binding || binding.owner !== context.owner)
         throw new MiraFailure(
             "PRECONDITION_FAILED",
-            "Daytona is not configured for this account."
+            "The code execution target is not configured for this account."
         );
     return binding;
+}
+function bindingHash(binding: CodeJobBinding): string {
+    return isLocalCodeBinding(binding)
+        ? localCodeBindingHash(binding)
+        : daytonaBindingHash(binding);
+}
+function permission(query: MiraQuery, binding: CodeJobBinding): Promise<number | null> {
+    return isLocalCodeBinding(binding)
+        ? localCodePermission(query, binding)
+        : daytonaPermission(query, binding);
 }
 function human(context: MiraContext): void {
     if (context.run || context.actor !== `human:${context.owner}`)
@@ -163,12 +181,14 @@ function human(context: MiraContext): void {
 export async function saveMiraDaytona(
     context: MiraContext,
     input: MiraDaytonaSave,
-    binding?: DaytonaBinding
+    binding?: CodeJobBinding
 ): Promise<MiraDaytonaJob> {
     const account = configured(context, binding),
         content = v.parse(miraDaytonaContentSchema, input.content),
         hash = miraDaytonaHash(content),
-        bindingHash = daytonaBindingHash(account);
+        targetHash = bindingHash(account);
+    const local = isLocalCodeBinding(account);
+    if (local) localCodeRequest(input.id, content);
     return miraTransaction(context, async (query) => {
         await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${context.owner}`},0))`;
         await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:daytona:${input.id}`},0))`;
@@ -189,7 +209,7 @@ export async function saveMiraDaytona(
             row &&
             input.version === 0 &&
             row.hash === hash &&
-            row.binding === bindingHash &&
+            row.binding === targetHash &&
             row.conversationId === input.conversationId &&
             row.taskId === input.taskId
         )
@@ -198,18 +218,21 @@ export async function saveMiraDaytona(
             row
                 ? row.version !== input.version ||
                   row.state !== "draft" ||
-                  row.binding !== bindingHash
+                  row.binding !== targetHash
                 : input.version !== 0
         )
             throw new MiraFailure("CONFLICT", "The job changed. Refresh before editing.");
-        if (context.run && (await daytonaPermission(query, account)) === null)
-            throw new MiraFailure("FORBIDDEN", "Daytona is paused or unavailable.");
+        if (context.run && (await permission(query, account)) === null)
+            throw new MiraFailure(
+                "FORBIDDEN",
+                "Code execution is paused or unavailable."
+            );
         await requireConversation(query, context.owner, input.conversationId);
         await requireTask(query, context.owner, input.taskId);
         await validateDaytonaInputs(query, context.owner, content);
         await (row
             ? query`UPDATE mira_daytona_jobs SET content=${JSON.stringify(content)}::text::jsonb,content_hash=${hash},conversation_id=${input.conversationId},task_id=${input.taskId},version=version+1,updated_at=now(),message=NULL WHERE id=${input.id}`
-            : query`INSERT INTO mira_daytona_jobs(id,owner,binding,binding_hash,content,content_hash,conversation_id,task_id) VALUES(${input.id},${context.owner},${JSON.stringify({ owner: account.owner, organizationId: account.organizationId, snapshotId: account.snapshotId, target: account.target, trustBoundary: account.trustBoundary, networkAccess: account.networkAccess })}::text::jsonb,${bindingHash},${JSON.stringify(content)}::text::jsonb,${hash},${input.conversationId},${input.taskId})`);
+            : query`INSERT INTO mira_daytona_jobs(id,owner,binding,binding_hash,content,content_hash,conversation_id,task_id,execution_target) VALUES(${input.id},${context.owner},${JSON.stringify(isLocalCodeBinding(account) ? v.parse(localCodeBindingSchema, account) : { owner: account.owner, organizationId: account.organizationId, snapshotId: account.snapshotId, target: account.target, trustBoundary: account.trustBoundary, networkAccess: account.networkAccess })}::text::jsonb,${targetHash},${JSON.stringify(content)}::text::jsonb,${hash},${input.conversationId},${input.taskId},${local ? "main" : "daytona"})`);
         await auditMira(query, context, "daytona.draft_saved", input.id);
         return readMiraDaytona(query, context.owner, input.id);
     });
@@ -224,7 +247,7 @@ export async function saveMiraDaytona(
 export async function approveMiraDaytona(
     context: MiraContext,
     input: MiraDaytonaApprove,
-    binding?: DaytonaBinding
+    binding?: CodeJobBinding
 ): Promise<MiraDaytonaJob> {
     human(context);
     const account = configured(context, binding);
@@ -234,24 +257,27 @@ export async function approveMiraDaytona(
             { binding: string }[]
         >`SELECT binding_hash AS binding FROM mira_daytona_jobs WHERE id=${input.id} AND owner=${context.owner} FOR UPDATE`;
         const job = await readMiraDaytona(query, context.owner, input.id);
-        const stamp = await daytonaPermission(query, account);
+        const stamp = await permission(query, account);
         if (stamp === null)
             throw new MiraFailure(
                 "PRECONDITION_FAILED",
-                "Daytona is paused, unavailable or not qualified."
+                "Code execution is paused, unavailable or not qualified."
             );
         if (
             job.state !== "draft" ||
+            job.executionTarget !== (isLocalCodeBinding(account) ? "main" : "daytona") ||
+            job.executionTarget !== (input.executionTarget ?? "daytona") ||
             job.version !== input.version ||
             job.contentHash !== input.contentHash ||
             miraDaytonaHash(input.reviewedContent) !== job.contentHash ||
-            row?.binding !== daytonaBindingHash(account)
+            row?.binding !== bindingHash(account)
         )
             throw new MiraFailure(
                 "CONFLICT",
                 "The reviewed job changed. Refresh and review again."
             );
         await requireConversation(query, context.owner, job.conversationId);
+        if (isLocalCodeBinding(account)) localCodeRequest(job.id, job.content);
         await requireTask(query, context.owner, job.taskId);
         await validateDaytonaInputs(query, context.owner, job.content);
         await query`UPDATE mira_daytona_jobs SET state='queued',approved_at=clock_timestamp(),control_version=${stamp},version=version+1,updated_at=now(),message=NULL WHERE id=${input.id}`;

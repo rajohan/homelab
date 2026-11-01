@@ -123,13 +123,13 @@ export async function dispatchMiraDaytona(
     stopping.throwIfAborted();
     const [candidate] = await client<
         { id: string; owner: string }[]
-    >`SELECT id,owner FROM mira_daytona_jobs WHERE (cleanup='pending' OR state='queued') AND (lease_expires_at IS NULL OR lease_expires_at<=clock_timestamp()) AND (retry_at IS NULL OR retry_at<=clock_timestamp()) ORDER BY CASE WHEN cleanup='pending' THEN 0 ELSE 1 END,approved_at,id LIMIT 1`;
+    >`SELECT id,owner FROM mira_daytona_jobs WHERE execution_target='daytona' AND (cleanup='pending' OR state='queued') AND (lease_expires_at IS NULL OR lease_expires_at<=clock_timestamp()) AND (retry_at IS NULL OR retry_at<=clock_timestamp()) ORDER BY CASE WHEN cleanup='pending' THEN 0 ELSE 1 END,approved_at,id LIMIT 1`;
     if (!candidate) return false;
     const claimed = await client.begin(async (query) => {
         await lock(query, candidate.owner);
         const [row] = await query<
             Omit<Job, "token">[]
-        >`SELECT id,owner,binding,binding_hash AS "bindingHash",content,content_hash AS "contentHash",conversation_id AS "conversationId",task_id AS "taskId",state,phase,cleanup,control_version AS "controlVersion",cancel_requested AS "cancelRequested",sandbox_id AS "sandboxId",command_id AS "commandId",upload_index AS "uploadIndex",delete_attempted AS "deleteAttempted",deadline,outcome,files FROM mira_daytona_jobs WHERE id=${candidate.id} AND (cleanup='pending' OR state='queued') AND (lease_expires_at IS NULL OR lease_expires_at<=clock_timestamp()) FOR UPDATE`;
+        >`SELECT id,owner,binding,binding_hash AS "bindingHash",content,content_hash AS "contentHash",conversation_id AS "conversationId",task_id AS "taskId",state,phase,cleanup,control_version AS "controlVersion",cancel_requested AS "cancelRequested",sandbox_id AS "sandboxId",command_id AS "commandId",upload_index AS "uploadIndex",delete_attempted AS "deleteAttempted",deadline,outcome,files FROM mira_daytona_jobs WHERE id=${candidate.id} AND execution_target='daytona' AND (cleanup='pending' OR state='queued') AND (lease_expires_at IS NULL OR lease_expires_at<=clock_timestamp()) FOR UPDATE`;
         if (!row) return null;
         if (row.state === "queued") {
             const [fresh] = await query<
@@ -152,7 +152,7 @@ export async function dispatchMiraDaytona(
             }
             const [limit] = await query<
                 { active: boolean; count: number }[]
-            >`SELECT EXISTS(SELECT 1 FROM mira_daytona_jobs WHERE cleanup='pending') AS active,(SELECT count(*)::int FROM mira_daytona_jobs WHERE started_at>clock_timestamp()-interval '24 hours') AS count`;
+            >`SELECT EXISTS(SELECT 1 FROM mira_daytona_jobs WHERE cleanup='pending') AS active,(SELECT count(*)::int FROM mira_daytona_jobs WHERE execution_target='daytona' AND started_at>clock_timestamp()-interval '24 hours') AS count`;
             if (limit?.active || !limit || limit.count >= 4) {
                 await query`UPDATE mira_daytona_jobs SET retry_at=clock_timestamp()+interval '30 seconds',message='Waiting for cloud capacity: one active sandbox and at most four attempts per rolling 24 hours.' WHERE id=${row.id}`;
                 return null;

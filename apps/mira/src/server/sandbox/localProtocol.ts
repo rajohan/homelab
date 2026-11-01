@@ -1,6 +1,14 @@
+import type { MiraDaytonaContent } from "@homelab/contracts/miraDaytona";
 import * as v from "valibot";
 
-import { daytonaCheckProfile, daytonaSandboxSchema } from "./profile";
+import {
+    daytonaCheckProfile,
+    daytonaSandboxSchema,
+    parseDaytonaArguments,
+    daytonaCheckContent,
+    daytonaEditContent,
+    daytonaSourceContent,
+} from "./profile";
 
 const text = v.pipe(
     v.string(),
@@ -32,6 +40,41 @@ export const localCheckResultSchema = v.strictObject({
     ),
 });
 export type LocalCheckResult = v.InferOutput<typeof localCheckResultSchema>;
+
+/**
+ * Recover only canonical fixed-profile proposals from the shared code-job queue.
+ * @param id - Durable job identity, which must match the command's request ID.
+ * @param content - Reviewed command and exact input/output selection; never executed as shell text.
+ * @returns Structured request after reconstructing and comparing the complete transfer contract.
+ */
+export function localCodeRequest(id: string, content: MiraDaytonaContent) {
+    const prefix = `bun --no-env-file ${daytonaCheckProfile.executable} `;
+    if (!content.command.startsWith(prefix))
+        throw new Error("Main accepts only the fixed Homelab code profile.");
+    const args =
+        content.command
+            .slice(prefix.length)
+            .match(/'[^']*'|[^ ]+/g)
+            ?.map((part) =>
+                part.startsWith("'") && part.endsWith("'") ? part.slice(1, -1) : part
+            ) ?? [];
+    const request = parseDaytonaArguments(args);
+    if (request.id !== id) throw new Error("The code request belongs to another job.");
+    const file = content.inputs[0];
+    let expected: MiraDaytonaContent;
+    if ("paths" in request) expected = daytonaSourceContent(request);
+    else if ("editsSha256" in request) {
+        if (!file) throw new Error("Choose the reviewed edit file.");
+        expected = daytonaEditContent(request, file);
+    } else expected = daytonaCheckContent(request, file);
+    if (
+        content.command !== expected.command ||
+        JSON.stringify(content.inputs) !== JSON.stringify(expected.inputs) ||
+        JSON.stringify(content.outputs) !== JSON.stringify(expected.outputs)
+    )
+        throw new Error("The local code command or file selection changed.");
+    return request;
+}
 
 /**
  * Validate one exact fixed-profile request before any local resource is allocated.
