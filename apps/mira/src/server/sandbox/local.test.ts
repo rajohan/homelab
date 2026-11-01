@@ -5,6 +5,7 @@ import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { Duplex } from "node:stream";
+import { setTimeout as delay } from "node:timers/promises";
 
 import type { BrowserDockerRequest } from "../browsing/docker";
 import { sandboxProxyEnvironment } from "../config/environment";
@@ -121,6 +122,7 @@ async function fixture() {
     const dependencies = {
         request,
         journalTimeoutMs: 100,
+        executionTimeoutMs: 650_000,
         attach: () =>
             Promise.resolve(
                 new Duplex({
@@ -128,6 +130,7 @@ async function fixture() {
                     write(chunk: Buffer, _encoding, callback) {
                         state.received += chunk.toString();
                         callback();
+                        if (state.reply === "pending") return;
                         if (state.reply === "hold") {
                             controller.abort();
                             return;
@@ -383,6 +386,44 @@ test("stalled lifecycle writes cannot hold resources or ignore cancellation", as
             }
             if (["cleaning", "discovered", "cleaned"].includes(phase))
                 expect(f.events).not.toContain("confirmed");
+        } finally {
+            await f.close();
+        }
+    }
+});
+
+test("slow Engine cleanup does not consume the final journal write's deadline", async () => {
+    const f = await fixture();
+    const request = f.dependencies.request;
+    f.dependencies.request = async (method, route, body) => {
+        if (method === "DELETE") await delay(150);
+        return request(method, route, body);
+    };
+    try {
+        expect(await f.run()).toEqual(result);
+        expect(f.state.exists).toBe(false);
+        expect(f.events.at(-1)).toBe("confirmed");
+    } finally {
+        await f.close();
+    }
+});
+
+test("the execution deadline starts after setup and still removes a stalled running check", async () => {
+    for (const pending of [false, true]) {
+        const f = await fixture();
+        const request = f.dependencies.request;
+        f.dependencies.executionTimeoutMs = 100;
+        f.dependencies.request = async (method, route, body) => {
+            if (route.startsWith("/containers/create?")) await delay(150);
+            return request(method, route, body);
+        };
+        if (pending) f.state.reply = "pending";
+        try {
+            if (pending) await assert.rejects(f.run(), /interrupted/);
+            else expect(await f.run()).toEqual(result);
+            expect(f.state.started).toBe(true);
+            expect(f.state.exists).toBe(false);
+            expect(f.events.at(-1)).toBe("confirmed");
         } finally {
             await f.close();
         }

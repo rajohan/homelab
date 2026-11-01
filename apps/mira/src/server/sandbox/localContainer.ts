@@ -189,11 +189,12 @@ export async function cleanupLocalCodeContainer(
     const { config, call } = await engine(configuration, transport);
     v.parse(id, record.id);
     if (record.containerId) v.parse(containerId, record.containerId);
-    // Cleanup has its own budget and must proceed after caller cancellation or a stalled database.
-    const deadline = journalDeadline(journalTimeoutMs);
+    // Each write gets a fresh budget; Docker I/O must not consume the final acknowledgement's time.
+    const recordWrite = (operation: (signal: AbortSignal) => Promise<void>) =>
+        writeJournal(operation, journalDeadline(journalTimeoutMs));
     let journalFailed = false;
     try {
-        await writeJournal((signal) => journal.cleaning(signal), deadline);
+        await recordWrite((signal) => journal.cleaning(signal));
     } catch {
         journalFailed = true;
     }
@@ -205,7 +206,7 @@ export async function cleanupLocalCodeContainer(
     );
     if (found) {
         try {
-            await writeJournal((signal) => journal.discovered(found, signal), deadline);
+            await recordWrite((signal) => journal.discovered(found, signal));
         } catch {
             journalFailed = true;
         }
@@ -220,7 +221,7 @@ export async function cleanupLocalCodeContainer(
             "Local code creation is uncertain; recovery must retain capacity."
         );
     if (journalFailed) throw new Error("Local code cleanup could not be recorded.");
-    await writeJournal((signal) => journal.cleaned(signal), deadline);
+    await recordWrite((signal) => journal.cleaned(signal));
 }
 
 /**
@@ -241,17 +242,23 @@ export async function executeLocalCodeCheck(
         request?: BrowserDockerRequest;
         attach?: typeof attachBrowserContainer;
         journalTimeoutMs?: number;
+        executionTimeoutMs?: number;
     } = {}
 ): Promise<LocalCheckResult> {
     const input = parseLocalCheckInput(value);
     stopping.throwIfAborted();
     const { config, call } = await engine(configuration, dependencies.request);
     const controller = new AbortController();
-    const signal = AbortSignal.any([
-        stopping,
-        controller.signal,
-        AbortSignal.timeout(650_000),
-    ]);
+    const signal = AbortSignal.any([stopping, controller.signal]);
+    const executionTimeoutMs = dependencies.executionTimeoutMs ?? 650_000;
+    if (
+        !Number.isInteger(executionTimeoutMs) ||
+        executionTimeoutMs < 1 ||
+        executionTimeoutMs > 650_000
+    )
+        throw new Error(
+            "Local execution deadlines must be between one and 650000 milliseconds."
+        );
     const journalTimeoutMs = dependencies.journalTimeoutMs ?? 10_000;
     journalDeadline(journalTimeoutMs, signal);
     const record = (operation: (deadline: AbortSignal) => Promise<void>) =>
@@ -262,6 +269,7 @@ export async function executeLocalCodeCheck(
         settled = false;
     let stream: Duplex | undefined;
     let monitoring: ReturnType<typeof setInterval> | undefined;
+    let executionDeadline: ReturnType<typeof setTimeout> | undefined;
     let checking = false;
     const verify = () =>
         config.egress
@@ -329,6 +337,9 @@ export async function executeLocalCodeCheck(
         void result.catch(() => {});
         await record((deadline) => journal.starting(deadline));
         signal.throwIfAborted();
+        // Creation and authorization are separately bounded and do not shorten the check profile.
+        executionDeadline = setTimeout(() => controller.abort(), executionTimeoutMs);
+        executionDeadline.unref();
         const started = await call("POST", `/containers/${created}/start`);
         if (started.status !== 204)
             throw new Error("Local code container startup failed.");
@@ -352,6 +363,7 @@ export async function executeLocalCodeCheck(
         return output;
     } finally {
         clearInterval(monitoring);
+        clearTimeout(executionDeadline);
         controller.abort();
         stream?.destroy();
         if (issued)
