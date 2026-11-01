@@ -67,7 +67,7 @@ jobs:
         run: bun --no-env-file scripts/testWindowsCapture.ts
       - name: Compile native consent host and qualify protocol and readiness rules
         run: bun --no-env-file scripts/testWindowsConsent.ts
-      - name: Qualify desktop connection manager
+      - name: Qualify shared Windows app and local connection
         run: bun --no-env-file scripts/testWindowsDesktop.ts
       - name: Qualify packaged worker and native process-tree ownership
         run: bun --no-env-file scripts/testWindowsWorker.ts "${{ runner.temp }}/computer-release"

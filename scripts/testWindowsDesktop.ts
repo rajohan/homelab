@@ -21,15 +21,35 @@ export async function testWindowsDesktop() {
             maxBuffer: 4096,
             encoding: "utf8",
         });
-        return v.parse(
+        const result = v.parse(
             v.strictObject({
                 windowsDesktop: v.literal("passed"),
                 assertions: v.pipe(v.number(), v.integer(), v.minValue(60)),
             }),
             JSON.parse(output) as unknown
         );
+        const browser = execFileSync(built.checks!, ["--webview"], {
+            windowsHide: true,
+            timeout: 90_000,
+            maxBuffer: 4096,
+            encoding: "utf8",
+        });
+        v.parse(
+            v.strictObject({
+                windowsWebView: v.literal("passed"),
+                originIsolation: v.literal(true),
+                sharedAuthNavigation: v.literal(true),
+            }),
+            JSON.parse(browser) as unknown
+        );
+        return result;
     } finally {
-        await rm(directory, { recursive: true, force: true });
+        await rm(directory, {
+            recursive: true,
+            force: true,
+            maxRetries: 20,
+            retryDelay: 100,
+        });
     }
 }
 

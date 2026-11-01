@@ -126,14 +126,17 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<void
                 );
             }
             await store.save(record);
+            print(`Paired: ${record.id}`);
             print(
                 "Paired. Start the companion with the run command when you want to connect."
             );
         } else {
-            if (!existing)
+            if (!existing) {
+                if (command === "run") print("Pairing required.");
                 throw new Error(
                     "Pair this server first using a code from Settings > Computers."
                 );
+            }
             if (command === "download-update") {
                 await withComputerUpdate(
                     {
@@ -147,6 +150,7 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<void
                 );
                 return;
             }
+            if (supervised) print(`Paired: ${existing.id}`);
             await runComputerPresence({
                 companion,
                 credential: existing.credential,

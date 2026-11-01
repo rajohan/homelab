@@ -17,6 +17,7 @@ import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
 import { ComputerPairDialog } from "./ComputerPairDialog";
 import { olderComputerVersion } from "./computerVersions";
+import { DesktopComputer } from "./DesktopComputer";
 
 /**
  * Manage the signed-in operator's paired computers using the existing Settings card design.
@@ -87,6 +88,7 @@ export function MiraComputers() {
                     </Button>
                 </div>
             </div>
+            <DesktopComputer />
             <p className="text-sm text-primary-400">
                 {download
                     ? `Windows 10 or later · x64 · Version ${download.version}. Install Mira, then pair this computer.`

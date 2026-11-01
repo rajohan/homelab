@@ -1,5 +1,57 @@
 # Mira computer driver
 
+## Shared Windows app
+
+Mira for Windows opens the deployed dashboard at
+`https://dashboard.home.rajohan.no/mira` in Microsoft WebView2. Chat, Tasks,
+Automations, files, browser controls and Settings are the same React application
+and server workflows used by the website. The existing Homelab sign-in flow stays
+inside the dashboard and Auth origins; the shell does not extract cookies, OAuth
+codes or account tokens. Browser cookies live in the current Windows user's
+`LocalAppData/Homelab/MiraComputer/WebView2` profile, outside versioned application
+files, so upgrades keep the sign-in. Sign out in the shared account menu as on web.
+
+Pairing is optional for Chat and other server work. In Windows, Settings > Computers
+also shows local connection status and Connect, Stop connection, Update app and
+Remove pairing. After creating a pairing code with the existing fresh verification,
+**Pair this Windows PC** passes that one-use code directly to the local companion;
+successful pairing starts the connection. Existing pairings reconnect when the app
+opens. The web version retains code copying for pairing another PC. Removing local
+pairing still requires the Windows confirmation; revoke the server entry too.
+No pairing form covers the chat when an already paired app starts.
+
+Minimizing keeps the app in the system tray. Open Mira and Settings restore the same
+window; Exit shuts down the companion and local controllers. Screen lock/suspend
+stops local access. Chat and automation jobs continue on Main independently of the
+window, network connection and PC power. Per-run local screen/input consent remains
+separate from both dashboard sign-in and computer pairing.
+
+Only the dashboard origin can send the fixed, bounded local state/pair/connect/stop/
+forget/update messages. Auth pages and other origins receive no bridge authority.
+No shell, filesystem, clipboard, generic host object or computer-input bridge is
+exposed to pages. Foreign document navigation is refused in the embedded view;
+user-initiated HTTPS links open in the normal browser. Downloads use WebView2's
+normal user-facing download UI. Certificate validation is never bypassed.
+
+The Bun build downloads the official WebView2 SDK pinned by version and SHA-256 in
+`deploy/computer/webview2.json`, verifies Microsoft's signatures and packages only
+the two .NET assemblies, x64 loader and license. It introduces no additional package
+manager or application framework. Update the SDK pin and hash together in reviewed
+repository changes. The separate Evergreen runtime is maintained by Microsoft;
+reopening Mira adopts its updates. If it is missing, the app links to Microsoft's
+installer instead of silently installing software. The repository release/update
+pipeline ships the Windows shell and verified SDK files together.
+
+`bun --no-env-file scripts/testWindowsDesktop.ts` covers native connection and update
+lifecycle, pairing-to-connection handoff and an actual WebView2 instance. Synthetic
+HTTPS responses exercise dashboard/Auth navigation, message round-trips, rejected
+origins and process exit before deleting the test profile. The external-browser
+launcher is replaced in this fixture, so tests never open the operator's browser.
+Live sign-in, security-key handling and installation remain deployment qualification.
+
+References: [Microsoft WebView2 distribution](https://learn.microsoft.com/microsoft-edge/webview2/concepts/distribution),
+[Microsoft WebView2 security guidance](https://learn.microsoft.com/microsoft-edge/webview2/concepts/security).
+
 The computer foundation uses the unmodified, pinned `@trycua/cua-driver` 0.37.0 SDK with Bun 1.4.4. It provides a single-window adapter, a supervised private child process and a reproducible native X11 qualification. Chat tools, per-run access controls and the installed Windows composition are implemented. Production PC activation still requires interactive qualification, private routing and release delivery.
 
 ## Authority and observations

@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
- * Build the visible Windows connection manager and optional isolated native fixtures.
+ * Build the shared-dashboard Windows shell and optional isolated native fixtures.
  * @param directory - Absolute caller-owned output directory; no installation or launch occurs.
  * @param tests - Also compile the non-distributed process/settings qualification executables.
  * @returns Fixed product and optional qualification paths.
@@ -25,6 +25,30 @@ export async function buildWindowsDesktop(directory: string, tests = false) {
         throw new Error("Windows SystemRoot is required.");
     const compiler = path.join(system, "Microsoft.NET/Framework64/v4.0.30319/csc.exe");
     await mkdir(directory, { recursive: true });
+    execFileSync(
+        path.join(system, "System32/WindowsPowerShell/v1.0/powershell.exe"),
+        [
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-File",
+            path.join(root, "scripts/setupWebView.ps1"),
+            "-Destination",
+            directory,
+        ],
+        {
+            windowsHide: true,
+            timeout: 120_000,
+            maxBuffer: 64 * 1024,
+            env: {
+                ...process.env,
+                PSModulePath: path.join(
+                    system,
+                    "System32/WindowsPowerShell/v1.0/Modules"
+                ),
+            },
+        }
+    );
     const desktop = path.join(directory, "mira-computer-desktop.exe");
     const shared = [
         "WorkerJob.cs",
@@ -36,6 +60,9 @@ export async function buildWindowsDesktop(directory: string, tests = false) {
         "InstallationProtocol.cs",
         "ConsentProtocol.cs",
         "DesktopButton.cs",
+        "DesktopConnection.cs",
+        "DesktopBridge.cs",
+        "DesktopWebView.cs",
         "DesktopForm.cs",
     ];
     const common = [
@@ -48,6 +75,8 @@ export async function buildWindowsDesktop(directory: string, tests = false) {
         "/reference:System.Windows.Forms.dll",
         "/reference:System.Drawing.dll",
         "/reference:System.Web.Extensions.dll",
+        `/reference:${path.join(directory, "Microsoft.Web.WebView2.Core.dll")}`,
+        `/reference:${path.join(directory, "Microsoft.Web.WebView2.WinForms.dll")}`,
     ];
     const compile = (file: string, sources: string[], gui = false) =>
         execFileSync(
@@ -67,6 +96,7 @@ export async function buildWindowsDesktop(directory: string, tests = false) {
             ...shared,
             "tests/DesktopTests.cs",
             "tests/DesktopUpdateTests.cs",
+            "tests/DesktopWebViewTests.cs",
         ]);
         const fixture = path.join(directory, "fixture");
         await mkdir(fixture);

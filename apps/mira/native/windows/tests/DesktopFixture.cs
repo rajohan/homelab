@@ -56,11 +56,12 @@ internal static class DesktopFixture
             output.Flush();
             return mode == "update-failure" ? 1 : 0;
         }
-        if (mode == "pair")
+        if (mode == "pair" || (mode == "pair-connect" && args[0] == "pair"))
         {
             if (args.Length != 2 || args[0] != "pair") return 3;
             string ticket = Console.ReadLine();
             File.WriteAllText(Path.Combine(directory, "pair-result.txt"), ticket == "mira_pair_12345678-1234-1234-1234-123456789abc." + new string('A', 43) ? "private-stdin" : "invalid");
+            Console.WriteLine("Paired: 12345678-1234-4234-8234-123456789abc");
             return 0;
         }
         if (mode == "forget") return args.Length == 2 && args[0] == "forget" ? 0 : 4;

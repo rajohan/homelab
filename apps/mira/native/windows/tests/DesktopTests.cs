@@ -18,6 +18,7 @@ internal static class DesktopTests
     {
         try
         {
+            if (args.Length == 1 && args[0] == "--webview") { Application.EnableVisualStyles(); DesktopWebViewTests.Browser(AppDomain.CurrentDomain.BaseDirectory); return 0; }
             if (args.Length == 2 && args[0] == "--qualify-update") {
                 using (var artifact = DesktopUpdateArtifact.Receive(Console.OpenStandardInput(), args[1])) {
                     if (!artifact.Install()) return 1;
@@ -55,11 +56,13 @@ internal static class DesktopTests
             if (args.Length != 0) return 1;
             string root = AppDomain.CurrentDomain.BaseDirectory;
             Settings(root);
+            DesktopWebViewTests.Boundaries(Require);
             Installation(root);
             DesktopUpdateTests.Run(root, Require);
             Startup(root);
             Arguments(root);
             Pairing(root);
+            PairAndConnect(root);
             foreach (string mode in new[] { "eof", "hang", "parent-death" }) Lifecycle(root, mode);
             foreach (string mode in new[] { "failure", "oversize" }) Failure(root, mode);
             using (var session = new DesktopSession(root, "run", Origin, null))
@@ -86,8 +89,7 @@ internal static class DesktopTests
     private static void Startup(string root)
     {
         var start = typeof(DesktopForm).GetMethod("StartAtSignIn", BindingFlags.Instance | BindingFlags.NonPublic);
-        var stop = typeof(DesktopForm).GetMethod("Stop", BindingFlags.Instance | BindingFlags.NonPublic);
-        var label = typeof(DesktopForm).GetField("status", BindingFlags.Instance | BindingFlags.NonPublic);
+        var controller = typeof(DesktopForm).GetField("connection", BindingFlags.Instance | BindingFlags.NonPublic);
         // No form is shown and no tray icon is registered. Only the owned fake companion is started.
         int index = 0;
         foreach (string previous in new[] { null, "https://different.example.test", new string('a', 513) }) {
@@ -103,18 +105,19 @@ internal static class DesktopTests
             using (var form = new DesktopForm(package, settings, null, true)) {
                 Require(!form.ShowInTaskbar && form.WindowState == FormWindowState.Minimized);
                 IntPtr unused = form.Handle;
+                var connection = (DesktopConnection)controller.GetValue(form);
                 var task = (Task)start.Invoke(form, null);
                 var clock = Stopwatch.StartNew();
-                while (((Label)label.GetValue(form)).Text != "Connected" && !task.IsCompleted && clock.ElapsedMilliseconds < 5000) {
+                while (connection.Message != "Connected" && !task.IsCompleted && clock.ElapsedMilliseconds < 5000) {
                     Application.DoEvents(); Thread.Sleep(10);
                 }
-                Require(((Label)label.GetValue(form)).Text == "Connected");
+                Require(connection.Message == "Connected");
                 Require(File.Exists(Path.Combine(package, "parent.pid")));
-                stop.Invoke(form, null);
+                connection.Stop();
                 clock.Restart();
                 while (!task.IsCompleted && clock.ElapsedMilliseconds < 6000) { Application.DoEvents(); Thread.Sleep(10); }
                 Require(task.IsCompleted && !task.IsFaulted);
-                Require(((Label)label.GetValue(form)).Text == "Disconnected");
+                Require(connection.Message == "Disconnected");
                 Require(previous == null ? !File.Exists(legacy) : File.ReadAllText(legacy) == previous);
             }
         }
@@ -129,7 +132,7 @@ internal static class DesktopTests
         Require(DesktopSettings.Origin(DesktopSettings.ServerOrigin) == "https://computer.home.rajohan.no");
         string package = Path.Combine(root, "package-test"); Directory.CreateDirectory(package);
         string executable = Path.Combine(package, "mira-computer-desktop.exe");
-        foreach (string name in new[] { "mira-computer-desktop.exe", "mira-computer.exe", "mira-computer-consent.exe", "mira-computer-worker-host.exe", "mira-computer-worker.exe", "mira-window-capture.exe" }) File.WriteAllText(Path.Combine(package, name), "fixture");
+        foreach (string name in new[] { "mira-computer-desktop.exe", "mira-computer.exe", "mira-computer-consent.exe", "mira-computer-worker-host.exe", "mira-computer-worker.exe", "mira-window-capture.exe", "Microsoft.Web.WebView2.Core.dll", "Microsoft.Web.WebView2.WinForms.dll", "WebView2Loader.dll" }) File.WriteAllText(Path.Combine(package, name), "fixture");
         // CI may supply an 8.3 TEMP path; .NET expands it when canonicalizing the package.
         Require(string.Equals(DesktopSettings.PackageDirectory(executable), Path.GetFullPath(package), StringComparison.OrdinalIgnoreCase));
         File.Delete(Path.Combine(package, "mira-computer-worker.exe"));
@@ -187,6 +190,23 @@ internal static class DesktopTests
         File.WriteAllText(Path.Combine(directory, "mode.txt"), mode);
         return directory;
     }
+    private static void PairAndConnect(string root)
+    {
+        string directory = Fixture(root, "pair-connect");
+        File.WriteAllText(Path.Combine(directory, "expected-origin.txt"), DesktopSettings.ServerOrigin);
+        using (var connection = new DesktopConnection(directory, Path.Combine(root, "connection-settings"), null, delegate(Action action) { action(); })) {
+            var work = connection.Start("pair", "mira_pair_12345678-1234-1234-1234-123456789abc." + new string('A', 43));
+            var clock = Stopwatch.StartNew();
+            while (connection.Message != "Connected" && !work.IsCompleted && clock.ElapsedMilliseconds < 5000) { Application.DoEvents(); Thread.Sleep(10); }
+            Require(connection.Message == "Connected");
+            Require(connection.ComputerId == "12345678-1234-4234-8234-123456789abc");
+            Require(!connection.CanStart && connection.CanStop);
+            Require(!connection.Close());
+            while (!work.IsCompleted && clock.ElapsedMilliseconds < 10000) { Application.DoEvents(); Thread.Sleep(10); }
+            Require(work.IsCompleted && !work.IsFaulted && connection.Close());
+            Require(!connection.Busy && connection.ComputerId != null);
+        }
+    }
     private static void Pairing(string root)
     {
         string directory = Fixture(root, "pair");
@@ -195,6 +215,7 @@ internal static class DesktopTests
         {
             DesktopResult result = Complete(session.Run(delegate { }));
             Require(result.Clean && result.Success && !result.Stopped);
+            Require(result.ComputerId == "12345678-1234-4234-8234-123456789abc");
             Require(File.ReadAllText(Path.Combine(directory, "pair-result.txt")) == "private-stdin");
         }
         using (var session = new DesktopSession(Fixture(root, "forget"), "forget", Origin, null))
