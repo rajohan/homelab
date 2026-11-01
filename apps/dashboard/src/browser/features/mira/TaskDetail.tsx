@@ -13,7 +13,7 @@ import {
     Textarea,
     SectionHeader,
 } from "@homelab/ui";
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
     Pencil,
@@ -39,15 +39,22 @@ import { TaskRunDialog } from "./TaskRunDialog";
  * @returns Task details, linked conversation and an append-only progress composer.
  */
 export function TaskDetail({
-    task,
+    task: initialTask,
     onEdit,
     onClose,
 }: {
     readonly task: MiraTask;
-    readonly onEdit: () => void;
+    readonly onEdit: (task: MiraTask) => void;
     readonly onClose: () => void;
 }) {
     const navigate = useNavigate();
+    const current = useQuery({
+        queryKey: ["operations", "mira", "task", initialTask.id, "detail"],
+        queryFn: ({ signal }) =>
+            api.mira.tasks.read.query({ id: initialTask.id }, { signal }),
+        refetchInterval: 5000,
+    });
+    const task = current.data ?? initialTask;
     const [progress, setProgress] = useState("");
     const [deleting, setDeleting] = useState(false);
     const [starting, setStarting] = useState<{
@@ -151,7 +158,11 @@ export function TaskDetail({
                     </div>
                 )}
                 <ActionGroup stretch={false}>
-                    <Button variant="secondary" onClick={onEdit}>
+                    <Button
+                        variant="secondary"
+                        onClick={() => onEdit(task)}
+                        disabled={current.isError}
+                    >
                         <Pencil size={16} aria-hidden="true" />
                         Edit task
                     </Button>
@@ -165,11 +176,16 @@ export function TaskDetail({
                             Open conversation
                         </Link>
                     )}
-                    <Button variant="secondary" onClick={() => setDeleting(true)}>
+                    <Button
+                        variant="secondary"
+                        onClick={() => setDeleting(true)}
+                        disabled={current.isError}
+                    >
                         <Trash2 size={16} aria-hidden="true" />
                         Delete task
                     </Button>
                 </ActionGroup>
+                {current.error && <ErrorNotice error={current.error} />}
                 <section className="space-y-3 border-t border-primary-700 pt-4">
                     <SectionHeader title="Description" icon={FileText} />
                     <Markdown>{task.description || "No description."}</Markdown>

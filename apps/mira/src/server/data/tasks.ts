@@ -101,9 +101,22 @@ export async function saveTask(
                     "Stop or finish active work before linking these conversations to the same task."
                 );
         }
+        const due = input.dueAt ? new Date(input.dueAt) : null;
         const [previous] = input.id
-            ? await query<{ status: string; assignee: string; autoStart: boolean }[]>`
-            SELECT status, assignee, auto_start AS "autoStart" FROM mira_tasks WHERE id=${id} AND owner=${context.owner} AND deleted_at IS NULL FOR UPDATE`
+            ? await query<
+                  {
+                      status: string;
+                      assignee: string;
+                      autoStart: boolean;
+                      workChanged: boolean;
+                  }[]
+              >`
+            SELECT status, assignee, auto_start AS "autoStart", NOT (
+                title=${input.title} AND description=${input.description} AND status=${input.status}
+                AND assignee=${input.assignee} AND priority=${input.priority} AND labels=${JSON.stringify(input.labels)}::text::jsonb
+                AND due_at IS NOT DISTINCT FROM ${due}::timestamptz
+                AND completion_criteria=${input.completionCriteria} AND conversation_id IS NOT DISTINCT FROM ${input.conversationId}::uuid
+            ) AS "workChanged" FROM mira_tasks WHERE id=${id} AND owner=${context.owner} AND deleted_at IS NULL FOR UPDATE`
             : [];
         const humanEdit = !context.run && context.actor === `human:${context.owner}`;
         if (!humanEdit && input.autoStart !== undefined)
@@ -129,7 +142,7 @@ export async function saveTask(
         ) {
             const [active] = await query<
                 { id: string }[]
-            >`SELECT id FROM mira_runs WHERE owner=${context.owner} AND task_id=${id} AND state IN ('queued','running') AND NOT cancel_requested AND (NOT task_auto_started OR ${previous.autoStart}) LIMIT 1`;
+            >`SELECT id FROM mira_runs WHERE owner=${context.owner} AND task_id=${id} AND state IN ('queued','running') AND NOT cancel_requested AND (state='running' OR NOT task_auto_started OR ${previous.autoStart}) LIMIT 1`;
             if (active) requestStart = false;
         }
         const stopWork =
@@ -137,7 +150,6 @@ export async function saveTask(
             (input.status === "blocked" ||
                 input.status === "done" ||
                 input.assignee !== "mira");
-        const due = input.dueAt ? new Date(input.dueAt) : null;
         if (input.id) {
             const rows = await query<
                 { id: string }[]
@@ -152,7 +164,13 @@ export async function saveTask(
         }
         if (input.conversationId)
             await query`UPDATE mira_runs SET task_id=${id} WHERE owner=${context.owner} AND conversation_id=${input.conversationId} AND task_id IS NULL`;
-        await auditMira(query, context, input.id ? "task.updated" : "task.created", id);
+        let action = "task.created";
+        if (input.id) {
+            action = "task.saved";
+            if (previous?.autoStart !== autoStart) action = "task.start_mode_changed";
+            if (previous?.workChanged) action = "task.updated";
+        }
+        await auditMira(query, context, action, id);
         if (requestStart)
             await auditMira(query, context, "task.auto_start_requested", id);
         if (

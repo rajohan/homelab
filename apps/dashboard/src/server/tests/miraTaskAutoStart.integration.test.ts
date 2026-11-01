@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 
+import { capabilities } from "@homelab/contracts/operations";
 import { setMiraEnabled } from "@homelab/mira/data/automations";
 import { cancelRun, createConversation } from "@homelab/mira/data/conversations";
 import { claimMiraRun, finishMiraRun, scheduleMiraRuns } from "@homelab/mira/data/queue";
@@ -7,6 +8,7 @@ import { runMiraTask } from "@homelab/mira/data/taskExecution";
 import { readTask, saveTask } from "@homelab/mira/data/tasks";
 import { readTaskSteering } from "@homelab/mira/data/taskSteering";
 
+import { appRouter } from "../api/router";
 import { createMiraTextTestTools } from "../testing/miraTools";
 import { operationFixture } from "../testing/operations";
 
@@ -59,7 +61,12 @@ test("manual is the default; an opted-in task starts once on the general worker"
             taskResumed: true,
             manual: true,
         });
-        const savedAutomatic = await readTask(f.context, automatic.id);
+        const api = (owner: string) =>
+            appRouter.createCaller({
+                operations: f,
+                principal: { kind: "human", id: owner, capabilities },
+            }).mira;
+        const savedAutomatic = await api("operator").tasks.read({ id: automatic.id });
         expect(savedAutomatic.conversationId).toBe(run.conversationId);
         await finishMiraRun(f.client, run, {
             state: "completed",
@@ -300,6 +307,30 @@ test("Mira cannot enable automatic start or create its own automatic start reque
         await f.close();
     }
 });
+
+test.each([false, true])(
+    "changing start mode during automatic work does not request a second run: reenable %s",
+    async (reenable) => {
+        const f = await fixture();
+        try {
+            const task = await saveTask(f.context, { ...fields, autoStart: true });
+            await scheduleMiraRuns(f.client);
+            const run = await claimMiraRun(f.client, crypto.randomUUID(), "general");
+            if (!run) throw new Error("Expected automatic work");
+            await f.update(task.id, { autoStart: false });
+            if (reenable) await f.update(task.id, { autoStart: true });
+            expect(await readTaskSteering(f.client, run)).toBeNull();
+            await finishMiraRun(f.client, run, {
+                state: "completed",
+                text: "Finished existing work",
+                message: null,
+            });
+            expect(await scheduleMiraRuns(f.client)).toBe(0);
+        } finally {
+            await f.close();
+        }
+    }
+);
 
 test.each(["uncertain", "archived", "expired"] as const)(
     "automatic start preserves recovery and lifecycle gates: %s",

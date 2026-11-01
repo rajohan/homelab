@@ -138,6 +138,7 @@ import {
     addTaskProgress,
     deleteTask,
     listTasks,
+    readTask,
     saveTask,
     taskProgress,
 } from "@homelab/mira/data/tasks";
@@ -500,6 +501,9 @@ export const miraRouter = trpc.router({
             ),
     }),
     tasks: trpc.router({
+        read: trpc.procedure
+            .input(record)
+            .query(({ ctx, input }) => execute(ctx, (mira) => readTask(mira, input.id))),
         execution: trpc.procedure
             .input(miraConversationReadSchema)
             .query(({ ctx, input }) =>

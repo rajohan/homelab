@@ -66,7 +66,10 @@ export function Tasks() {
                     <TaskDetail
                         task={selected}
                         onClose={() => setSelected(undefined)}
-                        onEdit={() => setEditing(true)}
+                        onEdit={(task) => {
+                            setSelected(task);
+                            setEditing(true);
+                        }}
                     />
                 )
             )}
