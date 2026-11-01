@@ -521,6 +521,60 @@ test("Synthetic server execution restores product history and preserves native c
             "cross-conversation history disabled"
         );
         expect(JSON.stringify(bodies[1]?.messages)).not.toContain('"type":"image_url"');
+        // A native turn after Synthetic must recover intervening product messages,
+        // even with cross-conversation history and saved memory disabled.
+        const command = path.join(directory, "fixture-codex");
+        const home = path.join(directory, "native-home");
+        await mkdir(home);
+        const child = fileURLToPath(
+            new URL(
+                "../../../../mira/src/server/testing/runtimeChild.ts",
+                import.meta.url
+            )
+        );
+        await writeFile(
+            command,
+            `#!/usr/bin/env bun\nprocess.argv=[process.argv[0],${JSON.stringify(child)},"policy-rotation",${JSON.stringify(home)}];\nawait import(${JSON.stringify(child)});\n`
+        );
+        await chmod(command, 0o700);
+        await database.client`UPDATE mira_runtime_status SET models=${JSON.stringify([v.parse(miraModelSchema, { model: "synthetic", isDefault: true })])}::text::jsonb WHERE id=1`;
+        const beforeReturn = await database.api().conversations.read({ id: chat.id });
+        await database.api().conversations.settings({
+            id: chat.id,
+            version: beforeReturn.conversation.version,
+            settings: {
+                ...miraDefaultChatSettings,
+                model: "synthetic",
+                useMemory: false,
+                useHistory: false,
+            },
+        });
+        await database.api().conversations.send({
+            conversationId: chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Continue back in ChatGPT.",
+        });
+        const returning = (await claimMiraRun(
+            database.client,
+            crypto.randomUUID(),
+            "foreground"
+        ))!;
+        await executeMiraTurn(
+            database.client,
+            { command, codexHome: home, workspace: directory },
+            returning,
+            new AbortController().signal,
+            directory
+        );
+        const returned = await database.api().conversations.read({ id: chat.id });
+        expect(returned.run?.state).toBe("completed");
+        const response = returned.messages.at(-1)?.content ?? "";
+        expect(response).toContain("Remembered the fixture.");
+        expect(response).toContain("Continue in text.");
+        expect(response).toContain("ZK-427");
+        expect(response).toContain("mira_conversation_history");
+        expect(response).not.toContain("CURRENT MEMORY SYN-981");
+        expect(bodies).toHaveLength(2);
     } finally {
         request.mockRestore();
         await provider.stop(true);

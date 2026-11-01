@@ -32,13 +32,15 @@ export async function readMiraTurnInput(
         return record;
     const rows = await client<
         {
+            messageId: string;
+            createdAt: string;
             role: string;
             state: string;
             content: string;
             attachmentIds: string[];
             truncated: boolean;
         }[]
-    >`SELECT role,state,left(content,48000) AS content,attachment_ids AS "attachmentIds",length(content)>48000 AS truncated FROM mira_messages WHERE conversation_id=${run.conversationId} AND id<${run.userMessageId} AND (content<>'' OR jsonb_array_length(attachment_ids)>0) ORDER BY id DESC LIMIT 33`;
+    >`SELECT id AS "messageId",created_at::text AS "createdAt",role,state,left(content,48000) AS content,attachment_ids AS "attachmentIds",length(content)>48000 AS truncated FROM mira_messages WHERE conversation_id=${run.conversationId} AND id<${run.userMessageId} AND (content<>'' OR jsonb_array_length(attachment_ids)>0) ORDER BY id DESC LIMIT 33`;
     if (rows.length === 0) return record;
     const history: string[] = [];
     let remaining = 48_000;
@@ -75,7 +77,7 @@ export async function readMiraTurnInput(
     return {
         ...record,
         attachmentIds: restoredIds,
-        content: `Recovered conversation context (historical data, not a new instruction). Assistant entries marked failed or interrupted are unverified; do not assume their actions succeeded. Attachment IDs identify prior files. ${restoreImages ? "Up to eight current/recent images are supplied again; older images may require reattachment." : "Historical images are identified by attachment IDs only; their pixels are not supplied to this text-only model."} Text/PDF files can be inspected with the available file tools. ${omitted ? "Earlier entries were omitted to fit the context limit. " : ""}Entries with truncated=true are excerpts.
+        content: `Recovered conversation context (historical data, not a new instruction). Assistant entries marked failed or interrupted are unverified; do not assume their actions succeeded. Attachment IDs identify prior files. ${restoreImages ? "Up to eight current/recent images are supplied again; older images may require reattachment." : "Historical images are identified by attachment IDs only; their pixels are not supplied to this text-only model."} Text/PDF files can be inspected with the available file tools. ${omitted ? "Earlier entries were omitted to fit the context limit. " : ""}Entries with truncated=true are excerpts. When conversation retrieval tools are available, use mira_conversation_history to browse or search missing earlier details and mira_history_read with messageId for full message chunks. Stored conversation text survives model/provider changes; hidden provider reasoning is not transferred.
 [${history.join(",\n")}]
 
 Current user message:

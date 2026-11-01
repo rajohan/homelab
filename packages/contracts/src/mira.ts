@@ -23,6 +23,10 @@ export const miraConversationPageSchema = v.strictObject({
 export const miraHistorySearchSchema = v.strictObject({
     query: v.pipe(text(160), v.minLength(2)),
 });
+export const miraConversationHistorySchema = v.strictObject({
+    beforeMessageId: v.optional(idSchema),
+    query: v.optional(v.pipe(text(160), v.minLength(2))),
+});
 export const miraHistoryReadSchema = v.strictObject({
     messageId: idSchema,
     offset: v.optional(
