@@ -36,7 +36,8 @@ ssh -N -L localhost:3100:127.0.0.1:3100 -L localhost:3101:127.0.0.1:3101 main
 
 Open `http://localhost:3100`, not an IP alias or a different port. This preview is disposable;
 restart it after backend changes. For persistent, independently running development processes,
-supply isolated configuration and use `bun run dev`, `dev:auth` or `dev:dashboard` (Bun hot reload).
+supply isolated configuration and use `bun run dev`, `bun run dev auth` or
+`bun run dev dashboard` (Bun hot reload).
 They never automatically migrate or seed a configured database. See [configuration](docs/identity-operations.md).
 iPhone/NFC acceptance needs private HTTPS origins reachable by the actual device.
 

@@ -227,6 +227,36 @@ test("PR execution cannot share a runner or secrets with authenticated coverage 
     expect(coverage.steps.filter((step) => step.run)).toHaveLength(1);
 });
 
+test("Daytona publication shares the container release gate instead of starting independent release CI", async () => {
+    const caller = v.parse(
+        v.object({
+            jobs: v.object({
+                daytona: v.object({
+                    uses: v.string(),
+                    needs: v.string(),
+                    if: v.string(),
+                }),
+            }),
+        }),
+        Bun.YAML.parse(await Bun.file(".github/workflows/container-images.yml").text())
+    );
+    expect(caller.jobs.daytona.uses).toBe("./.github/workflows/daytona-image.yml");
+    expect(caller.jobs.daytona.needs).toBe("release-checks");
+    expect(caller.jobs.daytona.if).toBe(
+        "github.event_name == 'release' && !github.event.release.prerelease"
+    );
+    const callee = v.parse(
+        v.object({
+            on: v.record(v.string(), v.unknown()),
+            jobs: v.record(v.string(), v.unknown()),
+        }),
+        Bun.YAML.parse(await Bun.file(".github/workflows/daytona-image.yml").text())
+    );
+    expect(callee.on).toHaveProperty("workflow_call");
+    expect(callee.on).not.toHaveProperty("release");
+    expect(callee.jobs).not.toHaveProperty("release-checks");
+});
+
 test("CI permits only planned platform skips and rejects failed classification or tests", async () => {
     const { jobs } = await ciWorkflow();
     const gate = jobs.verify.steps[0]!;
@@ -280,6 +310,11 @@ test("CI permits only planned platform skips and rejects failed classification o
 
 test.each([
     ["pull_request", "docs/example.md", false],
+    ["pull_request", "CONTRIBUTING.md", false],
+    ["pull_request", "CHANGELOG.md", false],
+    ["pull_request", "SECURITY.md", false],
+    ["pull_request", "CODE_OF_CONDUCT.md", false],
+    ["pull_request", "deploy/README.md", false],
     ["pull_request", "apps/dashboard/src/browser/example.tsx", false],
     ["pull_request", "packages/ui/src/components/example.tsx", false],
     ["pull_request", "packages/ui/src/assets/rajohan.ico", true],

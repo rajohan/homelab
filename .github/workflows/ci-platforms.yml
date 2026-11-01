@@ -39,7 +39,7 @@ jobs:
                   os.environ["BASE_SHA"] + "..." + os.environ["HEAD_SHA"],
               ]).decode("utf-8").rstrip("\0").split("\0")
               def web_or_docs(path):
-                  if path.startswith("docs/") or path in ("README.md", "AGENTS.md", ".github/pull_request_template.md"):
+                  if path.startswith("docs/") or (path.startswith("deploy/") and path.endswith(".md")) or path in ("README.md", "AGENTS.md", "CONTRIBUTING.md", "CHANGELOG.md", "SECURITY.md", "CODE_OF_CONDUCT.md", ".github/pull_request_template.md"):
                       return True
                   return path.startswith(("apps/auth/src/browser/", "apps/dashboard/src/browser/", "packages/ui/src/")) and path.endswith((".ts", ".tsx", ".css"))
               required = not (paths and all(web_or_docs(path) for path in paths))

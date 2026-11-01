@@ -19,6 +19,15 @@ jobs:
     if: github.event_name == 'release' && !github.event.release.prerelease
     uses: ./.github/workflows/ci.yml
 
+  daytona:
+    # One shared release gate qualifies all platforms before this workflow can publish.
+    if: github.event_name == 'release' && !github.event.release.prerelease
+    needs: release-checks
+    uses: ./.github/workflows/daytona-image.yml
+    permissions:
+      contents: write
+      packages: write
+
   build-and-test:
     needs: release-checks
     if: >-

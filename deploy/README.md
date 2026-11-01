@@ -112,8 +112,9 @@ separate [computer acceptance checks](../docs/mira-computer.md).
 ## Built artifact
 
 Each application's complete `dist` directory is its runtime artifact. Start from that directory
-with `bun --no-env-file index.js` and `NODE_ENV=production`, or use the repository's
-`start:auth` / `start:dashboard` scripts. HTML assets resolve relative to the working directory.
+with `bun --no-env-file index.js` and `NODE_ENV=production`. From the repository root,
+use `NODE_ENV=production bun --cwd apps/auth/dist --no-env-file index.js` (or
+`apps/dashboard/dist` / `apps/mira/dist`). HTML assets resolve relative to the working directory.
 Auth also contains `admin.js` and reviewed `migrations/`.
 
 Migrate with the same scoped auth environment and an explicit operator invocation:

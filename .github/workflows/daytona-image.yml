@@ -1,11 +1,10 @@
 name: Daytona check image
 
 on:
+  workflow_call:
   pull_request:
   push:
     branches: [main]
-  release:
-    types: [published]
 
 permissions:
   contents: read

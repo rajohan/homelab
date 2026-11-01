@@ -23,8 +23,9 @@ check rejects unexpected skips, failures and cancellations. Main pushes and rele
 always run all platform qualifications.
 
 Daytona still runs the full suite inside its actual image when selected. Its release
-workflow no longer launches a second copy of the entire Windows/browser/source CI;
-the container release workflow already qualifies those release assets. Publishers
+workflow no longer launches a second copy of the entire Windows/browser/source CI.
+Instead, the container release workflow invokes Daytona only after the shared release
+checks succeed. A failed source, native, Windows or browser check prevents that call. Publishers
 still receive only the exact tested images/packages and run only for stable releases.
 Superseded PR image builds are cancelled; release publication is never cancelled by
 a newer push. Docker dependency layers are reusable across source-only changes.
