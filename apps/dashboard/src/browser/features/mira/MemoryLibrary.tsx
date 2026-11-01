@@ -112,8 +112,8 @@ export function MemoryLibrary({ onClose }: { readonly onClose: () => void }) {
                     ))}
                 {query.data?.pages[0]?.rows.length === 0 && (
                     <p className="text-sm text-primary-400">
-                        No matching memories. Add context here, or ask Mira to remember
-                        something.
+                        No matching memories. Mira saves useful context automatically when
+                        memory is enabled. You can also add it here.
                     </p>
                 )}
                 {query.hasNextPage && (

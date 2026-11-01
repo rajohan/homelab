@@ -1,0 +1,51 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "479de76c-a65a-44ea-aae3-5b2b66897b9a",
+    "prevIds": ["720814bd-672b-48ec-bcef-5c6894182282"],
+    "footprints": [
+        {
+            "statementType": "create_index",
+            "statementTarget": [
+                "index",
+                "public",
+                "mira_messages",
+                "mira_messages_search"
+            ],
+            "writes": [
+                "s|idx|public.mira_messages_search",
+                "n|idx|public.mira_messages_search",
+                "e|idx|public.mira_messages_search",
+                "n|rel|public.mira_messages_search"
+            ],
+            "reads": ["n|tbl|public.mira_messages", "n|sch|public"]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_messages",
+                "name": "mira_messages_search",
+                "nameExplicit": true,
+                "columns": [
+                    {
+                        "value": "to_tsvector('simple', \"content\")",
+                        "isExpression": true,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    }
+                ],
+                "isUnique": false,
+                "where": "\"state\" = 'completed'",
+                "with": "",
+                "method": "gin",
+                "concurrently": false,
+                "entityType": "indexes"
+            }
+        }
+    ]
+}

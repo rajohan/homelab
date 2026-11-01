@@ -78,10 +78,16 @@ export function ModelSettings({
                             !defaultModel.startsWith("syn:") &&
                             models.some((entry) => entry.model === defaultModel)
                         ) {
-                            setDraft({ model: null, effort: null, serviceTier: null });
+                            setDraft({
+                                ...draft,
+                                model: null,
+                                effort: null,
+                                serviceTier: null,
+                            });
                             return;
                         }
                         setDraft({
+                            ...draft,
                             model:
                                 next === "synthetic"
                                     ? (models.find(
@@ -117,6 +123,7 @@ export function ModelSettings({
                             (entry) => entry.model === (model || defaultModel)
                         );
                         setDraft({
+                            ...draft,
                             model: model || null,
                             effort: next?.supportedReasoningEfforts.some(
                                 (entry) => entry.reasoningEffort === draft.effort

@@ -1,6 +1,7 @@
 import {
     miraDefaultChatSettings,
     type MiraAutomation,
+    type MiraChatSettings,
     type MiraSchedule,
 } from "@homelab/contracts/mira";
 import {
@@ -24,6 +25,7 @@ import { useState } from "react";
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
 import { ModelSettings } from "./ModelSettings";
+import { RecallSettings } from "./RecallSettings";
 
 /**
  * Edit a bounded Mira automation while preserving its independently saved pause state.
@@ -38,7 +40,7 @@ export function AutomationEditor({
     readonly agentMailAvailable?: boolean;
     readonly onClose: () => void;
 }) {
-    const [settings, setSettings] = useState(
+    const [settings, setSettings] = useState<MiraChatSettings>(
         automation?.settings ?? miraDefaultChatSettings
     );
     const models = useQuery({
@@ -135,6 +137,12 @@ export function AutomationEditor({
                     />
                     {models.error && <ErrorNotice error={models.error} />}
                 </Fieldset>
+                <RecallSettings
+                    settings={settings}
+                    onChange={setSettings}
+                    disabled={save.isPending}
+                    restricted={automation?.kind === "improvement"}
+                />
                 <Fieldset legend="Schedule">
                     <Select
                         label="Schedule type"

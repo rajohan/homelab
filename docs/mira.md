@@ -107,6 +107,35 @@ isolated synthetic preview before production deployment.
   not consume infrastructure workers. Leases, durable tool receipts and cancellation
   fencing prevent expired workers from recording new product effects. Uncertain
   external outcomes are not automatically replayed.
+- **Context** in Chat settings and each automation controls saved memory and
+  cross-conversation history. Both default to enabled for existing and new settings;
+  changes apply to future runs. Model changes preserve these choices. Chat context
+  settings remain editable when the model catalog is offline.
+  Mira receives bounded excerpts from the owner's latest saved memories and can
+  search completed messages in their other included conversations, with source
+  links and dates. History uses PostgreSQL word/phrase search, not semantic search
+  or unlimited recall. Read tools recheck ownership, deletion, archival and source
+  opt-outs. The current conversation is excluded from this search.
+  Relevant context goes to the provider selected for the run (ChatGPT or Synthetic);
+  no separate embedding service or duplicate history store is added. Dashboard
+  improvement and task-change assessments cannot retrieve private memory/history.
+  Disabling history also excludes that conversation from future searches. It does
+  not remove facts already included in previous replies. Changing effective recall
+  permissions rebuilds native provider context from the current conversation's
+  messages, without retaining the previous provider thread's hidden tool results.
+  Mira proactively saves useful preferences, confirmed decisions and ongoing-work
+  context without a separate save request or approval. It can update an existing
+  version when facts change. Both actions retain ownership, lease, version and audit
+  checks; disabling memory blocks reading and writing it. Memories remain visible,
+  editable and deletable in Memory. Untrusted source instructions and secrets must
+  not become memories. This is distinct from searching existing conversation history,
+  which does not create memory records.
+  Memory upkeep also runs as an individually pausable daily automation (03:30,
+  Europe/Oslo). It checks newer evidence, merges duplicate notes and removes
+  demonstrably obsolete records; old but valid preferences are retained. Its model
+  and context choices use the same automation controls. New installations include
+  the preset paused for review. Existing installations add and enable this definition
+  during rollout without reinstalling or altering their existing automations.
 - Interval, daily/cron, once and event automations share durable state. Each has its
   own pause reason and optional resumption, with a separate global pause. Dispatch
   rechecks current settings. Resuming does not replay every missed occurrence.
@@ -250,9 +279,9 @@ AgentMail delivery and provisioning are documented in [Mira AgentMail](mira-agen
 
 ### Proposed product changes
 
-Task creation, updates, progress and persistent memory proposed by a model require explicit human approval of the exact validated fields. A manual conversation is not blanket write authorization: uploads, previous reports and mail remain untrusted inputs. The chat shows **Proposed changes**, and the review dialog offers **Approve change** or **Reject**. Applying a proposal rechecks ownership and task version, and commits the product change and approval receipt in one transaction. Identical approval retries return the previous decision. Models and automation principals cannot approve proposals.
+Task creation, updates and progress proposed by a model require explicit human approval of the exact validated fields. A manual conversation is not blanket write authorization: uploads, previous reports and mail remain untrusted inputs. The chat shows **Proposed changes**, and the review dialog offers **Approve change** or **Reject**. Applying a proposal rechecks ownership and task version, and commits the product change and approval receipt in one transaction. Identical approval retries return the previous decision. Models and automation principals cannot approve proposals. Memory is separately authorized by the Context setting and can be maintained automatically, with the same ownership, version and audit protections. Pending memory proposals from older releases remain reviewable.
 
-Proposals expire after 24 hours; cleanup removes their argument contents, and deleting the conversation removes pending proposal contents immediately. Each run can propose at most twenty changes. Factual report snapshots remain explicitly attributed model output; automatic runs still cannot modify tasks or memory.
+Proposals expire after 24 hours; cleanup removes their argument contents, and deleting the conversation removes pending proposal contents immediately. Each run can propose at most twenty changes. Factual report snapshots remain explicitly attributed model output; automatic runs still cannot modify tasks.
 
 ## Daytona delivery
 

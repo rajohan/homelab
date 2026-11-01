@@ -393,6 +393,7 @@ test("Synthetic server execution restores product history and preserves native c
         )
     );
     try {
+        await database.client`INSERT INTO mira_memory(id,owner,title,content) VALUES(${Bun.randomUUIDv7()},'operator','Preference','CURRENT MEMORY SYN-981')`;
         await database.client`UPDATE mira_runtime_status SET models=${JSON.stringify([...catalog, ...syntheticModels({ data: [textModel] })])}::text::jsonb WHERE id=1`;
         const image = await saveMiraFile(
             { client: database.client, owner: "operator", actor: "human:operator" },
@@ -455,6 +456,7 @@ test("Synthetic server execution restores product history and preserves native c
         expect(bodies).toHaveLength(1);
         expect(bodies[0]?.model).toBe(selection.model);
         expect(JSON.stringify(bodies[0])).toContain("ZK-427");
+        expect(JSON.stringify(bodies[0])).toContain("CURRENT MEMORY SYN-981");
         expect(JSON.stringify(bodies[0])).toContain("data:image/png;base64,");
         const [stored] = await database.client<
             { state: string; ready: boolean; reference: string }[]
@@ -472,7 +474,12 @@ test("Synthetic server execution restores product history and preserves native c
         await database.api().conversations.settings({
             id: chat.id,
             version: current.conversation.version,
-            settings: { ...selection, model: textModel.id },
+            settings: {
+                ...selection,
+                model: textModel.id,
+                useMemory: false,
+                useHistory: false,
+            },
         });
         for (const attach of [false, true]) {
             await database.api().conversations.send({
@@ -509,6 +516,10 @@ test("Synthetic server execution restores product history and preserves native c
         expect(bodies[1]?.model).toBe(textModel.id);
         expect(JSON.stringify(bodies[1])).toContain(image.id);
         expect(JSON.stringify(bodies[1])).toContain("ZK-427");
+        expect(JSON.stringify(bodies[1])).not.toContain("CURRENT MEMORY SYN-981");
+        expect(JSON.stringify(bodies[1])).toContain(
+            "cross-conversation history disabled"
+        );
         expect(JSON.stringify(bodies[1]?.messages)).not.toContain('"type":"image_url"');
     } finally {
         request.mockRestore();
