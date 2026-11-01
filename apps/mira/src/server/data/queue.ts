@@ -124,7 +124,8 @@ export async function claimMiraRun(
                     SELECT t.id FROM mira_tasks t JOIN mira_runs r ON r.id=${run.id} AND r.owner=t.owner
                     WHERE t.id=${run.taskId} AND t.owner=${run.owner} AND t.deleted_at IS NULL
                         AND t.assignee='mira' AND t.status NOT IN ('blocked','done')
-                        AND (t.work_stopped_at IS NULL OR t.work_stopped_at<r.created_at) FOR SHARE OF t`;
+                        AND (t.work_stopped_at IS NULL OR t.work_stopped_at<r.created_at)
+                        AND (NOT r.task_auto_started OR (t.auto_start AND (t.auto_start_revoked_at IS NULL OR t.auto_start_revoked_at<r.created_at))) FOR SHARE OF t`;
                 if (!task) {
                     await query`UPDATE mira_runs SET state='interrupted',cancel_requested=true,message='Task work was paused or stopped before execution.',finished_at=now() WHERE id=${run.id}`;
                     await query`UPDATE mira_messages SET state='interrupted' WHERE id=${run.assistantMessageId}`;

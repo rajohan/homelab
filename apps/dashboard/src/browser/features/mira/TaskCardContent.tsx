@@ -12,8 +12,9 @@ export function TaskCardContent({ task }: { readonly task: MiraTask }) {
     const AssigneeIcon = task.assignee === "mira" ? Bot : UserRound;
     return (
         <div className="space-y-3">
-            <div className="pr-10">
+            <div className="flex flex-wrap gap-1.5 pr-10">
                 <Badge tone={taskPriorityTone(task.priority)}>{task.priority}</Badge>
+                {task.autoStart && <Badge>Auto start</Badge>}
             </div>
             <p className="line-clamp-3 text-sm font-semibold wrap-anywhere text-primary-100">
                 {task.title}

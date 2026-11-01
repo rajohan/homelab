@@ -274,7 +274,10 @@ export function createMiraTools(
             inputSchema: object(taskProperties, Object.keys(taskProperties)),
             automatic: false,
             action: (input, _signal, scoped) =>
-                saveTask(scoped, v.parse(miraTaskInputSchema, input)),
+                saveTask(
+                    scoped,
+                    v.parse(v.omit(miraTaskInputSchema, ["autoStart"]), input)
+                ),
         },
         {
             name: "mira_task_update",
@@ -288,7 +291,10 @@ export function createMiraTools(
             ),
             automatic: false,
             action: (input, _signal, scoped) =>
-                saveTask(scoped, v.parse(miraTaskUpdateSchema, input)),
+                saveTask(
+                    scoped,
+                    v.parse(v.omit(miraTaskUpdateSchema, ["autoStart"]), input)
+                ),
         },
         {
             name: "mira_task_progress",

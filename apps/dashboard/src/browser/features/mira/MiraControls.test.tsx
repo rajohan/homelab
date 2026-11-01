@@ -1134,6 +1134,11 @@ test("existing task edits submit only writable fields accepted by the public sch
         const user = userEvent.setup();
         await user.clear(screen.getByRole("textbox", { name: "Title" }));
         await user.type(screen.getByRole("textbox", { name: "Title" }), "Updated task");
+        expect(screen.getByRole("button", { name: /Task start mode/ })).toHaveTextContent(
+            "Run manually"
+        );
+        await user.click(screen.getByRole("button", { name: /Task start mode/ }));
+        await user.click(screen.getByRole("option", { name: "Start automatically" }));
         await user.click(screen.getByRole("button", { name: "Save task" }));
         await waitFor(() => expect(closed).toBe(true));
         expect(submitted).toHaveLength(1);
@@ -1141,6 +1146,7 @@ test("existing task edits submit only writable fields accepted by the public sch
             id: task.id,
             version: 3,
             title: "Updated task",
+            autoStart: true,
             description: "Retain this",
             labels: ["existing"],
         });

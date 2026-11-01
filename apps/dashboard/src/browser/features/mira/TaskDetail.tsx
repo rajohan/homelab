@@ -104,7 +104,12 @@ export function TaskDetail({
     return (
         <Modal
             title={task.title}
-            titleAccessory={<Badge>{taskStates[task.status].title}</Badge>}
+            titleAccessory={
+                <>
+                    <Badge>{taskStates[task.status].title}</Badge>
+                    {task.autoStart && <Badge>Auto start</Badge>}
+                </>
+            }
             onClose={onClose}
             size="wide"
         >

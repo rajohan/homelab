@@ -22,7 +22,7 @@ import {
  */
 export async function readTask(context: MiraContext, id: string): Promise<MiraTask> {
     const [task] = await context.client<MiraTask[]>`
-        SELECT id, title, description, status, assignee, priority, labels,
+        SELECT id, title, description, status, assignee, priority, labels, auto_start AS "autoStart",
             due_at::text AS "dueAt", completion_criteria AS "completionCriteria",
             conversation_id AS "conversationId", version, created_at::text AS "createdAt", updated_at::text AS "updatedAt"
         FROM mira_tasks WHERE id = ${id} AND owner = ${context.owner} AND deleted_at IS NULL`;
@@ -41,7 +41,7 @@ export async function listTasks(
     input: v.InferOutput<typeof miraTaskFilterSchema>
 ) {
     const rows = await context.client<MiraTask[]>`
-        SELECT id, title, description, status, assignee, priority, labels,
+        SELECT id, title, description, status, assignee, priority, labels, auto_start AS "autoStart",
             due_at::text AS "dueAt", completion_criteria AS "completionCriteria",
             conversation_id AS "conversationId", version, created_at::text AS "createdAt", updated_at::text AS "updatedAt"
         FROM mira_tasks WHERE owner = ${context.owner} AND deleted_at IS NULL
@@ -102,10 +102,36 @@ export async function saveTask(
                 );
         }
         const [previous] = input.id
-            ? await query<{ status: string }[]>`
-            SELECT status FROM mira_tasks WHERE id=${id} AND owner=${context.owner} AND deleted_at IS NULL FOR UPDATE`
+            ? await query<{ status: string; assignee: string; autoStart: boolean }[]>`
+            SELECT status, assignee, auto_start AS "autoStart" FROM mira_tasks WHERE id=${id} AND owner=${context.owner} AND deleted_at IS NULL FOR UPDATE`
             : [];
         const humanEdit = !context.run && context.actor === `human:${context.owner}`;
+        if (!humanEdit && input.autoStart !== undefined)
+            throw new MiraFailure(
+                "FORBIDDEN",
+                "Only the operator can change automatic task start."
+            );
+        const autoStart = input.autoStart ?? previous?.autoStart ?? false;
+        const ready =
+            input.assignee === "mira" && !["blocked", "done"].includes(input.status);
+        let requestStart =
+            humanEdit &&
+            autoStart &&
+            ready &&
+            (!previous?.autoStart ||
+                previous.assignee !== "mira" ||
+                ["blocked", "done"].includes(previous.status));
+        if (
+            requestStart &&
+            previous &&
+            previous.assignee === "mira" &&
+            !["blocked", "done"].includes(previous.status)
+        ) {
+            const [active] = await query<
+                { id: string }[]
+            >`SELECT id FROM mira_runs WHERE owner=${context.owner} AND task_id=${id} AND state IN ('queued','running') AND NOT cancel_requested AND (NOT task_auto_started OR ${previous.autoStart}) LIMIT 1`;
+            if (active) requestStart = false;
+        }
         const stopWork =
             humanEdit &&
             (input.status === "blocked" ||
@@ -115,19 +141,22 @@ export async function saveTask(
         if (input.id) {
             const rows = await query<
                 { id: string }[]
-            >`UPDATE mira_tasks SET work_stopped_at=CASE WHEN ${stopWork} THEN clock_timestamp() ELSE work_stopped_at END, title = ${input.title}, description = ${input.description}, status = ${input.status}, assignee = ${input.assignee}, priority = ${input.priority}, labels = ${JSON.stringify(input.labels)}::text::jsonb, due_at = ${due}, completion_criteria = ${input.completionCriteria}, conversation_id = ${input.conversationId}, version = version + 1, updated_at = now() WHERE id = ${id} AND owner = ${context.owner} AND version = ${input.version ?? 0} AND deleted_at IS NULL RETURNING id`;
+            >`UPDATE mira_tasks SET auto_start=${autoStart}, auto_start_revoked_at=CASE WHEN ${humanEdit && previous?.autoStart === true && !autoStart} THEN clock_timestamp() ELSE auto_start_revoked_at END, work_stopped_at=CASE WHEN ${stopWork} THEN clock_timestamp() ELSE work_stopped_at END, title = ${input.title}, description = ${input.description}, status = ${input.status}, assignee = ${input.assignee}, priority = ${input.priority}, labels = ${JSON.stringify(input.labels)}::text::jsonb, due_at = ${due}, completion_criteria = ${input.completionCriteria}, conversation_id = ${input.conversationId}, version = version + 1, updated_at = now() WHERE id = ${id} AND owner = ${context.owner} AND version = ${input.version ?? 0} AND deleted_at IS NULL RETURNING id`;
             if (!rows[0])
                 throw new MiraFailure(
                     "CONFLICT",
                     "The task changed. Refresh before saving."
                 );
         } else {
-            await query`INSERT INTO mira_tasks (id, owner, title, description, status, assignee, priority, labels, due_at, completion_criteria, conversation_id) VALUES (${id}, ${context.owner}, ${input.title}, ${input.description}, ${input.status}, ${input.assignee}, ${input.priority}, ${JSON.stringify(input.labels)}::text::jsonb, ${due}, ${input.completionCriteria}, ${input.conversationId})`;
+            await query`INSERT INTO mira_tasks (id, owner, title, description, status, assignee, priority, labels, due_at, completion_criteria, conversation_id, auto_start) VALUES (${id}, ${context.owner}, ${input.title}, ${input.description}, ${input.status}, ${input.assignee}, ${input.priority}, ${JSON.stringify(input.labels)}::text::jsonb, ${due}, ${input.completionCriteria}, ${input.conversationId}, ${autoStart})`;
         }
         if (input.conversationId)
             await query`UPDATE mira_runs SET task_id=${id} WHERE owner=${context.owner} AND conversation_id=${input.conversationId} AND task_id IS NULL`;
         await auditMira(query, context, input.id ? "task.updated" : "task.created", id);
+        if (requestStart)
+            await auditMira(query, context, "task.auto_start_requested", id);
         if (
+            !requestStart &&
             humanEdit &&
             previous?.status === "blocked" &&
             input.status === "in_progress" &&
