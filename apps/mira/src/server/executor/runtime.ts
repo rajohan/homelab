@@ -158,7 +158,11 @@ export async function runMiraExecutor(options: {
             await maintenance.run(() =>
                 dispatchMiraImprovement(
                     client,
-                    { daytona: options.daytona, github: options.github },
+                    {
+                        daytona: options.daytona,
+                        github: options.github,
+                        localCode: options.localCode,
+                    },
                     signal,
                     options.filesDirectory
                 )

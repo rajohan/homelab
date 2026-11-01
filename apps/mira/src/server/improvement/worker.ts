@@ -4,15 +4,16 @@ import type { SQL } from "bun";
 import { miraRunAllowed } from "../data/automations";
 import { codePermission, saveMiraCode } from "../data/code";
 import { auditMira, MiraFailure, type MiraQuery } from "../data/context";
-import { daytonaPermission, saveMiraDaytona, miraDaytonaHash } from "../data/daytona";
+import { codeJobPermission, saveMiraDaytona, miraDaytonaHash } from "../data/daytona";
 import { createReport } from "../data/documents";
 import { saveMiraFile } from "../data/files";
 import { type DaytonaExecutionConfiguration } from "../integrations/daytona/configuration";
 import type { GitHubConfiguration } from "../integrations/github/configuration";
 import { GitHubReader } from "../integrations/github/reader";
+import type { LocalCodeBinding } from "../sandbox/localBinding";
 import { daytonaEditContent } from "../sandbox/profile";
 import { parseImprovement } from "./plan";
-import { improvementBinding, improvementJobAllowed } from "./policy";
+import { improvementBinding, improvementJobAllowed, improvementTarget } from "./policy";
 
 interface Attempt {
     id: string;
@@ -24,6 +25,7 @@ interface Attempt {
     content: unknown;
     contentHash: string;
     bindingHash: string;
+    executionTarget: string;
     token: string;
 }
 async function lock(query: MiraQuery, owner: string) {
@@ -43,6 +45,7 @@ export async function dispatchMiraImprovement(
     configuration: {
         daytona?: DaytonaExecutionConfiguration | undefined;
         github?: GitHubConfiguration | undefined;
+        localCode?: LocalCodeBinding | undefined;
     },
     stopping: AbortSignal,
     directory?: string,
@@ -57,7 +60,7 @@ export async function dispatchMiraImprovement(
         await lock(query, candidate.owner);
         const [row] = await query<
             Omit<Attempt, "token">[]
-        >`SELECT id,owner,run_id AS "runId",conversation_id AS "conversationId",automation_id AS "automationId",state,content,content_hash AS "contentHash",binding_hash AS "bindingHash" FROM mira_improvements WHERE id=${candidate.id} AND state IN ('queued','checking','publishing') AND (lease_expires_at IS NULL OR lease_expires_at<=clock_timestamp()) FOR UPDATE`;
+        >`SELECT id,owner,run_id AS "runId",conversation_id AS "conversationId",automation_id AS "automationId",state,content,content_hash AS "contentHash",binding_hash AS "bindingHash",(SELECT coalesce(r.settings->>'executionTarget','daytona') FROM mira_runs r WHERE r.id=mira_improvements.run_id AND r.owner=mira_improvements.owner) AS "executionTarget" FROM mira_improvements WHERE id=${candidate.id} AND state IN ('queued','checking','publishing') AND (lease_expires_at IS NULL OR lease_expires_at<=clock_timestamp()) FOR UPDATE`;
         if (!row) return null;
         const token = crypto.randomUUID();
         await query`UPDATE mira_improvements SET lease_token=${token},lease_expires_at=clock_timestamp()+interval '3 minutes' WHERE id=${row.id}`;
@@ -72,12 +75,18 @@ export async function dispatchMiraImprovement(
         >`SELECT id FROM mira_improvements WHERE id=${job.id} AND lease_token=${job.token} AND lease_expires_at>clock_timestamp() AND state=${job.state} FOR UPDATE`;
         if (!lease) throw new MiraFailure("CONFLICT", "The improvement lease changed.");
     };
+    const execution = improvementTarget(configuration, job.executionTarget);
+    const controlKey =
+        job.executionTarget === "main" ? "code:main" : "integration:daytona";
     const allowed = async (query: MiraQuery) =>
         !!directory &&
-        configuration.daytona?.executionQualified === true &&
-        improvementBinding(job.owner, configuration) === job.bindingHash &&
+        !!execution &&
+        (job.executionTarget === "main" ||
+            configuration.daytona?.executionQualified === true) &&
+        improvementBinding(job.owner, configuration, job.executionTarget) ===
+            job.bindingHash &&
         (await improvementJobAllowed(query, job.id)) &&
-        (await daytonaPermission(query, configuration.daytona)) !== null &&
+        (await codeJobPermission(query, execution)) !== null &&
         (await codePermission(query, configuration.github!)) !== null;
     const guard = async (query: MiraQuery) => {
         signal.throwIfAborted();
@@ -104,7 +113,7 @@ export async function dispatchMiraImprovement(
                     title: `Automatic code change: ${state.replaceAll("_", " ")}`,
                     kind: "improvement",
                     taskId: null,
-                    markdown: `${message}\n\n[Cloud jobs and code changes](/jobs)${number ? `\n\n[Draft PR #${number}](https://github.com/rajohan/homelab/pull/${number})` : ""}\n\nNo merge or deployment was performed.`,
+                    markdown: `${message}\n\n[Code jobs and code changes](/jobs)${number ? `\n\n[Draft PR #${number}](https://github.com/rajohan/homelab/pull/${number})` : ""}\n\nNo merge or deployment was performed.`,
                 },
                 job.runId
             );
@@ -112,7 +121,7 @@ export async function dispatchMiraImprovement(
             await auditMira(query, context, `improvement.${state}`, job.id);
             const [delivery] = await query<
                 { mode: string; enabled: boolean }[]
-            >`SELECT a.delivery AS mode,(g.enabled AND coalesce(d.enabled,false) AND coalesce(h.enabled,false)) AS enabled FROM mira_automations a JOIN mira_improvement_grants g ON g.automation_id=a.id AND g.owner=a.owner LEFT JOIN mira_switches d ON d.owner=a.owner AND d.key='integration:daytona' LEFT JOIN mira_switches h ON h.owner=a.owner AND h.key='integration:github' WHERE a.id=${job.automationId} AND a.owner=${job.owner} AND a.deleted_at IS NULL`;
+            >`SELECT a.delivery AS mode,(g.enabled AND coalesce(d.enabled,false) AND coalesce(h.enabled,false)) AS enabled FROM mira_automations a JOIN mira_improvement_grants g ON g.automation_id=a.id AND g.owner=a.owner LEFT JOIN mira_switches d ON d.owner=a.owner AND d.key=${controlKey} LEFT JOIN mira_switches h ON h.owner=a.owner AND h.key='integration:github' WHERE a.id=${job.automationId} AND a.owner=${job.owner} AND a.deleted_at IS NULL`;
             if (
                 state !== "cancelled" &&
                 delivery?.enabled &&
@@ -175,7 +184,7 @@ export async function dispatchMiraImprovement(
             if (job.state === "queued") {
                 await finish(
                     "cancelled",
-                    "Automatic coding was paused, changed or expired before cloud execution."
+                    "Automatic coding was paused, changed or expired before code execution."
                 );
                 return true;
             }
@@ -227,14 +236,14 @@ export async function dispatchMiraImprovement(
             ) {
                 await finish(
                     "cancelled",
-                    "The cloud check was cancelled. No PR was queued."
+                    "The code check was cancelled. No PR was queued."
                 );
                 return true;
             }
             if (!authorized) {
                 await finish(
                     cloud?.state === "needs_attention" ? "needs_attention" : "cancelled",
-                    "Automatic work stopped. Review Cloud jobs for the recorded check and cleanup outcome."
+                    "Automatic work stopped. Review Code jobs for the recorded check and cleanup outcome."
                 );
                 return true;
             }
@@ -315,10 +324,12 @@ export async function dispatchMiraImprovement(
                         conversationId: job.conversationId,
                         taskId: null,
                         content,
+                        executionTarget:
+                            job.executionTarget === "main" ? "main" : "daytona",
                     },
-                    configuration.daytona
+                    execution
                 );
-                const stamp = await daytonaPermission(query, configuration.daytona!);
+                const stamp = await codeJobPermission(query, execution!);
                 await query`UPDATE mira_daytona_jobs SET state='queued',approved_at=clock_timestamp(),control_version=${stamp},version=version+1 WHERE id=${job.id} AND state='draft'`;
                 await query`UPDATE mira_improvements SET state='checking',cloud_hash=${miraDaytonaHash(content)},updated_at=clock_timestamp() WHERE id=${job.id}`;
                 await auditMira(query, context, "improvement.check_queued", job.id);
@@ -329,7 +340,7 @@ export async function dispatchMiraImprovement(
                 await guard(query);
                 const [same] = await query<
                     { id: string }[]
-                >`SELECT j.id FROM mira_daytona_jobs j JOIN mira_improvements i ON i.id=j.id WHERE j.id=${job.id} AND j.content_hash=i.cloud_hash AND j.state='completed' AND j.cleanup='confirmed' AND j.exit_code=0 AND NOT j.cancel_requested FOR SHARE OF j`;
+                >`SELECT j.id FROM mira_daytona_jobs j JOIN mira_improvements i ON i.id=j.id WHERE j.id=${job.id} AND j.content_hash=i.cloud_hash AND j.execution_target=${job.executionTarget} AND j.state='completed' AND j.cleanup='confirmed' AND j.exit_code=0 AND NOT j.cancel_requested FOR SHARE OF j`;
                 if (!same)
                     throw new MiraFailure("CONFLICT", "The selected check changed.");
                 const publication = await saveMiraCode(

@@ -51,6 +51,7 @@ test.each([
         id: crypto.randomUUID(),
         title: "Synthetic frontend improvement",
         version: 1,
+        settings: { executionTarget: mode === "compiled" ? "main" : "daytona" },
     } as MiraAutomation;
     const key = ["operations", "mira", "improvement-grant", automation.id];
     const view = render(
@@ -63,6 +64,12 @@ test.each([
     try {
         expect(await screen.findByRole("dialog")).toHaveAccessibleName(
             "Automatic code changes"
+        );
+        expect(screen.getByText(/One fixed/)).toHaveTextContent(
+            mode === "compiled" ? "One fixed Main check" : "One fixed Daytona check"
+        );
+        expect(screen.queryByText(/credits or billing/)).toBe(
+            mode === "compiled" ? null : screen.getByText(/credits or billing/)
         );
         expect(
             screen.getByRole("status", { name: "Loading coding permission…" })

@@ -24,6 +24,8 @@ export function createImprovementTools(
     run: MiraClaim,
     bindings: ImprovementBindings
 ): ReturnType<typeof createGitHubTools> {
+    const target = run.executionTarget ?? "daytona";
+    const controlKey = target === "main" ? "code:main" : "integration:daytona";
     return [
         {
             name: "mira_improvement_status",
@@ -54,7 +56,7 @@ export function createImprovementTools(
             automatic: true,
             transactional: true,
             description:
-                "Submit at most one bounded frontend change from this improvement automation. Inspect existing tasks/PRs, current main and applicable AGENTS.md first. Supply commit, conventional PR title, body and plan {version:1,commit,files:[{path,beforeSha256,content}]}; use null fingerprint for a new file, null content for deletion, complete replacement text otherwise. At most ten .ts/.tsx/.css files in apps/dashboard/src/browser/ or packages/ui/src/components/, 64 KiB each and 256 KiB total. The service checks current source and competing Mira PRs, runs one fixed ten-minute Daytona check, then opens one draft PR only on success. It never merges, deploys or retries uncertain writes. Explicit policy and integration permission are required; this queued workflow continues on the server after this model turn. Report only the returned queued status; later results appear in Cloud jobs, Code changes and Reports.",
+                "Submit at most one bounded frontend change from this improvement automation. Inspect existing tasks/PRs, current main and applicable AGENTS.md first. Supply commit, conventional PR title, body and plan {version:1,commit,files:[{path,beforeSha256,content}]}; use null fingerprint for a new file, null content for deletion, complete replacement text otherwise. At most ten .ts/.tsx/.css files in apps/dashboard/src/browser/ or packages/ui/src/components/, 64 KiB each and 256 KiB total. The service checks current source and competing Mira PRs, runs one fixed ten-minute check on the selected execution target, then opens one draft PR only on success. It never merges, deploys or retries uncertain writes. Explicit policy and integration permission are required; this queued workflow continues on the server after this model turn. Report only the returned queued status; later results appear in Code jobs, Code changes and Reports.",
             inputSchema: {
                 type: "object",
                 additionalProperties: false,
@@ -144,7 +146,7 @@ export function createImprovementTools(
                         daytona: number;
                         github: number;
                     }[]
-                >`SELECT s.version AS automation,coalesce(u.version,1) AS autonomy,d.version AS daytona,g.version AS github FROM mira_switches s JOIN mira_switches d ON d.owner=s.owner AND d.key='integration:daytona' AND d.enabled JOIN mira_switches g ON g.owner=s.owner AND g.key='integration:github' AND g.enabled LEFT JOIN mira_switches u ON u.owner=s.owner AND u.key='autonomy' WHERE s.owner=${run.owner} AND s.key='automation:'||${run.automationId}::text AND s.enabled AND coalesce(u.enabled,true) AND EXISTS(SELECT 1 FROM mira_runs r JOIN mira_improvement_grants p ON p.automation_id=r.automation_id AND p.owner=r.owner WHERE r.id=${run.id} AND r.owner=${run.owner} AND r.automation_id=${run.automationId} AND r.automation_kind='improvement' AND r.created_at>=p.updated_at)`;
+                >`SELECT s.version AS automation,coalesce(u.version,1) AS autonomy,d.version AS daytona,g.version AS github FROM mira_switches s JOIN mira_switches d ON d.owner=s.owner AND d.key=${controlKey} AND d.enabled JOIN mira_switches g ON g.owner=s.owner AND g.key='integration:github' AND g.enabled LEFT JOIN mira_switches u ON u.owner=s.owner AND u.key='autonomy' WHERE s.owner=${run.owner} AND s.key='automation:'||${run.automationId}::text AND s.enabled AND coalesce(u.enabled,true) AND EXISTS(SELECT 1 FROM mira_runs r JOIN mira_improvement_grants p ON p.automation_id=r.automation_id AND p.owner=r.owner WHERE r.id=${run.id} AND r.owner=${run.owner} AND r.automation_id=${run.automationId} AND r.automation_kind='improvement' AND r.created_at>=p.updated_at AND coalesce(r.settings->>'executionTarget','daytona')=${target} AND EXISTS(SELECT 1 FROM mira_automations a WHERE a.id=r.automation_id AND a.owner=r.owner AND coalesce(a.settings->>'executionTarget','daytona')=${target}))`;
                 if (!grant.enabled || !grant.current || !grant.available || !controls)
                     throw new MiraFailure(
                         "FORBIDDEN",
@@ -163,13 +165,13 @@ export function createImprovementTools(
                         "Automatic coding is limited to one active workflow and two attempts per rolling 24 hours. Review existing work."
                     );
                 const id = Bun.randomUUIDv7();
-                await query`INSERT INTO mira_improvements(id,owner,run_id,conversation_id,automation_id,grant_version,binding_hash,automation_control,autonomy_control,policy_version,daytona_control,github_control,content,content_hash) VALUES(${id},${run.owner},${run.id},${run.conversationId},${run.automationId},${grant.version},${improvementBinding(run.owner, bindings)},${controls.automation},${controls.autonomy},${miraImprovementPolicy.version},${controls.daytona},${controls.github},${JSON.stringify({ commit: proposal.commit, title: proposal.title, body: proposal.body, plan: proposal.plan })}::text::jsonb,${hash})`;
+                await query`INSERT INTO mira_improvements(id,owner,run_id,conversation_id,automation_id,grant_version,binding_hash,automation_control,autonomy_control,policy_version,daytona_control,github_control,content,content_hash) VALUES(${id},${run.owner},${run.id},${run.conversationId},${run.automationId},${grant.version},${improvementBinding(run.owner, bindings, target)},${controls.automation},${controls.autonomy},${miraImprovementPolicy.version},${controls.daytona},${controls.github},${JSON.stringify({ commit: proposal.commit, title: proposal.title, body: proposal.body, plan: proposal.plan })}::text::jsonb,${hash})`;
                 await auditMira(query, context, "improvement.submitted", id);
                 return {
                     id,
                     state: "queued",
                     message:
-                        "Queued for source verification, one fixed cloud check and a draft PR if successful. No check or publication has completed yet.",
+                        "Queued for source verification, one fixed check on the selected execution target and a draft PR if successful. No check or publication has completed yet.",
                 };
             },
         },
