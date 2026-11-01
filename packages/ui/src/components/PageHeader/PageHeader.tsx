@@ -18,7 +18,7 @@ export function PageHeader({
 }) {
     return (
         <header className="@container/page-header mb-7">
-            <div className="grid gap-4 @min-[40rem]/page-header:grid-cols-[minmax(0,1fr)_auto] @min-[40rem]/page-header:items-center">
+            <div className="grid gap-4 @min-[40rem]/page-header:grid-cols-[minmax(16rem,1fr)_minmax(0,auto)] @min-[40rem]/page-header:items-center">
                 <div>
                     {eyebrow && (
                         <p className="text-xs font-semibold tracking-widest text-primary-400 uppercase">
@@ -40,7 +40,7 @@ export function PageHeader({
                     )}
                 </div>
                 {actions && (
-                    <div className="flex flex-col gap-2 @min-[40rem]/page-header:flex-row [&>button]:w-full @min-[40rem]/page-header:[&>button]:w-auto">
+                    <div className="flex min-w-0 flex-col gap-2 @min-[40rem]/page-header:flex-row @min-[40rem]/page-header:flex-wrap @min-[40rem]/page-header:justify-end [&>button]:w-full @min-[40rem]/page-header:[&>button]:w-auto">
                         {actions}
                     </div>
                 )}

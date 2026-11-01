@@ -19,10 +19,10 @@ test.each([false, true])(
         try {
             const user = userEvent.setup();
             const toggle = screen.getByRole("switch", { name: "Remember me" });
-            expect(toggle).not.toBeChecked();
+            expect(toggle).toBeChecked();
             await user.type(screen.getByLabelText("Username"), "fixture");
             await user.type(screen.getByLabelText("Password"), "fixture-password");
-            if (remember) await user.click(toggle);
+            if (!remember) await user.click(toggle);
             await user.click(screen.getByRole("button", { name: "Sign in" }));
             expect(request).toHaveBeenCalledWith("/api/login", {
                 username: "fixture",

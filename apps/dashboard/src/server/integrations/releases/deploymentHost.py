@@ -213,8 +213,11 @@ def container(target, service):
     image_labels = image.get("Config", {}).get("Labels") or {}
     schema = image_labels.get("io.homelab.dashboard-schema", "")
     auth_schema = image_labels.get("io.homelab.auth-schema", "")
+    name = data["Name"].removeprefix("/")
+    if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,199}", name):
+        raise Refusal("container_changed")
     return {"authSchema": auth_schema if isinstance(auth_schema, str) and re.fullmatch("[a-f0-9]{64}", auth_schema) else None,
-            "dashboardSchema": schema if isinstance(schema, str) and re.fullmatch("[a-f0-9]{64}", schema) else None, "id": data["Id"], "imageId": data["Image"], "image": data["Config"]["Image"],
+            "dashboardSchema": schema if isinstance(schema, str) and re.fullmatch("[a-f0-9]{64}", schema) else None, "id": data["Id"], "name": name, "imageId": data["Image"], "image": data["Config"]["Image"],
             "running": data["State"]["Running"], "health": data["State"].get("Health", {}).get("Status")}
 
 

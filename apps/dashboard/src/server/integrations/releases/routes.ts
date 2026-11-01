@@ -1,9 +1,9 @@
-import type { UpdateReport } from "@homelab/contracts/updates";
 import { listMiraComputers } from "@homelab/mira/data/computers";
 
 import information from "../../../../../../package.json";
 import { runOperation, trpc } from "../../api/trpc";
 import { authorizedOperations } from "../../operations/authorization";
+import { authReleaseObservations } from "./authObservations";
 import { deploymentRouter } from "./deploymentRoutes";
 import { releaseSnapshot } from "./snapshot";
 
@@ -32,38 +32,14 @@ export const releasesRouter = trpc.router({
                       actor: `human:${principal.id}`,
                   })
                 : [];
-            const reports = await operations.client<
-                { key: string; value: UpdateReport }[]
-            >`SELECT key, value FROM operation_snapshots WHERE key LIKE 'updates:%'`;
             const repository = operations.releaseRepository;
-            const sources = new Set(
-                (operations.updateSources ?? []).map((source) => `updates:${source.id}`)
-            );
-            const auth = reports
-                .filter((report) => sources.has(report.key))
-                .flatMap((report) =>
-                    report.value.items
-                        .filter(
-                            (item) =>
-                                repository &&
-                                item.image?.startsWith(
-                                    `ghcr.io/${repository.toLowerCase()}/auth:`
-                                )
-                        )
-                        .map((item) => ({
-                            name: item.name,
-                            version:
-                                item.installedVersion ??
-                                item.image!.split(":")[1]?.split("@")[0] ??
-                                "unknown",
-                            image: item.image!,
-                            capturedAt: report.value.capturedAt,
-                            stale:
-                                !report.value.complete ||
-                                Date.parse(report.value.capturedAt) <
-                                    Date.now() - 26 * 3_600_000,
-                        }))
-                );
+            const auth = await authReleaseObservations({
+                client: operations.client,
+                repository,
+                sources: operations.updateSources ?? [],
+                targets: operations.deploymentTargets ?? [],
+                connections: operations.updateTargets ?? [],
+            });
             return {
                 configured: Boolean(repository),
                 dashboard: information.version,

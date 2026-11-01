@@ -189,13 +189,14 @@ class HostTests(unittest.TestCase):
 
     def test_installed_schema_comes_from_image_not_compose_labels(self):
         identity="a"*64
-        container={"Id":identity,"Image":"sha256:"+identity,"Config":{"Image":self.old,"Labels":{
+        container={"Id":identity,"Name":"/custom-dashboard","Image":"sha256:"+identity,"Config":{"Image":self.old,"Labels":{
             "com.docker.compose.project":"homelab","com.docker.compose.service":"dashboard","io.homelab.dashboard-schema":"f"*64}},
             "State":{"Running":True,"Health":{"Status":"healthy"}}}
         for schema in ["d"*64,"malformed",None]:
             with patch.object(host,"command",side_effect=[identity.encode(),json.dumps([container]).encode(),json.dumps([{"Config":{"Labels":{"io.homelab.dashboard-schema":schema}}}]).encode()]):
                 result=host.container(self.target,"dashboard")
             self.assertEqual(result["dashboardSchema"],schema if schema=="d"*64 else None)
+            self.assertEqual(result["name"], "custom-dashboard")
 
     def test_auth_image_and_backup_are_bound_to_auth(self):
         reference = self.new.replace("/dashboard:", "/auth:")

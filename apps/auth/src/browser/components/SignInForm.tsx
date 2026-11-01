@@ -13,7 +13,7 @@ export function SignInForm({
     readonly client: IdentityClient;
     readonly onComplete: () => Promise<void>;
 }) {
-    const [remember, setRemember] = useState(false);
+    const [remember, setRemember] = useState(true);
     return (
         <FieldsForm
             fields={[

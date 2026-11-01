@@ -306,7 +306,8 @@ restart auth. No build or source edit is required. Dashboard and ForwardAuth fol
 | `HOMELAB_AUTH_REMEMBER_IDLE_TIMEOUT_SECONDS` | 604800  | Remember me: seven days inactive   |
 | `HOMELAB_AUTH_STEP_UP_MAX_AGE_SECONDS`       | 300     | Fresh security proof: five minutes |
 
-Remember me is an explicit choice at password sign-in, off by default; it never skips enrolled MFA.
+Remember me is selected by default at password sign-in; users can turn it off on shared devices.
+It never skips enrolled MFA. The same Auth form and lifetimes apply to the website and Windows app.
 Absolute expiry does not slide. Passive session polling does not count as activity. Bounds are checked
 at startup: idle cannot exceed absolute expiry, remembered limits cannot be shorter than normal ones,
 and step-up is between 30 seconds and one hour, no longer than normal idle. Absolute limits are capped
