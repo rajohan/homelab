@@ -151,6 +151,7 @@ import { daytonaBindingHash } from "@homelab/mira/integrations/daytona/configura
 import { githubBindingHash } from "@homelab/mira/integrations/github/configuration";
 import { hereNowBindingHash } from "@homelab/mira/integrations/herenow/configuration";
 import { moltbookBindingHash } from "@homelab/mira/integrations/moltbook/configuration";
+import { localCodeBindingHash } from "@homelab/mira/sandbox/localBinding";
 import * as v from "valibot";
 
 import { runOperation, trpc } from "../api/trpc";
@@ -219,14 +220,26 @@ export const miraRouter = trpc.router({
             .input(miraDaytonaSaveSchema)
             .mutation(({ ctx, input }) =>
                 execute(ctx, (mira) =>
-                    saveMiraDaytona(mira, input, ctx.operations?.daytonaBinding)
+                    saveMiraDaytona(
+                        mira,
+                        input,
+                        input.executionTarget === "main"
+                            ? ctx.operations?.localCodeBinding
+                            : ctx.operations?.daytonaBinding
+                    )
                 )
             ),
         approve: trpc.procedure
             .input(miraDaytonaApproveSchema)
             .mutation(({ ctx, input }) =>
                 execute(ctx, (mira) =>
-                    approveMiraDaytona(mira, input, ctx.operations?.daytonaBinding)
+                    approveMiraDaytona(
+                        mira,
+                        input,
+                        input.executionTarget === "main"
+                            ? ctx.operations?.localCodeBinding
+                            : ctx.operations?.daytonaBinding
+                    )
                 )
             ),
         cancel: trpc.procedure
@@ -640,7 +653,8 @@ export const miraRouter = trpc.router({
                 ctx.operations?.moltbookBinding,
                 ctx.operations?.hereNowBinding,
                 ctx.operations?.daytonaBinding,
-                ctx.operations?.githubBinding
+                ctx.operations?.githubBinding,
+                ctx.operations?.localCodeBinding
             )
         )
     ),
@@ -653,6 +667,7 @@ export const miraRouter = trpc.router({
                 const hereNow = ctx.operations?.hereNowBinding;
                 const daytona = ctx.operations?.daytonaBinding;
                 const github = ctx.operations?.githubBinding;
+                const localCode = ctx.operations?.localCodeBinding;
                 if (
                     [
                         "integration:agentmail",
@@ -661,6 +676,7 @@ export const miraRouter = trpc.router({
                         "integration:here-now",
                         "integration:daytona",
                         "integration:github",
+                        "code:main",
                     ].includes(input.key) &&
                     input.enabled
                 ) {
@@ -670,7 +686,8 @@ export const miraRouter = trpc.router({
                         moltbook,
                         hereNow,
                         daytona,
-                        github
+                        github,
+                        localCode
                     );
                     const status = statuses.find((item) => item.key === input.key);
                     if (!status?.ready)
@@ -702,6 +719,8 @@ export const miraRouter = trpc.router({
                     hash = daytonaBindingHash(daytona);
                 if (input.key === "integration:github" && github?.owner === mira.owner)
                     hash = githubBindingHash(github);
+                if (input.key === "code:main" && localCode?.owner === mira.owner)
+                    hash = localCodeBindingHash(localCode);
                 return setMiraEnabled(mira, input, hash);
             })
         ),

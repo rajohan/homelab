@@ -1539,53 +1539,60 @@ function cloudJob(): MiraDaytonaJob {
         updatedAt: "2026-10-25T12:00:00Z",
     };
 }
-test("cloud review submits the exact displayed command and closes after approval", async () => {
-    const job = cloudJob();
-    const requested: unknown[] = [];
-    let closed = false;
-    const request = spyOn(globalThis, "fetch").mockImplementation(
-        Object.assign(
-            (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
-                if (typeof init?.body !== "string") throw new Error("Expected body");
-                requested.push(
-                    (JSON.parse(init.body) as { "0": { json: unknown } })["0"].json
-                );
-                return Promise.resolve(
-                    Response.json([
-                        { result: { data: serialize({ ...job, state: "queued" }) } },
-                    ])
-                );
-            },
-            { preconnect: fetch.preconnect }
-        )
-    );
-    const cleanup = fixture(
-        <DaytonaDetails
-            job={job}
-            onClose={() => {
-                closed = true;
-            }}
-        />
-    );
-    try {
-        expect(screen.getByText(job.content.command)).toBeInTheDocument();
-        await userEvent
-            .setup()
-            .click(screen.getByRole("button", { name: "Start cloud job" }));
-        await waitFor(() => expect(closed).toBe(true));
-        expect(requested).toEqual([
-            {
-                id: job.id,
-                version: 1,
-                contentHash: job.contentHash,
-                reviewedContent: job.content,
-            },
-        ]);
-    } finally {
-        cleanup();
-        request.mockRestore();
+test.each(["main", "daytona"] as const)(
+    "%s review submits the displayed target and command and closes after approval",
+    async (executionTarget) => {
+        const job = { ...cloudJob(), executionTarget };
+        const requested: unknown[] = [];
+        let closed = false;
+        const request = spyOn(globalThis, "fetch").mockImplementation(
+            Object.assign(
+                (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+                    if (typeof init?.body !== "string") throw new Error("Expected body");
+                    requested.push(
+                        (JSON.parse(init.body) as { "0": { json: unknown } })["0"].json
+                    );
+                    return Promise.resolve(
+                        Response.json([
+                            { result: { data: serialize({ ...job, state: "queued" }) } },
+                        ])
+                    );
+                },
+                { preconnect: fetch.preconnect }
+            )
+        );
+        const cleanup = fixture(
+            <DaytonaDetails
+                job={job}
+                onClose={() => {
+                    closed = true;
+                }}
+            />
+        );
+        try {
+            expect(screen.getByText(job.content.command)).toBeInTheDocument();
+            await userEvent.setup().click(
+                screen.getByRole("button", {
+                    name:
+                        executionTarget === "main" ? "Start on Main" : "Start on Daytona",
+                })
+            );
+            await waitFor(() => expect(closed).toBe(true));
+            expect(requested).toEqual([
+                {
+                    id: job.id,
+                    version: 1,
+                    contentHash: job.contentHash,
+                    reviewedContent: job.content,
+                    executionTarget,
+                },
+            ]);
+        } finally {
+            cleanup();
+            request.mockRestore();
+        }
     }
-});
+);
 test("cloud details keep command completion separate from pending cleanup and render logs passively", () => {
     const job = {
         ...cloudJob(),
@@ -1602,7 +1609,7 @@ test("cloud details keep command completion separate from pending cleanup and re
         expect(screen.getByText(job.stdout)).toBeInTheDocument();
         expect(screen.queryByRole("img")).not.toBeInTheDocument();
         expect(
-            screen.queryByRole("button", { name: "Start cloud job" })
+            screen.queryByRole("button", { name: "Start on Daytona" })
         ).not.toBeInTheDocument();
         expect(
             screen.queryByRole("button", { name: "Cancel job" })
@@ -1630,7 +1637,9 @@ test("cloud review does not silently replace the command when a newer draft arri
             });
         });
         await waitFor(() =>
-            expect(screen.getByRole("button", { name: "Start cloud job" })).toBeDisabled()
+            expect(
+                screen.getByRole("button", { name: "Start on Daytona" })
+            ).toBeDisabled()
         );
         expect(screen.getByText(job.content.command)).toBeInTheDocument();
         expect(screen.queryByText("new unseen command")).not.toBeInTheDocument();
@@ -1703,7 +1712,7 @@ test("cloud history opens the selected draft and returns to its list without sta
         await user.click(screen.getByRole("button", { name: "Review" }));
         expect(screen.getAllByRole("dialog")).toHaveLength(1);
         expect(
-            screen.getByRole("button", { name: "Start cloud job" })
+            screen.getByRole("button", { name: "Start on Daytona" })
         ).toBeInTheDocument();
         await user.click(screen.getByRole("button", { name: "Close" }));
         await user.click(screen.getByRole("button", { name: "Edit" }));
@@ -2532,3 +2541,22 @@ test.each(["offline", "update_required"] as const)(
         }
     }
 );
+
+test("Main cleanup cannot be replaced by a cloud cleanup assertion", () => {
+    const job: MiraDaytonaJob = {
+        ...cloudJob(),
+        executionTarget: "main",
+        state: "needs_attention",
+        cleanup: "pending",
+        phase: "cleaning",
+    };
+    const cleanup = fixture(<DaytonaDetails job={job} onClose={() => {}} />);
+    try {
+        expect(screen.getByText("Main · local")).toBeInTheDocument();
+        expect(
+            screen.queryByRole("button", { name: "Resolve cleanup" })
+        ).not.toBeInTheDocument();
+    } finally {
+        cleanup();
+    }
+});

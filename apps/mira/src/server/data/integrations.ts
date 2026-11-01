@@ -6,6 +6,7 @@ import type { DaytonaBinding } from "../integrations/daytona/configuration";
 import type { GitHubBinding } from "../integrations/github/configuration";
 import type { HereNowBinding } from "../integrations/herenow/configuration";
 import type { MoltbookBinding } from "../integrations/moltbook/configuration";
+import { localCodeStatus, type LocalCodeBinding } from "../sandbox/localBinding";
 import type { MiraContext, MiraQuery } from "./context";
 import { daytonaIntegrationStatus } from "./daytona";
 import { githubIntegrationStatus } from "./github";
@@ -46,6 +47,7 @@ export async function agentMailBindingStatus(
  * @param moltbook - Dashboard account mapping for passive social reads.
  * @param github - Dashboard mapping for reviewed code publication.
  * @param daytona - Dashboard cloud execution mapping.
+ * @param localCode - Optional Main deployment mapping.
  * @returns Configured availability and redacted recovery status; intentional pause stays separate.
  */
 export async function listMiraIntegrations(
@@ -54,7 +56,8 @@ export async function listMiraIntegrations(
     moltbook?: MoltbookBinding,
     hereNow?: HereNowBinding,
     daytona?: DaytonaBinding,
-    github?: GitHubBinding
+    github?: GitHubBinding,
+    localCode?: LocalCodeBinding
 ) {
     const status =
         binding?.owner === context.owner
@@ -86,6 +89,7 @@ export async function listMiraIntegrations(
         await hereNowIntegrationStatus(context, hereNow),
         await daytonaIntegrationStatus(context, daytona),
         await githubIntegrationStatus(context, github),
+        await localCodeStatus(context, localCode),
     ];
 }
 

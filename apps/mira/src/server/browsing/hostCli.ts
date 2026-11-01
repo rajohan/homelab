@@ -9,17 +9,31 @@ import * as v from "valibot";
 import { browserHostEnvironment } from "../config/environment";
 import { browserHostConfigurationSchema } from "../data/browserHost";
 import { runMiraBrowserHost, type MiraBrowserHealth } from "../data/browserService";
+import { runMiraLocalCodeHost } from "../sandbox/localService";
 
 /**
  * Own the private browser host independently of the model runtime and dashboard server.
  * @returns Completion after owned sessions stop; only content-free failures reach stderr.
  */
 export async function main(): Promise<void> {
-    const { file, databaseUrl, port, filesDirectory } = browserHostEnvironment();
+    const { file, databaseUrl, port, filesDirectory, localCode } =
+        browserHostEnvironment();
     const configuration = v.parse(
         browserHostConfigurationSchema,
         await Bun.file(file).json()
     );
+    if (
+        localCode &&
+        (localCode.hostId !== configuration.hostId ||
+            configuration.networks?.some(
+                (slot) =>
+                    slot.networkId === localCode.egress.networkId ||
+                    slot.proxyId === localCode.egress.proxyId
+            ))
+    )
+        throw new Error(
+            "Local code requires this host's identity and a separate network slot."
+        );
     const client = new SQL(databaseUrl, {
         max: 8,
         connectionTimeout: 5,
@@ -41,6 +55,13 @@ export async function main(): Promise<void> {
             throw new Error("Browser host shutdown deadline exceeded.");
         }, 30_000);
         deadline.unref();
+    };
+    const supervise = async (work: Promise<void>) => {
+        try {
+            await work;
+        } finally {
+            stop();
+        }
     };
     process.on("SIGINT", stop);
     process.on("SIGTERM", stop);
@@ -82,14 +103,34 @@ export async function main(): Promise<void> {
         });
         await Effect.runPromise(
             Effect.tryPromise({
-                try: () =>
-                    runMiraBrowserHost({
-                        client,
-                        configuration,
-                        signal: controller.signal,
-                        health,
-                        filesDirectory,
-                    }),
+                try: async () => {
+                    const results = await Promise.allSettled([
+                        supervise(
+                            runMiraBrowserHost({
+                                client,
+                                configuration,
+                                signal: controller.signal,
+                                health,
+                                filesDirectory,
+                            })
+                        ),
+                        ...(localCode
+                            ? [
+                                  supervise(
+                                      runMiraLocalCodeHost({
+                                          client,
+                                          binding: localCode,
+                                          socketPath: configuration.socketPath,
+                                          filesDirectory,
+                                          signal: controller.signal,
+                                      })
+                                  ),
+                              ]
+                            : []),
+                    ]);
+                    if (results.some((result) => result.status === "rejected"))
+                        throw new Error("Trusted host failed.");
+                },
                 catch: () => new Error("Browser host failed."),
             })
         );

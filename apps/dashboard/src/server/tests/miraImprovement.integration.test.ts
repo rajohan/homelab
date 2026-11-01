@@ -942,3 +942,37 @@ for (const outcome of ["published", "failed", "cancelled", "with-model-report"] 
             await f.close();
         }
     });
+
+test("Main selection never authorizes a Daytona improvement grant or falls back to cloud execution", async () => {
+    const f = await fixture();
+    try {
+        await f.api.automations.update({
+            ...f.fields,
+            id: f.automation.id,
+            version: 1,
+            settings: {
+                model: null,
+                effort: null,
+                serviceTier: null,
+                executionTarget: "main",
+            },
+        });
+        await rejects(
+            f.api.improvements.allow({
+                automationId: f.automation.id,
+                automationVersion: 2,
+                version: 0,
+                enabled: true,
+                policyVersion: 1,
+            }),
+            /Daytona target/
+        );
+        const { run, submit } = await f.start();
+        expect(run.executionTarget).toBe("main");
+        expect(await submit()).toMatchObject({ ok: false });
+        const jobs = await f.api.daytona.list({});
+        expect(jobs.rows).toHaveLength(0);
+    } finally {
+        await f.close();
+    }
+});

@@ -21,6 +21,7 @@ export const miraControlKeys = [
     "autonomy",
     "integration:agentmail",
     "integration:daytona",
+    "code:main",
     "integration:here-now",
     "integration:github",
     "integration:moltbook",
@@ -229,7 +230,7 @@ export async function setMiraEnabled(
             await query`INSERT INTO mira_control_windows (owner, key, version, started_at) VALUES (${context.owner}, ${input.key}, 1, '1970-01-01'::timestamptz)`;
         const rows = await query<
             { key: string; version: number; at: Date }[]
-        >`UPDATE mira_switches SET enabled = ${input.enabled}, reason = ${input.reason}, until = ${!input.key.startsWith("skill:") && input.until ? new Date(input.until) : null}, skill_resume_at = ${input.key.startsWith("skill:") && input.until ? new Date(input.until) : null}, version = version + 1, changed_at = clock_timestamp(), binding_activated_at = CASE WHEN ${input.key} IN ('integration:agentmail','integration:moltbook','integration:moltbook-publish','integration:here-now','integration:daytona','integration:github') AND ${input.enabled} AND binding_hash IS DISTINCT FROM ${bindingHash ?? null} THEN clock_timestamp() ELSE binding_activated_at END, binding_hash = CASE WHEN ${input.key} IN ('integration:agentmail','integration:moltbook','integration:moltbook-publish','integration:here-now','integration:daytona','integration:github') AND ${input.enabled} THEN ${bindingHash ?? null} ELSE binding_hash END WHERE owner = ${context.owner} AND key = ${input.key} AND version = ${input.version} RETURNING key, version, changed_at AS at`;
+        >`UPDATE mira_switches SET enabled = ${input.enabled}, reason = ${input.reason}, until = ${!input.key.startsWith("skill:") && input.until ? new Date(input.until) : null}, skill_resume_at = ${input.key.startsWith("skill:") && input.until ? new Date(input.until) : null}, version = version + 1, changed_at = clock_timestamp(), binding_activated_at = CASE WHEN ${input.key} IN ('integration:agentmail','integration:moltbook','integration:moltbook-publish','integration:here-now','integration:daytona','integration:github','code:main') AND ${input.enabled} AND binding_hash IS DISTINCT FROM ${bindingHash ?? null} THEN clock_timestamp() ELSE binding_activated_at END, binding_hash = CASE WHEN ${input.key} IN ('integration:agentmail','integration:moltbook','integration:moltbook-publish','integration:here-now','integration:daytona','integration:github','code:main') AND ${input.enabled} THEN ${bindingHash ?? null} ELSE binding_hash END WHERE owner = ${context.owner} AND key = ${input.key} AND version = ${input.version} RETURNING key, version, changed_at AS at`;
         if (!rows[0])
             throw new MiraFailure(
                 "CONFLICT",
@@ -288,6 +289,12 @@ export async function resumeMiraControls(
             { owner: string; key: string }[]
         >`SELECT owner, key FROM mira_switches WHERE owner = ${account.owner} AND NOT enabled AND COALESCE(skill_resume_at,until) <= ${now} FOR UPDATE`;
         for (const row of rows) {
+            if (row.key === "code:main") {
+                const [host] = await query<
+                    { current: boolean }[]
+                >`SELECT EXISTS(SELECT 1 FROM mira_switches s JOIN mira_integration_receivers r ON r.key='code:main' AND r.binding_hash=s.binding_hash WHERE s.owner=${row.owner} AND s.key='code:main' AND r.heartbeat_at>clock_timestamp()-interval '45 seconds') AS current`;
+                if (!host?.current) continue;
+            }
             if (
                 row.key.startsWith("skill:") &&
                 (await miraSkillsCompatibility(query)) !== "available"

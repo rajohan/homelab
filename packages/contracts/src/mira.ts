@@ -6,6 +6,7 @@ import { scheduleConfigurationSchema } from "./schedules";
 const text = (maximum: number) => v.pipe(v.string(), v.trim(), v.maxLength(maximum));
 const title = v.pipe(text(160), v.minLength(1));
 const body = text(32_000);
+export const miraCodeTargetSchema = v.picklist(["main", "daytona"]);
 export const miraPageSchema = v.strictObject({
     before: v.optional(idSchema),
     search: v.optional(text(160), ""),
@@ -59,6 +60,7 @@ export const miraTaskRunInputSchema = v.strictObject({
     requestId: idSchema,
     instructions: v.optional(text(4000), ""),
     reviewedRunId: v.optional(v.nullable(idSchema), null),
+    executionTarget: v.optional(miraCodeTargetSchema),
 });
 export const miraTaskFilterSchema = v.strictObject({
     ...miraPageSchema.entries,
@@ -143,6 +145,7 @@ export const miraChatSettingsSchema = v.strictObject({
     serviceTier: v.nullable(modelIdentifier),
     useMemory: v.optional(v.boolean()),
     useHistory: v.optional(v.boolean()),
+    executionTarget: v.optional(miraCodeTargetSchema),
 });
 export const miraDefaultChatSettings = { model: null, effort: null, serviceTier: null };
 export type MiraChatSettings = v.InferOutput<typeof miraChatSettingsSchema>;

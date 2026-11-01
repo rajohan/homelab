@@ -10,6 +10,7 @@ import { useRef, useState } from "react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
+import { CodeTargetSettings } from "./CodeTargetSettings";
 import { MiraRunDetails } from "./MiraRunDetails";
 
 /**
@@ -34,6 +35,7 @@ export function TaskRunDialog({
     const [instructions, setInstructions] = useState("");
     const [reviewed, setReviewed] = useState(false);
     const [submitted, setSubmitted] = useState(false);
+    const [executionTarget, setExecutionTarget] = useState<"main" | "daytona">();
     const requestId = useRef(crypto.randomUUID());
     const run = useOperation(() =>
         api.mira.tasks.run.mutate({
@@ -42,6 +44,7 @@ export function TaskRunDialog({
             requestId: requestId.current,
             instructions,
             reviewedRunId: null,
+            executionTarget,
         })
     );
     const review = useOperation(
@@ -89,6 +92,12 @@ export function TaskRunDialog({
                 onStarted(result.conversationId);
             }}
         >
+            <CodeTargetSettings
+                value={executionTarget}
+                onChange={setExecutionTarget}
+                disabled={submitted}
+                inherit
+            />
             <FormField
                 label="Additional instructions"
                 description="Optional scope or priority for this run."

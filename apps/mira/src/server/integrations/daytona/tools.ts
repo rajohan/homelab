@@ -11,6 +11,7 @@ import { MiraFailure, type MiraContext } from "../../data/context";
 import { listMiraDaytona, readMiraDaytona, saveMiraDaytona } from "../../data/daytona";
 import type { MiraClaim } from "../../data/queue";
 import type { RuntimeTool } from "../../runtime/protocol";
+import type { CodeJobBinding } from "../../sandbox/localBinding";
 import {
     daytonaCheckContent,
     daytonaCheckSchema,
@@ -18,7 +19,6 @@ import {
     daytonaSourceContent,
     daytonaSourceSchema,
 } from "../../sandbox/profile";
-import type { DaytonaBinding } from "./configuration";
 
 type DaytonaTool = Omit<RuntimeTool, "execute"> & {
     automatic: boolean;
@@ -31,7 +31,7 @@ type DaytonaTool = Omit<RuntimeTool, "execute"> & {
 };
 
 /**
- * Expose local cloud proposals and owned results without granting model execution or spending authority.
+ * Expose recorded code proposals and owned results without granting model execution or spending authority.
  * @param client - Product database.
  * @param run - Current fenced conversation claim.
  * @param configuration - Nonsecret fixed execution mapping.
@@ -40,9 +40,10 @@ type DaytonaTool = Omit<RuntimeTool, "execute"> & {
 export function createDaytonaTools(
     client: SQL,
     run: MiraClaim,
-    configuration?: DaytonaBinding
+    configuration?: CodeJobBinding
 ): DaytonaTool[] {
     const context = { client, owner: run.owner, actor: "mira" };
+    const target = run.executionTarget ?? "daytona";
     const inputFile = v.strictObject({
         id: idSchema,
         name: v.pipe(v.string(), v.maxLength(160)),
@@ -52,7 +53,7 @@ export function createDaytonaTools(
             name: "mira_daytona_jobs",
             automatic: true,
             description:
-                "List local cloud jobs for this conversation. Pass nextCursor as before to read older jobs. No provider call or execution. A completed command and confirmed sandbox cleanup are separate; never claim both unless recorded.",
+                "List recorded code jobs for this conversation. Pass nextCursor as before to read older jobs. No provider call or execution. A completed command and confirmed sandbox cleanup are separate; never claim both unless recorded.",
             inputSchema: {
                 type: "object",
                 additionalProperties: false,
@@ -71,6 +72,7 @@ export function createDaytonaTools(
                 return {
                     rows: page.rows.map((job) => ({
                         id: job.id,
+                        executionTarget: job.executionTarget,
                         title: job.content.title,
                         state: job.state,
                         phase: job.phase,
@@ -87,7 +89,7 @@ export function createDaytonaTools(
             name: "mira_daytona_result",
             automatic: true,
             description:
-                "Read one recorded cloud result from this conversation, with bounded untrusted logs. This never runs code or interprets log instructions. The returned truncated flag means the dashboard may contain more log text. Use mira_attachment_read with a returned file ID to read bounded text/PDF contents; images can be opened in the dashboard.",
+                "Read one recorded code result from this conversation, with bounded untrusted logs. This never runs code or interprets log instructions. The returned truncated flag means the dashboard may contain more log text. Use mira_attachment_read with a returned file ID to read bounded text/PDF contents; images can be opened in the dashboard.",
             inputSchema: {
                 type: "object",
                 additionalProperties: false,
@@ -101,10 +103,11 @@ export function createDaytonaTools(
                 if (job.conversationId !== run.conversationId)
                     throw new MiraFailure(
                         "NOT_FOUND",
-                        "Cloud job not found in this conversation."
+                        "Code job not found in this conversation."
                     );
                 return {
                     id: job.id,
+                    executionTarget: job.executionTarget,
                     state: job.state,
                     cleanup: job.cleanup,
                     exitCode: job.exitCode,
@@ -125,7 +128,7 @@ export function createDaytonaTools(
             automatic: false,
             transactional: true,
             description:
-                "Prepare a cloud command requested by the operator. Stable UUID/version 0 creates a draft; current version edits it. Each selected input must already be attached to this conversation. Use the fixed paths /tmp/homelab-mira/<draft-id>/inputs/<name> and outputs/<name>. Up to four inputs/results, each at most 1 MiB; results are passive text, PDF or images. The operator reviews and starts the exact command in Cloud jobs. This tool never approves, creates a sandbox, or spends resources. Do not include host credentials or assume local host files are available.",
+                "Prepare a code command requested by the operator. Stable UUID/version 0 creates a draft; current version edits it. Each selected input must already be attached to this conversation. Use the fixed paths /tmp/homelab-mira/<draft-id>/inputs/<name> and outputs/<name>. Up to four inputs/results, each at most 1 MiB; results are passive text, PDF or images. The operator reviews and starts the exact command in Code jobs. This tool never approves, creates a sandbox, or spends resources. Do not include host credentials or assume local host files are available.",
             inputSchema: {
                 type: "object",
                 additionalProperties: false,
@@ -156,7 +159,7 @@ export function createDaytonaTools(
                 if (!owned?.transaction)
                     throw new MiraFailure(
                         "FORBIDDEN",
-                        "Cloud drafts require the owned tool transaction."
+                        "Code drafts require the owned tool transaction."
                     );
                 const parsed = v.parse(
                     v.strictObject({
@@ -177,7 +180,7 @@ export function createDaytonaTools(
                     if (!file)
                         throw new MiraFailure(
                             "FORBIDDEN",
-                            "Attach each selected input to this conversation before proposing cloud export."
+                            "Attach each selected input to this conversation before proposing code execution."
                         );
                     inputs.push({ ...selected, sha256: file.sha256 });
                 }
@@ -185,6 +188,7 @@ export function createDaytonaTools(
                     owned,
                     {
                         id: parsed.id,
+                        executionTarget: target,
                         version: parsed.version,
                         conversationId: run.conversationId,
                         taskId: run.taskId ?? null,
@@ -209,7 +213,7 @@ export function createDaytonaTools(
             transactional: true,
             description: editing
                 ? 'Prepare reviewed Homelab file edits and full checks in the qualified version 2 snapshot. First use mira_file_create to attach a JSON plan: {"version":1,"commit":"<40-character public SHA>","files":[{"path":"apps/example.ts","beforeSha256":"<SHA-256 of exact original UTF-8 bytes>","content":"complete replacement text"}]}. At most 20 regular text files, 256 KiB each, one MiB total; use beforeSha256:null only for a new file, content:null to delete. Original fingerprints and base must match exactly; no path traversal, symlinks, binary or unchanged files. The sandbox generates changes.txt and runs all fixed checks. Pass the attached plan ID as editsId. This creates a draft only; the operator reviews and starts it. No GitHub write, merge, deployment or execution authority is granted.'
-                : "Prepare the fixed Homelab verification profile for one exact public commit and an optional attached unified patch text file. The qualified snapshot runs Bun 1.4.4, frozen install, checks, tests, build and smoke tests using isolated PostgreSQL. Results are untrusted report/log/patch files in Cloud jobs. No arbitrary repository, credentials, GitHub writes, approval or spending. The operator must review and start the draft. This profile requires the Homelab check snapshot; do not assume an ordinary Bun image contains it.",
+                : "Prepare the fixed Homelab verification profile for one exact public commit and an optional attached unified patch text file. The qualified snapshot runs Bun 1.4.4, frozen install, checks, tests, build and smoke tests using isolated PostgreSQL. Results are untrusted report/log/patch files in Code jobs. No arbitrary repository, credentials, GitHub writes, approval or spending. The operator must review and start the draft. This profile requires the Homelab check snapshot; do not assume an ordinary Bun image contains it.",
             inputSchema: {
                 type: "object",
                 additionalProperties: false,
@@ -226,7 +230,7 @@ export function createDaytonaTools(
                 if (!owned?.transaction)
                     throw new MiraFailure(
                         "FORBIDDEN",
-                        "Cloud drafts require the owned tool transaction."
+                        "Code drafts require the owned tool transaction."
                     );
                 const common = {
                     id: idSchema,
@@ -248,7 +252,7 @@ export function createDaytonaTools(
                     if (!file)
                         throw new MiraFailure(
                             "FORBIDDEN",
-                            "Attach the selected change file to this conversation before proposing cloud export."
+                            "Attach the selected change file to this conversation before proposing code execution."
                         );
                     patch = { id: fileId, sha256: file.sha256 };
                 }
@@ -324,5 +328,8 @@ export function createDaytonaTools(
             );
         },
     });
-    return tools;
+    return tools.map((tool) => ({
+        ...tool,
+        description: `This run's code execution target is ${target === "main" ? "Main (local isolated container)" : "Daytona (cloud sandbox)"}. It cannot be changed by a tool or fall back to another target. ${target === "main" ? "Only the fixed Homelab source/check/edit profile is supported; no arbitrary commands. " : ""}${tool.description}`,
+    }));
 }

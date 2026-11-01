@@ -49,6 +49,7 @@ import {
     loadSyntheticModels,
     syntheticSubscriptionAvailable,
 } from "../runtime/syntheticRuntime";
+import type { LocalCodeBinding } from "../sandbox/localBinding";
 import { miraSkillCatalogHash } from "../skills/catalog";
 import { cleanupMiraResources } from "./cleanup";
 import { MaintenanceGate } from "./maintenanceGate";
@@ -79,6 +80,7 @@ export async function runMiraExecutor(options: {
     daytona?: DaytonaExecutionConfiguration | undefined;
     github?: GitHubConfiguration | undefined;
     synthetic?: SyntheticConfiguration | undefined;
+    localCode?: LocalCodeBinding | undefined;
 }): Promise<void> {
     const { client, config, health } = options;
     const failed = new AbortController();
@@ -398,7 +400,8 @@ export async function runMiraExecutor(options: {
                                 options.hereNow,
                                 options.daytona,
                                 options.github,
-                                options.synthetic
+                                options.synthetic,
+                                options.localCode
                             );
                         } finally {
                             health.active--;

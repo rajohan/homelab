@@ -10,7 +10,7 @@ import {
     formatDateTime,
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
-import { Cloud, File, ScrollText } from "lucide-react";
+import { Cloud, File, ScrollText, Server } from "lucide-react";
 import { useState } from "react";
 
 import { api } from "../../api/client";
@@ -24,7 +24,7 @@ import { DaytonaRecovery } from "./DaytonaRecovery";
 import { MessageAttachments } from "./MessageAttachments";
 
 /**
- * Review exact cloud execution or follow its durable status after reconnecting.
+ * Review exact code execution or follow its durable status after reconnecting.
  * @returns Bounded status, logs, results and cancellation controls.
  */
 export function DaytonaDetails({
@@ -48,6 +48,7 @@ export function DaytonaDetails({
             id: job.id,
             version: job.version,
             contentHash: job.contentHash,
+            executionTarget: job.executionTarget,
             reviewedContent: job.content,
         })
     );
@@ -67,7 +68,7 @@ export function DaytonaDetails({
         return <DaytonaRecovery id={job.id} onClose={() => setRecovering(false)} />;
     return (
         <Modal
-            title={job.state === "draft" ? "Review cloud job" : "Cloud job details"}
+            title={job.state === "draft" ? "Review code job" : "Code job details"}
             onClose={onClose}
             size="wide"
             dismissible={!busy}
@@ -76,7 +77,7 @@ export function DaytonaDetails({
                 <Card className="space-y-4 bg-primary-900/40">
                     <SectionHeader
                         title={job.content.title}
-                        icon={Cloud}
+                        icon={job.executionTarget === "main" ? Server : Cloud}
                         badge={
                             <Badge tone={daytonaTones[job.state]}>
                                 {job.state.replaceAll("_", " ")}
@@ -84,6 +85,14 @@ export function DaytonaDetails({
                         }
                     />
                     <dl className="grid gap-3 text-sm sm:grid-cols-2">
+                        <div>
+                            <dt className="text-primary-400">Code execution</dt>
+                            <dd>
+                                {job.executionTarget === "main"
+                                    ? "Main · local"
+                                    : "Daytona · cloud"}
+                            </dd>
+                        </div>
                         <div>
                             <dt className="text-primary-400">Progress</dt>
                             <dd>{daytonaPhaseLabels[job.phase] ?? "Unknown"}</dd>
@@ -117,11 +126,18 @@ export function DaytonaDetails({
                 </Card>
                 {job.state === "draft" && (
                     <p className="text-sm text-primary-300">
-                        Start this exact command in Daytona with the selected files. Cloud
-                        usage may be billed. Each sandbox has 4 CPUs, 8 GiB memory, 10 GiB
-                        disk. Mira closes finished jobs; five idle minutes trigger
-                        automatic cleanup. Mira allows one active sandbox and four
-                        attempts per rolling 24 hours. Provider network access is enabled.
+                        {job.executionTarget === "main" ? (
+                            "Start this fixed Homelab profile on Main in an isolated container. It receives only the selected files and public source, with no host credentials or production directories. The job shares one code slot with Daytona; its checks stop after ten minutes and cleanup follows."
+                        ) : (
+                            <>
+                                Start this exact command in Daytona with the selected
+                                files. Cloud usage may be billed. Each sandbox has 4 CPUs,
+                                8 GiB memory, 10 GiB disk. Mira closes finished jobs; five
+                                idle minutes trigger automatic cleanup. Mira allows one
+                                active sandbox and four attempts per rolling 24 hours.
+                                Provider network access is enabled.
+                            </>
+                        )}
                     </p>
                 )}
                 {(job.content.inputs.length > 0 || job.content.outputs.length > 0) && (
@@ -178,20 +194,21 @@ export function DaytonaDetails({
                     <ErrorNotice error={query.error ?? approve.error ?? cancel.error} />
                 )}
                 <ActionGroup>
-                    {((job.cleanup === "pending" &&
-                        job.state === "needs_attention" &&
-                        job.phase === "cleaning") ||
-                        job.cleanup === "operator_confirmed") && (
-                        <Button
-                            variant="secondary"
-                            disabled={busy}
-                            onClick={() => setRecovering(true)}
-                        >
-                            {job.cleanup === "operator_confirmed"
-                                ? "View cleanup record"
-                                : "Resolve cleanup"}
-                        </Button>
-                    )}
+                    {job.executionTarget === "daytona" &&
+                        ((job.cleanup === "pending" &&
+                            job.state === "needs_attention" &&
+                            job.phase === "cleaning") ||
+                            job.cleanup === "operator_confirmed") && (
+                            <Button
+                                variant="secondary"
+                                disabled={busy}
+                                onClick={() => setRecovering(true)}
+                            >
+                                {job.cleanup === "operator_confirmed"
+                                    ? "View cleanup record"
+                                    : "Resolve cleanup"}
+                            </Button>
+                        )}
                     {job.state === "draft" && (
                         <Button
                             busy={approve.isPending}
@@ -203,7 +220,7 @@ export function DaytonaDetails({
                                     .catch(() => {})
                             }
                         >
-                            Start cloud job
+                            Start on {job.executionTarget === "main" ? "Main" : "Daytona"}
                         </Button>
                     )}
                     {active && !job.cancelRequested && (

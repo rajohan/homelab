@@ -426,6 +426,7 @@ test("conversation settings validate model capabilities, isolate owners and rema
             model: "synthetic-a",
             effort: "high",
             serviceTier: "priority",
+            executionTarget: "main" as const,
         };
         await rejects(
             database
@@ -476,6 +477,7 @@ test("conversation settings validate model capabilities, isolate owners and rema
             "foreground"
         );
         expect(claimed?.id).toBe(queued.id);
+        expect(claimed?.executionTarget).toBe("main");
         expect(
             await saveMiraActivity(database.client, claimed!, {
                 phase: "thinking",

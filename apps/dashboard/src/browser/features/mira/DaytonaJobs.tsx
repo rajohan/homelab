@@ -9,7 +9,7 @@ import {
     SectionHeader,
 } from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { Cloud, Plus } from "lucide-react";
+import { Cloud, Plus, Server, Terminal } from "lucide-react";
 import { useState } from "react";
 
 import { api } from "../../api/client";
@@ -18,7 +18,7 @@ import { DaytonaEditor } from "./DaytonaEditor";
 import { daytonaTones, daytonaCleanupDescriptions } from "./daytonaPresentation";
 
 /**
- * Show durable cloud work in Jobs or an owned conversation.
+ * Show durable code work in Jobs or an owned conversation.
  * @returns Shared bounded history and explicit draft/review actions.
  */
 export function DaytonaJobs({
@@ -45,9 +45,9 @@ export function DaytonaJobs({
     const content = (
         <div className="space-y-4">
             <SectionHeader
-                title={onClose ? "Commands and results" : "Cloud jobs"}
-                icon={Cloud}
-                description="Daytona commands, logs and results."
+                title={onClose ? "Commands and results" : "Code jobs"}
+                icon={Terminal}
+                description="Main and Daytona commands, logs and results."
                 actions={
                     <Button onClick={() => setEditing("new")}>
                         <Plus size={16} />
@@ -55,11 +55,11 @@ export function DaytonaJobs({
                     </Button>
                 }
             />
-            {query.isPending && <LoadingState label="Loading cloud jobs…" />}
+            {query.isPending && <LoadingState label="Loading code jobs…" />}
             {query.error && <ErrorNotice error={query.error} />}
             {!query.isPending && !query.error && rows.length === 0 && (
                 <p className="text-sm text-primary-400">
-                    No cloud jobs yet. Save a draft, then review the command and selected
+                    No code jobs yet. Save a draft, then review the command and selected
                     files before starting.
                 </p>
             )}
@@ -68,13 +68,13 @@ export function DaytonaJobs({
                     <Card key={job.id} className="space-y-3 bg-primary-900/40">
                         <SectionHeader
                             title={job.content.title}
-                            icon={Cloud}
+                            icon={job.executionTarget === "main" ? Server : Cloud}
                             badge={
                                 <Badge tone={daytonaTones[job.state]}>
                                     {job.state.replaceAll("_", " ")}
                                 </Badge>
                             }
-                            description={daytonaCleanupDescriptions[job.cleanup]}
+                            description={`${job.executionTarget === "main" ? "Main" : "Daytona"} · ${daytonaCleanupDescriptions[job.cleanup]}`}
                             actions={
                                 <>
                                     <Button
@@ -123,7 +123,7 @@ export function DaytonaJobs({
     if (selected)
         return <DaytonaDetails job={selected} onClose={() => setSelected(undefined)} />;
     return onClose ? (
-        <Modal title="Cloud jobs" onClose={onClose} size="wide">
+        <Modal title="Code jobs" onClose={onClose} size="wide">
             {content}
         </Modal>
     ) : (

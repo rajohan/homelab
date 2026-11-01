@@ -13,10 +13,11 @@ import { useState } from "react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
+import { CodeTargetSettings } from "./CodeTargetSettings";
 import { FileLibrary } from "./FileLibrary";
 
 /**
- * Compose a cloud proposal without running it.
+ * Compose a code proposal without running it.
  * @returns Shared editor with explicit file selection and sandbox paths.
  */
 export function DaytonaEditor({
@@ -28,6 +29,9 @@ export function DaytonaEditor({
     readonly conversationId?: string | undefined;
     readonly onClose: () => void;
 }) {
+    const [executionTarget, setExecutionTarget] = useState<"main" | "daytona">(
+        job?.executionTarget ?? "daytona"
+    );
     const [id] = useState(() => job?.id ?? crypto.randomUUID());
     const [title, setTitle] = useState(job?.content.title ?? "");
     const [command, setCommand] = useState(job?.content.command ?? "");
@@ -57,6 +61,7 @@ export function DaytonaEditor({
         api.mira.daytona.save.mutate({
             id,
             version: job?.version ?? 0,
+            executionTarget,
             conversationId: job?.conversationId ?? conversationId ?? null,
             taskId: job?.taskId ?? null,
             content: {
@@ -81,7 +86,7 @@ export function DaytonaEditor({
         );
     return (
         <Modal
-            title={job ? "Edit cloud job" : "New cloud job"}
+            title={job ? "Edit code job" : "New code job"}
             onClose={onClose}
             dismissible={!save.isPending}
             size="wide"
@@ -96,6 +101,11 @@ export function DaytonaEditor({
                         .catch(() => {});
                 }}
             >
+                <CodeTargetSettings
+                    value={executionTarget}
+                    onChange={(value) => setExecutionTarget(value ?? "daytona")}
+                    disabled={!!job || save.isPending}
+                />
                 <FormField label="Title">
                     <Input
                         value={title}
@@ -106,7 +116,11 @@ export function DaytonaEditor({
                 </FormField>
                 <FormField
                     label="Command"
-                    description="Runs in a fresh private Daytona sandbox. Review the command before starting; do not include credentials."
+                    description={
+                        executionTarget === "main"
+                            ? "Main accepts the fixed Homelab source, check and edit profiles. Ask Mira to prepare the job in Chat, then review its command and files here."
+                            : "Runs in a fresh private Daytona sandbox. Review the command before starting; do not include credentials."
+                    }
                 >
                     <Textarea
                         value={command}

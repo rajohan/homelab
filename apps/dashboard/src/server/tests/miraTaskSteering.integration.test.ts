@@ -53,6 +53,7 @@ async function fixture() {
         requestId: crypto.randomUUID(),
         instructions: "",
         reviewedRunId: null,
+        executionTarget: "main",
     });
     const run = await claimMiraRun(f.client, crypto.randomUUID(), "foreground");
     if (!run) throw new Error("Expected explicitly requested work.");
@@ -113,6 +114,7 @@ test("unblocking resumes existing work exactly once in its original conversation
             conversationId: f.requested.conversationId,
             manual: true,
             taskResumed: true,
+            executionTarget: "main",
         });
         if (!resumed) throw new Error("Expected continued work.");
         expect(

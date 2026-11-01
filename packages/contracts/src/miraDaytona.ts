@@ -39,6 +39,7 @@ export const miraDaytonaContentSchema = v.strictObject({
     ),
 });
 export const miraDaytonaSaveSchema = v.strictObject({
+    executionTarget: v.optional(v.picklist(["daytona", "main"])),
     id: idSchema,
     version: v.pipe(v.number(), v.integer(), v.minValue(0)),
     conversationId: v.nullable(idSchema),
