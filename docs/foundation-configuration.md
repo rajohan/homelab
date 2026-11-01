@@ -18,7 +18,7 @@ Drizzle ORM and Kit are pinned together to `1.0.0-rc.5-5935859`. Schema and revi
 belong to auth. Schema generation does not connect to a database:
 
 ```sh
-bun run db:generate:auth
+bun node_modules/drizzle-kit/bin.cjs generate --config apps/auth/drizzle.config.ts
 bun run db:check:auth
 ```
 
@@ -34,9 +34,8 @@ JSONB serialization in integration testing. Production connections require verif
 either direct PostgreSQL or a separately qualified PgBouncer configuration. See
 [operations](identity-operations.md).
 
-## Native test timings
+## Native tests
 
-`bun run test:timings` refreshes `.bun-test-timings.json` and
-`.bun-browser-test-timings.json`. Review measured changes when useful. CI reads existing maps
-but never regenerates them. Bun unit tests and Happy DOM tests remain separate two-worker
-processes; real HTTP/database integration tests run separately without DOM emulation.
+`bun run test` discovers unit and Happy DOM tests automatically. Real HTTP/database
+tests run separately with `bun run test:integration`, without DOM emulation. See
+[testing](testing.md) for coverage and platform qualification.

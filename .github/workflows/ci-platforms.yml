@@ -1,0 +1,48 @@
+name: Select platform qualification
+
+on:
+  workflow_call:
+    outputs:
+      required:
+        description: Whether native and sandbox qualification is needed
+        value: ${{ jobs.changes.outputs.required }}
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      required: ${{ steps.paths.outputs.required }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Require platform tests unless the PR changes only web UI or documentation
+        id: paths
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python3 -I - <<'PY'
+          import os
+          import subprocess
+
+          required = True
+          if os.environ["EVENT_NAME"] == "pull_request":
+              paths = subprocess.check_output([
+                  "git", "diff", "--name-only", "--no-renames", "-z",
+                  os.environ["BASE_SHA"] + "..." + os.environ["HEAD_SHA"],
+              ]).decode("utf-8").rstrip("\0").split("\0")
+              def web_or_docs(path):
+                  if path.startswith("docs/") or (path.startswith("deploy/") and path.endswith(".md")) or path in ("README.md", "AGENTS.md", "CONTRIBUTING.md", "CHANGELOG.md", "SECURITY.md", "CODE_OF_CONDUCT.md", ".github/pull_request_template.md"):
+                      return True
+                  return path.startswith(("apps/auth/src/browser/", "apps/dashboard/src/browser/", "packages/ui/src/")) and path.endswith((".ts", ".tsx", ".css"))
+              required = not (paths and all(web_or_docs(path) for path in paths))
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write("required=" + str(required).lower() + "\n")
+          PY

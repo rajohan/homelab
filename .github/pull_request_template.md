@@ -11,7 +11,7 @@ Describe the behavior before and after, including failure paths. For a bug fix, 
 Record results, or explain why a check does not apply. Never include credentials or private production data.
 
 - [ ] `bun run check`
-- [ ] `bun run test:coverage` (includes unit and component tests)
+- [ ] `bun run test --coverage` (includes unit and component tests)
 - [ ] `bun run test:integration`
 - [ ] `bun run build`
 - [ ] `bun run test:smoke`

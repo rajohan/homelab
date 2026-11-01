@@ -14,6 +14,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  platforms:
+    uses: ./.github/workflows/ci-platforms.yml
+
+  native:
+    name: Docker and native computer
+    needs: platforms
+    if: needs.platforms.outputs.required == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - name: Cache the disposable database image for Docker fixtures
+        run: docker pull postgres:18
+      - name: Verify real Docker lifecycle and namespace-aware Compose updates
+        run: bash scripts/testDocker.sh
+      - name: Verify isolated native computer input and permission boundaries
+        run: bash scripts/testComputer.sh
+
   checks:
     # No secrets are passed or inherited by the workflow executing PR code.
     uses: ./.github/workflows/ci-verify.yml
@@ -21,6 +45,8 @@ jobs:
       contents: read
 
   windows:
+    needs: platforms
+    if: needs.platforms.outputs.required == 'true'
     name: Windows consent host
     runs-on: windows-latest
     timeout-minutes: 10
@@ -38,13 +64,13 @@ jobs:
       - name: Install locked dependencies
         run: bun install --frozen-lockfile
       - name: Qualify window-only capture behind an independent overlay
-        run: bun run test:computer:windows-capture
+        run: bun --no-env-file scripts/testWindowsCapture.ts
       - name: Compile native consent host and qualify protocol and readiness rules
-        run: bun run test:computer:windows
+        run: bun --no-env-file scripts/testWindowsConsent.ts
       - name: Qualify desktop connection manager
-        run: bun run test:computer:windows-desktop
+        run: bun --no-env-file scripts/testWindowsDesktop.ts
       - name: Qualify packaged worker and native process-tree ownership
-        run: bun run test:computer:windows-worker "${{ runner.temp }}/computer-release"
+        run: bun --no-env-file scripts/testWindowsWorker.ts "${{ runner.temp }}/computer-release"
       - name: Set up the pinned portable installer compiler
         run: ./scripts/setupInno.ps1 -Destination "${{ runner.temp }}/mira-inno"
       - name: Qualify per-user Windows installation and upgrades
@@ -62,6 +88,8 @@ jobs:
         run: bun test apps/mira/src/server/computer/native.test.ts apps/mira/src/server/computer/windowsCapture.test.ts scripts/computerRelease.test.ts apps/mira/src/server/computer/companion.test.ts apps/mira/src/server/computer/updateDownload.test.ts apps/mira/src/server/computer/updatePipe.test.ts apps/mira/src/server/computer/companionParent.test.ts apps/mira/src/server/computer/installationLease.test.ts apps/mira/src/server/computer/consentProcess.test.ts apps/mira/src/server/computer/localConsentHost.test.ts apps/mira/src/server/computer/companionConsent.test.ts apps/mira/src/server/computer/companionLifecycle.test.ts apps/mira/src/server/computer/companionCommands.test.ts apps/mira/src/server/computer/companionWork.test.ts apps/mira/src/server/runtime/rpcCleanup.test.ts
 
   windows-consent-acceptance:
+    needs: platforms
+    if: needs.platforms.outputs.required == 'true'
     name: Windows consent interruption
     # The lock test owns a separate disposable desktop and never unlocks it.
     runs-on: windows-latest
@@ -80,9 +108,11 @@ jobs:
       - name: Install locked dependencies
         run: bun install --frozen-lockfile
       - name: Qualify native consent interruption and locked-session refusal
-        run: bun run test:computer:windows-acceptance
+        run: bun --no-env-file scripts/testWindowsConsentAcceptance.ts
 
   browser:
+    needs: platforms
+    if: needs.platforms.outputs.required == 'true'
     name: Isolated browser
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -101,10 +131,10 @@ jobs:
       - name: Install locked host qualification dependencies
         run: bun install --frozen-lockfile
       - name: Qualify isolated browser images, input and origin boundaries
-        run: bun run test:browser
+        run: bash scripts/testBrowser.sh
 
       - name: Qualify the built browser host and Chat command queue
-        run: bun run test:browser:service
+        run: bash scripts/testBrowserService.sh
 
       - name: Build the standalone browser runtime
         env:
@@ -124,7 +154,7 @@ jobs:
             --label "org.opencontainers.image.revision=$SOURCE_SHA" \
             --label "org.opencontainers.image.version=$version" .
       - name: Qualify the unchanged browser runtime image
-        run: bun run test:browser:image homelab-browser/runtime:tested
+        run: bun --no-env-file apps/mira/src/server/testing/browserImageSmoke.ts homelab-browser/runtime:tested
       - name: Build and qualify the unchanged public web proxy
         env:
           SOURCE_SHA: ${{ github.sha }}
@@ -153,22 +183,36 @@ jobs:
           if-no-files-found: error
 
   verify:
-    # Preserve the required check name and fail closed on skipped/failed/cancelled tests.
-    needs: [checks, windows, windows-consent-acceptance, browser]
+    # Preserve the required check; only the explicit UI/docs classification permits skips.
+    needs: [platforms, checks, native, windows, windows-consent-acceptance, browser]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
       - name: Require successful source verification
         env:
+          PLATFORM_RESULT: ${{ needs.platforms.result }}
+          PLATFORM_REQUIRED: ${{ needs.platforms.outputs.required }}
+          NATIVE_RESULT: ${{ needs.native.result }}
           BROWSER_RESULT: ${{ needs.browser.result }}
           CHECK_RESULT: ${{ needs.checks.result }}
           WINDOWS_RESULT: ${{ needs.windows.result }}
           CONSENT_RESULT: ${{ needs.windows-consent-acceptance.result }}
-        run: test "$BROWSER_RESULT" = success && test "$CHECK_RESULT" = success && test "$WINDOWS_RESULT" = success && test "$CONSENT_RESULT" = success
+        run: |
+          set -euo pipefail
+          test "$PLATFORM_RESULT" = success
+          test "$CHECK_RESULT" = success
+          case "$PLATFORM_REQUIRED" in
+            true) expected=success ;;
+            false) expected=skipped ;;
+            *) exit 1 ;;
+          esac
+          for result in "$NATIVE_RESULT" "$BROWSER_RESULT" "$WINDOWS_RESULT" "$CONSENT_RESULT"; do
+            test "$result" = "$expected"
+          done
 
   coverage:
-    needs: verify
+    needs: checks
     if: github.event_name == 'push' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')
     runs-on: ubuntu-latest
     timeout-minutes: 5

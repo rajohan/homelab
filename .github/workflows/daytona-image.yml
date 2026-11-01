@@ -1,29 +1,27 @@
 name: Daytona check image
 
 on:
+  workflow_call:
   pull_request:
   push:
     branches: [main]
-  release:
-    types: [published]
 
 permissions:
   contents: read
 
 concurrency:
   group: daytona-image-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  release-checks:
-    if: github.event_name == 'release' && !github.event.release.prerelease
-    uses: ./.github/workflows/ci.yml
+  platforms:
+    uses: ./.github/workflows/ci-platforms.yml
 
   build-and-test:
-    needs: release-checks
+    needs: platforms
     if: >-
-      !cancelled() &&
-      (github.event_name != 'release' || needs.release-checks.result == 'success')
+      needs.platforms.outputs.required == 'true' &&
+      (github.event_name != 'release' || !github.event.release.prerelease)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -74,7 +72,7 @@ jobs:
       - name: Run the full exact-commit checks in the actual image
         env:
           SOURCE_SHA: ${{ github.sha }}
-        run: bun run test:daytona "$SOURCE_SHA" homelab-daytona/daytona-check:tested
+        run: bun --no-env-file apps/mira/src/server/testing/daytonaSmoke.ts "$SOURCE_SHA" homelab-daytona/daytona-check:tested
       - name: Save only the tested check image
         if: github.event_name == 'release'
         run: docker save --output images.tar homelab-daytona/daytona-check:tested

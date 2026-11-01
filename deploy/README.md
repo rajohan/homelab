@@ -95,7 +95,7 @@ Meshnet route from the actual Windows PC. A passing loopback fixture does not pr
 that a production firewall or DNS zone is private. Provisioning and reload are
 separate operator actions; the example and tests do not modify live nginx or DNS.
 
-`HOMELAB_SMOKE_IMAGE_PREFIX=<local-image-prefix> bun run test:mira-deployment`
+`HOMELAB_SMOKE_IMAGE_PREFIX=<local-image-prefix> PYTHONDONTWRITEBYTECODE=1 python3 scripts/smokeMiraDeployment.py`
 qualifies the rendered overlays and actual dashboard image with disposable data.
 It verifies GitHub credential placement, default-off configuration, loopback ports,
 public endpoint refusal, private protocol boundaries, recreation and disabling.
@@ -112,8 +112,9 @@ separate [computer acceptance checks](../docs/mira-computer.md).
 ## Built artifact
 
 Each application's complete `dist` directory is its runtime artifact. Start from that directory
-with `bun --no-env-file index.js` and `NODE_ENV=production`, or use the repository's
-`start:auth` / `start:dashboard` scripts. HTML assets resolve relative to the working directory.
+with `bun --no-env-file index.js` and `NODE_ENV=production`. From the repository root,
+use `NODE_ENV=production bun --cwd apps/auth/dist --no-env-file index.js` (or
+`apps/dashboard/dist` / `apps/mira/dist`). HTML assets resolve relative to the working directory.
 Auth also contains `admin.js` and reviewed `migrations/`.
 
 Migrate with the same scoped auth environment and an explicit operator invocation:
@@ -251,4 +252,4 @@ A missing `networks` property preserves the existing fully offline mode. The dat
 
 For upgrades, stop accepting new browser sessions, allow active jobs to finish or explicitly stop them, and verify cleanup before recreating proxies. Recreating a proxy or network changes its immutable ID: update the nonsecret host configuration before restarting the host. A release notification or image publication alone does not perform this deployment. No production routing or activation is changed by this overlay.
 
-Run `bun run test:browser:egress` to qualify the actual images. The fixture uses synthetic HTTP, TLS and DNS servers in fully isolated Docker networks (including 1.1.1.0/29 with no host bridge address); it never contacts public DNS or the Internet. It tests mixed DNS answers, rebinding, redirects, independent packet filtering, direct-route refusal, dropped runtime capabilities, actual Chromium screenshots/input and automatic retirement after proxy loss. The existing offline image and host-service tests remain required too.
+Run `bash scripts/testBrowserEgress.sh` to qualify the actual images. The fixture uses synthetic HTTP, TLS and DNS servers in fully isolated Docker networks (including 1.1.1.0/29 with no host bridge address); it never contacts public DNS or the Internet. It tests mixed DNS answers, rebinding, redirects, independent packet filtering, direct-route refusal, dropped runtime capabilities, actual Chromium screenshots/input and automatic retirement after proxy loss. The existing offline image and host-service tests remain required too.

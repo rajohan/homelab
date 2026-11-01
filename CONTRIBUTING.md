@@ -50,7 +50,7 @@ bun run build
 bun run test:smoke
 ```
 
-`check` runs formatting, lint, and TypeScript checks. Use `bun run test:coverage` in place of `bun run test` when checking the unit/component coverage report; CI does this without repeating the same tests.
+`check` runs formatting, lint, and TypeScript checks. Use `bun run test --coverage` in place of `bun run test` when checking the unit/component coverage report; CI does this without repeating the same tests.
 
 Name unit tests `*.test.ts`, component tests `*.test.tsx`, and real HTTP integration tests `*.integration.test.ts`. Use the repository test scripts so Happy DOM stays isolated from native networking tests. Do not add Vitest, Playwright, or Storybook.
 

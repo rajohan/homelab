@@ -34,7 +34,7 @@ A connection has a server-issued generation, fifteen-second heartbeat cadence an
 
 ## Repeatable qualification
 
-Run `bun run test:computer` on a Docker-capable development host. The command builds the repository's fixture image and runs it with no network, no host desktop/device mounts, no capabilities, no elevated privileges and a read-only filesystem with bounded temporary storage. The SDK remains an ordinary repository dependency, covered by lockfile and dependency updates; the disposable image is not a new deployed service.
+Run `bash scripts/testComputer.sh` on a Docker-capable development host. The command builds the repository's fixture image and runs it with no network, no host desktop/device mounts, no capabilities, no elevated privileges and a read-only filesystem with bounded temporary storage. The SDK remains an ordinary repository dependency, covered by lockfile and dependency updates; the disposable image is not a new deployed service.
 
 The image starts Xvfb, Openbox and a synthetic Tk window, waiting for the display, window manager and visible application before publishing readiness. The qualification performs native operations through the supervised child. It reads an inline image, focuses the entry, types a literal string and clicks a counter. It verifies the text and exactly one increment through the fixture's separate state file. It also checks denied desktop discovery, denied out-of-manifest executable access, one-use observations and closed-session refusal. It prints only a content-free receipt. CI runs the same command in the existing secret-free source-verification job.
 
@@ -58,7 +58,7 @@ For this homelab, computer traffic must use the existing NordVPN Meshnet route. 
 
 Settings > Computers creates a ten-minute, single-use pairing code, lists presence and revokes pairings after recent human verification. Connected means that the server received a fresh heartbeat; it does not claim screen readiness. Revoked/expired pairings remain identifiable. Closing the code dialog clears its transient UI state.
 
-Build the entrypoint with Bun 1.4.4: `bun run build:computer linux-x64` or `bun run build:computer windows-x64`. Artifacts are under `apps/mira/dist/computer/<platform>/`. The executable contains its Bun runtime and disables automatic dotenv, bunfig, package.json and tsconfig loading. Windows `run` requires the complete package built with `build:computer:windows`, described below. Release publication and updater qualification remain separate work.
+Build the entrypoint with Bun 1.4.4: `bun --no-env-file scripts/buildComputer.ts linux-x64` or `bun --no-env-file scripts/buildComputer.ts windows-x64`. Artifacts are under `apps/mira/dist/computer/<platform>/`. The executable contains its Bun runtime and disables automatic dotenv, bunfig, package.json and tsconfig loading. Windows `run` requires the complete package built with `scripts/buildWindowsComputer.ts`, described below. Release publication and updater qualification remain separate work.
 
 On the PC, run `mira-computer pair https://computer.home.example.test`. Paste the ticket into the hidden prompt, never into command arguments, environment variables or a file. Enrollment is sent once; an uncertain response requires revoking the ticket and creating another. The credential is stored in the current user's OS vault using [Bun's credential API](https://bun.sh/docs/runtime/secrets), with Windows `persist: local`, no unrestricted keychain access and no plaintext fallback. A failed save requires revocation in Settings. The vault key is bound to the canonical origin, so another server cannot receive that credential.
 
@@ -171,7 +171,7 @@ explicit interactive acceptance on the intended PC before production activation.
 
 ## Windows local consent host
 
-`bun run build:computer:windows-host` builds the repository-owned Windows GUI
+`bun --no-env-file scripts/buildWindowsConsent.ts` builds the repository-owned Windows GUI
 helper using the operating system's .NET Framework compiler. It has no NuGet
 packages or provider credentials. Bun remains the companion runtime and owns the
 private child-process transport. The GUI helper is Windows x64, requires Windows
@@ -205,7 +205,7 @@ Its abort immediately retires the controller, and cleanup waits for both
 processes before admitting a replacement. No device token, server credential,
 screenshot or input command is sent to this host.
 
-`bun run test:computer:windows` compiles the actual GUI binary and checks its
+`bun --no-env-file scripts/testWindowsConsent.ts` compiles the actual GUI binary and checks its
 redirected-pipe bootstrap, strict protocol parsing, deadline rules, session-state
 matrix and process/window identity checks. The native test entrypoint is compiled
 separately and is not distributed. CI runs these checks and the actual Bun child
@@ -231,7 +231,7 @@ qualified package and per-user installer described below.
 
 ## Packaged Windows worker
 
-On Windows x64, run `bun run build:computer:windows-worker C:\absolute\empty\package`
+On Windows x64, run `bun --no-env-file scripts/buildWindowsWorker.ts C:\absolute\empty\package`
 with the pinned Bun version and a frozen install. The builder creates
 `mira-computer-worker-host.exe`, `mira-computer-worker.exe` and a private
 `node_modules` containing the unchanged locked SDK, its Windows native DLL/N-API
@@ -268,7 +268,7 @@ private temporary directory and blocks a replacement controller. Startup failure
 retain the same cleanup failure even when no driver port was returned. Interrupted
 input is never replayed.
 
-`bun run test:computer:windows-worker` compiles the actual supervisor and separate
+`bun --no-env-file scripts/testWindowsWorker.ts` compiles the actual supervisor and separate
 harmless fixtures. It verifies child and grandchild exit after parent EOF,
 supervisor termination and worker exit, with retained process handles to avoid PID
 reuse. It also checks environment filtering, builds the complete package, loads
@@ -362,11 +362,11 @@ The disposable Mira preview includes a synthetic waiting conversation for layout
 
 ## Installed Windows composition
 
-`bun run build:computer:windows C:\absolute\build-root` builds the desktop manager, companion,
+`bun --no-env-file scripts/buildWindowsComputer.ts C:\absolute\build-root` builds the desktop manager, companion,
 consent window, worker supervisor and unchanged locked native dependencies together
 in `build-root/windows-x64`. That subdirectory must be absent or empty. Existing
 packages are never replaced. The build does not install, start, pair or update a PC.
-The standalone `build:computer windows-x64` command builds only the entrypoint and
+The standalone `bun scripts/buildComputer.ts windows-x64` command builds only the entrypoint and
 is insufficient for Windows `run`.
 
 The installed `mira-computer.exe run https://private.example.test` validates all
@@ -398,7 +398,7 @@ loss and cleanup failure. These tests do not grant access to the operator's desk
 
 ## Qualified Windows release archive
 
-`bun run test:computer:windows-worker [absolute-export-directory]` builds the
+`bun --no-env-file scripts/testWindowsWorker.ts [absolute-export-directory]` builds the
 complete Windows x64 package with the pinned Bun and SDK, inventories its files,
 creates a ZIP with the operating system's .NET compression library, and extracts
 that freshly built archive into an isolated directory. Native qualification runs
@@ -466,7 +466,7 @@ service's retired port-3443 entry, without reading or transmitting either creden
 other origins remain isolated. Use Settings to revoke
 server access too. A failed or cancelled pairing must be revoked before retrying.
 
-`bun run test:computer:windows-desktop` builds native isolated fixtures and checks
+`bun --no-env-file scripts/testWindowsDesktop.ts` builds native isolated fixtures and checks
 argument quoting, private pairing input, fixed-origin startup with absent or stale
 preferences, graceful stop,
 unresponsive children, nested process ownership, manager death and malformed
@@ -653,7 +653,7 @@ and [CreateFreeThreaded](https://learn.microsoft.com/en-us/uwp/api/windows.graph
 
 ## Hosted Windows consent interruption acceptance
 
-`bun run test:computer:windows-acceptance` refuses developer PCs and runs only on
+`bun --no-env-file scripts/testWindowsConsentAcceptance.ts` refuses developer PCs and runs only on
 a disposable GitHub-hosted Windows runner. It builds the actual consent binary
 and a separate, non-distributed acceptance harness. GitHub's hosted Windows account
 is elevated with UAC disabled, so the harness creates one random local standard test

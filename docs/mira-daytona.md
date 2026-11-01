@@ -140,7 +140,7 @@ Local image qualification (Linux AMD64, Docker, public network access):
 
 ```sh
 docker build -f deploy/daytona/Dockerfile -t homelab-daytona-harness:tested .
-bun run test:daytona <exact-public-commit-sha>
+bun --no-env-file apps/mira/src/server/testing/daytonaSmoke.ts <exact-public-commit-sha>
 ```
 
 This smoke test uses a read-only container with two CPUs, 4 GiB memory, bounded

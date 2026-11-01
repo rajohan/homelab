@@ -97,7 +97,7 @@ Use the native executable and same explicit `CODEX_HOME` for `login --device-aut
 the login in their browser. Then run:
 
 ```sh
-bun run mira:qualify /absolute/path/to/pilot.json
+bun --no-env-file apps/mira/src/server/cli/qualify.ts /absolute/path/to/pilot.json
 ```
 
 This makes real synthetic model calls using that login's allowance. CI never invokes
@@ -226,7 +226,7 @@ product runs; the runtime qualification exercises this same recovery path.
 Run the real vision qualification separately from ordinary CI:
 
 ```sh
-bun run mira:qualify-visual /absolute/path/to/pilot.json
+bun --no-env-file apps/mira/src/server/cli/qualifyVisual.ts /absolute/path/to/pilot.json
 ```
 
 It uses Mira's isolated ChatGPT login and the model catalog, so it consumes plan
@@ -262,9 +262,9 @@ To qualify the actual service, use a Linux Docker host as UID 1000 with local
 `postgres:18` and the exact Mira image built from the current checkout:
 
 ```sh
-bun run mira:qualify-container homelab-release/mira:tested /absolute/dedicated-mira-codex-home
+bun --no-env-file apps/dashboard/src/server/testing/miraContainerQualification.ts homelab-release/mira:tested /absolute/dedicated-mira-codex-home
 # Optionally select an explicitly available model for this synthetic qualification:
-bun run mira:qualify-container homelab-release/mira:tested /absolute/dedicated-mira-codex-home gpt-6-luna
+bun --no-env-file apps/dashboard/src/server/testing/miraContainerQualification.ts homelab-release/mira:tested /absolute/dedicated-mira-codex-home gpt-6-luna
 ```
 
 This is an operator-invoked live test that consumes ChatGPT plan usage, not an

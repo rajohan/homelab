@@ -12,12 +12,21 @@ permissions:
 
 concurrency:
   group: containers-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   release-checks:
     if: github.event_name == 'release' && !github.event.release.prerelease
     uses: ./.github/workflows/ci.yml
+
+  daytona:
+    # One shared release gate qualifies all platforms before this workflow can publish.
+    if: github.event_name == 'release' && !github.event.release.prerelease
+    needs: release-checks
+    uses: ./.github/workflows/daytona-image.yml
+    permissions:
+      contents: write
+      packages: write
 
   build-and-test:
     needs: release-checks
@@ -128,7 +137,7 @@ jobs:
       - name: Test all actual images and the complete OIDC flow
         run: bun run test:smoke
       - name: Verify private Mira deployment and receiver isolation
-        run: bun run test:mira-deployment
+        run: PYTHONDONTWRITEBYTECODE=1 python3 scripts/smokeMiraDeployment.py
       - name: Save only the tested release images
         if: github.event_name == 'release'
         run: docker save --output images.tar homelab-release/auth:tested homelab-release/dashboard:tested homelab-release/mira:tested
