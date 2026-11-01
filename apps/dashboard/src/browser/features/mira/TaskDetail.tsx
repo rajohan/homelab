@@ -56,7 +56,7 @@ export function TaskDetail({
     });
     const task = current.data ?? initialTask;
     const [progress, setProgress] = useState("");
-    const [deleting, setDeleting] = useState(false);
+    const [deleting, setDeleting] = useState<number>();
     const [starting, setStarting] = useState<{
         version: number;
         reviewRunId: string | null;
@@ -75,8 +75,8 @@ export function TaskDetail({
         () => api.mira.tasks.addProgress.mutate({ taskId: task.id, text: progress }),
         () => setProgress("")
     );
-    const remove = useOperation(() =>
-        api.mira.tasks.delete.mutate({ id: task.id, version: task.version })
+    const remove = useOperation((version: number) =>
+        api.mira.tasks.delete.mutate({ id: task.id, version })
     );
     if (starting)
         return (
@@ -95,15 +95,15 @@ export function TaskDetail({
                 }}
             />
         );
-    if (deleting)
+    if (deleting !== undefined)
         return (
             <ConfirmDialog
                 title="Delete task"
                 description="Remove task content and progress. Historical runs retain an audit reference."
-                onClose={() => setDeleting(false)}
+                onClose={() => setDeleting(undefined)}
                 confirmLabel="Delete task"
                 onConfirm={async () => {
-                    await remove.mutateAsync(undefined);
+                    await remove.mutateAsync(deleting);
                     onClose();
                 }}
             />
@@ -178,7 +178,7 @@ export function TaskDetail({
                     )}
                     <Button
                         variant="secondary"
-                        onClick={() => setDeleting(true)}
+                        onClick={() => setDeleting(task.version)}
                         disabled={current.isError}
                     >
                         <Trash2 size={16} aria-hidden="true" />

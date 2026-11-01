@@ -125,6 +125,17 @@ export async function saveTask(
                 "Only the operator can change automatic task start."
             );
         const autoStart = input.autoStart ?? previous?.autoStart ?? false;
+        const revokeQueuedStart = humanEdit && previous?.autoStart === true && !autoStart;
+        if (revokeQueuedStart) {
+            // Claims lock runs before reading tasks. Never wait in the reverse order.
+            const [claim] = await query<{ acquired: boolean }[]>`
+                SELECT pg_try_advisory_xact_lock(hashtextextended('homelab:mira:claim',0)) AS acquired`;
+            if (!claim?.acquired)
+                throw new MiraFailure(
+                    "CONFLICT",
+                    "Task admission is busy. Retry after the current task action finishes."
+                );
+        }
         const ready =
             input.assignee === "mira" && !["blocked", "done"].includes(input.status);
         let requestStart =
@@ -142,7 +153,7 @@ export async function saveTask(
         ) {
             const [active] = await query<
                 { id: string }[]
-            >`SELECT id FROM mira_runs WHERE owner=${context.owner} AND task_id=${id} AND state IN ('queued','running') AND NOT cancel_requested AND (state='running' OR NOT task_auto_started OR ${previous.autoStart}) LIMIT 1`;
+            >`SELECT id FROM mira_runs WHERE owner=${context.owner} AND task_id=${id} AND manual AND state IN ('queued','running') AND NOT cancel_requested AND (state='running' OR NOT task_auto_started OR ${previous.autoStart}) LIMIT 1`;
             if (active) requestStart = false;
         }
         const stopWork =
@@ -164,6 +175,17 @@ export async function saveTask(
         }
         if (input.conversationId)
             await query`UPDATE mira_runs SET task_id=${id} WHERE owner=${context.owner} AND conversation_id=${input.conversationId} AND task_id IS NULL`;
+        if (revokeQueuedStart) {
+            const revoked = await query<{ id: string; assistantMessageId: string }[]>`
+                UPDATE mira_runs SET state='interrupted',cancel_requested=true,
+                    message='Automatic task start was disabled before execution.',finished_at=now()
+                WHERE owner=${context.owner} AND task_id=${id} AND task_auto_started AND state='queued'
+                RETURNING id,assistant_message_id AS "assistantMessageId"`;
+            for (const run of revoked) {
+                await query`UPDATE mira_messages SET state='interrupted' WHERE id=${run.assistantMessageId}`;
+                await auditMira(query, context, "run.cancel_requested", run.id);
+            }
+        }
         let action = "task.created";
         if (input.id) {
             action = "task.saved";

@@ -174,23 +174,109 @@ test("global pause defers automatic starts and Run mode cancels an unclaimed aut
         });
         expect(await claimMiraRun(f.client, crypto.randomUUID(), "general")).toBeNull();
         await f.update(task.id, { autoStart: false });
-        await setMiraEnabled(f.context, {
-            key: "autonomy",
-            enabled: true,
-            reason: null,
-            until: null,
-            version: 4,
-        });
         expect(await claimMiraRun(f.client, crypto.randomUUID(), "general")).toBeNull();
         expect(await scheduleMiraRuns(f.client)).toBe(0);
         const [run] = await f.client<
             { state: string }[]
         >`SELECT state FROM mira_runs WHERE task_id=${task.id}`;
         expect(run?.state).toBe("interrupted");
+        const current = await readTask(f.context, task.id);
+        const manual = await runMiraTask(f.context, {
+            id: task.id,
+            version: current.version,
+            requestId: crypto.randomUUID(),
+            instructions: "Run while automatic work remains paused",
+            reviewedRunId: null,
+        });
+        const claimed = await claimMiraRun(f.client, crypto.randomUUID(), "foreground");
+        expect(claimed?.id).toBe(manual.id);
     } finally {
         await f.close();
     }
 });
+
+test.each(["queued", "running"] as const)(
+    "automatic start waits behind a %s assessment without losing the request",
+    async (state) => {
+        const f = await fixture();
+        try {
+            const api = appRouter.createCaller({
+                operations: f,
+                principal: { kind: "human", id: "operator", capabilities },
+            }).mira;
+            const automation = await api.automations.create({
+                title: "Task assessment",
+                prompt: "Assess changes without performing the task.",
+                kind: "custom",
+                schedule: { kind: "event", event: "task_changed" },
+                budgetSeconds: 60,
+            });
+            await api.controls.setEnabled({
+                key: `automation:${automation.id}`,
+                enabled: true,
+                version: 1,
+                reason: null,
+                until: null,
+            });
+            const task = await saveTask(f.context, fields);
+            expect(await scheduleMiraRuns(f.client, new Date(Date.now() + 6000))).toBe(1);
+            let assessment =
+                state === "running"
+                    ? await claimMiraRun(f.client, crypto.randomUUID(), "general")
+                    : null;
+            await f.update(task.id, { autoStart: true });
+            expect(await scheduleMiraRuns(f.client)).toBe(0);
+            assessment ??= await claimMiraRun(f.client, crypto.randomUUID(), "general");
+            if (!assessment) throw new Error("Expected assessment");
+            expect(assessment.manual).toBe(false);
+            await finishMiraRun(f.client, assessment, {
+                state: "completed",
+                text: "Assessment complete",
+                message: null,
+            });
+            expect(await scheduleMiraRuns(f.client)).toBe(1);
+            const run = await claimMiraRun(f.client, crypto.randomUUID(), "general");
+            expect(run).toMatchObject({
+                taskId: task.id,
+                manual: true,
+                taskResumed: true,
+            });
+        } finally {
+            await f.close();
+        }
+    }
+);
+
+test.each(["blocked", "done", "operator"] as const)(
+    "a queued automatic start is replaced after the task becomes ready again: %s",
+    async (state) => {
+        const f = await fixture();
+        try {
+            const task = await saveTask(f.context, { ...fields, autoStart: true });
+            expect(await scheduleMiraRuns(f.client)).toBe(1);
+            await f.update(
+                task.id,
+                state === "operator" ? { assignee: "operator" } : { status: state }
+            );
+            await f.update(task.id, { status: "todo", assignee: "mira" });
+            const [requests] = await f.client<{ total: number }[]>`
+                SELECT count(*)::int AS total FROM mira_audit
+                WHERE target=${task.id} AND action='task.auto_start_requested'`;
+            expect(requests?.total).toBe(2);
+            expect(
+                await claimMiraRun(f.client, crypto.randomUUID(), "general")
+            ).toBeNull();
+            expect(await scheduleMiraRuns(f.client)).toBe(1);
+            const run = await claimMiraRun(f.client, crypto.randomUUID(), "general");
+            expect(run?.taskId).toBe(task.id);
+            const history = await f.client<{ state: string }[]>`
+                SELECT state FROM mira_runs WHERE task_id=${task.id} ORDER BY id`;
+            expect(history.map((row) => row.state)).toEqual(["interrupted", "running"]);
+        } finally {
+            await f.close();
+        }
+    }
+);
 
 test("an explicit Run wins admission without an automatic duplicate", async () => {
     const f = await fixture();
@@ -214,6 +300,31 @@ test("an explicit Run wins admission without an automatic duplicate", async () =
             message: null,
         });
         expect(await scheduleMiraRuns(f.client)).toBe(0);
+    } finally {
+        await f.close();
+    }
+});
+
+test("mode revocation does not deadlock a concurrent claim or partly save the task", async () => {
+    const f = await fixture();
+    try {
+        const task = await saveTask(f.context, { ...fields, autoStart: true });
+        expect(await scheduleMiraRuns(f.client)).toBe(1);
+        await f.client.begin(async (query) => {
+            await query`SELECT pg_advisory_xact_lock(hashtextextended('homelab:mira:claim',0))`;
+            const result = await f
+                .update(task.id, { autoStart: false })
+                .catch((error: unknown) => error);
+            expect(result).toBeInstanceOf(Error);
+            expect((result as Error).message).toContain("Task admission is busy");
+            const current = await readTask(f.context, task.id);
+            expect(current.autoStart).toBe(true);
+        });
+        await f.update(task.id, { autoStart: false });
+        const [run] = await f.client<{ state: string; messageState: string }[]>`
+            SELECT r.state,m.state AS "messageState" FROM mira_runs r
+            JOIN mira_messages m ON m.id=r.assistant_message_id WHERE r.task_id=${task.id}`;
+        expect(run).toEqual({ state: "interrupted", messageState: "interrupted" });
     } finally {
         await f.close();
     }
