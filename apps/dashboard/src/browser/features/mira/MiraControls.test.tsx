@@ -39,6 +39,7 @@ import { MailEditor } from "./MailEditor";
 import { MailReview } from "./MailReview";
 import { MiraRunTable } from "./MiraRunTable";
 import { MiraSkills } from "./MiraSkills";
+import { ModelSettings } from "./ModelSettings";
 import { ProposalReview } from "./ProposalReview";
 import { PublicationEditor } from "./PublicationEditor";
 import { PublicationReview } from "./PublicationReview";
@@ -180,6 +181,109 @@ test("automation editor preserves delivery policy and exposes event and one-time
         cleanup();
     }
 });
+
+test("automation editor uses current Synthetic aliases and resets unsupported thinking and speed", async () => {
+    const query = new QueryClient({
+        defaultOptions: { queries: { enabled: false, retry: false } },
+    });
+    const models = [
+        v.parse(miraModelSchema, {
+            model: "native-fixture",
+            isDefault: true,
+            supportedReasoningEfforts: [
+                { reasoningEffort: "high", description: "Native high" },
+            ],
+        }),
+        v.parse(miraModelSchema, {
+            model: "syn:large:text",
+            isDefault: false,
+            description:
+                "Currently Fixture A. Synthetic updates this alias automatically.",
+            supportedReasoningEfforts: [
+                { reasoningEffort: "max", description: "Current alias capability" },
+            ],
+        }),
+        v.parse(miraModelSchema, { model: "syn:small:text", isDefault: false }),
+    ];
+    query.setQueryData(["operations", "mira", "models"], {
+        models,
+        defaultModel: "native-fixture",
+        fresh: true,
+    });
+    const cleanup = fixture(<AutomationEditor onClose={() => {}} />, false, query);
+    try {
+        const user = userEvent.setup();
+        await user.click(screen.getByRole("button", { name: /Model provider/ }));
+        await user.click(screen.getByRole("option", { name: "Synthetic subscription" }));
+        expect(
+            screen.getByRole("button", { name: /Automation model/ })
+        ).toHaveTextContent("syn:large:text");
+        expect(screen.getByText(/Currently Fixture A/)).toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: /Thinking level/ }));
+        expect(screen.queryByRole("option", { name: "High" })).not.toBeInTheDocument();
+        await user.click(screen.getByRole("option", { name: "Max" }));
+        await user.click(screen.getByRole("button", { name: /Automation model/ }));
+        await user.click(screen.getByRole("option", { name: "syn:small:text" }));
+        expect(screen.getByRole("button", { name: /Thinking level/ })).toHaveTextContent(
+            "Default"
+        );
+        expect(screen.getByRole("button", { name: /Response speed/ })).toHaveTextContent(
+            "Standard"
+        );
+        expect(
+            screen.queryByRole("option", { name: "Fixture A" })
+        ).not.toBeInTheDocument();
+    } finally {
+        cleanup();
+    }
+});
+
+test.each(["configured-native", "syn:large:text"])(
+    "returning to ChatGPT follows its deployment default (%s)",
+    async (defaultModel) => {
+        const choices: unknown[] = [];
+        const cleanup = fixture(
+            <ModelSettings
+                draft={{ model: "syn:large:text", effort: "high", serviceTier: null }}
+                setDraft={(value) => {
+                    choices.push(value);
+                }}
+                models={[
+                    v.parse(miraModelSchema, {
+                        model: "catalog-native",
+                        isDefault: true,
+                    }),
+                    v.parse(miraModelSchema, {
+                        model: "configured-native",
+                        isDefault: false,
+                    }),
+                    v.parse(miraModelSchema, {
+                        model: "syn:large:text",
+                        isDefault: false,
+                    }),
+                ]}
+                defaultModel={defaultModel}
+                fresh
+            />
+        );
+        try {
+            const user = userEvent.setup();
+            await user.click(screen.getByRole("button", { name: /Model provider/ }));
+            await user.click(
+                screen.getByRole("option", { name: "ChatGPT subscription" })
+            );
+            expect(choices).toEqual([
+                {
+                    model: defaultModel === "configured-native" ? null : "catalog-native",
+                    effort: null,
+                    serviceTier: null,
+                },
+            ]);
+        } finally {
+            cleanup();
+        }
+    }
+);
 
 test.each([false, true])(
     "chat keyboard submission respects an active upload (%s)",

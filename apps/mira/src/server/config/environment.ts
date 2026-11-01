@@ -7,6 +7,7 @@ import { githubConfiguration } from "../integrations/github/configuration";
 import { hereNowReadConfiguration } from "../integrations/herenow/configuration";
 import { moltbookReadConfiguration } from "../integrations/moltbook/configuration";
 import { pilotEnvironment, type PilotConfig } from "../runtime/configuration";
+import { syntheticConfiguration } from "../runtime/syntheticConfiguration";
 
 /**
  * Read only the OS environment needed by the explicitly configured runtime child.
@@ -42,6 +43,7 @@ export function miraEnvironment() {
         hereNow: hereNowReadConfiguration(process.env),
         daytona: daytonaExecutionConfiguration(process.env),
         github: githubConfiguration(process.env),
+        synthetic: syntheticConfiguration(process.env),
     };
 }
 

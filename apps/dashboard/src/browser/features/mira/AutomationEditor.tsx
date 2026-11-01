@@ -1,4 +1,8 @@
-import type { MiraAutomation, MiraSchedule } from "@homelab/contracts/mira";
+import {
+    miraDefaultChatSettings,
+    type MiraAutomation,
+    type MiraSchedule,
+} from "@homelab/contracts/mira";
 import {
     FormField,
     ActionGroup,
@@ -14,10 +18,12 @@ import {
     Textarea,
     TimePicker,
 } from "@homelab/ui";
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
+import { ModelSettings } from "./ModelSettings";
 
 /**
  * Edit a bounded Mira automation while preserving its independently saved pause state.
@@ -32,6 +38,14 @@ export function AutomationEditor({
     readonly agentMailAvailable?: boolean;
     readonly onClose: () => void;
 }) {
+    const [settings, setSettings] = useState(
+        automation?.settings ?? miraDefaultChatSettings
+    );
+    const models = useQuery({
+        queryKey: ["operations", "mira", "models"],
+        queryFn: () => api.mira.models.query(),
+        refetchInterval: 30_000,
+    });
     const [title, setTitle] = useState(automation?.title ?? "");
     const [prompt, setPrompt] = useState(automation?.prompt ?? "");
     const [delivery, setDelivery] = useState<MiraAutomation["delivery"]>(
@@ -52,6 +66,10 @@ export function AutomationEditor({
         const input = {
             title,
             prompt,
+            ...(JSON.stringify(settings) ===
+            JSON.stringify(automation?.settings ?? miraDefaultChatSettings)
+                ? {}
+                : { settings }),
             delivery,
             schedule:
                 schedule.kind === "once"
@@ -105,6 +123,18 @@ export function AutomationEditor({
                         rows={6}
                     />
                 </FormField>
+                <Fieldset legend="Model">
+                    <ModelSettings
+                        draft={settings}
+                        setDraft={setSettings}
+                        models={models.data?.models ?? []}
+                        defaultModel={models.data?.defaultModel ?? null}
+                        fresh={models.data?.fresh === true}
+                        disabled={save.isPending}
+                        label="Automation model"
+                    />
+                    {models.error && <ErrorNotice error={models.error} />}
+                </Fieldset>
                 <Fieldset legend="Schedule">
                     <Select
                         label="Schedule type"

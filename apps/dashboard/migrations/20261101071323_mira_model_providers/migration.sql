@@ -1,0 +1,2 @@
+ALTER TABLE "mira_automations" ADD COLUMN "settings" jsonb DEFAULT '{"model":null,"effort":null,"serviceTier":null}' NOT NULL;--> statement-breakpoint
+ALTER TABLE "mira_runtime_status" ADD COLUMN "synthetic_owner" text;

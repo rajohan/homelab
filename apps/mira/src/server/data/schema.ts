@@ -153,6 +153,10 @@ export const miraAutomations = pgTable(
         kind: text().notNull(),
         delivery: text().notNull().default("changes"),
         schedule: jsonb().$type<MiraSchedule>().notNull(),
+        settings: jsonb()
+            .$type<MiraChatSettings>()
+            .notNull()
+            .default(miraDefaultChatSettings),
         budgetSeconds: integer("budget_seconds").notNull(),
         version: integer().notNull().default(1),
         nextRunAt: time("next_run_at"),
@@ -386,6 +390,7 @@ export const miraRuntimeStatus = pgTable(
         id: integer().primaryKey().default(1),
         workerId: uuid("worker_id").notNull(),
         version: text().notNull(),
+        syntheticOwner: text("synthetic_owner"),
         skillCatalogHash: text("skill_catalog_hash"),
         skillCatalogWorkerId: uuid("skill_catalog_worker_id"),
         deploymentDrainedFor: uuid("deployment_drained_for"),

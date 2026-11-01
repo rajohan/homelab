@@ -1,10 +1,12 @@
 import type { TransactionSQL } from "bun";
 
+import { isSyntheticModel } from "../runtime/syntheticCatalog";
 import { miraRunAllowed, resumeMiraControls } from "./automations";
 import { miraQueueAvailable } from "./capacity";
 import { auditMira } from "./context";
 import { enqueueTurn } from "./conversations";
 import { admitMiraMailEvent, admitMiraMailRun, miraMailLimits } from "./mailLimits";
+import type { MiraRunCatalog } from "./queue";
 import { currentTaskChange, pendingTaskChanges } from "./taskChanges";
 import { unreviewedTaskRun } from "./taskRecovery";
 
@@ -120,12 +122,14 @@ export async function recordMiraEvent(
  * @param query - The globally serialized Mira scheduler transaction.
  * @param now - Scheduler clock; old deliveries expire instead of bursting after downtime.
  * @param owners - Bounded accounts whose controls were locked before scheduler row locks.
+ * @param catalog - Available provider selections; unavailable deliveries remain pending.
  * @returns Number of queued event runs; busy subscribers retain a bounded retry.
  */
 export async function scheduleMiraEvents(
     query: TransactionSQL,
     now: Date,
-    owners: readonly string[]
+    owners: readonly string[],
+    catalog?: MiraRunCatalog
 ): Promise<number> {
     for (const change of await pendingTaskChanges(query, now, owners)) {
         await recordMiraEvent(query, {
@@ -171,7 +175,7 @@ export async function scheduleMiraEvents(
             prompt: string;
             budget: number;
         }[]
-    >`SELECT d.event_id AS "eventId", d.automation_id AS "automationId", e.owner, e.kind, e.reference, e.task_id AS "taskId", e.created_at AS "createdAt", a.title, a.prompt, a.budget_seconds AS budget FROM mira_event_deliveries d JOIN mira_events e ON e.id = d.event_id JOIN mira_automations a ON a.id = d.automation_id WHERE e.owner IN (SELECT jsonb_array_elements_text(${JSON.stringify(owners)}::text::jsonb)) AND d.state = 'pending' AND d.next_attempt_at <= ${now} ORDER BY d.next_attempt_at, e.id LIMIT 20 FOR UPDATE OF d, a SKIP LOCKED`;
+    >`SELECT d.event_id AS "eventId", d.automation_id AS "automationId", e.owner, e.kind, e.reference, e.task_id AS "taskId", e.created_at AS "createdAt", a.title, a.prompt, a.budget_seconds AS budget FROM mira_event_deliveries d JOIN mira_events e ON e.id = d.event_id JOIN mira_automations a ON a.id = d.automation_id WHERE e.owner IN (SELECT jsonb_array_elements_text(${JSON.stringify(owners)}::text::jsonb)) AND d.state = 'pending' AND d.next_attempt_at <= ${now} AND (${catalog === undefined} OR (COALESCE(a.settings->>'model',CASE WHEN ${!isSyntheticModel(catalog?.defaultModel)} OR a.owner=${catalog?.syntheticOwner ?? null} THEN ${catalog?.defaultModel ?? null} ELSE ${catalog?.nativeDefaultModel ?? null} END) IN (SELECT jsonb_array_elements_text(${JSON.stringify(catalog?.models ?? [])}::text::jsonb)) AND (COALESCE(a.settings->>'model',CASE WHEN ${!isSyntheticModel(catalog?.defaultModel)} OR a.owner=${catalog?.syntheticOwner ?? null} THEN ${catalog?.defaultModel ?? null} ELSE ${catalog?.nativeDefaultModel ?? null} END) NOT LIKE 'syn:%' OR e.owner=${catalog?.syntheticOwner ?? null}))) ORDER BY d.next_attempt_at, e.id LIMIT 20 FOR UPDATE OF d, a SKIP LOCKED`;
     let queued = 0;
     for (const event of pending) {
         if (event.taskId) {

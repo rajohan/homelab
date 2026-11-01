@@ -24,6 +24,7 @@ import { miraSkillCatalogHash } from "@homelab/mira/skills/catalog";
 
 import { createTestDatabase } from "../../../../../tests/database";
 import { createMiraTools } from "../../../../mira/src/server/executor/tools";
+import { syntheticAliases } from "../../../../mira/src/server/runtime/syntheticCatalog";
 import { daytonaEditContent } from "../../../../mira/src/server/sandbox/profile";
 import { syntheticPdf } from "../../../../mira/src/server/testing/document";
 import index from "../../index.html";
@@ -455,7 +456,33 @@ export async function main(port = 3330): Promise<void> {
 
             await database.client`UPDATE mira_computers SET last_seen_at=now(),connection_expires_at=now()+interval '45 seconds' WHERE owner=${context.owner} AND label='Windows desktop' AND state='paired'`;
             await database.client`INSERT INTO mira_runtime_status (id, worker_id, version, model, ready, message, heartbeat_at, skill_catalog_hash, skill_catalog_worker_id) VALUES (1, ${worker}, 'preview', 'synthetic-visual', true, 'Interactive preview only. No production or provider connection.', now(), ${miraSkillCatalogHash}, ${worker}) ON CONFLICT (id) DO UPDATE SET worker_id = EXCLUDED.worker_id, heartbeat_at = now(), skill_catalog_hash = EXCLUDED.skill_catalog_hash, skill_catalog_worker_id = EXCLUDED.skill_catalog_worker_id`;
-            await database.client`UPDATE mira_runtime_status SET models=${JSON.stringify([{ model: "synthetic-visual", displayName: "Synthetic replies", isDefault: true, inputModalities: ["text", "image"] }])}::text::jsonb WHERE id=1`;
+            await database.client`UPDATE mira_runtime_status SET synthetic_owner=${context.owner}, models=${JSON.stringify(
+                [
+                    {
+                        model: "synthetic-visual",
+                        displayName: "Preview model",
+                        isDefault: true,
+                        inputModalities: ["text", "image"],
+                    },
+                    ...syntheticAliases.map((model) => ({
+                        model,
+                        displayName: model,
+                        isDefault: false,
+                        description:
+                            "Current target and capabilities are supplied by Synthetic. This preview uses fixture data only.",
+                        inputModalities: model.includes(":vision")
+                            ? ["text", "image"]
+                            : ["text"],
+                        supportedReasoningEfforts: [
+                            {
+                                reasoningEffort: "high",
+                                description:
+                                    "Example capability from the preview catalog.",
+                            },
+                        ],
+                    })),
+                ]
+            )}::text::jsonb WHERE id=1`;
             const run = await claimMiraRun(database.client, worker, "foreground");
             if (run)
                 await finishMiraRun(database.client, run, {

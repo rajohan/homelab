@@ -1,5 +1,6 @@
 import {
     miraScheduleSchema,
+    miraDefaultChatSettings,
     type MiraAutomation,
     type MiraSchedule,
     type MiraSwitch,
@@ -12,6 +13,7 @@ import type { SQL } from "bun";
 import * as v from "valibot";
 
 import { miraSkillsCompatibility } from "../skills/status";
+import { validateMiraAutomationSettings } from "./chatSettings";
 import { auditMira, MiraFailure, type MiraContext, type MiraQuery } from "./context";
 
 export const miraControlKeys = [
@@ -80,7 +82,7 @@ export async function listMiraSwitches(context: MiraContext): Promise<MiraSwitch
 export async function listMiraAutomations(context: MiraContext, before?: string) {
     const rows = await context.client<
         MiraAutomation[]
-    >`SELECT id, title, prompt, kind, delivery, schedule, budget_seconds AS "budgetSeconds", version, next_run_at::text AS "nextRunAt" FROM mira_automations WHERE owner = ${context.owner} AND deleted_at IS NULL AND (${before ?? null}::uuid IS NULL OR id < ${before ?? null}::uuid) ORDER BY id DESC LIMIT 30`;
+    >`SELECT id, title, prompt, kind, delivery, schedule, settings, budget_seconds AS "budgetSeconds", version, next_run_at::text AS "nextRunAt" FROM mira_automations WHERE owner = ${context.owner} AND deleted_at IS NULL AND (${before ?? null}::uuid IS NULL OR id < ${before ?? null}::uuid) ORDER BY id DESC LIMIT 30`;
     return { rows, nextCursor: rows.length === 30 ? rows.at(-1)!.id : null };
 }
 
@@ -111,6 +113,8 @@ export async function saveMiraAutomation(
     return context.client.begin(async (query) => {
         await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${context.owner}`},0))`;
         const id = input.id ?? Bun.randomUUIDv7();
+        if (input.settings)
+            await validateMiraAutomationSettings(query, context.owner, input.settings);
         if (input.id) {
             if (input.kind !== "improvement") {
                 const [improvement] = await query<
@@ -130,7 +134,7 @@ export async function saveMiraAutomation(
                 input.schedule.kind === "event" ? input.schedule.event : null;
             const changed = await query<
                 { id: string }[]
-            >`UPDATE mira_automations SET title = ${input.title}, prompt = ${input.prompt}, kind = ${input.kind}, delivery = ${input.delivery}, schedule = ${JSON.stringify(input.schedule)}::text::jsonb, budget_seconds = ${input.budgetSeconds}, next_run_at = ${next}, version = version + 1 WHERE id = ${id} AND owner = ${context.owner} AND version = ${input.version ?? 0} AND deleted_at IS NULL RETURNING id`;
+            >`UPDATE mira_automations SET settings=COALESCE(${input.settings ? JSON.stringify(input.settings) : null}::text::jsonb, settings), title = ${input.title}, prompt = ${input.prompt}, kind = ${input.kind}, delivery = ${input.delivery}, schedule = ${JSON.stringify(input.schedule)}::text::jsonb, budget_seconds = ${input.budgetSeconds}, next_run_at = ${next}, version = version + 1 WHERE id = ${id} AND owner = ${context.owner} AND version = ${input.version ?? 0} AND deleted_at IS NULL RETURNING id`;
             if (!changed[0])
                 throw new MiraFailure(
                     "CONFLICT",
@@ -156,7 +160,7 @@ export async function saveMiraAutomation(
                 await query`UPDATE mira_event_deliveries SET state='skipped' WHERE automation_id=${id} AND state='pending'`;
             }
         } else {
-            await query`INSERT INTO mira_automations (id, owner, title, prompt, kind, delivery, schedule, budget_seconds, next_run_at) VALUES (${id}, ${context.owner}, ${input.title}, ${input.prompt}, ${input.kind}, ${input.delivery}, ${JSON.stringify(input.schedule)}::text::jsonb, ${input.budgetSeconds}, ${next})`;
+            await query`INSERT INTO mira_automations (id, owner, title, prompt, kind, delivery, schedule, budget_seconds, next_run_at, settings) VALUES (${id}, ${context.owner}, ${input.title}, ${input.prompt}, ${input.kind}, ${input.delivery}, ${JSON.stringify(input.schedule)}::text::jsonb, ${input.budgetSeconds}, ${next}, ${JSON.stringify(input.settings ?? miraDefaultChatSettings)}::text::jsonb)`;
             await query`INSERT INTO mira_switches (owner, key, enabled, reason) VALUES (${context.owner}, ${`automation:${id}`}, false, 'Not enabled yet.')`;
         }
         await auditMira(

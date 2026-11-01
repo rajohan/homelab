@@ -1,18 +1,11 @@
 import type { MiraChatSettings, MiraModel } from "@homelab/contracts/mira";
-import {
-    ActionGroup,
-    Button,
-    ErrorNotice,
-    FormField,
-    Modal,
-    Select,
-    Switch,
-} from "@homelab/ui";
+import { ActionGroup, Button, ErrorNotice, Modal, Switch } from "@homelab/ui";
 import { useState } from "react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
 import type { ChatDisplaySettings } from "./chatDisplay";
+import { ModelSettings } from "./ModelSettings";
 
 /**
  * Edit durable conversation preferences using the runtime's advertised model capabilities.
@@ -46,22 +39,6 @@ export function ChatSettings({
     const save = useOperation(() =>
         api.mira.conversations.settings.mutate({ id, version, settings: draft })
     );
-    const thinking = selected?.supportedReasoningEfforts.find(
-        (entry) =>
-            entry.reasoningEffort === (draft.effort ?? selected.defaultReasoningEffort)
-    );
-    const speed = selected?.serviceTiers.find(
-        (entry) => entry.id === (draft.serviceTier ?? selected.defaultServiceTier)
-    );
-    const modelOptions = [
-        { value: "", label: "Default model" },
-        ...models.map((model) => ({
-            value: model.model,
-            label: model.displayName || model.model,
-        })),
-    ];
-    if (draft.model && !models.some((model) => model.model === draft.model))
-        modelOptions.push({ value: draft.model, label: `${draft.model} (unavailable)` });
     return (
         <Modal title="Chat settings" onClose={onClose} dismissible={!save.isPending}>
             <form
@@ -79,93 +56,14 @@ export function ChatSettings({
                         Reconnect Mira to load current model choices and save settings.
                     </p>
                 )}
-                <FormField label="Model">
-                    <Select
-                        label="Chat model"
-                        value={draft.model ?? ""}
-                        disabled={!fresh || save.isPending}
-                        options={modelOptions}
-                        onChange={(model) => {
-                            const next = models.find(
-                                (entry) => entry.model === (model || defaultModel)
-                            );
-                            setDraft({
-                                model: model || null,
-                                effort: next?.supportedReasoningEfforts.some(
-                                    (entry) => entry.reasoningEffort === draft.effort
-                                )
-                                    ? draft.effort
-                                    : null,
-                                serviceTier: next?.serviceTiers.some(
-                                    (entry) => entry.id === draft.serviceTier
-                                )
-                                    ? draft.serviceTier
-                                    : null,
-                            });
-                        }}
-                    />
-                    {selected?.description && (
-                        <p className="text-xs text-primary-400">{selected.description}</p>
-                    )}
-                </FormField>
-                <div className="grid gap-4 sm:grid-cols-2">
-                    <FormField label="Thinking">
-                        <Select
-                            label="Thinking level"
-                            value={draft.effort ?? ""}
-                            disabled={!fresh || save.isPending || !selected}
-                            options={[
-                                {
-                                    value: "",
-                                    label: selected?.defaultReasoningEffort
-                                        ? `Default (${selected.defaultReasoningEffort})`
-                                        : "Default",
-                                },
-                                ...(selected?.supportedReasoningEfforts.map((entry) => ({
-                                    value: entry.reasoningEffort,
-                                    label:
-                                        entry.reasoningEffort.charAt(0).toUpperCase() +
-                                        entry.reasoningEffort.slice(1),
-                                })) ?? []),
-                            ]}
-                            onChange={(effort) =>
-                                setDraft({ ...draft, effort: effort || null })
-                            }
-                        />
-                        {thinking && (
-                            <p className="text-xs text-primary-400">
-                                {thinking.description}
-                            </p>
-                        )}
-                    </FormField>
-                    <FormField label="Speed">
-                        <Select
-                            label="Response speed"
-                            value={draft.serviceTier ?? ""}
-                            disabled={!fresh || save.isPending || !selected}
-                            options={[
-                                {
-                                    value: "",
-                                    label: selected?.defaultServiceTier
-                                        ? `Default (${selected.serviceTiers.find((entry) => entry.id === selected.defaultServiceTier)?.name ?? selected.defaultServiceTier})`
-                                        : "Standard",
-                                },
-                                ...(selected?.serviceTiers.map((entry) => ({
-                                    value: entry.id,
-                                    label: entry.name,
-                                })) ?? []),
-                            ]}
-                            onChange={(serviceTier) =>
-                                setDraft({ ...draft, serviceTier: serviceTier || null })
-                            }
-                        />
-                        {speed && (
-                            <p className="text-xs text-primary-400">
-                                {speed.description}
-                            </p>
-                        )}
-                    </FormField>
-                </div>
+                <ModelSettings
+                    draft={draft}
+                    setDraft={setDraft}
+                    models={models}
+                    defaultModel={defaultModel}
+                    fresh={fresh}
+                    disabled={save.isPending}
+                />
                 <div className="space-y-3 border-t border-primary-700 pt-4">
                     <Switch
                         label="Show work status"

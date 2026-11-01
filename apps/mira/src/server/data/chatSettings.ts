@@ -7,7 +7,24 @@ import {
 } from "@homelab/contracts/mira";
 import * as v from "valibot";
 
+import { isSyntheticModel } from "../runtime/syntheticCatalog";
 import { auditMira, MiraFailure, type MiraContext, type MiraQuery } from "./context";
+
+/**
+ * Resolve the automatic model for accounts without the owner-bound subscription.
+ * @param models - Current catalog, including the native provider's default marker.
+ * @param deploymentDefault - Configured default; an unavailable native choice remains unavailable.
+ * @returns The configured native model or the native provider default when Synthetic is owner-bound.
+ */
+export function miraNativeDefaultModel(
+    models: MiraModel[],
+    deploymentDefault: string | null
+): string | null {
+    return deploymentDefault && !isSyntheticModel(deploymentDefault)
+        ? deploymentDefault
+        : (models.find((entry) => entry.isDefault && !isSyntheticModel(entry.model))
+              ?.model ?? null);
+}
 
 /**
  * Resolve one turn from the current runtime catalog, rejecting unsupported combinations.
@@ -54,20 +71,31 @@ export function resolveMiraChatSettings(
  * @returns Catalog, deployment default and freshness; availability is rechecked before inference.
  */
 export async function listMiraModels(context: MiraContext) {
-    return readCatalog(context.client);
+    return readCatalog(context.client, context.owner);
 }
 
-async function readCatalog(query: MiraQuery) {
+async function readCatalog(query: MiraQuery, owner: string) {
     const [row] = await query<
-        { models: unknown; model: string | null; fresh: boolean }[]
-    >`SELECT models, model, ready AND heartbeat_at > now() - interval '45 seconds' AS fresh FROM mira_runtime_status WHERE id = 1`;
+        {
+            models: unknown;
+            model: string | null;
+            fresh: boolean;
+            syntheticOwner: string | null;
+        }[]
+    >`SELECT models, model, synthetic_owner AS "syntheticOwner", ready AND heartbeat_at > now() - interval '45 seconds' AS fresh FROM mira_runtime_status WHERE id = 1`;
     const parsed = v.safeParse(
         v.pipe(v.array(miraModelSchema), v.maxLength(2100)),
         row?.models ?? []
     );
+    const models = parsed.success ? parsed.output : [];
     return {
-        models: parsed.success ? parsed.output : [],
-        defaultModel: row?.model ?? null,
+        models: models.filter(
+            (entry) => !isSyntheticModel(entry.model) || row?.syntheticOwner === owner
+        ),
+        defaultModel:
+            row?.model && isSyntheticModel(row.model) && row.syntheticOwner !== owner
+                ? miraNativeDefaultModel(models, row.model)
+                : (row?.model ?? null),
         fresh: row?.fresh === true,
     };
 }
@@ -99,7 +127,7 @@ export async function saveMiraChatSettings(
                 "CONFLICT",
                 "Wait for the reply or stop it before changing chat settings."
             );
-        const catalog = await readCatalog(query);
+        const catalog = await readCatalog(query, context.owner);
         if (!catalog.fresh)
             throw new MiraFailure(
                 "PRECONDITION_FAILED",
@@ -109,4 +137,27 @@ export async function saveMiraChatSettings(
         await query`UPDATE mira_conversations SET settings = ${JSON.stringify(input.settings)}::text::jsonb, version = version + 1, updated_at = now() WHERE id = ${input.id}`;
         await auditMira(query, context, "conversation.settings_changed", input.id);
     });
+}
+
+/**
+ * Validate an explicit automation model choice against its owner's current catalog.
+ * @param query - Transaction saving the automation definition.
+ * @param owner - Verified operator, never taken from the submitted form.
+ * @param settings - Requested model preferences; null defaults remain editable while a provider is offline.
+ * @returns Completion after capability and availability validation.
+ */
+export async function validateMiraAutomationSettings(
+    query: MiraQuery,
+    owner: string,
+    settings: MiraChatSettings
+): Promise<void> {
+    const parsed = v.parse(miraChatSettingsSchema, settings);
+    if (Object.values(parsed).every((value) => value === null)) return;
+    const catalog = await readCatalog(query, owner);
+    if (!catalog.fresh)
+        throw new MiraFailure(
+            "PRECONDITION_FAILED",
+            "Reconnect Mira before changing model settings."
+        );
+    resolveMiraChatSettings(catalog.models, parsed, catalog.defaultModel);
 }

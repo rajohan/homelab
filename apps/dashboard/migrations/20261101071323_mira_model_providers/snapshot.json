@@ -1,0 +1,68 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "720814bd-672b-48ec-bcef-5c6894182282",
+    "prevIds": ["89c5a400-9e80-43db-8ad8-76b69a541552"],
+    "footprints": [
+        {
+            "statementType": "add_column",
+            "statementTarget": ["column", "public", "mira_automations", "settings"],
+            "writes": [
+                "s|col|public.mira_automations.settings",
+                "n|col|public.mira_automations.settings",
+                "e|col|public.mira_automations.settings"
+            ],
+            "reads": ["n|tbl|public.mira_automations", "n|sch|public"]
+        },
+        {
+            "statementType": "add_column",
+            "statementTarget": [
+                "column",
+                "public",
+                "mira_runtime_status",
+                "synthetic_owner"
+            ],
+            "writes": [
+                "s|col|public.mira_runtime_status.synthetic_owner",
+                "n|col|public.mira_runtime_status.synthetic_owner",
+                "e|col|public.mira_runtime_status.synthetic_owner"
+            ],
+            "reads": ["n|tbl|public.mira_runtime_status", "n|sch|public"]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_automations",
+                "name": "settings",
+                "type": "jsonb",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "'{\"model\":null,\"effort\":null,\"serviceTier\":null}'",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_runtime_status",
+                "name": "synthetic_owner",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        }
+    ]
+}
