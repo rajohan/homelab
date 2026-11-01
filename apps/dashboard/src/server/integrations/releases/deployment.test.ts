@@ -7,7 +7,9 @@ import {
 import {
     deploymentTestConnections as connections,
     deploymentTestTarget as target,
+    deploymentTestPlan,
 } from "./deploymentFixtures";
+import { deploymentRelease } from "./deploymentPlans";
 import { deploymentDigest, deploymentHost } from "./deploymentProtocol";
 
 test("deployment recipes require explicit compatible services, authority and private state", () => {
@@ -59,6 +61,22 @@ test("browser proxy startup units must be a distinct subset of the complete depl
     expect(parseReleaseDeploymentTargets(JSON.stringify([browser]), connections)).toEqual(
         [browser]
     );
+    const local = { ...browser, localCodeConfigFile: "/srv/code.json" };
+    expect(parseReleaseDeploymentTargets(JSON.stringify([local]), connections)).toEqual([
+        local,
+    ]);
+    for (const changed of [
+        { localCodeConfigFile: browser.browserConfigFile },
+        { localCodeConfigFile: browser.composeFile },
+        { localCodeConfigFile: browser.stateDirectory + "/code.json" },
+        { browserConfigFile: undefined },
+    ])
+        expect(() =>
+            parseReleaseDeploymentTargets(
+                JSON.stringify([{ ...local, ...changed }]),
+                connections
+            )
+        ).toThrow();
     for (const units of [
         [],
         ["missing.service"],
@@ -76,6 +94,59 @@ test("browser proxy startup units must be a distinct subset of the complete depl
             parseReleaseDeploymentTargets(JSON.stringify([browser]), connections)[0]!,
             connections
         )
+    );
+});
+
+test("local code deployments select a verified check image and reject incomplete publication", () => {
+    const plan = deploymentTestPlan();
+    const published = {
+        repository: plan.release.repository,
+        version: plan.release.version,
+        revision: plan.release.revision,
+        images: (["auth", "dashboard", "mira"] as const).map((app) => ({
+            app,
+            reference: `ghcr.io/demo/homelab/${app}:1.2.3@sha256:${"c".repeat(64)}`,
+        })),
+        verified: true,
+        tests: "success",
+        url: "https://example.test/release",
+        buildUrl: null,
+        computer: null,
+        browser: null,
+        code: null,
+    };
+    expect(deploymentRelease(published, target).images).toEqual(plan.release.images);
+    const browser = {
+        version: "1.2.3",
+        revision: plan.release.revision,
+        platform: "linux/amd64" as const,
+        images: (["mira-browser", "mira-browser-proxy"] as const).map((app) => ({
+            app,
+            reference: `ghcr.io/demo/homelab/${app}:1.2.3@sha256:${"d".repeat(64)}`,
+        })),
+    };
+    const code = {
+        ...browser,
+        images: [
+            {
+                app: "daytona-check" as const,
+                reference: `ghcr.io/demo/homelab/daytona-check:1.2.3@sha256:${"e".repeat(64)}`,
+            },
+        ],
+    };
+    const recipe = {
+        ...target,
+        browserConfigFile: "/srv/browser.json",
+        localCodeConfigFile: "/srv/code.json",
+    };
+    expect(() => deploymentRelease({ ...published, browser }, recipe)).toThrow(
+        "complete verified"
+    );
+    expect(
+        deploymentRelease({ ...published, browser, code }, recipe).images
+    ).toHaveLength(6);
+    expect(deploymentRelease({ ...published, browser, code }, target).images).toEqual(
+        plan.release.images
     );
 });
 

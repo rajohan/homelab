@@ -44,6 +44,7 @@ import {
 import type { TransactionSQL } from "bun";
 
 import { appRouter } from "../api/router";
+import { deploymentTestPlan } from "../integrations/releases/deploymentFixtures";
 import { permissionRun, permissionAction } from "../testing/miraPermissions";
 import { createMiraTextTestTools } from "../testing/miraTools";
 import { operationFixture } from "../testing/operations";
@@ -203,6 +204,39 @@ test("Main accepts canonical source/check/edit requests and refuses arbitrary co
         );
         await rejects(readMiraDaytona(f.client, "other", id), /not found/);
         await rejects(readMiraDaytonaRecovery(f.context, id), /not found/);
+    } finally {
+        await f.close();
+    }
+});
+
+test("local claims wait for release admission and preserve cleanup during deployment", async () => {
+    const f = await fixture();
+    try {
+        const job = await f.queue();
+        await f.client.begin(async (query) => {
+            await query`SELECT pg_advisory_xact_lock(1869440354, 1)`;
+            expect(await dispatchMiraLocalCode(f.options, { execute, cleanup })).toBe(
+                false
+            );
+        });
+        const deployment = Bun.randomUUIDv7();
+        const plan = deploymentTestPlan();
+        await f.client`INSERT INTO release_deployments(id,target,requested_by,request_key,confirmation_revision,configuration,plan,state,phase) VALUES(${deployment},'main','operator',${deployment},'fixture',${plan.configuration},${JSON.stringify(plan)}::text::jsonb,'waiting','draining')`;
+        expect(await dispatchMiraLocalCode(f.options, { execute, cleanup })).toBe(false);
+        expect(await f.read(job.id)).toMatchObject({ state: "queued" });
+        await f.client`UPDATE mira_daytona_jobs SET state='needs_attention',phase='cleaning',cleanup='pending',local_container_id=${containerId},local_creation_settled=true WHERE id=${job.id}`;
+        expect(
+            await dispatchMiraLocalCode(f.options, {
+                execute: () => Promise.reject(new Error("Must not replay")),
+                cleanup,
+            })
+        ).toBe(true);
+        expect(await f.read(job.id)).toMatchObject({ cleanup: "confirmed" });
+        const next = await f.queue();
+        expect(await dispatchMiraLocalCode(f.options, { execute, cleanup })).toBe(false);
+        await f.client`UPDATE release_deployments SET state='cancelled',finished_at=now() WHERE id=${deployment}`;
+        expect(await dispatchMiraLocalCode(f.options, { execute, cleanup })).toBe(true);
+        expect(await f.read(next.id)).toMatchObject({ state: "completed" });
     } finally {
         await f.close();
     }

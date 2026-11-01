@@ -40,8 +40,9 @@ const hostSchema = v.strictObject({
     migrateCommand: argumentsSchema,
     environmentFile: v.optional(absolutePath),
     browserConfigFile: v.optional(absolutePath),
+    localCodeConfigFile: v.optional(absolutePath),
     browserProxyUnits: v.optional(
-        v.pipe(v.array(unitName), v.minLength(1), v.maxLength(2))
+        v.pipe(v.array(unitName), v.minLength(1), v.maxLength(3))
     ),
     mira: v.boolean(),
     services: v.pipe(
@@ -57,7 +58,11 @@ const hostSchema = v.strictObject({
     units: v.pipe(v.array(unitName), v.minLength(1), v.maxLength(16)),
 });
 const authSchema = v.strictObject({
-    ...v.omit(hostSchema, ["browserConfigFile", "browserProxyUnits"]).entries,
+    ...v.omit(hostSchema, [
+        "browserConfigFile",
+        "localCodeConfigFile",
+        "browserProxyUnits",
+    ]).entries,
     mira: v.literal(false),
     services: v.pipe(
         v.array(
@@ -124,11 +129,28 @@ export function parseReleaseDeploymentTargets(
                     !target.services.some(
                         (service) => service.app === "mira-browser-proxy"
                     ))) ||
+            (target.localCodeConfigFile && !target.browserConfigFile) ||
             !target.composeFile.startsWith(target.directory + "/") ||
-            target.composeFile === target.browserConfigFile ||
-            [target.composeFile, target.browserConfigFile, target.environmentFile].some(
-                (file) => file?.startsWith(target.stateDirectory + "/")
-            )
+            new Set(
+                [
+                    target.composeFile,
+                    target.browserConfigFile,
+                    target.localCodeConfigFile,
+                    target.environmentFile,
+                ].filter(Boolean)
+            ).size !==
+                [
+                    target.composeFile,
+                    target.browserConfigFile,
+                    target.localCodeConfigFile,
+                    target.environmentFile,
+                ].filter(Boolean).length ||
+            [
+                target.composeFile,
+                target.browserConfigFile,
+                target.localCodeConfigFile,
+                target.environmentFile,
+            ].some((file) => file?.startsWith(target.stateDirectory + "/"))
         )
             throw new Error(
                 "Release deployment requires explicit services, separate state and an existing connection"

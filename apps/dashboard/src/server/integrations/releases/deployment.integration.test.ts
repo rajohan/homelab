@@ -27,6 +27,33 @@ import type { readHomelabRelease } from "./read";
 
 const target = deploymentTestTarget;
 
+test("deployment waits for active local jobs and cleanup but preserves queued jobs", async () => {
+    const state = await fixture();
+    try {
+        const { id } = await state.request();
+        await state.drained(id);
+        const job = Bun.randomUUIDv7();
+        await state.client`INSERT INTO mira_daytona_jobs(id,owner,binding,binding_hash,content,content_hash,execution_target,state,cleanup) VALUES(${job},'operator','{}','fixture','{}','fixture','main','running','pending')`;
+        await state.coordinate();
+        expect(await state.record()).toMatchObject({
+            state: "waiting",
+            phase: "draining",
+        });
+        expect(state.calls.some((call) => call.mode === "submit")).toBe(false);
+        await state.client`UPDATE mira_daytona_jobs SET state='needs_attention' WHERE id=${job}`;
+        await state.coordinate();
+        expect(await state.record()).toMatchObject({ phase: "draining" });
+        await state.client`UPDATE mira_daytona_jobs SET cleanup='confirmed',state='running' WHERE id=${job}`;
+        await state.coordinate();
+        expect(await state.record()).toMatchObject({ phase: "draining" });
+        await state.client`UPDATE mira_daytona_jobs SET state='queued',cleanup='not_needed' WHERE id=${job}`;
+        await state.coordinate();
+        expect(state.calls.some((call) => call.mode === "submit")).toBe(true);
+    } finally {
+        await state.close();
+    }
+});
+
 test("Auth version uses a verified deployment before inventory catches up, including Main failure", async () => {
     const state = await fixture(true);
     try {
@@ -155,6 +182,7 @@ async function fixture(includeAuth = false) {
     let published = {
         ...plan.release,
         browser: null,
+        code: null,
         computer: null,
         tests: "success",
         verified: true,

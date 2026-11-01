@@ -53,7 +53,7 @@ def cleanup(compose, tags):
 
 
 def main():
-    """Recreate both proxies, preserve isolated slots and verify refreshed IDs with the real browser guard."""
+    """Recreate browser/code proxies and verify distinct slots with the actual runtime guard."""
     original = json.loads(command(["docker", "image", "inspect", "homelab-browser-proxy-test:local"]))[0]["Id"]
     owner = "homelab-proxy-upgrade-" + uuid.uuid4().hex
     candidate = owner + ":candidate"
@@ -72,7 +72,7 @@ def main():
                 "HOMELAB_MIRA_FILES_DIR": str(directory / "unused-files"),
                 "HOMELAB_MIRA_BROWSER_CONFIG": str(directory / "unused-host.json")}
             rendered = json.loads(command(["docker", "compose", "--env-file", "/dev/null", "--project-name", owner,
-                "--file", "deploy/compose.browser.yaml", "config", "--format", "json"], environment))
+                "--profile", "local-code", "--file", "deploy/compose.browser.yaml", "config", "--format", "json"], environment))
             rendered["services"].pop("mira-browser-host")
             rendered["networks"].pop("default", None)
             # No public connectivity is needed to verify identity and health. Keep every network offline.
@@ -83,8 +83,9 @@ def main():
                 assert not service.get("ports") and not service.get("volumes")
             path = directory / "compose.json"
             path.write_text(json.dumps(rendered))
-            compose = ["docker", "compose", "--env-file", "/dev/null", "--project-name", owner, "--file", str(path)]
+            compose = ["docker", "compose", "--env-file", "/dev/null", "--project-name", owner, "--profile", "local-code", "--file", str(path)]
             target = {"directory": temporary, "project": owner, "units": ["fixture.service", "proxy.service"],
+                "localCodeConfigFile": str(directory / "code.json"),
                 "browserProxyUnits": ["proxy.service"],
                 "services": [{"name": name, "app": "mira-browser-proxy"} for name in rendered["services"]]}
             command(compose + ["up", "--detach", "--no-build", "--pull", "never", "--wait", "--wait-timeout", "45"])
@@ -94,8 +95,13 @@ def main():
                 network = json.loads(command(["docker", "network", "inspect", owner + "_mira-browser-" + suffix]))[0]["Id"]
                 proxy = before["mira-browser-proxy-" + suffix]
                 slots.append({"networkId": network, "proxyId": proxy["id"], "proxyImageId": proxy["imageId"]})
-            browser = {"imageId": "sha256:" + "a"*64, "networks": slots}
-            bindings = host.browser_bindings(target, browser, before)
+            browser = {"hostId": str(uuid.uuid4()), "imageId": "sha256:" + "a"*64, "networks": list(slots)}
+            network = json.loads(command(["docker", "network", "inspect", owner + "_mira-code"]))[0]["Id"]
+            proxy = before["mira-code-proxy"]
+            code = {"kind": "main", "owner": "fixture", "hostId": browser["hostId"], "imageId": "sha256:" + "b"*64,
+                    "egress": {"networkId": network, "proxyId": proxy["id"], "proxyImageId": proxy["imageId"]}}
+            slots.append(code["egress"])
+            bindings = host.browser_bindings(target, browser, before, code)
             assert host.browser_slots(target, bindings, before) == slots
             command(compose + ["stop", "--timeout", "5"])
             for service in rendered["services"].values():
@@ -105,9 +111,12 @@ def main():
             after = {entry["name"]: host.container(target, entry["name"]) for entry in target["services"]}
             refreshed = host.browser_slots(target, bindings, after)
             assert [slot["networkId"] for slot in refreshed] == [slot["networkId"] for slot in slots]
-            assert all(refreshed[index]["proxyId"] != slots[index]["proxyId"] and refreshed[index]["proxyImageId"] == replacement for index in range(2))
+            assert all(refreshed[index]["proxyId"] != slots[index]["proxyId"] and refreshed[index]["proxyImageId"] == replacement for index in range(3))
+            configurations = host.refreshed_runtimes({"browser": browser, "code": code}, refreshed)
+            assert configurations["browser"]["networks"] == refreshed[:2]
+            assert configurations["code"] == {**code, "egress": refreshed[2]}
             try:
-                host.browser_bindings(target, browser, after)
+                host.browser_bindings(target, browser, after, code)
             except host.Refusal:
                 pass
             else:
@@ -115,7 +124,7 @@ def main():
             # The production TypeScript guard independently checks the complete baked-policy boundary.
             probe = "import {browserDockerRequest} from './apps/mira/src/server/browsing/docker'; import {verifyBrowserEgress} from './apps/mira/src/server/browsing/egress'; const call=browserDockerRequest('/run/docker.sock'); for(const slot of JSON.parse(process.argv[1]!)) await verifyBrowserEgress(call,slot);"
             command(["bun", "--no-env-file", "-e", probe, json.dumps(refreshed)])
-            print("PASS: both real proxy replacements retained isolated network IDs; refreshed container/image IDs pass the browser guard")
+            print("PASS: three real browser/code proxy replacements retained distinct isolated networks; refreshed IDs pass the runtime guard")
         finally:
             cleanup(compose, [candidate, owner + ":base"])
 

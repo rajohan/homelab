@@ -258,6 +258,90 @@ class HostTests(unittest.TestCase):
                 host.browser_bindings(*arguments)
         self.assertEqual(host.browser_bindings(self.target, {"imageId": "sha256:" + "a"*64}, {}), [])
 
+    def code_fixture(self):
+        target, browser, observed = self.browser_fixture()
+        target["localCodeConfigFile"] = str(self.root / "code.json")
+        target["services"].append({"name": "code-proxy", "app": "mira-browser-proxy"})
+        observed["code-proxy"] = {"id": "1"*64, "imageId": "sha256:" + "a"*64}
+        code = {"kind": "main", "owner": "fixture", "hostId": browser["hostId"], "imageId": "sha256:" + "c"*64,
+                "egress": {"networkId": "2"*64, "proxyId": "1"*64, "proxyImageId": "sha256:" + "a"*64}}
+        return target, browser, code, observed
+
+    def test_code_slot_cannot_reuse_browser_network_proxy_or_host(self):
+        target, browser, code, observed = self.code_fixture()
+        self.assertEqual(host.browser_bindings(target, browser, observed, code),
+                         [{"service": "proxy", "networkId": "e"*64}, {"service": "code-proxy", "networkId": "2"*64}])
+        for changed in [None, {**code, "hostId": str(uuid.uuid4())}, {**code, "kind": "daytona"},
+                        {**code, "egress": browser["networks"][0]},
+                        {**code, "egress": {**code["egress"], "networkId": "e"*64}},
+                        {**code, "imageId": "latest"}, {**code, "token": "unexpected"}]:
+            with self.subTest(code=changed), self.assertRaises(host.Refusal):
+                host.browser_bindings(target, browser, observed, changed)
+
+    def test_code_runtime_updates_and_backup_failure_rebinds_both_original_files(self):
+        baseline = copy.deepcopy(self.target)
+        for failure in [False, True]:
+            with self.subTest(backup_failure=failure):
+                self.target = copy.deepcopy(baseline)
+                self.target, browser, code, observed = self.code_fixture()
+                configurations = {"browser": browser, "code": code}
+                paths = host.runtime_paths(self.target)
+                for name, path in paths.items():
+                    path.write_bytes(host.encoded(configurations[name]))
+                    path.chmod(0o600)
+                    self.expected[name + "Hash"] = host.digest(path.read_bytes())
+                old_proxy = "ghcr.io/demo/homelab/mira-browser-proxy:1.2.2@sha256:" + "a"*64
+                new_proxy = old_proxy.replace("1.2.2", "1.2.3").replace("a"*64, "b"*64)
+                self.source = ("services:\n  dashboard:\n    image: " + self.old + "\n  proxy:\n    image: " + old_proxy + "\n  code-proxy:\n    image: " + old_proxy + "\n").encode()
+                self.compose.write_bytes(self.source)
+                self.release["images"] = [{"app": "dashboard", "reference": self.new},
+                    *[{"app": app, "reference": "ghcr.io/demo/homelab/" + app + ":1.2.3@sha256:" + "b"*64}
+                      for app in ["mira-browser-proxy", "mira-browser", "daytona-check"]]]
+                self.expected["containers"] = {"dashboard": {"image": self.old, "imageId": "sha256:" + "a"*64},
+                    **{name: {**value, "image": old_proxy} for name, value in observed.items()}}
+                self.intent.update(target=self.target, release=self.release, expected=self.expected)
+                host.replace_file(self.operation / "intent.json", host.encoded(self.intent), (self.operation / "intent.json").read_bytes())
+                host.save_status(self.operation, {"id": self.identity, "requestHash": host.digest(host.encoded(self.intent)),
+                    "phase": "accepted", "state": "running", "changesStarted": False, "migrationStarted": False})
+                for name in ["compose.before", "browser.before", "code.before", "database.dump"]:
+                    (self.operation / name).unlink(missing_ok=True)
+                self.calls = []
+                starts = []
+                slots = [{**browser["networks"][0], "proxyId": "3"*64}, {**code["egress"], "proxyId": "4"*64}]
+                def configured(_target):
+                    new = self.new in self.compose.read_text()
+                    return {"services": {"dashboard": {"image": self.new if new else self.old},
+                        **{name: {"image": new_proxy if new else old_proxy} for name in observed}}}
+                def execute(arguments, directory, timeout=60, output_file=None):
+                    if arguments[0] == "/fixture/backup" and failure:
+                        raise host.Refusal("command_failed")
+                    if arguments[:2] == ["/usr/bin/systemctl", "start"]:
+                        starts.append(arguments[2:])
+                        if len(starts) == 1: self.assertEqual(starts[0], ["proxy.service"])
+                        else:
+                            saved = {name: json.loads(path.read_bytes()) for name, path in paths.items()}
+                            self.assertEqual(saved["browser"]["networks"], slots[:1])
+                            self.assertEqual(saved["code"]["egress"], slots[1])
+                            self.assertEqual(saved["code"]["imageId"], code["imageId"] if failure else "sha256:" + "d"*64)
+                            self.assertEqual(saved["code"]["owner"], "fixture")
+                    return self.command(arguments, directory, timeout, output_file)
+                with patch.object(host, "inspect", return_value=self.expected), patch.object(host, "configured", side_effect=configured), \
+                        patch.object(host, "command", side_effect=execute), \
+                        patch.object(host, "image_identity", side_effect=lambda _target, image, _release: "sha256:" + ("d" if "/daytona-check:" in image else "b")*64), \
+                        patch.object(host, "container", return_value={"running": False}), \
+                        patch.object(host, "verify_services", return_value=observed), patch.object(host, "browser_slots", return_value=slots):
+                    host.run(self.operation)
+                    result = json.loads((self.operation / "status.json").read_bytes())
+                    self.assertEqual(result["state"], "failed" if failure else "succeeded", result)
+                    self.assertEqual(len(starts), 2, result)
+                    if failure:
+                        self.assertTrue(result["recovered"], result)
+                        paths["code"].write_bytes(host.encoded({**code, "imageId": "sha256:" + "f"*64, "egress": slots[1]}))
+                        with self.assertRaisesRegex(host.Refusal, "configuration_changed"):
+                            host.verify_browser_recovery(self.target, self.operation, self.expected, observed)
+                self.assertEqual((self.operation / "code.before").read_bytes(), host.encoded(code))
+                self.assertTrue(any("pull" in arguments and any("/daytona-check:" in part for part in arguments) for arguments in self.calls))
+
     def test_preparation_allows_active_browser_but_submission_requires_drained_network(self):
         target, browser, observed = self.browser_fixture()
         path = Path(target["browserConfigFile"])

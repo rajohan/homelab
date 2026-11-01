@@ -220,6 +220,7 @@ export async function coordinateDeployment(options: {
                     legacy: boolean;
                     mira: boolean;
                     browsers: boolean;
+                    code: boolean;
                     unexpectedMira: boolean;
                 }[]
             >`
@@ -228,6 +229,7 @@ export async function coordinateDeployment(options: {
                 EXISTS(SELECT 1 FROM workers WHERE heartbeat_at>clock_timestamp()-interval '30 seconds' AND deployment_protocol<>1) AS legacy,
                 NOT EXISTS(SELECT 1 FROM mira_runtime_status WHERE deployment_drained_for=${claim.id} AND heartbeat_at>clock_timestamp()-interval '15 seconds') AS mira,
                 EXISTS(SELECT 1 FROM mira_browser_processes WHERE state<>'removed') AS browsers,
+                EXISTS(SELECT 1 FROM mira_daytona_jobs WHERE execution_target='main' AND (state='running' OR cleanup='pending')) AS code,
                 EXISTS(SELECT 1 FROM mira_runtime_status WHERE heartbeat_at>clock_timestamp()-interval '30 seconds') AS "unexpectedMira"`;
             if (!busy) throw new Error("Deployment admission unavailable");
             if (busy.legacy || (!target.mira && busy.unexpectedMira)) {
@@ -243,12 +245,13 @@ export async function coordinateDeployment(options: {
                 busy.jobs ||
                 busy.workers ||
                 (target.mira && busy.mira) ||
-                busy.browsers
+                busy.browsers ||
+                busy.code
             ) {
                 await write(
                     "waiting",
                     "draining",
-                    "Waiting for active work and browser cleanup. Queued work is preserved.",
+                    "Waiting for active work and runtime cleanup. Queued work is preserved.",
                     false
                 );
                 return;
