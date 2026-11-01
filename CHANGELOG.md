@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.14.0](https://github.com/rajohan/homelab/compare/v0.13.0...v0.14.0) (2026-11-01)
+
+
+### Features
+
+* **mira:** update Main code runtime with Homelab releases ([#173](https://github.com/rajohan/homelab/issues/173)) ([b8257f4](https://github.com/rajohan/homelab/commit/b8257f45147155bb73dc5d816fa46b7914248153))
+
+
+### Bug Fixes
+
+* **mira:** refresh shared state and remember sign-ins ([#171](https://github.com/rajohan/homelab/issues/171)) ([27c8470](https://github.com/rajohan/homelab/commit/27c8470442e3b9c3ee017b09868e85b657c78fa9))
+
 ## [0.13.0](https://github.com/rajohan/homelab/compare/v0.12.0...v0.13.0) (2026-11-01)
 
 
