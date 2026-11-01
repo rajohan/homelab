@@ -99,10 +99,11 @@ export async function main(): Promise<void> {
     process.once("SIGTERM", stop);
     process.once("SIGINT", stop);
     const reader = Bun.stdin.stream().getReader();
+    // Startup acknowledgement and two post-start Engine batches can each take ten seconds.
     const timer = setTimeout(() => {
         controller.abort();
         void reader.cancel();
-    }, 15_000);
+    }, 40_000);
     const chunks: Uint8Array[] = [];
     let bytes = 0;
     try {

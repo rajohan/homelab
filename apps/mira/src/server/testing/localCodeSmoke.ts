@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { setTimeout as delay } from "node:timers/promises";
 
 import { browserDockerRequest } from "../browsing/docker";
 import {
@@ -65,6 +66,8 @@ export async function main(): Promise<void> {
         };
     };
     const source = journal();
+    let started = false;
+    const delayed = new Set<string>();
     const inspected = await executeLocalCodeCheck(
         config,
         {
@@ -76,8 +79,28 @@ export async function main(): Promise<void> {
             input: null,
         },
         source.record,
-        controller.signal
+        controller.signal,
+        {
+            request: async (method, route, body) => {
+                const reply = await call(method, route, body);
+                if (route.endsWith("/start")) started = true;
+                // Both verification batches may approach their ten-second Engine deadlines.
+                if (
+                    started &&
+                    method === "GET" &&
+                    !delayed.has(route) &&
+                    (route.startsWith("/networks/") ||
+                        (route.startsWith("/containers/") &&
+                            !route.includes(validated.egress!.proxyId)))
+                ) {
+                    delayed.add(route);
+                    await delay(9000);
+                }
+                return reply;
+            },
+        }
     );
+    assert.equal(delayed.size, 2);
     assert.equal(inspected.exitCode, 0);
     const files = inspected.files.find((item) => item.name === "source-files.json");
     assert.ok(files?.text.includes("1.4.4"));
