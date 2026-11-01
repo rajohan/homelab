@@ -3,8 +3,8 @@ import * as v from "valibot";
 import { idSchema } from "./operations";
 
 export const miraImprovementPolicy = Object.freeze({
-    version: 1,
-    paths: ["apps/dashboard/src/browser/", "packages/ui/src/components/"],
+    version: 2,
+    scope: "repository",
     maximumFiles: 10,
     maximumFileBytes: 65_536,
     maximumPlanBytes: 262_144,
@@ -16,7 +16,7 @@ export const miraImprovementGrantSchema = v.strictObject({
     automationVersion: v.pipe(v.number(), v.integer(), v.minValue(1)),
     version: v.pipe(v.number(), v.integer(), v.minValue(0)),
     enabled: v.boolean(),
-    policyVersion: v.literal(1),
+    policyVersion: v.literal(2),
 });
 export interface MiraImprovementGrant {
     automationId: string;

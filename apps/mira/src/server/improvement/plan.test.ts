@@ -20,7 +20,7 @@ const input = {
     },
 };
 
-test("automatic improvements accept exact bounded frontend replacements, new files and deletion", () => {
+test("automatic improvements accept exact bounded repository replacements, new files and deletion", () => {
     expect(parseImprovement(input).plan.files).toHaveLength(1);
     const files = [
         {
@@ -44,7 +44,23 @@ for (const path of [
     "packages/ui/src/features/identity/Panel.tsx",
     ".github/workflows/update.ts",
     "package.json",
+    "apps/mira/src/server/computer/windows/ConsentHost.cs",
+    "deploy/compose.mira.yaml",
+    "scripts/setupInno.ps1",
+    "README.md",
+    ".github/workflows/ci.yml",
+    ".github/actions/check/action.yml",
+    ".GITHUB/workflows/ci.yml",
     "apps/dashboard/src/browser/AGENTS.md",
+])
+    test(`repository-wide improvement accepts ${path}`, () => {
+        const result = parseImprovement({
+            ...input,
+            plan: { ...input.plan, files: [{ ...input.plan.files[0], path }] },
+        });
+        expect(result.plan.files[0]!.path).toBe(path);
+    });
+for (const path of [
     "apps/dashboard/src/browser/../server/app.ts",
     "apps/dashboard/src/browser/.git/config.ts",
 ])

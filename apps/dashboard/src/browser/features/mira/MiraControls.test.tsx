@@ -2221,7 +2221,7 @@ test("automatic coding permission displays its scope and sends the exact reviewe
                 automationVersion: 4,
                 version: 2,
                 enabled: true,
-                policyVersion: 1,
+                policyVersion: 2,
             },
         ]);
     } finally {

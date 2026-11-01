@@ -52,12 +52,12 @@
             "mira_daytona_source_draft"
         ],
         "controls": ["integration:daytona"],
-        "version": "1.0.0",
+        "version": "1.1.0",
         "sources": [
             "https://github.com/rajohan/homelab/blob/47af9c4b24cde585eb85fd928cbc66175e1a0577/docs/mira-daytona.md"
         ],
         "files": {
-            "SKILL.md": "# Daytona\n\nUse the existing Daytona job tools. The service owns the account, qualified snapshot, execution limits and cleanup. Do not run the old Crabbox wrapper, create a separate sandbox, send credentials into a job or weaken its fixed test profile.\n\nFor Homelab work, identify the current repository commit and inspect source before proposing exact edits. Keep files within the allowed path and size limits. Supply the actual source fingerprints and complete replacement content. A draft requires operator review unless the run has a separately granted frontend-improvement policy. Creating a draft does not start a sandbox.\n\nFollow the job through its recorded phases. Read bounded logs and artifacts through result tools. Distinguish a passed command from a completed workflow: cleanup can remain pending or require attention after execution finishes. Report the tested commit, checks and artifact IDs, including failures.\n\nA cancelled or expired operation must not be silently recreated. An unknown provider result or failed cleanup requires the recovery controls and fresh observations. Do not claim a sandbox was deleted until the service confirms it. Cloud jobs never deploy to or administer production."
+            "SKILL.md": "# Daytona\n\nUse the existing Daytona job tools. The service owns the account, qualified snapshot, execution limits and cleanup. Do not run the old Crabbox wrapper, create a separate sandbox, send credentials into a job or weaken its fixed test profile.\n\nFor Homelab work, identify the current repository commit and inspect source before proposing exact edits. Keep files within the allowed path and size limits. Supply the actual source fingerprints and complete replacement content. A draft requires operator review unless the run has a separately granted repository-improvement policy. Creating a draft does not start a sandbox.\n\nFollow the job through its recorded phases. Read bounded logs and artifacts through result tools. Distinguish a passed command from a completed workflow: cleanup can remain pending or require attention after execution finishes. Report the tested commit, checks and artifact IDs, including failures.\n\nA cancelled or expired operation must not be silently recreated. An unknown provider result or failed cleanup requires the recovery controls and fresh observations. Do not claim a sandbox was deleted until the service confirms it. Cloud jobs never deploy to or administer production."
         }
     },
     {
@@ -127,8 +127,8 @@
     },
     {
         "id": "frontend-improvement",
-        "title": "Frontend improvement",
-        "description": "Use explicitly granted automation permissions for small, tested dashboard improvements.",
+        "title": "Homelab improvement",
+        "description": "Use explicitly granted automation permissions for tested improvements throughout Homelab.",
         "repositoryContext": true,
         "tools": [
             "mira_improvement_status",
@@ -137,13 +137,13 @@
             "mira_github_tree",
             "mira_github_file"
         ],
-        "controls": ["integration:github", "integration:daytona"],
-        "version": "1.0.0",
+        "controls": ["integration:github"],
+        "version": "2.0.0",
         "sources": [
             "https://github.com/rajohan/homelab/blob/47af9c4b24cde585eb85fd928cbc66175e1a0577/docs/mira-improvements.md"
         ],
         "files": {
-            "SKILL.md": "# Frontend improvement\n\nThis guidance does not grant coding permission. Start with mira_improvement_status for the current run. Only an eligible improvement automation with current, explicitly granted permissions can submit automatic work. A manual conversation, paused automation, stale grant or another automation kind does not inherit that permission.\n\nInspect current main and open work, then choose one small improvement within the reported policy limits. Use existing dashboard design and shared components. Read exact source and supply current fingerprints with complete replacement content. Do not modify workflows, credentials, infrastructure, backend authorization or unrelated files.\n\nSubmit one bounded plan with accurate rationale. The durable coordinator owns the fixed cloud checks, cleanup, base revalidation, draft publication and completion report. Acceptance means work was queued, not that checks passed or a PR exists. Read job, proposal and report state to describe actual progress.\n\nDo not resubmit accepted or uncertain work merely because the model turn ended or the result has not arrived. Respect attempt limits, active-work limits, expiry, cancellation and pause controls. The operator handles recovery after inspecting uncertain outcomes. A successful draft PR is not merged or deployed automatically."
+            "SKILL.md": "# Homelab improvement\n\nThis guidance does not grant coding permission. Start with mira_improvement_status for the current run. Only an eligible improvement automation with current, explicitly granted permissions can submit automatic work. A manual conversation, paused automation, stale grant or another automation kind does not inherit that permission.\n\nInspect current main and open work, then choose one small improvement within the reported policy limits. Use existing dashboard design and shared components. Read exact source and supply current fingerprints with complete replacement content. The scope includes the whole Homelab repository: web, Windows app, backend, shared packages, tests, CI workflows, deployment and documentation. Keep changes relevant and bounded. CI workflows and local GitHub actions follow the same tested draft-PR publication policy. Never read production secrets or modify live infrastructure as part of a code check.\n\nSubmit one bounded plan with accurate rationale. The durable coordinator owns the fixed Main or Daytona checks, cleanup, base revalidation, draft publication and completion report. Acceptance means work was queued, not that checks passed or a PR exists. Read job, proposal and report state to describe actual progress.\n\nDo not resubmit accepted or uncertain work merely because the model turn ended or the result has not arrived. Respect attempt limits, active-work limits, expiry, cancellation and pause controls. The operator handles recovery after inspecting uncertain outcomes. A successful draft PR is not merged or deployed automatically."
         }
     }
 ]

@@ -3,6 +3,7 @@ import { rejects } from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
 import { capabilities } from "@homelab/contracts/operations";
 import { publishDaytonaBinding } from "@homelab/mira/data/daytona";
@@ -19,6 +20,16 @@ import { daytonaBindingHash } from "@homelab/mira/integrations/daytona/configura
 import { dispatchMiraDaytona } from "@homelab/mira/integrations/daytona/jobs";
 import { githubBindingHash } from "@homelab/mira/integrations/github/configuration";
 import { dispatchMiraCode } from "@homelab/mira/integrations/github/outbox";
+import {
+    publishLocalCodeBinding,
+    type LocalCodeBinding,
+} from "@homelab/mira/sandbox/localBinding";
+import type { executeLocalCodeCheck } from "@homelab/mira/sandbox/localContainer";
+import { dispatchMiraLocalCode } from "@homelab/mira/sandbox/localJobs";
+import {
+    parseLocalCheckInput,
+    type LocalCheckResult,
+} from "@homelab/mira/sandbox/localProtocol";
 
 import {
     base,
@@ -42,6 +53,40 @@ const daytona = {
     executionQualified: true,
 };
 const bindings = { daytona, github };
+const localCode: LocalCodeBinding = {
+    kind: "main",
+    owner: github.owner,
+    hostId: "11111111-1111-4111-8111-111111111111",
+    imageId: `sha256:${"a".repeat(64)}`,
+    egress: {
+        networkId: "b".repeat(64),
+        proxyId: "c".repeat(64),
+        proxyImageId: `sha256:${"d".repeat(64)}`,
+    },
+};
+const localResult: LocalCheckResult = {
+    exitCode: 0,
+    files: [
+        { name: "check-result.json", text: '{"exitCode":0}' },
+        { name: "check-log.txt", text: "Synthetic check passed." },
+        { name: "changes.txt", text: "Synthetic frontend diff." },
+    ],
+};
+const executeLocal: typeof executeLocalCodeCheck = async (
+    _config,
+    input,
+    journal,
+    stopping
+) => {
+    const selected = parseLocalCheckInput(input);
+    expect(JSON.parse(selected.input!)).toMatchObject({ version: 1, commit: base });
+    await journal.creating(stopping);
+    await journal.created("e".repeat(64), stopping);
+    await journal.starting(stopping);
+    await journal.cleaning(signal);
+    await journal.cleaned(signal);
+    return localResult;
+};
 const input = {
     commit: base,
     title: "fix(dashboard): improve layout",
@@ -66,7 +111,12 @@ const provider = (id: string) =>
             : reply()
     );
 
-async function fixture() {
+async function fixture(target: "main" | "daytona" = "daytona") {
+    const configured = {
+        daytona: target === "daytona" ? daytona : undefined,
+        localCode: target === "main" ? localCode : undefined,
+        github,
+    };
     const f = await operationFixture(),
         directory = await mkdtemp(path.join(tmpdir(), "mira-improvement-"));
     const context = {
@@ -89,11 +139,14 @@ async function fixture() {
         },
     ];
     await f.client`INSERT INTO mira_runtime_status(id,worker_id,version,ready,heartbeat_at,integrations) VALUES(1,${crypto.randomUUID()},'synthetic',true,now(),${JSON.stringify(integrations)}::text::jsonb)`;
-    await publishDaytonaBinding(f.client, daytona);
+    await (target === "main"
+        ? publishLocalCodeBinding(f.client, localCode)
+        : publishDaytonaBinding(f.client, daytona));
     await publishGitHubBinding(f.client, github);
     const operations = {
         ...f,
-        daytonaBinding: daytona,
+        daytonaBinding: configured.daytona,
+        localCodeBinding: configured.localCode,
         githubBinding: github,
         miraFilesDirectory: directory,
     };
@@ -112,7 +165,7 @@ async function fixture() {
             until: null,
         });
     };
-    await control("integration:daytona", true);
+    await control(target === "main" ? "code:main" : "integration:daytona", true);
     await control("integration:github", true);
     const fields = {
         title: "Dashboard improvement",
@@ -121,6 +174,12 @@ async function fixture() {
         schedule: { kind: "interval" as const, intervalSeconds: 60 },
         budgetSeconds: 900,
         delivery: "reports" as const,
+        settings: {
+            model: null,
+            effort: null,
+            serviceTier: null,
+            executionTarget: target,
+        },
     };
     const automation = await api.automations.create(fields);
     await control(`automation:${automation.id}`, true);
@@ -130,7 +189,7 @@ async function fixture() {
             automationVersion: 1,
             version,
             enabled,
-            policyVersion: 1,
+            policyVersion: 2,
         });
     const start = async () => {
         await api.automations.run({ id: automation.id, requestId: crypto.randomUUID() });
@@ -143,8 +202,9 @@ async function fixture() {
             undefined,
             undefined,
             undefined,
-            daytona,
-            github
+            configured.daytona,
+            github,
+            configured.localCode
         );
         const submit = async (
             proposal: unknown = input,
@@ -166,8 +226,26 @@ async function fixture() {
         return { run, tools, submit };
     };
     const dispatch = (request: typeof fetch) =>
-        dispatchMiraImprovement(f.client, bindings, signal, directory, request);
+        dispatchMiraImprovement(f.client, configured, signal, directory, request);
+    const localOptions = {
+        client: f.client,
+        binding: localCode,
+        socketPath: "/synthetic/socket",
+        filesDirectory: directory,
+        signal,
+    };
     const completed = async (id: string) => {
+        if (target === "main") {
+            expect(
+                await dispatchMiraLocalCode(localOptions, { execute: executeLocal })
+            ).toBe(true);
+            expect(await api.daytona.read({ id })).toMatchObject({
+                state: "completed",
+                cleanup: "confirmed",
+                executionTarget: "main",
+            });
+            return;
+        }
         await f.client`UPDATE mira_daytona_jobs SET state='completed',phase='closed',cleanup='confirmed',outcome='completed',exit_code=0 WHERE id=${id}`;
     };
     const state = async (id: string) => {
@@ -179,6 +257,7 @@ async function fixture() {
     return {
         ...f,
         context,
+        localOptions,
         operations,
         api,
         automation,
@@ -198,87 +277,139 @@ async function fixture() {
     };
 }
 
-test("automatic frontend work continues after the model turn and publishes one verified draft with a report", async () => {
-    const f = await fixture();
-    try {
-        expect(await f.api.improvements.grant({ id: f.automation.id })).toMatchObject({
-            enabled: false,
-            current: false,
-            available: true,
-            version: 0,
-        });
-        await f.grant(true);
-        const { run, submit } = await f.start(),
-            submitted = await submit();
-        expect(submitted.ok).toBe(true);
-        const id = submitted.result!.id,
-            provider = f.provider(id);
-        expect(await submit()).toMatchObject({
-            ok: true,
-            result: { id, state: "queued" },
-        });
-        expect(await submit({ ...input, title: "fix: different" })).toMatchObject({
-            ok: false,
-        });
-        await f.client`UPDATE mira_runs SET state='completed' WHERE id=${run.id}`;
-        expect(await f.dispatch(provider.request)).toBe(true);
-        expect(await f.state(id)).toMatchObject({ state: "checking" });
-        const job = await f.api.daytona.read({ id });
-        expect(job).toMatchObject({
-            state: "queued",
-            conversationId: run.conversationId,
-            content: { outputs: ["check-result.json", "check-log.txt", "changes.txt"] },
-        });
-        expect(job.content.command).toContain(
-            `/opt/homelab/daytona-check.js ${id} ${base} --edits `
-        );
-        expect(await improvementJobAllowed(f.client, id, "cloud")).toBe(true);
-        expect(provider.calls.every((call) => call.init.method === "GET")).toBe(true);
-        await f.completed(id);
-        await f.dispatch(provider.request);
-        expect(await f.state(id)).toMatchObject({ state: "publishing" });
-        expect(await f.api.code.read({ id })).toMatchObject({
-            state: "queued",
-            content: { title: input.title },
-        });
-        expect(
-            await dispatchMiraCode(
-                f.client,
-                github,
-                signal,
-                f.directory,
-                provider.request
-            )
-        ).toBe(true);
-        await f.dispatch(provider.request);
-        const final = await f.state(id);
-        expect(final.state).toBe("published");
-        expect(final.reportId).not.toBeNull();
-        expect(await f.api.code.read({ id })).toMatchObject({
-            state: "published",
-            number: 123,
-        });
-        const count = provider.calls.length;
-        expect(await f.dispatch(provider.request)).toBe(false);
-        expect(provider.calls).toHaveLength(count);
-        const reports = await f.api.reports.list({ search: "", archived: false });
-        expect(reports.rows).toHaveLength(1);
-        expect(reports.rows[0]!.markdown).toContain("No merge or deployment");
-        expect(reports.rows[0]!.runId).toBe(run.id);
-        const notices = await f.client<
-            { recipient: string; destination: string; severity: string }[]
-        >`SELECT recipient,destination,severity FROM dashboard_notifications WHERE source='mira' AND source_key=${`improvement:${id}`}`;
-        expect([...notices]).toEqual([
-            {
-                recipient: `human:${github.owner}`,
-                destination: "reports",
-                severity: "info",
-            },
-        ]);
-    } finally {
-        await f.close();
+test.each(["main", "daytona"] as const)(
+    "repository work on %s continues after the model turn and publishes one verified draft with a report",
+    async (target) => {
+        const f = await fixture(target);
+        try {
+            expect(await f.api.improvements.grant({ id: f.automation.id })).toMatchObject(
+                {
+                    enabled: false,
+                    current: false,
+                    available: true,
+                    version: 0,
+                }
+            );
+            await f.grant(true);
+            const proposal = {
+                ...input,
+                plan: {
+                    ...input.plan,
+                    files: [
+                        {
+                            path: "apps/auth/src/server/example.ts",
+                            beforeSha256: null,
+                            content: "export const example = 1;\n",
+                        },
+                        {
+                            path: "apps/computer/native/Example.cs",
+                            beforeSha256: null,
+                            content: "internal class Example {}\n",
+                        },
+                        {
+                            path: "deploy/example.yaml",
+                            beforeSha256: null,
+                            content: "services: {}\n",
+                        },
+                        {
+                            path: ".github/workflows/improvement-fixture.yml",
+                            beforeSha256: null,
+                            content: "name: Fixture\non: workflow_dispatch\njobs: {}\n",
+                        },
+                        {
+                            path: ".github/actions/example/action.yml",
+                            beforeSha256: null,
+                            content: "name: Fixture action\n",
+                        },
+                    ],
+                },
+            };
+            const { run, submit } = await f.start(),
+                submitted = await submit(proposal);
+            expect(submitted.ok).toBe(true);
+            const id = submitted.result!.id,
+                provider = f.provider(id);
+            expect(await submit(proposal)).toMatchObject({
+                ok: true,
+                result: { id, state: "queued" },
+            });
+            expect(await submit({ ...input, title: "fix: different" })).toMatchObject({
+                ok: false,
+            });
+            await f.client`UPDATE mira_runs SET state='completed' WHERE id=${run.id}`;
+            expect(await f.dispatch(provider.request)).toBe(true);
+            expect(await f.state(id)).toMatchObject({ state: "checking" });
+            const job = await f.api.daytona.read({ id });
+            expect(job).toMatchObject({
+                state: "queued",
+                executionTarget: target,
+                conversationId: run.conversationId,
+                content: {
+                    outputs: ["check-result.json", "check-log.txt", "changes.txt"],
+                },
+            });
+            expect(job.content.command).toContain(
+                `/opt/homelab/daytona-check.js ${id} ${base} --edits `
+            );
+            expect(await improvementJobAllowed(f.client, id, "cloud")).toBe(true);
+            expect(provider.calls.every((call) => call.init.method === "GET")).toBe(true);
+            await f.completed(id);
+            await f.dispatch(provider.request);
+            expect(await f.state(id)).toMatchObject({ state: "publishing" });
+            expect(await f.api.code.read({ id })).toMatchObject({
+                state: "queued",
+                content: { title: input.title },
+            });
+            expect(
+                await dispatchMiraCode(
+                    f.client,
+                    github,
+                    signal,
+                    f.directory,
+                    provider.request
+                )
+            ).toBe(true);
+            await f.dispatch(provider.request);
+            const final = await f.state(id);
+            expect(final.state).toBe("published");
+            expect(final.reportId).not.toBeNull();
+            expect(await f.api.code.read({ id })).toMatchObject({
+                state: "published",
+                number: 123,
+            });
+            const treeWrite = provider.calls.find(
+                (call) =>
+                    call.init.method === "POST" &&
+                    call.url.pathname.endsWith("/git/trees")
+            );
+            const publishedTree = JSON.parse(treeWrite!.init.body as string) as {
+                tree: { path: string }[];
+            };
+            expect(publishedTree.tree.map((file) => file.path)).toEqual(
+                proposal.plan.files.map((file) => file.path)
+            );
+            const count = provider.calls.length;
+            expect(await f.dispatch(provider.request)).toBe(false);
+            expect(provider.calls).toHaveLength(count);
+            const reports = await f.api.reports.list({ search: "", archived: false });
+            expect(reports.rows).toHaveLength(1);
+            expect(reports.rows[0]!.markdown).toContain("No merge or deployment");
+            expect(reports.rows[0]!.runId).toBe(run.id);
+            const notices = await f.client<
+                { recipient: string; destination: string; severity: string }[]
+            >`SELECT recipient,destination,severity FROM dashboard_notifications WHERE source='mira' AND source_key=${`improvement:${id}`}`;
+            expect([...notices]).toEqual([
+                {
+                    recipient: `human:${github.owner}`,
+                    destination: "reports",
+                    severity: "info",
+                },
+            ]);
+        } finally {
+            await f.close();
+        }
     }
-});
+);
 
 test("coding grant is human-only, owner-scoped, versioned and invalidated by definition edits", async () => {
     const f = await fixture();
@@ -297,7 +428,7 @@ test("coding grant is human-only, owner-scoped, versioned and invalidated by def
                     automationVersion: 1,
                     version: 0,
                     enabled: true,
-                    policyVersion: 1,
+                    policyVersion: 2,
                 },
                 bindings
             ),
@@ -327,8 +458,67 @@ test("coding grant is human-only, owner-scoped, versioned and invalidated by def
             automationVersion: 2,
             version: 1,
             enabled: false,
-            policyVersion: 1,
+            policyVersion: 2,
         });
+    } finally {
+        await f.close();
+    }
+});
+
+test("frontend-only permission cannot silently authorize repository-wide changes", async () => {
+    const f = await fixture();
+    try {
+        await f.grant(true);
+        const legacy = new Bun.CryptoHasher("sha256")
+            .update(
+                JSON.stringify([
+                    {
+                        version: 1,
+                        paths: [
+                            "apps/dashboard/src/browser/",
+                            "packages/ui/src/components/",
+                        ],
+                        maximumFiles: 10,
+                        maximumFileBytes: 65_536,
+                        maximumPlanBytes: 262_144,
+                        attemptsPerDay: 2,
+                        minutesPerCheck: 10,
+                    },
+                    daytonaBindingHash(daytona),
+                    githubBindingHash(github),
+                ])
+            )
+            .digest("hex");
+        await f.client`UPDATE mira_improvement_grants SET binding_hash=${legacy} WHERE automation_id=${f.automation.id}`;
+        expect(await f.api.improvements.grant({ id: f.automation.id })).toMatchObject({
+            enabled: true,
+            current: false,
+        });
+        await rejects(
+            f.api.improvements.allow({
+                automationId: f.automation.id,
+                automationVersion: 1,
+                version: 1,
+                enabled: true,
+                policyVersion: 1 as never,
+            })
+        );
+        const { submit } = await f.start();
+        expect(
+            await submit({
+                ...input,
+                plan: {
+                    ...input.plan,
+                    files: [
+                        {
+                            ...input.plan.files[0],
+                            path: "apps/auth/src/server/fixture.ts",
+                        },
+                    ],
+                },
+            })
+        ).toMatchObject({ ok: false });
+        expect(await f.client`SELECT id FROM mira_improvements`).toHaveLength(0);
     } finally {
         await f.close();
     }
@@ -785,7 +975,7 @@ test("silent automation delivery retains durable outcome reports without a notif
             automationVersion: 2,
             version: 0,
             enabled: true,
-            policyVersion: 1,
+            policyVersion: 2,
         });
         const { submit } = await f.start(),
             result = await submit(),
@@ -963,9 +1153,9 @@ test("Main selection never authorizes a Daytona improvement grant or falls back 
                 automationVersion: 2,
                 version: 0,
                 enabled: true,
-                policyVersion: 1,
+                policyVersion: 2,
             }),
-            /Daytona target/
+            /selected execution target/
         );
         const { run, submit } = await f.start();
         expect(run.executionTarget).toBe("main");
@@ -976,3 +1166,221 @@ test("Main selection never authorizes a Daytona improvement grant or falls back 
         await f.close();
     }
 });
+
+test.each([
+    "grant",
+    "automation",
+    "autonomy",
+    "main",
+    "github",
+    "definition",
+    "target",
+    "run",
+    "host",
+    "expired",
+] as const)(
+    "Main automatic coding stops before execution after %s changes",
+    async (fault) => {
+        const f = await fixture("main");
+        try {
+            await f.grant(true);
+            const { run, submit } = await f.start();
+            const submitted = await submit();
+            expect(submitted.ok).toBe(true);
+            const id = submitted.result!.id,
+                provider = f.provider(id);
+            await f.dispatch(provider.request);
+            expect(await f.state(id)).toMatchObject({ state: "checking" });
+            if (fault === "grant") {
+                await f.grant(false, 1);
+                await f.grant(true, 2);
+            }
+            if (fault === "automation") {
+                await f.control(`automation:${f.automation.id}`, false);
+                await f.control(`automation:${f.automation.id}`, true);
+            }
+            if (fault === "autonomy") {
+                await f.control("autonomy", false);
+                await f.control("autonomy", true);
+            }
+            if (fault === "main") {
+                await f.control("code:main", false);
+                await f.control("code:main", true);
+            }
+            if (fault === "github") {
+                await f.control("integration:github", false);
+                await f.control("integration:github", true);
+            }
+            if (fault === "definition" || fault === "target")
+                await f.api.automations.update({
+                    ...f.fields,
+                    id: f.automation.id,
+                    version: 1,
+                    settings: {
+                        ...f.fields.settings,
+                        executionTarget: fault === "target" ? "daytona" : "main",
+                    },
+                });
+            if (fault === "run")
+                await f.client`UPDATE mira_runs SET cancel_requested=true WHERE id=${run.id}`;
+            if (fault === "host")
+                await publishLocalCodeBinding(f.client, {
+                    ...localCode,
+                    imageId: `sha256:${"f".repeat(64)}`,
+                });
+            if (fault === "expired")
+                await f.client`UPDATE mira_improvements SET created_at=now()-interval '2 hours' WHERE id=${id}`;
+            let executed = false;
+            expect(
+                await dispatchMiraLocalCode(f.localOptions, {
+                    execute: async (...args) => {
+                        executed = true;
+                        return executeLocal(...args);
+                    },
+                })
+            ).toBe(false);
+            expect(executed).toBe(false);
+            await f.dispatch(provider.request);
+            expect(await f.state(id)).toMatchObject({ state: "cancelled" });
+            expect(await f.client`SELECT id FROM mira_code_publications`).toHaveLength(0);
+            expect(provider.calls.every((call) => call.init.method === "GET")).toBe(true);
+        } finally {
+            await f.close();
+        }
+    }
+);
+
+test.each(["grant", "target", "payload"] as const)(
+    "active Main check stops and cleans up after %s changes",
+    async (fault) => {
+        const f = await fixture("main");
+        try {
+            await f.grant(true);
+            const { submit } = await f.start(),
+                submitted = await submit(),
+                id = submitted.result!.id;
+            const provider = f.provider(id);
+            await f.dispatch(provider.request);
+            let stopped = false,
+                cleaned = false;
+            await dispatchMiraLocalCode(f.localOptions, {
+                execute: async (_config, _input, journal, stopping) => {
+                    await journal.creating(stopping);
+                    await journal.created("e".repeat(64), stopping);
+                    await journal.starting(stopping);
+                    if (fault === "grant") await f.grant(false, 1);
+                    if (fault === "target")
+                        await f.api.automations.update({
+                            ...f.fields,
+                            id: f.automation.id,
+                            version: 1,
+                            settings: {
+                                ...f.fields.settings,
+                                executionTarget: "daytona",
+                            },
+                        });
+                    if (fault === "payload")
+                        await f.client`UPDATE mira_improvements SET cloud_hash='changed' WHERE id=${id}`;
+                    await delay(5000, undefined, { signal: stopping }).catch(() => {
+                        stopped = true;
+                    });
+                    stopping.throwIfAborted();
+                    throw new Error("Revocation did not stop the active check.");
+                },
+                cleanup: async (_config, _record, journal) => {
+                    await journal.cleaning(signal);
+                    await journal.cleaned(signal);
+                    cleaned = true;
+                },
+            });
+            expect(stopped).toBe(true);
+            expect(cleaned).toBe(true);
+            expect(await f.api.daytona.read({ id })).toMatchObject({
+                cleanup: "confirmed",
+                state: "needs_attention",
+            });
+            await f.dispatch(provider.request);
+            expect(await f.client`SELECT id FROM mira_code_publications`).toHaveLength(0);
+        } finally {
+            await f.close();
+        }
+    }
+);
+
+test("changing an automation target requires a fresh grant and does not upgrade old runs", async () => {
+    const f = await fixture();
+    try {
+        await f.grant(true);
+        const { submit } = await f.start();
+        f.operations.localCodeBinding = localCode;
+        await publishLocalCodeBinding(f.client, localCode);
+        await f.control("code:main", true);
+        await f.api.automations.update({
+            ...f.fields,
+            id: f.automation.id,
+            version: 1,
+            settings: { ...f.fields.settings, executionTarget: "main" },
+        });
+        expect(await f.api.improvements.grant({ id: f.automation.id })).toMatchObject({
+            enabled: true,
+            current: false,
+            available: true,
+        });
+        await f.api.improvements.allow({
+            automationId: f.automation.id,
+            automationVersion: 2,
+            version: 1,
+            enabled: true,
+            policyVersion: 2,
+        });
+        expect(await submit()).toMatchObject({ ok: false });
+        expect(await f.client`SELECT id FROM mira_improvements`).toHaveLength(0);
+    } finally {
+        await f.close();
+    }
+});
+
+test.each(["grant", "host", "offline", "target"] as const)(
+    "Main publication rechecks authority after %s changes",
+    async (fault) => {
+        const f = await fixture("main");
+        try {
+            await f.grant(true);
+            const { submit } = await f.start(),
+                submitted = await submit();
+            const id = submitted.result!.id,
+                provider = f.provider(id);
+            await f.dispatch(provider.request);
+            await f.completed(id);
+            await f.dispatch(provider.request);
+            expect(await f.state(id)).toMatchObject({ state: "publishing" });
+            if (fault === "grant") await f.grant(false, 1);
+            if (fault === "host")
+                await publishLocalCodeBinding(f.client, {
+                    ...localCode,
+                    imageId: `sha256:${"f".repeat(64)}`,
+                });
+            if (fault === "offline")
+                await f.client`UPDATE mira_integration_receivers SET heartbeat_at=now()-interval '1 minute' WHERE key='code:main'`;
+            if (fault === "target")
+                await f.api.automations.update({
+                    ...f.fields,
+                    id: f.automation.id,
+                    version: 1,
+                    settings: { ...f.fields.settings, executionTarget: "daytona" },
+                });
+            expect(
+                await dispatchMiraCode(
+                    f.client,
+                    github,
+                    signal,
+                    f.directory,
+                    provider.request
+                )
+            ).toBe(false);
+            expect(provider.calls.every((call) => call.init.method === "GET")).toBe(true);
+        } finally {
+            await f.close();
+        }
+    }
+);

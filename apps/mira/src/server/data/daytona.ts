@@ -159,7 +159,16 @@ function bindingHash(binding: CodeJobBinding): string {
         ? localCodeBindingHash(binding)
         : daytonaBindingHash(binding);
 }
-function permission(query: MiraQuery, binding: CodeJobBinding): Promise<number | null> {
+/**
+ * Check the exact selected execution target without falling back to another provider.
+ * @param query - Owner-controls-locked transaction or read.
+ * @param binding - Reviewed Main or Daytona mapping.
+ * @returns Current consent version, or null when unavailable or paused.
+ */
+export function codeJobPermission(
+    query: MiraQuery,
+    binding: CodeJobBinding
+): Promise<number | null> {
     return isLocalCodeBinding(binding)
         ? localCodePermission(query, binding)
         : daytonaPermission(query, binding);
@@ -227,7 +236,7 @@ export async function saveMiraDaytona(
                 : input.version !== 0
         )
             throw new MiraFailure("CONFLICT", "The job changed. Refresh before editing.");
-        if (context.run && (await permission(query, account)) === null)
+        if (context.run && (await codeJobPermission(query, account)) === null)
             throw new MiraFailure(
                 "FORBIDDEN",
                 "Code execution is paused or unavailable."
@@ -262,7 +271,7 @@ export async function approveMiraDaytona(
             { binding: string }[]
         >`SELECT binding_hash AS binding FROM mira_daytona_jobs WHERE id=${input.id} AND owner=${context.owner} FOR UPDATE`;
         const job = await readMiraDaytona(query, context.owner, input.id);
-        const stamp = await permission(query, account);
+        const stamp = await codeJobPermission(query, account);
         if (stamp === null)
             throw new MiraFailure(
                 "PRECONDITION_FAILED",

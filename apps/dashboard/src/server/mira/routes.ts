@@ -590,6 +590,7 @@ export const miraRouter = trpc.router({
             execute(ctx, (mira) =>
                 readImprovementGrant(mira, input.id, {
                     daytona: ctx.operations?.daytonaBinding,
+                    localCode: ctx.operations?.localCodeBinding,
                     github: ctx.operations?.githubBinding,
                 })
             )
@@ -600,6 +601,7 @@ export const miraRouter = trpc.router({
                 execute(ctx, (mira) =>
                     saveImprovementGrant(mira, input, {
                         daytona: ctx.operations?.daytonaBinding,
+                        localCode: ctx.operations?.localCodeBinding,
                         github: ctx.operations?.githubBinding,
                     })
                 )

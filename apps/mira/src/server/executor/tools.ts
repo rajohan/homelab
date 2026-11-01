@@ -522,7 +522,8 @@ export function createMiraTools(
         ...createHereNowTools(client, run, hereNow),
         ...createGitHubTools(client, run, github),
         ...createImprovementTools(client, run, {
-            daytona: run.executionTarget === "main" ? undefined : daytona,
+            daytona,
+            localCode,
             github,
         }),
         ...createGitHubReadTools(

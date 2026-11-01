@@ -5,6 +5,7 @@ import * as v from "valibot";
 import { requireConversation, requireTask } from "../data/context";
 import { miraDaytonaHash, validateDaytonaInputs } from "../data/daytona";
 import { readMiraFile, saveMiraFile } from "../data/files";
+import { improvementJobAllowed } from "../improvement/policy";
 import {
     localCodeBindingHash,
     localCodeBindingSchema,
@@ -63,6 +64,8 @@ async function ownerLock(query: TransactionSQL, owner: string): Promise<void> {
 async function authority(query: TransactionSQL, job: Job): Promise<void> {
     if ((await localCodePermission(query, job.binding)) !== job.controlVersion)
         throw new Error("Local code permission changed.");
+    if (!(await improvementJobAllowed(query, job.id, "cloud")))
+        throw new Error("Automatic code authority changed.");
     await requireConversation(query, job.owner, job.conversationId);
     await requireTask(query, job.owner, job.taskId);
     const [row] = await query<
@@ -94,9 +97,10 @@ async function claim(
             try {
                 const [fresh] = await query<
                     { allowed: boolean }[]
-                >`SELECT approved_at>clock_timestamp()-interval '15 minutes' AND NOT cancel_requested AND NOT EXISTS(SELECT 1 FROM mira_improvements WHERE id=${row.id}) AS allowed FROM mira_daytona_jobs WHERE id=${row.id}`;
+                >`SELECT approved_at>clock_timestamp()-interval '15 minutes' AND NOT cancel_requested AS allowed FROM mira_daytona_jobs WHERE id=${row.id}`;
                 if (
                     !fresh?.allowed ||
+                    !(await improvementJobAllowed(query, row.id, "cloud")) ||
                     row.bindingHash !== localCodeBindingHash(binding) ||
                     row.contentHash !== miraDaytonaHash(row.content) ||
                     (await localCodePermission(query, binding)) !== row.controlVersion

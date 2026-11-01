@@ -28,6 +28,8 @@ export function ImprovementPermission({
     readonly automation: MiraAutomation;
     readonly onClose: () => void;
 }) {
+    const main = automation.settings?.executionTarget === "main";
+    const target = main ? "Main" : "Daytona";
     const [reason, setReason] = useState("");
     const query = useQuery({
         queryKey: ["operations", "mira", "improvement-grant", automation.id],
@@ -73,24 +75,28 @@ export function ImprovementPermission({
                     <Badge>{active ? "Allowed" : "Requires permission"}</Badge>
                 </div>
                 <p className="text-sm leading-6 text-primary-300">
-                    Allow this automation to test a small frontend improvement and open a
+                    Allow this automation to test a small Homelab improvement and open a
                     draft PR with Mira. Each change still needs GitHub reviews and your
                     approval before merge.
                 </p>
                 <Fieldset legend="Scope and limits">
                     <ul className="list-disc space-y-2 pl-5 text-sm leading-6 text-primary-300">
                         <li>
-                            Dashboard browser code and shared UI components only. Up to
-                            ten TypeScript or CSS files, 64 KiB each and 256 KiB total.
+                            The whole Homelab repository: web, Windows app, backend,
+                            shared packages, tests, CI workflows, configuration and
+                            documentation. Up to ten text files, 64 KiB each and 256 KiB
+                            total.
                         </li>
                         <li>
-                            One fixed Daytona check per run, up to ten minutes. At most
+                            One fixed {target} check per run, up to ten minutes. At most
                             two attempts per rolling 24 hours and one workflow at a time.
                         </li>
                         <li>
-                            Uses your qualified Daytona account and its credits or
-                            billing. No automatic retry of a failed check or uncertain
-                            provider action.
+                            {main
+                                ? "Uses an isolated container on Main with 4 CPU and 8 GiB RAM, without access to production files or credentials."
+                                : "Uses your qualified Daytona account and its credits or billing."}{" "}
+                            No automatic retry of a failed check or uncertain provider
+                            action.
                         </li>
                         <li>
                             A draft PR is opened only after successful tests and confirmed
@@ -100,14 +106,15 @@ export function ImprovementPermission({
                     </ul>
                 </Fieldset>
                 <p className="text-sm leading-6 text-primary-400">
-                    Pausing this automation, automatic work, Daytona or GitHub stops
+                    Pausing this automation, automatic work, {target} or GitHub stops
                     further steps. Sandbox cleanup continues. Editing the automation or
-                    changing its account or snapshot requires renewed permission.
+                    changing its execution target or configuration requires renewed
+                    permission.
                 </p>
                 {query.isPending && <LoadingState label="Loading coding permission…" />}
                 {grant && !grant.available && (
                     <p className="text-sm text-primary-300">
-                        Qualified Daytona and GitHub integrations must be enabled before
+                        Qualified {target} and GitHub integrations must be enabled before
                         allowing code changes.
                     </p>
                 )}

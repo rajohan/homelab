@@ -18,7 +18,7 @@ export function CodeTargetSettings({
     return (
         <FormField
             label="Code execution"
-            description="Main runs Homelab checks locally. Daytona uses a cloud sandbox. Each job still requires review."
+            description="Main runs Homelab checks locally. Daytona uses a cloud sandbox."
         >
             <Select
                 label="Code execution"
