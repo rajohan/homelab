@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.13.0](https://github.com/rajohan/homelab/compare/v0.12.0...v0.13.0) (2026-11-01)
+
+
+### Features
+
+* **dashboard:** support iPhone home-screen installation ([#160](https://github.com/rajohan/homelab/issues/160)) ([788889d](https://github.com/rajohan/homelab/commit/788889dc7cd9ca4d7b4de3bde20ad45cb850dcaf))
+* **mira:** add browser tabs to shared Chat controls ([#169](https://github.com/rajohan/homelab/issues/169)) ([2621192](https://github.com/rajohan/homelab/commit/26211921ae9802e3c83ef14017484958e59b87aa))
+* **mira:** add isolated local code execution ([#162](https://github.com/rajohan/homelab/issues/162)) ([754f243](https://github.com/rajohan/homelab/commit/754f243bb772d4c2d53cbfa1869e9f769bedb2c4))
+* **mira:** add optional automatic task start ([#168](https://github.com/rajohan/homelab/issues/168)) ([1809abe](https://github.com/rajohan/homelab/commit/1809abecd6764e400196fe2d9b69546e64ff256c))
+* **mira:** add per-conversation permission modes ([#167](https://github.com/rajohan/homelab/issues/167)) ([c1793d6](https://github.com/rajohan/homelab/commit/c1793d6851fcbe73474c54d6ea7951cb69c881cd))
+* **mira:** add subscription model choices to chat and automations ([#157](https://github.com/rajohan/homelab/issues/157)) ([9875338](https://github.com/rajohan/homelab/commit/9875338ac31f2f6fa7f365974c7f905138a48c9c))
+* **mira:** choose Main or Daytona for code jobs ([#165](https://github.com/rajohan/homelab/issues/165)) ([7cb64e2](https://github.com/rajohan/homelab/commit/7cb64e20b0a9308b51f8b757aa7795f8df8416a0))
+* **mira:** improve the whole repository on Main or Daytona ([#166](https://github.com/rajohan/homelab/issues/166)) ([138d148](https://github.com/rajohan/homelab/commit/138d148267ee08b4be9d767784c5dab6f026fa20))
+* **mira:** maintain memory across conversations ([#161](https://github.com/rajohan/homelab/issues/161)) ([82e8fa3](https://github.com/rajohan/homelab/commit/82e8fa358e9566be4fb2ffe344b1d7fcdbc7de5b))
+* **mira:** queue reviewed local code checks ([#164](https://github.com/rajohan/homelab/issues/164)) ([31bb47b](https://github.com/rajohan/homelab/commit/31bb47b5d69752d4b026574f23de5da836d47764))
+* **mira:** share the dashboard with the Windows app ([#170](https://github.com/rajohan/homelab/issues/170)) ([6f39715](https://github.com/rajohan/homelab/commit/6f39715f0758cf060a08b892e35494b41dc6ee2b))
+
+
+### Bug Fixes
+
+* **mira:** retrieve earlier context after provider changes ([#163](https://github.com/rajohan/homelab/issues/163)) ([673ddb0](https://github.com/rajohan/homelab/commit/673ddb0bccc8f7fddcfc610bd534f39cebd9984c))
+
 ## [0.12.0](https://github.com/rajohan/homelab/compare/v0.11.1...v0.12.0) (2026-10-31)
 
 
