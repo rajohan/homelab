@@ -6,6 +6,7 @@ import path from "node:path";
 
 import type { MiraDaytonaContent, MiraDaytonaJob } from "@homelab/contracts/miraDaytona";
 import { capabilities } from "@homelab/contracts/operations";
+import { miraActionApproval } from "@homelab/mira/data/approvalPolicy";
 import { resumeMiraControls } from "@homelab/mira/data/automations";
 import {
     approveMiraDaytona,
@@ -21,8 +22,10 @@ import {
     daytonaSandboxName,
 } from "@homelab/mira/integrations/daytona/configuration";
 import { dispatchMiraDaytona } from "@homelab/mira/integrations/daytona/jobs";
+import { daytonaCheckContent } from "@homelab/mira/sandbox/profile";
 
 import { appRouter } from "../api/router";
+import { permissionRun, permissionAction } from "../testing/miraPermissions";
 import { createMiraTextTestTools as createMiraTools } from "../testing/miraTools";
 import { operationFixture } from "../testing/operations";
 
@@ -1767,3 +1770,67 @@ test("expired provisioning is cleaned up without reviving activity", async () =>
         await f.close();
     }
 });
+
+for (const mode of ["ask", "approve_for_me", "full_access"] as const)
+    test(`Daytona ${mode} separates fixed checks from arbitrary commands and respects revocation`, async () => {
+        const f = await fixture();
+        try {
+            const { run } = await permissionRun(f.client, f.api, mode);
+            const tools = createMiraTools(
+                f.client,
+                run,
+                f.directory,
+                undefined,
+                undefined,
+                undefined,
+                configuration
+            );
+            const fixedId = crypto.randomUUID();
+            const fixed = await f.api.daytona.save({
+                id: fixedId,
+                version: 0,
+                conversationId: run.conversationId,
+                taskId: null,
+                content: daytonaCheckContent({
+                    id: fixedId,
+                    commit: "a".repeat(40),
+                    patchSha256: null,
+                }),
+            });
+            const arbitrary = await f.api.daytona.save({
+                id: crypto.randomUUID(),
+                version: 0,
+                conversationId: run.conversationId,
+                taskId: null,
+                content: defaultContent,
+            });
+            expect(await permissionAction(tools, "job", fixed)).toMatchObject({
+                ok: mode !== "ask",
+            });
+            expect(await permissionAction(tools, "job", arbitrary)).toMatchObject({
+                ok: mode === "full_access",
+            });
+            if (mode !== "ask") {
+                expect(
+                    await miraActionApproval(f.client, "operator", "job", fixed.id)
+                ).toBe(true);
+                await f.client`UPDATE mira_runs SET cancel_requested=true WHERE id=${run.id}`;
+                expect(
+                    await miraActionApproval(f.client, "operator", "job", fixed.id)
+                ).toBe(false);
+                const mock = provider(fixed.id);
+                expect(
+                    await dispatchMiraDaytona(
+                        f.client,
+                        configuration,
+                        signal,
+                        f.directory,
+                        mock.request
+                    )
+                ).toBe(false);
+                expect(mock.calls).toHaveLength(0);
+            }
+        } finally {
+            await f.close();
+        }
+    });

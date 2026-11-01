@@ -1,5 +1,6 @@
 import type { SQL } from "bun";
 
+import { miraActionApproval } from "../../data/approvalPolicy";
 import { codePermission, miraCodeHash, readMiraCode } from "../../data/code";
 import { readCodeSource } from "../../data/codeSource";
 import { MiraFailure } from "../../data/context";
@@ -41,10 +42,16 @@ export async function reconcileMiraCode(
                 : null;
             if (
                 !row.fresh ||
+                !(await miraActionApproval(
+                    query,
+                    candidate.owner,
+                    "code",
+                    candidate.id
+                )) ||
                 permission !== row.control ||
                 !(await improvementJobAllowed(query, candidate.id, "publication"))
             )
-                await query`UPDATE mira_code_publications SET state='draft',approved_version=NULL,approved_by=NULL,approved_at=NULL,control_version=NULL,message=${review},version=version+1,updated_at=now() WHERE id=${candidate.id}`;
+                await query`UPDATE mira_code_publications SET state='draft',approval_run_id=NULL,approved_version=NULL,approved_by=NULL,approved_at=NULL,control_version=NULL,message=${review},version=version+1,updated_at=now() WHERE id=${candidate.id}`;
         });
 }
 
@@ -79,7 +86,15 @@ export async function dispatchMiraCode(
             { id: string }[]
         >`SELECT id FROM mira_code_publications WHERE owner=${configuration.owner} AND binding_hash=${githubBindingHash(configuration)} AND state='queued' AND control_version=${permission} AND approved_at>clock_timestamp()-interval '15 minutes' ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED`;
         if (!candidate) return null;
-        if (!(await improvementJobAllowed(query, candidate.id, "publication")))
+        if (
+            !(await miraActionApproval(
+                query,
+                configuration.owner,
+                "code",
+                candidate.id
+            )) ||
+            !(await improvementJobAllowed(query, candidate.id, "publication"))
+        )
             return null;
         const row = await readMiraCode(query, context.owner, candidate.id);
         let bytes: Uint8Array;
@@ -94,7 +109,7 @@ export async function dispatchMiraCode(
             );
             bytes = source.bytes;
         } catch {
-            await query`UPDATE mira_code_publications SET state='draft',approved_version=NULL,approved_by=NULL,approved_at=NULL,control_version=NULL,message=${review},version=version+1,updated_at=now() WHERE id=${row.id}`;
+            await query`UPDATE mira_code_publications SET state='draft',approval_run_id=NULL,approved_version=NULL,approved_by=NULL,approved_at=NULL,control_version=NULL,message=${review},version=version+1,updated_at=now() WHERE id=${row.id}`;
             return { handled: true as const };
         }
         stopping.throwIfAborted();
@@ -119,6 +134,12 @@ export async function dispatchMiraCode(
             >`SELECT id FROM mira_code_publications WHERE id=${claim.row.id} AND owner=${context.owner} AND state='publishing' AND attempt_token=${claim.token} AND content_hash=${claim.row.contentHash} AND binding_hash=${githubBindingHash(configuration)} AND approved_at>clock_timestamp()-interval '15 minutes' FOR UPDATE`;
             if (
                 !live ||
+                !(await miraActionApproval(
+                    query,
+                    configuration.owner,
+                    "code",
+                    claim.row.id
+                )) ||
                 !(await improvementJobAllowed(query, claim.row.id, "publication")) ||
                 (await codePermission(query, configuration)) !== claim.permission
             )
@@ -166,7 +187,7 @@ export async function dispatchMiraCode(
         if (result)
             await query`UPDATE mira_code_publications SET state='published',phase='pull_request:confirmed',branch=${result.branch},commit=${result.commit},number=${result.number},message='Draft pull request created. GitHub checks and review are still required.',version=version+1,updated_at=now() WHERE id=${claim.row.id}`;
         else if (current.phase === null)
-            await query`UPDATE mira_code_publications SET state='draft',approved_version=NULL,approved_by=NULL,approved_at=NULL,control_version=NULL,attempt_token=NULL,started_at=NULL,authored_at=NULL,message=${review},version=version+1,updated_at=now() WHERE id=${claim.row.id}`;
+            await query`UPDATE mira_code_publications SET state='draft',approval_run_id=NULL,approved_version=NULL,approved_by=NULL,approved_at=NULL,control_version=NULL,attempt_token=NULL,started_at=NULL,authored_at=NULL,message=${review},version=version+1,updated_at=now() WHERE id=${claim.row.id}`;
         else
             await query`UPDATE mira_code_publications SET state='needs_attention',message=${uncertain},version=version+1,updated_at=now() WHERE id=${claim.row.id}`;
     });

@@ -12,6 +12,7 @@ import {
     moltbookBindingHash,
     type MoltbookBinding,
 } from "../integrations/moltbook/configuration";
+import { requireMiraApproval } from "./approvalPolicy";
 import {
     auditMira,
     MiraFailure,
@@ -47,7 +48,14 @@ function human(context: MiraContext): void {
             "Moltbook publication requires the operator's confirmation."
         );
 }
-async function readDraft(
+/**
+ * Read an owned draft and its exact saved content for review or delegated execution.
+ * @param query - Product read or enclosing transaction.
+ * @param owner - Authenticated account.
+ * @param id - Selected draft identity.
+ * @returns Current draft, or a non-disclosing not-found error.
+ */
+export async function readMiraSocial(
     query: MiraQuery,
     owner: string,
     id: string
@@ -117,7 +125,7 @@ export async function saveMiraSocial(
                 existing.binding === account &&
                 existing.conversationId === input.conversationId
             )
-                return readDraft(query, context.owner, input.id);
+                return readMiraSocial(query, context.owner, input.id);
             if (
                 existing.version !== input.version ||
                 existing.state !== "draft" ||
@@ -134,7 +142,7 @@ export async function saveMiraSocial(
             ? query`UPDATE mira_social_drafts SET content=${JSON.stringify(content)}::text::jsonb,content_hash=${hash},conversation_id=${input.conversationId},message=NULL,version=version+1,updated_at=now() WHERE id=${input.id}`
             : query`INSERT INTO mira_social_drafts(id,owner,conversation_id,agent_name,binding_hash,content,content_hash) VALUES(${input.id},${context.owner},${input.conversationId},${configured.agentName},${account},${JSON.stringify(content)}::text::jsonb,${hash})`);
         await auditMira(query, context, "social.draft_saved", input.id);
-        return readDraft(query, context.owner, input.id);
+        return readMiraSocial(query, context.owner, input.id);
     });
 }
 /**
@@ -154,7 +162,7 @@ export async function listMiraSocial(
 }
 /**
  * Queue only the exact text and destination displayed to the signed-in operator.
- * @param context - Human owner; models cannot approve drafts.
+ * @param context - Human owner or fenced model context with Full access delegation.
  * @param input - Displayed version, hash and content snapshot.
  * @param binding - Current configured agent.
  * @returns Queued state or the result of the same previously accepted approval.
@@ -164,9 +172,8 @@ export async function approveMiraSocial(
     input: MiraSocialApprove,
     binding?: MoltbookBinding
 ): Promise<MiraSocialDraft> {
-    human(context);
     const configured = bindingFor(context, binding);
-    return context.client.begin(async (query) => {
+    return miraTransaction(context, async (query) => {
         await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${context.owner}`},0))`;
         const [row] = await query<
             {
@@ -180,6 +187,12 @@ export async function approveMiraSocial(
             }[]
         >`SELECT version,state,content,content_hash AS hash,binding_hash AS binding,approved_version AS "approvedVersion",conversation_id AS "conversationId" FROM mira_social_drafts WHERE id=${input.id} AND owner=${context.owner} FOR UPDATE`;
         if (!row) throw new MiraFailure("NOT_FOUND", "Moltbook draft not found.");
+        const approvalRunId = await requireMiraApproval(
+            query,
+            context,
+            row.conversationId,
+            "external"
+        );
         if (
             row.hash !== input.contentHash ||
             miraSocialHash(row.content) !== row.hash ||
@@ -190,7 +203,7 @@ export async function approveMiraSocial(
                 "This draft changed. Review its current text and destination."
             );
         if (row.approvedVersion === input.version)
-            return readDraft(query, context.owner, input.id);
+            return readMiraSocial(query, context.owner, input.id);
         if (
             row.state !== "draft" ||
             row.version !== input.version ||
@@ -207,9 +220,9 @@ export async function approveMiraSocial(
                 "PRECONDITION_FAILED",
                 "Enable Moltbook reads and publishing with a connected publishing credential first."
             );
-        await query`UPDATE mira_social_drafts SET state='queued',message=NULL,retry_after=NULL,approved_version=version,approved_by=${context.actor},approved_at=clock_timestamp(),control_stamp=${stamp},version=version+1,updated_at=now() WHERE id=${input.id}`;
+        await query`UPDATE mira_social_drafts SET state='queued',approval_run_id=${approvalRunId},message=NULL,retry_after=NULL,approved_version=version,approved_by=${context.actor},approved_at=clock_timestamp(),control_stamp=${stamp},version=version+1,updated_at=now() WHERE id=${input.id}`;
         await auditMira(query, context, "social.approved", input.id);
-        return readDraft(query, context.owner, input.id);
+        return readMiraSocial(query, context.owner, input.id);
     });
 }
 /**
@@ -243,7 +256,7 @@ export async function verifyMiraSocial(
                 "The challenge expired, access changed or this draft already advanced. Refresh its status."
             );
         await auditMira(query, context, "social.verification_queued", input.id);
-        return readDraft(query, context.owner, input.id);
+        return readMiraSocial(query, context.owner, input.id);
     });
 }
 /**

@@ -19,6 +19,7 @@ import {
     type CodeJobBinding,
 } from "../sandbox/localBinding";
 import { localCodeRequest } from "../sandbox/localProtocol";
+import { miraJobApprovalScope, requireMiraApproval } from "./approvalPolicy";
 import {
     auditMira,
     MiraFailure,
@@ -252,8 +253,8 @@ export async function saveMiraDaytona(
     });
 }
 /**
- * Queue an exact human-reviewed command with a fifteen-minute approval.
- * @param context - Signed-in human.
+ * Queue an exact command with a fifteen-minute human or delegated approval.
+ * @param context - Human owner or fenced model context with the required Chat permission.
  * @param input - Displayed content and version.
  * @param binding - Configured mapping.
  * @returns Queued job, never a provider call.
@@ -263,14 +264,20 @@ export async function approveMiraDaytona(
     input: MiraDaytonaApprove,
     binding?: CodeJobBinding
 ): Promise<MiraDaytonaJob> {
-    human(context);
     const account = configured(context, binding);
-    return context.client.begin(async (query) => {
+    return miraTransaction(context, async (query) => {
         await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${context.owner}`},0))`;
         const [row] = await query<
             { binding: string }[]
         >`SELECT binding_hash AS binding FROM mira_daytona_jobs WHERE id=${input.id} AND owner=${context.owner} FOR UPDATE`;
         const job = await readMiraDaytona(query, context.owner, input.id);
+        const scope = miraJobApprovalScope(job.id, job.content);
+        const approvalRunId = await requireMiraApproval(
+            query,
+            context,
+            job.conversationId,
+            scope
+        );
         const stamp = await codeJobPermission(query, account);
         if (stamp === null)
             throw new MiraFailure(
@@ -294,7 +301,7 @@ export async function approveMiraDaytona(
         if (isLocalCodeBinding(account)) localCodeRequest(job.id, job.content);
         await requireTask(query, context.owner, job.taskId);
         await validateDaytonaInputs(query, context.owner, job.content);
-        await query`UPDATE mira_daytona_jobs SET state='queued',approved_at=clock_timestamp(),control_version=${stamp},version=version+1,updated_at=now(),message=NULL WHERE id=${input.id}`;
+        await query`UPDATE mira_daytona_jobs SET state='queued',approval_run_id=${approvalRunId},approved_at=clock_timestamp(),control_version=${stamp},version=version+1,updated_at=now(),message=NULL WHERE id=${input.id}`;
         await auditMira(query, context, "daytona.approved", input.id);
         return readMiraDaytona(query, context.owner, input.id);
     });

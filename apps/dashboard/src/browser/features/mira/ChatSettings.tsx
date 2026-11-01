@@ -6,6 +6,7 @@ import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
 import type { ChatDisplaySettings } from "./chatDisplay";
 import { ModelSettings } from "./ModelSettings";
+import { PermissionSettings } from "./PermissionSettings";
 import { RecallSettings } from "./RecallSettings";
 
 /**
@@ -58,7 +59,7 @@ export function ChatSettings({
             >
                 {!fresh && (
                     <p className="text-sm text-primary-300">
-                        Reconnect Mira to change model choices. Context settings remain
+                        Reconnect Mira to change model choices. Other settings remain
                         available.
                     </p>
                 )}
@@ -68,6 +69,11 @@ export function ChatSettings({
                     models={models}
                     defaultModel={defaultModel}
                     fresh={fresh}
+                    disabled={save.isPending}
+                />
+                <PermissionSettings
+                    settings={draft}
+                    onChange={setDraft}
                     disabled={save.isPending}
                 />
                 <RecallSettings

@@ -6,6 +6,7 @@ import { publishNotification } from "@homelab/notifications";
 import type { SQL } from "bun";
 import * as v from "valibot";
 
+import { miraActionApproval } from "../../data/approvalPolicy";
 import { MiraFailure } from "../../data/context";
 import { hereNowBindingCurrent } from "../../data/herenow";
 import {
@@ -80,13 +81,19 @@ export async function reconcileMiraPublications(
             >`SELECT enabled,version,binding_hash AS binding FROM mira_switches WHERE owner=${candidate.owner} AND key='integration:here-now'`;
             if (
                 !row.fresh ||
+                !(await miraActionApproval(
+                    query,
+                    candidate.owner,
+                    "publication",
+                    candidate.id
+                )) ||
                 !control?.enabled ||
                 control.version !== row.control ||
                 control.binding !== row.binding ||
                 !configuration ||
                 (matches && !configuration.publishApiKey)
             )
-                await query`UPDATE mira_publications SET state='draft',approved_version=NULL,approved_by=NULL,approved_at=NULL,control_version=NULL,retry_after=NULL,message=${reviewMessage},version=version+1,updated_at=now() WHERE id=${candidate.id}`;
+                await query`UPDATE mira_publications SET state='draft',approval_run_id=NULL,approved_version=NULL,approved_by=NULL,approved_at=NULL,control_version=NULL,retry_after=NULL,message=${reviewMessage},version=version+1,updated_at=now() WHERE id=${candidate.id}`;
         });
     }
 }
@@ -135,7 +142,7 @@ export async function dispatchMiraPublication(
     } catch (error) {
         stopping.throwIfAborted();
         await (error instanceof PublicationConflict
-            ? client`UPDATE mira_publications SET state='draft',approved_version=NULL,approved_by=NULL,approved_at=NULL,control_version=NULL,message=${error.message},version=version+1,updated_at=now() WHERE id=${candidate.id} AND version=${candidate.version} AND state='queued'`
+            ? client`UPDATE mira_publications SET state='draft',approval_run_id=NULL,approved_version=NULL,approved_by=NULL,approved_at=NULL,control_version=NULL,message=${error.message},version=version+1,updated_at=now() WHERE id=${candidate.id} AND version=${candidate.version} AND state='queued'`
             : client`UPDATE mira_publications SET retry_after=clock_timestamp()+interval '30 seconds' WHERE id=${candidate.id} AND version=${candidate.version} AND state='queued'`);
         return false;
     }
@@ -151,7 +158,18 @@ export async function dispatchMiraPublication(
         >`SELECT control_version AS control,approved_at>clock_timestamp()-interval '15 minutes' AS fresh FROM mira_publications WHERE id=${candidate.id} AND owner=${configuration.owner} AND version=${candidate.version} AND content_hash=${candidate.hash} AND binding_hash=${hereNowBindingHash(configuration)} AND state='queued' FOR UPDATE`;
         if (!row) return null;
         const control = await publicationPermission(query, configuration);
-        if (!row.fresh || control === null || control !== row.control) return null;
+        if (
+            !(await miraActionApproval(
+                query,
+                configuration.owner,
+                "publication",
+                candidate.id
+            )) ||
+            !row.fresh ||
+            control === null ||
+            control !== row.control
+        )
+            return null;
         let bytes: Uint8Array[];
         try {
             bytes = await readPublicationFiles(
@@ -160,7 +178,7 @@ export async function dispatchMiraPublication(
                 content.files
             );
         } catch {
-            await query`UPDATE mira_publications SET state='draft',approved_version=NULL,approved_by=NULL,approved_at=NULL,control_version=NULL,message='The selected files could not be verified. Save and review the draft again.',version=version+1,updated_at=now() WHERE id=${candidate.id}`;
+            await query`UPDATE mira_publications SET state='draft',approval_run_id=NULL,approved_version=NULL,approved_by=NULL,approved_at=NULL,control_version=NULL,message='The selected files could not be verified. Save and review the draft again.',version=version+1,updated_at=now() WHERE id=${candidate.id}`;
             return null;
         }
         stopping.throwIfAborted();
@@ -186,6 +204,12 @@ export async function dispatchMiraPublication(
             >`SELECT id FROM mira_publications WHERE id=${candidate.id} AND owner=${configuration.owner} AND attempt_token=${claimed.token} AND state='publishing' AND content_hash=${candidate.hash} AND approved_at>clock_timestamp()-interval '15 minutes' FOR UPDATE`;
             if (
                 !row ||
+                !(await miraActionApproval(
+                    query,
+                    configuration.owner,
+                    "publication",
+                    candidate.id
+                )) ||
                 (await publicationPermission(query, configuration)) !== claimed.control ||
                 !(await hereNowBindingCurrent(query, configuration))
             )

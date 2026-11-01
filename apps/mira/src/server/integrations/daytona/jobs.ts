@@ -1,6 +1,7 @@
 import type { MiraDaytonaContent } from "@homelab/contracts/miraDaytona";
 import type { SQL } from "bun";
 
+import { miraActionApproval } from "../../data/approvalPolicy";
 import {
     MiraFailure,
     requireConversation,
@@ -68,6 +69,7 @@ async function permission(
 ): Promise<void> {
     if (
         !configuration.executionQualified ||
+        !(await miraActionApproval(query, job.owner, "job", job.id)) ||
         !(await improvementJobAllowed(query, job.id, "cloud")) ||
         daytonaBindingHash(configuration) !== job.bindingHash ||
         (await daytonaPermission(query, configuration)) !== job.controlVersion
@@ -143,11 +145,12 @@ export async function dispatchMiraDaytona(
                     : null;
             if (
                 !fresh?.fresh ||
+                !(await miraActionApproval(query, row.owner, "job", row.id)) ||
                 consent !== row.controlVersion ||
                 row.cancelRequested ||
                 !(await improvementJobAllowed(query, row.id, "cloud"))
             ) {
-                await query`UPDATE mira_daytona_jobs SET state=${row.cancelRequested ? "cancelled" : "draft"},approved_at=NULL,control_version=NULL,version=version+1,updated_at=now(),message='Approval expired or access changed. Review this job again.' WHERE id=${row.id}`;
+                await query`UPDATE mira_daytona_jobs SET state=${row.cancelRequested ? "cancelled" : "draft"},approval_run_id=NULL,approved_at=NULL,control_version=NULL,version=version+1,updated_at=now(),message='Approval expired or access changed. Review this job again.' WHERE id=${row.id}`;
                 return null;
             }
             const [limit] = await query<
@@ -163,7 +166,7 @@ export async function dispatchMiraDaytona(
                 await validateDaytonaInputs(query, row.owner, row.content);
             } catch (error) {
                 if (!(error instanceof MiraFailure)) throw error;
-                await query`UPDATE mira_daytona_jobs SET state='draft',message='A linked conversation, task or input is unavailable. Review this job again.',approved_at=NULL,control_version=NULL,version=version+1 WHERE id=${row.id}`;
+                await query`UPDATE mira_daytona_jobs SET state='draft',message='A linked conversation, task or input is unavailable. Review this job again.',approval_run_id=NULL,approved_at=NULL,control_version=NULL,version=version+1 WHERE id=${row.id}`;
                 return null;
             }
             // Admission survives a crash before POST. No other job can consume this slot.

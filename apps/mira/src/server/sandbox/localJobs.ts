@@ -2,6 +2,7 @@ import type { MiraDaytonaContent } from "@homelab/contracts/miraDaytona";
 import type { SQL, TransactionSQL } from "bun";
 import * as v from "valibot";
 
+import { miraActionApproval } from "../data/approvalPolicy";
 import { requireConversation, requireTask } from "../data/context";
 import { miraDaytonaHash, validateDaytonaInputs } from "../data/daytona";
 import { readMiraFile, saveMiraFile } from "../data/files";
@@ -64,7 +65,10 @@ async function ownerLock(query: TransactionSQL, owner: string): Promise<void> {
 async function authority(query: TransactionSQL, job: Job): Promise<void> {
     if ((await localCodePermission(query, job.binding)) !== job.controlVersion)
         throw new Error("Local code permission changed.");
-    if (!(await improvementJobAllowed(query, job.id, "cloud")))
+    if (
+        !(await miraActionApproval(query, job.owner, "job", job.id)) ||
+        !(await improvementJobAllowed(query, job.id, "cloud"))
+    )
         throw new Error("Automatic code authority changed.");
     await requireConversation(query, job.owner, job.conversationId);
     await requireTask(query, job.owner, job.taskId);
@@ -100,6 +104,7 @@ async function claim(
                 >`SELECT approved_at>clock_timestamp()-interval '15 minutes' AND NOT cancel_requested AS allowed FROM mira_daytona_jobs WHERE id=${row.id}`;
                 if (
                     !fresh?.allowed ||
+                    !(await miraActionApproval(query, row.owner, "job", row.id)) ||
                     !(await improvementJobAllowed(query, row.id, "cloud")) ||
                     row.bindingHash !== localCodeBindingHash(binding) ||
                     row.contentHash !== miraDaytonaHash(row.content) ||
@@ -111,7 +116,7 @@ async function claim(
                 await requireTask(query, row.owner, row.taskId);
                 await validateDaytonaInputs(query, row.owner, row.content);
             } catch {
-                await query`UPDATE mira_daytona_jobs SET state=CASE WHEN cancel_requested THEN 'cancelled' ELSE 'draft' END,approved_at=NULL,control_version=NULL,version=version+1,message='Local approval or input changed. Review this job again.' WHERE id=${row.id}`;
+                await query`UPDATE mira_daytona_jobs SET state=CASE WHEN cancel_requested THEN 'cancelled' ELSE 'draft' END,approval_run_id=NULL,approved_at=NULL,control_version=NULL,version=version+1,message='Local approval or input changed. Review this job again.' WHERE id=${row.id}`;
                 return null;
             }
             const [busy] = await query<

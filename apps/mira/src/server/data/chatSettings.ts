@@ -110,7 +110,13 @@ export async function saveMiraChatSettings(
     context: MiraContext,
     input: v.InferOutput<typeof miraChatSettingsUpdateSchema>
 ): Promise<void> {
+    if (context.run || context.actor !== `human:${context.owner}`)
+        throw new MiraFailure(
+            "FORBIDDEN",
+            "Only the operator can change Chat permissions."
+        );
     await context.client.begin(async (query) => {
+        await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${context.owner}`},0))`;
         const [conversation] = await query<
             { id: string; settings: MiraChatSettings }[]
         >`SELECT id,settings FROM mira_conversations WHERE id = ${input.id} AND owner = ${context.owner} AND version = ${input.version} AND deleted_at IS NULL AND archived_at IS NULL FOR UPDATE`;
@@ -140,6 +146,11 @@ export async function saveMiraChatSettings(
                 );
             resolveMiraChatSettings(catalog.models, input.settings, catalog.defaultModel);
         }
+        if (
+            (conversation.settings.permissionMode ?? "ask") !==
+            (input.settings.permissionMode ?? "ask")
+        )
+            await query`UPDATE mira_runs SET approval_revoked_at=clock_timestamp() WHERE conversation_id=${input.id} AND owner=${context.owner} AND approval_revoked_at IS NULL`;
         await query`UPDATE mira_conversations SET settings = ${JSON.stringify(input.settings)}::text::jsonb, version = version + 1, updated_at = now() WHERE id = ${input.id}`;
         await auditMira(query, context, "conversation.settings_changed", input.id);
     });

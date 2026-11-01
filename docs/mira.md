@@ -12,6 +12,10 @@ environments and has not been deployed to production. OpenClaw and the retired
 dashboard remain migration sources, not permanent dependencies. No third-party
 patches are part of this design.
 
+## Chat permissions
+
+Chat settings offers Ask for approval, Approve for me and Full access. The selected mode is stored with the conversation and enforced by the same server for web and Windows. See [Chat permissions](mira-permissions.md) for exact action scopes, revocation and deployment requirements.
+
 ## Deployment boundaries
 
 All product functionality must remain available in the website, including Chat,
