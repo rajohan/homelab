@@ -12,17 +12,8 @@ import {
 } from "./profile";
 import { executeDaytonaChecks } from "./workflow";
 
-/**
- * Run the fixed public Homelab checks inside a qualified disposable Linux snapshot.
- * @param request - Exact attempt, commit and optional reviewed patch fingerprint.
- * @param stopping - Sandbox process interruption; does not imply cloud-resource deletion.
- * @returns Nonzero when preparation, any required check, result recovery or local database cleanup fails.
- */
-export async function runDaytonaChecks(
-    request: DaytonaSandboxRequest,
-    stopping: AbortSignal
-): Promise<number> {
-    const input = v.parse(daytonaSandboxSchema, request);
+/** Verify the fixed image and non-root process before creating any attempt files. */
+export async function requireSandboxImage(): Promise<void> {
     if (
         process.platform !== "linux" ||
         process.getuid?.() === 0 ||
@@ -35,6 +26,22 @@ export async function runDaytonaChecks(
     const profile = await readFile("/opt/homelab/profile.json", "utf8");
     if (profile.trim() !== JSON.stringify(daytonaCheckProfile))
         throw new Error("Sandbox profile does not match this harness.");
+}
+
+/**
+ * Run the fixed public Homelab checks inside a qualified disposable Linux snapshot.
+ * @param request - Exact attempt, commit and optional reviewed patch fingerprint.
+ * @param stopping - Sandbox process interruption; does not imply cloud-resource deletion.
+ * @param announce - Status sink; the local JSON transport suppresses ordinary stdout messages.
+ * @returns Nonzero when preparation, any required check, result recovery or local database cleanup fails.
+ */
+export async function runDaytonaChecks(
+    request: DaytonaSandboxRequest,
+    stopping: AbortSignal,
+    announce?: (message: string) => void
+): Promise<number> {
+    const input = v.parse(daytonaSandboxSchema, request);
+    await requireSandboxImage();
     const root = "/tmp/homelab-mira";
     await mkdir(root, { recursive: true, mode: 0o700 });
     if ((await realpath(root)) !== root)
@@ -43,7 +50,7 @@ export async function runDaytonaChecks(
     await mkdir(attempt, { recursive: true, mode: 0o700 });
     if ((await realpath(attempt)) !== attempt)
         throw new Error("Sandbox attempt is not canonical.");
-    return executeDaytonaChecks(input, attempt, stopping);
+    return executeDaytonaChecks(input, attempt, stopping, undefined, announce);
 }
 
 /**

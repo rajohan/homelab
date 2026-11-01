@@ -11,6 +11,7 @@ COPY packages/ui/package.json ./packages/ui/package.json
 RUN bun install --frozen-lockfile --ignore-scripts
 COPY . .
 RUN bun build --target=bun apps/mira/src/server/sandbox/harness.ts --outfile=/output/daytona-check.js
+RUN bun build --target=bun apps/mira/src/server/sandbox/localHarness.ts --outfile=/output/local-check.js
 RUN bun --no-env-file -e 'import {daytonaCheckProfile} from "./apps/mira/src/server/sandbox/profile.ts"; await Bun.write("/output/profile.json", JSON.stringify(daytonaCheckProfile));'
 
 FROM postgres:18-bookworm
