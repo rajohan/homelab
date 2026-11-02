@@ -280,11 +280,10 @@ async function executorFixture(mode = "resume-missing") {
         waitForReplies: async (count: number) => {
             for (let attempt = 0; attempt < 220; attempt++) {
                 const current = await replies();
-                if (
-                    current.messages.length >= count ||
-                    current.chat.run?.state !== "running"
-                )
-                    return current;
+                if (current.messages.length >= count) return current;
+                // Messages are read before run status. Refresh after terminal visibility
+                // rather than returning a transcript fetched just before finalization.
+                if (current.chat.run?.state !== "running") return replies();
                 await delay(100);
             }
             throw new Error("Fixture replies did not arrive.");
@@ -447,7 +446,7 @@ test.each([
             if (reason === "deadline") f.run.deadlineAt = Date.now() + 5000;
             const execution = f.start();
             const first = await f.waitForReplies(1);
-            expect(first.messages).toHaveLength(1);
+            expect(first.messages, JSON.stringify(first.chat.run)).toHaveLength(1);
             if (reason === "local stop")
                 await stopMiraComputerAccessLocally(f.client, f.device.credential, {
                     id: f.grant.id,
