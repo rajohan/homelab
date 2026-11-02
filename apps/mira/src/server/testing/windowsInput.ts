@@ -264,8 +264,11 @@ export async function qualifyWindowsInput(directory: string, root: string) {
             try {
                 const desktopFrame = await desktopView.observe(signal);
                 if (
-                    desktopFrame.width !== state.screenWidth ||
-                    desktopFrame.height !== state.screenHeight
+                    desktopFrame.width > 1600 ||
+                    Math.abs(
+                        desktopFrame.width / desktopFrame.height -
+                            state.screenWidth / state.screenHeight
+                    ) > 0.01
                 )
                     throw new Error(
                         "Primary desktop capture dimensions do not match the display."
@@ -293,7 +296,13 @@ export async function qualifyWindowsInput(directory: string, root: string) {
                     {
                         action: "click",
                         observationId: desktopFrame.observationId,
-                        ...state.screenEntry,
+                        x: Math.round(
+                            (state.screenEntry.x * desktopFrame.width) / state.screenWidth
+                        ),
+                        y: Math.round(
+                            (state.screenEntry.y * desktopFrame.height) /
+                                state.screenHeight
+                        ),
                     },
                     signal
                 );
@@ -315,7 +324,12 @@ export async function qualifyWindowsInput(directory: string, root: string) {
                 const click = {
                     action: "click",
                     observationId: desktopFrame.observationId,
-                    ...state.screenButton,
+                    x: Math.round(
+                        (state.screenButton.x * desktopFrame.width) / state.screenWidth
+                    ),
+                    y: Math.round(
+                        (state.screenButton.y * desktopFrame.height) / state.screenHeight
+                    ),
                 };
                 await desktop.act(click, signal);
                 await eventually((current) => current.count === 2);

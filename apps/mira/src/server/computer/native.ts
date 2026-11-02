@@ -10,7 +10,11 @@ import type * as NativeSdk from "@trycua/cua-driver";
 import { imageSize } from "image-size";
 import * as v from "valibot";
 
-import { runtimeContentItems, type RuntimeToolResult } from "../runtime/toolResult";
+import {
+    maximumToolImageBytes,
+    runtimeContentItems,
+    type RuntimeToolResult,
+} from "../runtime/toolResult";
 import { computerDriverVersion, computerGrant, computerManifest } from "./policy";
 import type { ComputerActionResult, ComputerWindowPort } from "./session";
 import { openWindowsCapture, type WindowsCapturePort } from "./windowsCapture";
@@ -79,40 +83,63 @@ export async function openNativeComputer(
                 elements.clear();
                 signal.throwIfAborted();
                 if (grant.scope === "desktop") {
-                    const frame = await native.getDesktopState(
-                        { maxImageDimension: 0 },
-                        { signal }
-                    );
-                    signal.throwIfAborted();
-                    ensureOpen();
-                    if (frame.isError || frame.images.length !== 1)
-                        throw new Error(
-                            "Computer driver did not return the primary desktop frame."
+                    // The SDK keeps the screenshot-to-desktop coordinate mapping for
+                    // each capture. Retry dense frames through that same API, never
+                    // resize pixels independently of the driver's input coordinates.
+                    for (const maxImageDimension of [1600, 1024, 640]) {
+                        const frame = await native.getDesktopState(
+                            { maxImageDimension },
+                            { signal }
                         );
-                    const image = frame.images[0]!;
-                    if (image.mimeType !== "image/png" && image.mimeType !== "image/jpeg")
-                        throw new Error("Unsupported computer frame format.");
-                    const content: Exclude<RuntimeToolResult, string> = {
-                        content: [
-                            {
-                                type: "text",
-                                text: "Primary desktop. All visible windows are shared.",
-                            },
-                            {
-                                type: "image",
-                                mediaType: image.mimeType,
-                                data: image.dataBase64,
-                            },
-                        ],
-                    };
-                    runtimeContentItems(content);
-                    const dimensions = imageSize(Buffer.from(image.dataBase64, "base64"));
-                    return {
-                        snapshot: crypto.randomUUID(),
-                        width: dimensions.width,
-                        height: dimensions.height,
-                        content,
-                    };
+                        signal.throwIfAborted();
+                        ensureOpen();
+                        if (frame.isError || frame.images.length !== 1)
+                            throw new Error(
+                                "Computer driver did not return the primary desktop frame."
+                            );
+                        const image = frame.images[0]!;
+                        if (
+                            image.mimeType !== "image/png" &&
+                            image.mimeType !== "image/jpeg"
+                        )
+                            throw new Error("Unsupported computer frame format.");
+                        if (
+                            Buffer.byteLength(image.dataBase64, "base64") >
+                            maximumToolImageBytes
+                        )
+                            continue;
+                        const content: Exclude<RuntimeToolResult, string> = {
+                            content: [
+                                {
+                                    type: "text",
+                                    text: "Primary desktop. All visible windows are shared.",
+                                },
+                                {
+                                    type: "image",
+                                    mediaType: image.mimeType,
+                                    data: image.dataBase64,
+                                },
+                            ],
+                        };
+                        runtimeContentItems(content);
+                        const dimensions = imageSize(
+                            Buffer.from(image.dataBase64, "base64")
+                        );
+                        if (
+                            Math.max(dimensions.width, dimensions.height) >
+                            maxImageDimension
+                        )
+                            throw new Error(
+                                "Computer driver did not bound the desktop frame."
+                            );
+                        return {
+                            snapshot: crypto.randomUUID(),
+                            width: dimensions.width,
+                            height: dimensions.height,
+                            content,
+                        };
+                    }
+                    throw new Error("Computer desktop frame exceeds its image budget.");
                 }
                 const frame = await native.getWindowState(
                     {

@@ -203,13 +203,14 @@ export async function qualifyComputerFixture() {
         );
         try {
             let image = await desktop.observe(signal);
-            if (image.width !== 1024 || image.height !== 768)
+            if (image.width !== 1600 || image.height !== 900)
                 throw new Error("Unexpected primary desktop dimensions.");
             await desktop.act(
                 {
                     action: "click",
                     observationId: image.observationId,
-                    ...fixture.screenEntry,
+                    x: Math.round((fixture.screenEntry.x * image.width) / 2560),
+                    y: Math.round((fixture.screenEntry.y * image.height) / 1440),
                 },
                 signal
             );
@@ -228,7 +229,8 @@ export async function qualifyComputerFixture() {
                 {
                     action: "click",
                     observationId: image.observationId,
-                    ...fixture.screenButton,
+                    x: Math.round((fixture.screenButton.x * image.width) / 2560),
+                    y: Math.round((fixture.screenButton.y * image.height) / 1440),
                 },
                 signal
             );

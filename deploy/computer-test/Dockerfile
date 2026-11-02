@@ -5,4 +5,4 @@ WORKDIR /source
 COPY . .
 RUN bun install --frozen-lockfile --ignore-scripts
 USER bun
-ENTRYPOINT ["xvfb-run", "--server-num=99", "--server-args=-screen 0 1024x768x24 -nolisten tcp", "sh", "/source/deploy/computer-test/start.sh"]
+ENTRYPOINT ["xvfb-run", "--server-num=99", "--server-args=-screen 0 2560x1440x24 -nolisten tcp", "sh", "/source/deploy/computer-test/start.sh"]
