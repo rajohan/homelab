@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.15.0](https://github.com/rajohan/homelab/compare/v0.14.0...v0.15.0) (2026-11-02)
+
+
+### Features
+
+* **computer:** add explicitly approved desktop sharing ([#181](https://github.com/rajohan/homelab/issues/181)) ([45e4933](https://github.com/rajohan/homelab/commit/45e49336ec3c07a206601831534f29e7875061a1))
+* **computer:** retain conversation access and unify Windows controls ([#179](https://github.com/rajohan/homelab/issues/179)) ([a5cc1a3](https://github.com/rajohan/homelab/commit/a5cc1a3b6c1a419d5c5793f3909bb872b0a06af9))
+* **mira:** bundle versioned identity and operating instructions ([#178](https://github.com/rajohan/homelab/issues/178)) ([b0cbd9f](https://github.com/rajohan/homelab/commit/b0cbd9fb1c2f6d25328b1bcdd0294fae6ce0cf21))
+* **mira:** continue explicitly requested live assistance ([#182](https://github.com/rajohan/homelab/issues/182)) ([135825d](https://github.com/rajohan/homelab/commit/135825d3dc865b1da3f972a09d8111dd5cb39f00))
+
+
+### Bug Fixes
+
+* **mira:** support live guidance and separate chat replies ([#176](https://github.com/rajohan/homelab/issues/176)) ([56ece9f](https://github.com/rajohan/homelab/commit/56ece9fcfd55134491fccdb333d230af56ea5ef9))
+* **ui:** adapt shared layouts and make navigation collapsible ([#180](https://github.com/rajohan/homelab/issues/180)) ([2d1d804](https://github.com/rajohan/homelab/commit/2d1d8043cebbdd387c179315b10be3aa75b64d83))
+
+
+### Dependencies
+
+* **deps:** bump the application-minor-and-patch group with 18 updates ([#175](https://github.com/rajohan/homelab/issues/175)) ([fa96403](https://github.com/rajohan/homelab/commit/fa9640377c16fa5f08e08e74f2873735785c4b0c))
+* **deps:** bump unpdf from 1.9.1 to 2.1.0 in the application-major group across 1 directory ([#174](https://github.com/rajohan/homelab/issues/174)) ([2b75195](https://github.com/rajohan/homelab/commit/2b75195b7a06d2789fb7b1499d0f883c8a8f86fa))
+
 ## [0.14.0](https://github.com/rajohan/homelab/compare/v0.13.0...v0.14.0) (2026-11-01)
 
 
