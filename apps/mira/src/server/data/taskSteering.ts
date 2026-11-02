@@ -130,6 +130,8 @@ export async function pendingTaskContinuations(query: MiraQuery, now: Date) {
                     AND a.created_at>=r.started_at AND a.created_at<=r.finished_at
                     AND (t.work_stopped_at IS NULL OR t.work_stopped_at<r.created_at)))))
             AND NOT EXISTS (SELECT 1 FROM mira_runs used WHERE used.request_key=a.owner||':'||a.id::text)
+            AND NOT EXISTS (SELECT 1 FROM mira_chat_inputs i WHERE i.owner=a.owner AND i.conversation_id=t.conversation_id
+                AND i.state IN ('pending','sending') AND i.id<a.id)
             AND NOT EXISTS (SELECT 1 FROM mira_audit stopped WHERE stopped.owner=a.owner
                 AND stopped.target=r.id::text AND stopped.action='run.cancel_requested' AND stopped.created_at>=a.created_at)
         ORDER BY CASE WHEN a.id>COALESCE(

@@ -175,7 +175,7 @@ export async function readMiraHistory(
             length: number;
             parts: MiraMessagePart[];
         }[]
-    >`SELECT c.id AS "conversationId",c.title,m.id AS "messageId",m.role,m.state,m.created_at::text AS "createdAt",substring(m.content FROM ${input.offset + 1} FOR 6000) AS content,length(m.content) AS length,m.parts FROM mira_messages m JOIN mira_conversations c ON c.id=m.conversation_id WHERE m.id=${input.messageId} AND c.owner=${run.owner} AND c.deleted_at IS NULL AND c.archived_at IS NULL AND ((${policy.conversation} AND c.id=${run.conversationId} AND m.id<${run.assistantMessageId} AND m.id<>${run.userMessageId} AND m.state<>'queued') OR (${policy.history} AND c.id<>${run.conversationId} AND c.settings->'useHistory' IS DISTINCT FROM 'false'::jsonb AND m.state='completed'))`;
+    >`SELECT c.id AS "conversationId",c.title,m.id AS "messageId",m.role,m.state,m.created_at::text AS "createdAt",substring(m.content FROM ${input.offset + 1} FOR 6000) AS content,length(m.content) AS length,m.parts FROM mira_messages m JOIN mira_conversations c ON c.id=m.conversation_id WHERE m.id=${input.messageId} AND c.owner=${run.owner} AND c.deleted_at IS NULL AND c.archived_at IS NULL AND ((${policy.conversation} AND c.id=${run.conversationId} AND m.id<${run.assistantMessageId} AND m.id<>${run.userMessageId} AND m.state<>'queued' AND NOT EXISTS (SELECT 1 FROM mira_chat_inputs i WHERE i.id=m.id AND i.state='stopped')) OR (${policy.history} AND c.id<>${run.conversationId} AND c.settings->'useHistory' IS DISTINCT FROM 'false'::jsonb AND m.state='completed'))`;
     if (!row) throw new MiraFailure("NOT_FOUND", "Historical message not found.");
     const { length, ...message } = row;
     return {

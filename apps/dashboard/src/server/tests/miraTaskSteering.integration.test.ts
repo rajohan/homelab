@@ -10,6 +10,7 @@ import { setMiraEnabled } from "@homelab/mira/data/automations";
 import {
     claimChatSteering,
     acknowledgeChatSteering,
+    scheduleChatFollowups,
 } from "@homelab/mira/data/chatSteering";
 import { enqueueTurn } from "@homelab/mira/data/conversations";
 import {
@@ -26,6 +27,7 @@ import {
     readTaskSteering,
 } from "@homelab/mira/data/taskSteering";
 
+import { readMiraTurnInput } from "../../../../mira/src/server/executor/context";
 import { executeMiraTurn } from "../../../../mira/src/server/executor/turn";
 import { appRouter } from "../api/router";
 import { createMiraTextTestTools } from "../testing/miraTools";
@@ -132,6 +134,45 @@ test("unblocking resumes existing work exactly once in its original conversation
             text: "Continued",
             message: null,
         });
+        expect(await scheduleMiraRuns(f.client)).toBe(0);
+    } finally {
+        await f.close();
+    }
+});
+
+test("a newer task edit waits for older chat guidance even during queue backoff", async () => {
+    const f = await fixture();
+    try {
+        await f.api.conversations.send({
+            conversationId: f.run.conversationId,
+            requestId: crypto.randomUUID(),
+            text: "Earlier chat correction",
+        });
+        await f.update(2, "in_progress", { description: "Later task correction" });
+        await f.finish();
+        for (let index = 0; index < 32; index++) {
+            const chat = await f.api.conversations.create({ title: `Occupy ${index}` });
+            await f.api.conversations.send({
+                conversationId: chat.id,
+                requestId: crypto.randomUUID(),
+                text: "Existing queued work",
+            });
+        }
+        expect(await scheduleChatFollowups(f.client)).toBe(0);
+        const [deferred] = await f.client<{ waiting: boolean }[]>`
+            SELECT next_attempt_at>clock_timestamp() AS waiting FROM mira_chat_inputs
+            WHERE conversation_id=${f.run.conversationId} AND state='pending'`;
+        expect(deferred?.waiting).toBe(true);
+        await f.client`UPDATE mira_runs SET state='interrupted' WHERE owner=${f.run.owner}
+            AND state='queued' AND conversation_id<>${f.run.conversationId}`;
+        expect(await scheduleChatFollowups(f.client)).toBe(0);
+        expect(await scheduleMiraRuns(f.client)).toBe(0);
+        await f.client`UPDATE mira_chat_inputs SET next_attempt_at=clock_timestamp()
+            WHERE conversation_id=${f.run.conversationId}`;
+        expect(await scheduleChatFollowups(f.client)).toBe(1);
+        const next = (await claimMiraRun(f.client, crypto.randomUUID(), "foreground"))!;
+        const input = await readMiraTurnInput(f.client, next);
+        expect(input.content).toEndWith("Earlier chat correction");
         expect(await scheduleMiraRuns(f.client)).toBe(0);
     } finally {
         await f.close();

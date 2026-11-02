@@ -136,6 +136,21 @@ test.each(["interrupted", "needs_attention", "failed"] as const)(
             expect(
                 await claimMiraRun(f.client, crypto.randomUUID(), "foreground")
             ).toBeNull();
+            await f.client`UPDATE mira_messages SET state='interrupted' WHERE id=${f.run.userMessageId}`;
+            await f.send("New explicit work.");
+            const next = (await claimMiraRun(
+                f.client,
+                crypto.randomUUID(),
+                "foreground"
+            ))!;
+            const restored = await readMiraTurnInput(f.client, next, true);
+            expect(restored.content).not.toContain("A follow-up.");
+            expect(restored.content).toContain("Start the task.");
+            const retired = chat.messages.find((m) => m.content === "A follow-up.")!;
+            await rejects(
+                readMiraHistory(f.client, next, { messageId: retired.id, offset: 0 }),
+                /not found/
+            );
         } finally {
             await f.close();
         }
@@ -157,6 +172,10 @@ test("unacknowledged guidance is not replayed after provider or executor loss", 
         expect(chat.messages.find((m) => m.content === "Do this once.")?.state).toBe(
             "interrupted"
         );
+        await f.send("New explicit work.");
+        const next = (await claimMiraRun(f.client, crypto.randomUUID(), "foreground"))!;
+        const restored = await readMiraTurnInput(f.client, next, true);
+        expect(restored.content).not.toContain("Do this once.");
     } finally {
         await f.close();
     }
@@ -310,6 +329,9 @@ test("files sent during work wait for the next turn and a deleted file cannot st
             chat.messages.filter((message) => message.content === "Then use this note.")
         ).toHaveLength(1);
         expect(chat.run?.state).toBe("queued");
+        const next = (await claimMiraRun(f.client, crypto.randomUUID(), "foreground"))!;
+        const restored = await readMiraTurnInput(f.client, next, true);
+        expect(restored.content).not.toContain("Read this file.");
     } finally {
         await f.close();
     }
@@ -472,6 +494,8 @@ test.each(["done", "blocked", "reassigned", "deleted"])(
                 "foreground"
             ))!;
             expect(await claimChatSteering(f.client, next)).toBeNull();
+            const restored = await readMiraTurnInput(f.client, next, true);
+            expect(restored.content).not.toContain("Pending task guidance");
         } finally {
             await f.close();
         }

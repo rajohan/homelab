@@ -88,11 +88,14 @@ test("dropping multiple files into the writing field shares upload, preview and 
             expect(screen.getByRole("button", { name: "Send" })).toBeEnabled()
         );
         const user = userEvent.setup();
+        expect(document.querySelector("img")).toBeNull();
         await user.click(screen.getByRole("button", { name: "Attach files" }));
         expect(screen.getByRole("dialog", { name: "Attach files" })).toBeInTheDocument();
         expect(screen.getByText("2/8")).toBeInTheDocument();
+        expect(document.querySelector("img")).toBeNull();
         await user.click(screen.getByRole("button", { name: "Preview one.png" }));
         expect(screen.getByRole("dialog", { name: "one.png" })).toBeInTheDocument();
+        expect(document.querySelectorAll("img")).toHaveLength(1);
         await user.click(screen.getByRole("button", { name: "Close dialog" }));
         await user.click(
             screen.getByRole("button", { name: "Remove one.png from message" })

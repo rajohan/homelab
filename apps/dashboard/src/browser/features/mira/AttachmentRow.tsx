@@ -1,6 +1,6 @@
 import type { MiraAttachment } from "@homelab/contracts/mira";
 import { Button, IconButton } from "@homelab/ui";
-import { FileText, X } from "lucide-react";
+import { FileImage, FileText, X } from "lucide-react";
 
 /**
  * Show a selected attachment with readable metadata, preview and a separate remove action.
@@ -29,11 +29,7 @@ export function AttachmentRow({
             >
                 <span className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-md bg-primary-900">
                     {image ? (
-                        <img
-                            src={`/api/mira/files/${file.id}?preview=1`}
-                            alt=""
-                            className="size-full object-cover"
-                        />
+                        <FileImage size={18} aria-hidden="true" />
                     ) : (
                         <FileText size={18} aria-hidden="true" />
                     )}

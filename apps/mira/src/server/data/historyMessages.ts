@@ -70,6 +70,7 @@ export async function readMessageParts(
         AND (${options.snapshot === undefined} OR (c.archived_at IS NULL
             AND m.id<${options.snapshot?.assistantMessageId ?? null}::uuid AND m.id<>${options.snapshot?.userMessageId ?? null}::uuid
             AND m.state<>'queued' AND p.id<${options.snapshot?.assistantMessageId ?? null}::uuid
+            AND NOT EXISTS (SELECT 1 FROM mira_chat_inputs i WHERE i.id=m.id AND i.state='stopped')
             AND (m.content<>'' OR jsonb_array_length(m.attachment_ids)>0)))
         AND (${options.before ?? null}::uuid IS NULL OR p.id<${options.before ?? null}::uuid)
         AND (${options.query === undefined} OR to_tsvector('simple',reply.content) @@ websearch_to_tsquery('simple',${options.query ?? ""}))
