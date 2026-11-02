@@ -56,10 +56,26 @@ test("reply index upgrades old transcripts and follows streaming, replacement an
         await connection.client`UPDATE mira_messages SET state='failed' WHERE id=${parent}`;
         const failed = await read();
         expect(failed.slice(0, 2).map((row) => row.state)).toEqual(["failed", "failed"]);
+        const confirmed = parts.map((part, index) => ({
+            ...part,
+            completed: index === 0,
+        }));
+        await connection.client`UPDATE mira_messages SET parts=${JSON.stringify(confirmed)}::text::jsonb WHERE id=${parent}`;
+        const continued = await read();
+        expect(continued.slice(0, 2).map((row) => row.state)).toEqual([
+            "failed",
+            "completed",
+        ]);
+        const history = await readMessageParts(connection.client, "operator", chat, {
+            limit: 50,
+            historyOnly: true,
+        });
+        expect(history.map((row) => row.content)).toEqual(["😀", "Hello"]);
         await connection.client`UPDATE mira_messages SET content='',parts='[]'::jsonb WHERE id=${parent}`;
         const cleared = await read();
         expect(cleared.map((row) => row.partId)).toEqual([parent, user]);
         expect(cleared[0]!.content).toBe("");
+        expect(cleared[0]!.state).toBe("failed");
         await connection.client`DELETE FROM mira_messages WHERE conversation_id=${chat}`;
         expect(await read()).toHaveLength(0);
         expect(

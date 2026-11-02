@@ -24,7 +24,11 @@ for await (const line of reader) {
         error?: unknown;
     };
     if (!message.method) {
-        if (mode.startsWith("tool-") || mode === "approval") {
+        if (
+            mode.startsWith("tool-") ||
+            mode === "approval" ||
+            mode === "live-finish-steer"
+        ) {
             write({
                 method: "item/agentMessage/delta",
                 params: {
@@ -34,6 +38,7 @@ for await (const line of reader) {
                     delta: JSON.stringify(message.result ?? message.error),
                 },
             });
+            if (mode === "live-finish-steer" && activeTurn === 1) continue;
             write({
                 method: "turn/completed",
                 params: {
@@ -270,6 +275,8 @@ for await (const line of reader) {
                 emit("foreign", "stale", { turnId: "other-turn" });
                 emit("final", "Created.\n\n```json\n{");
                 emit("final", '\n  "ok": true\n}\n```');
+            } else if (mode === "message-live-limit") {
+                emit("reply", activeTurn === 1 ? "x".repeat(255_999) : "y");
             } else {
                 emit("first", "x".repeat(255_999));
                 emit(mode === "message-limit-same-item" ? "first" : "second", "y");
@@ -283,7 +290,11 @@ for await (const line of reader) {
             });
             continue;
         }
-        if (mode.startsWith("tool-") || mode === "approval") {
+        if (
+            mode.startsWith("tool-") ||
+            mode === "approval" ||
+            mode === "live-finish-steer"
+        ) {
             write({ id: message.id, result: { turn: { id: turnId } } });
             write({
                 id: "host-call",
@@ -301,12 +312,21 @@ for await (const line of reader) {
                             {
                                 "tool-unknown": "administer_host",
                                 "tool-router": "mira_tool_call",
+                                "live-finish-steer": "mira_tool_call",
                             } as Record<string, string>
                         )[mode] ?? "echo",
-                    arguments:
-                        mode === "tool-router"
-                            ? { name: "echo", arguments: { marker: "test" } }
-                            : { marker: "test" },
+                    arguments: (
+                        {
+                            "live-finish-steer": {
+                                name: "mira_live_assistance_finish",
+                                arguments: {},
+                            },
+                            "tool-router": {
+                                name: "echo",
+                                arguments: { marker: "test" },
+                            },
+                        } as Record<string, unknown>
+                    )[mode] ?? { marker: "test" },
                 },
             });
             continue;
@@ -350,7 +370,11 @@ for await (const line of reader) {
                     threadId: "thread-test",
                     turn: {
                         id: turnId,
-                        status: mode === "failed" ? "failed" : "completed",
+                        status:
+                            mode === "failed" ||
+                            (mode === "live-partial-failure" && activeTurn === 2)
+                                ? "failed"
+                                : "completed",
                     },
                 },
             });
@@ -376,7 +400,7 @@ for await (const line of reader) {
                     mode === "steer-wrong-receipt" ? "other-turn" : `turn-${activeTurn}`,
             },
         });
-        if (mode === "steer-ok") {
+        if (mode === "steer-ok" || mode === "live-finish-steer") {
             write({
                 method: "item/agentMessage/delta",
                 params: {

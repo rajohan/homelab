@@ -223,15 +223,21 @@ test("reply boundaries survive polling and completion and stale leases cannot re
     }
 });
 
-test.each(["failed", "interrupted"] as const)(
-    "every reply retains its parent %s outcome in the transcript and recovered history",
-    async (state) => {
+test.each([
+    ["failed", false],
+    ["interrupted", false],
+    ["failed", true],
+    ["interrupted", true],
+] as const)(
+    "replies retain parent %s outcome unless explicitly completed: %s",
+    async (state, confirmed) => {
         const f = await fixture();
         try {
             const parts = [
                 {
                     id: f.run.assistantMessageId,
                     offset: 0,
+                    completed: confirmed,
                     createdAt: new Date().toISOString(),
                 },
                 {
@@ -253,7 +259,7 @@ test.each(["failed", "interrupted"] as const)(
                 transcript.messages
                     .filter((row) => row.role === "assistant")
                     .map((row) => row.state)
-            ).toEqual([state, state]);
+            ).toEqual([confirmed ? "completed" : state, state]);
             await f.send("Continue explicitly.");
             const next = (await claimMiraRun(
                 f.client,
@@ -265,11 +271,11 @@ test.each(["failed", "interrupted"] as const)(
                 history.rows
                     .filter((row) => row.role === "assistant")
                     .map((row) => row.state)
-            ).toEqual([state, state]);
+            ).toEqual([state, confirmed ? "completed" : state]);
             const recovered = await readMiraTurnInput(f.client, next, true);
             expect(
                 recovered.content.match(new RegExp(`"state":"${state}"`, "g"))
-            ).toHaveLength(2);
+            ).toHaveLength(confirmed ? 1 : 2);
         } finally {
             await f.close();
         }

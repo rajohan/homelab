@@ -136,7 +136,10 @@ export async function saveMiraChatSettings(
         if (
             conversation.settings.model !== input.settings.model ||
             conversation.settings.effort !== input.settings.effort ||
-            conversation.settings.serviceTier !== input.settings.serviceTier
+            conversation.settings.serviceTier !== input.settings.serviceTier ||
+            ((input.settings.liveAssistanceMinutes ?? 0) > 0 &&
+                input.settings.liveAssistanceMinutes !==
+                    conversation.settings.liveAssistanceMinutes)
         ) {
             const catalog = await readCatalog(query, context.owner);
             if (!catalog.fresh)
@@ -144,7 +147,21 @@ export async function saveMiraChatSettings(
                     "PRECONDITION_FAILED",
                     "Reconnect Mira before changing model settings."
                 );
-            resolveMiraChatSettings(catalog.models, input.settings, catalog.defaultModel);
+            const resolved = resolveMiraChatSettings(
+                catalog.models,
+                input.settings,
+                catalog.defaultModel
+            );
+            if (
+                (input.settings.liveAssistanceMinutes ?? 0) > 0 &&
+                !catalog.models
+                    .find((model) => model.model === resolved.model)!
+                    .inputModalities.includes("image")
+            )
+                throw new MiraFailure(
+                    "BAD_REQUEST",
+                    "Live computer assistance requires a model that supports images. Choose another model in Chat settings."
+                );
         }
         if (
             (conversation.settings.permissionMode ?? "ask") !==

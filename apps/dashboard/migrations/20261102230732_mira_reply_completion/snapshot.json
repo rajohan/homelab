@@ -1,0 +1,37 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "470ddf59-509b-4d10-ad0c-e596cc98a926",
+    "prevIds": ["40cb2d92-d60a-4d4f-bcea-268d88e37448"],
+    "footprints": [
+        {
+            "statementType": "add_column",
+            "statementTarget": ["column", "public", "mira_message_replies", "completed"],
+            "writes": [
+                "s|col|public.mira_message_replies.completed",
+                "n|col|public.mira_message_replies.completed",
+                "e|col|public.mira_message_replies.completed"
+            ],
+            "reads": ["n|tbl|public.mira_message_replies", "n|sch|public"]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_message_replies",
+                "name": "completed",
+                "type": "boolean",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "false",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        }
+    ]
+}
