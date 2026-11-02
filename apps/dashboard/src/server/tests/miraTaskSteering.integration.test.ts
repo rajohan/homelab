@@ -7,6 +7,10 @@ import { fileURLToPath } from "node:url";
 
 import { capabilities } from "@homelab/contracts/operations";
 import { setMiraEnabled } from "@homelab/mira/data/automations";
+import {
+    claimChatSteering,
+    acknowledgeChatSteering,
+} from "@homelab/mira/data/chatSteering";
 import { enqueueTurn } from "@homelab/mira/data/conversations";
 import {
     claimMiraRun,
@@ -166,6 +170,40 @@ test("live edits and human progress steer only the current owned work lease", as
         expect(await acknowledgeTaskSteering(f.client, f.run, edit.id)).toBe(false);
         expect(await readTaskSteering(f.client, f.run)).toEqual(newer);
         expect(await scheduleMiraRuns(f.client)).toBe(0);
+    } finally {
+        await f.close();
+    }
+});
+
+test("task edits wait for older chat guidance and precede newer chat guidance", async () => {
+    const f = await fixture();
+    try {
+        const send = (text: string) =>
+            f.api.conversations.send({
+                conversationId: f.requested.conversationId,
+                requestId: crypto.randomUUID(),
+                text,
+            });
+        await send("First chat update.");
+        await send("Second chat update.");
+        await f.update(2, "in_progress", { description: "Newer task direction" });
+        await send("Chat after the task update.");
+        for (const text of ["First chat update.", "Second chat update."]) {
+            expect(await readTaskSteering(f.client, f.run)).toBeNull();
+            const guidance = (await claimChatSteering(f.client, f.run))!;
+            expect(guidance.content).toBe(text);
+            expect(await readTaskSteering(f.client, f.run)).toBeNull();
+            expect(
+                await acknowledgeChatSteering(f.client, f.run, guidance.id, true)
+            ).toBe(true);
+        }
+        const edit = (await readTaskSteering(f.client, f.run))!;
+        expect(edit).not.toBeNull();
+        expect(await acknowledgeTaskSteering(f.client, f.run, edit.id)).toBe(true);
+        const last = (await claimChatSteering(f.client, f.run))!;
+        expect(last.content).toBe("Chat after the task update.");
+        expect(await acknowledgeChatSteering(f.client, f.run, last.id, true)).toBe(true);
+        expect(await readTaskSteering(f.client, f.run)).toBeNull();
     } finally {
         await f.close();
     }

@@ -1,3 +1,4 @@
+import type { MiraMessage } from "@homelab/contracts/mira";
 import type { SQL } from "bun";
 
 import type { MiraClaim } from "./queue";
@@ -14,12 +15,38 @@ export async function readHistoryMessages(
     run: MiraClaim,
     options: { limit: number; characters: number; before?: string; query?: string }
 ) {
+    return readMessageParts(client, run.owner, run.conversationId, {
+        ...options,
+        snapshot: run,
+    });
+}
+
+/**
+ * Expand persisted replies before ordering and pagination for clients and model history.
+ * @param client - Product database connection.
+ * @param owner - Authenticated account; rows never cross account boundaries.
+ * @param conversationId - Owned conversation reference.
+ * @param options - Page bounds, optional excerpt limit and fixed model-history snapshot.
+ * @returns Newest-first reply rows; original message IDs remain available for full history reads.
+ */
+export async function readMessageParts(
+    client: SQL,
+    owner: string,
+    conversationId: string,
+    options: {
+        limit: number;
+        characters?: number;
+        before?: string;
+        query?: string;
+        snapshot?: Pick<MiraClaim, "assistantMessageId" | "userMessageId">;
+    }
+) {
     const rows = await client<
         {
             messageId: string;
             partId: string;
-            role: string;
-            state: string;
+            role: MiraMessage["role"];
+            state: MiraMessage["state"];
             createdAt: string;
             content: string;
             attachmentIds: string[];
@@ -27,7 +54,8 @@ export async function readHistoryMessages(
         }[]
     >`SELECT m.id AS "messageId",p.id AS "partId",m.role,
         CASE WHEN p."endOffset" IS NULL THEN m.state ELSE 'completed' END AS state,
-        p."createdAt",left(reply.content,${options.characters}) AS content,length(reply.content)>${options.characters} AS truncated,
+        p."createdAt",left(reply.content,coalesce(${options.characters ?? null}::int,length(reply.content))) AS content,
+        coalesce(length(reply.content)>${options.characters ?? null}::int,false) AS truncated,
         CASE WHEN p."endOffset" IS NULL THEN m.attachment_ids ELSE '[]'::jsonb END AS "attachmentIds"
         FROM mira_messages m JOIN mira_conversations c ON c.id=m.conversation_id
         CROSS JOIN LATERAL (
@@ -38,10 +66,12 @@ export async function readHistoryMessages(
                 THEN m.parts ELSE jsonb_build_array(jsonb_build_object('id',m.id,'offset',0,'createdAt',m.created_at)) END) WITH ORDINALITY
         ) p
         CROSS JOIN LATERAL (SELECT rtrim(substring(m.content FROM p.offset+1 FOR coalesce(p."endOffset",length(m.content))-p.offset), E' \t\n\r') AS content) reply
-        WHERE c.id=${run.conversationId} AND c.owner=${run.owner} AND c.deleted_at IS NULL AND c.archived_at IS NULL
-        AND m.id<${run.assistantMessageId} AND m.id<>${run.userMessageId}
-        AND m.state<>'queued' AND p.id<${run.assistantMessageId} AND p.id<${options.before ?? run.assistantMessageId}
-        AND (m.content<>'' OR jsonb_array_length(m.attachment_ids)>0)
+        WHERE c.id=${conversationId} AND c.owner=${owner} AND c.deleted_at IS NULL
+        AND (${options.snapshot === undefined} OR (c.archived_at IS NULL
+            AND m.id<${options.snapshot?.assistantMessageId ?? null}::uuid AND m.id<>${options.snapshot?.userMessageId ?? null}::uuid
+            AND m.state<>'queued' AND p.id<${options.snapshot?.assistantMessageId ?? null}::uuid
+            AND (m.content<>'' OR jsonb_array_length(m.attachment_ids)>0)))
+        AND (${options.before ?? null}::uuid IS NULL OR p.id<${options.before ?? null}::uuid)
         AND (${options.query === undefined} OR to_tsvector('simple',reply.content) @@ websearch_to_tsquery('simple',${options.query ?? ""}))
         ORDER BY p.id DESC LIMIT ${options.limit}`;
     return rows;

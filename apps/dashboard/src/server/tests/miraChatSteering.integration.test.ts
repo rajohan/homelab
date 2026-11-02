@@ -176,8 +176,13 @@ test("reply boundaries survive polling and completion and stale leases cannot re
         await saveMiraDelta(f.client, f.run, "Working.\n\nDone.", parts);
         const streaming = await f.api.conversations.read({ id: f.chat.id });
         expect(
-            streaming.messages.find((m) => m.id === f.run.assistantMessageId)?.parts
-        ).toEqual(parts);
+            streaming.messages
+                .filter((m) => m.role === "assistant")
+                .map(({ id, content, state }) => ({ id, content, state }))
+        ).toEqual([
+            { id: parts[0]!.id, content: "Working.", state: "completed" },
+            { id: parts[1]!.id, content: "Done.", state: "streaming" },
+        ]);
         await finishMiraRun(f.client, f.run, {
             state: "completed",
             text: "Working.\n\nDone.",
@@ -187,8 +192,13 @@ test("reply boundaries survive polling and completion and stale leases cannot re
         expect(await saveMiraDelta(f.client, f.run, "Overwrite", [])).toBe(false);
         const completed = await f.api.conversations.read({ id: f.chat.id });
         expect(
-            completed.messages.find((m) => m.id === f.run.assistantMessageId)?.parts
-        ).toEqual(parts);
+            completed.messages
+                .filter((m) => m.role === "assistant")
+                .map(({ id, content, state }) => ({ id, content, state }))
+        ).toEqual([
+            { id: parts[0]!.id, content: "Working.", state: "completed" },
+            { id: parts[1]!.id, content: "Done.", state: "completed" },
+        ]);
     } finally {
         await f.close();
     }
@@ -238,9 +248,10 @@ test.each(["steer-ok", "steer-error", "message-boundaries"])(
             }
             await execution;
             const chat = await f.api.conversations.read({ id: f.chat.id });
-            const reply = chat.messages.find(
-                (message) => message.id === f.run.assistantMessageId
-            )!;
+            const replies = chat.messages.filter(
+                (message) => message.role === "assistant"
+            );
+            const reply = replies.at(-1)!;
             expect(chat.run?.state).toBe(
                 mode === "steer-error" ? "needs_attention" : "completed"
             );
@@ -253,11 +264,10 @@ test.each(["steer-ok", "steer-error", "message-boundaries"])(
                 ).toBe("completed");
             }
             if (mode === "message-boundaries") {
-                expect(reply.parts).toHaveLength(2);
-                expect(
-                    // oxlint-disable-next-line typescript/no-misused-spread -- Persisted offsets are Unicode code points.
-                    [...reply.content].slice(reply.parts![1]!.offset).join("")
-                ).toBe('Created.\n\n```json\n{\n  "ok": true\n}\n```');
+                expect(replies).toHaveLength(2);
+                expect(reply.content).toBe(
+                    'Created.\n\n```json\n{\n  "ok": true\n}\n```'
+                );
             }
             expect(await scheduleChatFollowups(f.client)).toBe(0);
         } finally {
@@ -553,6 +563,58 @@ test("history search applies before pagination to each Unicode reply", async () 
         });
         expect(result.rows.map((row) => row.excerpt)).toEqual(["🦊 Fjordplan decision."]);
         expect(result.nextBeforeMessageId).toBeNull();
+    } finally {
+        await f.close();
+    }
+});
+
+test("transcript pages keep every reply interleaved with guidance beyond fifty rows", async () => {
+    const f = await fixture();
+    try {
+        const first = await f.api.conversations.read({ id: f.chat.id });
+        const expected = [first.messages.find((m) => m.role === "user")!.id];
+        const parts = [];
+        let content = "";
+        let offset = 0;
+        for (let index = 0; index < 55; index++) {
+            if (index > 0) {
+                await f.send(`Guidance ${index}.`);
+                const input = (await claimChatSteering(f.client, f.run))!;
+                await acknowledgeChatSteering(f.client, f.run, input.id, true);
+                expected.push(input.id);
+            }
+            const id = Bun.randomUUIDv7();
+            parts.push({ id, offset, createdAt: new Date().toISOString() });
+            expected.push(id);
+            const reply = `Reply ${index}.\n\n`;
+            content += reply;
+            offset += reply.length;
+        }
+        await finishMiraRun(f.client, f.run, {
+            state: "completed",
+            text: content,
+            parts,
+            message: null,
+        });
+        let page = await f.api.conversations.read({ id: f.chat.id });
+        expect(page.messages).toHaveLength(50);
+        expect(page.messages.at(-1)?.content).toBe("Reply 54.");
+        const all = [...page.messages];
+        for (let count = 0; page.nextCursor && count < 4; count++) {
+            page = await f.api.conversations.read({
+                id: f.chat.id,
+                before: page.nextCursor,
+            });
+            all.unshift(...page.messages);
+        }
+        expect(page.nextCursor).toBeNull();
+        expect(all.map((message) => message.id)).toEqual(expected);
+        expect(new Set(all.map((message) => message.id)).size).toBe(expected.length);
+        expect(
+            all
+                .filter((message) => message.role === "assistant")
+                .every((message) => message.state === "completed")
+        ).toBe(true);
     } finally {
         await f.close();
     }

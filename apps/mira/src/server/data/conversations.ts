@@ -19,6 +19,7 @@ import {
     type MiraContext,
     type MiraQuery,
 } from "./context";
+import { readMessageParts } from "./historyMessages";
 import { unreviewedTaskRun } from "./taskRecovery";
 
 // Conversation mutations already hold the conversation row. Use a nonblocking
@@ -124,9 +125,20 @@ export async function readConversation(
         (MiraConversation & { settings: MiraChatSettings })[]
     >`SELECT id, title, version, settings, archived_at::text AS "archivedAt", created_at::text AS "createdAt", updated_at::text AS "updatedAt" FROM mira_conversations WHERE id = ${id} AND owner = ${context.owner} AND deleted_at IS NULL`;
     if (!conversation) throw new MiraFailure("NOT_FOUND", "Conversation not found.");
-    const rows = await context.client<
-        MiraMessage[]
-    >`SELECT id, role, content, state, parts, attachment_ids AS "attachmentIds", created_at::text AS "createdAt" FROM mira_messages WHERE conversation_id = ${id} AND (${before ?? null}::uuid IS NULL OR id < ${before ?? null}::uuid) ORDER BY id DESC LIMIT 50`;
+    const parts = await readMessageParts(context.client, context.owner, id, {
+        limit: 50,
+        ...(before ? { before } : {}),
+    });
+    const rows: MiraMessage[] = parts.map(
+        ({ partId, role, content, state, attachmentIds, createdAt }) => ({
+            id: partId,
+            role,
+            content,
+            state,
+            attachmentIds,
+            createdAt,
+        })
+    );
     const [run] = await context.client<
         MiraRun[]
     >`SELECT id, manual, conversation_id AS "conversationId", automation_id AS "automationId", task_id AS "taskId", activity, state, cancel_requested AS "cancelRequested", message, created_at::text AS "createdAt", started_at::text AS "startedAt", finished_at::text AS "finishedAt" FROM mira_runs WHERE conversation_id = ${id} ORDER BY id DESC LIMIT 1`;

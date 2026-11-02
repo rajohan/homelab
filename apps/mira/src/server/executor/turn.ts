@@ -136,10 +136,8 @@ export async function executeMiraTurn(
                         steeringFailed = true;
                         throw error;
                     }
-                    if (
-                        accepted &&
-                        !(await acknowledgeTaskSteering(client, run, edit.id))
-                    )
+                    if (!accepted) return;
+                    if (!(await acknowledgeTaskSteering(client, run, edit.id)))
                         controller.abort();
                 }
                 if (signal.aborted) return;

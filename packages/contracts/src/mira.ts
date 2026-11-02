@@ -214,7 +214,6 @@ export interface MiraMessage {
     content: string;
     state: "queued" | "streaming" | "completed" | "interrupted" | "failed";
     attachmentIds: string[];
-    parts?: MiraMessagePart[];
     createdAt: string;
 }
 export type MiraRunState =
