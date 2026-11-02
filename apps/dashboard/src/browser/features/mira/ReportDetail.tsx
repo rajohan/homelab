@@ -17,6 +17,7 @@ import { useState } from "react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
+import { miraStatusTone } from "./statusTone";
 
 /**
  * Resolve a stable report link and preserve a clear tombstone when content was removed.
@@ -64,7 +65,9 @@ export function ReportDetail({
                         <Badge>{report.kind}</Badge>
                         <Badge>{report.source}</Badge>
                         {report.outcome && (
-                            <Badge>{report.outcome.replaceAll("_", " ")}</Badge>
+                            <Badge tone={miraStatusTone(report.outcome)}>
+                                {report.outcome.replaceAll("_", " ")}
+                            </Badge>
                         )}
                         <span className="text-xs text-primary-400">
                             {formatDateTime(report.createdAt)}

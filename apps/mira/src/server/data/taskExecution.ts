@@ -111,6 +111,16 @@ export async function runMiraTask(
                 "CONFLICT",
                 "Stop or finish the current task run before continuing."
             );
+        if (link.conversationId) {
+            const [pending] = await query<{ id: string }[]>`
+                SELECT id FROM mira_chat_inputs WHERE conversation_id=${link.conversationId}
+                    AND owner=${context.owner} AND state IN ('pending','sending') LIMIT 1`;
+            if (pending)
+                throw new MiraFailure(
+                    "CONFLICT",
+                    "An earlier chat message is still pending. Wait for Mira to process it before starting another task run."
+                );
+        }
         const uncertain = await unreviewedTaskRun(query, context.owner, input.id);
         if (uncertain && input.reviewedRunId !== uncertain)
             throw new MiraFailure(

@@ -16,18 +16,21 @@ export async function readMiraComputerReadiness(
 ): Promise<MiraComputerReadiness> {
     if (!context.run)
         throw new MiraFailure("FORBIDDEN", "Computer readiness requires a manual run.");
-    const [run] = await context.client<{ id: string }[]>`SELECT r.id FROM mira_runs r
+    const [run] = await context.client<
+        { id: string; conversationId: string }[]
+    >`SELECT r.id,r.conversation_id AS "conversationId" FROM mira_runs r
         JOIN mira_conversations c ON c.id=r.conversation_id AND c.owner=r.owner
         LEFT JOIN mira_switches s ON s.owner=r.owner AND s.key='autonomy'
         WHERE r.id=${context.run.id} AND r.owner=${context.owner} AND r.lease_token=${context.run.leaseToken}
-        AND r.automation_id IS NULL AND r.state='running' AND NOT r.cancel_requested AND r.lease_expires_at>clock_timestamp()
-        AND r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp() AND c.deleted_at IS NULL AND coalesce(s.enabled,true)`;
+        AND r.manual AND r.automation_id IS NULL AND r.state='running' AND NOT r.cancel_requested AND r.lease_expires_at>clock_timestamp()
+        AND r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp() AND c.deleted_at IS NULL AND c.archived_at IS NULL AND coalesce(s.enabled,true)`;
     if (!run) return { state: "unavailable" };
     const [last] = await context.client<
         { id: string }[]
-    >`SELECT id FROM mira_computer_access
-        WHERE owner=${context.owner} AND run_id=${context.run.id} AND run_lease=${context.run.leaseToken}
-        ORDER BY created_at DESC,id DESC LIMIT 1`;
+    >`SELECT g.id FROM mira_computer_access g JOIN mira_runs original ON original.id=g.run_id AND original.owner=g.owner
+        WHERE g.owner=${context.owner} AND ((g.run_id=${context.run.id} AND g.run_lease=${context.run.leaseToken})
+            OR (g.keep_open AND original.conversation_id=${run.conversationId}))
+        ORDER BY g.created_at DESC,g.id DESC LIMIT 1`;
     if (last) {
         const access = await readComputerAccess(context.client, context.owner, last.id);
         if (!access?.available || access.state === "stopped") return { state: "stopped" };

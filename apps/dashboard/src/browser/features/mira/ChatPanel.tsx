@@ -171,7 +171,11 @@ export function ChatPanel({
                 <SectionHeader
                     title={conversation.title}
                     icon={MessageSquare}
-                    badge={<Badge>{status.data?.ready ? "Ready" : "Offline"}</Badge>}
+                    badge={
+                        <Badge tone={status.data?.ready ? "positive" : "warning"}>
+                            {status.data?.ready ? "Ready" : "Offline"}
+                        </Badge>
+                    }
                     compactActions
                     actions={
                         <DropdownMenu
@@ -338,6 +342,7 @@ export function ChatPanel({
                     onUploading={setUploading}
                     sending={send.isPending}
                     active={Boolean(active)}
+                    steerable={run?.manual === true && !run.automationId}
                     stopping={run?.cancelRequested ?? false}
                     stopPending={cancel.isPending}
                     onStop={() => {

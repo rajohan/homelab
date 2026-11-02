@@ -24,12 +24,15 @@ export function ModelSettings({
     readonly disabled?: boolean;
     readonly label?: string;
 }) {
-    const provider = (draft.model ?? defaultModel)?.startsWith("syn:")
+    const automaticId = defaultModel ?? models.find((model) => model.isDefault)?.model;
+    const automatic = models.find((model) => model.model === automaticId);
+    const missingDefault = automaticId
+        ? `Default · ${automaticId} (unavailable)`
+        : "Default · unavailable";
+    const provider = (draft.model ?? automaticId)?.startsWith("syn:")
         ? "synthetic"
         : "chatgpt";
-    const selected =
-        models.find((model) => model.model === (draft.model ?? defaultModel)) ??
-        (draft.model ? undefined : models.find((model) => model.isDefault));
+    const selected = models.find((model) => model.model === (draft.model ?? automaticId));
     const thinking = selected?.supportedReasoningEfforts.find(
         (entry) =>
             entry.reasoningEffort === (draft.effort ?? selected.defaultReasoningEffort)
@@ -38,8 +41,15 @@ export function ModelSettings({
         (entry) => entry.id === (draft.serviceTier ?? selected.defaultServiceTier)
     );
     const modelOptions = [
-        ...((defaultModel?.startsWith("syn:") ? "synthetic" : "chatgpt") === provider
-            ? [{ value: "", label: "Default model" }]
+        ...((automaticId?.startsWith("syn:") ? "synthetic" : "chatgpt") === provider
+            ? [
+                  {
+                      value: "",
+                      label: automatic
+                          ? `Default · ${automatic.displayName || automatic.model}`
+                          : missingDefault,
+                  },
+              ]
             : []),
         ...models
             .filter(
@@ -76,9 +86,9 @@ export function ModelSettings({
                     onChange={(next) => {
                         if (
                             next === "chatgpt" &&
-                            defaultModel &&
-                            !defaultModel.startsWith("syn:") &&
-                            models.some((entry) => entry.model === defaultModel)
+                            automaticId &&
+                            !automaticId.startsWith("syn:") &&
+                            automatic
                         ) {
                             setDraft({
                                 ...draft,
@@ -122,7 +132,7 @@ export function ModelSettings({
                     options={modelOptions}
                     onChange={(model) => {
                         const next = models.find(
-                            (entry) => entry.model === (model || defaultModel)
+                            (entry) => entry.model === (model || automaticId)
                         );
                         setDraft({
                             ...draft,

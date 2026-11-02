@@ -105,6 +105,7 @@ export async function openComputerConsentSurface(
                 mode: request.mode,
                 consentExpiresAt: request.consentExpiresAt,
                 expiresAt: request.expiresAt,
+                ...(request.keepOpen ? { keepOpen: true } : {}),
             })
         );
         const target = await selection;

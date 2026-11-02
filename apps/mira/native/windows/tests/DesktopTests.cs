@@ -56,6 +56,8 @@ internal static class DesktopTests
             if (args.Length != 0) return 1;
             string root = AppDomain.CurrentDomain.BaseDirectory;
             Settings(root);
+            MiraWindowTests.Run(Require);
+            NoticeLayout();
             DesktopWebViewTests.Boundaries(Require);
             Installation(root);
             DesktopUpdateTests.Run(root, Require);
@@ -85,6 +87,37 @@ internal static class DesktopTests
             Console.Error.WriteLine("Windows desktop qualification failed after " + checks + ": " + error.GetType().Name + ": " + error.Message);
             return 1;
         }
+    }
+
+    private static void NoticeLayout()
+    {
+        string message = "";
+        for (int i = 0; i < 12; i++) message += "The installation could not finish. Close Mira and try the verified installer again. ";
+        using (var notice = new MiraNotice("Synthetic notice", message)) {
+            var create = typeof(Control).GetMethod("CreateControl", BindingFlags.Instance | BindingFlags.NonPublic, null, new[] { typeof(bool) }, null);
+            create.Invoke(notice, new object[] { true });
+            var text = FindNoticeText(notice, message);
+            Require(text != null);
+            foreach (int width in new[] { 480, 360 }) {
+                notice.Width = width;
+                notice.PerformLayout();
+                var viewport = (Panel)text.Parent;
+                viewport.PerformLayout();
+                Require(text.Width <= viewport.ClientSize.Width);
+                Require(text.Height > text.Font.Height * 2);
+                Require(viewport.AutoScroll && viewport.DisplayRectangle.Height >= text.Height);
+            }
+        }
+    }
+
+    private static Label FindNoticeText(Control parent, string message)
+    {
+        foreach (Control child in parent.Controls) {
+            if (child is Label && child.Text == message) return (Label)child;
+            var found = FindNoticeText(child, message);
+            if (found != null) return found;
+        }
+        return null;
     }
     private static void Startup(string root)
     {

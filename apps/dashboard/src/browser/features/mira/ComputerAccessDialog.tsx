@@ -19,6 +19,7 @@ import type * as v from "valibot";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
+import { accessStatusTone } from "./statusTone";
 import { computerAccessLabel, useComputerAccess } from "./useComputerAccess";
 
 /**
@@ -36,6 +37,7 @@ export function ComputerAccessDialog({
 }) {
     const [choice, setChoice] = useState("");
     const [mode, setMode] = useState<"view" | "control">("view");
+    const [lifetime, setLifetime] = useState<"conversation" | "run">("conversation");
     const computers = useQuery({
         queryKey: ["operations", "mira", "computers"],
         queryFn: ({ signal }) => api.mira.computers.list.query(undefined, { signal }),
@@ -70,7 +72,7 @@ export function ComputerAccessDialog({
     return (
         <Modal
             title="Computer access"
-            description="Share one window with Mira for this run. Choose and approve the window on your computer."
+            description="Choose how long to share a window, then approve it on your computer."
             onClose={onClose}
             dismissible={!request.isPending}
         >
@@ -84,9 +86,19 @@ export function ComputerAccessDialog({
                             }
                             icon={Monitor}
                             badge={
-                                <Badge>{computerAccessLabel(access, run, fresh)}</Badge>
+                                <Badge
+                                    tone={accessStatusTone(
+                                        computerAccessLabel(access, run, fresh)
+                                    )}
+                                >
+                                    {computerAccessLabel(access, run, fresh)}
+                                </Badge>
                             }
-                            description={`Ends by ${formatDateTime(access.expiresAt)}`}
+                            description={
+                                access.keepOpen
+                                    ? "Stays open between replies in this conversation until stopped."
+                                    : `Ends by ${formatDateTime(access.expiresAt)}`
+                            }
                         />
                         {access.state === "pending" && fresh && running && (
                             <p className="text-sm text-primary-300">
@@ -110,7 +122,8 @@ export function ComputerAccessDialog({
                 {!running && (
                     <p className="rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm text-primary-300">
                         Ask Mira to help with your computer first. Access can be requested
-                        while that manual run is running, and ends when the run stops.
+                        while that manual run is running. Existing conversation access
+                        stays open between replies.
                     </p>
                 )}
                 {(computers.isPending || (run && accessQuery.isPending)) && (
@@ -147,6 +160,7 @@ export function ComputerAccessDialog({
                                     computerVersion: selected.version,
                                     runId: run.id,
                                     mode,
+                                    keepOpen: lifetime === "conversation",
                                 });
                         }}
                     >
@@ -191,11 +205,27 @@ export function ComputerAccessDialog({
                                 ]}
                                 onChange={setMode}
                             />
-                            <p className="text-xs text-primary-400">
-                                Up to five minutes for this run. Local approval is
-                                required. You can stop access here or on your PC at any
-                                time.
-                            </p>
+                        </FormField>
+                        <FormField
+                            label="Duration"
+                            description="Stop access here or on your PC at any time. Closing the shared window, locking the PC or disconnecting also ends access."
+                        >
+                            <Select
+                                label="Access duration"
+                                value={lifetime}
+                                disabled={request.isPending}
+                                options={[
+                                    {
+                                        value: "conversation",
+                                        label: "Keep open between replies",
+                                    },
+                                    {
+                                        value: "run",
+                                        label: "This run only · up to five minutes",
+                                    },
+                                ]}
+                                onChange={setLifetime}
+                            />
                         </FormField>
                         <ActionGroup>
                             <Button

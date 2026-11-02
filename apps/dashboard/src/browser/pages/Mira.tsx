@@ -39,7 +39,7 @@ export function Mira() {
     const conversationId = parsed.success ? parsed.output.conversationId : undefined;
     return (
         <div
-            className={`flex min-h-0 flex-1 flex-col gap-4 ${conversationId ? "" : "overflow-y-auto"}`}
+            className={`@container/chat-workspace flex min-h-0 flex-1 flex-col gap-4 ${conversationId ? "" : "overflow-y-auto"}`}
         >
             {!conversationId && (
                 <PageHeader
@@ -101,9 +101,11 @@ export function Mira() {
                 />
             )}
             <div
-                className={`grid min-w-0 flex-1 gap-4 lg:grid-cols-[16rem_minmax(0,1fr)] ${conversationId ? "min-h-0" : "min-h-96"}`}
+                className={`grid min-w-0 flex-1 gap-4 @min-[56rem]/chat-workspace:grid-cols-[16rem_minmax(0,1fr)] ${conversationId ? "min-h-0" : "min-h-96"}`}
             >
-                <div className={`min-h-0 ${conversationId ? "hidden lg:flex" : "flex"}`}>
+                <div
+                    className={`min-h-0 ${conversationId ? "hidden @min-[56rem]/chat-workspace:flex" : "flex"}`}
+                >
                     <ConversationList selected={conversationId} />
                 </div>
                 {conversationId ? (

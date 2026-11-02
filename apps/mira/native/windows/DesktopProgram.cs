@@ -28,7 +28,7 @@ internal static class DesktopProgram
                     bool created;
                     using (var instance = new Mutex(true, @"Global\Homelab.Mira.Computer.Desktop." + identity.User.Value, out created))
                     {
-                        if (!created) { if (!startup) MessageBox.Show("Mira is already running for this Windows account.", "Mira"); return 1; }
+                        if (!created) { if (!startup) MiraNotice.ShowNotice(null, "Mira is already running for this Windows account.", "Mira"); return 1; }
                         Application.EnableVisualStyles();
                         Application.SetCompatibleTextRenderingDefault(false);
                         string settings = InstallationLease.DirectoryPath;
@@ -43,7 +43,7 @@ internal static class DesktopProgram
         }
         catch
         {
-            if (!check && !leaseOnly && !startup) MessageBox.Show("Mira could not start. Wait for any installation to finish, then use the complete local package in your normal Windows session without administrator privileges.", "Mira", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            if (!check && !leaseOnly && !startup) MiraNotice.ShowNotice(null, "Mira could not start. Wait for any installation to finish, then use the complete local package in your normal Windows session without administrator privileges.", "Mira");
             return 1;
         }
     }

@@ -12,9 +12,11 @@ import {
     stopMiraComputerAccessLocally,
 } from "@homelab/mira/data/computerAccess";
 import { connectMiraComputer, enrollMiraComputer } from "@homelab/mira/data/computers";
+import { readMiraComputerReadiness } from "@homelab/mira/data/computerWait";
 import { cancelRun } from "@homelab/mira/data/conversations";
 import { claimMiraRun } from "@homelab/mira/data/queue";
 
+import { version } from "../../../../../package.json";
 import { appRouter } from "../api/router";
 import { miraComputerReceiver } from "../mira/computerReceiver";
 import { operationFixture } from "../testing/operations";
@@ -92,6 +94,109 @@ async function fixture() {
         allow,
     };
 }
+
+test("persistent consent remains available between replies but only authorizes live manual work in its conversation", async () => {
+    const f = await fixture();
+    try {
+        await rejects(
+            f.api.computers.access.request({ ...f.request, keepOpen: true }),
+            /Update the Windows app/
+        );
+        await f.client`UPDATE mira_computers SET companion_version=${version} WHERE id=${f.pair.id}`;
+        const grant = await f.api.computers.access.request({
+            ...f.request,
+            keepOpen: true,
+        });
+        expect(grant.keepOpen).toBe(true);
+        expect(Date.parse(grant.expiresAt)).toBeGreaterThan(Date.now() + 300_000);
+        await f.accept(grant.id);
+        await f.client`UPDATE mira_runs SET state='completed',lease_token=NULL,lease_expires_at=NULL WHERE id=${f.run.id}`;
+        const permit = () =>
+            permitMiraComputerAccessLocally(f.client, f.device.credential, {
+                id: grant.id,
+                connectionId: f.connection.connectionId,
+                targetId: f.targetId,
+                mode: "control",
+            });
+        const localPermit = await permit();
+        expect(localPermit.validForMs).toBeGreaterThan(0);
+        await rejects(f.allow(grant.id));
+        await f.api.conversations.send({
+            conversationId: f.chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Continue coaching",
+            attachmentIds: [],
+        });
+        const next = await claimMiraRun(f.client, crypto.randomUUID(), "foreground");
+        if (!next) throw new Error("Expected follow-up run");
+        const worker = {
+            ...f.worker,
+            actor: `mira:${next.id}`,
+            run: { id: next.id, leaseToken: next.leaseToken },
+        };
+        const allow = () =>
+            requireMiraComputerAccess(worker, {
+                id: grant.id,
+                targetId: f.targetId,
+                mode: "control",
+            });
+        expect(await allow()).toMatchObject({ id: grant.id });
+        expect(await f.api.computers.access.list({ runId: next.id })).toMatchObject([
+            { id: grant.id, state: "active", keepOpen: true },
+        ]);
+        expect(await readMiraComputerReadiness(worker)).toEqual({
+            state: "ready",
+            mode: "control",
+        });
+        await f.client`UPDATE mira_runs SET manual=false WHERE id=${next.id}`;
+        await rejects(allow());
+        await f.client`UPDATE mira_runs SET manual=true WHERE id=${next.id}`;
+        const other = await f.api.conversations.create({
+            title: "Different conversation",
+        });
+        await f.client`UPDATE mira_runs SET conversation_id=${other.id} WHERE id=${next.id}`;
+        await rejects(allow());
+        await f.client`UPDATE mira_runs SET conversation_id=${f.chat.id} WHERE id=${next.id}`;
+        await f.api.computers.access.stop({ id: grant.id });
+        await rejects(allow());
+        await rejects(permit());
+    } finally {
+        await f.close();
+    }
+});
+
+test.each(["archive", "pause", "reconnect"])(
+    "persistent consent cannot survive %s",
+    async (reason) => {
+        const f = await fixture();
+        try {
+            await f.client`UPDATE mira_computers SET companion_version=${version} WHERE id=${f.pair.id}`;
+            const grant = await f.api.computers.access.request({
+                ...f.request,
+                keepOpen: true,
+            });
+            await f.accept(grant.id);
+            if (reason === "archive")
+                await f.client`UPDATE mira_conversations SET archived_at=clock_timestamp() WHERE id=${f.chat.id}`;
+            if (reason === "pause")
+                await setMiraEnabled(f.context, {
+                    key: "autonomy",
+                    version: 1,
+                    enabled: false,
+                    reason: "Synthetic pause",
+                    until: null,
+                });
+            if (reason === "reconnect")
+                await connectMiraComputer(f.client, f.device.credential);
+            await rejects(f.allow(grant.id));
+            expect(await f.api.computers.access.list()).toMatchObject([
+                { state: "unavailable" },
+            ]);
+        } finally {
+            await f.close();
+        }
+    }
+);
 
 test("computer requests require fresh human verification and remain unusable before explicit local consent", async () => {
     const f = await fixture();
@@ -325,15 +430,9 @@ test("reconnection, credential revocation and expiration cannot restore old gran
     }
 });
 
-test("run cancellation, worker loss, completion, budget and conversation deletion invalidate access", async () => {
-    for (const mode of [
-        "cancel",
-        "lease",
-        "replacement",
-        "complete",
-        "budget",
-        "delete",
-    ]) {
+test.each(["cancel", "lease", "replacement", "complete", "budget", "delete"])(
+    "%s invalidates computer access",
+    async (mode) => {
         const f = await fixture();
         try {
             const grant = await f.api.computers.access.request(f.request);
@@ -357,7 +456,7 @@ test("run cancellation, worker loss, completion, budget and conversation deletio
             await f.close();
         }
     }
-});
+);
 
 test("pause then resume never revives a grant, including a manual chat session", async () => {
     const f = await fixture();

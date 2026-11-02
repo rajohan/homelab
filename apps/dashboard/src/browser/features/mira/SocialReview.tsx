@@ -17,6 +17,7 @@ import { useState } from "react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
+import { miraStatusTone } from "./statusTone";
 
 /**
  * Display immutable text/target approval and a separate operator-only provider challenge.
@@ -60,7 +61,11 @@ export function SocialReview({
                     <SectionHeader
                         title={title}
                         icon={MessageSquare}
-                        badge={<Badge>{draft.state.replaceAll("_", " ")}</Badge>}
+                        badge={
+                            <Badge tone={miraStatusTone(draft.state)}>
+                                {draft.state.replaceAll("_", " ")}
+                            </Badge>
+                        }
                     />
                     <p className="text-sm wrap-anywhere text-primary-300">
                         Posting as {draft.agentName} ·{" "}

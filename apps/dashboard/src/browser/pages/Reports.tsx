@@ -22,6 +22,7 @@ import * as v from "valibot";
 
 import { api } from "../api/client";
 import { ReportDetail } from "../features/mira/ReportDetail";
+import { miraStatusTone } from "../features/mira/statusTone";
 
 /**
  * Browse immutable report snapshots with source, outcome, type and date filters.
@@ -162,7 +163,9 @@ export function Reports() {
                             <Badge>{report.kind}</Badge>
                             <Badge>{report.source}</Badge>
                             {report.outcome && (
-                                <Badge>{report.outcome.replaceAll("_", " ")}</Badge>
+                                <Badge tone={miraStatusTone(report.outcome)}>
+                                    {report.outcome.replaceAll("_", " ")}
+                                </Badge>
                             )}
                         </div>
                         <SectionHeader title={report.title} icon={FileText} />

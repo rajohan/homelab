@@ -1,5 +1,8 @@
 import * as v from "valibot";
 
+/** Access-wide admission ceiling, matching the companion's non-evicting replay history. */
+export const miraComputerCommandLimit = 1024;
+
 const id = v.pipe(v.string(), v.uuid());
 export const miraComputerCommandBindingSchema = v.strictObject({
     accessId: id,

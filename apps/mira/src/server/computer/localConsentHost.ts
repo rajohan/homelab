@@ -162,7 +162,12 @@ export class ComputerLocalConsentHost implements ComputerConsentHost {
                         type: (text: string, signal: AbortSignal) =>
                             port.type(text, signal),
                         close: () =>
-                            (closing ??= Promise.resolve().then(() => port.close())),
+                            (closing ??= (async () => {
+                                await port.close();
+                                // A replacement still uses the immutable approved
+                                // target and cannot start before confirmed cleanup.
+                                this.opened = false;
+                            })()),
                     };
                 })
                 .catch((error: unknown) => {

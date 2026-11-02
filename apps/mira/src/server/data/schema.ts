@@ -3,6 +3,7 @@ import {
     type MiraActivity,
     type MiraChatSettings,
     type MiraModel,
+    type MiraMessagePart,
     type MiraSchedule,
 } from "@homelab/contracts/mira";
 import type { MiraCodeContent, MiraCodePublication } from "@homelab/contracts/miraCode";
@@ -66,6 +67,7 @@ export const miraMessages = pgTable(
             .references(() => miraConversations.id),
         role: text().notNull(),
         content: text().notNull().default(""),
+        parts: jsonb().$type<MiraMessagePart[]>().notNull().default([]),
         state: text().notNull(),
         attachmentIds: jsonb("attachment_ids").$type<string[]>().notNull().default([]),
         createdAt: time("created_at").notNull().defaultNow(),
@@ -81,6 +83,31 @@ export const miraMessages = pgTable(
             sql`${t.state} in ('queued','streaming','completed','interrupted','failed')`
         ),
         check("mira_messages_length", sql`length(${t.content}) <= 256000`),
+    ]
+);
+// Indexed reply boundaries; the migration trigger maintains this projection only
+// when boundaries change. Content and outcome remain on the original message.
+export const miraMessageReplies = pgTable(
+    "mira_message_replies",
+    {
+        id: uuid().primaryKey(),
+        messageId: uuid("message_id")
+            .notNull()
+            .references(() => miraMessages.id, { onDelete: "cascade" }),
+        conversationId: uuid("conversation_id")
+            .notNull()
+            .references(() => miraConversations.id),
+        offset: integer().notNull(),
+        endOffset: integer("end_offset"),
+        createdAt: time("created_at").notNull(),
+    },
+    (t) => [
+        index("mira_message_replies_conversation").on(t.conversationId, t.id),
+        index("mira_message_replies_message").on(t.messageId),
+        check(
+            "mira_message_replies_offsets",
+            sql`${t.offset} >= 0 and (${t.endOffset} is null or ${t.endOffset} >= ${t.offset})`
+        ),
     ]
 );
 export const miraTaskContinuationCursor = pgTable(
@@ -277,6 +304,34 @@ export const miraRuns = pgTable(
         check(
             "mira_runs_state",
             sql`${t.state} in ('queued','running','completed','interrupted','failed','needs_attention')`
+        ),
+    ]
+);
+export const miraChatInputs = pgTable(
+    "mira_chat_inputs",
+    {
+        id: uuid()
+            .primaryKey()
+            .references(() => miraMessages.id),
+        owner: text().notNull(),
+        conversationId: uuid("conversation_id")
+            .notNull()
+            .references(() => miraConversations.id),
+        runId: uuid("run_id")
+            .notNull()
+            .references(() => miraRuns.id),
+        requestKey: text("request_key").notNull().unique(),
+        requestHash: text("request_hash").notNull(),
+        state: text().notNull().default("pending"),
+        leaseToken: uuid("lease_token"),
+        nextAttemptAt: time("next_attempt_at").notNull().defaultNow(),
+    },
+    (t) => [
+        index("mira_chat_inputs_pending").on(t.state, t.id),
+        index("mira_chat_inputs_conversation").on(t.conversationId, t.id),
+        check(
+            "mira_chat_inputs_state",
+            sql`${t.state} IN ('pending','sending','delivered','continued','stopped')`
         ),
     ]
 );
@@ -920,6 +975,7 @@ export const miraComputerAccess = pgTable(
             .references(() => miraRuns.id),
         runLease: uuid("run_lease").notNull(),
         controls: jsonb().notNull(),
+        keepOpen: boolean("keep_open").notNull().default(false),
         mode: text().notNull(),
         state: text().notNull().default("pending"),
         targetId: uuid("target_id"),
@@ -943,7 +999,7 @@ export const miraComputerAccess = pgTable(
         ),
         check(
             "mira_computer_access_duration",
-            sql`${t.expiresAt} > ${t.createdAt} AND ${t.expiresAt} <= ${t.createdAt}+interval '5 minutes'`
+            sql`${t.expiresAt} > ${t.createdAt} AND (${t.keepOpen} OR ${t.expiresAt} <= ${t.createdAt}+interval '5 minutes')`
         ),
     ]
 );
@@ -968,6 +1024,7 @@ export const miraComputerCommands = pgTable(
         state: text().notNull().default("queued"),
         payload: jsonb(),
         result: jsonb(),
+        observationId: uuid("observation_id"),
         createdAt: time("created_at").notNull().defaultNow(),
         expiresAt: time("expires_at").notNull(),
         claimedAt: time("claimed_at"),

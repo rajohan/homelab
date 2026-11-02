@@ -17,16 +17,16 @@ namespace Homelab.Mira.Computer
         {
             base.OnPaint(args);
             if (Enabled) return;
-            Color background = Color.FromArgb(30, 41, 59);
+            Color background = MiraWindow.Raised;
             args.Graphics.Clear(background);
-            using (var border = new Pen(Color.FromArgb(71, 85, 105)))
+            using (var border = new Pen(MiraWindow.Border))
                 args.Graphics.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
             TextRenderer.DrawText(args.Graphics, Text, Font, ClientRectangle,
-                Color.FromArgb(148, 163, 184), TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+                MiraWindow.Muted, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
         }
     }
 
-    internal sealed class ConsentForm : Form
+    internal sealed class ConsentForm : MiraWindow
     {
         private readonly ConsentRequest request;
         private readonly NativeWindows.DesktopState desktop;
@@ -38,6 +38,9 @@ namespace Homelab.Mira.Computer
         private readonly Button stop = new Button();
         private readonly CheckBox foreground = new CheckBox();
         private readonly Label status = new Label();
+        private readonly Label selection = new Label();
+        private readonly Label heading = new Label();
+        private readonly Label detail = new Label();
         private readonly System.Windows.Forms.Timer monitor = new System.Windows.Forms.Timer();
         private readonly object stateLock = new object();
         private readonly HashSet<IntPtr> candidates = new HashSet<IntPtr>();
@@ -81,8 +84,8 @@ namespace Homelab.Mira.Computer
             Text = "Mira · Computer access";
             Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
             Font = new Font("Segoe UI", 10);
-            BackColor = Color.FromArgb(15, 23, 42);
-            ForeColor = Color.FromArgb(226, 232, 240);
+            BackColor = Canvas;
+            ForeColor = TextColor;
             Size = new Size(720, 590);
             MinimumSize = new Size(580, 480);
             StartPosition = FormStartPosition.CenterScreen;
@@ -95,17 +98,30 @@ namespace Homelab.Mira.Computer
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            var heading = new Label { AutoSize = true, Text = input.Mode == "view" ? "Allow Mira to view one window" : "Allow Mira to control one window", Font = new Font(Font.FontFamily, 16, FontStyle.Bold), Margin = new Padding(0, 0, 0, 12) };
-            var detail = new Label { AutoSize = true, MaximumSize = new Size(640, 0), Text = input.Origin + "\nJob " + input.RunId + "\nChoose a window below. Its contents, including tabs, may be visible to Mira.", Margin = new Padding(0, 0, 0, 16) };
+            heading.AutoSize = true;
+            heading.Text = input.Mode == "view" ? "Allow Mira to view one window" : "Allow Mira to control one window";
+            heading.Font = new Font(Font.FontFamily, 16, FontStyle.Bold);
+            heading.Margin = new Padding(0, 0, 0, 12);
+            detail.AutoSize = true; detail.MaximumSize = new Size(640, 0); detail.ForeColor = Muted;
+            detail.Text = input.Origin + "\nChoose a window to share. Its contents, including tabs, may be visible to Mira." +
+                (input.KeepOpen ? " Access stays open between replies in this conversation until you stop it, close the window, lock the PC or disconnect." : " Access ends with this run, within five minutes.");
+            detail.Margin = new Padding(0, 0, 0, 16);
             windows.Dock = DockStyle.Fill;
             windows.View = View.Details;
             windows.FullRowSelect = true;
             windows.MultiSelect = false;
             windows.HideSelection = false;
-            windows.BackColor = Color.FromArgb(30, 41, 59);
+            windows.BackColor = MiraWindow.Raised;
             windows.ForeColor = ForeColor;
+            windows.BorderStyle = BorderStyle.None;
+            windows.HeaderStyle = ColumnHeaderStyle.None;
             windows.Columns.Add("Window", 380);
             windows.Columns.Add("Application", 220);
+            windows.Resize += delegate {
+                int available = Math.Max(0, windows.ClientSize.Width - SystemInformation.VerticalScrollBarWidth);
+                windows.Columns[0].Width = (int)(available * .68);
+                windows.Columns[1].Width = available - windows.Columns[0].Width;
+            };
             windows.SelectedIndexChanged += delegate { UpdateAllow(); };
             foreground.AutoSize = true;
             foreground.MaximumSize = new Size(640, 0);
@@ -121,21 +137,31 @@ namespace Homelab.Mira.Computer
             allow.Enabled = false;
             allow.Padding = new Padding(12, 5, 12, 5);
             allow.FlatStyle = FlatStyle.Flat;
+            allow.BackColor = Accent; allow.ForeColor = Canvas; allow.FlatAppearance.BorderSize = 0;
             allow.Click += delegate { ApproveSelected(); };
             stop.Text = "Decline";
             stop.AutoSize = true;
             stop.Padding = new Padding(12, 5, 12, 5);
             stop.FlatStyle = FlatStyle.Flat;
+            stop.BackColor = Raised; stop.FlatAppearance.BorderColor = Border;
             stop.Click += delegate { Retire(); };
             actions.Controls.Add(allow);
             actions.Controls.Add(stop);
             layout.Controls.Add(heading);
             layout.Controls.Add(detail);
-            layout.Controls.Add(windows);
+            var choicePanel = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0), BackColor = Raised };
+            selection.Dock = DockStyle.Fill; selection.Padding = new Padding(20);
+            selection.ForeColor = TextColor; selection.Visible = false;
+            choicePanel.Controls.Add(windows); choicePanel.Controls.Add(selection);
+            layout.Controls.Add(choicePanel);
             layout.Controls.Add(foreground);
             layout.Controls.Add(status);
             layout.Controls.Add(actions);
-            Controls.Add(layout);
+            Content.Controls.Add(layout);
+            Content.Resize += delegate {
+                int width = Math.Max(120, Content.ClientSize.Width - 48);
+                heading.MaximumSize = detail.MaximumSize = foreground.MaximumSize = status.MaximumSize = new Size(width, 0);
+            };
             CancelButton = stop;
             FormClosing += delegate { Retire(); };
             Shown += delegate { if (stopped != 0) Retire(); else LoadWindows(); };
@@ -241,8 +267,14 @@ namespace Homelab.Mira.Computer
                     Volatile.Write(ref announced, true);
                 }
                 allow.Visible = false;
-                windows.Enabled = false;
-                foreground.Enabled = false;
+                windows.Visible = false;
+                selection.Text = "Connected window\n\n" + selected.Title + "\n" + System.IO.Path.GetFileName(selected.Executable) +
+                    (request.Mode == "view" ? "\n\nMira can view this window." : "\n\nMira can view, click and type in this window.");
+                selection.Visible = true; selection.BringToFront();
+                foreground.Visible = false;
+                heading.Text = "Computer access is active";
+                detail.Text = request.Origin + "\nOnly the selected window is shared. You can stop access at any time.";
+                status.ForeColor = Color.FromArgb(110, 231, 183);
                 stop.Text = "Stop access";
                 Tick();
             }
@@ -262,7 +294,7 @@ namespace Homelab.Mira.Computer
                     throw new InvalidOperationException("The selected window changed.");
                 int seconds = (int)Math.Ceiling(remaining / 1000);
                 status.Text = announced
-                    ? "Access allowed · " + seconds + " seconds remaining. Use Stop access to take over."
+                    ? (request.KeepOpen ? "Access stays open between replies. Use Stop access to take over." : "Access allowed · " + seconds + " seconds remaining. Use Stop access to take over.")
                     : "This request expires in " + seconds + " seconds.";
                 UpdateAllow();
             }

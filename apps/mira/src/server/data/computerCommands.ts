@@ -1,4 +1,5 @@
 import {
+    miraComputerCommandLimit,
     miraComputerCommandBindingSchema,
     miraComputerOperationSchema,
     type MiraComputerCommand,
@@ -38,8 +39,13 @@ async function liveRun(query: TransactionSQL, context: MiraContext) {
     if (!context.run)
         throw new MiraFailure("FORBIDDEN", "Computer commands require an active run.");
     const [run] = await query<
-        { id: string }[]
-    >`SELECT id FROM mira_runs WHERE id=${context.run.id} AND owner=${context.owner}
+        {
+            id: string;
+            conversationId: string;
+            manual: boolean;
+            automationId: string | null;
+        }[]
+    >`SELECT id,conversation_id AS "conversationId",manual,automation_id AS "automationId" FROM mira_runs WHERE id=${context.run.id} AND owner=${context.owner}
         AND state='running' AND NOT cancel_requested AND lease_token=${context.run.leaseToken}
         AND lease_expires_at>clock_timestamp() AND started_at+budget_seconds*interval '1 second'>clock_timestamp() FOR SHARE`;
     if (!run)
@@ -47,6 +53,7 @@ async function liveRun(query: TransactionSQL, context: MiraContext) {
             "FORBIDDEN",
             "Computer command run is no longer available."
         );
+    return run;
 }
 
 /**
@@ -97,7 +104,9 @@ async function deviceAccess(
     const first = await readComputerAccess(query, device.owner, binding.accessId);
     if (!first || first.computerId !== device.id) return;
     // The executor can retire its run/receipt without the account lock. Hold both while disclosing content.
-    await query`SELECT id FROM mira_runs WHERE id=${first.runId} FOR SHARE`;
+    await query`SELECT id FROM mira_runs WHERE id=${first.runId} OR id IN (
+        SELECT run_id FROM mira_computer_commands WHERE access_id=${first.id} AND state IN ('queued','claimed','completed')
+    ) ORDER BY id FOR SHARE`;
     await query`SELECT receipt.id FROM mira_tool_receipts receipt JOIN mira_computer_commands cmd ON cmd.id=receipt.id
         WHERE cmd.access_id=${first.id} AND cmd.state IN ('queued','claimed','completed') ORDER BY receipt.id FOR SHARE OF receipt`;
     const access = await readComputerAccess(query, device.owner, binding.accessId);
@@ -168,7 +177,7 @@ export async function enqueueMiraComputerCommand(
         // Global capacity is serialized before account/row locks; cleanup never acquires this lock.
         await query`SELECT pg_advisory_xact_lock(hashtextextended('mira:computer-command-capacity',0))`;
         await lockComputerOwner(query, context.owner);
-        await liveRun(query, context);
+        const run = await liveRun(query, context);
         const [receipt] = await query<
             { id: string }[]
         >`SELECT id FROM mira_tool_receipts WHERE id=${receiptId} AND run_id=${context.run!.id}
@@ -181,17 +190,37 @@ export async function enqueueMiraComputerCommand(
         await reconcile(query, context.owner);
         const [candidate] = await query<
             { id: string }[]
-        >`SELECT id FROM mira_computer_access WHERE owner=${context.owner} AND run_id=${context.run!.id} AND state='active'`;
+        >`SELECT g.id FROM mira_computer_access g JOIN mira_runs original ON original.id=g.run_id AND original.owner=g.owner
+            WHERE g.owner=${context.owner} AND g.state='active' AND (g.run_id=${context.run!.id}
+                OR (g.keep_open AND ${run.manual} AND ${run.automationId}::uuid IS NULL AND original.conversation_id=${run.conversationId}))`;
         const access = candidate
             ? await readComputerAccess(query, context.owner, candidate.id)
             : undefined;
         if (
             !access?.available ||
             !access.targetId ||
-            access.runLease !== context.run!.leaseToken ||
+            (!access.keepOpen && access.runLease !== context.run!.leaseToken) ||
+            (access.keepOpen &&
+                (!run.manual ||
+                    run.automationId !== null ||
+                    access.conversationId !== run.conversationId)) ||
             (operation.action !== "observe" && access.mode !== "control")
         )
             return null;
+        if (access.keepOpen && operation.action !== "observe") {
+            // Keep only the opaque frame identity after consumption. A previous
+            // reply's image must never authorize input in this run.
+            const [observation] = await query<{ id: string }[]>`
+                SELECT id FROM mira_computer_commands WHERE owner=${context.owner} AND access_id=${access.id}
+                    AND run_id=${context.run!.id} AND run_lease=${context.run!.leaseToken} AND action='observe'
+                    AND state='consumed' AND observation_id=${operation.observationId}
+                    AND connection_id=${access.connectionId} AND target_id=${access.targetId}`;
+            if (!observation)
+                throw new MiraFailure(
+                    "PRECONDITION_FAILED",
+                    "Read a fresh computer observation in this run before sending input."
+                );
+        }
         const [limits] = await query<
             {
                 total: number;
@@ -199,20 +228,23 @@ export async function enqueueMiraComputerCommand(
                 busy: boolean;
                 attempted: boolean;
                 recent: number;
+                accessTotal: number;
             }[]
         >`SELECT
             (SELECT count(*)::int FROM mira_computer_commands WHERE state IN ('queued','claimed','completed')) AS total,
             (SELECT count(*)::int FROM mira_computer_commands WHERE owner=${context.owner} AND state IN ('queued','claimed','completed')) AS owned,
             EXISTS(SELECT 1 FROM mira_computer_commands WHERE access_id=${access.id} AND state IN ('queued','claimed','completed')) AS busy,
             EXISTS(SELECT 1 FROM mira_computer_commands WHERE id=${receiptId}) AS attempted,
-            (SELECT count(*)::int FROM mira_computer_commands WHERE access_id=${access.id}) AS recent`;
+            (SELECT count(*)::int FROM mira_computer_commands WHERE access_id=${access.id} AND run_id=${context.run!.id}) AS recent,
+            (SELECT count(*)::int FROM mira_computer_commands WHERE access_id=${access.id}) AS "accessTotal"`;
         if (
             !limits ||
             limits.total >= 32 ||
             limits.owned >= 8 ||
             limits.busy ||
             limits.attempted ||
-            limits.recent >= 32
+            limits.recent >= 32 ||
+            limits.accessTotal >= miraComputerCommandLimit
         )
             return null;
         await query`WITH timing AS MATERIALIZED (SELECT clock_timestamp() AS at)
@@ -304,7 +336,8 @@ export async function finishMiraComputerCommand(
         }
         const rows = await query<
             { id: string }[]
-        >`UPDATE mira_computer_commands SET state='completed',result=${JSON.stringify(result)}::text::jsonb,finished_at=clock_timestamp()
+        >`UPDATE mira_computer_commands SET state='completed',result=${JSON.stringify(result)}::text::jsonb,
+            observation_id=${"observationId" in result ? result.observationId : null},finished_at=clock_timestamp()
             WHERE id=${row.id} AND state='claimed' AND expires_at>clock_timestamp() RETURNING id`;
         if (rows.length === 0)
             await retireComputerCommands(query, device.owner, access.id);
@@ -402,7 +435,7 @@ export async function finalizeMiraComputerCommand(
         if (
             !access?.available ||
             access.state !== "active" ||
-            access.runLease !== context.run!.leaseToken
+            (!access.keepOpen && access.runLease !== context.run!.leaseToken)
         )
             throw new Error("Computer result lost its authority before delivery.");
         signal.throwIfAborted();

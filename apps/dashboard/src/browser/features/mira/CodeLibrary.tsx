@@ -19,15 +19,7 @@ import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
 import { CodeEditor } from "./CodeEditor";
 import { CodeReview } from "./CodeReview";
-
-const tones = {
-    draft: "neutral",
-    queued: "neutral",
-    publishing: "neutral",
-    published: "positive",
-    needs_attention: "warning",
-    cancelled: "neutral",
-} as const;
+import { miraStatusTone } from "./statusTone";
 
 /**
  * Show local publication drafts and durable delivery outcomes alongside the conversation.
@@ -108,7 +100,7 @@ export function CodeLibrary({
                             title={draft.content.title}
                             icon={GitPullRequest}
                             badge={
-                                <Badge tone={tones[draft.state]}>
+                                <Badge tone={miraStatusTone(draft.state)}>
                                     {draft.state.replaceAll("_", " ")}
                                 </Badge>
                             }

@@ -4,6 +4,7 @@ import { Monitor, Square } from "lucide-react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
+import { accessStatusTone } from "./statusTone";
 import { computerAccessLabel, useComputerAccess } from "./useComputerAccess";
 
 /**
@@ -36,7 +37,15 @@ export function ComputerAccessPanel({
                 <SectionHeader
                     title="Computer access"
                     icon={Monitor}
-                    badge={<Badge>{computerAccessLabel(access, run, fresh)}</Badge>}
+                    badge={
+                        <Badge
+                            tone={accessStatusTone(
+                                computerAccessLabel(access, run, fresh)
+                            )}
+                        >
+                            {computerAccessLabel(access, run, fresh)}
+                        </Badge>
+                    }
                     {...(waiting && !access
                         ? {
                               description:

@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { rejects } from "node:assert/strict";
 
+import { miraComputerCommandLimit } from "@homelab/contracts/miraComputerCommands";
 import { capabilities } from "@homelab/contracts/operations";
 import {
     acceptMiraComputerAccess,
@@ -18,6 +19,7 @@ import { connectMiraComputer, enrollMiraComputer } from "@homelab/mira/data/comp
 import { cancelRun } from "@homelab/mira/data/conversations";
 import { claimMiraRun } from "@homelab/mira/data/queue";
 
+import { version } from "../../../../../package.json";
 import { createVisualChallenge } from "../../../../mira/src/server/testing/visualChallenge";
 import { appRouter } from "../api/router";
 import { startDashboardServer } from "../index";
@@ -27,7 +29,8 @@ import { operationFixture } from "../testing/operations";
 async function session(
     f: Awaited<ReturnType<typeof operationFixture>>,
     owner = "operator",
-    mode: "view" | "control" = "control"
+    mode: "view" | "control" = "control",
+    keepOpen = false
 ) {
     const api = appRouter.createCaller({
         operations: f,
@@ -57,12 +60,15 @@ async function session(
         platform: "win32",
         version: "0.10.0",
     });
-    const connection = await connectMiraComputer(f.client, device.credential);
+    const connection = await connectMiraComputer(f.client, device.credential, {
+        version,
+    });
     const grant = await api.computers.access.request({
         computerId: pair.id,
         computerVersion: 2,
         runId: run.id,
         mode,
+        keepOpen,
     });
     const binding = {
         accessId: grant.id,
@@ -139,6 +145,146 @@ async function row(f: Awaited<ReturnType<typeof session>>, id: string) {
     >`SELECT state,payload,result FROM mira_computer_commands WHERE id=${id}`;
     return result;
 }
+
+test("persistent consent delivers commands for the next manual reply without reusing an old run or receipt", async () => {
+    const f = await session(await operationFixture(), "operator", "control", true);
+    try {
+        const first = await f.enqueue();
+        await f.claim();
+        const firstFrame = image();
+        await f.finish(first.id, firstFrame);
+        await takeMiraComputerCommand(f.worker, first.id);
+        await f.client`UPDATE mira_runs SET state='completed',lease_token=NULL,lease_expires_at=NULL WHERE id=${f.run.id}`;
+        const between = await f.permit();
+        expect(between.validForMs).toBeGreaterThan(0);
+        await rejects(f.enqueue());
+        await f.api.conversations.send({
+            conversationId: f.chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Next coaching question",
+            attachmentIds: [],
+        });
+        const next = await claimMiraRun(f.client, crypto.randomUUID(), "foreground");
+        if (!next) throw new Error("Expected a follow-up run");
+        const worker = {
+            ...f.worker,
+            actor: `mira:${next.id}`,
+            run: { id: next.id, leaseToken: next.leaseToken },
+        };
+        await rejects(
+            enqueueMiraComputerCommand(worker, first.id, { action: "observe" }),
+            /receipt/
+        );
+        const id = crypto.randomUUID();
+        await f.client`INSERT INTO mira_tool_receipts(id,run_id,call_id,tool,input_hash,state) VALUES(${id},${next.id},${crypto.randomUUID()},'mira_computer_observe','synthetic','running')`;
+        await f.client`UPDATE mira_runs SET manual=false WHERE id=${next.id}`;
+        await rejects(
+            enqueueMiraComputerCommand(worker, id, { action: "observe" }),
+            /unavailable/
+        );
+        await f.client`UPDATE mira_runs SET manual=true WHERE id=${next.id}`;
+        const inputId = crypto.randomUUID();
+        await f.client`INSERT INTO mira_tool_receipts(id,run_id,call_id,tool,input_hash,state) VALUES(${inputId},${next.id},${crypto.randomUUID()},'mira_computer_input','synthetic','running')`;
+        await rejects(
+            enqueueMiraComputerCommand(worker, inputId, {
+                action: "type",
+                observationId: firstFrame.observationId,
+                text: "Old reply frame",
+            }),
+            /fresh computer observation in this run/
+        );
+        expect(await f.claim()).toEqual({ command: null });
+        const permit = await f.permit();
+        expect(permit.validForMs).toBeGreaterThan(0);
+        await enqueueMiraComputerCommand(worker, id, { action: "observe" });
+        expect(await f.claim()).toMatchObject({ command: { commandId: id } });
+        const nextFrame = image();
+        expect(await f.finish(id, nextFrame)).toMatchObject({ accepted: true });
+        expect(await takeMiraComputerCommand(worker, id)).toMatchObject({
+            state: "completed",
+        });
+        await rejects(takeMiraComputerCommand(f.worker, id));
+        await enqueueMiraComputerCommand(worker, inputId, {
+            action: "type",
+            observationId: nextFrame.observationId,
+            text: "Current reply frame",
+        });
+        expect(await f.claim()).toMatchObject({ command: { commandId: inputId } });
+        expect(await f.finish(inputId, { effect: "confirmed" })).toMatchObject({
+            accepted: true,
+        });
+        expect(await takeMiraComputerCommand(worker, inputId)).toMatchObject({
+            result: { effect: "confirmed" },
+        });
+    } finally {
+        await f.close();
+    }
+});
+
+test("retained access refuses its lifetime command ceiling before claiming an uncertain operation", async () => {
+    const f = await session(await operationFixture(), "operator", "control", true);
+    try {
+        await f.client`WITH receipts AS (
+            INSERT INTO mira_tool_receipts(id,run_id,call_id,tool,input_hash,state)
+            SELECT gen_random_uuid(),${f.run.id},gen_random_uuid()::text,'mira_computer_observe','synthetic','succeeded'
+            FROM generate_series(1,${miraComputerCommandLimit - 1}) RETURNING id
+        ) INSERT INTO mira_computer_commands(id,owner,access_id,run_id,run_lease,connection_id,target_id,action,state,created_at,expires_at)
+            SELECT id,${f.context.owner},${f.binding.accessId},${f.run.id},${f.run.leaseToken},${f.binding.connectionId},${f.binding.targetId},'observe','consumed',statement_timestamp(),statement_timestamp()+interval '15 seconds' FROM receipts`;
+        await f.client`UPDATE mira_runs SET state='completed',lease_token=NULL,lease_expires_at=NULL WHERE id=${f.run.id}`;
+        await f.api.conversations.send({
+            conversationId: f.chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Next reply",
+            attachmentIds: [],
+        });
+        const next = await claimMiraRun(f.client, crypto.randomUUID(), "foreground");
+        if (!next) throw new Error("Expected a follow-up run");
+        const worker = { ...f.worker, run: { id: next.id, leaseToken: next.leaseToken } };
+        const reserve = async () => {
+            const id = crypto.randomUUID();
+            await f.client`INSERT INTO mira_tool_receipts(id,run_id,call_id,tool,input_hash,state) VALUES(${id},${next.id},${crypto.randomUUID()},'mira_computer_observe','synthetic','running')`;
+            return id;
+        };
+        const last = await reserve();
+        await enqueueMiraComputerCommand(worker, last, { action: "observe" });
+        expect(await f.claim()).toMatchObject({ command: { commandId: last } });
+        await f.finish(last, image());
+        await takeMiraComputerCommand(worker, last);
+        const excess = await reserve();
+        await rejects(
+            enqueueMiraComputerCommand(worker, excess, { action: "observe" }),
+            /command limit/
+        );
+        expect(await row(f, excess)).toBeUndefined();
+        expect(await f.claim()).toEqual({ command: null });
+        const permit = await f.permit();
+        expect(permit.validForMs).toBeGreaterThan(0);
+    } finally {
+        await f.close();
+    }
+});
+
+test.each(["queued", "claimed", "completed"])(
+    "persistent consent refuses %s command content after its current run ends",
+    async (state) => {
+        const f = await session(await operationFixture(), "operator", "control", true);
+        try {
+            const pending = await f.enqueue();
+            if (state !== "queued") await f.claim();
+            if (state === "completed") await f.finish(pending.id, image());
+            await f.client`UPDATE mira_runs SET state='completed',lease_token=NULL,lease_expires_at=NULL WHERE id=${f.run.id}`;
+            expect(await f.claim()).toEqual({ command: null });
+            await rejects(f.permit());
+            expect(await row(f, pending.id)).toMatchObject({
+                payload: null,
+                result: null,
+                state: state === "queued" ? "refused" : "unknown",
+            });
+        } finally {
+            await f.close();
+        }
+    }
+);
 
 test("durable commands claim and consume exactly once across concurrent requests", async () => {
     const f = await session(await operationFixture());

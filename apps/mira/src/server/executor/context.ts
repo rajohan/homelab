@@ -1,6 +1,7 @@
 import type { MiraChatSettings } from "@homelab/contracts/mira";
 import type { SQL } from "bun";
 
+import { readHistoryMessages } from "../data/historyMessages";
 import type { MiraClaim } from "../data/queue";
 
 /**
@@ -30,17 +31,10 @@ export async function readMiraTurnInput(
     if (!record) throw new Error("Conversation unavailable.");
     if (!restoreHistory && record.providerThread && record.providerContextReady)
         return record;
-    const rows = await client<
-        {
-            messageId: string;
-            createdAt: string;
-            role: string;
-            state: string;
-            content: string;
-            attachmentIds: string[];
-            truncated: boolean;
-        }[]
-    >`SELECT id AS "messageId",created_at::text AS "createdAt",role,state,left(content,48000) AS content,attachment_ids AS "attachmentIds",length(content)>48000 AS truncated FROM mira_messages WHERE conversation_id=${run.conversationId} AND id<${run.userMessageId} AND (content<>'' OR jsonb_array_length(attachment_ids)>0) ORDER BY id DESC LIMIT 33`;
+    const rows = await readHistoryMessages(client, run, {
+        limit: 33,
+        characters: 48_000,
+    });
     if (rows.length === 0) return record;
     const history: string[] = [];
     let remaining = 48_000;

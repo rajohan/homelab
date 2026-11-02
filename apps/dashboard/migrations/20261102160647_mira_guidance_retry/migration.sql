@@ -1,0 +1,1 @@
+ALTER TABLE "mira_chat_inputs" ADD COLUMN "next_attempt_at" timestamp with time zone DEFAULT now() NOT NULL;

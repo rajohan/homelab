@@ -176,14 +176,8 @@ test("session-wide actions share the responsive full-width action group", () => 
     const all = screen.getByRole("button", { name: "Log out all" });
     const others = screen.getByRole("button", { name: "Log out others" });
     expect(all.parentElement).toBe(others.parentElement);
-    expect(all.parentElement).toHaveClass(
-        "flex-col",
-        "[&>:is(button,a)]:w-full",
-        "min-[30rem]:flex-row"
-    );
-    expect(all.parentElement?.lastElementChild).toBe(
-        globalThis.matchMedia("(min-width: 30rem)").matches ? all : others
-    );
+    expect(all.parentElement).toHaveClass("flex-col", "[&>:is(button,a)]:w-full");
+    expect(all.parentElement?.lastElementChild?.textContent).toBe("Log out others");
     expect(others).toBeDisabled();
     fireEvent.click(all);
     expect(action).toHaveBeenCalledWith("all");

@@ -106,6 +106,53 @@ test("history recall isolates owners and excludes current, archived, deleted, op
     }
 });
 
+test("cross-conversation recall selects individual replies and includes intervening guidance", async () => {
+    const f = await fixture();
+    try {
+        const first = "🦊 The first plan uses red.",
+            second = "The corrected plan uses blue.";
+        const source = await f.source("operator", `${first}\n\n${second}`);
+        const guidance = Bun.randomUUIDv7();
+        await f.client`INSERT INTO mira_messages(id,conversation_id,role,content,state) VALUES(${guidance},${source.conversationId},'user','Correction: choose blue instead.','completed')`;
+        const secondId = Bun.randomUUIDv7();
+        const parts = [
+            { id: source.messageId, offset: 0, createdAt: new Date().toISOString() },
+            {
+                id: secondId,
+                // oxlint-disable-next-line typescript/no-misused-spread -- Persisted offsets are Unicode code points.
+                offset: [...first].length + 2,
+                createdAt: new Date().toISOString(),
+            },
+        ];
+        await f.client`UPDATE mira_messages SET parts=${JSON.stringify(parts)}::text::jsonb WHERE id=${source.messageId}`;
+        const run = await f.start();
+        const found = await searchMiraHistory(f.client, run, {
+            query: '"corrected plan"',
+        });
+        expect(found.rows).toHaveLength(1);
+        expect(found.rows[0]).toMatchObject({ messageId: secondId });
+        expect(found.rows[0]!.excerpt).toContain("corrected plan uses blue");
+        expect(found.rows[0]!.excerpt).not.toContain("red");
+        const reply = await readMiraHistory(f.client, run, {
+            messageId: secondId,
+            offset: 0,
+        });
+        expect(reply.content).toBe(second);
+        expect(reply.context.map((row) => row.excerpt)).toEqual([
+            first,
+            "Correction: choose blue instead.",
+        ]);
+        const earlier = await readMiraHistory(f.client, run, {
+            messageId: source.messageId,
+            offset: 0,
+        });
+        expect(earlier.content).toBe(first);
+        expect(earlier.context.map((row) => row.messageId)).toEqual([guidance, secondId]);
+    } finally {
+        await f.close();
+    }
+});
+
 test("recall bounds search, Unicode message chunks and memory snapshots without mixing accounts", async () => {
     const f = await fixture();
     try {
@@ -577,6 +624,13 @@ test.each([true, false])(
                 `saved memory ${enabled ? "enabled" : "disabled"}`
             );
             expect(response.includes("CURRENT MEMORY ZK-981")).toBe(enabled);
+            for (const heading of [
+                "# Mira",
+                "# Character and purpose",
+                "# The current operator",
+                "# Mira operating instructions",
+            ])
+                expect(start.mock.calls[0]![3]).toContain(heading);
             const registry = start.mock.calls[0]![2].find(
                 (tool) => tool.name === "mira_tools_list"
             )!;

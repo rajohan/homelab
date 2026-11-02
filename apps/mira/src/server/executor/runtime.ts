@@ -6,6 +6,7 @@ import type { SQL } from "bun";
 import { runtimeEnvironment } from "../config/environment";
 import { reconcileMiraControls } from "../data/automations";
 import { miraNativeDefaultModel } from "../data/chatSettings";
+import { scheduleChatFollowups } from "../data/chatSteering";
 import { claimMiraRun, reconcileMiraRuns, scheduleMiraRuns } from "../data/queue";
 import { dispatchMiraImprovement } from "../improvement/worker";
 import {
@@ -222,6 +223,7 @@ export async function runMiraExecutor(options: {
             const changed = inspectionChanged.promise;
             await maintenance.run(async () => {
                 await reconcileMiraControls(client);
+                if (health.ready) await scheduleChatFollowups(client);
                 if (health.ready)
                     await scheduleMiraRuns(client, new Date(), {
                         models: models.map((entry) => entry.model),

@@ -53,7 +53,7 @@ export function AutomationEditor({
                               {
                                   name: "label",
                                   label: "Account name",
-                                  placeholder: "For example, OpenClaw",
+                                  placeholder: "For example, Backup monitor",
                                   maximum: 80,
                               },
                           ]

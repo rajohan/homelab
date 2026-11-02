@@ -12,21 +12,13 @@ import { useState } from "react";
 
 import { MiraRunDetails } from "./MiraRunDetails";
 
-const tones = {
-    queued: "neutral",
-    running: "neutral",
-    completed: "positive",
-    interrupted: "neutral",
-    cancelled: "neutral",
-    failed: "danger",
-    needs_attention: "warning",
-} as const;
-
 function runSource(run: MiraRunSummary) {
     if (run.automationName) return run.automationName;
     if (run.automationId) return "Automation";
     return run.taskId ? "Task" : "Chat";
 }
+
+import { miraStatusTone } from "./statusTone";
 
 /**
  * Present agent runs with the same responsive table and scroll behavior as infrastructure jobs.
@@ -78,7 +70,7 @@ export function MiraRunTable({
                         label: "Status",
                         width: "w-36",
                         render: (run) => (
-                            <Badge tone={tones[run.state]}>
+                            <Badge tone={miraStatusTone(run.state)}>
                                 <span className="capitalize">
                                     {run.cancelRequested &&
                                     ["queued", "running"].includes(run.state)

@@ -154,6 +154,7 @@ test("computer request defaults to view and submits the displayed PC version onl
                     computerVersion: 2,
                     runId: current.id,
                     mode: "view",
+                    keepOpen: true,
                 },
             },
         });
@@ -169,6 +170,30 @@ test("computer request defaults to view and submits the displayed PC version onl
         ).not.toBeInTheDocument();
         expect(screen.queryByRole("button", { name: "Allow" })).not.toBeInTheDocument();
         expect(wire.sent).toHaveLength(1);
+    } finally {
+        f.close();
+        wire.close();
+    }
+});
+
+test("persistent sharing stays visible and stoppable after the assistant finishes", async () => {
+    const current = { ...run(), state: "completed" as const };
+    const pc = computer();
+    const shared = { ...grant(current, pc), keepOpen: true };
+    const wire = network();
+    const f = fixture(
+        current,
+        [pc],
+        [shared],
+        <ComputerAccessPanel run={current} waiting={false} onManage={() => {}} />
+    );
+    try {
+        expect(screen.getByText("View only")).toBeInTheDocument();
+        await userEvent
+            .setup()
+            .click(screen.getByRole("button", { name: "Stop access" }));
+        await waitFor(() => expect(wire.sent).toHaveLength(1));
+        expect(wire.sent[0]!.url).toContain("mira.computers.access.stop");
     } finally {
         f.close();
         wire.close();

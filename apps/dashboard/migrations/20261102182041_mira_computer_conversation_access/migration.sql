@@ -1,0 +1,2 @@
+ALTER TABLE "mira_computer_access" ADD COLUMN "keep_open" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "mira_computer_access" DROP CONSTRAINT "mira_computer_access_duration", ADD CONSTRAINT "mira_computer_access_duration" CHECK ("expires_at" > "created_at" AND ("keep_open" OR "expires_at" <= "created_at"+interval '5 minutes'));

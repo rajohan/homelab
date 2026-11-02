@@ -19,15 +19,7 @@ import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
 import { MailEditor } from "./MailEditor";
 import { MailReview } from "./MailReview";
-
-const tones = {
-    draft: "neutral",
-    queued: "neutral",
-    sending: "neutral",
-    sent: "positive",
-    needs_attention: "warning",
-    cancelled: "neutral",
-} as const;
+import { miraStatusTone } from "./statusTone";
 
 /**
  * Show local email drafts and durable delivery outcomes alongside the conversation.
@@ -108,7 +100,7 @@ export function MailLibrary({
                             title={draft.content.subject}
                             icon={Mail}
                             badge={
-                                <Badge tone={tones[draft.state]}>
+                                <Badge tone={miraStatusTone(draft.state)}>
                                     {draft.state.replaceAll("_", " ")}
                                 </Badge>
                             }

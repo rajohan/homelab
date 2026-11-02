@@ -44,7 +44,13 @@ export function MiraBrowserControl() {
                 title="Browser"
                 icon={Globe}
                 description="Use an isolated browser on the server. Choose websites and access for each run in Chat."
-                badge={control && <Badge>{control.enabled ? "Enabled" : "Paused"}</Badge>}
+                badge={
+                    control && (
+                        <Badge tone={control.enabled ? "positive" : "neutral"}>
+                            {control.enabled ? "Enabled" : "Paused"}
+                        </Badge>
+                    )
+                }
                 actions={
                     control && (
                         <Button

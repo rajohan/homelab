@@ -1,0 +1,59 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "1dcff834-13d7-4a81-9338-5537d502ee62",
+    "prevIds": ["4994db21-6b0a-4a08-8a67-51b5646408c1"],
+    "footprints": [
+        {
+            "statementType": "add_column",
+            "statementTarget": ["column", "public", "mira_computer_access", "keep_open"],
+            "writes": [
+                "s|col|public.mira_computer_access.keep_open",
+                "n|col|public.mira_computer_access.keep_open",
+                "e|col|public.mira_computer_access.keep_open"
+            ],
+            "reads": ["n|tbl|public.mira_computer_access", "n|sch|public"]
+        },
+        {
+            "statementType": "alter_check",
+            "statementTarget": ["table", "public", "mira_computer_access"],
+            "writes": ["s|ck|public.mira_computer_access.mira_computer_access_duration"],
+            "reads": [
+                "n|tbl|public.mira_computer_access",
+                "n|sch|public",
+                "n|col|public.mira_computer_access.expires_at",
+                "n|col|public.mira_computer_access.created_at",
+                "n|col|public.mira_computer_access.keep_open",
+                "e|col|public.mira_computer_access.expires_at",
+                "e|col|public.mira_computer_access.created_at"
+            ],
+            "sqlHash": "bab0cecab0ac7054"
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_computer_access",
+                "name": "keep_open",
+                "type": "boolean",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "false",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "alter",
+            "key": "checks\u0000[\"public\",\"mira_computer_access\",\"mira_computer_access_duration\"]",
+            "set": {
+                "value": "\"expires_at\" > \"created_at\" AND (\"keep_open\" OR \"expires_at\" <= \"created_at\"+interval '5 minutes')"
+            }
+        }
+    ]
+}

@@ -167,6 +167,30 @@ test("local host retains immutable view/control scope and shares cleanup with th
     }
 });
 
+test("a driver can be replaced only after confirmed cleanup and with the same local target", async () => {
+    const f = fixture();
+    const closed = deferred<void>();
+    f.port.close = () => closed.promise;
+    try {
+        await f.host.select(f.request, f.stopped.signal);
+        const first = await f.host.open(f.target, f.stopped.signal);
+        const closing = first.close();
+        await rejects(f.host.open(f.target, f.stopped.signal), /already opened/);
+        closed.resolve();
+        await closing;
+        const next = await f.host.open(f.target, f.stopped.signal);
+        expect(f.events.filter((event) => event === "open")).toHaveLength(2);
+        await next.close();
+        await rejects(
+            f.host.open({ ...f.target, windowId: "different" }, f.stopped.signal)
+        );
+        expect(f.events.filter((event) => event === "open")).toHaveLength(2);
+    } finally {
+        closed.resolve();
+        await f.host.close();
+    }
+});
+
 test("refusal and changed local scope never open a driver", async () => {
     for (const outcome of ["refusal", "scope", "stopped"]) {
         const f = fixture("view");

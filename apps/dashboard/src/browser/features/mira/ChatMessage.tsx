@@ -2,6 +2,7 @@ import type { MiraMessage } from "@homelab/contracts/mira";
 import { Badge, Markdown, formatDateTime } from "@homelab/ui";
 
 import { MessageAttachments } from "./MessageAttachments";
+import { miraStatusTone } from "./statusTone";
 
 /**
  * Show a persisted message, including partial text and its actual terminal state.
@@ -30,7 +31,7 @@ export function ChatMessage({ message }: { readonly message: MiraMessage }) {
                         {formatDateTime(message.createdAt)}
                     </time>
                     {message.state !== "completed" && (
-                        <Badge>
+                        <Badge tone={miraStatusTone(message.state)}>
                             {message.state === "streaming"
                                 ? "Replying"
                                 : message.state.replaceAll("_", " ")}
