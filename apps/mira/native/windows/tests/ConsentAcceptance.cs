@@ -172,7 +172,6 @@ internal static class ConsentAcceptance
     {
         stage = reason;
         using (var fixture = new Child(fixturePath))
-        using (var host = new Child(hostPath))
         {
             fixture.Send(new { id = 1, method = "state", @params = new { } });
             var target = Object(fixture.Read(), "result");
@@ -180,28 +179,34 @@ internal static class ConsentAcceptance
             detail = "fixture native eligibility";
             var identity = NativeWindows.Identity(new IntPtr(Int64.Parse((string)target["windowId"], CultureInfo.InvariantCulture)));
             Require(identity.ProcessId == fixture.Process.Id);
-            Initialize(host);
-            var window = Approve(host, target);
-            var transition = Stopwatch.StartNew();
-            detail = "transition dispatch";
-            if (reason == "local-stop")
-                ((InvokePattern)Find(window, ControlType.Button, "Stop access").GetCurrentPattern(InvokePattern.Pattern)).Invoke();
-            else if (reason == "parent-loss") host.Process.StandardInput.Close();
-            else if (reason == "target-exit") { fixture.Process.StandardInput.Close(); fixture.Exited(); }
-            else
+            // The product waits only five seconds for initialization. Finish
+            // cold fixture startup before creating that time-bounded host.
+            using (var host = new Child(hostPath))
             {
-                NativeWindows.ReadyDesktop();
-                Require(LockWorkStation());
-                // Success from LockWorkStation only initiates the transition. Require
-                // independent desktop refusal and the actual host's terminal receipt.
-                Wait(delegate
+                detail = "host initialization";
+                Initialize(host);
+                var window = Approve(host, target);
+                var transition = Stopwatch.StartNew();
+                detail = "transition dispatch";
+                if (reason == "local-stop")
+                    ((InvokePattern)Find(window, ControlType.Button, "Stop access").GetCurrentPattern(InvokePattern.Pattern)).Invoke();
+                else if (reason == "parent-loss") host.Process.StandardInput.Close();
+                else if (reason == "target-exit") { fixture.Process.StandardInput.Close(); fixture.Exited(); }
+                else
                 {
-                    try { NativeWindows.ReadyDesktop(); return false; }
-                    catch (InvalidOperationException) { return true; }
-                });
+                    NativeWindows.ReadyDesktop();
+                    Require(LockWorkStation());
+                    // Success from LockWorkStation only initiates the transition. Require
+                    // independent desktop refusal and the actual host's terminal receipt.
+                    Wait(delegate
+                    {
+                        try { NativeWindows.ReadyDesktop(); return false; }
+                        catch (InvalidOperationException) { return true; }
+                    });
+                }
+                Stopped(host);
+                Require(transition.ElapsedMilliseconds < 4500); // Do not pass via the five-second parent watchdog.
             }
-            Stopped(host);
-            Require(transition.ElapsedMilliseconds < 4500); // Do not pass via the five-second parent watchdog.
         }
     }
     [MTAThread]
