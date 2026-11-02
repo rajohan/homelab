@@ -122,6 +122,27 @@ The compiled presence executable was run on Windows x64 with `--version` and `--
 
 ## Computer access protocol
 
+Chat settings include optional **Live computer assistance**, off by default.
+Choose up to 30 minutes, one hour or two hours before sending a request. The
+executor continues after completed replies, waiting at least fifteen seconds
+between observation turns. Each new reply has its own timestamped bubble, and
+messages sent during the session steer the active turn or its next continuation.
+Both native and Synthetic models must support images; accepted operator guidance
+is preserved when Synthetic starts a fresh provider turn.
+
+This is periodic assistance, not a continuous video stream. It uses the selected
+model throughout and ends when its duration expires, the model finishes the task,
+Stop is pressed or computer access becomes unavailable. It never grants or renews
+computer access: choose retained conversation access separately for sessions longer
+than the five-minute job grant. Task-linked chats and automations retain their
+normal completion rules. Long assistance sessions use general executor lanes,
+leaving the foreground lane available for ordinary user requests.
+
+Attachments arriving during assistance wait for a new turn. Unverified tool outcomes
+prevent further continuations and remain visible for review; interrupted work is
+not automatically replayed. Reply text, queued guidance and command counts remain
+bounded, including a rolling thirty-two-command limit per minute during assistance.
+
 The server stores separate consent for one paired computer, either for the
 current job or retained across manual replies in the same conversation.
 `mira.computers.access.request` requires fresh human MFA and

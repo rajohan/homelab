@@ -1,11 +1,17 @@
 import type { MiraActivity, MiraMessagePart } from "@homelab/contracts/mira";
 import type { SQL } from "bun";
+import * as v from "valibot";
 
 import { runtimeEnvironment } from "../config/environment";
 import { miraRunPermission } from "../data/approvalPolicy";
 import { resolveMiraChatSettings } from "../data/chatSettings";
 import { claimChatSteering, acknowledgeChatSteering } from "../data/chatSteering";
+import { readMiraComputerReadiness } from "../data/computerWait";
 import { MiraFailure } from "../data/context";
+import {
+    liveAssistanceMinutes,
+    readLiveAssistanceGuidance,
+} from "../data/liveAssistance";
 import {
     finishMiraRun,
     renewMiraRun,
@@ -37,6 +43,7 @@ import { createMiraToolRouter } from "../runtime/toolRouter";
 import type { LocalCodeBinding } from "../sandbox/localBinding";
 import { prepareMiraAttachments } from "./attachments";
 import { readMiraTurnInput } from "./context";
+import { waitForLiveAssistance } from "./liveAssistance";
 import { createMiraTools } from "./tools";
 
 export { miraInstructionsHash } from "../persona/instructions";
@@ -83,6 +90,9 @@ export async function executeMiraTurn(
     let providerThread: string | undefined;
     let providerTurn: string | undefined;
     let steeringFailed = false;
+    let assistance = false;
+    let assistanceIdle = false;
+    let assistanceFinished = false;
     const transport = new AbortController();
     let stopTransportTimer: ReturnType<typeof setTimeout> | undefined;
     const stopTransport = () => {
@@ -213,6 +223,12 @@ export async function executeMiraTurn(
                 : await loadSyntheticModels(synthetic!, signal);
         const settings = resolveMiraChatSettings(models, record.settings, automaticModel);
         const selectedModel = models.find((entry) => entry.model === settings.model)!;
+        assistance = liveAssistanceMinutes(record.settings, run) > 0;
+        if (assistance && !selectedModel.inputModalities.includes("image"))
+            throw new MiraFailure(
+                "BAD_REQUEST",
+                "Live computer assistance needs a model that supports images."
+            );
         const recall = await readMiraRecallPolicy(client, run);
         const recallHash =
             recall.memory && recall.history
@@ -277,17 +293,41 @@ export async function executeMiraTurn(
             );
         }
         const tools = createMiraToolRouter(
-            createMiraTools(
-                client,
-                run,
-                filesDirectory,
-                agentMail,
-                moltbook,
-                hereNow,
-                daytona,
-                github,
-                localCode
-            ).filter(
+            [
+                ...createMiraTools(
+                    client,
+                    run,
+                    filesDirectory,
+                    agentMail,
+                    moltbook,
+                    hereNow,
+                    daytona,
+                    github,
+                    localCode
+                ),
+                ...(assistance
+                    ? [
+                          {
+                              name: "mira_live_assistance_finish",
+                              description:
+                                  "End this live computer assistance after your current reply when the operator asks you to stop or their coaching task has ended. This only stops continued work; it does not change local computer consent.",
+                              inputSchema: {
+                                  type: "object",
+                                  properties: {},
+                                  additionalProperties: false,
+                              },
+                              execute: (input: unknown, signal: AbortSignal) => {
+                                  signal.throwIfAborted();
+                                  v.parse(v.strictObject({}), input);
+                                  assistanceFinished = true;
+                                  return Promise.resolve(
+                                      "Live assistance will finish after this reply."
+                                  );
+                              },
+                          },
+                      ]
+                    : []),
+            ].filter(
                 (tool) =>
                     (recall.memory || !tool.name.startsWith("mira_memory_")) &&
                     (recall.history || tool.name !== "mira_history_search") &&
@@ -361,57 +401,134 @@ export async function executeMiraTurn(
         if (!recorded[0]) throw new Error("Run lease lost.");
         providerThread = threadId;
         const recallContext = await readMiraRecallContext(client, run);
-        const result = await runtime.turn(
-            threadId,
-            `${recallContext}\n\n${record.content}`,
-            {
-                signal,
-                settings,
-                attachments: attachments.inputs,
-                timeoutMs: Math.max(1, deadlineAt - Date.now()),
-                onStarted: async (turnId) => {
-                    await client.begin(async (query) => {
-                        const accepted = await query<
-                            { id: string }[]
-                        >`UPDATE mira_runs SET provider_turn=${turnId} WHERE id=${run.id} AND state='running' AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp() RETURNING id`;
-                        if (!accepted[0])
-                            throw new Error(
-                                "Run lease lost before turn acknowledgement."
-                            );
-                        if (!useSynthetic)
-                            await query`UPDATE mira_conversations SET provider_context_ready=true WHERE id=${run.conversationId} AND provider_thread=${threadId}`;
-                    });
-                    providerTurn = turnId;
-                },
-                onActivity: (next) => {
-                    activity = next;
-                },
-                onDelta: (delta, itemId) => {
-                    if (parts.length === 0 || (itemId && itemId !== messageId)) {
-                        if (parts.length >= 256)
-                            throw new Error("Mira reply limit reached.");
-                        parts.push({
-                            id: Bun.randomUUIDv7(),
-                            offset:
-                                // oxlint-disable-next-line typescript/no-misused-spread -- Match PostgreSQL Unicode code point offsets.
-                                [...text].length +
-                                (text && delta.startsWith("\n\n") ? 2 : 0),
-                            createdAt: new Date().toISOString(),
-                        });
-                        messageId = itemId;
-                    }
-                    text += delta;
-                },
+        const initialPrompt = `${recallContext}\n\n${record.content}`;
+        const assistanceInstruction =
+            "Live computer assistance is enabled by the operator. Inspect fresh screen observations and help with their current request. The host will continue after your replies while access remains active. Give concise advice when useful; do not repeat unchanged advice or invent unseen screen activity. Use mira_live_assistance_finish when the operator asks you to stop or the task ends. All existing permissions still apply.";
+        let nextPrompt =
+            initialPrompt + (assistance ? `\n\n${assistanceInstruction}` : "");
+        let continuation = false;
+        let result: Awaited<ReturnType<CodexRuntime["turn"]>>;
+        for (;;) {
+            if (continuation && runtime instanceof SyntheticRuntime) {
+                // Synthetic clears its ephemeral registry after every reply.
+                threadId = await runtime.startThread(
+                    settings.model,
+                    config.workspace,
+                    tools,
+                    turnInstructions
+                );
+                providerThread = threadId;
             }
-        );
+            const guidance = continuation ? await claimChatSteering(client, run) : null;
+            let firstDelta = true;
+            assistanceIdle = false;
+            result = await runtime.turn(
+                threadId,
+                nextPrompt +
+                    (guidance ? `\n\nNew operator message:\n${guidance.content}` : ""),
+                {
+                    signal,
+                    settings,
+                    attachments: attachments.inputs,
+                    timeoutMs: Math.max(1, deadlineAt - Date.now()),
+                    onStarted: async (turnId) => {
+                        await client.begin(async (query) => {
+                            const accepted = await query<
+                                { id: string }[]
+                            >`UPDATE mira_runs SET provider_turn=${turnId} WHERE id=${run.id} AND state='running' AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp() RETURNING id`;
+                            if (!accepted[0])
+                                throw new Error(
+                                    "Run lease lost before turn acknowledgement."
+                                );
+                            if (!useSynthetic)
+                                await query`UPDATE mira_conversations SET provider_context_ready=true WHERE id=${run.conversationId} AND provider_thread=${threadId}`;
+                        });
+                        if (
+                            guidance &&
+                            !(await acknowledgeChatSteering(
+                                client,
+                                run,
+                                guidance.id,
+                                true
+                            ))
+                        )
+                            throw new Error(
+                                "Guidance acknowledgement lost its run lease."
+                            );
+                        providerTurn = turnId;
+                    },
+                    onActivity: (next) => {
+                        activity = next;
+                    },
+                    onDelta: (delta, itemId) => {
+                        if (assistance && text.length + delta.length > 512 * 1024)
+                            throw new MiraFailure(
+                                "PRECONDITION_FAILED",
+                                "Live assistance reached its reply limit. Review the conversation before continuing."
+                            );
+                        if (firstDelta && continuation && text) text += "\n\n";
+                        if (
+                            firstDelta ||
+                            parts.length === 0 ||
+                            (itemId && itemId !== messageId)
+                        ) {
+                            if (parts.length >= (assistance ? 1024 : 256))
+                                throw new Error("Mira reply limit reached.");
+                            parts.push({
+                                id: Bun.randomUUIDv7(),
+                                offset:
+                                    // oxlint-disable-next-line typescript/no-misused-spread -- Match PostgreSQL Unicode code point offsets.
+                                    [...text].length +
+                                    (text && delta.startsWith("\n\n") ? 2 : 0),
+                                createdAt: new Date().toISOString(),
+                            });
+                            messageId = itemId;
+                        }
+                        text += delta;
+                        firstDelta = false;
+                    },
+                }
+            );
+            providerTurn = undefined;
+            await renewal;
+            if (steeringFailed)
+                throw new Error("Message delivery could not be confirmed.");
+            if (!assistance || assistanceFinished || result.status !== "completed") break;
+            assistanceIdle = true;
+            activity = { phase: "working", tool: null };
+            const pending = await readLiveAssistanceGuidance(client, run);
+            if (pending.yieldForAttachments || pending.uncertain) break;
+            const access = () =>
+                readMiraComputerReadiness({
+                    client,
+                    owner: run.owner,
+                    actor: `mira:${run.id}`,
+                    run: { id: run.id, leaseToken: run.leaseToken },
+                });
+            if (!(await waitForLiveAssistance(access, signal, deadlineAt))) break;
+            const updates = await readLiveAssistanceGuidance(client, run);
+            if (updates.yieldForAttachments || updates.uncertain) break;
+            const reminder =
+                "Continue the operator's live computer assistance using a fresh observation. Preserve prior instructions and completed work. Give a new concise reply only when useful. Stop with mira_live_assistance_finish if the operator requested it or the task has ended.";
+            nextPrompt = useSynthetic
+                ? `${initialPrompt}\n\nAccepted operator guidance for this session:\n${JSON.stringify(updates.guidance)}\n\nRecent replies (historical context):\n${text.slice(-16_000)}\n\n${reminder}`
+                : reminder;
+            continuation = true;
+        }
         clearInterval(interval);
         await renewal;
         if (steeringFailed) throw new Error("Message delivery could not be confirmed.");
         clearInterval(flush);
         await update;
+        if (assistanceIdle) {
+            const [current] = await client<
+                { cancelled: boolean }[]
+            >`SELECT cancel_requested AS cancelled FROM mira_runs WHERE id=${run.id} AND owner=${run.owner} AND lease_token=${run.leaseToken}`;
+            if (current?.cancelled) result = { ...result, status: "interrupted" };
+        }
         await finishMiraRun(client, run, {
             state: result.status,
-            text: result.text,
+            text: assistance ? text : result.text,
             parts,
             message:
                 result.status === "failed"
@@ -428,11 +545,19 @@ export async function executeMiraTurn(
             message =
                 "Maximum run time exceeded during preparation or execution. Review this run before continuing.";
         else if (error instanceof MiraFailure) message = error.message;
+        let state: "completed" | "interrupted" | "needs_attention" = "needs_attention";
+        if (assistanceIdle) {
+            const [current] = await client<
+                { cancelled: boolean }[]
+            >`SELECT cancel_requested AS cancelled FROM mira_runs WHERE id=${run.id} AND owner=${run.owner} AND lease_token=${run.leaseToken}`;
+            if (current?.cancelled) state = "interrupted";
+            else if (deadline.signal.aborted || stopping.aborted) state = "completed";
+        }
         await finishMiraRun(client, run, {
-            state: "needs_attention",
+            state,
             text,
             parts,
-            message,
+            message: state === "needs_attention" ? message : null,
         });
     } finally {
         clearTimeout(timer);

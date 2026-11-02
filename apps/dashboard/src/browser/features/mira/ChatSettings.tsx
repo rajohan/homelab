@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
+import { AssistanceSettings } from "./AssistanceSettings";
 import type { ChatDisplaySettings } from "./chatDisplay";
 import { ModelSettings } from "./ModelSettings";
 import { PermissionSettings } from "./PermissionSettings";
@@ -77,6 +78,11 @@ export function ChatSettings({
                     disabled={save.isPending}
                 />
                 <RecallSettings
+                    settings={draft}
+                    onChange={setDraft}
+                    disabled={save.isPending}
+                />
+                <AssistanceSettings
                     settings={draft}
                     onChange={setDraft}
                     disabled={save.isPending}

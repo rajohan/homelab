@@ -1,3 +1,4 @@
+import type { MiraChatSettings } from "@homelab/contracts/mira";
 import {
     miraComputerCommandLimit,
     miraComputerCommandBindingSchema,
@@ -17,6 +18,7 @@ import {
     requireComputerDevice,
 } from "./computerAuthority";
 import { MiraFailure, type MiraContext } from "./context";
+import { liveAssistanceMinutes } from "./liveAssistance";
 
 const idSchema = v.pipe(v.string(), v.uuid());
 const completionSchema = v.strictObject({
@@ -44,8 +46,10 @@ async function liveRun(query: TransactionSQL, context: MiraContext) {
             conversationId: string;
             manual: boolean;
             automationId: string | null;
+            taskId: string | null;
+            settings: MiraChatSettings;
         }[]
-    >`SELECT id,conversation_id AS "conversationId",manual,automation_id AS "automationId" FROM mira_runs WHERE id=${context.run.id} AND owner=${context.owner}
+    >`SELECT id,conversation_id AS "conversationId",manual,automation_id AS "automationId",task_id AS "taskId",settings FROM mira_runs WHERE id=${context.run.id} AND owner=${context.owner}
         AND state='running' AND NOT cancel_requested AND lease_token=${context.run.leaseToken}
         AND lease_expires_at>clock_timestamp() AND started_at+budget_seconds*interval '1 second'>clock_timestamp() FOR SHARE`;
     if (!run)
@@ -228,6 +232,7 @@ export async function enqueueMiraComputerCommand(
                 busy: boolean;
                 attempted: boolean;
                 recent: number;
+                lastMinute: number;
                 accessTotal: number;
             }[]
         >`SELECT
@@ -236,14 +241,17 @@ export async function enqueueMiraComputerCommand(
             EXISTS(SELECT 1 FROM mira_computer_commands WHERE access_id=${access.id} AND state IN ('queued','claimed','completed')) AS busy,
             EXISTS(SELECT 1 FROM mira_computer_commands WHERE id=${receiptId}) AS attempted,
             (SELECT count(*)::int FROM mira_computer_commands WHERE access_id=${access.id} AND run_id=${context.run!.id}) AS recent,
+            (SELECT count(*)::int FROM mira_computer_commands WHERE access_id=${access.id} AND created_at>clock_timestamp()-interval '1 minute') AS "lastMinute",
             (SELECT count(*)::int FROM mira_computer_commands WHERE access_id=${access.id}) AS "accessTotal"`;
+        const continuedAssistance = liveAssistanceMinutes(run.settings, run) > 0;
         if (
             !limits ||
             limits.total >= 32 ||
             limits.owned >= 8 ||
             limits.busy ||
             limits.attempted ||
-            limits.recent >= 32 ||
+            limits.recent >= (continuedAssistance ? miraComputerCommandLimit : 32) ||
+            (continuedAssistance && limits.lastMinute >= 32) ||
             limits.accessTotal >= miraComputerCommandLimit
         )
             return null;

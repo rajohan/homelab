@@ -146,6 +146,7 @@ export const miraPermissionModeSchema = v.picklist([
     "full_access",
 ]);
 export type MiraPermissionMode = v.InferOutput<typeof miraPermissionModeSchema>;
+export const miraLiveAssistanceMinutesSchema = v.picklist([0, 30, 60, 120]);
 export const miraChatSettingsSchema = v.strictObject({
     model: v.nullable(modelIdentifier),
     effort: v.nullable(modelIdentifier),
@@ -154,6 +155,7 @@ export const miraChatSettingsSchema = v.strictObject({
     useHistory: v.optional(v.boolean()),
     executionTarget: v.optional(miraCodeTargetSchema),
     permissionMode: v.optional(miraPermissionModeSchema),
+    liveAssistanceMinutes: v.optional(miraLiveAssistanceMinutesSchema),
 });
 export const miraDefaultChatSettings = { model: null, effort: null, serviceTier: null };
 export type MiraChatSettings = v.InferOutput<typeof miraChatSettingsSchema>;

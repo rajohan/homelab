@@ -690,6 +690,29 @@ test("per-access, account and global admission limits bound durable payload stor
     }
 }, 30_000);
 
+test("live assistance can observe beyond 32 commands while keeping its per-minute limit", async () => {
+    const f = await session(await operationFixture());
+    try {
+        await f.client`UPDATE mira_runs SET settings=jsonb_set(settings,'{liveAssistanceMinutes}','60') WHERE id=${f.run.id}`;
+        for (let index = 0; index < 32; index++) {
+            const queued = await f.enqueue();
+            await f.claim();
+            await f.finish(queued.id, image());
+            await takeMiraComputerCommand(f.worker, queued.id);
+        }
+        await rejects(f.enqueue(), /limit/);
+        await f.client`UPDATE mira_computer_commands SET created_at=created_at-interval '2 minutes',expires_at=expires_at-interval '2 minutes',claimed_at=claimed_at-interval '2 minutes',finished_at=finished_at-interval '2 minutes' WHERE access_id=${f.binding.accessId}`;
+        const continued = await f.enqueue();
+        await f.claim();
+        await f.finish(continued.id, image());
+        await takeMiraComputerCommand(f.worker, continued.id);
+        await f.client`UPDATE mira_runs SET settings=jsonb_set(settings,'{liveAssistanceMinutes}','0') WHERE id=${f.run.id}`;
+        await rejects(f.enqueue(), /limit/);
+    } finally {
+        await f.close();
+    }
+});
+
 test("run cancellation committed during dispatch or completion wins before content leaves the transaction", async () => {
     for (const phase of ["claim", "finish"]) {
         const f = await session(await operationFixture());
