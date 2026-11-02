@@ -48,6 +48,7 @@ export const miraComputerAccessRequestSchema = v.strictObject({
     computerVersion: v.pipe(v.number(), v.integer(), v.minValue(1)),
     runId: id,
     mode: v.picklist(["view", "control"]),
+    scope: v.optional(v.picklist(["window", "desktop"]), "window"),
     keepOpen: v.optional(v.boolean(), false),
 });
 export const miraComputerAccessConnectionSchema = v.strictObject({ connectionId: id });
@@ -63,6 +64,8 @@ export interface MiraComputerAccessSummary {
     computerId: string;
     runId: string;
     mode: "view" | "control";
+    /** Omitted by older companions, which support one selected window only. */
+    scope?: "window" | "desktop";
     state: "pending" | "active" | "stopped" | "expired" | "unavailable";
     expiresAt: string;
     /** Local approval remains valid for this conversation between manual runs. */

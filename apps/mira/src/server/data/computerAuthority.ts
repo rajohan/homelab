@@ -11,6 +11,7 @@ export interface AccessRow {
     conversationId: string;
     keepOpen: boolean;
     mode: "view" | "control";
+    scope: "window" | "desktop";
     state: "pending" | "active" | "stopped";
     connectionId: string;
     targetId: string | null;
@@ -45,7 +46,7 @@ export async function readComputerAccess(
     id: string
 ): Promise<AccessRow | undefined> {
     const [row] = await query<AccessRow[]>`
-        SELECT g.id,g.owner,g.computer_id AS "computerId",g.run_id AS "runId",r.conversation_id AS "conversationId",g.keep_open AS "keepOpen",g.mode,g.state,
+        SELECT g.id,g.owner,g.computer_id AS "computerId",g.run_id AS "runId",r.conversation_id AS "conversationId",g.keep_open AS "keepOpen",g.mode,g.scope,g.state,
             g.connection_id AS "connectionId",g.target_id AS "targetId",g.run_lease AS "runLease",g.expires_at AS "expiresAt",
             least(g.expires_at,g.created_at+interval '1 minute') AS "consentExpiresAt",
             g.expires_at<=clock_timestamp() AS expired,

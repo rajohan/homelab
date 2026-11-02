@@ -14,6 +14,7 @@ namespace Homelab.Mira.Computer
         internal string Origin;
         internal string Mode;
         internal bool KeepOpen;
+        internal string Scope;
         internal DateTime ConsentExpiresAt;
         internal DateTime ExpiresAt;
 
@@ -23,12 +24,20 @@ namespace Homelab.Mira.Computer
         }
         internal static ConsentRequest Parse(Dictionary<string, object> value)
         {
+            var keys = new List<string> { "id", "runId", "origin", "mode", "consentExpiresAt", "expiresAt" };
             bool keepOpen = false;
             if (value.ContainsKey("keepOpen")) {
-                ConsentProtocol.Keys(value, "id", "runId", "origin", "mode", "consentExpiresAt", "expiresAt", "keepOpen");
+                keys.Add("keepOpen");
                 if (!(value["keepOpen"] is bool)) throw new InvalidDataException("Invalid consent lifetime.");
                 keepOpen = (bool)value["keepOpen"];
-            } else ConsentProtocol.Keys(value, "id", "runId", "origin", "mode", "consentExpiresAt", "expiresAt");
+            }
+            string scope = "window";
+            if (value.ContainsKey("scope")) {
+                keys.Add("scope");
+                scope = ConsentProtocol.Text(value, "scope", 7);
+                if (scope != "window" && scope != "desktop") throw new InvalidDataException("Invalid target scope.");
+            }
+            ConsentProtocol.Keys(value, keys.ToArray());
             string id = ConsentProtocol.Text(value, "id", 36);
             string run = ConsentProtocol.Text(value, "runId", 36);
             Guid parsed;
@@ -49,7 +58,7 @@ namespace Homelab.Mira.Computer
             DateTime now = DateTime.UtcNow;
             if (consent <= now || consent > expires || consent > now.AddMinutes(1) || (!keepOpen && expires > now.AddMinutes(5)))
                 throw new InvalidDataException("Consent expired or exceeded its deadline.");
-            return new ConsentRequest { Id = id, RunId = run, Origin = origin, Mode = mode, ConsentExpiresAt = consent, ExpiresAt = expires, KeepOpen = keepOpen };
+            return new ConsentRequest { Id = id, RunId = run, Origin = origin, Mode = mode, ConsentExpiresAt = consent, ExpiresAt = expires, KeepOpen = keepOpen, Scope = scope };
         }
 
         private static DateTime Timestamp(string value)

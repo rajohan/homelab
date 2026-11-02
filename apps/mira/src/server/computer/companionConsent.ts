@@ -1,7 +1,7 @@
 import type { MiraComputerConsentRequest } from "@homelab/contracts/miraComputers";
 
 import type { ComputerCompanion } from "./companion";
-import { computerWindowGrant, type ComputerWindowGrant } from "./policy";
+import { computerGrant, type ComputerGrant } from "./policy";
 import { ComputerWindowSession, type ComputerWindowPort } from "./session";
 
 export interface ComputerConsentHost {
@@ -16,17 +16,14 @@ export interface ComputerConsentHost {
     select(
         request: Readonly<MiraComputerConsentRequest>,
         signal: AbortSignal
-    ): Promise<ComputerWindowGrant | null>;
+    ): Promise<ComputerGrant | null>;
     /**
      * Verify the interactive desktop and the same executable/process/window are still ready.
      * @param target - Locally selected identity; reused without rediscovery or fallback.
      * @param signal - Local retirement, including the short server-permit deadline.
      * @returns Completion only for the unlocked, connected, authorized desktop and exact target.
      */
-    assertReady(
-        target: Readonly<ComputerWindowGrant>,
-        signal: AbortSignal
-    ): Promise<void>;
+    assertReady(target: Readonly<ComputerGrant>, signal: AbortSignal): Promise<void>;
     /**
      * Open the supervised native child after consent and a fresh server gate.
      * @param target - Frozen local selection with an explicit view/control ceiling.
@@ -34,7 +31,7 @@ export interface ComputerConsentHost {
      * @returns Exclusive process-owned driver; cleanup must wait for actual process exit.
      */
     open(
-        target: Readonly<ComputerWindowGrant>,
+        target: Readonly<ComputerGrant>,
         signal: AbortSignal
     ): Promise<ComputerWindowPort>;
     /**
@@ -65,7 +62,7 @@ export class ComputerConsentController {
     private readonly now: () => number;
     private readonly stopListener: () => void;
     private request?: MiraComputerConsentRequest;
-    private target?: Readonly<ComputerWindowGrant>;
+    private target?: Readonly<ComputerGrant>;
     private targetId?: string;
     private session: ComputerWindowSession | undefined;
     private sessionStarted = 0;
@@ -142,8 +139,10 @@ export class ComputerConsentController {
             }
             this.assertLive();
             this.target = Object.freeze(
-                computerWindowGrant({ ...selected, mode: request.mode })
+                computerGrant({ ...selected, mode: request.mode })
             );
+            if ((this.target.scope ?? "window") !== (request.scope ?? "window"))
+                throw new Error("Local consent scope changed.");
             this.targetId = crypto.randomUUID();
             await this.options.host.assertReady(this.target, this.abort.signal);
             this.assertLive();
@@ -162,6 +161,7 @@ export class ComputerConsentController {
                 receipt.computerId !== request.computerId ||
                 receipt.runId !== request.runId ||
                 receipt.mode !== request.mode ||
+                (receipt.scope ?? "window") !== (request.scope ?? "window") ||
                 receipt.state !== "active" ||
                 receipt.expiresAt !== request.expiresAt ||
                 Boolean(receipt.keepOpen) !== Boolean(request.keepOpen)

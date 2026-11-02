@@ -4,6 +4,7 @@ import { MiraFailure, type MiraContext } from "./context";
 export interface MiraComputerReadiness {
     state: "waiting" | "pending" | "ready" | "stopped" | "offline" | "unavailable";
     mode?: "view" | "control";
+    scope?: "window" | "desktop";
 }
 
 /**
@@ -35,7 +36,11 @@ export async function readMiraComputerReadiness(
         const access = await readComputerAccess(context.client, context.owner, last.id);
         if (!access?.available || access.state === "stopped") return { state: "stopped" };
         return access.state === "active"
-            ? { state: "ready", mode: access.mode }
+            ? {
+                  state: "ready",
+                  mode: access.mode,
+                  ...(access.scope === "desktop" ? { scope: access.scope } : {}),
+              }
             : { state: "pending" };
     }
     const [online] = await context.client<

@@ -8,7 +8,7 @@ import * as v from "valibot";
 
 import { RpcProcess, type RpcProcessOptions } from "../runtime/rpcProcess";
 import { runtimeContentItems, type RuntimeToolResult } from "../runtime/toolResult";
-import { computerDriverVersion, computerWindowGrant } from "./policy";
+import { computerDriverVersion, computerGrant } from "./policy";
 import type { ComputerWindowPort } from "./session";
 
 export interface ComputerProcessOptions {
@@ -149,7 +149,7 @@ async function openWorker(
         "command" | "args" | "stopViaStdin" | "requireCleanExit"
     >
 ): Promise<ComputerWindowPort> {
-    const grant = computerWindowGrant(grantInput);
+    const grant = computerGrant(grantInput);
     const timeout = options.requestTimeoutMs ?? 10_000;
     if (!Number.isInteger(timeout) || timeout < 1 || timeout > 10_000)
         throw new Error(

@@ -30,6 +30,8 @@ namespace Homelab.Mira.Computer
     {
         private readonly ConsentRequest request;
         private readonly NativeWindows.DesktopState desktop;
+        private readonly Rectangle primaryBounds;
+        private bool WholeDesktop { get { return request.Scope == "desktop"; } }
         private readonly Stopwatch clock = Stopwatch.StartNew();
         private readonly double consentDeadline;
         private readonly double sessionDeadline;
@@ -65,6 +67,7 @@ namespace Homelab.Mira.Computer
         {
             request = input;
             desktop = NativeWindows.ReadyDesktop();
+            primaryBounds = Screen.PrimaryScreen.Bounds;
             consentDeadline = Math.Max(0, (input.ConsentExpiresAt - DateTime.UtcNow).TotalMilliseconds);
             sessionDeadline = Math.Max(0, (input.ExpiresAt - DateTime.UtcNow).TotalMilliseconds);
             destroyedCallback = delegate(IntPtr hook, uint eventId, IntPtr window, int objectId, int childId, uint thread, uint time)
@@ -79,8 +82,8 @@ namespace Homelab.Mira.Computer
                 if (retire) Retire();
                 else UpdateAllow();
             };
-            destroyedHook = SetWinEventHook(0x8001, 0x8001, IntPtr.Zero, destroyedCallback, 0, 0, 2);
-            if (destroyedHook == IntPtr.Zero) throw new InvalidOperationException("Window lifetime monitoring is unavailable.");
+            destroyedHook = WholeDesktop ? IntPtr.Zero : SetWinEventHook(0x8001, 0x8001, IntPtr.Zero, destroyedCallback, 0, 0, 2);
+            if (!WholeDesktop && destroyedHook == IntPtr.Zero) throw new InvalidOperationException("Window lifetime monitoring is unavailable.");
             Text = "Mira · Computer access";
             Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
             Font = new Font("Segoe UI", 10);
@@ -99,12 +102,14 @@ namespace Homelab.Mira.Computer
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             heading.AutoSize = true;
-            heading.Text = input.Mode == "view" ? "Allow Mira to view one window" : "Allow Mira to control one window";
+            heading.Text = "Allow Mira to " + (input.Mode == "view" ? "view " : "control ") + (WholeDesktop ? "your desktop" : "one window");
             heading.Font = new Font(Font.FontFamily, 16, FontStyle.Bold);
             heading.Margin = new Padding(0, 0, 0, 12);
             detail.AutoSize = true; detail.MaximumSize = new Size(640, 0); detail.ForeColor = Muted;
-            detail.Text = input.Origin + "\nChoose a window to share. Its contents, including tabs, may be visible to Mira." +
-                (input.KeepOpen ? " Access stays open between replies in this conversation until you stop it, close the window, lock the PC or disconnect." : " Access ends with this run, within five minutes.");
+            detail.Text = input.Origin + (WholeDesktop
+                ? "\nEverything visible on your primary display is shared, including other apps and notifications."
+                : "\nChoose a window to share. Its contents, including tabs, may be visible to Mira.") +
+                (input.KeepOpen ? " Access stays open between replies until you stop it, lock the PC or disconnect." : " Access ends with this run, within five minutes.");
             detail.Margin = new Padding(0, 0, 0, 16);
             windows.Dock = DockStyle.Fill;
             windows.View = View.Details;
@@ -125,7 +130,7 @@ namespace Homelab.Mira.Computer
             windows.SelectedIndexChanged += delegate { UpdateAllow(); };
             foreground.AutoSize = true;
             foreground.MaximumSize = new Size(640, 0);
-            foreground.Text = "Allow Mira to bring this window forward while clicking or typing.";
+            foreground.Text = WholeDesktop ? "Allow Mira to click and type across apps on my primary display." : "Allow Mira to bring this window forward while clicking or typing.";
             foreground.Visible = input.Mode == "control";
             foreground.Margin = new Padding(0, 14, 0, 10);
             foreground.CheckedChanged += delegate { UpdateAllow(); };
@@ -151,7 +156,9 @@ namespace Homelab.Mira.Computer
             layout.Controls.Add(detail);
             var choicePanel = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0), BackColor = Raised };
             selection.Dock = DockStyle.Fill; selection.Padding = new Padding(20);
-            selection.ForeColor = TextColor; selection.Visible = false;
+            selection.ForeColor = TextColor; selection.Visible = WholeDesktop;
+            selection.Text = "Entire desktop · primary display\n\nOther displays are not shared. Move a window onto the primary display to work with it.";
+            windows.Visible = !WholeDesktop;
             choicePanel.Controls.Add(windows); choicePanel.Controls.Add(selection);
             layout.Controls.Add(choicePanel);
             layout.Controls.Add(foreground);
@@ -170,6 +177,7 @@ namespace Homelab.Mira.Computer
             monitor.Start();
             SystemEvents.SessionSwitch += SessionChanged;
             SystemEvents.PowerModeChanged += PowerChanged;
+            SystemEvents.DisplaySettingsChanged += DisplayChanged;
             watchdog = new System.Threading.Timer(delegate
             {
                 double elapsed = clock.Elapsed.TotalMilliseconds;
@@ -184,10 +192,10 @@ namespace Homelab.Mira.Computer
         {
             lock (stateLock)
             {
-                if (stopped != 0 || selected == null || clock.Elapsed.TotalMilliseconds >= sessionDeadline)
+                if (stopped != 0 || !announced || clock.Elapsed.TotalMilliseconds >= sessionDeadline)
                     throw new InvalidOperationException("Local computer access is stopped.");
                 CheckDesktop();
-                if (destroyed.Contains(selected.Handle) || !NativeWindows.SameWindow(selected, NativeWindows.Identity(selected.Handle)))
+                if (!WholeDesktop && (destroyed.Contains(selected.Handle) || !NativeWindows.SameWindow(selected, NativeWindows.Identity(selected.Handle))))
                     throw new InvalidOperationException("The selected window changed.");
                 if (stopped != 0) throw new InvalidOperationException("Local computer access is stopped.");
                 Interlocked.Exchange(ref lastCheck, (long)clock.Elapsed.TotalMilliseconds);
@@ -214,7 +222,7 @@ namespace Homelab.Mira.Computer
         private void CheckDesktop()
         {
             var current = NativeWindows.ReadyDesktop();
-            if (current.SessionId != desktop.SessionId || current.ConnectedAt != desktop.ConnectedAt)
+            if (current.SessionId != desktop.SessionId || current.ConnectedAt != desktop.ConnectedAt || (WholeDesktop && Screen.PrimaryScreen.Bounds != primaryBounds))
                 throw new InvalidOperationException("The desktop connection changed.");
         }
 
@@ -222,7 +230,7 @@ namespace Homelab.Mira.Computer
         {
             try
             {
-                foreach (var window in NativeWindows.Windows())
+                if (!WholeDesktop) foreach (var window in NativeWindows.Windows())
                 {
                     candidates.Add(window.Handle);
                     var item = new ListViewItem(window.Title);
@@ -237,10 +245,10 @@ namespace Homelab.Mira.Computer
 
         private void UpdateAllow()
         {
-            allow.Enabled = stopped == 0 && selected == null && windows.SelectedItems.Count == 1 &&
+            allow.Enabled = stopped == 0 && !announced && (WholeDesktop || windows.SelectedItems.Count == 1) &&
                 (request.Mode == "view" || foreground.Checked) &&
                 clock.Elapsed.TotalMilliseconds < consentDeadline &&
-                !destroyed.Contains(((NativeWindows.WindowIdentity)windows.SelectedItems[0].Tag).Handle);
+                (WholeDesktop || !destroyed.Contains(((NativeWindows.WindowIdentity)windows.SelectedItems[0].Tag).Handle));
         }
 
         private void ApproveSelected()
@@ -249,31 +257,35 @@ namespace Homelab.Mira.Computer
             {
                 lock (stateLock)
                 {
-                    if (!allow.Enabled || stopped != 0 || selected != null ||
-                        clock.Elapsed.TotalMilliseconds >= consentDeadline || windows.SelectedItems.Count != 1)
+                    if (!allow.Enabled || stopped != 0 || announced ||
+                        clock.Elapsed.TotalMilliseconds >= consentDeadline || (!WholeDesktop && windows.SelectedItems.Count != 1))
                         throw new InvalidOperationException("Local consent is unavailable.");
-                    var choice = (NativeWindows.WindowIdentity)windows.SelectedItems[0].Tag;
                     CheckDesktop();
-                    if (destroyed.Contains(choice.Handle) || !NativeWindows.SameWindow(choice, NativeWindows.Identity(choice.Handle)))
-                        throw new InvalidOperationException("The selected window changed.");
-                    selected = choice;
+                    object target;
+                    if (WholeDesktop) {
+                        target = new { scope = "desktop", displayId = "primary", delivery = "foreground" };
+                    } else {
+                        var choice = (NativeWindows.WindowIdentity)windows.SelectedItems[0].Tag;
+                        if (destroyed.Contains(choice.Handle) || !NativeWindows.SameWindow(choice, NativeWindows.Identity(choice.Handle)))
+                            throw new InvalidOperationException("The selected window changed.");
+                        selected = choice;
+                        target = new { executable = choice.Executable, pid = choice.ProcessId, windowId = choice.Handle.ToInt64().ToString(CultureInfo.InvariantCulture), startedAt = choice.StartedAt.ToString(CultureInfo.InvariantCulture), delivery = "foreground" };
+                    }
                     if (stopped != 0) throw new InvalidOperationException("Local consent was stopped.");
-                    ConsentProtocol.Write(new
-                    {
-                        method = "consent/selected",
-                        @params = new { target = new { executable = choice.Executable, pid = choice.ProcessId, windowId = choice.Handle.ToInt64().ToString(CultureInfo.InvariantCulture), startedAt = choice.StartedAt.ToString(CultureInfo.InvariantCulture), delivery = "foreground" } }
-                    });
+                    ConsentProtocol.Write(new { method = "consent/selected", @params = new { target = target } });
                     Interlocked.Exchange(ref lastCheck, (long)clock.Elapsed.TotalMilliseconds);
                     Volatile.Write(ref announced, true);
                 }
                 allow.Visible = false;
                 windows.Visible = false;
-                selection.Text = "Connected window\n\n" + selected.Title + "\n" + System.IO.Path.GetFileName(selected.Executable) +
-                    (request.Mode == "view" ? "\n\nMira can view this window." : "\n\nMira can view, click and type in this window.");
+                selection.Text = WholeDesktop
+                    ? "Connected desktop · primary display\n\n" + (request.Mode == "view" ? "Mira can view all visible apps." : "Mira can view, click and type across apps.")
+                    : "Connected window\n\n" + selected.Title + "\n" + System.IO.Path.GetFileName(selected.Executable) +
+                        (request.Mode == "view" ? "\n\nMira can view this window." : "\n\nMira can view, click and type in this window.");
                 selection.Visible = true; selection.BringToFront();
                 foreground.Visible = false;
                 heading.Text = "Computer access is active";
-                detail.Text = request.Origin + "\nOnly the selected window is shared. You can stop access at any time.";
+                detail.Text = request.Origin + (WholeDesktop ? "\nYour primary display is shared." : "\nOnly the selected window is shared.") + " You can stop access at any time.";
                 status.ForeColor = Color.FromArgb(110, 231, 183);
                 stop.Text = "Stop access";
                 Tick();
@@ -287,10 +299,10 @@ namespace Homelab.Mira.Computer
             {
                 if (stopped != 0) { Retire(); return; }
                 CheckDesktop();
-                double remaining = (selected == null ? consentDeadline : sessionDeadline) - clock.Elapsed.TotalMilliseconds;
+                double remaining = (!announced ? consentDeadline : sessionDeadline) - clock.Elapsed.TotalMilliseconds;
                 if (remaining <= 0) { Retire(); return; }
                 // UI refresh does not count as a parent liveness check.
-                if (selected != null && (destroyed.Contains(selected.Handle) || !NativeWindows.SameWindow(selected, NativeWindows.Identity(selected.Handle))))
+                if (!WholeDesktop && selected != null && (destroyed.Contains(selected.Handle) || !NativeWindows.SameWindow(selected, NativeWindows.Identity(selected.Handle))))
                     throw new InvalidOperationException("The selected window changed.");
                 int seconds = (int)Math.Ceiling(remaining / 1000);
                 status.Text = announced
@@ -306,6 +318,10 @@ namespace Homelab.Mira.Computer
             // Never restore authority after a lock/unlock or reconnect transition.
             Retire();
         }
+        private void DisplayChanged(object sender, EventArgs args)
+        {
+            if (WholeDesktop) Retire();
+        }
         private void PowerChanged(object sender, PowerModeChangedEventArgs args)
         {
             if (args.Mode == PowerModes.Suspend || args.Mode == PowerModes.Resume) Retire();
@@ -316,11 +332,12 @@ namespace Homelab.Mira.Computer
             {
                 monitor.Stop();
                 monitor.Dispose();
-                UnhookWinEvent(destroyedHook);
+                if (destroyedHook != IntPtr.Zero) UnhookWinEvent(destroyedHook);
                 watchdog.Dispose();
                 if (forcedExit != null) forcedExit.Dispose();
                 SystemEvents.SessionSwitch -= SessionChanged;
                 SystemEvents.PowerModeChanged -= PowerChanged;
+                SystemEvents.DisplaySettingsChanged -= DisplayChanged;
             }
             base.Dispose(disposing);
         }

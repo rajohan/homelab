@@ -35,3 +35,30 @@ test("host grants require explicit delivery, canonical-shaped identities and saf
     ])
         expect(() => computerWindowGrant({ ...grant, ...change })).toThrow();
 });
+
+test("desktop consent grants only explicit primary display observation and foreground input", async () => {
+    const { computerGrant, computerManifest } = await import("./policy");
+    const desktop = {
+        scope: "desktop",
+        displayId: "primary",
+        delivery: "foreground",
+        mode: "view",
+    };
+    expect(computerManifest(desktop)).toMatchObject({
+        allow: { tools: ["get_desktop_state"] },
+        resources: { apps: [], desktop: { display: true } },
+    });
+    expect(computerManifest({ ...desktop, mode: "control" }).allow.tools).toEqual([
+        "get_desktop_state",
+        "click",
+        "type_text",
+    ]);
+    for (const invalid of [
+        { ...desktop, displayId: "secondary" },
+        { ...desktop, delivery: "background" },
+        { ...desktop, executable: grant.executable },
+        { ...grant, scope: "desktop" },
+    ])
+        expect(() => computerGrant(invalid)).toThrow();
+    expect(() => computerWindowGrant(desktop)).toThrow();
+});

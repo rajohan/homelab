@@ -11,30 +11,29 @@ import { imageSize } from "image-size";
 import * as v from "valibot";
 
 import { runtimeContentItems, type RuntimeToolResult } from "../runtime/toolResult";
-import {
-    computerDriverVersion,
-    computerWindowGrant,
-    computerWindowManifest,
-} from "./policy";
+import { computerDriverVersion, computerGrant, computerManifest } from "./policy";
 import type { ComputerActionResult, ComputerWindowPort } from "./session";
 import { openWindowsCapture, type WindowsCapturePort } from "./windowsCapture";
 
 /**
- * Open the pinned native SDK with a fixed application ceiling and exact window adapter.
- * @param input - Host-approved canonical executable, PID/window and explicit delivery mode.
+ * Open the pinned native SDK within the locally approved window or primary desktop.
+ * @param input - Host-approved target, input mode and explicit delivery mode.
  * @param loadSdk - Native-module loader, replaceable by a synthetic driver in unit tests.
  * @param openCapture - Fixed Windows capture factory; synthetic substitution is only for tests.
  * @returns An exclusive port. The caller must close it and enforce interactive desktop readiness.
  */
-export async function openNativeComputerWindow(
+export async function openNativeComputer(
     input: unknown,
     loadSdk: () => Promise<typeof NativeSdk> = () => import("@trycua/cua-driver"),
     openCapture:
         | ((input: unknown) => Promise<WindowsCapturePort>)
         | null = process.platform === "win32" ? openWindowsCapture : null
 ): Promise<ComputerWindowPort> {
-    const grant = computerWindowGrant(input);
-    if ((await realpath(grant.executable)) !== grant.executable)
+    const grant = computerGrant(input);
+    if (
+        grant.scope !== "desktop" &&
+        (await realpath(grant.executable)) !== grant.executable
+    )
         throw new Error("Computer executable must use its canonical path.");
     const sdk = await loadSdk();
     const directory = await mkdtemp(path.join(os.tmpdir(), "homelab-computer-"));
@@ -42,7 +41,7 @@ export async function openNativeComputerWindow(
     let driver: ReturnType<typeof sdk.CuaDriver.createConfigured> | undefined;
     let capture: WindowsCapturePort | undefined;
     try {
-        await writeFile(manifest, JSON.stringify(computerWindowManifest(grant)), {
+        await writeFile(manifest, JSON.stringify(computerManifest(grant)), {
             mode: 0o600,
         });
         driver = sdk.CuaDriver.createConfigured({
@@ -60,11 +59,14 @@ export async function openNativeComputerWindow(
         const metadata = await native.metadata();
         if (metadata.driverVersion !== computerDriverVersion || !metadata.embedded)
             throw new Error("Unexpected computer driver version or execution mode.");
-        capture = await openCapture?.(grant);
-        const target = new sdk.ActionTarget.Window({
-            pid: grant.pid,
-            windowId: BigInt(grant.windowId),
-        });
+        if (grant.scope !== "desktop") capture = await openCapture?.(grant);
+        const target =
+            grant.scope === "desktop"
+                ? new sdk.ActionTarget.Desktop({ displayId: grant.displayId })
+                : new sdk.ActionTarget.Window({
+                      pid: grant.pid,
+                      windowId: BigInt(grant.windowId),
+                  });
         let elements = new Set<string>();
         let closed = false;
         let closing: Promise<void> | undefined;
@@ -76,6 +78,42 @@ export async function openNativeComputerWindow(
                 ensureOpen();
                 elements.clear();
                 signal.throwIfAborted();
+                if (grant.scope === "desktop") {
+                    const frame = await native.getDesktopState(
+                        { maxImageDimension: 0 },
+                        { signal }
+                    );
+                    signal.throwIfAborted();
+                    ensureOpen();
+                    if (frame.isError || frame.images.length !== 1)
+                        throw new Error(
+                            "Computer driver did not return the primary desktop frame."
+                        );
+                    const image = frame.images[0]!;
+                    if (image.mimeType !== "image/png" && image.mimeType !== "image/jpeg")
+                        throw new Error("Unsupported computer frame format.");
+                    const content: Exclude<RuntimeToolResult, string> = {
+                        content: [
+                            {
+                                type: "text",
+                                text: "Primary desktop. All visible windows are shared.",
+                            },
+                            {
+                                type: "image",
+                                mediaType: image.mimeType,
+                                data: image.dataBase64,
+                            },
+                        ],
+                    };
+                    runtimeContentItems(content);
+                    const dimensions = imageSize(Buffer.from(image.dataBase64, "base64"));
+                    return {
+                        snapshot: crypto.randomUUID(),
+                        width: dimensions.width,
+                        height: dimensions.height,
+                        content,
+                    };
+                }
                 const frame = await native.getWindowState(
                     {
                         pid: grant.pid,
@@ -218,11 +256,14 @@ export async function openNativeComputerWindow(
                 const result = await native.callTool(
                     "type_text",
                     JSON.stringify({
-                        target: {
-                            kind: "window",
-                            pid: grant.pid,
-                            window_id: Number(grant.windowId),
-                        },
+                        target:
+                            grant.scope === "desktop"
+                                ? { kind: "desktop", display_id: grant.displayId }
+                                : {
+                                      kind: "window",
+                                      pid: grant.pid,
+                                      window_id: Number(grant.windowId),
+                                  },
                         text,
                         delivery_mode: grant.delivery,
                     }),

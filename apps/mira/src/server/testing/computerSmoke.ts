@@ -6,7 +6,7 @@ import { CuaDriver, SessionPermissionMode } from "@trycua/cua-driver";
 import { Effect } from "effect";
 import * as v from "valibot";
 
-import { openNativeComputerWindow } from "../computer/native";
+import { openNativeComputer } from "../computer/native";
 import { computerDriverVersion, computerWindowManifest } from "../computer/policy";
 import { openComputerProcess } from "../computer/process";
 import { ComputerWindowSession } from "../computer/session";
@@ -20,6 +20,8 @@ const stateSchema = v.object({
     count: v.number(),
     entry: point,
     button: point,
+    screenEntry: point,
+    screenButton: point,
 });
 async function readState() {
     return v.parse(
@@ -108,7 +110,7 @@ export async function qualifyComputerFixture() {
         windowId,
         delivery: "foreground",
     };
-    const view = await openNativeComputerWindow({ ...grant, mode: "view" });
+    const view = await openNativeComputer({ ...grant, mode: "view" });
     try {
         await view.observe(AbortSignal.timeout(3000));
         for (const operation of [
@@ -130,7 +132,7 @@ export async function qualifyComputerFixture() {
     } finally {
         await view.close();
     }
-    const wrong = await openNativeComputerWindow({
+    const wrong = await openNativeComputer({
         ...grant,
         executable: await realpath(process.execPath),
     });
@@ -190,7 +192,52 @@ export async function qualifyComputerFixture() {
             stopped = true;
         }
         if (!stopped) throw new Error("The closed session retained computer authority.");
+        const desktop = new ComputerWindowSession(
+            await openNativeComputer({
+                scope: "desktop",
+                displayId: "primary",
+                delivery: "foreground",
+                mode: "control",
+            }),
+            () => Promise.resolve()
+        );
+        try {
+            let image = await desktop.observe(signal);
+            if (image.width !== 1024 || image.height !== 768)
+                throw new Error("Unexpected primary desktop dimensions.");
+            await desktop.act(
+                {
+                    action: "click",
+                    observationId: image.observationId,
+                    ...fixture.screenEntry,
+                },
+                signal
+            );
+            image = await desktop.observe(signal);
+            await desktop.act(
+                { action: "type", observationId: image.observationId, text: " desktop" },
+                signal
+            );
+            await assertEventually(
+                (state) =>
+                    state.text.includes(" desktop") &&
+                    state.text.replace(" desktop", "") === literal
+            );
+            image = await desktop.observe(signal);
+            await desktop.act(
+                {
+                    action: "click",
+                    observationId: image.observationId,
+                    ...fixture.screenButton,
+                },
+                signal
+            );
+            await assertEventually((state) => state.count === 2);
+        } finally {
+            await desktop.close();
+        }
         return {
+            desktop: true,
             driver: computerDriverVersion,
             platform: "linux-x11",
             image: true,

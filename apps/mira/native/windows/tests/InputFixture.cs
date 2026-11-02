@@ -75,7 +75,10 @@ internal sealed class InputFixture : Form
             title = Text, text = entry.Text, count = count,
             width = bounds.Right - bounds.Left, height = bounds.Bottom - bounds.Top,
             entry = new { x = entryPoint.X - bounds.Left, y = entryPoint.Y - bounds.Top },
-            button = new { x = buttonPoint.X - bounds.Left, y = buttonPoint.Y - bounds.Top }
+            button = new { x = buttonPoint.X - bounds.Left, y = buttonPoint.Y - bounds.Top },
+            screenEntry = new { x = entryPoint.X, y = entryPoint.Y },
+            screenButton = new { x = buttonPoint.X, y = buttonPoint.Y },
+            screenWidth = Screen.PrimaryScreen.Bounds.Width, screenHeight = Screen.PrimaryScreen.Bounds.Height
         };
     }
 

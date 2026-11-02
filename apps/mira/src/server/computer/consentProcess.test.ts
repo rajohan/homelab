@@ -25,7 +25,7 @@ async function fixture(mode: string) {
 import { createInterface } from "node:readline";
 import { writeFileSync } from "node:fs";
 const mode = ${JSON.stringify(mode)};
-const target = ${JSON.stringify(target)};
+const target = mode === "desktop" ? { scope: "desktop", displayId: "primary", delivery: "foreground" } : ${JSON.stringify(target)};
 const send = (value) => process.stdout.write(JSON.stringify(value) + String.fromCharCode(10));
 setInterval(() => {}, 1000);
 process.on("SIGTERM", () => {});
@@ -215,6 +215,31 @@ test("invalid origins, relative launch paths and expired consent cannot launch a
             }),
             /expired/
         );
+    } finally {
+        await f.remove();
+    }
+});
+
+test("local consent cannot widen a window request to desktop and admits only explicit desktop selection", async () => {
+    const f = await fixture("desktop");
+    try {
+        expect(await openComputerConsentSurface(f.options)).toBeNull();
+        const surface = await openComputerConsentSurface({
+            ...f.options,
+            request: { ...f.options.request, scope: "desktop" },
+        });
+        if (!surface) throw new Error("Expected explicit desktop consent");
+        try {
+            expect(surface.target).toEqual({
+                scope: "desktop",
+                displayId: "primary",
+                delivery: "foreground",
+                mode: "view",
+            });
+            await surface.assertReady();
+        } finally {
+            await surface.close();
+        }
     } finally {
         await f.remove();
     }

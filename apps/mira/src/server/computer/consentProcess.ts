@@ -5,13 +5,13 @@ import * as v from "valibot";
 
 import { RpcProcess, type RpcProcessOptions } from "../runtime/rpcProcess";
 import { computerConsentRequestSchema, computerOrigin } from "./companion";
-import { computerWindowGrant, type ComputerWindowGrant } from "./policy";
+import { computerGrant, type ComputerGrant } from "./policy";
 import { computerChildEnvironment } from "./process";
 
 /** A local consent surface; its pipe never receives credentials, pixels or input commands. */
 export interface ComputerConsentSurface {
     signal: AbortSignal;
-    target: Readonly<ComputerWindowGrant & { mode: MiraComputerConsentRequest["mode"] }>;
+    target: Readonly<ComputerGrant & { mode: MiraComputerConsentRequest["mode"] }>;
     /**
      * Recheck the selected window and independently observed interactive desktop state.
      * @returns Completion only while the same local selection remains available.
@@ -80,8 +80,12 @@ export async function openComputerConsentSurface(
             stopped.abort();
         } else if (event.method === "consent/selected" && !selected && !signal.aborted) {
             const parsed = v.parse(v.strictObject({ target: v.unknown() }), event.params);
-            const target = computerWindowGrant(parsed.target);
-            if (target.delivery !== "foreground" || target.mode !== undefined)
+            const target = computerGrant(parsed.target);
+            if (
+                target.delivery !== "foreground" ||
+                target.mode !== undefined ||
+                (target.scope ?? "window") !== (request.scope ?? "window")
+            )
                 throw new Error("Unexpected local consent target scope.");
             selected = true;
             resolveSelection(Object.freeze({ ...target, mode: request.mode }));
@@ -106,6 +110,7 @@ export async function openComputerConsentSurface(
                 consentExpiresAt: request.consentExpiresAt,
                 expiresAt: request.expiresAt,
                 ...(request.keepOpen ? { keepOpen: true } : {}),
+                ...(request.scope === "desktop" ? { scope: "desktop" } : {}),
             })
         );
         const target = await selection;
