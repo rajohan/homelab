@@ -6,7 +6,7 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
-import { miraDefaultChatSettings } from "@homelab/contracts/mira";
+import { miraDefaultChatSettings, miraModelSchema } from "@homelab/contracts/mira";
 import { capabilities } from "@homelab/contracts/operations";
 import {
     claimChatSteering,
@@ -17,15 +17,17 @@ import {
     stopMiraComputerAccessLocally,
 } from "@homelab/mira/data/computerAccess";
 import { connectMiraComputer, enrollMiraComputer } from "@homelab/mira/data/computers";
+import { saveMiraFile } from "@homelab/mira/data/files";
 import { readLiveAssistanceGuidance } from "@homelab/mira/data/liveAssistance";
 import { claimMiraRun } from "@homelab/mira/data/queue";
+import * as v from "valibot";
 
 import { version } from "../../../../../package.json";
 import { executeMiraTurn } from "../../../../mira/src/server/executor/turn";
 import { appRouter } from "../api/router";
 import { operationFixture } from "../testing/operations";
 
-async function fixture() {
+async function fixture(filesDirectory?: string) {
     const f = await operationFixture();
     const principal = { kind: "human" as const, id: "operator", capabilities };
     const api = appRouter.createCaller({
@@ -33,19 +35,81 @@ async function fixture() {
         principal,
         verifyHuman: () => Promise.resolve(principal),
     }).mira;
+    const models = [v.parse(miraModelSchema, { model: "synthetic", isDefault: true })];
+    await f.client`INSERT INTO mira_runtime_status(id,worker_id,version,model,ready,heartbeat_at,models) VALUES(1,${crypto.randomUUID()},'fixture','synthetic',true,now(),${JSON.stringify(models)}::text::jsonb)`;
     const chat = await api.conversations.create({ title: "Live assistance fixture" });
     await api.conversations.settings({
         id: chat.id,
         version: 1,
         settings: { ...miraDefaultChatSettings, liveAssistanceMinutes: 60 },
     });
+    const attachment = filesDirectory
+        ? await saveMiraFile(
+              { client: f.client, owner: "operator", actor: "human:operator" },
+              filesDirectory,
+              {
+                  id: crypto.randomUUID(),
+                  name: "map.txt",
+                  bytes: new TextEncoder().encode("Fixture map legend"),
+              }
+          )
+        : null;
     await api.conversations.send({
         conversationId: chat.id,
         requestId: crypto.randomUUID(),
         text: "Coach this synthetic activity.",
+        attachmentIds: attachment ? [attachment.id] : [],
     });
     return { ...f, api, chat };
 }
+
+test("live settings reject explicit and automatic text-only models before queuing work", async () => {
+    const f = await fixture();
+    try {
+        const models = [
+            v.parse(miraModelSchema, {
+                model: "text-only",
+                isDefault: true,
+                inputModalities: ["text"],
+            }),
+        ];
+        await f.client`UPDATE mira_runtime_status SET models=${JSON.stringify(models)}::text::jsonb,model='text-only' WHERE id=1`;
+        const chat = await f.api.conversations.create({ title: "Settings validation" });
+        for (const model of [null, "text-only"]) {
+            await rejects(
+                f.api.conversations.settings({
+                    id: chat.id,
+                    version: 1,
+                    settings: {
+                        ...miraDefaultChatSettings,
+                        model,
+                        liveAssistanceMinutes: 30,
+                    },
+                }),
+                /requires a model that supports images/
+            );
+        }
+        await f.client`UPDATE mira_runtime_status SET heartbeat_at=now()-interval '1 minute' WHERE id=1`;
+        await rejects(
+            f.api.conversations.settings({
+                id: chat.id,
+                version: 1,
+                settings: { ...miraDefaultChatSettings, liveAssistanceMinutes: 30 },
+            }),
+            /Reconnect Mira/
+        );
+        await f.api.conversations.settings({
+            id: chat.id,
+            version: 1,
+            settings: { ...miraDefaultChatSettings, liveAssistanceMinutes: 0 },
+        });
+        const saved = await f.api.conversations.read({ id: chat.id });
+        expect(saved.run).toBeNull();
+        expect(saved.conversation.settings.liveAssistanceMinutes).toBe(0);
+    } finally {
+        await f.close();
+    }
+});
 
 test("live assistance leaves the reserved worker available and freezes its explicit duration", async () => {
     const f = await fixture();
@@ -109,9 +173,10 @@ test("continuations retain acknowledged guidance and refuse foreign leases and u
     }
 });
 
-async function executorFixture() {
-    const f = await fixture();
+async function executorFixture(mode = "resume-missing") {
     const directory = await mkdtemp(path.join(tmpdir(), "mira-live-assistance-"));
+    const filesDirectory = path.join(directory, "files");
+    const f = await fixture(filesDirectory);
     const stop = new AbortController();
     const run = (await claimMiraRun(f.client, crypto.randomUUID(), "general"))!;
     const pair = await f.api.computers.pair({ label: "Synthetic live PC" });
@@ -145,7 +210,7 @@ async function executorFixture() {
     );
     await writeFile(
         command,
-        `#!/usr/bin/env bun\nprocess.argv=[process.argv[0],${JSON.stringify(child)},"resume-missing",${JSON.stringify(home)}];\nawait import(${JSON.stringify(child)});\n`
+        `#!/usr/bin/env bun\nprocess.argv=[process.argv[0],${JSON.stringify(child)},${JSON.stringify(mode)},${JSON.stringify(home)}];\nawait import(${JSON.stringify(child)});\n`
     );
     await chmod(command, 0o700);
     let execution: Promise<void> | undefined;
@@ -177,7 +242,7 @@ async function executorFixture() {
                 },
                 run,
                 stop.signal,
-                undefined,
+                filesDirectory,
                 undefined,
                 undefined,
                 undefined,
@@ -217,6 +282,7 @@ test("the executor continues after a reply, delivers idle guidance in a new bubb
         const first = await f.waitForReplies(1);
         expect(first.chat.run?.state).toBe("running");
         expect(first.messages).toHaveLength(1);
+        expect(first.messages[0]?.content).toContain("Fixture map legend");
         await f.api.conversations.send({
             conversationId: f.chat.id,
             requestId: crypto.randomUUID(),
@@ -226,12 +292,63 @@ test("the executor continues after a reply, delivers idle guidance in a new bubb
         expect(continued.chat.run?.state).toBe("running");
         expect(continued.messages).toHaveLength(2);
         expect(continued.messages[1]?.content).toContain("Focus on the map now.");
+        expect(continued.messages[1]?.content).not.toContain("Fixture map legend");
         expect(continued.messages[0]?.id).not.toBe(continued.messages[1]?.id);
         await f.api.runs.cancel({ id: f.run.id });
         await execution;
         const stopped = await f.replies();
         expect(stopped.chat.run?.state).toBe("interrupted");
         expect(stopped.messages).toHaveLength(2);
+    } finally {
+        await f.close();
+    }
+}, 35_000);
+
+test("live reply limits include continuation separators and preserve a terminal record", async () => {
+    const f = await executorFixture("message-live-limit");
+    try {
+        await f.start();
+        const ended = await f.replies();
+        expect(ended.chat.run?.state).toBe("needs_attention");
+        expect(ended.chat.run?.message).toContain("reply limit");
+        expect(ended.messages).toHaveLength(1);
+        expect(ended.messages[0]?.content).toBe("x".repeat(255_999));
+        const [run] = await f.client<
+            { finished_at: Date | null }[]
+        >`SELECT finished_at FROM mira_runs WHERE id=${f.run.id}`;
+        expect(run!.finished_at).not.toBeNull();
+    } finally {
+        await f.close();
+    }
+}, 30_000);
+
+test("accepted steering supersedes a finish request and a later finish still ends the session", async () => {
+    const f = await executorFixture("live-finish-steer");
+    try {
+        const execution = f.start();
+        const first = await f.waitForReplies(1);
+        expect(first.chat.run?.state).toBe("running");
+        expect(first.messages[0]?.content).toContain("will finish after this reply");
+        await f.api.conversations.send({
+            conversationId: f.chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Keep observing; the activity is not finished.",
+        });
+        await execution;
+        const ended = await f.replies();
+        expect(ended.chat.run?.state).toBe("completed");
+        expect(
+            ended.messages.some((message) => message.content.includes("Keep observing"))
+        ).toBe(true);
+        expect(
+            ended.messages.filter((message) =>
+                message.content.includes("will finish after this reply")
+            )
+        ).toHaveLength(2);
+        const [run] = await f.client<
+            { provider_turn: string | null }[]
+        >`SELECT provider_turn FROM mira_runs WHERE id=${f.run.id}`;
+        expect(run!.provider_turn).toBe("turn-2");
     } finally {
         await f.close();
     }
@@ -355,6 +472,7 @@ test("Synthetic continuations preserve accepted guidance and can finish without 
         expect(bodies[2]).toContain("Never click. Only comment on the map.");
         expect(bodies[2]).toContain("Coach this synthetic activity.");
         expect(bodies[2]).toContain("Advice 2");
+        for (const body of bodies) expect(body).toContain("Fixture map legend");
     } finally {
         await f.close();
         request.mockRestore();

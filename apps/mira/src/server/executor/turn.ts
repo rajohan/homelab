@@ -93,6 +93,7 @@ export async function executeMiraTurn(
     let assistance = false;
     let assistanceIdle = false;
     let assistanceFinished = false;
+    let replyLimitFailure: MiraFailure | undefined;
     const transport = new AbortController();
     let stopTransportTimer: ReturnType<typeof setTimeout> | undefined;
     const stopTransport = () => {
@@ -156,6 +157,7 @@ export async function executeMiraTurn(
                     steeringFailed = true;
                     throw error;
                 }
+                if (accepted) assistanceFinished = false;
                 if (!(await acknowledgeChatSteering(client, run, guidance.id, accepted)))
                     controller.abort();
                 return;
@@ -429,7 +431,7 @@ export async function executeMiraTurn(
                 {
                     signal,
                     settings,
-                    attachments: attachments.inputs,
+                    attachments: !continuation || useSynthetic ? attachments.inputs : [],
                     timeoutMs: Math.max(1, deadlineAt - Date.now()),
                     onStarted: async (turnId) => {
                         await client.begin(async (query) => {
@@ -461,12 +463,19 @@ export async function executeMiraTurn(
                         activity = next;
                     },
                     onDelta: (delta, itemId) => {
-                        if (assistance && text.length + delta.length > 512 * 1024)
-                            throw new MiraFailure(
+                        const separator =
+                            firstDelta && continuation && text ? "\n\n" : "";
+                        if (
+                            assistance &&
+                            text.length + separator.length + delta.length > 256_000
+                        ) {
+                            replyLimitFailure = new MiraFailure(
                                 "PRECONDITION_FAILED",
                                 "Live assistance reached its reply limit. Review the conversation before continuing."
                             );
-                        if (firstDelta && continuation && text) text += "\n\n";
+                            throw replyLimitFailure;
+                        }
+                        text += separator;
                         if (
                             firstDelta ||
                             parts.length === 0 ||
@@ -544,6 +553,7 @@ export async function executeMiraTurn(
         if (deadline.signal.aborted)
             message =
                 "Maximum run time exceeded during preparation or execution. Review this run before continuing.";
+        else if (replyLimitFailure) message = replyLimitFailure.message;
         else if (error instanceof MiraFailure) message = error.message;
         let state: "completed" | "interrupted" | "needs_attention" = "needs_attention";
         if (assistanceIdle) {

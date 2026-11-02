@@ -179,7 +179,9 @@ The cached system skills are verified against the complete SHA-256 manifest from
 
 The follow-up qualification passed with the stricter checks on 2026-10-24: streamed response, registered tool call, resume after process replacement, interruption and recovery using the isolated Mira login.
 
-The 0.166.0 dependency qualification on 2026-11-02 also passed against the actual native binary in a new unauthenticated home: exact version, initialization, effective configuration, system-skill integrity, account protocol, model catalog and isolated thread creation. Its 69 system-skill entries match the official `rust-v0.166.0` source and have no content changes from 0.164.0. This offline check uses no provider credentials or inference and does not replace the authenticated lifecycle qualification before deployment.
+The 0.166.0 dependency qualification on 2026-11-02 also passed against the actual native binary in a new unauthenticated home: exact version, initialization, effective configuration, system-skill integrity, account protocol, model catalog and isolated thread creation. Its 69 system-skill entries match the official `rust-v0.166.0` source and have no content changes from 0.164.0. This offline check uses no provider credentials or inference.
+
+The authenticated 0.166.0 lifecycle qualification subsequently passed on 2026-11-02 with the existing isolated Mira profile and `gpt-6.1-sol`: streaming, validated echo-tool input and output, retained context after process replacement, interruption and recovery. It used a new empty workspace and synthetic tools only; production and desktop access were not involved.
 
 Effective configuration must also preserve the supported official OpenAI/ChatGPT
 base URLs. Provider identity alone is insufficient: endpoint overrides, legacy
