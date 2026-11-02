@@ -171,7 +171,11 @@ export function ChatPanel({
                 <SectionHeader
                     title={conversation.title}
                     icon={MessageSquare}
-                    badge={<Badge>{status.data?.ready ? "Ready" : "Offline"}</Badge>}
+                    badge={
+                        <Badge tone={status.data?.ready ? "positive" : "warning"}>
+                            {status.data?.ready ? "Ready" : "Offline"}
+                        </Badge>
+                    }
                     compactActions
                     actions={
                         <DropdownMenu

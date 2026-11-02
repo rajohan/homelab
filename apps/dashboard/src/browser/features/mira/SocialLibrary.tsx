@@ -19,18 +19,7 @@ import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
 import { SocialEditor } from "./SocialEditor";
 import { SocialReview } from "./SocialReview";
-
-const tones = {
-    draft: "neutral",
-    queued: "neutral",
-    publishing: "neutral",
-    submitted: "positive",
-    verification_required: "warning",
-    queued_verification: "neutral",
-    verifying: "neutral",
-    needs_attention: "warning",
-    cancelled: "neutral",
-} as const;
+import { miraStatusTone } from "./statusTone";
 
 /**
  * Show local Moltbook drafts and durable delivery outcomes alongside the conversation.
@@ -117,7 +106,7 @@ export function SocialLibrary({
                             }
                             icon={Globe}
                             badge={
-                                <Badge tone={tones[draft.state]}>
+                                <Badge tone={miraStatusTone(draft.state)}>
                                     {draft.state.replaceAll("_", " ")}
                                 </Badge>
                             }

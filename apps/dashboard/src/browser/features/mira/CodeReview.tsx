@@ -22,6 +22,7 @@ import {
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
 import { CodeFiles } from "./CodeFiles";
+import { miraStatusTone } from "./statusTone";
 
 /**
  * Review exact tested edits and PR text, then follow durable publication and read-only recovery.
@@ -71,13 +72,7 @@ export function CodeReview({
                         title={draft.content.title}
                         icon={GitPullRequest}
                         badge={
-                            <Badge
-                                tone={
-                                    draft.state === "needs_attention"
-                                        ? "warning"
-                                        : "neutral"
-                                }
-                            >
+                            <Badge tone={miraStatusTone(draft.state)}>
                                 {draft.state.replaceAll("_", " ")}
                             </Badge>
                         }

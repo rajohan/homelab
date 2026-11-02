@@ -76,7 +76,7 @@ export function MiraAutomations() {
     const global = controls.data?.find((control) => control.key === "autonomy");
     const error = query.error ?? controls.error ?? enable.error ?? presets.error;
     return (
-        <div className="space-y-4">
+        <div className="@container/automations space-y-4">
             <PageHeader
                 title="Automations"
                 description="Schedule work, manage heartbeat and pause automatic activity with a reason."
@@ -87,11 +87,15 @@ export function MiraAutomations() {
                     </Button>
                 }
             />
-            <Card className="space-y-4">
+            <Card className="@container/automations space-y-4">
                 <SectionHeader
                     title="Automatic work"
                     icon={Clock}
-                    badge={<Badge>{global?.enabled ? "Enabled" : "Paused"}</Badge>}
+                    badge={
+                        <Badge tone={global?.enabled ? "positive" : "neutral"}>
+                            {global?.enabled ? "Enabled" : "Paused"}
+                        </Badge>
+                    }
                     actions={
                         global && (
                             <Button
@@ -131,7 +135,7 @@ export function MiraAutomations() {
                 </Card>
             )}
             {!query.isPending && rows.length === 0 && (
-                <Card className="space-y-4">
+                <Card className="@container/automations space-y-4">
                     <p className="text-sm text-primary-300">
                         Restore the morning brief, evening summary, dashboard improvement
                         and heartbeat definitions. They start paused so you can review
@@ -147,7 +151,7 @@ export function MiraAutomations() {
                     </ActionGroup>
                 </Card>
             )}
-            <div className="grid gap-4 xl:grid-cols-2">
+            <div className="grid gap-4 @min-[64rem]/automations:grid-cols-2">
                 {rows.map((automation) => {
                     const control = controls.data?.find(
                         (item) => item.key === `automation:${automation.id}`
@@ -159,7 +163,10 @@ export function MiraAutomations() {
                         cadence = `Event · ${automation.schedule.event.replaceAll("_", " ")}`;
                     else cadence = describeSchedule(automation.schedule);
                     return (
-                        <Card key={automation.id} className="space-y-4">
+                        <Card
+                            key={automation.id}
+                            className="@container/automations space-y-4"
+                        >
                             <SectionHeader
                                 title={automation.title}
                                 icon={Clock}
@@ -219,7 +226,9 @@ export function MiraAutomations() {
                                     />
                                 }
                                 badge={
-                                    <Badge>
+                                    <Badge
+                                        tone={control?.enabled ? "positive" : "neutral"}
+                                    >
                                         {control?.enabled ? "Enabled" : "Paused"}
                                     </Badge>
                                 }

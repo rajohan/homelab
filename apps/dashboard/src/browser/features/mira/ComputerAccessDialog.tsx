@@ -19,6 +19,7 @@ import type * as v from "valibot";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
+import { accessStatusTone } from "./statusTone";
 import { computerAccessLabel, useComputerAccess } from "./useComputerAccess";
 
 /**
@@ -85,7 +86,13 @@ export function ComputerAccessDialog({
                             }
                             icon={Monitor}
                             badge={
-                                <Badge>{computerAccessLabel(access, run, fresh)}</Badge>
+                                <Badge
+                                    tone={accessStatusTone(
+                                        computerAccessLabel(access, run, fresh)
+                                    )}
+                                >
+                                    {computerAccessLabel(access, run, fresh)}
+                                </Badge>
                             }
                             description={
                                 access.keepOpen

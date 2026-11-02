@@ -4,7 +4,7 @@ import { Badge } from "@homelab/ui";
 const active = {
     error: { tone: "danger", label: "Critical" },
     warning: { tone: "warning", label: "Warning" },
-    info: { tone: "neutral", label: "Active" },
+    info: { tone: "info", label: "Active" },
 } as const;
 
 /**

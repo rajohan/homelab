@@ -77,7 +77,7 @@ export function MiraIntegrations() {
                             icon={
                                 integration.key === "integration:agentmail" ? Mail : Globe
                             }
-                            badge={<Badge>{label}</Badge>}
+                            badge={<Badge tone={integrationTone(label)}>{label}</Badge>}
                             description={integration.description}
                             actions={
                                 control && (
@@ -119,4 +119,9 @@ export function MiraIntegrations() {
             )}
         </Card>
     );
+}
+
+function integrationTone(label: string) {
+    if (label === "Ready" || label === "Connected") return "positive";
+    return ["Offline", "Needs attention"].includes(label) ? "warning" : "neutral";
 }

@@ -525,7 +525,7 @@ test("job badges remain content-width when mobile table cells become grids", () 
     try {
         expect(screen.getByText("succeeded").parentElement).toHaveClass(
             "w-fit",
-            "self-start"
+            "self-center"
         );
     } finally {
         view.unmount();

@@ -14,12 +14,7 @@ import { History } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { api } from "../../api/client";
-
-function outcomeTone(state: string) {
-    if (["needs_attention", "unknown"].includes(state)) return "warning";
-    if (state === "failed") return "danger";
-    return "neutral";
-}
+import { miraStatusTone } from "./statusTone";
 
 /**
  * Inspect durable tool outcomes for the selected run, including old uncertain effects.
@@ -58,7 +53,7 @@ export function MiraRunDetails({
                             icon={History}
                             description={formatDateTime(run.createdAt)}
                             badge={
-                                <Badge tone={outcomeTone(run.state)}>
+                                <Badge tone={miraStatusTone(run.state)}>
                                     {run.state.replaceAll("_", " ")}
                                 </Badge>
                             }
@@ -99,7 +94,7 @@ export function MiraRunDetails({
                                         label: "Outcome",
                                         width: "w-40",
                                         render: (tool) => (
-                                            <Badge tone={outcomeTone(tool.state)}>
+                                            <Badge tone={miraStatusTone(tool.state)}>
                                                 {tool.state === "unknown"
                                                     ? "Needs review"
                                                     : tool.state.replaceAll("_", " ")}

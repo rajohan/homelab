@@ -122,7 +122,9 @@ export function MiraComputers() {
                                     icon={Monitor}
                                     badge={
                                         <div className="flex flex-wrap gap-2">
-                                            <Badge>{status}</Badge>
+                                            <Badge tone={computerStatusTone(status)}>
+                                                {status}
+                                            </Badge>
                                             {download &&
                                                 computer.state === "paired" &&
                                                 Date.parse(computer.expiresAt) >
@@ -195,4 +197,10 @@ function computerStatus(computer: MiraComputerSummary, checkedAt: number): strin
 function platformLabel(platform: string): string {
     if (platform === "win32") return "Windows";
     return platform === "darwin" ? "macOS" : "Linux";
+}
+
+function computerStatusTone(status: string) {
+    if (status === "Connected") return "positive";
+    if (status === "Offline") return "warning";
+    return status === "Waiting for pairing" ? "info" : "neutral";
 }

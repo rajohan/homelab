@@ -182,7 +182,18 @@ export async function main(): Promise<void> {
         monitoring = createMonitoringFixture();
         const operationConfiguration = parseOperationsConfiguration({
             NODE_ENV: "development",
-            HOMELAB_DASHBOARD_APPLICATION_TARGETS: JSON.stringify([applications.target]),
+            HOMELAB_DASHBOARD_APPLICATION_TARGETS: JSON.stringify([
+                {
+                    ...applications.target,
+                    updateSources: [
+                        ...new Set(
+                            previewUpdateTargets
+                                .filter((target) => target.driver.kind === "docker")
+                                .map((target) => target.source)
+                        ),
+                    ],
+                },
+            ]),
             HOMELAB_DASHBOARD_LOGS_URL: applications.url,
             HOMELAB_DASHBOARD_ALERTMANAGER_URL: monitoring.url,
             HOMELAB_DASHBOARD_RULES_URL: monitoring.url,

@@ -34,7 +34,7 @@ export function SchedulesPanel() {
             <Card className="space-y-4">
                 <SectionHeader
                     title="Schedules"
-                    description="Daily, interval or cron schedules follow the system clock. Existing host timers and OpenClaw cron remain separate."
+                    description="Daily, interval or cron schedules follow the system clock. Host timers are managed separately."
                     icon={CalendarClock}
                 />
                 {query.isPending && <LoadingState label="Loading schedules…" />}

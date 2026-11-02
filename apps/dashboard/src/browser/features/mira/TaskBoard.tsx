@@ -35,7 +35,7 @@ export function TaskBoard({
         api.mira.tasks.update.mutate(input)
     );
     return (
-        <div className="space-y-4">
+        <div className="@container/task-board space-y-4">
             {move.error && <ErrorNotice error={move.error} />}
             <DragDropProvider
                 sensors={sensors}
@@ -54,7 +54,7 @@ export function TaskBoard({
                     setDragged(undefined);
                 }}
             >
-                <div className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <div className="grid min-w-0 gap-4 @min-[34rem]/task-board:grid-cols-2 @min-[72rem]/task-board:grid-cols-4">
                     {miraTaskStates.map((status) => (
                         <TaskColumn
                             key={status}

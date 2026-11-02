@@ -13,6 +13,7 @@ import { Mail, Send, Paperclip, Download } from "lucide-react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
+import { miraStatusTone } from "./statusTone";
 
 /**
  * Present the submitted content and provider footer disclosure before approval.
@@ -48,7 +49,11 @@ export function MailReview({
                     <SectionHeader
                         title={draft.content.subject}
                         icon={Mail}
-                        badge={<Badge>{draft.state.replaceAll("_", " ")}</Badge>}
+                        badge={
+                            <Badge tone={miraStatusTone(draft.state)}>
+                                {draft.state.replaceAll("_", " ")}
+                            </Badge>
+                        }
                     />
                     <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
                         <dt className="whitespace-nowrap text-primary-400">From</dt>

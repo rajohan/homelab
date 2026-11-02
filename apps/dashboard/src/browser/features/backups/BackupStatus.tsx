@@ -3,7 +3,7 @@ import { Badge } from "@homelab/ui";
 
 const presentation = {
     healthy: { label: "Healthy", tone: "positive" },
-    running: { label: "Running", tone: "neutral" },
+    running: { label: "Running", tone: "info" },
     failed: { label: "Failed", tone: "danger" },
     overdue: { label: "Overdue", tone: "warning" },
     disabled: { label: "Disabled", tone: "neutral" },
