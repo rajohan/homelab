@@ -39,9 +39,10 @@ export async function buildWindowsConsent(outputRoot?: string, tests = false) {
             (file) => path.join(source, file)
         ),
     ];
+    // Instrumented CodeQL builds can exceed 30 seconds on a cold Windows runner.
     execFileSync(compiler, ["/target:winexe", `/out:${host}`, ...common], {
         windowsHide: true,
-        timeout: 30_000,
+        timeout: 120_000,
         maxBuffer: 64 * 1024,
     });
     if (checks)
@@ -54,7 +55,7 @@ export async function buildWindowsConsent(outputRoot?: string, tests = false) {
                 ...common,
                 path.join(source, "tests/WindowsTests.cs"),
             ],
-            { windowsHide: true, timeout: 30_000, maxBuffer: 64 * 1024 }
+            { windowsHide: true, timeout: 120_000, maxBuffer: 64 * 1024 }
         );
     return { host, checks };
 }
