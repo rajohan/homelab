@@ -25,7 +25,7 @@ async function fixture() {
         owner = "operator",
         verified = owner,
         kind: "human" | "automation" = "human",
-        fresh = true
+        fresh = true,
     ) =>
         appRouter.createCaller({
             operations: f,
@@ -98,23 +98,23 @@ test("computer requests require fresh human verification and remain unusable bef
     try {
         await rejects(
             f.caller("operator", "other").computers.access.request(f.request),
-            /account changed/
+            /account changed/,
         );
         await rejects(
             f
                 .caller("operator", "operator", "human", false)
                 .computers.access.request(f.request),
-            /verified operator/
+            /verified operator/,
         );
         await rejects(
             f
                 .caller("operator", "operator", "automation")
                 .computers.access.request(f.request),
-            /signed-in operator/
+            /signed-in operator/,
         );
         await rejects(
             requestMiraComputerAccess(f.worker, f.request),
-            /signed-in operator/
+            /signed-in operator/,
         );
         const grant = await f.api.computers.access.request(f.request);
         expect(grant.state).toBe("pending");
@@ -142,7 +142,7 @@ test("computer requests require fresh human verification and remain unusable bef
         expect(
             await pendingMiraComputerAccess(f.client, f.device.credential, {
                 connectionId: f.connection.connectionId,
-            })
+            }),
         ).toEqual({ request: null });
         await rejects(f.accept(grant.id), /local consent/);
         await rejects(
@@ -150,7 +150,7 @@ test("computer requests require fresh human verification and remain unusable bef
                 id: grant.id,
                 connectionId: f.connection.connectionId,
                 targetId: crypto.randomUUID(),
-            })
+            }),
         );
         const listed = await f.api.computers.access.list();
         expect(listed).toMatchObject([{ state: "active" }]);
@@ -179,7 +179,7 @@ test("computer grants isolate owner, worker lease, device, target and view-only 
     try {
         await rejects(
             f.caller("other").computers.access.request(f.request),
-            /Computer changed/
+            /Computer changed/,
         );
         const grant = await f.api.computers.access.request({
             ...f.request,
@@ -197,7 +197,7 @@ test("computer grants isolate owner, worker lease, device, target and view-only 
                 id: grant.id,
                 connectionId: otherConnection.connectionId,
                 targetId: f.targetId,
-            })
+            }),
         );
         await stopMiraComputerAccessLocally(f.client, other.credential, { id: grant.id });
         await f.caller("other").computers.access.stop({ id: grant.id });
@@ -208,28 +208,28 @@ test("computer grants isolate owner, worker lease, device, target and view-only 
         await rejects(
             requireMiraComputerAccess(
                 { ...f.worker, owner: "other" },
-                { id: grant.id, targetId: f.targetId, mode: "view" }
-            )
+                { id: grant.id, targetId: f.targetId, mode: "view" },
+            ),
         );
         await rejects(
             requireMiraComputerAccess(
                 { ...f.worker, run: { id: f.run.id, leaseToken: crypto.randomUUID() } },
-                { id: grant.id, targetId: f.targetId, mode: "view" }
-            )
+                { id: grant.id, targetId: f.targetId, mode: "view" },
+            ),
         );
         await rejects(
             requireMiraComputerAccess(f.worker, {
                 id: grant.id,
                 targetId: crypto.randomUUID(),
                 mode: "view",
-            })
+            }),
         );
         await rejects(
             requireMiraComputerAccess(f.context, {
                 id: grant.id,
                 targetId: f.targetId,
                 mode: "view",
-            })
+            }),
         );
     } finally {
         await f.close();
@@ -284,7 +284,7 @@ test("one computer and one run can have only one pending or active request despi
         await connectMiraComputer(f.client, other.credential);
         await rejects(
             f.api.computers.access.request({ ...f.request, computerId: otherPair.id }),
-            /already pending/
+            /already pending/,
         );
         const accepts = await Promise.allSettled([
             f.accept(granted.value.id),
@@ -325,15 +325,9 @@ test("reconnection, credential revocation and expiration cannot restore old gran
     }
 });
 
-test("run cancellation, worker loss, completion, budget and conversation deletion invalidate access", async () => {
-    for (const mode of [
-        "cancel",
-        "lease",
-        "replacement",
-        "complete",
-        "budget",
-        "delete",
-    ]) {
+test.each(["cancel", "lease", "replacement", "complete", "budget", "delete"])(
+    "%s invalidates computer access",
+    async (mode) => {
         const f = await fixture();
         try {
             const grant = await f.api.computers.access.request(f.request);
@@ -356,8 +350,8 @@ test("run cancellation, worker loss, completion, budget and conversation deletio
         } finally {
             await f.close();
         }
-    }
-});
+    },
+);
 
 test("pause then resume never revives a grant, including a manual chat session", async () => {
     const f = await fixture();
@@ -398,14 +392,14 @@ test("pending consent expires after a minute and total authority never extends p
         expect(
             await pendingMiraComputerAccess(f.client, f.device.credential, {
                 connectionId: f.connection.connectionId,
-            })
+            }),
         ).toEqual({ request: null });
         const next = await f.api.computers.access.request(f.request);
         expect(next.id).not.toBe(grant.id);
         const accepted = await f.accept(next.id);
         expect(accepted.expiresAt).toBe(next.expiresAt);
         expect(Date.parse(accepted.expiresAt)).toBeLessThanOrEqual(
-            Date.parse(original) + 1000
+            Date.parse(original) + 1000,
         );
         await f.client`UPDATE mira_computer_access SET created_at=clock_timestamp()-interval '6 minutes',expires_at=clock_timestamp()-interval '1 minute' WHERE id=${next.id}`;
         await rejects(f.allow(next.id));
@@ -440,7 +434,7 @@ test("private HTTP consent uses device authentication and accepts no native path
         route: string,
         data: unknown,
         token = f.device.credential,
-        headers: Record<string, string> = {}
+        headers: Record<string, string> = {},
     ) => {
         const response = await fetch(
             `http://127.0.0.1:${server.port}/api/mira/computers/access/${route}`,
@@ -452,7 +446,7 @@ test("private HTTP consent uses device authentication and accepts no native path
                     ...headers,
                 },
                 body: JSON.stringify(data),
-            }
+            },
         );
         return {
             status: response.status,
@@ -472,11 +466,11 @@ test("private HTTP consent uses device authentication and accepts no native path
         expect(
             await post("pending", connection, f.device.credential, {
                 origin: "https://synthetic.invalid",
-            })
+            }),
         ).toMatchObject({ status: 403 });
         const consent = { ...connection, id: grant.id, targetId: f.targetId };
         expect(await post("accept", { ...consent, executable: "/bin/sh" })).toMatchObject(
-            { status: 400 }
+            { status: 400 },
         );
         expect(await post("accept", consent)).toMatchObject({ status: 200 });
         expect(await post("click", { id: grant.id, x: 1, y: 1 })).toMatchObject({
@@ -538,11 +532,11 @@ test("requesting access refuses an ended or foreign run and races safely with de
     try {
         await rejects(
             f.api.computers.access.request({ ...f.request, computerVersion: 1 }),
-            /Computer changed/
+            /Computer changed/,
         );
         await rejects(
             f.api.computers.access.request({ ...f.request, runId: crypto.randomUUID() }),
-            /selected run/
+            /selected run/,
         );
         const otherChat = await f
             .caller("other")
@@ -556,7 +550,7 @@ test("requesting access refuses an ended or foreign run and races safely with de
         await claimMiraRun(f.client, crypto.randomUUID(), "general");
         await rejects(
             f.api.computers.access.request({ ...f.request, runId: otherRun.id }),
-            /selected run/
+            /selected run/,
         );
         const result = await Promise.allSettled([
             f.api.computers.access.request(f.request),
@@ -618,7 +612,7 @@ test("paired PC permits preserve exact generation, target, view scope and pause 
         };
         const permit = (
             change: Record<string, unknown> = {},
-            token = f.device.credential
+            token = f.device.credential,
         ) => permitMiraComputerAccessLocally(f.client, token, { ...input, ...change });
         await rejects(permit(), /no longer available/);
         await f.accept(grant.id);
@@ -642,7 +636,7 @@ test("paired PC permits preserve exact generation, target, view scope and pause 
         });
         const otherConnection = await connectMiraComputer(f.client, other.credential);
         await rejects(
-            permit({ connectionId: otherConnection.connectionId }, other.credential)
+            permit({ connectionId: otherConnection.connectionId }, other.credential),
         );
         await f.api.computers.access.stop({ id: grant.id });
         await rejects(permit(), /no longer available/);
@@ -650,11 +644,11 @@ test("paired PC permits preserve exact generation, target, view scope and pause 
         await f.accept(next.id);
         const active = { ...input, id: next.id, mode: "control" };
         expect(
-            await permitMiraComputerAccessLocally(f.client, f.device.credential, active)
+            await permitMiraComputerAccessLocally(f.client, f.device.credential, active),
         ).toMatchObject(active);
         await cancelRun(f.context, f.run.id);
         await rejects(
-            permitMiraComputerAccessLocally(f.client, f.device.credential, active)
+            permitMiraComputerAccessLocally(f.client, f.device.credential, active),
         );
     } finally {
         await f.close();
@@ -694,7 +688,7 @@ test("private permit HTTP route admits only a valid machine binding and reveals 
         expect(payload).toMatchObject(input);
         expect(JSON.stringify(payload)).not.toContain(f.run.leaseToken);
         expect(
-            await post(input, { origin: "https://public.example.test" })
+            await post(input, { origin: "https://public.example.test" }),
         ).toMatchObject({ status: 403 });
         expect(await post({ ...input, executable: "/injected" })).toMatchObject({
             status: 400,
