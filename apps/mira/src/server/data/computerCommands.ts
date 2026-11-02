@@ -1,4 +1,5 @@
 import {
+    miraComputerCommandLimit,
     miraComputerCommandBindingSchema,
     miraComputerOperationSchema,
     type MiraComputerCommand,
@@ -206,6 +207,20 @@ export async function enqueueMiraComputerCommand(
             (operation.action !== "observe" && access.mode !== "control")
         )
             return null;
+        if (access.keepOpen && operation.action !== "observe") {
+            // Keep only the opaque frame identity after consumption. A previous
+            // reply's image must never authorize input in this run.
+            const [observation] = await query<{ id: string }[]>`
+                SELECT id FROM mira_computer_commands WHERE owner=${context.owner} AND access_id=${access.id}
+                    AND run_id=${context.run!.id} AND run_lease=${context.run!.leaseToken} AND action='observe'
+                    AND state='consumed' AND observation_id=${operation.observationId}
+                    AND connection_id=${access.connectionId} AND target_id=${access.targetId}`;
+            if (!observation)
+                throw new MiraFailure(
+                    "PRECONDITION_FAILED",
+                    "Read a fresh computer observation in this run before sending input."
+                );
+        }
         const [limits] = await query<
             {
                 total: number;
@@ -213,20 +228,23 @@ export async function enqueueMiraComputerCommand(
                 busy: boolean;
                 attempted: boolean;
                 recent: number;
+                accessTotal: number;
             }[]
         >`SELECT
             (SELECT count(*)::int FROM mira_computer_commands WHERE state IN ('queued','claimed','completed')) AS total,
             (SELECT count(*)::int FROM mira_computer_commands WHERE owner=${context.owner} AND state IN ('queued','claimed','completed')) AS owned,
             EXISTS(SELECT 1 FROM mira_computer_commands WHERE access_id=${access.id} AND state IN ('queued','claimed','completed')) AS busy,
             EXISTS(SELECT 1 FROM mira_computer_commands WHERE id=${receiptId}) AS attempted,
-            (SELECT count(*)::int FROM mira_computer_commands WHERE access_id=${access.id} AND run_id=${context.run!.id}) AS recent`;
+            (SELECT count(*)::int FROM mira_computer_commands WHERE access_id=${access.id} AND run_id=${context.run!.id}) AS recent,
+            (SELECT count(*)::int FROM mira_computer_commands WHERE access_id=${access.id}) AS "accessTotal"`;
         if (
             !limits ||
             limits.total >= 32 ||
             limits.owned >= 8 ||
             limits.busy ||
             limits.attempted ||
-            limits.recent >= 32
+            limits.recent >= 32 ||
+            limits.accessTotal >= miraComputerCommandLimit
         )
             return null;
         await query`WITH timing AS MATERIALIZED (SELECT clock_timestamp() AS at)
@@ -318,7 +336,8 @@ export async function finishMiraComputerCommand(
         }
         const rows = await query<
             { id: string }[]
-        >`UPDATE mira_computer_commands SET state='completed',result=${JSON.stringify(result)}::text::jsonb,finished_at=clock_timestamp()
+        >`UPDATE mira_computer_commands SET state='completed',result=${JSON.stringify(result)}::text::jsonb,
+            observation_id=${"observationId" in result ? result.observationId : null},finished_at=clock_timestamp()
             WHERE id=${row.id} AND state='claimed' AND expires_at>clock_timestamp() RETURNING id`;
         if (rows.length === 0)
             await retireComputerCommands(query, device.owner, access.id);

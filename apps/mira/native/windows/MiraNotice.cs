@@ -4,7 +4,7 @@ using System.Windows.Forms;
 // Product-owned notices use the same frame as the shell and access picker.
 internal sealed class MiraNotice : MiraWindow
 {
-    private MiraNotice(string title, string message)
+    internal MiraNotice(string title, string message)
     {
         Text = title; Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         Size = new Size(480, 230); MinimumSize = new Size(360, 210);
@@ -13,9 +13,14 @@ internal sealed class MiraNotice : MiraWindow
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(20), RowCount = 2 };
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        var text = new Label { Text = message, AutoSize = true, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 16) };
+        var viewport = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Margin = new Padding(0, 0, 0, 16) };
+        var text = new Label { Text = message, AutoSize = true, Location = Point.Empty };
+        viewport.Controls.Add(text);
+        viewport.Resize += delegate {
+            text.MaximumSize = new Size(System.Math.Max(1, viewport.ClientSize.Width - SystemInformation.VerticalScrollBarWidth), 0);
+        };
         var done = new Button { Text = "OK", AutoSize = true, Anchor = AnchorStyles.Right, Padding = new Padding(16, 6, 16, 6), FlatStyle = FlatStyle.Flat, BackColor = Raised, DialogResult = DialogResult.OK };
-        layout.Controls.Add(text); layout.Controls.Add(done);
+        layout.Controls.Add(viewport); layout.Controls.Add(done);
         Content.Controls.Add(layout); AcceptButton = done; CancelButton = done;
     }
 

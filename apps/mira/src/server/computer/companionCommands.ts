@@ -1,5 +1,7 @@
 import { setTimeout as delay } from "node:timers/promises";
 
+import { miraComputerCommandLimit } from "@homelab/contracts/miraComputerCommands";
+
 import { RuntimeCleanupError } from "../runtime/rpcProcess";
 import {
     ComputerConnectionError,
@@ -53,7 +55,7 @@ export async function runComputerCommandLoop(options: {
                 continue;
             }
             // Never evict: a lost acknowledgement must not permit a later replay in this session.
-            if (seen.has(command.commandId) || seen.size >= 1024)
+            if (seen.has(command.commandId) || seen.size >= miraComputerCommandLimit)
                 throw new ComputerConnectionError(false);
             seen.add(command.commandId);
             const until = started + command.validForMs;

@@ -1,0 +1,42 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "fa79f615-98ca-4595-9a5b-724d92d6ad48",
+    "prevIds": ["1dcff834-13d7-4a81-9338-5537d502ee62"],
+    "footprints": [
+        {
+            "statementType": "add_column",
+            "statementTarget": [
+                "column",
+                "public",
+                "mira_computer_commands",
+                "observation_id"
+            ],
+            "writes": [
+                "s|col|public.mira_computer_commands.observation_id",
+                "n|col|public.mira_computer_commands.observation_id",
+                "e|col|public.mira_computer_commands.observation_id"
+            ],
+            "reads": ["n|tbl|public.mira_computer_commands", "n|sch|public"]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_computer_commands",
+                "name": "observation_id",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        }
+    ]
+}

@@ -1024,6 +1024,7 @@ export const miraComputerCommands = pgTable(
         state: text().notNull().default("queued"),
         payload: jsonb(),
         result: jsonb(),
+        observationId: uuid("observation_id"),
         createdAt: time("created_at").notNull().defaultNow(),
         expiresAt: time("expires_at").notNull(),
         claimedAt: time("claimed_at"),
