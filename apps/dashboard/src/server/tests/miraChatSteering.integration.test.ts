@@ -223,6 +223,59 @@ test("reply boundaries survive polling and completion and stale leases cannot re
     }
 });
 
+test.each(["failed", "interrupted"] as const)(
+    "every reply retains its parent %s outcome in the transcript and recovered history",
+    async (state) => {
+        const f = await fixture();
+        try {
+            const parts = [
+                {
+                    id: f.run.assistantMessageId,
+                    offset: 0,
+                    createdAt: new Date().toISOString(),
+                },
+                {
+                    id: Bun.randomUUIDv7(),
+                    offset: 14,
+                    createdAt: new Date().toISOString(),
+                },
+            ];
+            await finishMiraRun(f.client, f.run, {
+                state,
+                text: "First reply.\n\nLast reply.",
+                parts,
+                message: "Interrupted fixture",
+            });
+            // Exercise both persisted terminal message states, including rows retired by lease recovery.
+            await f.client`UPDATE mira_messages SET state=${state} WHERE id=${f.run.assistantMessageId}`;
+            const transcript = await f.api.conversations.read({ id: f.chat.id });
+            expect(
+                transcript.messages
+                    .filter((row) => row.role === "assistant")
+                    .map((row) => row.state)
+            ).toEqual([state, state]);
+            await f.send("Continue explicitly.");
+            const next = (await claimMiraRun(
+                f.client,
+                crypto.randomUUID(),
+                "foreground"
+            ))!;
+            const history = await readMiraConversationHistory(f.client, next, {});
+            expect(
+                history.rows
+                    .filter((row) => row.role === "assistant")
+                    .map((row) => row.state)
+            ).toEqual([state, state]);
+            const recovered = await readMiraTurnInput(f.client, next, true);
+            expect(
+                recovered.content.match(new RegExp(`"state":"${state}"`, "g"))
+            ).toHaveLength(2);
+        } finally {
+            await f.close();
+        }
+    }
+);
+
 test.each(["steer-ok", "steer-error", "message-boundaries"])(
     "the executor persists real provider replies and guidance: %s",
     async (mode) => {
@@ -457,8 +510,11 @@ test("recovery and paged retrieval interleave reply parts with acknowledged guid
             messageId: page.rows[0]!.messageId,
             offset: 0,
         });
-        expect(full.parts).toEqual(parts);
-        expect(full.content).toBe(`${first}\n\n${second}`);
+        expect(full.content).toBe(second);
+        expect(full.context.map((row) => row.excerpt)).toEqual([
+            first,
+            "Change of plan.",
+        ]);
     } finally {
         await f.close();
     }
