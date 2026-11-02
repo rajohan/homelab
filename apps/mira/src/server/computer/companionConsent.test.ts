@@ -17,6 +17,7 @@ function summaryOf(request: {
     mode: "view" | "control";
     state: string;
     expiresAt: string;
+    keepOpen?: boolean;
 }) {
     return {
         id: request.id,
@@ -25,6 +26,7 @@ function summaryOf(request: {
         mode: request.mode,
         state: request.state,
         expiresAt: request.expiresAt,
+        ...(request.keepOpen ? { keepOpen: true } : {}),
     };
 }
 function deferred<T>() {
@@ -34,7 +36,7 @@ function deferred<T>() {
     });
     return { promise, resolve: complete };
 }
-function fixture(mode: "view" | "control" = "control") {
+function fixture(mode: "view" | "control" = "control", keepOpen = false) {
     const id = crypto.randomUUID();
     const credential = issueComputerCredential("device", id).token;
     const connectionId = crypto.randomUUID();
@@ -44,7 +46,8 @@ function fixture(mode: "view" | "control" = "control") {
         runId: crypto.randomUUID(),
         mode,
         state: "pending" as const,
-        expiresAt: new Date(Date.now() + 120_000).toISOString(),
+        expiresAt: new Date(Date.now() + (keepOpen ? 3_600_000 : 120_000)).toISOString(),
+        ...(keepOpen ? { keepOpen: true } : {}),
     };
     const request = {
         ...summary,
@@ -183,6 +186,74 @@ function fixture(mode: "view" | "control" = "control") {
         },
     };
 }
+
+test.each([90_000, 360_000])(
+    "persistent consent resumes after %s ms idle without another prompt and keeps stop authoritative",
+    async (idle) => {
+        const f = fixture("control", true);
+        try {
+            await f.controller.review();
+            const first = await f.controller.observe(signal());
+            f.advance(idle);
+            const next = await f.controller.observe(signal());
+            expect(next.observationId).not.toBe(first.observationId);
+            expect(f.events.filter((event) => event === "prompt")).toHaveLength(1);
+            expect(f.events.filter((event) => event === "open")).toHaveLength(2);
+            expect(f.events.filter((event) => event === "closed")).toHaveLength(1);
+            expect(
+                await f.controller.act(
+                    {
+                        action: "type",
+                        observationId: next.observationId,
+                        text: "Next reply",
+                    },
+                    signal()
+                )
+            ).toEqual({ effect: "confirmed" });
+            f.localStop.abort();
+            f.advance(360_000);
+            await rejects(f.controller.observe(signal()));
+            expect(f.events.filter((event) => event === "open")).toHaveLength(2);
+        } finally {
+            await f.controller.close();
+        }
+    }
+);
+
+test("persistent rotation invalidates old observation tokens and requires confirmed cleanup", async () => {
+    for (const failure of ["token", "cleanup", "offline"]) {
+        const f = fixture("control", true);
+        try {
+            await f.controller.review();
+            const first = await f.controller.observe(signal());
+            f.advance(360_000);
+            if (failure === "cleanup")
+                f.port.close = () => Promise.reject(new Error("Cleanup failed"));
+            if (failure === "offline") f.unavailable();
+            if (failure === "token") {
+                await f.controller.observe(signal());
+                await rejects(
+                    f.controller.act(
+                        {
+                            action: "type",
+                            observationId: first.observationId,
+                            text: "Stale",
+                        },
+                        signal()
+                    ),
+                    /fresh computer observation/
+                );
+            } else {
+                await rejects(f.controller.observe(signal()));
+                expect(f.events.filter((event) => event === "open")).toHaveLength(1);
+            }
+            expect(f.events).not.toContain("type");
+            expect(f.controller.signal.aborted).toBe(true);
+        } finally {
+            await f.controller.close().catch(() => {});
+        }
+    }
+});
 
 test("local consent precedes acceptance and native startup; only opaque target identities leave the PC", async () => {
     const f = fixture();

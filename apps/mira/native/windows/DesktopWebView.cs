@@ -24,8 +24,8 @@ internal sealed class DesktopWebView : UserControl
     internal DesktopWebView(string directory, Func<string, string, string> receive, Action<string> openExternal = null)
     {
         profile = Path.Combine(directory, "WebView2"); message = receive; external = openExternal ?? LaunchExternal;
-        Dock = DockStyle.Fill; BackColor = Color.FromArgb(2, 6, 23);
-        ForeColor = Color.FromArgb(226, 232, 240); Font = new Font("Segoe UI", 11);
+        Dock = DockStyle.Fill; BackColor = MiraWindow.Canvas;
+        ForeColor = MiraWindow.TextColor; Font = new Font("Segoe UI", 11);
         fallback.Dock = DockStyle.Fill; fallback.FlowDirection = FlowDirection.TopDown;
         fallback.Padding = new Padding(32); fallback.WrapContents = false;
         notice.Text = "Opening Mira…"; notice.AutoSize = true; notice.Margin = new Padding(0, 0, 0, 20);

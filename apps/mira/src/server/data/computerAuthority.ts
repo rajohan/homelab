@@ -8,6 +8,8 @@ export interface AccessRow {
     owner: string;
     computerId: string;
     runId: string;
+    conversationId: string;
+    keepOpen: boolean;
     mode: "view" | "control";
     state: "pending" | "active" | "stopped";
     connectionId: string;
@@ -43,7 +45,7 @@ export async function readComputerAccess(
     id: string
 ): Promise<AccessRow | undefined> {
     const [row] = await query<AccessRow[]>`
-        SELECT g.id,g.owner,g.computer_id AS "computerId",g.run_id AS "runId",g.mode,g.state,
+        SELECT g.id,g.owner,g.computer_id AS "computerId",g.run_id AS "runId",r.conversation_id AS "conversationId",g.keep_open AS "keepOpen",g.mode,g.state,
             g.connection_id AS "connectionId",g.target_id AS "targetId",g.run_lease AS "runLease",g.expires_at AS "expiresAt",
             least(g.expires_at,g.created_at+interval '1 minute') AS "consentExpiresAt",
             g.expires_at<=clock_timestamp() AS expired,
@@ -51,19 +53,23 @@ export async function readComputerAccess(
              AND (g.state<>'pending' OR g.created_at>clock_timestamp()-interval '1 minute')
              AND c.state='paired' AND c.version=g.computer_version AND c.connection_id=g.connection_id
              AND c.expires_at>clock_timestamp() AND c.connection_expires_at>clock_timestamp()
-             AND r.state='running' AND NOT r.cancel_requested AND r.lease_token=g.run_lease
-             AND r.lease_expires_at>clock_timestamp() AND r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp()
-             AND v.deleted_at IS NULL AND coalesce(u.enabled,true)
+             AND ((g.keep_open AND r.manual AND r.automation_id IS NULL) OR
+                (NOT g.keep_open AND r.state='running' AND NOT r.cancel_requested AND r.lease_token=g.run_lease
+                 AND r.lease_expires_at>clock_timestamp() AND r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp()))
+             AND v.deleted_at IS NULL AND v.archived_at IS NULL AND coalesce(u.enabled,true)
              AND (r.automation_id IS NULL OR (a.deleted_at IS NULL AND s.enabled AND
                  (a.schedule->>'event' IS DISTINCT FROM 'agentmail' OR i.enabled)))
              AND NOT EXISTS (SELECT 1 FROM mira_computer_commands cmd JOIN mira_tool_receipts receipt ON receipt.id=cmd.id
+                 JOIN mira_runs command_run ON command_run.id=cmd.run_id AND command_run.owner=cmd.owner
                  WHERE cmd.access_id=g.id AND cmd.state IN ('queued','claimed','completed')
-                 AND (cmd.expires_at<=clock_timestamp() OR receipt.state<>'running'))
+                 AND (cmd.expires_at<=clock_timestamp() OR receipt.state<>'running'
+                    OR command_run.state<>'running' OR command_run.cancel_requested OR command_run.lease_token IS DISTINCT FROM cmd.run_lease
+                    OR command_run.lease_expires_at<=clock_timestamp() OR command_run.started_at+command_run.budget_seconds*interval '1 second'<=clock_timestamp()))
              AND g.controls=jsonb_build_array(coalesce(u.version,1),a.version,s.version,
                  CASE WHEN a.schedule->>'event'='agentmail' THEN i.version END)
             ) IS TRUE AS available,
-            greatest(0,least(5000,floor(extract(epoch FROM (least(g.expires_at,c.expires_at,c.connection_expires_at,r.lease_expires_at,
-                r.started_at+r.budget_seconds*interval '1 second')-clock_timestamp()))*1000)))::int AS "validForMs"
+            greatest(0,least(5000,floor(extract(epoch FROM (least(g.expires_at,c.expires_at,c.connection_expires_at,
+                CASE WHEN g.keep_open THEN g.expires_at ELSE least(r.lease_expires_at,r.started_at+r.budget_seconds*interval '1 second') END)-clock_timestamp()))*1000)))::int AS "validForMs"
         FROM mira_computer_access g JOIN mira_computers c ON c.id=g.computer_id AND c.owner=g.owner
         JOIN mira_runs r ON r.id=g.run_id AND r.owner=g.owner
         JOIN mira_conversations v ON v.id=r.conversation_id AND v.owner=g.owner

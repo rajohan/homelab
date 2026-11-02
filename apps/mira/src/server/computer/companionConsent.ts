@@ -67,7 +67,9 @@ export class ComputerConsentController {
     private request?: MiraComputerConsentRequest;
     private target?: Readonly<ComputerWindowGrant>;
     private targetId?: string;
-    private session?: ComputerWindowSession;
+    private session: ComputerWindowSession | undefined;
+    private sessionStarted = 0;
+    private sessionUsed = 0;
     private opening?: Promise<ComputerWindowPort>;
     private closing?: Promise<void>;
     private checking: Promise<void> | undefined;
@@ -115,7 +117,7 @@ export class ComputerConsentController {
             this.attempted = true;
             this.request = Object.freeze({ ...request });
             const remaining = Math.min(
-                300_000,
+                request.keepOpen ? Number.MAX_SAFE_INTEGER : 300_000,
                 Date.parse(request.expiresAt) - Date.now()
             );
             if (!Number.isFinite(remaining) || remaining <= 0)
@@ -161,24 +163,22 @@ export class ComputerConsentController {
                 receipt.runId !== request.runId ||
                 receipt.mode !== request.mode ||
                 receipt.state !== "active" ||
-                receipt.expiresAt !== request.expiresAt
+                receipt.expiresAt !== request.expiresAt ||
+                Boolean(receipt.keepOpen) !== Boolean(request.keepOpen)
             )
                 throw new Error("Computer consent receipt changed.");
             this.consentDeadline = 0;
             clearTimeout(this.expiryTimer);
-            this.expiryTimer = setTimeout(
-                this.stopListener,
-                Math.max(0, this.deadline - this.now())
-            );
+            // Long grants are checked by the same one-second permit loop; do not
+            // overflow JavaScript's 32-bit timer when pairing lasts many days.
+            if (!request.keepOpen)
+                this.expiryTimer = setTimeout(
+                    this.stopListener,
+                    Math.max(0, this.deadline - this.now())
+                );
             await this.check();
             this.assertLive();
-            this.opening = Promise.resolve().then(() => {
-                this.assertLive();
-                return this.options.host.open(this.target!, this.abort.signal);
-            });
-            const port = await this.opening;
-            this.assertLive();
-            this.session = new ComputerWindowSession(port, () => this.check(), this.now);
+            await this.openSession();
             await this.check();
             return true;
         } catch (error) {
@@ -209,7 +209,21 @@ export class ComputerConsentController {
      */
     async observe(signal: AbortSignal) {
         try {
-            return await this.active().observe(signal);
+            // Consent survives replies; native workers keep their five-minute
+            // ceiling. Rotate before observation so old input tokens cannot cross.
+            if (
+                this.request?.keepOpen &&
+                (this.now() - this.sessionStarted >= 240_000 ||
+                    this.now() - this.sessionUsed >= 45_000)
+            ) {
+                await this.active().close();
+                this.session = undefined;
+                await this.check();
+                await this.openSession();
+            }
+            const observation = await this.active().observe(signal);
+            this.sessionUsed = this.now();
+            return observation;
         } catch (error) {
             await this.close();
             throw error;
@@ -228,6 +242,7 @@ export class ComputerConsentController {
             throw new Error("Computer access is view-only.");
         try {
             const result = await session.act(input, signal);
+            this.sessionUsed = this.now();
             if (result.effect === "unknown") await this.close();
             return result;
         } catch (error) {
@@ -285,6 +300,18 @@ export class ComputerConsentController {
         }
         if (!this.session) throw new Error("Computer access is awaiting local consent.");
         return this.session;
+    }
+    private async openSession(): Promise<void> {
+        this.assertLive();
+        this.opening = Promise.resolve().then(() => {
+            this.assertLive();
+            return this.options.host.open(this.target!, this.abort.signal);
+        });
+        const port = await this.opening;
+        this.assertLive();
+        this.session = new ComputerWindowSession(port, () => this.check(), this.now);
+        this.sessionStarted = this.now();
+        this.sessionUsed = this.sessionStarted;
     }
     private assertLive() {
         this.abort.signal.throwIfAborted();

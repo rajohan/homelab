@@ -8,9 +8,9 @@ internal sealed class DesktopButton : Button
     {
         if (Enabled) { base.OnPaint(args); return; }
         args.Graphics.Clear(BackColor);
-        using (var border = new Pen(Color.FromArgb(71, 85, 105)))
+        using (var border = new Pen(MiraWindow.Border))
             args.Graphics.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
-        TextRenderer.DrawText(args.Graphics, Text, Font, ClientRectangle, Color.FromArgb(148, 163, 184),
+        TextRenderer.DrawText(args.Graphics, Text, Font, ClientRectangle, MiraWindow.Muted,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
     }
 }

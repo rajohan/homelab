@@ -35,9 +35,13 @@ export async function buildWindowsConsent(outputRoot?: string, tests = false) {
         "/reference:System.Windows.Forms.dll",
         "/reference:System.Drawing.dll",
         "/reference:System.Web.Extensions.dll",
-        ...["NativeWindows.cs", "ConsentProtocol.cs", "ConsentForm.cs", "Program.cs"].map(
-            (file) => path.join(source, file)
-        ),
+        ...[
+            "NativeWindows.cs",
+            "ConsentProtocol.cs",
+            "MiraWindow.cs",
+            "ConsentForm.cs",
+            "Program.cs",
+        ].map((file) => path.join(source, file)),
     ];
     // Instrumented CodeQL builds can exceed 30 seconds on a cold Windows runner.
     execFileSync(compiler, ["/target:winexe", `/out:${host}`, ...common], {
@@ -54,6 +58,7 @@ export async function buildWindowsConsent(outputRoot?: string, tests = false) {
                 `/out:${checks}`,
                 ...common,
                 path.join(source, "tests/WindowsTests.cs"),
+                path.join(source, "tests/MiraWindowTests.cs"),
             ],
             { windowsHide: true, timeout: 120_000, maxBuffer: 64 * 1024 }
         );

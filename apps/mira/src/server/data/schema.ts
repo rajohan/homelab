@@ -975,6 +975,7 @@ export const miraComputerAccess = pgTable(
             .references(() => miraRuns.id),
         runLease: uuid("run_lease").notNull(),
         controls: jsonb().notNull(),
+        keepOpen: boolean("keep_open").notNull().default(false),
         mode: text().notNull(),
         state: text().notNull().default("pending"),
         targetId: uuid("target_id"),
@@ -998,7 +999,7 @@ export const miraComputerAccess = pgTable(
         ),
         check(
             "mira_computer_access_duration",
-            sql`${t.expiresAt} > ${t.createdAt} AND ${t.expiresAt} <= ${t.createdAt}+interval '5 minutes'`
+            sql`${t.expiresAt} > ${t.createdAt} AND (${t.keepOpen} OR ${t.expiresAt} <= ${t.createdAt}+interval '5 minutes')`
         ),
     ]
 );
@@ -1023,6 +1024,7 @@ export const miraComputerCommands = pgTable(
         state: text().notNull().default("queued"),
         payload: jsonb(),
         result: jsonb(),
+        observationId: uuid("observation_id"),
         createdAt: time("created_at").notNull().defaultNow(),
         expiresAt: time("expires_at").notNull(),
         claimedAt: time("claimed_at"),

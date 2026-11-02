@@ -1,0 +1,1 @@
+ALTER TABLE "mira_computer_commands" ADD COLUMN "observation_id" uuid;
