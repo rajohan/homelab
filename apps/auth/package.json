@@ -10,19 +10,19 @@
         "@homelab/contracts": "workspace:*",
         "@homelab/ui": "workspace:*",
         "@simplewebauthn/server": "14.0.3",
-        "@tanstack/react-query": "5.104.5",
+        "@tanstack/react-query": "5.105.0",
         "drizzle-orm": "1.0.0-rc.5",
-        "effect": "4.0.6",
-        "oidc-provider": "9.13.0",
+        "effect": "4.1.0",
+        "oidc-provider": "9.13.3",
         "otpauth": "9.5.2",
-        "re2js": "2.9.0",
+        "re2js": "2.9.1",
         "react": "19.3.1",
         "react-dom": "19.3.1",
         "tldts": "7.4.19",
         "valibot": "1.5.0"
     },
     "devDependencies": {
-        "@types/oidc-provider": "9.12.1",
-        "jose": "6.2.13"
+        "@types/oidc-provider": "9.13.1",
+        "jose": "6.2.14"
     }
 }
