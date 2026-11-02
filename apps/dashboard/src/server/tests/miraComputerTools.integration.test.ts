@@ -12,7 +12,7 @@ import {
 } from "@homelab/mira/data/computerCommands";
 import { connectMiraComputer, enrollMiraComputer } from "@homelab/mira/data/computers";
 import { readMiraComputerReadiness } from "@homelab/mira/data/computerWait";
-import { claimMiraRun } from "@homelab/mira/data/queue";
+import { claimMiraRun, finishMiraRun } from "@homelab/mira/data/queue";
 
 import { createMiraTools } from "../../../../mira/src/server/executor/tools";
 import {
@@ -151,7 +151,11 @@ const input = () => ({
     observationId: crypto.randomUUID(),
     text: "synthetic private input",
 });
-async function retired(f: Awaited<ReturnType<typeof fixture>>, id: string) {
+async function retired(
+    f: Awaited<ReturnType<typeof fixture>>,
+    id: string,
+    receipt = "unknown"
+) {
     const [row] = await f.client<
         {
             state: string;
@@ -165,7 +169,7 @@ async function retired(f: Awaited<ReturnType<typeof fixture>>, id: string) {
         payload: null,
         result: null,
         access: "stopped",
-        receipt: "unknown",
+        receipt,
     });
     expect(
         await claimMiraComputerCommand(f.client, f.device.credential, f.binding)
@@ -342,7 +346,7 @@ test("computer cancellation retires queued and claimed work and latches uncertai
     }
 });
 
-test("computer unknown delivery and malformed stored frames cannot become successful or retryable tool results", async () => {
+test("computer input stays uncertain while malformed observations fail without claiming an action", async () => {
     for (const malformed of [false, true]) {
         const f = await fixture();
         try {
@@ -354,8 +358,11 @@ test("computer unknown delivery and malformed stored frames cannot become succes
             await (malformed
                 ? f.client`UPDATE mira_computer_commands SET state='completed',result='{"content":[]}'::jsonb WHERE id=${command.commandId}`
                 : f.finish(command.commandId, { effect: "unknown" }));
-            expect(text(await pending)).toMatchObject({ ok: false, retryable: false });
-            await retired(f, command.commandId);
+            expect(text(await pending)).toMatchObject({
+                ok: false,
+                retryable: malformed,
+            });
+            await retired(f, command.commandId, malformed ? "failed" : "unknown");
         } finally {
             await f.close();
         }
@@ -374,8 +381,8 @@ test("computer final delivery fence drops consumed frames if access stops before
         const pending = f.invoke("mira_computer_observe", {});
         const command = await f.claim();
         await f.finish(command.commandId, frame());
-        expect(text(await pending)).toMatchObject({ ok: false, retryable: false });
-        await retired(f, command.commandId);
+        expect(text(await pending)).toMatchObject({ ok: false, retryable: true });
+        await retired(f, command.commandId, "failed");
     } finally {
         await f.close();
     }
@@ -450,8 +457,33 @@ test("computer consumed result loss is never reconstructed or replayed by a wait
         expect(await takeMiraComputerCommand(f.worker, command.commandId)).toEqual({
             state: "consumed",
         });
-        expect(text(await pending)).toMatchObject({ ok: false, retryable: false });
-        await retired(f, command.commandId);
+        expect(text(await pending)).toMatchObject({ ok: false, retryable: true });
+        await retired(f, command.commandId, "failed");
+    } finally {
+        await f.close();
+    }
+});
+
+test("a lost screen read does not block ordinary chat or manufacture an uncertain action", async () => {
+    const f = await fixture("view");
+    try {
+        const pending = f.invoke("mira_computer_observe", {});
+        const command = await f.claim();
+        await f.api.computers.access.stop({ id: f.binding.accessId });
+        expect(text(await pending)).toMatchObject({
+            ok: false,
+            retryable: true,
+            message: expect.stringContaining("No clicks or keystrokes") as unknown,
+        });
+        await retired(f, command.commandId, "failed");
+        expect(text(await f.invoke("mira_tasks_list", {})).ok).toBe(true);
+        await finishMiraRun(f.client, f.run, {
+            state: "completed",
+            text: "The screen read failed; text chat still works.",
+            message: null,
+        });
+        const chat = await f.api.conversations.read({ id: f.run.conversationId });
+        expect(chat.run?.state).toBe("completed");
     } finally {
         await f.close();
     }

@@ -3,6 +3,7 @@ import {
     type MiraActivity,
     type MiraChatSettings,
     type MiraModel,
+    type MiraMessagePart,
     type MiraSchedule,
 } from "@homelab/contracts/mira";
 import type { MiraCodeContent, MiraCodePublication } from "@homelab/contracts/miraCode";
@@ -66,6 +67,7 @@ export const miraMessages = pgTable(
             .references(() => miraConversations.id),
         role: text().notNull(),
         content: text().notNull().default(""),
+        parts: jsonb().$type<MiraMessagePart[]>().notNull().default([]),
         state: text().notNull(),
         attachmentIds: jsonb("attachment_ids").$type<string[]>().notNull().default([]),
         createdAt: time("created_at").notNull().defaultNow(),
@@ -277,6 +279,33 @@ export const miraRuns = pgTable(
         check(
             "mira_runs_state",
             sql`${t.state} in ('queued','running','completed','interrupted','failed','needs_attention')`
+        ),
+    ]
+);
+export const miraChatInputs = pgTable(
+    "mira_chat_inputs",
+    {
+        id: uuid()
+            .primaryKey()
+            .references(() => miraMessages.id),
+        owner: text().notNull(),
+        conversationId: uuid("conversation_id")
+            .notNull()
+            .references(() => miraConversations.id),
+        runId: uuid("run_id")
+            .notNull()
+            .references(() => miraRuns.id),
+        requestKey: text("request_key").notNull().unique(),
+        requestHash: text("request_hash").notNull(),
+        state: text().notNull().default("pending"),
+        leaseToken: uuid("lease_token"),
+    },
+    (t) => [
+        index("mira_chat_inputs_pending").on(t.state, t.id),
+        index("mira_chat_inputs_conversation").on(t.conversationId, t.id),
+        check(
+            "mira_chat_inputs_state",
+            sql`${t.state} IN ('pending','sending','delivered','continued','stopped')`
         ),
     ]
 );

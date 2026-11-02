@@ -67,6 +67,7 @@ import {
     setMiraEnabled,
 } from "@homelab/mira/data/automations";
 import { listMiraModels, saveMiraChatSettings } from "@homelab/mira/data/chatSettings";
+import { sendMiraMessage } from "@homelab/mira/data/chatSteering";
 import {
     saveMiraCode,
     approveMiraCode,
@@ -81,7 +82,6 @@ import {
     cancelRun,
     changeConversation,
     createConversation,
-    enqueueTurn,
     listConversations,
     readConversation,
     renameConversation,
@@ -478,9 +478,7 @@ export const miraRouter = trpc.router({
         send: trpc.procedure
             .input(miraMessageInputSchema)
             .mutation(({ ctx, input }) =>
-                execute(ctx, (mira) =>
-                    mira.client.begin((query) => enqueueTurn(query, mira, input))
-                )
+                execute(ctx, (mira) => sendMiraMessage(mira, input))
             ),
     }),
     runs: trpc.router({

@@ -202,12 +202,18 @@ export interface MiraConversation {
     createdAt: string;
     updatedAt: string;
 }
+export interface MiraMessagePart {
+    id: string;
+    offset: number;
+    createdAt: string;
+}
 export interface MiraMessage {
     id: string;
     role: "user" | "assistant";
     content: string;
     state: "queued" | "streaming" | "completed" | "interrupted" | "failed";
     attachmentIds: string[];
+    parts?: MiraMessagePart[];
     createdAt: string;
 }
 export type MiraRunState =

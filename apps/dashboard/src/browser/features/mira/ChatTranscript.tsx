@@ -3,6 +3,7 @@ import { Button } from "@homelab/ui";
 import { useEffect, useRef, type ReactNode } from "react";
 
 import { ChatMessage } from "./ChatMessage";
+import { chatMessageParts } from "./messageParts";
 
 /**
  * Keep the transcript inside the workspace and follow new replies without moving a reader in history.
@@ -69,7 +70,7 @@ export function ChatTranscript({
                     Start a conversation with Mira.
                 </p>
             )}
-            {messages.map((message) => (
+            {chatMessageParts(messages).map((message) => (
                 <ChatMessage key={message.id} message={message} />
             ))}
             {activity}

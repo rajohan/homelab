@@ -14,6 +14,18 @@ patches are part of this design.
 
 ## Chat permissions
 
+While Mira is working, Send stores a message immediately and steers the active
+manual turn. Late messages and attachments continue in a new turn after successful
+completion. Cancellation, failed work and unconfirmed delivery never trigger an
+automatic replay. Each provider reply has its own timestamped chat bubble.
+Desktop Enter sends and Shift+Enter inserts a line; touch devices keep Enter as a
+newline. Files can be dropped directly into the writing field or the attachment
+dialog, with shared upload status, preview and removal in web and Windows.
+
+A failed read-only PC observation is reported as a capture failure, not an
+uncertain click or keystroke. The computer grant still stops on a failed capture;
+input commands with unconfirmed outcomes remain blocked from replay.
+
 Chat settings offers Ask for approval, Approve for me and Full access. The selected mode is stored with the conversation and enforced by the same server for web and Windows. See [Chat permissions](mira-permissions.md) for exact action scopes, revocation and deployment requirements.
 
 ## Deployment boundaries
