@@ -9,6 +9,7 @@ import {
 import type { SQL, TransactionSQL } from "bun";
 import * as v from "valibot";
 
+import { version } from "../../../../../package.json";
 import {
     lockComputerOwner as lockOwner,
     readComputerAccess as readAccess,
@@ -38,13 +39,14 @@ function summary(row: AccessRow): MiraComputerAccessSummary {
         mode: row.mode,
         state,
         expiresAt: row.expiresAt.toISOString(),
+        ...(row.keepOpen ? { keepOpen: true } : {}),
     };
 }
 
 /**
- * Request one short-lived computer session for an already running owned job.
+ * Request local consent for one running job, optionally retained for its manual chat replies.
  * @param context - Freshly reverified human; this function never accepts a model principal.
- * @param input - Displayed computer version, exact run and view-only or input authority.
+ * @param input - Displayed computer version, exact run, action scope and explicit retained-consent choice.
  * @returns Pending local consent, never an executable or an active desktop capability.
  */
 export async function requestMiraComputerAccess(
@@ -55,14 +57,21 @@ export async function requestMiraComputerAccess(
     const request = v.parse(miraComputerAccessRequestSchema, input);
     return context.client.begin(async (query) => {
         await lockOwner(query, context.owner);
-        const [computer] = await query<{ connectionId: string; expiresAt: Date }[]>`
-            SELECT connection_id AS "connectionId",expires_at AS "expiresAt" FROM mira_computers
+        const [computer] = await query<
+            { connectionId: string; expiresAt: Date; companionVersion: string | null }[]
+        >`
+            SELECT connection_id AS "connectionId",expires_at AS "expiresAt",companion_version AS "companionVersion" FROM mira_computers
             WHERE id=${request.computerId} AND owner=${context.owner} AND version=${request.computerVersion}
             AND state='paired' AND expires_at>clock_timestamp() AND connection_expires_at>clock_timestamp() FOR UPDATE`;
         if (!computer)
             throw new MiraFailure(
                 "CONFLICT",
                 "Computer changed or is offline. Refresh before allowing access."
+            );
+        if (request.keepOpen && computer.companionVersion !== version)
+            throw new MiraFailure(
+                "PRECONDITION_FAILED",
+                "Update the Windows app before sharing across replies."
             );
         // Retire unusable requests before enforcing the one-computer/one-run ceiling.
         const previous = await query<
@@ -76,7 +85,8 @@ export async function requestMiraComputerAccess(
             }
         }
         const [limits] = await query<{ busy: boolean; recent: number }[]>`
-            SELECT coalesce(bool_or(state IN ('pending','active') AND (computer_id=${request.computerId} OR run_id=${request.runId})),false) AS busy,
+            SELECT coalesce(bool_or(state IN ('pending','active') AND (computer_id=${request.computerId} OR run_id=${request.runId}
+                OR (keep_open AND run_id IN (SELECT old.id FROM mira_runs old JOIN mira_runs current ON current.conversation_id=old.conversation_id AND current.owner=old.owner WHERE current.id=${request.runId} AND current.owner=${context.owner})))),false) AS busy,
             count(*) FILTER(WHERE created_at>clock_timestamp()-interval '1 hour')::int AS recent
             FROM mira_computer_access WHERE owner=${context.owner}`;
         if (limits!.busy || limits!.recent >= 20)
@@ -87,7 +97,7 @@ export async function requestMiraComputerAccess(
         const [run] = await query<
             { lease: string; expiresAt: Date; controls: unknown }[]
         >`
-            SELECT r.lease_token AS lease,least(clock_timestamp()+interval '5 minutes',r.started_at+r.budget_seconds*interval '1 second',${computer.expiresAt}) AS "expiresAt",
+            SELECT r.lease_token AS lease,CASE WHEN ${request.keepOpen} THEN ${computer.expiresAt}::timestamptz ELSE least(clock_timestamp()+interval '5 minutes',r.started_at+r.budget_seconds*interval '1 second',${computer.expiresAt}) END AS "expiresAt",
                 jsonb_build_array(coalesce(u.version,1),a.version,s.version,CASE WHEN a.schedule->>'event'='agentmail' THEN i.version END) AS controls
             FROM mira_runs r JOIN mira_conversations c ON c.id=r.conversation_id AND c.owner=r.owner
             LEFT JOIN mira_switches u ON u.owner=r.owner AND u.key='autonomy'
@@ -97,6 +107,7 @@ export async function requestMiraComputerAccess(
             WHERE r.id=${request.runId} AND r.owner=${context.owner} AND r.state='running' AND NOT r.cancel_requested
                 AND r.lease_expires_at>clock_timestamp() AND r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp()
                 AND c.deleted_at IS NULL AND coalesce(u.enabled,true)
+                AND c.archived_at IS NULL AND (NOT ${request.keepOpen} OR (r.manual AND r.automation_id IS NULL))
                 AND (r.automation_id IS NULL OR (a.deleted_at IS NULL AND s.enabled AND
                     (a.schedule->>'event' IS DISTINCT FROM 'agentmail' OR i.enabled))) FOR SHARE OF r`;
         if (!run)
@@ -107,9 +118,9 @@ export async function requestMiraComputerAccess(
         const id = Bun.randomUUIDv7();
         const [inserted] = await query<{ id: string }[]>`
             WITH timing AS MATERIALIZED (SELECT clock_timestamp() AS at)
-            INSERT INTO mira_computer_access(id,owner,computer_id,computer_version,connection_id,run_id,run_lease,controls,mode,expires_at,created_at)
-            SELECT ${id},${context.owner},${request.computerId},${request.computerVersion},${computer.connectionId},${request.runId},${run.lease},${JSON.stringify(run.controls)}::text::jsonb,${request.mode},
-                least(${run.expiresAt}::timestamptz,timing.at+interval '5 minutes'),timing.at
+            INSERT INTO mira_computer_access(id,owner,computer_id,computer_version,connection_id,run_id,run_lease,controls,mode,keep_open,expires_at,created_at)
+            SELECT ${id},${context.owner},${request.computerId},${request.computerVersion},${computer.connectionId},${request.runId},${run.lease},${JSON.stringify(run.controls)}::text::jsonb,${request.mode},${request.keepOpen},
+                CASE WHEN ${request.keepOpen} THEN ${run.expiresAt}::timestamptz ELSE least(${run.expiresAt}::timestamptz,timing.at+interval '5 minutes') END,timing.at
             FROM timing WHERE ${run.expiresAt}::timestamptz>timing.at RETURNING id`;
         if (!inserted)
             throw new MiraFailure(
@@ -124,7 +135,7 @@ export async function requestMiraComputerAccess(
 /**
  * Read recent owned access requests with effective expiry and cancellation state.
  * @param context - Signed-in operator, never a machine or model.
- * @param runId - Optional exact run filter for conversation controls.
+ * @param runId - Optional owned run; includes retained consent anchored to the same conversation.
  * @returns At most fifty summaries without run lease tokens, device secrets or window details.
  */
 export async function listMiraComputerAccess(
@@ -135,7 +146,10 @@ export async function listMiraComputerAccess(
     if (runId) v.parse(v.pipe(v.string(), v.uuid()), runId);
     const rows = await context.client<
         { id: string }[]
-    >`SELECT id FROM mira_computer_access WHERE owner=${context.owner} AND (${runId ?? null}::uuid IS NULL OR run_id=${runId ?? null}::uuid) ORDER BY created_at DESC,id DESC LIMIT 50`;
+    >`SELECT g.id FROM mira_computer_access g JOIN mira_runs original ON original.id=g.run_id AND original.owner=g.owner
+        WHERE g.owner=${context.owner} AND (${runId ?? null}::uuid IS NULL OR g.run_id=${runId ?? null}::uuid
+            OR (g.keep_open AND original.conversation_id=(SELECT conversation_id FROM mira_runs WHERE id=${runId ?? null}::uuid AND owner=${context.owner})))
+        ORDER BY g.created_at DESC,g.id DESC LIMIT 50`;
     const result: MiraComputerAccessSummary[] = [];
     for (const item of rows) {
         const row = await readAccess(context.client, context.owner, item.id);
@@ -287,11 +301,23 @@ export async function requireMiraComputerAccess(
     return context.client.begin(async (query) => {
         await lockOwner(query, context.owner);
         const row = await readAccess(query, context.owner, input.id);
+        const [run] = await query<
+            { conversationId: string; manual: boolean; automationId: string | null }[]
+        >`
+            SELECT conversation_id AS "conversationId",manual,automation_id AS "automationId" FROM mira_runs
+            WHERE id=${context.run!.id} AND owner=${context.owner} AND state='running' AND NOT cancel_requested
+                AND lease_token=${context.run!.leaseToken} AND lease_expires_at>clock_timestamp()
+                AND started_at+budget_seconds*interval '1 second'>clock_timestamp() FOR SHARE`;
         if (
             !row?.available ||
+            !run ||
             row.state !== "active" ||
-            row.runId !== context.run!.id ||
-            row.runLease !== context.run!.leaseToken ||
+            (row.keepOpen
+                ? !run.manual ||
+                  run.automationId !== null ||
+                  run.conversationId !== row.conversationId
+                : row.runId !== context.run!.id ||
+                  row.runLease !== context.run!.leaseToken) ||
             row.targetId !== input.targetId ||
             (input.mode === "control" && row.mode !== "control") ||
             row.validForMs <= 0

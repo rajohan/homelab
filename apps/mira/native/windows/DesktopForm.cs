@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Win32;
 
-internal sealed class DesktopForm : Form
+internal sealed class DesktopForm : MiraWindow
 {
     private readonly DesktopConnection connection;
     private readonly DesktopWebView web;
@@ -18,13 +18,13 @@ internal sealed class DesktopForm : Form
     internal DesktopForm(string package, string settings, Action<bool> installation, bool startup)
     {
         Text = "Mira"; Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
-        ClientSize = new Size(1280, 820); MinimumSize = new Size(640, 520);
+        Size = new Size(1280, 820); MinimumSize = new Size(640, 520);
         StartPosition = FormStartPosition.CenterScreen; AutoScaleMode = AutoScaleMode.Dpi;
-        BackColor = Color.FromArgb(2, 6, 23);
+        BackColor = Canvas;
         connection = new DesktopConnection(package, settings, installation, delegate(Action action) {
             try { if (!IsDisposed && IsHandleCreated) BeginInvoke(action); } catch (InvalidOperationException) { }
         });
-        web = new DesktopWebView(settings, Receive); Controls.Add(web);
+        web = new DesktopWebView(settings, Receive); Content.Controls.Add(web);
         tray.Icon = Icon; tray.Text = "Mira";
         trayMenu.Items.Add("Open Mira", null, async delegate { await RestoreWindow(false); });
         trayMenu.Items.Add("Settings", null, async delegate { await RestoreWindow(true); });

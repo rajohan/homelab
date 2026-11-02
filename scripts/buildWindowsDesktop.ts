@@ -60,6 +60,8 @@ export async function buildWindowsDesktop(directory: string, tests = false) {
         "InstallationProtocol.cs",
         "ConsentProtocol.cs",
         "DesktopButton.cs",
+        "MiraWindow.cs",
+        "MiraNotice.cs",
         "DesktopConnection.cs",
         "DesktopBridge.cs",
         "DesktopWebView.cs",
@@ -95,6 +97,7 @@ export async function buildWindowsDesktop(directory: string, tests = false) {
         compile(checks, [
             ...shared,
             "tests/DesktopTests.cs",
+            "tests/MiraWindowTests.cs",
             "tests/DesktopUpdateTests.cs",
             "tests/DesktopWebViewTests.cs",
         ]);

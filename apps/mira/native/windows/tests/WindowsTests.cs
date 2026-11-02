@@ -38,12 +38,22 @@ internal static class WindowsTests
             { "expiresAt", DateTime.UtcNow.AddMinutes(2).ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture) }
         };
     }
+    [STAThread]
     private static int Main()
     {
         try
         {
             var json = new JavaScriptSerializer();
+            MiraWindowTests.Run(Check);
             Check(ConsentRequest.Parse(json.Serialize(Request())).Mode == "view");
+            var persistent = Request();
+            persistent["keepOpen"] = true;
+            persistent["expiresAt"] = DateTime.UtcNow.AddDays(30).ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);
+            Check(ConsentRequest.Parse(json.Serialize(persistent)).KeepOpen);
+            persistent["keepOpen"] = false;
+            Reject(delegate { ConsentRequest.Parse(json.Serialize(persistent)); });
+            persistent["keepOpen"] = "true";
+            Reject(delegate { ConsentRequest.Parse(json.Serialize(persistent)); });
             foreach (var change in new[]
             {
                 new KeyValuePair<string, object>("origin", "http://computer.example.test"),

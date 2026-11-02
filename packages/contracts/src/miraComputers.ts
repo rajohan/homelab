@@ -48,6 +48,7 @@ export const miraComputerAccessRequestSchema = v.strictObject({
     computerVersion: v.pipe(v.number(), v.integer(), v.minValue(1)),
     runId: id,
     mode: v.picklist(["view", "control"]),
+    keepOpen: v.optional(v.boolean(), false),
 });
 export const miraComputerAccessConnectionSchema = v.strictObject({ connectionId: id });
 export const miraComputerAccessAcceptSchema = v.strictObject({
@@ -64,6 +65,8 @@ export interface MiraComputerAccessSummary {
     mode: "view" | "control";
     state: "pending" | "active" | "stopped" | "expired" | "unavailable";
     expiresAt: string;
+    /** Local approval remains valid for this conversation between manual runs. */
+    keepOpen?: boolean;
 }
 
 export const miraComputerAccessPermitSchema = v.strictObject({

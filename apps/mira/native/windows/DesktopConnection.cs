@@ -100,7 +100,7 @@ internal sealed class DesktopConnection : IDisposable
             maintenance(true); released = true;
             bool success = await Task.Run((Func<bool>)artifact.Install); completed = true;
             if (success) {
-                MessageBox.Show(owner, "Mira was updated. Open it again from Start; your pairing and sign-in are kept.", "Update installed", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MiraNotice.ShowNotice(owner, "Mira was updated. Open it again from Start; your pairing and sign-in are kept.", "Update installed");
                 closing = true;
             } else Publish("Setup did not complete. Close other Mira clients and try again.");
         } catch { blocked = true; Publish("The update could not be confirmed. Let setup finish, then reopen Mira from Start."); }

@@ -120,10 +120,11 @@ On the PC, run `mira-computer pair https://computer.home.example.test`. Paste th
 
 The compiled presence executable was run on Windows x64 with `--version` and `--help`. `apps/mira/src/server/testing/computerVault.ts` separately qualified the real Windows vault using one random synthetic origin and confirmed removal afterward. This does not qualify native Windows input, lock detection or the live Meshnet route. The builder uses the pinned Bun CLI: its Windows output was exercised directly, rather than inferring executable readiness from a successful cross-compilation.
 
-## Per-run access protocol
+## Computer access protocol
 
-The server now stores a separate, short-lived permission for one running job and
-one paired computer. `mira.computers.access.request` requires fresh human MFA and
+The server stores separate consent for one paired computer, either for the
+current job or retained across manual replies in the same conversation.
+`mira.computers.access.request` requires fresh human MFA and
 an exact displayed computer version. A request is only pending consent: the
 installed Windows companion must obtain a separate local approval before accepting
 it. Chat controls and the local consent UI use the same protocol.
@@ -131,8 +132,12 @@ it. Chat controls and the local consent UI use the same protocol.
 The permission captures the current worker lease, computer connection generation,
 view-only/input scope, automation definition and relevant pause-control versions.
 Only one pending/active permission can exist per computer and per run. A local
-consent request expires after one minute; all authority expires within five
-minutes and no later than the job's budget or device credential. Requests are
+consent request expires after one minute. Job-only consent expires within five
+minutes and no later than the job's budget or device credential. Retained consent
+requires the matching Windows release and expires with the device credential;
+the user can stop it sooner from Chat or the local consent window. It cannot be
+used by automations or another conversation, and only one retained permission can
+exist in that conversation. Requests are
 limited to twenty per account per hour, including stopped requests.
 
 The private machine listener exposes `access/pending`, `access/accept` and
@@ -157,8 +162,11 @@ remain required before actual desktop control can be enabled.
 Human stop is idempotent and does not require another MFA challenge or an
 optimistic version. Local stop first closes the native session and then records
 the stop on the server; reconnecting must never restore it. Cancellation,
-completion, expired leases, pairing revocation, deleted conversations and changed
-pause-control versions all invalidate access. Resuming a pause requires a new
+completion and expired leases prevent that job from issuing any further commands.
+Job-only consent ends with it; retained consent remains available to a later live
+manual job in the same conversation. Outstanding commands from an ended job are
+retired without replay. Pairing revocation, archived/deleted conversations and
+changed pause-control versions invalidate both kinds of consent. Resuming a pause requires a new
 human request and new local consent. Stop records durable denial; it does not
 claim an already dispatched OS action was undone.
 
@@ -167,12 +175,19 @@ claim an already dispatched OS action was undone.
 The companion transport now reads consent requests, accepts one opaque target,
 checks a short `access/permit` receipt and records stop on the private listener.
 Pending metadata includes the original server consent deadline; discovering a request late never starts a new one-minute consent window.
-A permit rechecks the same live run, pause versions, device generation, target and
-scope as the executor gate. It cannot extend the original consent deadline or
+A permit rechecks pause versions, device generation, target and scope. Job-only
+consent also requires its original live run. Retained consent may remain idle
+between jobs, but command admission and result disclosure always recheck the
+current live manual run and its conversation. It cannot extend the consent deadline or
 reveal worker credentials. Responses are bounded and identity-checked; acceptance
 and input are never retried after uncertain delivery.
 
 `ComputerConsentController` is a single-use local lifecycle for that connection.
+Retained consent can replace its short-lived native driver before the next
+observation, after confirmed cleanup, using the same immutable target and fresh
+server/readiness checks. The five-minute worker and one-minute idle limits remain;
+old observation tokens cannot cross driver replacement. No new local prompt is
+needed while that explicit retained consent remains valid.
 Its host must show the requested job and view/control scope, obtain explicit local
 consent, resolve one exact native target, and independently check OS readiness.
 Only an opaque UUID leaves the PC during consent; executable, PID and window
@@ -237,7 +252,7 @@ from input control, and requires a local window selection. Input control also
 requires explicit consent to bring that window forward. No window is selected by
 default. Closing or declining the prompt permanently stops that request. Its
 countdown uses the original server consent deadline; approving it cannot renew
-the five-minute session ceiling. The helper does not itself capture pixels or
+the displayed job-only or retained-consent deadline. The helper does not itself capture pixels or
 send input, and its pipe accepts only initialization, readiness checks and stop.
 
 Only visible, non-elevated windows in the current interactive session are offered.

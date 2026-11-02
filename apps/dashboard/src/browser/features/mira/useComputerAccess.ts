@@ -60,7 +60,10 @@ export function computerAccessLabel(
     if (access?.state === "expired") return "Expired";
     if (!fresh) return "Status unavailable";
     if (!access) return "Not shared";
-    if (access.state === "unavailable" || run?.state !== "running" || run.cancelRequested)
+    if (
+        access.state === "unavailable" ||
+        (!access.keepOpen && (run?.state !== "running" || run.cancelRequested))
+    )
         return "Unavailable";
     if (access.state === "pending") return "Awaiting local approval";
     return access.mode === "view" ? "View only" : "Control";

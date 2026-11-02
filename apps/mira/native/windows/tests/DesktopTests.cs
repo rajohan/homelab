@@ -56,6 +56,7 @@ internal static class DesktopTests
             if (args.Length != 0) return 1;
             string root = AppDomain.CurrentDomain.BaseDirectory;
             Settings(root);
+            MiraWindowTests.Run(Require);
             DesktopWebViewTests.Boundaries(Require);
             Installation(root);
             DesktopUpdateTests.Run(root, Require);
