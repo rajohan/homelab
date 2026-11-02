@@ -624,6 +624,13 @@ test.each([true, false])(
                 `saved memory ${enabled ? "enabled" : "disabled"}`
             );
             expect(response.includes("CURRENT MEMORY ZK-981")).toBe(enabled);
+            for (const heading of [
+                "# Mira",
+                "# Character and purpose",
+                "# The current operator",
+                "# Mira operating instructions",
+            ])
+                expect(start.mock.calls[0]![3]).toContain(heading);
             const registry = start.mock.calls[0]![2].find(
                 (tool) => tool.name === "mira_tools_list"
             )!;

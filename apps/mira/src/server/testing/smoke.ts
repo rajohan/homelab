@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import information from "../../../package.json";
 import { readMiraPdf } from "../files/content";
+import { miraInstructions, miraInstructionsHash } from "../persona/instructions";
 import { CodexRuntime } from "../runtime/codexRuntime";
 import { pilotArguments, pilotEnvironment } from "../runtime/configuration";
 import { validatePilot } from "../runtime/validatePilot";
@@ -16,6 +17,20 @@ import { syntheticPdf } from "./document";
  * @returns Completion without login, credentials, network access or paid model requests.
  */
 export async function main(): Promise<void> {
+    for (const heading of [
+        "# Mira",
+        "# Character and purpose",
+        "# The current operator",
+        "# Mira operating instructions",
+    ])
+        assert.ok(
+            miraInstructions.includes(heading),
+            `Missing packaged persona section: ${heading}`
+        );
+    assert.equal(
+        miraInstructionsHash,
+        new Bun.CryptoHasher("sha256").update(miraInstructions).digest("hex")
+    );
     const root = await mkdtemp(path.join(tmpdir(), "homelab-mira-smoke-"));
     let runtime: CodexRuntime | undefined;
     try {
