@@ -432,16 +432,25 @@ export async function executeMiraTurn(
                     signal,
                     settings,
                     attachments: !continuation || useSynthetic ? attachments.inputs : [],
-                    timeoutMs: Math.max(1, deadlineAt - Date.now()),
+                    timeoutMs: Math.max(
+                        1,
+                        Math.min(
+                            assistance ? 300_000 : Number.POSITIVE_INFINITY,
+                            deadlineAt - Date.now()
+                        )
+                    ),
                     onStarted: async (turnId) => {
                         await client.begin(async (query) => {
                             const accepted = await query<
                                 { id: string }[]
-                            >`UPDATE mira_runs SET provider_turn=${turnId} WHERE id=${run.id} AND state='running' AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp() RETURNING id`;
-                            if (!accepted[0])
+                            >`UPDATE mira_runs SET provider_turn=${turnId} WHERE id=${run.id} AND state='running' AND NOT cancel_requested AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp() RETURNING id`;
+                            if (!accepted[0]) {
+                                assistanceIdle = assistance;
+                                controller.abort();
                                 throw new Error(
                                     "Run lease lost before turn acknowledgement."
                                 );
+                            }
                             if (!useSynthetic)
                                 await query`UPDATE mira_conversations SET provider_context_ready=true WHERE id=${run.conversationId} AND provider_thread=${threadId}`;
                         });

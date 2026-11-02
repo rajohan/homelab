@@ -128,7 +128,9 @@ executor continues after completed replies, waiting at least fifteen seconds
 between observation turns. Each new reply has its own timestamped bubble, and
 messages sent during the session steer the active turn or its next continuation.
 Both native and Synthetic models must support images; accepted operator guidance
-is preserved when Synthetic starts a fresh provider turn.
+is preserved when Synthetic starts a fresh provider turn. Each provider turn keeps
+a five-minute maximum within the overall session deadline, so a stalled reply
+cannot occupy the executor for the entire session.
 
 This is periodic assistance, not a continuous video stream. It uses the selected
 model throughout and ends when its duration expires, the model finishes the task,

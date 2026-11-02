@@ -19,11 +19,12 @@ import {
 import { connectMiraComputer, enrollMiraComputer } from "@homelab/mira/data/computers";
 import { saveMiraFile } from "@homelab/mira/data/files";
 import { readLiveAssistanceGuidance } from "@homelab/mira/data/liveAssistance";
-import { claimMiraRun } from "@homelab/mira/data/queue";
+import { claimMiraRun, finishMiraRun } from "@homelab/mira/data/queue";
 import * as v from "valibot";
 
 import { version } from "../../../../../package.json";
 import { executeMiraTurn } from "../../../../mira/src/server/executor/turn";
+import { CodexRuntime } from "../../../../mira/src/server/runtime/codexRuntime";
 import { appRouter } from "../api/router";
 import { operationFixture } from "../testing/operations";
 
@@ -129,6 +130,28 @@ test("live assistance leaves the reserved worker available and freezes its expli
         const live = await claimMiraRun(f.client, crypto.randomUUID(), "general");
         expect(live?.conversationId).toBe(f.chat.id);
         expect(live?.budgetSeconds).toBe(3600);
+        await finishMiraRun(f.client, short!, {
+            state: "completed",
+            text: "Synthetic quick reply.",
+            message: null,
+        });
+        const automation = await f.api.automations.create({
+            title: "Manual automation with shared settings",
+            prompt: "Check synthetic status.",
+            kind: "custom",
+            delivery: "silent",
+            schedule: { kind: "daily", time: "09:30" },
+            budgetSeconds: 60,
+            settings: { ...miraDefaultChatSettings, liveAssistanceMinutes: 60 },
+        });
+        const manual = await f.api.automations.run({
+            id: automation.id,
+            requestId: crypto.randomUUID(),
+        });
+        const claim = await claimMiraRun(f.client, crypto.randomUUID(), "foreground");
+        expect(claim?.id).toBe(manual.id);
+        expect(claim?.automationId).toBe(automation.id);
+        expect(claim?.budgetSeconds).toBe(60);
     } finally {
         await f.close();
     }
@@ -277,6 +300,18 @@ async function executorFixture(mode = "resume-missing") {
 
 test("the executor continues after a reply, delivers idle guidance in a new bubble and honors Stop", async () => {
     const f = await executorFixture();
+    const timeouts: (number | undefined)[] = [];
+    // oxlint-disable-next-line typescript/unbound-method -- The spy calls the original with the real runtime receiver.
+    const turn = CodexRuntime.prototype.turn;
+    const observed = spyOn(CodexRuntime.prototype, "turn").mockImplementation(function (
+        this: CodexRuntime,
+        thread,
+        text,
+        options
+    ) {
+        timeouts.push(options?.timeoutMs);
+        return turn.call(this, thread, text, options);
+    });
     try {
         const execution = f.start();
         const first = await f.waitForReplies(1);
@@ -299,10 +334,54 @@ test("the executor continues after a reply, delivers idle guidance in a new bubb
         const stopped = await f.replies();
         expect(stopped.chat.run?.state).toBe("interrupted");
         expect(stopped.messages).toHaveLength(2);
+        expect(timeouts).toEqual([300_000, 300_000]);
     } finally {
         await f.close();
+        observed.mockRestore();
     }
 }, 35_000);
+
+test("Stop between readiness and provider acknowledgement rejects the continuation immediately", async () => {
+    const f = await executorFixture();
+    // oxlint-disable-next-line typescript/unbound-method -- The spy calls the original with the real runtime receiver.
+    const turn = CodexRuntime.prototype.turn;
+    let starts = 0;
+    let rejected = false;
+    const observed = spyOn(CodexRuntime.prototype, "turn").mockImplementation(function (
+        this: CodexRuntime,
+        thread,
+        text,
+        options
+    ) {
+        starts++;
+        return turn.call(this, thread, text, {
+            ...options,
+            onStarted: async (id) => {
+                if (starts === 2) await f.api.runs.cancel({ id: f.run.id });
+                try {
+                    await options?.onStarted?.(id);
+                } catch (error) {
+                    rejected = true;
+                    throw error;
+                }
+            },
+        });
+    });
+    try {
+        await f.start();
+        expect(starts).toBe(2);
+        expect(rejected).toBe(true);
+        const ended = await f.replies();
+        expect(ended.chat.run?.state).toBe("interrupted");
+        const [run] = await f.client<
+            { provider_turn: string | null }[]
+        >`SELECT provider_turn FROM mira_runs WHERE id=${f.run.id}`;
+        expect(run?.provider_turn).toBe("turn-1");
+    } finally {
+        await f.close();
+        observed.mockRestore();
+    }
+}, 30_000);
 
 test("live reply limits include continuation separators and preserve a terminal record", async () => {
     const f = await executorFixture("message-live-limit");
