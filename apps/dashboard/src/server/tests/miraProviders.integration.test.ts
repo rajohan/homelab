@@ -453,6 +453,13 @@ test("Synthetic server execution restores product history and preserves native c
             undefined,
             { owner: "operator", apiKey: "fixture-subscription-key" }
         );
+        for (const heading of [
+            "# Mira",
+            "# Character and purpose",
+            "# The current operator",
+            "# Mira operating instructions",
+        ])
+            expect(JSON.stringify(bodies)).toContain(heading);
         expect(bodies).toHaveLength(1);
         expect(bodies[0]?.model).toBe(selection.model);
         expect(JSON.stringify(bodies[0])).toContain("ZK-427");

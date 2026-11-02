@@ -1,16 +1,15 @@
 # Mira
 
-Mira is being built into Homelab. The dashboard owns conversations, files, tasks,
+Mira is Homelab's assistant. The dashboard owns conversations, files, tasks,
 automations, reports, permissions and memory. An isolated agent runtime provides
 inference and tool orchestration. Replacing that runtime must not require replacing
 the product's data model.
 
 The core implementation includes the [runtime qualification](mira-runtime.md), a
 separate `apps/mira` executor, authenticated dashboard routes, PostgreSQL state,
-files, task board, automations and reports. It is qualified in disposable development
-environments and has not been deployed to production. OpenClaw and the retired
-dashboard remain migration sources, not permanent dependencies. No third-party
-patches are part of this design.
+files, task board, automations and reports. Changes are qualified in disposable
+development environments before release. OpenClaw and the retired dashboard are
+not runtime dependencies. No third-party patches are part of this design.
 
 ## Chat permissions
 
@@ -31,8 +30,8 @@ Chat settings offers Ask for approval, Approve for me and Full access. The selec
 ## Deployment boundaries
 
 All product functionality must remain available in the website, including Chat,
-Tasks, Automations, files, model selection and the browser workspace. The planned
-full Windows client uses the same server APIs, permissions and persisted state;
+Tasks, Automations, files, model selection and the browser workspace. The
+Windows client uses the same server APIs, permissions and persisted state;
 features must not become Windows-only. Local PC control, pairing and the system
 tray are companion capabilities. Closing either client does not stop server work.
 
@@ -353,3 +352,16 @@ The host now reserves this record before Docker work and uses its UUID for the c
 `recoverMiraBrowserProcesses` rotates expired local controller claims and reconciles at most two processes per invocation. It verifies the original image, owner label and known container ID, persists a newly discovered ID before deletion, uses the recorded image even after an update, and never attaches, starts or replays work. Failed cleanup and unknown creation plus not-found retain capacity. An observed late container can be removed safely and then release that slot. The caller receives recovered/unresolved counts; private controller tokens remain inside the host.
 
 The service loop, command queue, network egress, operator controls and production activation remain separate work. No Docker socket or registry endpoint is exposed to the model. Qualification covers the database and private HTTP/stream lifecycle together, plus actual Chromium teardown and recovery through the Docker engine.
+
+## Identity and instructions
+
+Mira's release-owned persona lives in `apps/mira/src/server/persona/`:
+
+- `IDENTITY.md`: the name and role shared by every model provider.
+- `SOUL.md`: voice, initiative, honesty and working style, adapted from Mira-Workspace.
+- `USER.md`: rules for applying the current account's preferences, without a shared private profile.
+- `AGENTS.md`: runtime tools, permissions, continuity and memory behavior. The root `AGENTS.md` remains development guidance.
+
+Static text imports embed these files in the server artifact. ChatGPT and Synthetic receive the same foundation. All four files contribute to the existing instructions hash, so a changed release renews provider instructions and reconstructs context from product history instead of resuming an obsolete policy. Updates use the normal Homelab build, review and deployment flow; there is no remote instruction fetch or mutable host-directory override.
+
+Saved memories and conversation history remain in the owner-scoped database with the existing recall controls. Old daily journals, private profiles and legacy VPS/OpenClaw paths are not imported. Changes to memory do not modify these reviewed instructions or grant additional permissions.
