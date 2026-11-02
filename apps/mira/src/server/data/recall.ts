@@ -189,7 +189,8 @@ export async function readMiraHistory(
         substring(p.content FROM ${input.offset + 1} FOR 6000) AS content,length(p.content) AS length
         FROM mira_messages m JOIN mira_conversations c ON c.id=m.conversation_id
         CROSS JOIN LATERAL (${messagePartRows(client)}) p
-        WHERE (m.id=${input.messageId} OR m.parts @> ${JSON.stringify([{ id: input.messageId }])}::text::jsonb)
+        WHERE m.id IN (SELECT message_id FROM mira_message_replies WHERE id=${input.messageId}
+            UNION SELECT id FROM mira_messages WHERE id=${input.messageId})
         AND (p.id=${input.messageId} OR (m.id=${input.messageId} AND p.offset=0))
         AND c.owner=${run.owner} AND c.deleted_at IS NULL AND c.archived_at IS NULL
         AND ((${policy.conversation} AND c.id=${run.conversationId}

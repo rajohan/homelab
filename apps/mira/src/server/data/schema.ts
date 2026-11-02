@@ -85,6 +85,31 @@ export const miraMessages = pgTable(
         check("mira_messages_length", sql`length(${t.content}) <= 256000`),
     ]
 );
+// Indexed reply boundaries; the migration trigger maintains this projection only
+// when boundaries change. Content and outcome remain on the original message.
+export const miraMessageReplies = pgTable(
+    "mira_message_replies",
+    {
+        id: uuid().primaryKey(),
+        messageId: uuid("message_id")
+            .notNull()
+            .references(() => miraMessages.id, { onDelete: "cascade" }),
+        conversationId: uuid("conversation_id")
+            .notNull()
+            .references(() => miraConversations.id),
+        offset: integer().notNull(),
+        endOffset: integer("end_offset"),
+        createdAt: time("created_at").notNull(),
+    },
+    (t) => [
+        index("mira_message_replies_conversation").on(t.conversationId, t.id),
+        index("mira_message_replies_message").on(t.messageId),
+        check(
+            "mira_message_replies_offsets",
+            sql`${t.offset} >= 0 and (${t.endOffset} is null or ${t.endOffset} >= ${t.offset})`
+        ),
+    ]
+);
 export const miraTaskContinuationCursor = pgTable(
     "mira_task_continuation_cursor",
     {

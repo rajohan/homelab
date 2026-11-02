@@ -461,6 +461,65 @@ test.each([false, true])(
     }
 );
 
+test.each([false, true])(
+    "explicit Task Run waits for older chat guidance (attachment=%s)",
+    async (attached) => {
+        const f = await fixture();
+        try {
+            const task = Bun.randomUUIDv7();
+            await f.client`INSERT INTO mira_tasks(id,owner,title,description,status,assignee,priority,completion_criteria,conversation_id) VALUES (${task},'operator','Fixture','Synthetic','in_progress','mira','normal','Verified',${f.chat.id})`;
+            await f.client`UPDATE mira_runs SET task_id=${task} WHERE id=${f.run.id}`;
+            const file = crypto.randomUUID();
+            if (attached)
+                await f.client`INSERT INTO mira_attachments(id,owner,name,media_type,bytes,sha256,ready_at) VALUES (${file},'operator','older.txt','text/plain',8,${"a".repeat(64)},now())`;
+            await f.api.conversations.send({
+                conversationId: f.chat.id,
+                requestId: crypto.randomUUID(),
+                text: "Older guidance",
+                attachmentIds: attached ? [file] : [],
+            });
+            await finishMiraRun(f.client, f.run, {
+                state: "completed",
+                text: "First reply",
+                message: null,
+            });
+            const request = {
+                id: task,
+                version: 1,
+                requestId: crypto.randomUUID(),
+                instructions: "Newer task instructions",
+            };
+            await rejects(f.api.tasks.run(request), /earlier chat message/);
+            expect(await scheduleChatFollowups(f.client)).toBe(1);
+            const next = (await claimMiraRun(
+                f.client,
+                crypto.randomUUID(),
+                "foreground"
+            ))!;
+            const input = await readMiraTurnInput(f.client, next);
+            expect(input.content).toEndWith("Older guidance");
+            expect(input.content).not.toContain("Newer task instructions");
+            expect(input.attachmentIds).toEqual(attached ? [file] : []);
+            await finishMiraRun(f.client, next, {
+                state: "completed",
+                text: "Handled older guidance",
+                message: null,
+            });
+            const started = await f.api.tasks.run(request);
+            const last = (await claimMiraRun(
+                f.client,
+                crypto.randomUUID(),
+                "foreground"
+            ))!;
+            expect(last.id).toBe(started.id);
+            const finalInput = await readMiraTurnInput(f.client, last);
+            expect(finalInput.content).toContain("Newer task instructions");
+        } finally {
+            await f.close();
+        }
+    }
+);
+
 test("recovery and paged retrieval interleave reply parts with acknowledged guidance", async () => {
     const f = await fixture();
     try {
