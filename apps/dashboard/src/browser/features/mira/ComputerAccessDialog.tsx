@@ -37,6 +37,7 @@ export function ComputerAccessDialog({
 }) {
     const [choice, setChoice] = useState("");
     const [mode, setMode] = useState<"view" | "control">("view");
+    const [scope, setScope] = useState<"window" | "desktop">("window");
     const [lifetime, setLifetime] = useState<"conversation" | "run">("conversation");
     const computers = useQuery({
         queryKey: ["operations", "mira", "computers"],
@@ -72,7 +73,7 @@ export function ComputerAccessDialog({
     return (
         <Modal
             title="Computer access"
-            description="Choose how long to share a window, then approve it on your computer."
+            description="Choose what to share, then approve access on your computer."
             onClose={onClose}
             dismissible={!request.isPending}
         >
@@ -95,15 +96,19 @@ export function ComputerAccessDialog({
                                 </Badge>
                             }
                             description={
-                                access.keepOpen
+                                `${access.scope === "desktop" ? "Entire desktop · primary display. " : "Selected window. "}` +
+                                (access.keepOpen
                                     ? "Stays open between replies in this conversation until stopped."
-                                    : `Ends by ${formatDateTime(access.expiresAt)}`
+                                    : `Ends by ${formatDateTime(access.expiresAt)}`)
                             }
                         />
                         {access.state === "pending" && fresh && running && (
                             <p className="text-sm text-primary-300">
-                                Select a window and choose Allow in the companion on your
-                                PC. This request expires after one minute.
+                                {access.scope === "desktop"
+                                    ? "Review desktop access"
+                                    : "Select a window"}{" "}
+                                and choose Allow in the companion on your PC. This request
+                                expires after one minute.
                             </p>
                         )}
                         {stoppable && (
@@ -160,6 +165,7 @@ export function ComputerAccessDialog({
                                     computerVersion: selected.version,
                                     runId: run.id,
                                     mode,
+                                    scope,
                                     keepOpen: lifetime === "conversation",
                                 });
                         }}
@@ -191,6 +197,28 @@ export function ComputerAccessDialog({
                                     </p>
                                 )}
                         </FormField>
+                        <FormField
+                            label="Share"
+                            description={
+                                scope === "desktop"
+                                    ? "Everything visible on the primary display is shared, including other apps and notifications. Other displays are not shared."
+                                    : "Only the window you select on your PC is shared."
+                            }
+                        >
+                            <Select
+                                label="Computer scope"
+                                value={scope}
+                                disabled={request.isPending}
+                                options={[
+                                    { value: "window", label: "One window" },
+                                    {
+                                        value: "desktop",
+                                        label: "Entire desktop · primary display",
+                                    },
+                                ]}
+                                onChange={setScope}
+                            />
+                        </FormField>
                         <FormField label="Permission">
                             <Select
                                 label="Computer permission"
@@ -208,7 +236,7 @@ export function ComputerAccessDialog({
                         </FormField>
                         <FormField
                             label="Duration"
-                            description="Stop access here or on your PC at any time. Closing the shared window, locking the PC or disconnecting also ends access."
+                            description={`Stop access here or on your PC at any time. ${scope === "window" ? "Closing the shared window, locking" : "Locking"} the PC or disconnecting also ends access.`}
                         >
                             <Select
                                 label="Access duration"

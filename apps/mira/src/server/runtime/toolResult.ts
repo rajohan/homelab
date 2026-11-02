@@ -1,10 +1,11 @@
 import { imageSize } from "image-size";
 import * as v from "valibot";
 
-const maximumImageBytes = 2 * 1024 * 1024;
+/** Maximum aggregate decoded image bytes in a single runtime tool result. */
+export const maximumToolImageBytes = 2 * 1024 * 1024;
 /** Maximum aggregate UTF-8 text bytes in a single runtime tool result. */
 export const maximumToolTextBytes = 256 * 1024;
-const maximumBase64Length = 4 * Math.ceil(maximumImageBytes / 3);
+const maximumBase64Length = 4 * Math.ceil(maximumToolImageBytes / 3);
 const maximumResultBytes = 3 * 1024 * 1024;
 const contentSchema = v.pipe(
     v.array(
@@ -60,7 +61,7 @@ export function runtimeContentItems(result: unknown): RuntimeContentItem[] {
         images++;
         if (
             images > 2 ||
-            imageBytes > maximumImageBytes ||
+            imageBytes > maximumToolImageBytes ||
             bytes.toString("base64") !== item.data
         )
             throw new Error("Mira tool image encoding exceeds its limit or is invalid.");

@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from "node:util";
+
 import type { MiraComputerConsentRequest } from "@homelab/contracts/miraComputers";
 import * as v from "valibot";
 
@@ -8,7 +10,7 @@ import {
     openComputerConsentSurface,
     type ComputerConsentSurface,
 } from "./consentProcess";
-import { computerWindowGrant, type ComputerWindowGrant } from "./policy";
+import { computerGrant, type ComputerGrant } from "./policy";
 import type { ComputerWindowPort } from "./session";
 
 type SurfaceOptions = Parameters<typeof openComputerConsentSurface>[0];
@@ -100,8 +102,11 @@ export class ComputerLocalConsentHost implements ComputerConsentHost {
             surface.signal.addEventListener("abort", this.stop, { once: true });
             if (surface.signal.aborted) this.stop();
             combined.throwIfAborted();
-            const target = computerWindowGrant(surface.target);
-            if (target.mode !== shown.mode)
+            const target = computerGrant(surface.target);
+            if (
+                target.mode !== shown.mode ||
+                (target.scope ?? "window") !== (shown.scope ?? "window")
+            )
                 throw new Error("Local consent scope changed.");
             this.target = Object.freeze({ ...target, mode: shown.mode });
             await this.assertReady(this.target, combined);
@@ -119,7 +124,7 @@ export class ComputerLocalConsentHost implements ComputerConsentHost {
      * @returns Completion only while the same local authority remains live.
      */
     async assertReady(
-        target: Readonly<ComputerWindowGrant>,
+        target: Readonly<ComputerGrant>,
         signal: AbortSignal
     ): Promise<void> {
         try {
@@ -139,7 +144,7 @@ export class ComputerLocalConsentHost implements ComputerConsentHost {
      * @returns A port owned by the controller; a late starting port is closed before returning an error.
      */
     async open(
-        target: Readonly<ComputerWindowGrant>,
+        target: Readonly<ComputerGrant>,
         signal: AbortSignal
     ): Promise<ComputerWindowPort> {
         if (this.opened) throw new Error("Local computer driver was already opened.");
@@ -213,20 +218,15 @@ export class ComputerLocalConsentHost implements ComputerConsentHost {
             throw new Error("Local computer cleanup could not be confirmed.");
     }
 
-    private assertTarget(target: Readonly<ComputerWindowGrant>, signal: AbortSignal) {
+    private assertTarget(target: Readonly<ComputerGrant>, signal: AbortSignal) {
         this.signal.throwIfAborted();
         signal.throwIfAborted();
         this.surface?.signal.throwIfAborted();
-        const parsed = computerWindowGrant(target);
+        const parsed = computerGrant(target);
         if (
             !this.surface ||
             !this.target ||
-            parsed.executable !== this.target.executable ||
-            parsed.pid !== this.target.pid ||
-            parsed.windowId !== this.target.windowId ||
-            parsed.startedAt !== this.target.startedAt ||
-            parsed.delivery !== this.target.delivery ||
-            parsed.mode !== this.target.mode
+            !isDeepStrictEqual(parsed, computerGrant(this.target))
         )
             throw new Error("Local consent target changed.");
     }

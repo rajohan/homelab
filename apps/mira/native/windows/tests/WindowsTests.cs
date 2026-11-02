@@ -46,6 +46,12 @@ internal static class WindowsTests
             var json = new JavaScriptSerializer();
             MiraWindowTests.Run(Check);
             Check(ConsentRequest.Parse(json.Serialize(Request())).Mode == "view");
+            Check(ConsentRequest.Parse(json.Serialize(Request())).Scope == "window");
+            var desktopRequest = Request();
+            desktopRequest["scope"] = "desktop";
+            Check(ConsentRequest.Parse(json.Serialize(desktopRequest)).Scope == "desktop");
+            desktopRequest["scope"] = "all";
+            Reject(delegate { ConsentRequest.Parse(json.Serialize(desktopRequest)); });
             var persistent = Request();
             persistent["keepOpen"] = true;
             persistent["expiresAt"] = DateTime.UtcNow.AddDays(30).ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);

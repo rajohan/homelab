@@ -154,6 +154,7 @@ test("computer request defaults to view and submits the displayed PC version onl
                     computerVersion: 2,
                     runId: current.id,
                     mode: "view",
+                    scope: "window",
                     keepOpen: true,
                 },
             },
@@ -383,5 +384,35 @@ test("inactive conversations stop access polling after the last live request is 
     } finally {
         f.close();
         request.mockRestore();
+    }
+});
+
+test("desktop sharing requires an explicit scope choice and explains the primary display boundary", async () => {
+    const current = run();
+    const pc = computer();
+    const wire = network(true);
+    const f = fixture(
+        current,
+        [pc],
+        [],
+        <ComputerAccessDialog run={current} supportsImages onClose={() => {}} />
+    );
+    try {
+        const user = userEvent.setup();
+        await user.click(screen.getByRole("button", { name: /^Computer Computer$/ }));
+        await user.click(screen.getByRole("option", { name: "Desktop" }));
+        await user.click(screen.getByRole("button", { name: /Computer scope/ }));
+        await user.click(
+            screen.getByRole("option", { name: "Entire desktop · primary display" })
+        );
+        expect(screen.getByText(/Other displays are not shared/)).toBeVisible();
+        await user.click(screen.getByRole("button", { name: "Request access" }));
+        await screen.findByRole("alert");
+        expect(wire.sent[0]!.body).toMatchObject({
+            "0": { json: { scope: "desktop", mode: "view" } },
+        });
+    } finally {
+        f.close();
+        wire.close();
     }
 });

@@ -1,0 +1,2 @@
+ALTER TABLE "mira_computer_access" ADD COLUMN "scope" text DEFAULT 'window' NOT NULL;--> statement-breakpoint
+ALTER TABLE "mira_computer_access" ADD CONSTRAINT "mira_computer_access_scope" CHECK ("scope" IN ('window','desktop'));

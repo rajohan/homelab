@@ -43,6 +43,7 @@ const accessSummary = v.strictObject({
     state: v.picklist(["pending", "active"]),
     expiresAt: v.pipe(v.string(), v.isoTimestamp()),
     keepOpen: v.exactOptional(v.boolean()),
+    scope: v.exactOptional(v.picklist(["window", "desktop"])),
 });
 export const computerConsentRequestSchema = v.strictObject({
     ...accessSummary.entries,

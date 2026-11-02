@@ -40,6 +40,7 @@ function summary(row: AccessRow): MiraComputerAccessSummary {
         state,
         expiresAt: row.expiresAt.toISOString(),
         ...(row.keepOpen ? { keepOpen: true } : {}),
+        ...(row.scope === "desktop" ? { scope: "desktop" } : {}),
     };
 }
 
@@ -68,10 +69,13 @@ export async function requestMiraComputerAccess(
                 "CONFLICT",
                 "Computer changed or is offline. Refresh before allowing access."
             );
-        if (request.keepOpen && computer.companionVersion !== version)
+        if (
+            (request.keepOpen || request.scope === "desktop") &&
+            computer.companionVersion !== version
+        )
             throw new MiraFailure(
                 "PRECONDITION_FAILED",
-                "Update the Windows app before sharing across replies."
+                "Update the Windows app before sharing the desktop or keeping access open."
             );
         // Retire unusable requests before enforcing the one-computer/one-run ceiling.
         const previous = await query<
@@ -118,8 +122,8 @@ export async function requestMiraComputerAccess(
         const id = Bun.randomUUIDv7();
         const [inserted] = await query<{ id: string }[]>`
             WITH timing AS MATERIALIZED (SELECT clock_timestamp() AS at)
-            INSERT INTO mira_computer_access(id,owner,computer_id,computer_version,connection_id,run_id,run_lease,controls,mode,keep_open,expires_at,created_at)
-            SELECT ${id},${context.owner},${request.computerId},${request.computerVersion},${computer.connectionId},${request.runId},${run.lease},${JSON.stringify(run.controls)}::text::jsonb,${request.mode},${request.keepOpen},
+            INSERT INTO mira_computer_access(id,owner,computer_id,computer_version,connection_id,run_id,run_lease,controls,mode,keep_open,scope,expires_at,created_at)
+            SELECT ${id},${context.owner},${request.computerId},${request.computerVersion},${computer.connectionId},${request.runId},${run.lease},${JSON.stringify(run.controls)}::text::jsonb,${request.mode},${request.keepOpen},${request.scope},
                 CASE WHEN ${request.keepOpen} THEN ${run.expiresAt}::timestamptz ELSE least(${run.expiresAt}::timestamptz,timing.at+interval '5 minutes') END,timing.at
             FROM timing WHERE ${run.expiresAt}::timestamptz>timing.at RETURNING id`;
         if (!inserted)

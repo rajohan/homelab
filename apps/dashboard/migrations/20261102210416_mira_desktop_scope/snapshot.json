@@ -1,0 +1,62 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "40cb2d92-d60a-4d4f-bcea-268d88e37448",
+    "prevIds": ["fa79f615-98ca-4595-9a5b-724d92d6ad48"],
+    "footprints": [
+        {
+            "statementType": "add_column",
+            "statementTarget": ["column", "public", "mira_computer_access", "scope"],
+            "writes": [
+                "s|col|public.mira_computer_access.scope",
+                "n|col|public.mira_computer_access.scope",
+                "e|col|public.mira_computer_access.scope"
+            ],
+            "reads": ["n|tbl|public.mira_computer_access", "n|sch|public"]
+        },
+        {
+            "statementType": "add_check",
+            "statementTarget": ["table", "public", "mira_computer_access"],
+            "writes": [
+                "s|ck|public.mira_computer_access.mira_computer_access_scope",
+                "n|ck|public.mira_computer_access.mira_computer_access_scope",
+                "e|ck|public.mira_computer_access.mira_computer_access_scope",
+                "n|con|public.mira_computer_access.mira_computer_access_scope"
+            ],
+            "reads": [
+                "n|tbl|public.mira_computer_access",
+                "n|sch|public",
+                "n|col|public.mira_computer_access.scope"
+            ]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_computer_access",
+                "name": "scope",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "'window'",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_computer_access",
+                "name": "mira_computer_access_scope",
+                "value": "\"scope\" IN ('window','desktop')",
+                "entityType": "checks"
+            }
+        }
+    ]
+}

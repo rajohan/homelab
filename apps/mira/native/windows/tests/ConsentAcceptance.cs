@@ -98,23 +98,23 @@ internal static class ConsentAcceptance
         });
         return element;
     }
-    private static object Request()
+    private static object Request(bool desktop = false)
     {
         return new
         {
             id = Guid.NewGuid().ToString("D"), runId = Guid.NewGuid().ToString("D"),
-            origin = "https://computer.example.test", mode = "control",
+            origin = "https://computer.example.test", mode = "control", scope = desktop ? "desktop" : "window",
             consentExpiresAt = DateTime.UtcNow.AddSeconds(50).ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture),
             expiresAt = DateTime.UtcNow.AddMinutes(2).ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture)
         };
     }
-    private static void Initialize(Child host)
+    private static void Initialize(Child host, bool desktop = false)
     {
-        host.Send(new { id = 1, method = "initialize", @params = Request() });
+        host.Send(new { id = 1, method = "initialize", @params = Request(desktop) });
         var initialized = host.Read();
         Require((int)initialized["id"] == 1 && (int)Object(initialized, "result")["protocol"] == 1);
     }
-    private static AutomationElement Approve(Child host, Dictionary<string, object> target)
+    private static AutomationElement Approve(Child host, Dictionary<string, object> target, bool desktop = false)
     {
         detail = "prompt handle";
         Wait(delegate { host.Process.Refresh(); return host.Process.MainWindowHandle != IntPtr.Zero; });
@@ -123,6 +123,7 @@ internal static class ConsentAcceptance
         detail = "approval button";
         var allow = Find(window, ControlType.Button, "Allow control");
         Require(!allow.Current.IsEnabled);
+        if (!desktop) {
         detail = "fixture list item";
         // Details views may expose DataItem rather than ListItem. Require the
         // actual selection capability and exact owned fixture name instead.
@@ -137,8 +138,9 @@ internal static class ConsentAcceptance
         detail = "fixture selection";
         ((SelectionItemPattern)item.GetCurrentPattern(SelectionItemPattern.Pattern)).Select();
         Require(!allow.Current.IsEnabled); // Selecting a window alone cannot grant foreground input.
+        }
         detail = "foreground checkbox";
-        var checkbox = Find(window, ControlType.CheckBox, "Allow Mira to bring this window forward while clicking or typing.");
+        var checkbox = Find(window, ControlType.CheckBox, desktop ? "Allow Mira to click and type across apps on my primary display." : "Allow Mira to bring this window forward while clicking or typing.");
         var toggle = (TogglePattern)checkbox.GetCurrentPattern(TogglePattern.Pattern);
         Require(toggle.Current.ToggleState == ToggleState.Off);
         detail = "foreground approval";
@@ -149,8 +151,12 @@ internal static class ConsentAcceptance
         var selection = host.Read();
         Require((string)selection["method"] == "consent/selected");
         var selected = Object(Object(selection, "params"), "target");
+        if (desktop) {
+            Require(selected.Count == 3 && (string)selected["scope"] == "desktop" && (string)selected["displayId"] == "primary");
+        } else {
         foreach (string field in new[] { "pid", "windowId", "startedAt" }) Require(selected[field].Equals(target[field]));
         Require(String.Equals((string)selected["executable"], (string)target["executable"], StringComparison.OrdinalIgnoreCase));
+        }
         Require((string)selected["delivery"] == "foreground");
         detail = "readiness receipt";
         host.Send(new { id = 2, method = "check", @params = new { } });
@@ -168,9 +174,9 @@ internal static class ConsentAcceptance
         host.Exited();
         Require(host.Process.StandardOutput.ReadToEnd() == "");
     }
-    private static void Run(string hostPath, string fixturePath, string reason)
+    private static void Run(string hostPath, string fixturePath, string reason, bool desktop = false)
     {
-        stage = reason;
+        stage = (desktop ? "desktop-" : "window-") + reason;
         using (var fixture = new Child(fixturePath))
         {
             fixture.Send(new { id = 1, method = "state", @params = new { } });
@@ -184,8 +190,8 @@ internal static class ConsentAcceptance
             using (var host = new Child(hostPath))
             {
                 detail = "host initialization";
-                Initialize(host);
-                var window = Approve(host, target);
+                Initialize(host, desktop);
+                var window = Approve(host, target, desktop);
                 var transition = Stopwatch.StartNew();
                 detail = "transition dispatch";
                 if (reason == "local-stop")
@@ -221,6 +227,7 @@ internal static class ConsentAcceptance
             // non-elevated policy instead of weakening the production window filter.
             if (args.Length == 2) return AcceptanceToken.Run(args);
             Require(args[2] == "--restricted" && AcceptanceToken.IsUnelevated());
+            foreach (string reason in new[] { "local-stop", "parent-loss" }) Run(args[0], args[1], reason, true);
             foreach (string reason in new[] { "local-stop", "parent-loss", "target-exit", "lock" }) Run(args[0], args[1], reason);
             stage = "locked-startup";
             using (var host = new Child(args[0]))

@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url";
 import type * as NativeSdk from "@trycua/cua-driver";
 
 import { serveComputerChild } from "./child";
-import { openNativeComputerWindow } from "./native";
+import { openNativeComputer } from "./native";
 import { computerDriverVersion } from "./policy";
 
 const loadSdk = () =>
@@ -28,7 +28,7 @@ const loadSdk = () =>
 export async function runComputerWorker(args: readonly string[]): Promise<void> {
     if (args.length === 0) {
         await serveComputerChild(process.stdin, process.stdout, (grant) =>
-            openNativeComputerWindow(grant, loadSdk)
+            openNativeComputer(grant, loadSdk)
         );
     } else if (args.length === 1 && args[0] === "--check-runtime") {
         // Fixed state-only qualification: load the native module and read metadata, never a screen or app.

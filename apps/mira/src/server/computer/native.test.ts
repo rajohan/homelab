@@ -1,12 +1,13 @@
 import { expect, test } from "bun:test";
 import assert from "node:assert/strict";
 import { realpath } from "node:fs/promises";
+import { deflateSync } from "node:zlib";
 
 import type * as NativeSdk from "@trycua/cua-driver";
 
 import { createVisualChallenge } from "../testing/visualChallenge";
 import { computerCommandResult } from "./commandResult";
-import { openNativeComputerWindow } from "./native";
+import { openNativeComputer } from "./native";
 import { computerDriverVersion } from "./policy";
 import { ComputerWindowSession } from "./session";
 import { openWindowsCapture, windowsCaptureMaximumPngBytes } from "./windowsCapture";
@@ -52,6 +53,10 @@ async function fixture() {
             calls.push(input);
             return Promise.resolve(frame);
         },
+        getDesktopState: (input: unknown) => {
+            calls.push({ desktop: input });
+            return Promise.resolve({ images: frame.images, isError: false });
+        },
         click: (input: unknown) => {
             calls.push(input);
             return Promise.resolve({ effect: 2 });
@@ -93,7 +98,7 @@ async function fixture() {
         },
         SessionPermissionMode: { Bounded: 1 },
         InputDeliveryMode: { Background: 0, Foreground: 1 },
-        ActionTarget: { Window: Fields },
+        ActionTarget: { Window: Fields, Desktop: Fields },
         ClickPosition: { Coordinates: Fields, Element: Fields },
     } as unknown as typeof NativeSdk;
     return {
@@ -102,7 +107,7 @@ async function fixture() {
         sdk,
         frame,
         calls,
-        open: () => openNativeComputerWindow(grant, () => Promise.resolve(sdk), null),
+        open: () => openNativeComputer(grant, () => Promise.resolve(sdk), null),
         manifest: () => manifest,
         shuts: () => shuts,
         destroys: () => destroys,
@@ -289,7 +294,7 @@ test("Windows view adapter uses only window-only images and never dispatches inp
             return Promise.resolve();
         },
     };
-    const driver = await openNativeComputerWindow(
+    const driver = await openNativeComputer(
         f.grant,
         () => Promise.resolve(f.sdk),
         () => Promise.resolve(capture)
@@ -326,7 +331,7 @@ test("Windows view refuses SDK pixels, invalid geometry and missing capture with
         },
         close: () => Promise.resolve(),
     };
-    const driver = await openNativeComputerWindow(
+    const driver = await openNativeComputer(
         f.grant,
         () => Promise.resolve(f.sdk),
         () => Promise.resolve(capture)
@@ -341,7 +346,7 @@ test("Windows view refuses SDK pixels, invalid geometry and missing capture with
     const missing = await fixture();
     missing.grant.mode = "view";
     await assert.rejects(
-        openNativeComputerWindow(
+        openNativeComputer(
             missing.grant,
             () => Promise.resolve(missing.sdk),
             () => Promise.reject(new Error("capture missing"))
@@ -371,7 +376,7 @@ test("largest accepted PNG plus near-limit escaped tree fits both private transp
     const capture = await openWindowsCapture({ ...f.grant, startedAt: "123" }, () =>
         Promise.resolve(bytes)
     );
-    const driver = await openNativeComputerWindow(
+    const driver = await openNativeComputer(
         f.grant,
         () => Promise.resolve(f.sdk),
         () => Promise.resolve(capture)
@@ -403,7 +408,7 @@ test("Windows control uses only its captured image and observed SDK element toke
             }),
         close: () => Promise.resolve(),
     };
-    const driver = await openNativeComputerWindow(
+    const driver = await openNativeComputer(
         f.grant,
         () => Promise.resolve(f.sdk),
         () => Promise.resolve(capture)
@@ -462,7 +467,7 @@ test("Windows targets exclude disabled, foreign and degraded elements and reject
             }),
         close: () => Promise.resolve(),
     };
-    const driver = await openNativeComputerWindow(
+    const driver = await openNativeComputer(
         f.grant,
         () => Promise.resolve(f.sdk),
         () => Promise.resolve(capture)
@@ -512,7 +517,7 @@ test("maximum PNG and escaped element labels fit the machine transport after tre
     const capture = await openWindowsCapture({ ...f.grant, startedAt: "123" }, () =>
         Promise.resolve(paddedPng(windowsCaptureMaximumPngBytes))
     );
-    const driver = await openNativeComputerWindow(
+    const driver = await openNativeComputer(
         f.grant,
         () => Promise.resolve(f.sdk),
         () => Promise.resolve(capture)
@@ -527,5 +532,162 @@ test("maximum PNG and escaped element labels fit the machine transport after tre
         );
     } finally {
         await session.close();
+    }
+});
+
+test("desktop adapter captures primary pixels and sends only fixed foreground desktop targets", async () => {
+    const f = await fixture();
+    let captureOpened = false;
+    const port = await openNativeComputer(
+        {
+            scope: "desktop",
+            displayId: "primary",
+            delivery: "foreground",
+            mode: "control",
+        },
+        () => Promise.resolve(f.sdk),
+        () => {
+            captureOpened = true;
+            throw new Error("Window capture must not open");
+        }
+    );
+    try {
+        const frame = await port.observe(signal());
+        expect(frame.width).toBe(390);
+        expect(frame.height).toBe(110);
+        expect(captureOpened).toBe(false);
+        expect(f.calls).toContainEqual({ desktop: { maxImageDimension: 1600 } });
+        expect(await port.clickElement("unobserved", signal())).toEqual({
+            effect: "refused",
+        });
+        await port.click(12, 34, signal());
+        expect(f.calls.at(-1)).toMatchObject({
+            target: { value: { displayId: "primary" } },
+            position: { value: { x: 12, y: 34 } },
+            deliveryMode: 1,
+        });
+        await port.type("Literal text", signal());
+        expect(f.calls.at(-1)).toEqual({
+            name: "type_text",
+            input: {
+                target: { kind: "desktop", display_id: "primary" },
+                text: "Literal text",
+                delivery_mode: "foreground",
+            },
+        });
+        f.frame.images = [];
+        await assert.rejects(port.observe(signal()), /primary desktop frame/);
+    } finally {
+        await port.close();
+    }
+    expect(f.shuts()).toBe(1);
+    await assert.rejects(port.observe(signal()), /closed/);
+});
+
+test("desktop view mode cannot send input", async () => {
+    const f = await fixture();
+    const port = await openNativeComputer(
+        { scope: "desktop", displayId: "primary", delivery: "foreground", mode: "view" },
+        () => Promise.resolve(f.sdk),
+        null
+    );
+    try {
+        await port.observe(signal());
+        await assert.rejects(port.click(1, 2, signal()), /view-only/);
+        await assert.rejects(port.type("blocked", signal()), /view-only/);
+    } finally {
+        await port.close();
+    }
+});
+
+function pngChunk(type: string, bytes: Buffer): Buffer {
+    const body = Buffer.concat([Buffer.from(type), bytes]);
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(bytes.length);
+    const checksum = Buffer.alloc(4);
+    checksum.writeUInt32BE(Bun.hash.crc32(body));
+    return Buffer.concat([length, body, checksum]);
+}
+
+function detailedDesktopPng(size: number): string {
+    const header = Buffer.alloc(13);
+    header.writeUInt32BE(size);
+    header.writeUInt32BE(size, 4);
+    header[8] = 8;
+    header[9] = 6;
+    const pixels = Buffer.alloc((size * 4 + 1) * size);
+    for (let y = 0; y < size; y++)
+        for (let x = 0; x < size * 4; x++)
+            pixels[y * (size * 4 + 1) + 1 + x] = (x * 31 + y * 17) % 256;
+    return Buffer.concat([
+        Buffer.from("89504e470d0a1a0a", "hex"),
+        pngChunk("IHDR", header),
+        pngChunk("IDAT", deflateSync(pixels, { level: 0 })),
+        pngChunk("IEND", Buffer.alloc(0)),
+    ]).toString("base64");
+}
+
+test("dense desktop captures retry through the SDK and keep its scaled input coordinates", async () => {
+    const f = await fixture();
+    const limits: number[] = [];
+    f.native.getDesktopState = (input: unknown) => {
+        const { maxImageDimension } = input as { maxImageDimension: number };
+        limits.push(maxImageDimension);
+        return Promise.resolve({
+            isError: false,
+            images: [
+                {
+                    mimeType: "image/png",
+                    dataBase64: detailedDesktopPng(maxImageDimension),
+                },
+            ],
+        });
+    };
+    const port = await openNativeComputer(
+        {
+            scope: "desktop",
+            displayId: "primary",
+            delivery: "foreground",
+            mode: "control",
+        },
+        () => Promise.resolve(f.sdk),
+        null
+    );
+    try {
+        const frame = await port.observe(signal());
+        expect(limits).toEqual([1600, 1024, 640]);
+        expect([frame.width, frame.height]).toEqual([640, 640]);
+        await port.click(120, 230, signal());
+        expect(f.calls.at(-1)).toMatchObject({ position: { value: { x: 120, y: 230 } } });
+    } finally {
+        await port.close();
+    }
+});
+
+test("oversized desktop frames exhaust a bounded retry budget and cancelled capture stops retrying", async () => {
+    const f = await fixture();
+    const oversized = detailedDesktopPng(1024);
+    let captures = 0;
+    const abort = new AbortController();
+    f.native.getDesktopState = () => {
+        captures++;
+        if (captures === 4) abort.abort();
+        return Promise.resolve({
+            isError: false,
+            images: [{ mimeType: "image/png", dataBase64: oversized }],
+        });
+    };
+    const port = await openNativeComputer(
+        { scope: "desktop", displayId: "primary", delivery: "foreground", mode: "view" },
+        () => Promise.resolve(f.sdk),
+        null
+    );
+    try {
+        await assert.rejects(port.observe(signal()), /image budget/);
+        expect(captures).toBe(3);
+        await assert.rejects(port.observe(abort.signal), /abort/i);
+        expect(captures).toBe(4);
+    } finally {
+        await port.close();
     }
 });

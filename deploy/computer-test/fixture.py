@@ -21,6 +21,8 @@ def save():
         "count": count,
         "entry": {"x": entry.winfo_x() + 20, "y": entry.winfo_y() + 10},
         "button": {"x": button.winfo_x() + 20, "y": button.winfo_y() + 10},
+        "screenEntry": {"x": entry.winfo_rootx() + 20, "y": entry.winfo_rooty() + 10},
+        "screenButton": {"x": button.winfo_rootx() + 20, "y": button.winfo_rooty() + 10},
     }
     temporary = state_path.with_suffix(".tmp")
     temporary.write_text(json.dumps(state))

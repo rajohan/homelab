@@ -3,8 +3,8 @@ import type { Readable, Writable } from "node:stream";
 import { miraComputerElementTokenSchema } from "@homelab/contracts/miraComputerCommands";
 import * as v from "valibot";
 
-import { openNativeComputerWindow } from "./native";
-import { computerDriverVersion, computerWindowGrant } from "./policy";
+import { openNativeComputer } from "./native";
+import { computerDriverVersion, computerGrant } from "./policy";
 import type { ComputerWindowPort } from "./session";
 
 const coordinate = v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(8191));
@@ -30,7 +30,7 @@ const requestSchema = v.strictObject({
 export function serveComputerChild(
     input: Readable,
     output: Writable,
-    open: typeof openNativeComputerWindow = openNativeComputerWindow,
+    open: typeof openNativeComputer = openNativeComputer,
     forceExit: () => void = () => {
         process.kill(process.pid, "SIGKILL");
     }
@@ -81,7 +81,7 @@ export function serveComputerChild(
         if (request.method === "initialize") {
             if (initialized) throw new Error("Computer worker already initialized.");
             initialized = true;
-            const grant = computerWindowGrant(request.params);
+            const grant = computerGrant(request.params);
             port = await open(grant);
             result = { version: 1, driver: computerDriverVersion };
         } else {

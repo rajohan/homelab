@@ -767,3 +767,28 @@ automatically. Restarting presence cannot revive that command.
 
 This qualifies the private transport and durable queue together, not Windows
 session disconnect/reconnect, suspend/resume or the deployed Meshnet route.
+
+## Explicit desktop sharing
+
+Chat offers **One window** (default) or **Entire desktop · primary display**.
+Both choices require a fresh server request and local confirmation. View-only
+remains the default; desktop control additionally requires the unchecked local
+foreground-input checkbox. An existing window grant cannot become a desktop grant.
+The stored scope is immutable and survives replies only when the operator chose
+that duration. Older companions can receive window-only requests but must update
+before accepting desktop sharing.
+
+Desktop sharing uses the pinned driver's primary-display capture and foreground
+input targets. Other displays are not shared. Its permission manifest allows only
+observation and, for control, click/type; it does not grant process launch,
+clipboard or arbitrary native tools. Each input still requires a fresh one-use
+observation. Local Stop, connection loss, lock, suspend and display changes revoke
+access; starting again requires new local consent. Closing an unrelated window
+does not stop desktop access. The window-only capture adapter remains unchanged.
+
+The native desktop input qualification runs only on a disposable hosted Windows
+runner against the fixture's independently reported screen coordinates and state.
+It verifies primary-display dimensions, changing pixels, view-only refusal,
+click/type, replay refusal and closure. The local consent acceptance harness also
+checks explicit desktop approval, Stop and parent-pipe loss. Developer-PC checks
+compile and validate the protocol without capturing the user's desktop.

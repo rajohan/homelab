@@ -976,6 +976,7 @@ export const miraComputerAccess = pgTable(
         runLease: uuid("run_lease").notNull(),
         controls: jsonb().notNull(),
         keepOpen: boolean("keep_open").notNull().default(false),
+        scope: text().notNull().default("window"),
         mode: text().notNull(),
         state: text().notNull().default("pending"),
         targetId: uuid("target_id"),
@@ -993,6 +994,7 @@ export const miraComputerAccess = pgTable(
             .on(t.runId)
             .where(sql`${t.state} IN ('pending','active')`),
         check("mira_computer_access_mode", sql`${t.mode} IN ('view','control')`),
+        check("mira_computer_access_scope", sql`${t.scope} IN ('window','desktop')`),
         check(
             "mira_computer_access_state",
             sql`(${t.state}='pending' AND ${t.targetId} IS NULL AND ${t.acceptedAt} IS NULL AND ${t.stoppedAt} IS NULL) OR (${t.state}='active' AND ${t.targetId} IS NOT NULL AND ${t.acceptedAt} IS NOT NULL AND ${t.stoppedAt} IS NULL) OR (${t.state}='stopped' AND ${t.stoppedAt} IS NOT NULL)`

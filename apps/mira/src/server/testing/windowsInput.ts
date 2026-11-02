@@ -27,6 +27,10 @@ const stateSchema = v.strictObject({
     height: v.number(),
     entry: point,
     button: point,
+    screenEntry: point,
+    screenButton: point,
+    screenWidth: v.number(),
+    screenHeight: v.number(),
 });
 
 /**
@@ -247,7 +251,101 @@ export async function qualifyWindowsInput(directory: string, root: string) {
                 );
             await session.close();
             await denied(() => session.observe(signal));
+            await host.close();
+            const desktopGrant = {
+                scope: "desktop",
+                displayId: "primary",
+                delivery: "foreground",
+            };
+            const desktopView = await openWindowsComputerProcess(
+                { ...desktopGrant, mode: "view" },
+                options
+            );
+            try {
+                const desktopFrame = await desktopView.observe(signal);
+                if (
+                    desktopFrame.width > 1600 ||
+                    Math.abs(
+                        desktopFrame.width / desktopFrame.height -
+                            state.screenWidth / state.screenHeight
+                    ) > 0.01
+                )
+                    throw new Error(
+                        "Primary desktop capture dimensions do not match the display."
+                    );
+                await denied(() => desktopView.type("Denied desktop input", signal));
+            } finally {
+                await desktopView.close();
+            }
+            const desktop = new ComputerWindowSession(
+                await openWindowsComputerProcess(
+                    { ...desktopGrant, mode: "control" },
+                    options
+                ),
+                () => {
+                    fixture.signal.throwIfAborted();
+                    return Promise.resolve();
+                }
+            );
+            try {
+                let desktopFrame = await desktop.observe(signal);
+                const before = desktopFrame.content.find(
+                    (item) => item.type === "image"
+                )!.data;
+                await desktop.act(
+                    {
+                        action: "click",
+                        observationId: desktopFrame.observationId,
+                        x: Math.round(
+                            (state.screenEntry.x * desktopFrame.width) / state.screenWidth
+                        ),
+                        y: Math.round(
+                            (state.screenEntry.y * desktopFrame.height) /
+                                state.screenHeight
+                        ),
+                    },
+                    signal
+                );
+                desktopFrame = await desktop.observe(signal);
+                await desktop.act(
+                    {
+                        action: "type",
+                        observationId: desktopFrame.observationId,
+                        text: " desktop",
+                    },
+                    signal
+                );
+                await eventually(
+                    (current) =>
+                        current.text.includes(" desktop") &&
+                        current.text.replace(" desktop", "") === text
+                );
+                desktopFrame = await desktop.observe(signal);
+                const click = {
+                    action: "click",
+                    observationId: desktopFrame.observationId,
+                    x: Math.round(
+                        (state.screenButton.x * desktopFrame.width) / state.screenWidth
+                    ),
+                    y: Math.round(
+                        (state.screenButton.y * desktopFrame.height) / state.screenHeight
+                    ),
+                };
+                await desktop.act(click, signal);
+                await eventually((current) => current.count === 2);
+                await denied(() => desktop.act(click, signal));
+                desktopFrame = await desktop.observe(signal);
+                if (
+                    desktopFrame.content.find((item) => item.type === "image")!.data ===
+                    before
+                )
+                    throw new Error("Desktop pixels did not reflect fixture input.");
+            } finally {
+                await desktop.close();
+            }
+            await denied(() => desktop.observe(signal));
             return {
+                desktop: true,
                 platform: "windows-x64",
                 image: true,
                 text: true,

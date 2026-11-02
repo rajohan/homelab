@@ -824,3 +824,36 @@ test("pending consent exposes the original one-minute deadline even when discove
         await f.close();
     }
 });
+
+test("desktop scope is durable, version gated and visible in local consent and readiness", async () => {
+    const f = await fixture();
+    try {
+        await rejects(
+            f.api.computers.access.request({ ...f.request, scope: "desktop" }),
+            /Update the Windows app/
+        );
+        await f.client`UPDATE mira_computers SET companion_version=${version} WHERE id=${f.pair.id}`;
+        const access = await f.api.computers.access.request({
+            ...f.request,
+            scope: "desktop",
+        });
+        expect(access.scope).toBe("desktop");
+        expect(
+            await pendingMiraComputerAccess(f.client, f.device.credential, {
+                connectionId: f.connection.connectionId,
+            })
+        ).toMatchObject({ request: { id: access.id, scope: "desktop" } });
+        expect(await f.accept(access.id)).toMatchObject({
+            scope: "desktop",
+            state: "active",
+        });
+        expect(await readMiraComputerReadiness(f.worker)).toMatchObject({
+            state: "ready",
+            scope: "desktop",
+        });
+        await f.api.computers.access.stop({ id: access.id });
+        await rejects(f.allow(access.id));
+    } finally {
+        await f.close();
+    }
+});
