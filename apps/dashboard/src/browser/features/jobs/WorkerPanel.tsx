@@ -63,7 +63,7 @@ export function WorkerPanel() {
                     {query.isError && <ErrorNotice error={query.error} />}
                     {data && (
                         <>
-                            <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+                            <dl className="grid grid-cols-2 gap-3 @min-[28rem]:grid-cols-3 @min-[56rem]:grid-cols-6">
                                 {jobStates.map((state) => (
                                     <div
                                         key={state}

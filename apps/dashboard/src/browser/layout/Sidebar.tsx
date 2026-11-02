@@ -25,15 +25,19 @@ import { NavigationLink } from "./NavigationLink";
 export function Sidebar({
     onClose,
     onNavigate,
+    compact = false,
 }: {
+    readonly compact?: boolean;
     readonly onClose?: (() => void) | undefined;
     readonly onNavigate?: (() => void) | undefined;
 }) {
     return (
         <>
-            <div className="flex h-20 shrink-0 items-center justify-between gap-2 border-b border-primary-700 px-5">
+            <div
+                className={`flex h-20 shrink-0 items-center gap-2 border-b border-primary-700 ${compact ? "justify-center px-2" : "justify-between px-5"}`}
+            >
                 <Link to="/" aria-label="Homelab overview" onClick={onNavigate}>
-                    <Brand />
+                    <Brand compact={compact} />
                 </Link>
                 {onClose && (
                     <IconButton
@@ -47,7 +51,13 @@ export function Sidebar({
                 className="min-h-0 flex-1 space-y-1 overflow-y-auto p-3"
                 aria-label="Main navigation"
             >
-                <p className="px-3 pt-4 pb-3 text-xs font-semibold tracking-widest text-primary-500 uppercase">
+                <p
+                    className={
+                        compact
+                            ? "sr-only"
+                            : "px-3 pt-4 pb-3 text-xs font-semibold tracking-widest text-primary-500 uppercase"
+                    }
+                >
                     Workspace
                 </p>
                 <NavigationLink
@@ -55,75 +65,91 @@ export function Sidebar({
                     label="Overview"
                     icon={LayoutDashboard}
                     onNavigate={onNavigate}
+                    compact={compact}
                 />
                 <NavigationLink
                     to="/mira"
                     label="Chat"
                     icon={MessageSquare}
                     onNavigate={onNavigate}
+                    compact={compact}
                 />
                 <NavigationLink
                     to="/tasks"
                     label="Tasks"
                     icon={ListTodo}
                     onNavigate={onNavigate}
+                    compact={compact}
                 />
                 <NavigationLink
                     to="/reports"
                     label="Reports"
                     icon={FileText}
                     onNavigate={onNavigate}
+                    compact={compact}
                 />
                 <NavigationLink
                     to="/mira-automations"
                     label="Automations"
                     icon={Clock}
                     onNavigate={onNavigate}
+                    compact={compact}
                 />
                 <NavigationLink
                     to="/infrastructure"
                     label="Infrastructure"
                     icon={Server}
                     onNavigate={onNavigate}
+                    compact={compact}
                 />
                 <NavigationLink
                     to="/jobs"
                     label="Jobs"
                     icon={ListChecks}
                     onNavigate={onNavigate}
+                    compact={compact}
                 />
                 <NavigationLink
                     to="/applications"
                     label="Applications"
                     icon={Boxes}
                     onNavigate={onNavigate}
+                    compact={compact}
                 />
                 <NavigationLink
                     to="/alerts"
                     label="Incidents"
                     icon={BellRing}
                     onNavigate={onNavigate}
+                    compact={compact}
                 />
                 <NavigationLink
                     to="/backups"
                     label="Backups"
                     icon={Archive}
                     onNavigate={onNavigate}
+                    compact={compact}
                 />
                 <NavigationLink
                     to="/updates"
                     label="Updates"
                     icon={PackageCheck}
                     onNavigate={onNavigate}
+                    compact={compact}
                 />
                 <NavigationLink
                     to="/settings"
                     label="Settings"
                     icon={Settings}
                     onNavigate={onNavigate}
+                    compact={compact}
                 />
             </nav>
-            <div className="shrink-0 border-t border-primary-700 p-5">
+            <div
+                className={
+                    compact ? "sr-only" : "shrink-0 border-t border-primary-700 p-5"
+                }
+            >
                 <p className="text-xs font-medium text-primary-300">Homelab Dashboard</p>
                 <p className="mt-2 text-xs leading-5 text-primary-500">
                     Infrastructure, automation and account security.

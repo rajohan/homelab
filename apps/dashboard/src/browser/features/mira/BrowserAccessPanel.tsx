@@ -6,6 +6,7 @@ import { useState } from "react";
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
 import { BrowserConsoleDialog } from "./BrowserConsoleDialog";
+import { accessStatusTone } from "./statusTone";
 import { browserAccessLabel, useBrowserAccess } from "./useBrowserAccess";
 
 /**
@@ -39,7 +40,15 @@ export function BrowserAccessPanel({
                 <SectionHeader
                     title="Browser access"
                     icon={Globe}
-                    badge={<Badge>{browserAccessLabel(access, run, fresh)}</Badge>}
+                    badge={
+                        <Badge
+                            tone={accessStatusTone(
+                                browserAccessLabel(access, run, fresh)
+                            )}
+                        >
+                            {browserAccessLabel(access, run, fresh)}
+                        </Badge>
+                    }
                     {...(waiting && !access
                         ? {
                               description:

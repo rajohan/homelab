@@ -4,6 +4,7 @@ import { Brain, LoaderCircle, MessageSquare, Wrench } from "lucide-react";
 import { useState } from "react";
 
 import type { ChatDisplaySettings } from "./chatDisplay";
+import { miraStatusTone } from "./statusTone";
 
 /**
  * Present observed work stages and redacted durable tool receipts beneath the current reply.
@@ -91,7 +92,9 @@ export function ChatActivity({
                                             .replace(/^mira_/, "")
                                             .replaceAll("_", " ")}
                                     </span>
-                                    <Badge>{toolStates[tool.state] ?? "Unknown"}</Badge>
+                                    <Badge tone={miraStatusTone(tool.state)}>
+                                        {toolStates[tool.state] ?? "Unknown"}
+                                    </Badge>
                                 </div>
                                 {tool.message && <p>{tool.message}</p>}
                             </li>

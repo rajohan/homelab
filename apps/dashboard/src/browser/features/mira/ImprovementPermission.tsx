@@ -72,7 +72,9 @@ export function ImprovementPermission({
             <div className="space-y-4">
                 <div className="flex flex-wrap items-center gap-2">
                     <span className="font-medium">{automation.title}</span>
-                    <Badge>{active ? "Allowed" : "Requires permission"}</Badge>
+                    <Badge tone={active ? "positive" : "neutral"}>
+                        {active ? "Allowed" : "Requires permission"}
+                    </Badge>
                 </div>
                 <p className="text-sm leading-6 text-primary-300">
                     Allow this automation to test a small Homelab improvement and open a

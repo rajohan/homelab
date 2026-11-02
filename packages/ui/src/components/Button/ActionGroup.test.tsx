@@ -1,4 +1,4 @@
-import { expect, spyOn, test } from "bun:test";
+import { expect, test } from "bun:test";
 
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -6,55 +6,55 @@ import userEvent from "@testing-library/user-event";
 import { ActionGroup } from "./ActionGroup";
 import { Button } from "./Button";
 
-test.each([false, true])(
-    "action order follows the responsive layout and keyboard order (wide: %s)",
-    async (wide) => {
-        const media = globalThis.matchMedia("(min-width: 30rem)");
-        Object.defineProperty(media, "matches", { configurable: true, value: wide });
-        const match = spyOn(globalThis, "matchMedia").mockReturnValue(media);
-        const view = render(
-            <ActionGroup>
-                <Button>Approve</Button>
-                <Button variant="secondary">Deny</Button>
-            </ActionGroup>
-        );
-        try {
-            const approve = screen.getByRole("button", { name: "Approve" });
-            const deny = screen.getByRole("button", { name: "Deny" });
-            expect(approve).toHaveClass("whitespace-nowrap");
-            expect(deny).toHaveClass("whitespace-nowrap");
-            const container = approve.parentElement;
-            expect(container).toHaveClass(
-                "flex-col",
-                "[&>:is(button,a)]:w-full",
-                "[&>:is(button,a)]:min-w-min",
-                "min-[30rem]:flex-wrap",
-                "min-[30rem]:flex-row",
-                "min-[30rem]:[&>:is(button,a)]:flex-1",
-                "min-[30rem]:[&>:is(button,a):last-child]:flex-2"
-            );
-            expect(container?.firstElementChild).toBe(wide ? deny : approve);
-            expect(container?.lastElementChild).toBe(wide ? approve : deny);
-            const user = userEvent.setup();
-            await user.tab();
-            expect(wide ? deny : approve).toHaveFocus();
-            await user.tab();
-            expect(wide ? approve : deny).toHaveFocus();
-            act(() => {
-                Object.defineProperty(media, "matches", {
-                    configurable: true,
-                    value: !wide,
-                });
-                media.dispatchEvent(new Event("change"));
-            });
-            expect(container?.firstElementChild).toBe(wide ? approve : deny);
-            expect(container?.lastElementChild).toBe(wide ? deny : approve);
-            // Reordering preserves the original buttons and their focus.
-            expect(screen.getByRole("button", { name: "Approve" })).toBe(approve);
-            expect(screen.getByRole("button", { name: "Deny" })).toBe(deny);
-        } finally {
-            view.unmount();
-            match.mockRestore();
+test("actions follow their container width, preserving keyboard order and focus", async () => {
+    let resize: ((width: number) => void) | undefined;
+    let disconnected = false;
+    const original = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = class implements ResizeObserver {
+        /** Capture deliveries so the test controls container resizing. */
+        constructor(callback: ResizeObserverCallback) {
+            resize = (width) =>
+                callback([{ contentRect: { width } } as ResizeObserverEntry], this);
         }
+        /** No real layout is observed in the DOM fixture. */
+        observe() {}
+        /** The fixture owns only one element. */
+        unobserve() {}
+        /** Record cleanup when the action group unmounts. */
+        disconnect() {
+            disconnected = true;
+        }
+    };
+    const view = render(
+        <ActionGroup>
+            <Button>Approve</Button>
+            <Button variant="secondary">Deny</Button>
+        </ActionGroup>
+    );
+    try {
+        const approve = screen.getByRole("button", { name: "Approve" });
+        const deny = screen.getByRole("button", { name: "Deny" });
+        const container = approve.parentElement;
+        act(() => resize?.(320));
+        expect(container?.firstElementChild?.textContent).toBe("Approve");
+        expect(container).toHaveClass("flex-col", "[&>:is(button,a)]:w-full");
+        const user = userEvent.setup();
+        await user.tab();
+        expect(approve).toHaveFocus();
+        await user.tab();
+        expect(deny).toHaveFocus();
+        act(() => resize?.(700));
+        expect(container?.firstElementChild?.textContent).toBe("Deny");
+        expect(container?.lastElementChild?.textContent).toBe("Approve");
+        expect(deny).toHaveFocus();
+        await user.tab();
+        expect(approve).toHaveFocus();
+        act(() => resize?.(320));
+        expect(container?.firstElementChild?.textContent).toBe("Approve");
+        expect(approve).toHaveFocus();
+    } finally {
+        view.unmount();
+        globalThis.ResizeObserver = original;
     }
-);
+    expect(disconnected).toBe(true);
+});

@@ -22,6 +22,7 @@ import type * as v from "valibot";
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
 import { BrowserProfileControls } from "./BrowserProfileControls";
+import { accessStatusTone } from "./statusTone";
 import { browserAccessLabel, useBrowserAccess } from "./useBrowserAccess";
 
 /**
@@ -98,7 +99,11 @@ export function BrowserAccessDialog({
                             title="Server browser"
                             icon={Globe}
                             badge={
-                                <Badge>
+                                <Badge
+                                    tone={accessStatusTone(
+                                        browserAccessLabel(access, run, accessQuery.fresh)
+                                    )}
+                                >
                                     {browserAccessLabel(access, run, accessQuery.fresh)}
                                 </Badge>
                             }

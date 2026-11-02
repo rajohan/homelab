@@ -30,6 +30,7 @@ import { useState } from "react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
+import { miraStatusTone } from "./statusTone";
 import { TaskExecution } from "./TaskExecution";
 import { taskStates, taskPriorityTone } from "./taskPresentation";
 import { TaskRunDialog } from "./TaskRunDialog";
@@ -113,8 +114,10 @@ export function TaskDetail({
             title={task.title}
             titleAccessory={
                 <>
-                    <Badge>{taskStates[task.status].title}</Badge>
-                    {task.autoStart && <Badge>Auto start</Badge>}
+                    <Badge tone={miraStatusTone(task.status)}>
+                        {taskStates[task.status].title}
+                    </Badge>
+                    {task.autoStart && <Badge tone="info">Auto start</Badge>}
                 </>
             }
             onClose={onClose}

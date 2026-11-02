@@ -99,7 +99,7 @@ export function BrowserConsoleDialog({
             title="Server browser"
             size="wide"
             onClose={onClose}
-            titleAccessory={<Badge>{label}</Badge>}
+            titleAccessory={<Badge tone={fresh ? "info" : "warning"}>{label}</Badge>}
         >
             <div className="space-y-4">
                 <div className="@container/browser-console">

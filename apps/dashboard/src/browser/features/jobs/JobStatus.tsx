@@ -2,8 +2,8 @@ import type { JobState } from "@homelab/contracts/operations";
 import { Badge } from "@homelab/ui";
 
 const tones = {
-    queued: "neutral",
-    running: "neutral",
+    queued: "info",
+    running: "info",
     succeeded: "positive",
     failed: "danger",
     timed_out: "danger",

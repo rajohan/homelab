@@ -72,7 +72,11 @@ export function MiraSkills() {
                                 icon={BookOpen}
                                 description={skill.description}
                                 badge={
-                                    <Badge>
+                                    <Badge
+                                        tone={
+                                            skill.control.enabled ? "positive" : "neutral"
+                                        }
+                                    >
                                         {skill.control.enabled ? "Enabled" : "Paused"}
                                     </Badge>
                                 }

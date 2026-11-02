@@ -1,13 +1,13 @@
 import type { MiraDaytonaJob } from "@homelab/contracts/miraDaytona";
 export const daytonaTones: Record<
     MiraDaytonaJob["state"],
-    "neutral" | "positive" | "warning"
+    "neutral" | "info" | "positive" | "warning" | "danger"
 > = {
     draft: "neutral",
-    queued: "neutral",
-    running: "neutral",
+    queued: "info",
+    running: "info",
     completed: "positive",
-    failed: "warning",
+    failed: "danger",
     cancelled: "neutral",
     needs_attention: "warning",
 };

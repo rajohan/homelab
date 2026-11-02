@@ -13,6 +13,7 @@ import { Download, ExternalLink, Globe, Upload } from "lucide-react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
+import { miraStatusTone } from "./statusTone";
 
 /**
  * Show the exact public destination and selected bytes before publication approval.
@@ -45,7 +46,11 @@ export function PublicationReview({
                     <SectionHeader
                         title={draft.content.title}
                         icon={Globe}
-                        badge={<Badge>{draft.state.replaceAll("_", " ")}</Badge>}
+                        badge={
+                            <Badge tone={miraStatusTone(draft.state)}>
+                                {draft.state.replaceAll("_", " ")}
+                            </Badge>
+                        }
                     />
                     <p className="text-sm text-primary-300">
                         {draft.content.target
