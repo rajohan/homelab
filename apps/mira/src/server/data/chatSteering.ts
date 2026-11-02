@@ -165,7 +165,7 @@ export async function acknowledgeChatSteering(
 export async function scheduleChatFollowups(client: SQL) {
     const candidates = await client<
         { id: string; owner: string; conversationId: string }[]
-    >`SELECT i.id,i.owner,i.conversation_id AS "conversationId" FROM mira_chat_inputs i JOIN mira_runs r ON r.id=i.run_id WHERE i.state IN ('pending','sending') AND r.state NOT IN ('queued','running') AND NOT EXISTS(SELECT 1 FROM mira_runs active WHERE active.conversation_id=i.conversation_id AND active.state IN ('queued','running')) ORDER BY i.id LIMIT 20`;
+    >`SELECT i.id,i.owner,i.conversation_id AS "conversationId" FROM mira_chat_inputs i JOIN mira_runs r ON r.id=i.run_id WHERE i.state IN ('pending','sending') AND i.next_attempt_at<=clock_timestamp() AND NOT EXISTS(SELECT 1 FROM mira_chat_inputs older WHERE older.conversation_id=i.conversation_id AND older.owner=i.owner AND older.state IN ('pending','sending') AND older.id<i.id) AND r.state NOT IN ('queued','running') AND NOT EXISTS(SELECT 1 FROM mira_runs active WHERE active.conversation_id=i.conversation_id AND active.state IN ('queued','running')) ORDER BY i.id LIMIT 20`;
     let count = 0;
     for (const candidate of candidates) {
         count += await client.begin(async (query) => {
@@ -181,6 +181,7 @@ export async function scheduleChatFollowups(client: SQL) {
                 return (await continueChatFollowup(query, candidate)) ? 1 : 0;
             } catch (error) {
                 if (!(error instanceof MiraFailure)) throw error;
+                await query`UPDATE mira_chat_inputs SET next_attempt_at=clock_timestamp()+interval '30 seconds' WHERE id=${candidate.id} AND state IN ('pending','sending')`;
                 return 0;
             }
         });
@@ -233,7 +234,10 @@ async function continueChatFollowup(
         });
     } catch (error) {
         if (!(error instanceof MiraFailure)) throw error;
-        if (["NOT_FOUND", "BAD_REQUEST", "FORBIDDEN"].includes(error.code)) {
+        if (
+            !error.retryable ||
+            ["NOT_FOUND", "BAD_REQUEST", "FORBIDDEN"].includes(error.code)
+        ) {
             await query`UPDATE mira_chat_inputs SET state='stopped',lease_token=NULL WHERE id=${candidate.id}`;
             await query`UPDATE mira_messages SET state='interrupted' WHERE id=${candidate.id}`;
         } else throw error;

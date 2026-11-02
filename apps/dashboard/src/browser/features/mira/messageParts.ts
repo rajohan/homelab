@@ -10,11 +10,14 @@ export function chatMessageParts(messages: readonly MiraMessage[]): MiraMessage[
         .flatMap((message) => {
             const parts = message.role === "assistant" ? message.parts : undefined;
             if (!parts?.length) return [message];
+            // oxlint-disable-next-line typescript/no-misused-spread -- Persisted offsets use PostgreSQL Unicode code points, not graphemes.
+            const characters = [...message.content];
             return parts.map((part, index) => ({
                 ...message,
                 id: part.id,
-                content: message.content
+                content: characters
                     .slice(part.offset, parts[index + 1]?.offset)
+                    .join("")
                     .trimEnd(),
                 createdAt: part.createdAt,
                 state:

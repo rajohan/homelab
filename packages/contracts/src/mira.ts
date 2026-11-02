@@ -204,6 +204,7 @@ export interface MiraConversation {
 }
 export interface MiraMessagePart {
     id: string;
+    /** Unicode code-point offset, matching PostgreSQL substring and history chunks. */
     offset: number;
     createdAt: string;
 }

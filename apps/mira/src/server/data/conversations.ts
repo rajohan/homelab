@@ -34,14 +34,16 @@ async function linkedTaskForSend(
     if (tasks.length > 1)
         throw new MiraFailure(
             "CONFLICT",
-            "This conversation is linked to multiple tasks. Start a separate conversation for the intended task."
+            "This conversation is linked to multiple tasks. Start a separate conversation for the intended task.",
+            false
         );
     const task = tasks[0];
     if (!task) return;
     if (task.deleted)
         throw new MiraFailure(
             "PRECONDITION_FAILED",
-            "This conversation belongs to a deleted task. Start a separate conversation before continuing."
+            "This conversation belongs to a deleted task. Start a separate conversation before continuing.",
+            false
         );
     const [lock] = await query<
         { acquired: boolean }[]
@@ -54,7 +56,8 @@ async function linkedTaskForSend(
     if (task.assignee !== "mira" || task.status === "done" || task.status === "blocked")
         throw new MiraFailure(
             "PRECONDITION_FAILED",
-            "Assign the linked unfinished task to Mira before continuing, or start a separate conversation."
+            "Assign the linked unfinished task to Mira before continuing, or start a separate conversation.",
+            false
         );
     if (await unreviewedTaskRun(query, owner, task.id))
         throw new MiraFailure(
@@ -201,7 +204,8 @@ export async function enqueueTurn(
         if (otherLinks.length > 0)
             throw new MiraFailure(
                 "CONFLICT",
-                "This conversation is linked to multiple tasks. Start a separate conversation for the intended task."
+                "This conversation is linked to multiple tasks. Start a separate conversation for the intended task.",
+                false
             );
     }
     const taskId =

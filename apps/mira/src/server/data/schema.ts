@@ -299,6 +299,7 @@ export const miraChatInputs = pgTable(
         requestHash: text("request_hash").notNull(),
         state: text().notNull().default("pending"),
         leaseToken: uuid("lease_token"),
+        nextAttemptAt: time("next_attempt_at").notNull().defaultNow(),
     },
     (t) => [
         index("mira_chat_inputs_pending").on(t.state, t.id),

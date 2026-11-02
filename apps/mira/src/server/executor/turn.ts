@@ -403,7 +403,9 @@ export async function executeMiraTurn(
                         parts.push({
                             id: Bun.randomUUIDv7(),
                             offset:
-                                text.length + (text && delta.startsWith("\n\n") ? 2 : 0),
+                                // oxlint-disable-next-line typescript/no-misused-spread -- Match PostgreSQL Unicode code point offsets.
+                                [...text].length +
+                                (text && delta.startsWith("\n\n") ? 2 : 0),
                             createdAt: new Date().toISOString(),
                         });
                         messageId = itemId;

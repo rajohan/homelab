@@ -254,9 +254,10 @@ test.each(["steer-ok", "steer-error", "message-boundaries"])(
             }
             if (mode === "message-boundaries") {
                 expect(reply.parts).toHaveLength(2);
-                expect(reply.content.slice(reply.parts![1]!.offset)).toBe(
-                    'Created.\n\n```json\n{\n  "ok": true\n}\n```'
-                );
+                expect(
+                    // oxlint-disable-next-line typescript/no-misused-spread -- Persisted offsets are Unicode code points.
+                    [...reply.content].slice(reply.parts![1]!.offset).join("")
+                ).toBe('Created.\n\n```json\n{\n  "ok": true\n}\n```');
             }
             expect(await scheduleChatFollowups(f.client)).toBe(0);
         } finally {
@@ -288,6 +289,8 @@ test("files sent during work wait for the next turn and a deleted file cannot st
             message: null,
         });
         await f.client`UPDATE mira_attachments SET deleted_at=now() WHERE id=${file}`;
+        // One candidate per conversation: retire the missing file, then admit the next note.
+        expect(await scheduleChatFollowups(f.client)).toBe(0);
         expect(await scheduleChatFollowups(f.client)).toBe(1);
         const chat = await f.api.conversations.read({ id: f.chat.id });
         expect(
@@ -386,7 +389,8 @@ test("recovery and paged retrieval interleave reply parts with acknowledged guid
         await acknowledgeChatSteering(f.client, f.run, guidance.id, true);
         parts.push({
             id: Bun.randomUUIDv7(),
-            offset: first.length + 2,
+            // oxlint-disable-next-line typescript/no-misused-spread -- Persisted offsets are Unicode code points.
+            offset: [...first].length + 2,
             createdAt: new Date().toISOString(),
         });
         await finishMiraRun(f.client, f.run, {
@@ -423,6 +427,132 @@ test("recovery and paged retrieval interleave reply parts with acknowledged guid
         });
         expect(full.parts).toEqual(parts);
         expect(full.content).toBe(`${first}\n\n${second}`);
+    } finally {
+        await f.close();
+    }
+});
+
+test.each(["done", "blocked", "reassigned", "deleted"])(
+    "follow-ups retire when linked task becomes %s",
+    async (change) => {
+        const f = await fixture();
+        try {
+            const task = Bun.randomUUIDv7();
+            await f.client`INSERT INTO mira_tasks(id,owner,title,description,status,assignee,priority,completion_criteria,conversation_id) VALUES (${task},'operator','Fixture','Synthetic','in_progress','mira','normal','Verified',${f.chat.id})`;
+            await f.client`UPDATE mira_runs SET task_id=${task} WHERE id=${f.run.id}`;
+            await f.send("Pending task guidance");
+            await finishMiraRun(f.client, f.run, {
+                state: "completed",
+                text: "Finished turn",
+                message: null,
+            });
+            await f.client`UPDATE mira_tasks SET status=${change === "done" || change === "blocked" ? change : "in_progress"},assignee=${change === "reassigned" ? "operator" : "mira"},deleted_at=${change === "deleted" ? new Date() : null} WHERE id=${task}`;
+            expect(await scheduleChatFollowups(f.client)).toBe(0);
+            const chat = await f.api.conversations.read({ id: f.chat.id });
+            expect(
+                chat.messages.find(
+                    (message) => message.content === "Pending task guidance"
+                )?.state
+            ).toBe("interrupted");
+            await f.client`UPDATE mira_tasks SET status='in_progress',assignee='mira',deleted_at=NULL WHERE id=${task}`;
+            await f.send("New explicit request");
+            const next = (await claimMiraRun(
+                f.client,
+                crypto.randomUUID(),
+                "foreground"
+            ))!;
+            expect(await claimChatSteering(f.client, next)).toBeNull();
+        } finally {
+            await f.close();
+        }
+    }
+);
+
+test("temporarily full owners cannot starve later conversations", async () => {
+    const f = await fixture();
+    try {
+        await finishMiraRun(f.client, f.run, {
+            state: "completed",
+            text: "Done",
+            message: null,
+        });
+        const other = appRouter.createCaller({
+            operations: f,
+            principal: { kind: "human", id: "other", capabilities },
+        }).mira;
+        for (let index = 0; index < 21; index++) {
+            const api = index < 20 ? f.api : other;
+            const chat = await api.conversations.create({ title: `Pending ${index}` });
+            await api.conversations.send({
+                conversationId: chat.id,
+                requestId: crypto.randomUUID(),
+                text: "Start",
+            });
+            const run = (await claimMiraRun(
+                f.client,
+                crypto.randomUUID(),
+                "foreground"
+            ))!;
+            await api.conversations.send({
+                conversationId: chat.id,
+                requestId: crypto.randomUUID(),
+                text: "Follow up",
+            });
+            await finishMiraRun(f.client, run, {
+                state: "completed",
+                text: "Done",
+                message: null,
+            });
+        }
+        for (let index = 0; index < 32; index++) {
+            const chat = await f.api.conversations.create({ title: `Occupy ${index}` });
+            await f.api.conversations.send({
+                conversationId: chat.id,
+                requestId: crypto.randomUUID(),
+                text: "Queued work",
+            });
+        }
+        expect(await scheduleChatFollowups(f.client)).toBe(0);
+        expect(await scheduleChatFollowups(f.client)).toBe(1);
+        const [deferred] = await f.client<
+            { total: number }[]
+        >`SELECT count(*)::int AS total FROM mira_chat_inputs WHERE owner='operator' AND state='pending' AND next_attempt_at>clock_timestamp()`;
+        expect(deferred?.total).toBe(20);
+    } finally {
+        await f.close();
+    }
+}, 15_000);
+
+test("history search applies before pagination to each Unicode reply", async () => {
+    const f = await fixture();
+    try {
+        const parts = [];
+        let content = "";
+        for (let index = 0; index < 12; index++) {
+            parts.push({
+                id: Bun.randomUUIDv7(),
+                // oxlint-disable-next-line typescript/no-misused-spread -- Persisted offsets are Unicode code points.
+                offset: [...content].length,
+                createdAt: new Date().toISOString(),
+            });
+            content +=
+                (index === 0
+                    ? "🦊 Fjordplan decision."
+                    : `🦊 Unrelated reply ${index}.`) + "\n\n";
+        }
+        await finishMiraRun(f.client, f.run, {
+            state: "completed",
+            text: content,
+            parts,
+            message: null,
+        });
+        await f.send("Find the decision");
+        const next = (await claimMiraRun(f.client, crypto.randomUUID(), "foreground"))!;
+        const result = await readMiraConversationHistory(f.client, next, {
+            query: "fjordplan",
+        });
+        expect(result.rows.map((row) => row.excerpt)).toEqual(["🦊 Fjordplan decision."]);
+        expect(result.nextBeforeMessageId).toBeNull();
     } finally {
         await f.close();
     }

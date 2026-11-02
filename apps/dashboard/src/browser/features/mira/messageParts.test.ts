@@ -9,7 +9,7 @@ test("separate replies keep Markdown intact, interleave guidance and attach file
         user = Bun.randomUUIDv7(),
         last = Bun.randomUUIDv7();
     const a = new Date().toISOString();
-    const content = 'I am checking.\n\n```json\n{"ok":true}\n```';
+    const content = '🦊 I am checking.\n\n```json\n{"ok":true}\n```';
     const messages: MiraMessage[] = [
         {
             id: first,
@@ -20,7 +20,7 @@ test("separate replies keep Markdown intact, interleave guidance and attach file
             createdAt: a,
             parts: [
                 { id: first, offset: 0, createdAt: a },
-                { id: last, offset: 16, createdAt: a },
+                { id: last, offset: 18, createdAt: a },
             ],
         },
         {
@@ -35,7 +35,7 @@ test("separate replies keep Markdown intact, interleave guidance and attach file
     const result = chatMessageParts(messages);
     expect(result.map((m) => m.id)).toEqual([first, user, last]);
     expect(result[0]).toMatchObject({
-        content: "I am checking.",
+        content: "🦊 I am checking.",
         state: "completed",
         attachmentIds: [],
     });
