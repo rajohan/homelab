@@ -1,6 +1,6 @@
 {
-    "version": "0.164.0",
-    "source": "https://github.com/openai/codex/tree/rust-v0.164.0/codex-rs/skills/src/assets/samples",
+    "version": "0.166.0",
+    "source": "https://github.com/openai/codex/tree/rust-v0.166.0/codex-rs/skills/src/assets/samples",
     "entries": {
         "imagegen/": null,
         "imagegen/LICENSE.txt": "4dd13869245e356246a5b770723247bbb80a8f07a181d1d3d873a1734297cdb9",

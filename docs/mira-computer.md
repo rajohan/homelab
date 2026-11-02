@@ -54,7 +54,7 @@ Live sign-in, security-key handling and installation remain deployment qualifica
 References: [Microsoft WebView2 distribution](https://learn.microsoft.com/microsoft-edge/webview2/concepts/distribution),
 [Microsoft WebView2 security guidance](https://learn.microsoft.com/microsoft-edge/webview2/concepts/security).
 
-The computer foundation uses the unmodified, pinned `@trycua/cua-driver` 0.37.0 SDK with Bun 1.4.4. It provides a single-window adapter, a supervised private child process and a reproducible native X11 qualification. Chat tools, per-run access controls and the installed Windows composition are implemented. Production PC activation still requires interactive qualification, private routing and release delivery.
+The computer foundation uses the unmodified, pinned `@trycua/cua-driver` 0.38.0 SDK with Bun 1.4.4. It provides a single-window adapter, a supervised private child process and a reproducible native X11 qualification. Chat tools, per-run access controls and the installed Windows composition are implemented. Production PC activation still requires interactive qualification, private routing and release delivery.
 
 ## Authority and observations
 
@@ -212,7 +212,7 @@ and private routing qualification remain required before production activation.
 
 ## Hosted Windows native qualification
 
-The pinned 0.37 Windows backend omits the optional `screenshotFrameValid` field,
+The previously qualified 0.37 Windows backend omits the optional `screenshotFrameValid` field,
 including with full output. The adapter accepts that omission only on Windows;
 an explicit `false` is always rejected. It still requires the selected PID/window,
 a snapshot, exactly one bounded PNG/JPEG image, and decoded image dimensions that

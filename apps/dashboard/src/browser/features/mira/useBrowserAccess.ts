@@ -20,10 +20,8 @@ export function useBrowserAccess(run: MiraRun | null) {
     }, []);
     const query = useQuery({
         queryKey: ["operations", "mira", "browser-access", runId],
-        queryFn: ({ signal }) =>
-            runId
-                ? api.mira.browser.list.query({ runId }, { signal })
-                : Promise.resolve([]),
+        queryFn: async ({ signal }) =>
+            runId ? api.mira.browser.list.query({ runId }, { signal }) : [],
         ...(runId ? {} : { enabled: false }),
         refetchInterval: (current) => {
             if (running) return 1000;

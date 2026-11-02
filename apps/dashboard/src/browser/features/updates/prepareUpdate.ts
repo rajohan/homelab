@@ -6,7 +6,7 @@ interface PreparationInput {
     readonly target?: string;
 }
 const transport = {
-    start: (input: PreparationInput, signal: AbortSignal) =>
+    start: async (input: PreparationInput, signal: AbortSignal) =>
         api.updates.prepare.mutate(input, { signal }),
     state: async (id: string, signal: AbortSignal) => {
         const detail = await api.jobs.detail.query({ id, limit: 1 }, { signal });

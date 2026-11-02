@@ -2,7 +2,9 @@ import path from "node:path";
 
 import * as v from "valibot";
 
-export const computerDriverVersion = "0.37.0";
+import miraPackage from "../../../package.json";
+
+export const computerDriverVersion = miraPackage.dependencies["@trycua/cua-driver"];
 const grantSchema = v.strictObject({
     executable: v.pipe(v.string(), v.minLength(1), v.maxLength(4096)),
     pid: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(2_147_483_647)),
