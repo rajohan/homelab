@@ -106,7 +106,7 @@ test("attachment retries reuse their identity and retain files accepted before a
     const cleanup = fixture(<UploadHarness onBusy={(value) => busy.push(value)} />);
     try {
         const user = userEvent.setup();
-        await user.upload(screen.getByLabelText("Attach files"), [
+        await user.upload(screen.getByLabelText("Choose local attachments"), [
             new File(["Synthetic"], "one.txt", { type: "text/plain" }),
             new File(["Synthetic"], "two.txt", { type: "text/plain" }),
         ]);
@@ -285,12 +285,68 @@ test.each(["configured-native", "syn:large:text"])(
     }
 );
 
+test("automatic model labels show the current catalog name without changing the saved automatic choice", () => {
+    const query = new QueryClient();
+    const models = [
+        v.parse(miraModelSchema, {
+            model: "current-native",
+            displayName: "Current ChatGPT model",
+            isDefault: true,
+        }),
+    ];
+    const settings = { model: null, effort: null, serviceTier: null };
+    const view = render(
+        <QueryClientProvider client={query}>
+            <ModelSettings
+                draft={settings}
+                setDraft={() => {}}
+                models={models}
+                defaultModel={null}
+                fresh
+            />
+        </QueryClientProvider>
+    );
+    try {
+        expect(screen.getByRole("button", { name: /Chat model/ })).toHaveTextContent(
+            "Default · Current ChatGPT model"
+        );
+        view.rerender(
+            <QueryClientProvider client={query}>
+                <ModelSettings
+                    draft={settings}
+                    setDraft={() => {}}
+                    models={models}
+                    defaultModel="missing-model"
+                    fresh
+                />
+            </QueryClientProvider>
+        );
+        expect(screen.getByRole("button", { name: /Chat model/ })).toHaveTextContent(
+            "Default · missing-model (unavailable)"
+        );
+    } finally {
+        view.unmount();
+        query.clear();
+    }
+});
+
 test.each([false, true])(
     "chat keyboard submission respects an active upload (%s)",
     (uploading) => {
         let submissions = 0;
+        const media = spyOn(globalThis, "matchMedia").mockReturnValue({
+            matches: true,
+            media: "(pointer: fine)",
+            onchange: null,
+            addListener() {},
+            removeListener() {},
+            addEventListener() {},
+            removeEventListener() {},
+            dispatchEvent: () => true,
+        });
         const cleanup = fixture(
             <ChatComposer
+                steerable
                 text="Review the plan"
                 onText={() => {}}
                 attachments={[]}
@@ -310,16 +366,17 @@ test.each([false, true])(
         );
         try {
             const input = screen.getByRole("textbox", { name: "Message Mira" });
-            fireEvent.keyDown(input, { key: "Enter" });
+            fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
             expect(submissions).toBe(0);
             fireEvent.keyDown(input, { key: "Enter", ctrlKey: true, isComposing: true });
             expect(submissions).toBe(0);
-            fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
+            fireEvent.keyDown(input, { key: "Enter" });
             expect(submissions).toBe(uploading ? 0 : 1);
             if (uploading)
                 expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
         } finally {
             cleanup();
+            media.mockRestore();
         }
     }
 );

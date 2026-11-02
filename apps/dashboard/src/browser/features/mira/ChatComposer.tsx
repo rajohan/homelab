@@ -17,6 +17,7 @@ export function ChatComposer({
     onUploading,
     sending,
     active,
+    steerable = false,
     stopping,
     stopPending,
     onStop,
@@ -34,6 +35,7 @@ export function ChatComposer({
     readonly onUploading: (busy: boolean) => void;
     readonly sending: boolean;
     readonly active: boolean;
+    readonly steerable?: boolean;
     readonly stopping: boolean;
     readonly stopPending: boolean;
     readonly onStop: () => void;
@@ -43,7 +45,9 @@ export function ChatComposer({
     readonly onComputer?: (() => void) | undefined;
     readonly onSettings?: (() => void) | undefined;
 }) {
-    const canSend = Boolean(text.trim()) && !active && !uploading && !sending;
+    const placeholder = active ? "Add guidance while Mira works…" : "Message Mira…";
+    const blocked = stopping || stopPending || (active && !steerable);
+    const canSend = Boolean(text.trim()) && !blocked && !uploading && !sending;
     return (
         <form
             className="shrink-0 border-t border-primary-700 p-3 sm:p-4"
@@ -53,34 +57,13 @@ export function ChatComposer({
             }}
         >
             <div className="rounded-xl border border-primary-600 bg-primary-950 p-2 focus-within:border-accent-400">
-                <Textarea
-                    aria-label="Message Mira"
-                    rows={4}
-                    value={text}
-                    onChange={(event) => onText(event.target.value)}
-                    maxLength={32_000}
-                    disabled={sending}
-                    placeholder="Message Mira…"
-                    className="field-sizing-content max-h-[min(28dvh,18rem)] min-h-[clamp(5rem,15dvh,8rem)] resize-none border-0 bg-transparent p-2 shadow-none data-focus:ring-0"
-                    onKeyDown={(event) => {
-                        if (
-                            event.key === "Enter" &&
-                            (event.ctrlKey || event.metaKey) &&
-                            !event.nativeEvent.isComposing &&
-                            canSend
-                        ) {
-                            event.preventDefault();
-                            onSend();
-                        }
-                    }}
-                />
                 <AttachmentPicker
                     compact
                     value={attachments}
                     onChange={onAttachments}
                     onBusyChange={onUploading}
                     onBrowse={onBrowse}
-                    disabled={sending || active}
+                    disabled={sending || blocked}
                     controls={
                         <>
                             {onBrowser && (
@@ -108,24 +91,53 @@ export function ChatComposer({
                         </>
                     }
                     actions={
-                        active ? (
-                            <Button
-                                variant="secondary"
-                                busy={stopPending}
-                                disabled={stopping}
-                                onClick={onStop}
-                            >
-                                <Square size={16} aria-hidden="true" />
-                                {stopping ? "Stopping" : "Stop"}
-                            </Button>
-                        ) : (
+                        <>
+                            {active && (
+                                <Button
+                                    variant="secondary"
+                                    busy={stopPending}
+                                    disabled={stopping}
+                                    onClick={onStop}
+                                >
+                                    <Square size={16} aria-hidden="true" />
+                                    {stopping ? "Stopping" : "Stop"}
+                                </Button>
+                            )}
                             <Button type="submit" busy={sending} disabled={!canSend}>
                                 <Send size={16} aria-hidden="true" />
                                 Send
                             </Button>
-                        )
+                        </>
                     }
-                />
+                >
+                    <Textarea
+                        aria-label="Message Mira"
+                        rows={4}
+                        value={text}
+                        onChange={(event) => onText(event.target.value)}
+                        maxLength={32_000}
+                        disabled={sending}
+                        placeholder={
+                            blocked
+                                ? "Draft a message for when this run finishes…"
+                                : placeholder
+                        }
+                        className="field-sizing-content max-h-[min(28dvh,18rem)] min-h-[clamp(5rem,15dvh,8rem)] resize-none border-0 bg-transparent p-2 shadow-none data-focus:ring-0"
+                        onKeyDown={(event) => {
+                            if (
+                                event.key === "Enter" &&
+                                !event.shiftKey &&
+                                !event.altKey &&
+                                globalThis.matchMedia("(pointer: fine)").matches &&
+                                !event.nativeEvent.isComposing &&
+                                canSend
+                            ) {
+                                event.preventDefault();
+                                onSend();
+                            }
+                        }}
+                    />
+                </AttachmentPicker>
             </div>
         </form>
     );

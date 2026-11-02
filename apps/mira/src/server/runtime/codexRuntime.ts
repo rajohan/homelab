@@ -221,7 +221,7 @@ export class CodexRuntime {
         options: {
             signal?: AbortSignal;
             timeoutMs?: number;
-            onDelta?: (delta: string) => void;
+            onDelta?: (delta: string, messageId?: string) => void;
             onStarted?: (turnId: string) => Promise<void>;
             attachments?: RuntimeInput[];
             onActivity?: (activity: MiraActivity) => void;
@@ -277,7 +277,7 @@ export class CodexRuntime {
                 )
                     return;
                 if (delta.delta.length === 0) return;
-                // Distinct commentary/final items share one product message, not one paragraph.
+                // Keep aggregate text for context and expose item boundaries for the transcript.
                 const separator =
                     lastMessageId !== null && lastMessageId !== delta.itemId
                         ? "\n\n"
@@ -288,7 +288,7 @@ export class CodexRuntime {
                 options.onActivity?.({ phase: "replying", tool: null });
                 lastMessageId = delta.itemId;
                 output += chunk;
-                options.onDelta?.(chunk);
+                options.onDelta?.(chunk, delta.itemId);
             } else if (event.method === "turn/completed") {
                 const result = v.parse(completedSchema, event.params);
                 if (

@@ -38,6 +38,7 @@ export async function lockMiraProposals(query: MiraQuery, owner: string): Promis
 
 /** A deliberately public domain error without provider, database or file details. */
 export class MiraFailure extends Error {
+    readonly retryable: boolean;
     readonly code:
         | "BAD_REQUEST"
         | "CONFLICT"
@@ -48,10 +49,12 @@ export class MiraFailure extends Error {
      * Create a user-actionable failure for the authenticated transport boundary.
      * @param code - Reviewed public error category.
      * @param message - Safe explanation without private diagnostics.
+     * @param retryable - Whether an existing queued input may wait for the condition to change.
      */
-    constructor(code: MiraFailure["code"], message: string) {
+    constructor(code: MiraFailure["code"], message: string, retryable = true) {
         super(message);
         this.name = "MiraFailure";
+        this.retryable = retryable;
         this.code = code;
     }
 }

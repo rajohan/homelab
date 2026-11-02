@@ -1,0 +1,42 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "b63bf536-a035-4d40-8120-7caaa5bee8c6",
+    "prevIds": ["085046a1-fee1-4eed-9b2f-ff0140131856"],
+    "footprints": [
+        {
+            "statementType": "add_column",
+            "statementTarget": [
+                "column",
+                "public",
+                "mira_chat_inputs",
+                "next_attempt_at"
+            ],
+            "writes": [
+                "s|col|public.mira_chat_inputs.next_attempt_at",
+                "n|col|public.mira_chat_inputs.next_attempt_at",
+                "e|col|public.mira_chat_inputs.next_attempt_at"
+            ],
+            "reads": ["n|tbl|public.mira_chat_inputs", "n|sch|public"]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_chat_inputs",
+                "name": "next_attempt_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "now()",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        }
+    ]
+}

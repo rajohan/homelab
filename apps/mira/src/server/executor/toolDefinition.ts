@@ -11,6 +11,7 @@ export interface MiraToolDefinition extends Omit<RuntimeTool, "execute"> {
     automatic: boolean;
     transactional?: boolean;
     commitsIndependently?: boolean;
+    readOnly?: boolean;
     confirmation?: boolean;
     structuredOutput?: boolean;
     action: (

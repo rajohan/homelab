@@ -1,9 +1,10 @@
-import type { MiraActivity } from "@homelab/contracts/mira";
+import type { MiraActivity, MiraMessagePart } from "@homelab/contracts/mira";
 import type { SQL } from "bun";
 
 import { runtimeEnvironment } from "../config/environment";
 import { miraRunPermission } from "../data/approvalPolicy";
 import { resolveMiraChatSettings } from "../data/chatSettings";
+import { claimChatSteering, acknowledgeChatSteering } from "../data/chatSteering";
 import { MiraFailure } from "../data/context";
 import {
     finishMiraRun,
@@ -103,6 +104,8 @@ export async function executeMiraTurn(
     let activity: MiraActivity = { phase: "starting", tool: null };
     let savedActivity = "";
     let text = "";
+    const parts: MiraMessagePart[] = [];
+    let messageId: string | undefined;
     let persisted = "";
     let updating = false;
     let renewing = false;
@@ -120,19 +123,38 @@ export async function executeMiraTurn(
                 if (!runtime || !providerThread || !providerTurn || signal.aborted)
                     return;
                 const edit = await readTaskSteering(client, run);
-                if (!edit || signal.aborted) return;
+                if (signal.aborted) return;
+                if (edit) {
+                    let accepted: boolean;
+                    try {
+                        accepted = await runtime.steer(
+                            providerThread,
+                            providerTurn,
+                            `The operator updated task ${run.taskId} while you were working (change ${edit.id}). Read its current title, description, completion criteria and latest progress now. Adapt this ongoing work to the update; preserve completed work and do not restart from scratch. The update does not grant new external permissions.`
+                        );
+                    } catch (error) {
+                        steeringFailed = true;
+                        throw error;
+                    }
+                    if (!accepted) return;
+                    if (!(await acknowledgeTaskSteering(client, run, edit.id)))
+                        controller.abort();
+                }
+                if (signal.aborted) return;
+                const guidance = await claimChatSteering(client, run);
+                if (!guidance) return;
                 let accepted: boolean;
                 try {
                     accepted = await runtime.steer(
                         providerThread,
                         providerTurn,
-                        `The operator updated task ${run.taskId} while you were working (change ${edit.id}). Read its current title, description, completion criteria and latest progress now. Adapt this ongoing work to the update; preserve completed work and do not restart from scratch. The update does not grant new external permissions.`
+                        `New message from the operator while you were working (message ${guidance.id}). Adapt the current work to this message and preserve completed work:\n\n${guidance.content}`
                     );
                 } catch (error) {
                     steeringFailed = true;
                     throw error;
                 }
-                if (accepted && !(await acknowledgeTaskSteering(client, run, edit.id)))
+                if (!(await acknowledgeChatSteering(client, run, guidance.id, accepted)))
                     controller.abort();
                 return;
             })
@@ -151,7 +173,7 @@ export async function executeMiraTurn(
         const snapshot = text;
         const currentActivity = activity;
         update = Promise.all([
-            saveMiraDelta(client, run, snapshot),
+            saveMiraDelta(client, run, snapshot, [...parts]),
             saveMiraActivity(client, run, currentActivity),
         ])
             .then(([textAccepted, activityAccepted]) => {
@@ -372,19 +394,33 @@ export async function executeMiraTurn(
                 onActivity: (next) => {
                     activity = next;
                 },
-                onDelta: (delta) => {
+                onDelta: (delta, itemId) => {
+                    if (parts.length === 0 || (itemId && itemId !== messageId)) {
+                        if (parts.length >= 256)
+                            throw new Error("Mira reply limit reached.");
+                        parts.push({
+                            id: Bun.randomUUIDv7(),
+                            offset:
+                                // oxlint-disable-next-line typescript/no-misused-spread -- Match PostgreSQL Unicode code point offsets.
+                                [...text].length +
+                                (text && delta.startsWith("\n\n") ? 2 : 0),
+                            createdAt: new Date().toISOString(),
+                        });
+                        messageId = itemId;
+                    }
                     text += delta;
                 },
             }
         );
         clearInterval(interval);
         await renewal;
-        if (steeringFailed) throw new Error("Task steering outcome requires review.");
+        if (steeringFailed) throw new Error("Message delivery could not be confirmed.");
         clearInterval(flush);
         await update;
         await finishMiraRun(client, run, {
             state: result.status,
             text: result.text,
+            parts,
             message:
                 result.status === "failed"
                     ? "Mira could not complete the reply. Review the run before continuing."
@@ -400,7 +436,12 @@ export async function executeMiraTurn(
             message =
                 "Maximum run time exceeded during preparation or execution. Review this run before continuing.";
         else if (error instanceof MiraFailure) message = error.message;
-        await finishMiraRun(client, run, { state: "needs_attention", text, message });
+        await finishMiraRun(client, run, {
+            state: "needs_attention",
+            text,
+            parts,
+            message,
+        });
     } finally {
         clearTimeout(timer);
         clearTimeout(stopTransportTimer);

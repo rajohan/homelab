@@ -59,7 +59,7 @@ export function createMiraRecallTools(client: SQL, run: MiraClaim): MiraToolDefi
         {
             name: "mira_history_read",
             description:
-                "Read up to 6000 characters of a message found in recovered context, current-conversation browsing or cross-conversation search. Use nextOffset for another chunk only when necessary. Failed/interrupted responses are unverified. Access is rechecked; other conversations require history enabled and source inclusion. Archived or deleted conversations cannot be read.",
+                "Read up to 6000 characters of one reply found in recovered context, current-conversation browsing or cross-conversation search. Context contains up to two earlier and two later excerpts, including intervening user guidance; use their message IDs to retrieve more. Use nextOffset for another chunk of this reply only when necessary. Failed/interrupted responses are unverified. Access is rechecked; other conversations require history enabled and source inclusion. Archived or deleted conversations cannot be read.",
             inputSchema: {
                 type: "object",
                 properties: {

@@ -202,6 +202,12 @@ export interface MiraConversation {
     createdAt: string;
     updatedAt: string;
 }
+export interface MiraMessagePart {
+    id: string;
+    /** Unicode code-point offset, matching PostgreSQL substring and history chunks. */
+    offset: number;
+    createdAt: string;
+}
 export interface MiraMessage {
     id: string;
     role: "user" | "assistant";
@@ -222,6 +228,7 @@ export interface MiraActivity {
     tool: string | null;
 }
 export interface MiraRun {
+    manual?: boolean;
     activity?: MiraActivity | null;
     id: string;
     conversationId: string;

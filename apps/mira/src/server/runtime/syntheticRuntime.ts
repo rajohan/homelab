@@ -418,7 +418,7 @@ export class SyntheticRuntime {
                         if (output.length > 256_000)
                             throw new Error("Synthetic output exceeds its limit.");
                         options.onActivity?.({ phase: "replying", tool: null });
-                        options.onDelta?.(delta);
+                        options.onDelta?.(delta, `${active.id}:${step}`);
                     }
                     reasoning +=
                         choice.delta.reasoning_content ?? choice.delta.reasoning ?? "";
@@ -559,7 +559,7 @@ export class SyntheticRuntime {
      * Queue operator guidance before the next model decision and prevent pending tools from using stale guidance.
      * @param threadId - Expected ephemeral registry identity.
      * @param turnId - Expected active execution identity.
-     * @param text - Server-created guidance referencing a verified human task edit.
+     * @param text - Verified operator guidance from a chat message or task edit.
      * @returns True when accepted by this active turn, false when it has already ended.
      */
     steer(threadId: string, turnId: string, text: string): Promise<boolean> {
@@ -572,7 +572,7 @@ export class SyntheticRuntime {
             active.id !== turnId
         )
             return Promise.resolve(false);
-        if (text.length > 4000 || active.guidance.length >= 32)
+        if (text.length > 32_768 || active.guidance.length >= 32)
             throw new Error("Synthetic guidance exceeds its limit.");
         active.guidance.push(text);
         return Promise.resolve(true);

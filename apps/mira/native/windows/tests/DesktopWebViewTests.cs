@@ -48,8 +48,9 @@ internal static class DesktopWebViewTests
             return new JavaScriptSerializer().Serialize(new { type = "fixture-reply", id = request["id"] });
         }, delegate(string url) { Check(url == "https://untrusted.example.test/"); external++; })) {
             form.Controls.Add(web); IntPtr handle = form.Handle;
-            var environment = Wait(CoreWebView2Environment.CreateAsync(null, Path.Combine(root, "browser-profile")));
-            Wait(web.EnsureCoreWebView2Async(environment));
+            // A fresh hosted runner may still be starting Edge services. Keep input waits short.
+            var environment = Wait(CoreWebView2Environment.CreateAsync(null, Path.Combine(root, "browser-profile")), "environment startup", 60000);
+            Wait(web.EnsureCoreWebView2Async(environment), "controller startup", 60000);
             var core = web.CoreWebView2;
             core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
             core.WebResourceRequested += delegate(object sender, CoreWebView2WebResourceRequestedEventArgs args) {
@@ -94,12 +95,12 @@ internal static class DesktopWebViewTests
         try { core.Navigate(url); Until(delegate { return done; }); }
         finally { core.NavigationCompleted -= completed; }
     }
-    private static T Wait<T>(Task<T> task) { Until(delegate { return task.IsCompleted; }); return task.GetAwaiter().GetResult(); }
-    private static void Wait(Task task) { Until(delegate { return task.IsCompleted; }); task.GetAwaiter().GetResult(); }
-    private static void Until(Func<bool> ready)
+    private static T Wait<T>(Task<T> task, string stage = "operation", int timeoutMs = 15000) { Until(delegate { return task.IsCompleted; }, stage, timeoutMs); return task.GetAwaiter().GetResult(); }
+    private static void Wait(Task task, string stage = "operation", int timeoutMs = 15000) { Until(delegate { return task.IsCompleted; }, stage, timeoutMs); task.GetAwaiter().GetResult(); }
+    private static void Until(Func<bool> ready, string stage = "operation", int timeoutMs = 15000)
     {
         var clock = Stopwatch.StartNew();
-        while (!ready()) { if (clock.ElapsedMilliseconds > 15000) throw new TimeoutException("WebView fixture timed out."); Application.DoEvents(); Thread.Sleep(10); }
+        while (!ready()) { if (clock.ElapsedMilliseconds > timeoutMs) throw new TimeoutException("WebView fixture timed out during " + stage + "."); Application.DoEvents(); Thread.Sleep(10); }
     }
     private static void Pump(int milliseconds) { var clock = Stopwatch.StartNew(); while (clock.ElapsedMilliseconds < milliseconds) { Application.DoEvents(); Thread.Sleep(10); } }
     private static void Check(bool condition) { browserChecks++; if (!condition) throw new InvalidDataException("WebView fixture failed at " + browserChecks); }

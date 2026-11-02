@@ -557,6 +557,7 @@ export function createMiraTools(
             automatic,
             transactional,
             commitsIndependently,
+            readOnly,
             confirmation,
             structuredOutput,
             finalize,
@@ -710,19 +711,24 @@ export function createMiraTools(
                     }
                     // Independently committed work cannot roll back with the later receipt fence.
                     const known =
-                        !cleanupFailed &&
-                        !(commitsIndependently && actionCompleted) &&
-                        (error instanceof MiraFailure || error instanceof v.ValiError);
+                        readOnly ||
+                        (!cleanupFailed &&
+                            !(commitsIndependently && actionCompleted) &&
+                            (error instanceof MiraFailure ||
+                                error instanceof v.ValiError));
                     uncertain = !known;
                     let message =
                         "The action outcome is uncertain. Do not retry; review this run before continuing.";
                     if (known && error instanceof MiraFailure) message = error.message;
+                    else if (readOnly)
+                        message =
+                            "The screen could not be captured. No clicks or keystrokes were sent. Check Computer access before requesting another observation.";
                     else if (known)
                         message = "The tool input was invalid; no change was committed.";
                     try {
                         await client`UPDATE mira_tool_receipts SET state=${known ? "failed" : "unknown"}, message=${message}, finished_at=now() WHERE id=${receipt} AND state='running'`;
                     } catch {
-                        uncertain = true;
+                        uncertain = !readOnly;
                     }
                     return JSON.stringify({
                         ok: false,

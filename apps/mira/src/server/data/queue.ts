@@ -1,4 +1,9 @@
-import type { MiraActivity, MiraRunSummary, MiraSchedule } from "@homelab/contracts/mira";
+import type {
+    MiraActivity,
+    MiraMessagePart,
+    MiraRunSummary,
+    MiraSchedule,
+} from "@homelab/contracts/mira";
 import type { SQL, TransactionSQL } from "bun";
 
 import { isSyntheticModel } from "../runtime/syntheticCatalog";
@@ -64,6 +69,7 @@ async function reconcileExpired(query: TransactionSQL): Promise<number> {
     for (const run of expired) {
         await notifyMiraRun(query, run.id);
         await query`UPDATE mira_messages SET state = 'failed' WHERE id = ${run.assistantMessageId}`;
+        await query`UPDATE mira_tool_receipts SET state='failed',message='The screen capture did not complete. No clicks or keystrokes were sent.',finished_at=now() WHERE run_id=${run.id} AND state='running' AND tool='mira_computer_observe'`;
         await query`UPDATE mira_tool_receipts SET state = 'unknown', message = 'Executor disconnected; reconcile before retrying.' WHERE run_id = ${run.id} AND state = 'running'`;
         await auditMira(
             query,
@@ -204,16 +210,18 @@ export async function renewMiraRun(client: SQL, run: MiraClaim): Promise<boolean
  * @param client - Executor database pool.
  * @param run - Current lease.
  * @param content - Bounded accumulated assistant text.
+ * @param parts - Stable reply boundaries within the accumulated text.
  * @returns Whether this fenced write was accepted.
  */
 export async function saveMiraDelta(
     client: SQL,
     run: MiraClaim,
-    content: string
+    content: string,
+    parts: MiraMessagePart[] = []
 ): Promise<boolean> {
     const rows = await client<
         { id: string }[]
-    >`UPDATE mira_messages SET content = ${content} WHERE id = ${run.assistantMessageId} AND EXISTS (SELECT 1 FROM mira_runs WHERE id = ${run.id} AND state = 'running' AND lease_token = ${run.leaseToken} AND lease_expires_at > now()) RETURNING id`;
+    >`UPDATE mira_messages SET content = ${content}, parts=${JSON.stringify(parts)}::text::jsonb WHERE id = ${run.assistantMessageId} AND EXISTS (SELECT 1 FROM mira_runs WHERE id = ${run.id} AND state = 'running' AND lease_token = ${run.leaseToken} AND lease_expires_at > now()) RETURNING id`;
     return rows.length === 1;
 }
 
@@ -230,21 +238,24 @@ export async function finishMiraRun(
     outcome: {
         state: "completed" | "interrupted" | "failed" | "needs_attention";
         text: string;
+        parts?: MiraMessagePart[];
         message: string | null;
         providerTurn?: string;
     }
 ): Promise<boolean> {
     return client.begin(async (query) => {
+        // Match message admission's conversation -> task -> run lock order.
+        await query`SELECT id FROM mira_conversations WHERE id=${run.conversationId} AND owner=${run.owner} FOR UPDATE`;
         if (run.manual && run.taskId) {
             // Match task edits' conversation -> task -> run order. The shared task
             // lock makes the terminal clock boundary follow all committed edits.
-            await query`SELECT id FROM mira_conversations WHERE id=${run.conversationId} AND owner=${run.owner} FOR UPDATE`;
             await query`SELECT id FROM mira_tasks WHERE id=${run.taskId} AND owner=${run.owner} FOR SHARE`;
         }
         const [owned] = await query<
             { id: string; cancelRequested: boolean }[]
         >`SELECT id,cancel_requested AS "cancelRequested" FROM mira_runs WHERE id=${run.id} AND state='running' AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp() FOR UPDATE`;
         if (!owned) return false;
+        await query`UPDATE mira_tool_receipts SET state='failed',message='The screen capture did not complete. No clicks or keystrokes were sent.',finished_at=now() WHERE run_id=${run.id} AND state='running' AND tool='mira_computer_observe'`;
         await query`UPDATE mira_tool_receipts SET state='unknown', message='The tool receipt was not completed. Review before continuing.', finished_at=now() WHERE run_id=${run.id} AND state='running'`;
         const [receipts] = await query<
             { uncertain: boolean }[]
@@ -270,7 +281,7 @@ export async function finishMiraRun(
             { id: string }[]
         >`UPDATE mira_runs SET state = ${terminal.state}, message = ${terminal.message}, provider_turn = COALESCE(${terminal.providerTurn ?? null}, provider_turn), finished_at = clock_timestamp(), lease_expires_at = NULL WHERE id = ${run.id} AND state = 'running' AND lease_token = ${run.leaseToken} AND lease_expires_at > now() RETURNING id`;
         if (!rows[0]) return false;
-        await query`UPDATE mira_messages SET content = ${terminal.text}, state = ${terminal.state === "needs_attention" ? "failed" : terminal.state} WHERE id = ${run.assistantMessageId}`;
+        await query`UPDATE mira_messages SET content = ${terminal.text}, parts=${JSON.stringify(terminal.parts ?? [])}::text::jsonb, state = ${terminal.state === "needs_attention" ? "failed" : terminal.state} WHERE id = ${run.assistantMessageId}`;
         await query`UPDATE mira_conversations SET updated_at = now() WHERE id = ${run.conversationId}`;
         await notifyMiraRun(query, run.id);
         await auditMira(

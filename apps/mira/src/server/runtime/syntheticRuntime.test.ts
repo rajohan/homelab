@@ -359,70 +359,70 @@ test.each(["disconnect", "length", "duplicate", "unregistered", "tool_failure"])
     }
 );
 
-test("Synthetic steering prevents queued stale tools and continues with the operator update", async () => {
-    let requests = 0,
-        executions = 0,
-        turnId = "";
-    const runtime = new SyntheticRuntime(
-        configuration,
-        "operator",
-        transport(async (_url, init) => {
-            requests++;
-            if (requests === 1) {
-                expect(
-                    await runtime.steer(thread, turnId, "Read the changed task first.")
-                ).toBe(true);
-                return stream([
-                    chunk(
-                        {
-                            tool_calls: [
-                                {
-                                    index: 0,
-                                    id: "stale",
-                                    type: "function",
-                                    function: { name: "write", arguments: "{}" },
-                                },
-                            ],
-                        },
-                        "tool_calls"
-                    ),
-                ]);
-            }
-            expect(v.parse(v.string(), init.body)).toContain(
-                "Read the changed task first."
-            );
-            expect(v.parse(v.string(), init.body)).toContain("Not executed");
-            return stream([chunk({ content: "Adjusted to the new task." }, "stop")]);
-        })
-    );
-    const thread = await runtime.startThread(
-        settings.model,
-        "/unused",
-        [
-            {
-                name: "write",
-                description: "Fixture",
-                inputSchema: {},
-                execute: () => {
-                    executions++;
-                    return Promise.resolve("ok");
+test.each([28, 32_000])(
+    "Synthetic steering prevents stale tools and accepts an operator message of %s characters",
+    async (length) => {
+        const guidance = "u".repeat(length);
+        let requests = 0,
+            executions = 0,
+            turnId = "";
+        const runtime = new SyntheticRuntime(
+            configuration,
+            "operator",
+            transport(async (_url, init) => {
+                requests++;
+                if (requests === 1) {
+                    expect(await runtime.steer(thread, turnId, guidance)).toBe(true);
+                    return stream([
+                        chunk(
+                            {
+                                tool_calls: [
+                                    {
+                                        index: 0,
+                                        id: "stale",
+                                        type: "function",
+                                        function: { name: "write", arguments: "{}" },
+                                    },
+                                ],
+                            },
+                            "tool_calls"
+                        ),
+                    ]);
+                }
+                expect(v.parse(v.string(), init.body)).toContain(guidance);
+                expect(v.parse(v.string(), init.body)).toContain("Not executed");
+                return stream([chunk({ content: "Adjusted to the new task." }, "stop")]);
+            })
+        );
+        const thread = await runtime.startThread(
+            settings.model,
+            "/unused",
+            [
+                {
+                    name: "write",
+                    description: "Fixture",
+                    inputSchema: {},
+                    execute: () => {
+                        executions++;
+                        return Promise.resolve("ok");
+                    },
                 },
+            ],
+            "Fixture"
+        );
+        const result = await runtime.turn(thread, "Old task", {
+            settings,
+            onStarted: (id) => {
+                turnId = id;
+                return Promise.resolve();
             },
-        ],
-        "Fixture"
-    );
-    const result = await runtime.turn(thread, "Old task", {
-        settings,
-        onStarted: (id) => {
-            turnId = id;
-            return Promise.resolve();
-        },
-    });
-    expect(result.status).toBe("completed");
-    expect(executions).toBe(0);
-    expect(await runtime.steer(thread, turnId, "Too late")).toBe(false);
-    await runtime.close();
-});
+        });
+        expect(result.status).toBe("completed");
+        expect(executions).toBe(0);
+        expect(await runtime.steer(thread, turnId, "Too late")).toBe(false);
+        await runtime.close();
+    }
+);
 
 test("Synthetic cancellation stops a stalled response without invoking a tool", async () => {
     const abort = new AbortController();

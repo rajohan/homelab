@@ -325,15 +325,9 @@ test("reconnection, credential revocation and expiration cannot restore old gran
     }
 });
 
-test("run cancellation, worker loss, completion, budget and conversation deletion invalidate access", async () => {
-    for (const mode of [
-        "cancel",
-        "lease",
-        "replacement",
-        "complete",
-        "budget",
-        "delete",
-    ]) {
+test.each(["cancel", "lease", "replacement", "complete", "budget", "delete"])(
+    "%s invalidates computer access",
+    async (mode) => {
         const f = await fixture();
         try {
             const grant = await f.api.computers.access.request(f.request);
@@ -357,7 +351,7 @@ test("run cancellation, worker loss, completion, budget and conversation deletio
             await f.close();
         }
     }
-});
+);
 
 test("pause then resume never revives a grant, including a manual chat session", async () => {
     const f = await fixture();

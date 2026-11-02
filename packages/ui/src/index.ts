@@ -30,6 +30,7 @@ export { Input } from "./components/Input/Input";
 export { Textarea } from "./components/Input/Textarea";
 export { Markdown } from "./components/Markdown/Markdown";
 export { SearchInput } from "./components/SearchInput/SearchInput";
+export { FileDropZone } from "./components/FileDropZone/FileDropZone";
 
 export { Form } from "./components/Form/Form";
 export { Fieldset } from "./components/Form/Fieldset";

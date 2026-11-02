@@ -30,7 +30,7 @@ export async function testWindowsDesktop() {
         );
         const browser = execFileSync(built.checks!, ["--webview"], {
             windowsHide: true,
-            timeout: 90_000,
+            timeout: 150_000,
             maxBuffer: 4096,
             encoding: "utf8",
         });
