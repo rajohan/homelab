@@ -12,17 +12,17 @@
         "./skills/*": "./src/server/skills/*.ts"
     },
     "dependencies": {
-        "@daytona/api-client": "0.226.1",
-        "@daytona/toolbox-api-client": "0.226.1",
+        "@daytona/api-client": "0.227.0",
+        "@daytona/toolbox-api-client": "0.227.0",
         "@homelab/contracts": "workspace:*",
         "@homelab/notifications": "workspace:*",
         "@homelab/scheduling": "workspace:*",
-        "@openai/codex": "0.164.0",
-        "@trycua/cua-driver": "0.37.0",
+        "@openai/codex": "0.166.0",
+        "@trycua/cua-driver": "0.38.0",
         "drizzle-orm": "1.0.0-rc.5",
-        "effect": "4.0.6",
+        "effect": "4.1.0",
         "image-size": "2.0.4",
-        "svix": "2.9.0",
+        "svix": "2.9.1",
         "unpdf": "1.9.1",
         "valibot": "1.5.0"
     }

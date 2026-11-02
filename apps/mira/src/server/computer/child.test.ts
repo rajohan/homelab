@@ -3,6 +3,7 @@ import { PassThrough } from "node:stream";
 
 import { createVisualChallenge } from "../testing/visualChallenge";
 import { serveComputerChild } from "./child";
+import { computerDriverVersion } from "./policy";
 import type { ComputerWindowPort } from "./session";
 
 const grant = {
@@ -97,7 +98,7 @@ test("the private child permits only one initialization and fixed native operati
         "element:s00000001:1",
     ]);
     expect(f.replies.map((reply) => reply.id)).toEqual([1, 2, 3, 4, 5]);
-    expect(f.replies[0]?.result).toEqual({ version: 1, driver: "0.37.0" });
+    expect(f.replies[0]?.result).toEqual({ version: 1, driver: computerDriverVersion });
     expect(f.replies[2]?.result).toEqual({ effect: "unverified" });
     f.input.end();
     await f.done;

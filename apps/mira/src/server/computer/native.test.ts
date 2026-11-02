@@ -7,6 +7,7 @@ import type * as NativeSdk from "@trycua/cua-driver";
 import { createVisualChallenge } from "../testing/visualChallenge";
 import { computerCommandResult } from "./commandResult";
 import { openNativeComputerWindow } from "./native";
+import { computerDriverVersion } from "./policy";
 import { ComputerWindowSession } from "./session";
 import { openWindowsCapture, windowsCaptureMaximumPngBytes } from "./windowsCapture";
 
@@ -22,7 +23,7 @@ async function fixture() {
     let manifest = "";
     let shuts = 0;
     let destroys = 0;
-    let version = "0.37.0";
+    let version = computerDriverVersion;
     const calls: unknown[] = [];
     const frame = {
         pid: 123,
@@ -221,7 +222,7 @@ test("wrong identities, invalid pixels and undeclared remote files are rejected"
 
 test("version mismatch cleans up the native runtime and temporary manifest", async () => {
     const f = await fixture();
-    f.version("0.38.0");
+    f.version("0.0.0");
     await assert.rejects(f.open(), /version/);
     expect(f.shuts()).toBe(1);
     expect(f.destroys()).toBe(1);

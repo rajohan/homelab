@@ -20,10 +20,8 @@ export function useComputerAccess(run: MiraRun | null) {
     }, []);
     const query = useQuery({
         queryKey: ["operations", "mira", "computer-access", runId],
-        queryFn: ({ signal }) =>
-            runId
-                ? api.mira.computers.access.list.query({ runId }, { signal })
-                : Promise.resolve([]),
+        queryFn: async ({ signal }) =>
+            runId ? api.mira.computers.access.list.query({ runId }, { signal }) : [],
         ...(runId ? {} : { enabled: false }),
         refetchInterval: (current) => {
             if (running) return 1000;

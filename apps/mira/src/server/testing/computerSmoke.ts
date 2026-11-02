@@ -7,7 +7,7 @@ import { Effect } from "effect";
 import * as v from "valibot";
 
 import { openNativeComputerWindow } from "../computer/native";
-import { computerWindowManifest } from "../computer/policy";
+import { computerDriverVersion, computerWindowManifest } from "../computer/policy";
 import { openComputerProcess } from "../computer/process";
 import { ComputerWindowSession } from "../computer/session";
 import { computerEnvironment } from "../config/environment";
@@ -191,7 +191,7 @@ export async function qualifyComputerFixture() {
         }
         if (!stopped) throw new Error("The closed session retained computer authority.");
         return {
-            driver: "0.37.0",
+            driver: computerDriverVersion,
             platform: "linux-x11",
             image: true,
             text: true,

@@ -40,7 +40,7 @@ Create intent commits before Docker dispatch; the returned ID commits before sta
 
 ## Fixed runtime boundary
 
-Bun 1.4.4 and the unmodified official CUA CLI 0.38.0 are pinned. `driverRelease.json` records the upstream release URL, exact archive size and SHA-256; image builds verify these before extracting the executable. `deploy/browser/Dockerfile` packages Chromium, Xvfb/Openbox and the CLI beside the bundled fixed worker. The Windows SDK remains independently pinned to 0.37.0. It contains no host profiles, model credentials, test sites or repository source.
+Bun 1.4.4 and the unmodified official CUA CLI 0.38.0 are pinned. `driverRelease.json` records the upstream release URL, exact archive size and SHA-256; image builds verify these before extracting the executable. `deploy/browser/Dockerfile` packages Chromium, Xvfb/Openbox and the CLI beside the bundled fixed worker. The Windows SDK is independently pinned to 0.38.0. It contains no host profiles, model credentials, test sites or repository source.
 
 The fixed container runs as UID/GID 1000 with a read-only root, no host mounts or published ports, no capabilities, no-new-privileges, bounded temporary filesystems, 1536 MiB RAM, two CPUs and 256 PIDs. Docker init, automatic removal and `/usr/bin/timeout --signal=KILL 305s` bound descendants independently of native cleanup. The upstream browser no-sandbox setting is confined to this outer container boundary; do not run the worker outside it.
 
