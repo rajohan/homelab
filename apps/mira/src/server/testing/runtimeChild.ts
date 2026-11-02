@@ -370,7 +370,11 @@ for await (const line of reader) {
                     threadId: "thread-test",
                     turn: {
                         id: turnId,
-                        status: mode === "failed" ? "failed" : "completed",
+                        status:
+                            mode === "failed" ||
+                            (mode === "live-partial-failure" && activeTurn === 2)
+                                ? "failed"
+                                : "completed",
                     },
                 },
             });

@@ -209,6 +209,8 @@ export interface MiraMessagePart {
     /** Unicode code-point offset, matching PostgreSQL substring and history chunks. */
     offset: number;
     createdAt: string;
+    /** Confirmed provider completion; later continuations cannot change this reply's outcome. */
+    completed?: boolean;
 }
 export interface MiraMessage {
     id: string;

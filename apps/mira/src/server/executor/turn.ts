@@ -422,6 +422,7 @@ export async function executeMiraTurn(
                 providerThread = threadId;
             }
             const guidance = continuation ? await claimChatSteering(client, run) : null;
+            const firstPart = parts.length;
             let firstDelta = true;
             assistanceIdle = false;
             result = await runtime.turn(
@@ -508,6 +509,13 @@ export async function executeMiraTurn(
                 }
             );
             providerTurn = undefined;
+            if (assistance && result.status === "completed") {
+                for (const part of parts.slice(firstPart)) part.completed = true;
+                await update;
+                if (!(await saveMiraDelta(client, run, text, parts)))
+                    throw new Error("Run lease lost while saving completed replies.");
+                persisted = text;
+            }
             await renewal;
             if (steeringFailed)
                 throw new Error("Message delivery could not be confirmed.");

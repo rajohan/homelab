@@ -137,7 +137,9 @@ export async function saveMiraChatSettings(
             conversation.settings.model !== input.settings.model ||
             conversation.settings.effort !== input.settings.effort ||
             conversation.settings.serviceTier !== input.settings.serviceTier ||
-            (input.settings.liveAssistanceMinutes ?? 0) > 0
+            ((input.settings.liveAssistanceMinutes ?? 0) > 0 &&
+                input.settings.liveAssistanceMinutes !==
+                    conversation.settings.liveAssistanceMinutes)
         ) {
             const catalog = await readCatalog(query, context.owner);
             if (!catalog.fresh)

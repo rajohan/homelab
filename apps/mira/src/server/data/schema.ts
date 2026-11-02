@@ -86,7 +86,7 @@ export const miraMessages = pgTable(
     ]
 );
 // Indexed reply boundaries; the migration trigger maintains this projection only
-// when boundaries change. Content and outcome remain on the original message.
+// when boundaries or confirmed completions change. Content remains on the original message.
 export const miraMessageReplies = pgTable(
     "mira_message_replies",
     {
@@ -99,6 +99,7 @@ export const miraMessageReplies = pgTable(
             .references(() => miraConversations.id),
         offset: integer().notNull(),
         endOffset: integer("end_offset"),
+        completed: boolean().default(false).notNull(),
         createdAt: time("created_at").notNull(),
     },
     (t) => [

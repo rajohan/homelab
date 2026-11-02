@@ -107,6 +107,36 @@ test("live settings reject explicit and automatic text-only models before queuin
         const saved = await f.api.conversations.read({ id: chat.id });
         expect(saved.run).toBeNull();
         expect(saved.conversation.settings.liveAssistanceMinutes).toBe(0);
+        const run = (await claimMiraRun(f.client, crypto.randomUUID(), "general"))!;
+        await finishMiraRun(f.client, run, {
+            state: "completed",
+            text: "Done.",
+            message: null,
+        });
+        const enabled = await f.api.conversations.read({ id: f.chat.id });
+        await f.api.conversations.settings({
+            id: f.chat.id,
+            version: enabled.conversation.version,
+            settings: {
+                ...enabled.conversation.settings,
+                useMemory: false,
+                useHistory: false,
+            },
+        });
+        const updated = await f.api.conversations.read({ id: f.chat.id });
+        expect(updated.conversation.settings.liveAssistanceMinutes).toBe(60);
+        expect(updated.conversation.settings.useMemory).toBe(false);
+        await rejects(
+            f.api.conversations.settings({
+                id: f.chat.id,
+                version: updated.conversation.version,
+                settings: {
+                    ...updated.conversation.settings,
+                    liveAssistanceMinutes: 120,
+                },
+            }),
+            /Reconnect Mira/
+        );
     } finally {
         await f.close();
     }
@@ -333,6 +363,10 @@ test("the executor continues after a reply, delivers idle guidance in a new bubb
         const stopped = await f.replies();
         expect(stopped.chat.run?.state).toBe("interrupted");
         expect(stopped.messages).toHaveLength(2);
+        expect(stopped.messages.map((message) => message.state)).toEqual([
+            "completed",
+            "completed",
+        ]);
         expect(timeouts).toEqual([300_000, 300_000]);
     } finally {
         await f.close();
@@ -391,10 +425,26 @@ test("live reply limits include continuation separators and preserve a terminal 
         expect(ended.chat.run?.message).toContain("reply limit");
         expect(ended.messages).toHaveLength(1);
         expect(ended.messages[0]?.content).toBe("x".repeat(255_999));
+        expect(ended.messages[0]?.state).toBe("completed");
         const [run] = await f.client<
             { finished_at: Date | null }[]
         >`SELECT finished_at FROM mira_runs WHERE id=${f.run.id}`;
         expect(run!.finished_at).not.toBeNull();
+    } finally {
+        await f.close();
+    }
+}, 30_000);
+
+test("a failed continuation keeps the earlier completed reply and its own failed state", async () => {
+    const f = await executorFixture("live-partial-failure");
+    try {
+        await f.start();
+        const ended = await f.replies();
+        expect(ended.chat.run?.state).toBe("failed");
+        expect(ended.messages.map((message) => message.state)).toEqual([
+            "completed",
+            "failed",
+        ]);
     } finally {
         await f.close();
     }

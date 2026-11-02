@@ -127,6 +127,7 @@ Choose up to 30 minutes, one hour or two hours before sending a request. The
 executor continues after completed replies, waiting at least fifteen seconds
 between observation turns. Each new reply has its own timestamped bubble, and
 messages sent during the session steer the active turn or its next continuation.
+Confirmed replies retain their completed status if a later continuation stops or fails.
 Both native and Synthetic models must support images; accepted operator guidance
 is preserved when Synthetic starts a fresh provider turn. Each provider turn keeps
 a five-minute maximum within the overall session deadline, so a stalled reply
