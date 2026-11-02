@@ -17,6 +17,7 @@ export function ChatComposer({
     onUploading,
     sending,
     active,
+    steerable = false,
     stopping,
     stopPending,
     onStop,
@@ -34,6 +35,7 @@ export function ChatComposer({
     readonly onUploading: (busy: boolean) => void;
     readonly sending: boolean;
     readonly active: boolean;
+    readonly steerable?: boolean;
     readonly stopping: boolean;
     readonly stopPending: boolean;
     readonly onStop: () => void;
@@ -43,7 +45,9 @@ export function ChatComposer({
     readonly onComputer?: (() => void) | undefined;
     readonly onSettings?: (() => void) | undefined;
 }) {
-    const canSend = Boolean(text.trim()) && !stopping && !uploading && !sending;
+    const placeholder = active ? "Add guidance while Mira works…" : "Message Mira…";
+    const blocked = stopping || stopPending || (active && !steerable);
+    const canSend = Boolean(text.trim()) && !blocked && !uploading && !sending;
     return (
         <form
             className="shrink-0 border-t border-primary-700 p-3 sm:p-4"
@@ -59,7 +63,7 @@ export function ChatComposer({
                     onChange={onAttachments}
                     onBusyChange={onUploading}
                     onBrowse={onBrowse}
-                    disabled={sending}
+                    disabled={sending || blocked}
                     controls={
                         <>
                             {onBrowser && (
@@ -114,7 +118,9 @@ export function ChatComposer({
                         maxLength={32_000}
                         disabled={sending}
                         placeholder={
-                            active ? "Add guidance while Mira works…" : "Message Mira…"
+                            blocked
+                                ? "Draft a message for when this run finishes…"
+                                : placeholder
                         }
                         className="field-sizing-content max-h-[min(28dvh,18rem)] min-h-[clamp(5rem,15dvh,8rem)] resize-none border-0 bg-transparent p-2 shadow-none data-focus:ring-0"
                         onKeyDown={(event) => {

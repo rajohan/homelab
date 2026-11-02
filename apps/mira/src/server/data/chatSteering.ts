@@ -1,5 +1,5 @@
 import type { miraMessageInputSchema } from "@homelab/contracts/mira";
-import type { SQL } from "bun";
+import type { SQL, TransactionSQL } from "bun";
 import type * as v from "valibot";
 
 import { MiraFailure, auditMira, type MiraContext } from "./context";
@@ -41,7 +41,7 @@ export async function sendMiraMessage(
                 "NOT_FOUND",
                 "Open an active conversation before sending."
             );
-        const [run] = await query<
+        let [run] = await query<
             {
                 id: string;
                 manual: boolean;
@@ -49,7 +49,35 @@ export async function sendMiraMessage(
                 cancelled: boolean;
             }[]
         >`SELECT id,manual,automation_id AS "automationId",cancel_requested AS cancelled FROM mira_runs WHERE conversation_id=${chat.id} AND owner=${context.owner} AND state IN ('queued','running') FOR UPDATE`;
-        if (!run) return enqueueTurn(query, context, input);
+        if (!run) {
+            // Admission and the scheduler share the conversation lock. Never let a
+            // newly submitted message overtake an older, unconsumed follow-up.
+            const pending = await query<
+                { id: string; owner: string; conversationId: string }[]
+            >`
+                SELECT id,owner,conversation_id AS "conversationId" FROM mira_chat_inputs
+                WHERE conversation_id=${chat.id} AND owner=${context.owner} AND state IN ('pending','sending') ORDER BY id`;
+            for (const candidate of pending) {
+                const [lock] = await query<{ acquired: boolean }[]>`
+                    SELECT pg_try_advisory_xact_lock(hashtextextended(${`mira:request:${candidate.owner}:${candidate.id}`},0)) AS acquired`;
+                if (!lock?.acquired)
+                    throw new MiraFailure(
+                        "CONFLICT",
+                        "An earlier message is being queued. Retry shortly."
+                    );
+                const next = await continueChatFollowup(query, candidate);
+                if (next) {
+                    run = {
+                        id: next.id,
+                        manual: true,
+                        automationId: null,
+                        cancelled: false,
+                    };
+                    break;
+                }
+            }
+            if (!run) return enqueueTurn(query, context, input);
+        }
         if (!run.manual || run.automationId || run.cancelled)
             throw new MiraFailure(
                 "CONFLICT",
@@ -146,56 +174,69 @@ export async function scheduleChatFollowups(client: SQL) {
             >`SELECT pg_try_advisory_xact_lock(hashtextextended(${`mira:request:${candidate.owner}:${candidate.id}`},0)) AS acquired`;
             if (!lock?.acquired) return 0;
             await query`SELECT id FROM mira_conversations WHERE id=${candidate.conversationId} AND owner=${candidate.owner} FOR UPDATE`;
-            const [input] = await query<
-                {
-                    content: string;
-                    attachmentIds: string[];
-                    state: string;
-                    runState: string;
-                    cancelled: boolean;
-                    available: boolean;
-                }[]
-            >`SELECT m.content,m.attachment_ids AS "attachmentIds",i.state,r.state AS "runState",r.cancel_requested AS cancelled,(c.deleted_at IS NULL AND c.archived_at IS NULL) AS available FROM mira_chat_inputs i JOIN mira_messages m ON m.id=i.id JOIN mira_runs r ON r.id=i.run_id AND r.owner=i.owner JOIN mira_conversations c ON c.id=i.conversation_id AND c.owner=i.owner WHERE i.id=${candidate.id} AND i.owner=${candidate.owner} AND i.state IN ('pending','sending') FOR UPDATE OF i`;
-            if (!input || ["queued", "running"].includes(input.runState)) return 0;
-            if (
-                !input.available ||
-                input.cancelled ||
-                input.runState !== "completed" ||
-                input.state === "sending"
-            ) {
-                await query`UPDATE mira_chat_inputs SET state='stopped',lease_token=NULL WHERE id=${candidate.id}`;
-                await query`UPDATE mira_messages SET state='interrupted' WHERE id=${candidate.id}`;
-                return 0;
-            }
-            const [busy] = await query<
-                { id: string }[]
-            >`SELECT id FROM mira_runs WHERE conversation_id=${candidate.conversationId} AND state IN ('queued','running') LIMIT 1`;
+            const [busy] = await query<{ id: string }[]>`
+                SELECT id FROM mira_runs WHERE conversation_id=${candidate.conversationId} AND state IN ('queued','running') LIMIT 1`;
             if (busy) return 0;
             try {
-                return await query.savepoint(async (nested) => {
-                    const next = await enqueueTurn(
-                        nested,
-                        { owner: candidate.owner, actor: `human:${candidate.owner}` },
-                        {
-                            conversationId: candidate.conversationId,
-                            requestId: candidate.id,
-                            text: input.content,
-                            attachmentIds: input.attachmentIds,
-                        },
-                        { userMessageId: candidate.id }
-                    );
-                    await nested`UPDATE mira_chat_inputs SET state='continued',run_id=${next.id} WHERE id=${candidate.id}`;
-                    return 1;
-                });
+                return (await continueChatFollowup(query, candidate)) ? 1 : 0;
             } catch (error) {
                 if (!(error instanceof MiraFailure)) throw error;
-                if (["NOT_FOUND", "BAD_REQUEST", "FORBIDDEN"].includes(error.code)) {
-                    await query`UPDATE mira_chat_inputs SET state='stopped',lease_token=NULL WHERE id=${candidate.id}`;
-                    await query`UPDATE mira_messages SET state='interrupted' WHERE id=${candidate.id}`;
-                }
                 return 0;
             }
         });
     }
     return count;
+}
+
+// Caller holds the conversation and follow-up request locks. A transient failure
+// keeps the oldest message pending; terminal/unacknowledged work is never replayed.
+async function continueChatFollowup(
+    query: TransactionSQL,
+    candidate: { id: string; owner: string; conversationId: string }
+) {
+    const [input] = await query<
+        {
+            content: string;
+            attachmentIds: string[];
+            state: string;
+            runState: string;
+            cancelled: boolean;
+            available: boolean;
+        }[]
+    >`SELECT m.content,m.attachment_ids AS "attachmentIds",i.state,r.state AS "runState",r.cancel_requested AS cancelled,(c.deleted_at IS NULL AND c.archived_at IS NULL) AS available FROM mira_chat_inputs i JOIN mira_messages m ON m.id=i.id JOIN mira_runs r ON r.id=i.run_id AND r.owner=i.owner JOIN mira_conversations c ON c.id=i.conversation_id AND c.owner=i.owner WHERE i.id=${candidate.id} AND i.owner=${candidate.owner} AND i.state IN ('pending','sending') AND i.id=(SELECT older.id FROM mira_chat_inputs older WHERE older.owner=i.owner AND older.conversation_id=i.conversation_id AND older.state IN ('pending','sending') ORDER BY older.id LIMIT 1) FOR UPDATE OF i`;
+    if (!input || ["queued", "running"].includes(input.runState)) return null;
+    if (
+        !input.available ||
+        input.cancelled ||
+        input.runState !== "completed" ||
+        input.state === "sending"
+    ) {
+        await query`UPDATE mira_chat_inputs SET state='stopped',lease_token=NULL WHERE id=${candidate.id}`;
+        await query`UPDATE mira_messages SET state='interrupted' WHERE id=${candidate.id}`;
+        return null;
+    }
+    try {
+        return await query.savepoint(async (nested) => {
+            const next = await enqueueTurn(
+                nested,
+                { owner: candidate.owner, actor: `human:${candidate.owner}` },
+                {
+                    conversationId: candidate.conversationId,
+                    requestId: candidate.id,
+                    text: input.content,
+                    attachmentIds: input.attachmentIds,
+                },
+                { userMessageId: candidate.id }
+            );
+            await nested`UPDATE mira_chat_inputs SET state='continued',run_id=${next.id} WHERE id=${candidate.id}`;
+            return next;
+        });
+    } catch (error) {
+        if (!(error instanceof MiraFailure)) throw error;
+        if (["NOT_FOUND", "BAD_REQUEST", "FORBIDDEN"].includes(error.code)) {
+            await query`UPDATE mira_chat_inputs SET state='stopped',lease_token=NULL WHERE id=${candidate.id}`;
+            await query`UPDATE mira_messages SET state='interrupted' WHERE id=${candidate.id}`;
+        } else throw error;
+        return null;
+    }
 }

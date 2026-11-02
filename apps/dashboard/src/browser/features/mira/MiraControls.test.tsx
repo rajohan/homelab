@@ -346,6 +346,7 @@ test.each([false, true])(
         });
         const cleanup = fixture(
             <ChatComposer
+                steerable
                 text="Review the plan"
                 onText={() => {}}
                 attachments={[]}

@@ -31,6 +31,7 @@ test.each([
             <QueryClientProvider client={query}>
                 <IdentityClientContext value={new IdentityClient()}>
                     <ChatComposer
+                        steerable
                         text="A message"
                         onText={() => {}}
                         attachments={[]}
@@ -64,6 +65,50 @@ test.each([
             view.unmount();
             query.clear();
             media.mockRestore();
+        }
+    }
+);
+
+test.each(["automatic", "stopping", "stop-pending"])(
+    "%s work allows drafting but blocks sends and attachments",
+    (mode) => {
+        let sent = 0;
+        const query = new QueryClient();
+        const view = render(
+            <QueryClientProvider client={query}>
+                <IdentityClientContext value={new IdentityClient()}>
+                    <ChatComposer
+                        text="Draft"
+                        onText={() => {}}
+                        attachments={[]}
+                        onAttachments={() => {}}
+                        uploading={false}
+                        onUploading={() => {}}
+                        sending={false}
+                        active
+                        steerable={mode !== "automatic"}
+                        stopping={mode === "stopping"}
+                        stopPending={mode === "stop-pending"}
+                        onStop={() => {}}
+                        onSend={() => {
+                            sent++;
+                        }}
+                        onBrowse={() => {}}
+                    />
+                </IdentityClientContext>
+            </QueryClientProvider>
+        );
+        try {
+            const input = screen.getByRole("textbox", { name: "Message Mira" });
+            expect(input).toBeEnabled();
+            expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+            fireEvent.keyDown(input, { key: "Enter" });
+            fireEvent.submit(input.closest("form")!);
+            expect(sent).toBe(0);
+            expect(view.container.querySelector('input[type="file"]')).toBeDisabled();
+        } finally {
+            view.unmount();
+            query.clear();
         }
     }
 );

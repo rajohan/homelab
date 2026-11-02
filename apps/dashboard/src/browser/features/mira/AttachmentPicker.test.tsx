@@ -15,6 +15,7 @@ function Composer() {
     const [uploading, setUploading] = useState(false);
     return (
         <ChatComposer
+            steerable
             text="Inspect these"
             onText={() => {}}
             attachments={files}

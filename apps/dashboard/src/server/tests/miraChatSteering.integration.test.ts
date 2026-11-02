@@ -13,7 +13,9 @@ import {
     scheduleChatFollowups,
 } from "@homelab/mira/data/chatSteering";
 import { claimMiraRun, finishMiraRun, saveMiraDelta } from "@homelab/mira/data/queue";
+import { readMiraConversationHistory, readMiraHistory } from "@homelab/mira/data/recall";
 
+import { readMiraTurnInput } from "../../../../mira/src/server/executor/context";
 import { executeMiraTurn } from "../../../../mira/src/server/executor/turn";
 import { appRouter } from "../api/router";
 import { operationFixture } from "../testing/operations";
@@ -324,6 +326,103 @@ test("stopping a run and archiving a conversation prevent pending guidance from 
             action: "archive",
         });
         await rejects(f.send("After archive"), /active conversation/);
+    } finally {
+        await f.close();
+    }
+});
+
+test.each([false, true])(
+    "a fresh send queues older pending guidance first (attachment=%s)",
+    async (attached) => {
+        const f = await fixture();
+        try {
+            const file = crypto.randomUUID();
+            if (attached)
+                await f.client`INSERT INTO mira_attachments(id,owner,name,media_type,bytes,sha256,ready_at) VALUES (${file},'operator','older.txt','text/plain',8,${"a".repeat(64)},now())`;
+            await f.api.conversations.send({
+                conversationId: f.chat.id,
+                requestId: crypto.randomUUID(),
+                text: "Older guidance",
+                attachmentIds: attached ? [file] : [],
+            });
+            await finishMiraRun(f.client, f.run, {
+                state: "completed",
+                text: "First reply",
+                message: null,
+            });
+            const fresh = {
+                conversationId: f.chat.id,
+                requestId: crypto.randomUUID(),
+                text: "Newer guidance",
+            };
+            const sent = await f.api.conversations.send(fresh);
+            expect(await f.api.conversations.send(fresh)).toEqual(sent);
+            expect(await scheduleChatFollowups(f.client)).toBe(0);
+            const next = await claimMiraRun(f.client, crypto.randomUUID(), "foreground");
+            expect(next?.id).toBe(sent.id);
+            const input = await readMiraTurnInput(f.client, next!);
+            expect(input.content).toEndWith("Older guidance");
+            expect(input.content).not.toContain("Newer guidance");
+            expect(input.attachmentIds).toEqual(attached ? [file] : []);
+            expect(await claimChatSteering(f.client, next!)).toMatchObject({
+                content: "Newer guidance",
+            });
+        } finally {
+            await f.close();
+        }
+    }
+);
+
+test("recovery and paged retrieval interleave reply parts with acknowledged guidance", async () => {
+    const f = await fixture();
+    try {
+        const first = "🦊 First answer.";
+        const second = "🦊 Answer after guidance.";
+        const parts = [
+            { id: Bun.randomUUIDv7(), offset: 0, createdAt: new Date().toISOString() },
+        ];
+        await f.send("Change of plan.");
+        const guidance = (await claimChatSteering(f.client, f.run))!;
+        await acknowledgeChatSteering(f.client, f.run, guidance.id, true);
+        parts.push({
+            id: Bun.randomUUIDv7(),
+            offset: first.length + 2,
+            createdAt: new Date().toISOString(),
+        });
+        await finishMiraRun(f.client, f.run, {
+            state: "completed",
+            text: `${first}\n\n${second}`,
+            parts,
+            message: null,
+        });
+        await f.send("Continue here.");
+        const next = (await claimMiraRun(f.client, crypto.randomUUID(), "foreground"))!;
+        const restored = await readMiraTurnInput(f.client, next, true);
+        expect(restored.content.indexOf(first)).toBeLessThan(
+            restored.content.indexOf("Change of plan.")
+        );
+        expect(restored.content.indexOf("Change of plan.")).toBeLessThan(
+            restored.content.indexOf(second)
+        );
+        const page = await readMiraConversationHistory(f.client, next, {});
+        expect(page.rows.slice(0, 3).map((row) => row.excerpt)).toEqual([
+            second,
+            "Change of plan.",
+            first,
+        ]);
+        const older = await readMiraConversationHistory(f.client, next, {
+            beforeMessageId: parts[1]!.id,
+        });
+        expect(older.rows.slice(0, 2).map((row) => row.excerpt)).toEqual([
+            "Change of plan.",
+            first,
+        ]);
+        const full = await readMiraHistory(f.client, next, {
+            messageId: page.rows[0]!.messageId,
+            offset: 0,
+        });
+        expect(full.parts).toEqual(parts);
+        expect(full.content).toBe(`${first}\n\n${second}`);
     } finally {
         await f.close();
     }

@@ -1,5 +1,6 @@
 import type {
     MiraChatSettings,
+    MiraMessagePart,
     miraConversationHistorySchema,
     miraHistoryReadSchema,
     miraHistorySearchSchema,
@@ -8,6 +9,7 @@ import type { SQL } from "bun";
 import type * as v from "valibot";
 
 import { MiraFailure } from "./context";
+import { readHistoryMessages } from "./historyMessages";
 import type { MiraClaim } from "./queue";
 
 /** Effective private-context access for a leased turn; model tools cannot broaden it. */
@@ -91,22 +93,19 @@ export async function readMiraConversationHistory(
             "FORBIDDEN",
             "Conversation retrieval is disabled for this run."
         );
-    const rows = await client<
-        {
-            messageId: string;
-            role: string;
-            state: string;
-            createdAt: string;
-            excerpt: string;
-            truncated: boolean;
-            attachmentIds: string[];
-        }[]
-    >`SELECT m.id AS "messageId",m.role,m.state,m.created_at::text AS "createdAt",left(m.content,2400) AS excerpt,length(m.content)>2400 AS truncated,m.attachment_ids AS "attachmentIds" FROM mira_messages m JOIN mira_conversations c ON c.id=m.conversation_id WHERE c.id=${run.conversationId} AND c.owner=${run.owner} AND c.deleted_at IS NULL AND c.archived_at IS NULL AND m.id<${run.userMessageId} AND m.id<${input.beforeMessageId ?? run.userMessageId} AND (m.content<>'' OR jsonb_array_length(m.attachment_ids)>0) AND (${input.query === undefined} OR to_tsvector('simple',m.content) @@ websearch_to_tsquery('simple',${input.query ?? ""})) ORDER BY m.id DESC LIMIT 9`;
+    const rows = await readHistoryMessages(client, run, {
+        limit: 9,
+        characters: 2400,
+        ...(input.beforeMessageId ? { before: input.beforeMessageId } : {}),
+        ...(input.query === undefined ? {} : { query: input.query }),
+    });
     return {
         conversationId: run.conversationId,
         source: `/mira/${run.conversationId}`,
-        rows: rows.slice(0, 8),
-        nextBeforeMessageId: rows.length > 8 ? rows[7]!.messageId : null,
+        rows: rows
+            .slice(0, 8)
+            .map(({ content, ...row }) => ({ ...row, excerpt: content })),
+        nextBeforeMessageId: rows.length > 8 ? rows[7]!.partId : null,
     };
 }
 
@@ -174,8 +173,9 @@ export async function readMiraHistory(
             createdAt: string;
             content: string;
             length: number;
+            parts: MiraMessagePart[];
         }[]
-    >`SELECT c.id AS "conversationId",c.title,m.id AS "messageId",m.role,m.state,m.created_at::text AS "createdAt",substring(m.content FROM ${input.offset + 1} FOR 6000) AS content,length(m.content) AS length FROM mira_messages m JOIN mira_conversations c ON c.id=m.conversation_id WHERE m.id=${input.messageId} AND c.owner=${run.owner} AND c.deleted_at IS NULL AND c.archived_at IS NULL AND ((${policy.conversation} AND c.id=${run.conversationId} AND m.id<${run.userMessageId}) OR (${policy.history} AND c.id<>${run.conversationId} AND c.settings->'useHistory' IS DISTINCT FROM 'false'::jsonb AND m.state='completed'))`;
+    >`SELECT c.id AS "conversationId",c.title,m.id AS "messageId",m.role,m.state,m.created_at::text AS "createdAt",substring(m.content FROM ${input.offset + 1} FOR 6000) AS content,length(m.content) AS length,m.parts FROM mira_messages m JOIN mira_conversations c ON c.id=m.conversation_id WHERE m.id=${input.messageId} AND c.owner=${run.owner} AND c.deleted_at IS NULL AND c.archived_at IS NULL AND ((${policy.conversation} AND c.id=${run.conversationId} AND m.id<${run.assistantMessageId} AND m.id<>${run.userMessageId} AND m.state<>'queued') OR (${policy.history} AND c.id<>${run.conversationId} AND c.settings->'useHistory' IS DISTINCT FROM 'false'::jsonb AND m.state='completed'))`;
     if (!row) throw new MiraFailure("NOT_FOUND", "Historical message not found.");
     const { length, ...message } = row;
     return {

@@ -126,7 +126,7 @@ export async function readConversation(
     >`SELECT id, role, content, state, parts, attachment_ids AS "attachmentIds", created_at::text AS "createdAt" FROM mira_messages WHERE conversation_id = ${id} AND (${before ?? null}::uuid IS NULL OR id < ${before ?? null}::uuid) ORDER BY id DESC LIMIT 50`;
     const [run] = await context.client<
         MiraRun[]
-    >`SELECT id, conversation_id AS "conversationId", automation_id AS "automationId", task_id AS "taskId", activity, state, cancel_requested AS "cancelRequested", message, created_at::text AS "createdAt", started_at::text AS "startedAt", finished_at::text AS "finishedAt" FROM mira_runs WHERE conversation_id = ${id} ORDER BY id DESC LIMIT 1`;
+    >`SELECT id, manual, conversation_id AS "conversationId", automation_id AS "automationId", task_id AS "taskId", activity, state, cancel_requested AS "cancelRequested", message, created_at::text AS "createdAt", started_at::text AS "startedAt", finished_at::text AS "finishedAt" FROM mira_runs WHERE conversation_id = ${id} ORDER BY id DESC LIMIT 1`;
     const tools = run
         ? await context.client<
               {

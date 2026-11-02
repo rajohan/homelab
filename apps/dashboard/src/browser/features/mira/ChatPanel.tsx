@@ -338,6 +338,7 @@ export function ChatPanel({
                     onUploading={setUploading}
                     sending={send.isPending}
                     active={Boolean(active)}
+                    steerable={run?.manual === true && !run.automationId}
                     stopping={run?.cancelRequested ?? false}
                     stopPending={cancel.isPending}
                     onStop={() => {

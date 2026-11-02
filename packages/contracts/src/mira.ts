@@ -228,6 +228,7 @@ export interface MiraActivity {
     tool: string | null;
 }
 export interface MiraRun {
+    manual?: boolean;
     activity?: MiraActivity | null;
     id: string;
     conversationId: string;
