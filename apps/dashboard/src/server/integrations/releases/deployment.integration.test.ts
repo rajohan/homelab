@@ -557,8 +557,9 @@ test("deployment inventory ignores newer observations, foreign identities and un
             { current: boolean }[]
         >`SELECT captured_at<=clock_timestamp() AS current FROM operation_snapshots WHERE key='updates:demo'`;
         expect(watermark!.current).toBe(true);
-        const refreshed =
-            await state.client`UPDATE operation_snapshots SET value=${JSON.stringify(report)}::text::jsonb,captured_at=clock_timestamp()
+        const refreshed = await state.client<
+            { key: string }[]
+        >`UPDATE operation_snapshots SET value=${JSON.stringify(report)}::text::jsonb,captured_at=clock_timestamp()
             WHERE key='updates:demo' AND captured_at<clock_timestamp() RETURNING key`;
         expect(refreshed).toHaveLength(1);
     } finally {
