@@ -19,9 +19,12 @@ export async function recordDeploymentInventory(
 ): Promise<void> {
     if (receipt.state !== "succeeded" || !receipt.containers || !receipt.version) return;
     for (const key of [`updates:${source}`, `updates.resolved:${source}`]) {
+        // Use the coordinator's verification time; remote receipt clocks can be skewed.
+        // Exact immutable container/image identities below also fence newer replacements.
         const [row] = await transaction<{ value: UpdateReport }[]>`
-            SELECT value FROM operation_snapshots WHERE key=${key} FOR UPDATE`;
-        if (!row || Date.parse(row.value.capturedAt) > receipt.updatedAt * 1000) continue;
+            SELECT value FROM operation_snapshots WHERE key=${key}
+                AND (value->>'capturedAt')::timestamptz<=now() FOR UPDATE`;
+        if (!row) continue;
         const items = row.value.items.map((item) => {
             if (item.kind !== "container") return item;
             const match = Object.entries(expected.containers).find(
