@@ -246,30 +246,32 @@ test("declined request IDs never prompt twice even if stop delivery fails, while
     expect(f.events).not.toContain("accept");
 });
 
-test("a cleanly retired screen read keeps the companion online for a new local selection", async () => {
+test("a cleanly retired screen read requires a new connection before fresh selection", async () => {
     const f = fixture();
     let sessions = 0;
-    await runComputerConsentLoop({
-        companion: f.client,
-        credential: f.credential,
-        connectionId: crypto.randomUUID(),
-        signal: f.stop.signal,
-        createHost: () => f.host().value,
-        runSession: async (controller) => {
-            sessions++;
-            await controller.close();
-            if (sessions === 1) throw new ComputerObservationEnded();
-            f.stop.abort();
-        },
-        wait: () => {
-            expect(f.events).toContain("driver-closed");
-            f.request.id = crypto.randomUUID();
-            return Promise.resolve();
-        },
-    });
-    expect(sessions).toBe(2);
-    expect(f.events.filter((event) => event === "prompt")).toHaveLength(2);
-    expect(f.events.filter((event) => event === "driver-closed")).toHaveLength(2);
+    await rejects(
+        runComputerConsentLoop({
+            companion: f.client,
+            credential: f.credential,
+            connectionId: crypto.randomUUID(),
+            signal: f.stop.signal,
+            createHost: () => f.host().value,
+            runSession: async (controller) => {
+                sessions++;
+                await controller.close();
+                throw new ComputerObservationEnded();
+            },
+            wait: () => {
+                expect(f.events).toContain("driver-closed");
+                f.request.id = crypto.randomUUID();
+                return Promise.resolve();
+            },
+        }),
+        ComputerObservationEnded
+    );
+    expect(sessions).toBe(1);
+    expect(f.events.filter((event) => event === "prompt")).toHaveLength(1);
+    expect(f.events.filter((event) => event === "driver-closed")).toHaveLength(1);
 });
 
 test("local retirement waits for accepted work and cleanup before creating another consent host", async () => {

@@ -82,7 +82,7 @@ async function fixture() {
     const releaseReply = Promise.withResolvers<void>();
     const releaseCleanup = Promise.withResolvers<void>();
     const retry = Promise.withResolvers<void>();
-    const behavior = { drop: "", dropped: false };
+    const behavior = { drop: "", dropped: false, failStop: false, failCapture: false };
     const receiver = miraComputerReceiver(f.client);
     let server: ReturnType<typeof Bun.serve> | undefined;
     let port = 0;
@@ -94,6 +94,8 @@ async function fixture() {
             tls,
             async fetch(request) {
                 const route = new URL(request.url).pathname.split("/").at(-1)!;
+                if (behavior.failStop && route === "stop")
+                    return new Response(null, { status: 503 });
                 const result = await receiver(request);
                 if (route === "connect" && result.ok) events.push("connect");
                 const body: unknown =
@@ -168,7 +170,7 @@ async function fixture() {
         const pair = await api.computers.pair({ label: "Synthetic reconnect PC" });
         const device = await companion.enroll(
             pair.token,
-            { installationId: crypto.randomUUID(), platform: "win32", version: "0.10.0" },
+            { installationId: crypto.randomUUID(), platform: "win32", version: "0.15.0" },
             stop.signal
         );
         const createHost = (): ComputerConsentHost => {
@@ -199,20 +201,24 @@ async function fixture() {
                     events.push("open");
                     return Promise.resolve({
                         observe: () =>
-                            Promise.resolve({
-                                snapshot: "synthetic",
-                                width: 390,
-                                height: 110,
-                                content: {
-                                    content: [
-                                        {
-                                            type: "image",
-                                            mediaType: "image/png",
-                                            data: createVisualChallenge().data,
-                                        },
-                                    ],
-                                },
-                            }),
+                            behavior.failCapture
+                                ? Promise.reject(
+                                      new Error("Synthetic capture unavailable")
+                                  )
+                                : Promise.resolve({
+                                      snapshot: "synthetic",
+                                      width: 390,
+                                      height: 110,
+                                      content: {
+                                          content: [
+                                              {
+                                                  type: "image",
+                                                  mediaType: "image/png",
+                                                  data: createVisualChallenge().data,
+                                              },
+                                          ],
+                                      },
+                                  }),
                         type: (text) => {
                             input.push(text);
                             return Promise.resolve({ effect: "confirmed" });
@@ -263,12 +269,13 @@ async function fixture() {
             );
             return running;
         };
-        const request = () =>
+        const request = (keepOpen = false) =>
             api.computers.access.request({
                 computerId: pair.id,
                 computerVersion: 2,
                 runId: run.id,
                 mode: "control",
+                keepOpen,
             });
         const enqueue = async (
             operation:
@@ -328,6 +335,51 @@ async function fixture() {
         throw error;
     }
 }
+
+test("failed capture rotates the connection even when stopping retained access returns HTTP 503", async () => {
+    const f = await fixture();
+    const running = f.start();
+    try {
+        await until(() => f.events.includes("connected"));
+        const first = await f.request(true);
+        await until(() => f.prompts.length === 1);
+        f.prompts[0]!.allow();
+        await until(() => f.events.includes("open"));
+        f.behavior.failStop = true;
+        f.behavior.failCapture = true;
+        await f.enqueue({ action: "observe" });
+        await until(() => f.events.includes("closing"));
+        expect(f.events).not.toContain("retry");
+        f.releaseCleanup.resolve();
+        await until(() => f.events.includes("retry"));
+        const [orphan] = await f.client<
+            { state: string; keepOpen: boolean }[]
+        >`SELECT state,keep_open AS "keepOpen" FROM mira_computer_access WHERE id=${first.id}`;
+        expect(orphan).toEqual({ state: "active", keepOpen: true });
+        expect(f.events.filter((event) => event === "connect")).toHaveLength(1);
+        expect(f.events.indexOf("closed")).toBeLessThan(f.events.indexOf("retry"));
+        f.retry.resolve();
+        await until(() => f.events.filter((event) => event === "connect").length === 2);
+        const [retired] = await f.client<
+            { state: string }[]
+        >`SELECT state FROM mira_computer_access WHERE id=${first.id}`;
+        expect(retired?.state).toBe("stopped");
+        expect(f.prompts).toHaveLength(1);
+        expect(f.input).toEqual([]);
+        f.behavior.failStop = false;
+        f.behavior.failCapture = false;
+        const second = await f.request(true);
+        expect(second.id).not.toBe(first.id);
+        await until(() => f.prompts.length === 2);
+        expect(f.events.filter((event) => event === "open")).toHaveLength(1);
+        f.prompts[1]!.allow();
+        await until(() => f.events.filter((event) => event === "open").length === 2);
+        expect(await f.observe()).toBeString();
+    } finally {
+        await f.close();
+    }
+    expect(await running).toBeNull();
+}, 30_000);
 
 test("real HTTPS reconnect retires a lost claim and requires fresh local consent before new input", async () => {
     const f = await fixture();

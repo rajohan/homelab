@@ -19,10 +19,10 @@ export class ComputerPollingOutage extends ComputerConnectionError {
 }
 
 /** A failed read whose controller and native resources have been confirmed closed. */
-export class ComputerObservationEnded extends Error {
+export class ComputerObservationEnded extends ComputerConnectionError {
     /** Report a retired viewing attempt without treating it as unconfirmed cleanup. */
     constructor() {
-        super("Computer observation ended. New local consent is required.");
+        super(true);
     }
 }
 

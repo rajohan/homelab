@@ -721,7 +721,9 @@ worker's Windows process job; Stop aborts a pending capture and cleanup waits fo
 its exit. View-only policy and the adapter both refuse input.
 
 A failed observation retires the current grant. After confirmed native cleanup,
-the paired companion remains available for a new request and local selection.
+the paired companion reconnects before accepting a new request and local selection.
+The new connection invalidates the old grant even if its best-effort stop message
+was lost; it never resumes old consent or replays the failed read.
 Unconfirmed cleanup and interrupted input remain terminal. A later manual Chat
 request can wait for fresh consent after an older retained grant stopped; an
 explicit Stop during the current run still stops that run's computer access.

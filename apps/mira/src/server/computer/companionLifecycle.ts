@@ -62,12 +62,15 @@ export async function runComputerConsentLoop(options: {
                 }
             } catch (error) {
                 if (
-                    !(error instanceof ComputerObservationEnded) &&
                     !isComputerCancellation(error, controller.signal) &&
                     !isComputerCancellation(error, host.signal) &&
                     !isComputerCancellation(error, options.signal)
                 ) {
-                    if (sessionStarted && !(error instanceof ComputerPollingOutage))
+                    if (
+                        sessionStarted &&
+                        !(error instanceof ComputerPollingOutage) &&
+                        !(error instanceof ComputerObservationEnded)
+                    )
                         throw new RuntimeCleanupError();
                     throw error;
                 }
