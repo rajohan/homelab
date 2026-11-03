@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.1](https://github.com/rajohan/homelab/compare/v0.15.0...v0.15.1) (2026-11-03)
+
+
+### Bug Fixes
+
+* **mira:** recover game capture and refresh deployed package status ([#183](https://github.com/rajohan/homelab/issues/183)) ([05f4422](https://github.com/rajohan/homelab/commit/05f4422e9f532b4b51f09592fc3a8ab60de6dc2f))
+
 ## [0.15.0](https://github.com/rajohan/homelab/compare/v0.14.0...v0.15.0) (2026-11-02)
 
 
