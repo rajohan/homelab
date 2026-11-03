@@ -42,6 +42,12 @@ internal static class MiraWindowTests
                 long packed = ((long)(ushort)center.Y << 16) | (ushort)center.X;
                 check(SendMessage(handle, 0x84, IntPtr.Zero, new IntPtr(packed)).ToInt32() == item.Code);
                 check(SendMessage(button.Handle, 0x84, IntPtr.Zero, new IntPtr(packed)).ToInt32() == -1);
+                foreach (int x in new[] { 0, button.Width - 1 }) {
+                    var top = button.PointToScreen(new Point(x, 0));
+                    check(form.HitTest(form.PointToClient(top)) == item.Code);
+                    long topPacked = ((long)(ushort)top.Y << 16) | (ushort)top.X;
+                    check(SendMessage(handle, 0x84, IntPtr.Zero, new IntPtr(topPacked)).ToInt32() == item.Code);
+                }
             }
             form.MaximizeBox = false; form.MinimizeBox = false;
             form.Size = new Size(500, 360); form.PerformLayout();

@@ -511,10 +511,12 @@ test("deployment inventory ignores newer observations, foreign identities and un
         expect(unchanged!.value).toEqual(report);
         report.items[0]!.installed = before.imageId;
         for (const newer of [false, true]) {
-            if (newer)
+            if (newer) {
                 report.capturedAt = new Date(
                     receipt.updatedAt * 1000 + 60_000
                 ).toISOString();
+                report.items[0]!.id = `docker:${"e".repeat(64)}`;
+            }
             await state.client`UPDATE operation_snapshots SET value=${JSON.stringify(report)}::text::jsonb WHERE key='updates:demo'`;
             await state.client.begin((transaction) =>
                 recordDeploymentInventory(transaction, "demo", plan.expected, {
@@ -527,8 +529,10 @@ test("deployment inventory ignores newer observations, foreign identities and un
             >`SELECT value FROM operation_snapshots WHERE key='updates:demo'`;
             expect(row!.value).toEqual(report);
         }
-        report.capturedAt = new Date(receipt.updatedAt * 1000 - 60_000).toISOString();
+        // Publisher timestamps up to 60 seconds ahead are valid; they must not hide a completed installation.
+        report.capturedAt = new Date(receipt.updatedAt * 1000 + 30_000).toISOString();
         Object.assign(report.items[0]!, {
+            id: `docker:${before.id}`,
             candidateVerified: true,
             availableVersion: "main",
             availableImage: `ghcr.io/demo/homelab/dashboard:latest@sha256:${"e".repeat(64)}`,

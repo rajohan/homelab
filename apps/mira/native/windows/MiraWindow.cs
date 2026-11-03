@@ -116,6 +116,12 @@ internal class MiraWindow : Form
 
     internal int HitTest(Point point)
     {
+        if (caption != null && caption.Bounds.Contains(point)) {
+            var local = new Point(point.X - caption.Left, point.Y - caption.Top);
+            if (close.Bounds.Contains(local)) return 20;
+            if (MaximizeBox && maximize.Bounds.Contains(local)) return 9;
+            if (MinimizeBox && minimize.Bounds.Contains(local)) return 8;
+        }
         if (WindowState != FormWindowState.Maximized) {
             int edge = ScalePixels(6);
             bool left = point.X < edge, right = point.X >= ClientSize.Width - edge;
@@ -125,13 +131,7 @@ internal class MiraWindow : Form
             if (left) return 10;
             if (right) return 11;
         }
-        if (caption != null && caption.Bounds.Contains(point)) {
-            var local = new Point(point.X - caption.Left, point.Y - caption.Top);
-            if (close.Bounds.Contains(local)) return 20;
-            if (MaximizeBox && maximize.Bounds.Contains(local)) return 9;
-            if (MinimizeBox && minimize.Bounds.Contains(local)) return 8;
-            return 2;
-        }
+        if (caption != null && caption.Bounds.Contains(point)) return 2;
         return 1;
     }
 
