@@ -67,7 +67,7 @@ export async function recordDeploymentInventory(
         // Preserve unrelated observation ages while rejecting delayed pre-deployment reports.
         await transaction`UPDATE operation_snapshots
             SET value=${JSON.stringify({ ...row.value, items })}::text::jsonb,
-                captured_at=GREATEST(captured_at,to_timestamp(${receipt.updatedAt}))
+                captured_at=GREATEST(captured_at,now())
             WHERE key=${key}`;
     }
 }

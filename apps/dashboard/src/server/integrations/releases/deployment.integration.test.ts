@@ -546,6 +546,21 @@ test("deployment inventory ignores newer observations, foreign identities and un
             availableVersion: "main",
             status: "available",
         });
+        await state.client`UPDATE operation_snapshots SET value=${JSON.stringify(report)}::text::jsonb WHERE key='updates:demo'`;
+        await state.client.begin((transaction) =>
+            recordDeploymentInventory(transaction, "demo", plan.expected, {
+                ...receipt,
+                updatedAt: receipt.updatedAt + 86_400,
+            })
+        );
+        const [watermark] = await state.client<
+            { current: boolean }[]
+        >`SELECT captured_at<=clock_timestamp() AS current FROM operation_snapshots WHERE key='updates:demo'`;
+        expect(watermark!.current).toBe(true);
+        const refreshed =
+            await state.client`UPDATE operation_snapshots SET value=${JSON.stringify(report)}::text::jsonb,captured_at=clock_timestamp()
+            WHERE key='updates:demo' AND captured_at<clock_timestamp() RETURNING key`;
+        expect(refreshed).toHaveLength(1);
     } finally {
         await state.close();
     }
