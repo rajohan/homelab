@@ -641,6 +641,33 @@ test("computer wait observes human stop and cancellation without manufacturing a
     }
 });
 
+test("a new manual request can wait after a retained grant stopped, while a stop in that run remains final", async () => {
+    const f = await fixture("view");
+    try {
+        await f.client`UPDATE mira_computer_access SET keep_open=true WHERE id=${f.binding.accessId}`;
+        await f.api.computers.access.stop({ id: f.binding.accessId });
+        await finishMiraRun(f.client, f.run, {
+            state: "completed",
+            text: "Sharing ended.",
+            message: null,
+        });
+        await f.api.conversations.send({
+            conversationId: f.run.conversationId,
+            requestId: crypto.randomUUID(),
+            text: "Please wait while I share the new game window.",
+        });
+        const run = await claimMiraRun(f.client, crypto.randomUUID(), "foreground");
+        if (!run) throw new Error("Expected a new manual run.");
+        const context = { ...f.worker, run: { id: run.id, leaseToken: run.leaseToken } };
+        expect(await readMiraComputerReadiness(context)).toEqual({ state: "waiting" });
+        expect(await f.client`SELECT id FROM mira_computer_access`).toHaveLength(1);
+        await f.client`UPDATE mira_computer_access SET stopped_at=clock_timestamp() WHERE id=${f.binding.accessId}`;
+        expect(await readMiraComputerReadiness(context)).toEqual({ state: "stopped" });
+    } finally {
+        await f.close();
+    }
+});
+
 test("computer access lists are scoped to the requested owned run", async () => {
     const f = await fixture();
     try {

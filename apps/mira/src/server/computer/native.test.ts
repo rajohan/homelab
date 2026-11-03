@@ -118,6 +118,42 @@ async function fixture() {
 }
 const signal = () => new AbortController().signal;
 
+test("view-only window capture does not wait for a game's accessibility provider", async () => {
+    const f = await fixture();
+    f.grant.mode = "view";
+    f.native.getWindowState = () => {
+        throw new Error("The game does not expose UI Automation");
+    };
+    let captures = 0;
+    const driver = await openNativeComputer(
+        f.grant,
+        () => Promise.resolve(f.sdk),
+        () =>
+            Promise.resolve({
+                read: () => {
+                    captures++;
+                    return Promise.resolve({
+                        dataBase64: createVisualChallenge().data,
+                        width: 390,
+                        height: 110,
+                    });
+                },
+                close: () => Promise.resolve(),
+            })
+    );
+    try {
+        const result = await driver.observe(signal());
+        expect(result.width).toBe(390);
+        expect(result.coordinateInput).toBe(false);
+        expect(result.elements).toEqual([]);
+        expect(captures).toBe(1);
+        await assert.rejects(driver.click(1, 1, signal()), /view-only/);
+        await assert.rejects(driver.type("not sent", signal()), /view-only/);
+    } finally {
+        await driver.close();
+    }
+});
+
 test("native adapter pins permission mode, exact window, fixed text tool and literal delivery", async () => {
     const f = await fixture();
     const driver = await f.open();
@@ -301,11 +337,7 @@ test("Windows view adapter uses only window-only images and never dispatches inp
     );
     const frame = await driver.observe(signal());
     expect(frame.width).toBe(390);
-    expect(f.calls[1]).toMatchObject({
-        includeScreenshot: false,
-        includeAccessibilityTree: true,
-        treeFormat: "elements",
-    });
+    expect(f.calls).toHaveLength(1);
     const before = f.calls.length;
     await assert.rejects(driver.click(15, 25, signal()), /view-only/);
     await assert.rejects(driver.type("not sent", signal()), /view-only/);
@@ -315,7 +347,7 @@ test("Windows view adapter uses only window-only images and never dispatches inp
     expect(closes).toBe(1);
 });
 
-test("Windows view refuses SDK pixels, invalid geometry and missing capture without fallback", async () => {
+test("Windows view ignores SDK pixels and rejects invalid geometry and missing capture without fallback", async () => {
     const f = await fixture();
     f.grant.mode = "view";
     let width = 390;
@@ -336,10 +368,9 @@ test("Windows view refuses SDK pixels, invalid geometry and missing capture with
         () => Promise.resolve(f.sdk),
         () => Promise.resolve(capture)
     );
-    await assert.rejects(driver.observe(signal()), /selected window frame/);
-    expect(reads).toBe(0);
-    f.frame.images = [];
     await driver.observe(signal());
+    expect(reads).toBe(1);
+    expect(f.calls).toHaveLength(1);
     width = 391;
     await assert.rejects(driver.observe(signal()), /dimensions/);
     await driver.close();
@@ -368,7 +399,7 @@ function paddedPng(length: number) {
 
 test("largest accepted PNG plus near-limit escaped tree fits both private transport envelopes", async () => {
     const f = await fixture();
-    f.grant.mode = "view";
+    f.grant.mode = "control";
     f.frame.images = [];
     f.frame.treeMarkdown = "\u0001".repeat(42 * 1024);
     f.frame.windowTitle = "\u0001".repeat(512);

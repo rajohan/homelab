@@ -9,7 +9,7 @@ import { RuntimeCleanupError } from "../runtime/rpcProcess";
 import { createVisualChallenge } from "../testing/visualChallenge";
 import { computerCommandResult } from "./commandResult";
 import { ComputerCompanion, ComputerConnectionError } from "./companion";
-import { runComputerCommandLoop } from "./companionCommands";
+import { ComputerObservationEnded, runComputerCommandLoop } from "./companionCommands";
 import { ComputerConsentController, type ComputerConsentHost } from "./companionConsent";
 import { issueComputerCredential } from "./credentials";
 import type { ComputerWindowPort } from "./session";
@@ -379,6 +379,28 @@ test("a replayed command retires the controller instead of invoking the native p
     expect(f.events).toContain("port-close");
 });
 
+test("a failed observation retires only its grant after confirmed cleanup", async () => {
+    for (const cleanupFails of [false, true]) {
+        const f = fixture("view");
+        await f.controller.review();
+        const request = { ...command(), ...f.controller.commandBinding() };
+        f.handlers.claim = () => ({ command: request });
+        f.port.observe = () =>
+            Promise.reject(new Error("Selected game window is unavailable"));
+        if (cleanupFails)
+            f.cleanup(() => Promise.reject(new Error("Unconfirmed process exit")));
+        await rejects(
+            f.run(),
+            cleanupFails ? RuntimeCleanupError : ComputerObservationEnded
+        );
+        expect(f.received).toHaveLength(0);
+        expect(f.events.filter((event) => event === "claim")).toHaveLength(1);
+        expect(f.events).toContain("port-close");
+        expect(f.events).toContain("host-close");
+        expect(f.events).toContain("stop");
+    }
+});
+
 test("expired claims, reversed clocks and view-only input never reach a native action", async () => {
     for (const scenario of ["expired", "clock", "view"] as const) {
         const f = fixture(scenario === "view" ? "view" : "control");
@@ -511,8 +533,8 @@ test("operation deadline aborts a pending capture without a late result or repla
                 once: true,
             });
         });
-    // The operation deadline is a terminal failure, not an instruction to replay on reconnect.
-    await rejects(f.run());
+    // Retire this observation without replay; a fresh local grant may use the companion again.
+    await rejects(f.run(), ComputerObservationEnded);
     expect(f.events.filter((x) => x === "claim")).toHaveLength(1);
     expect(f.received).toHaveLength(0);
     expect(f.events).toContain("port-close");

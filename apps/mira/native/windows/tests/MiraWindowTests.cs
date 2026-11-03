@@ -34,6 +34,7 @@ internal static class MiraWindowTests
             foreach (var item in new[] { new { Name = "Minimize", Code = 8 }, new { Name = "Maximize", Code = 9 }, new { Name = "Close", Code = 20 } }) {
                 var button = Find(form, item.Name);
                 check(button != null && button is Button && !button.TabStop);
+                check(button.Top == 0 && button.Parent.Top == 0);
                 var center = button.PointToScreen(new Point(button.Width / 2, button.Height / 2));
                 if (form.HitTest(form.PointToClient(center)) != item.Code)
                     throw new Exception(item.Name + " hit=" + form.HitTest(form.PointToClient(center)) + " point=" + form.PointToClient(center) + " caption=" + button.Parent.Bounds + " button=" + button.Bounds);
@@ -41,6 +42,12 @@ internal static class MiraWindowTests
                 long packed = ((long)(ushort)center.Y << 16) | (ushort)center.X;
                 check(SendMessage(handle, 0x84, IntPtr.Zero, new IntPtr(packed)).ToInt32() == item.Code);
                 check(SendMessage(button.Handle, 0x84, IntPtr.Zero, new IntPtr(packed)).ToInt32() == -1);
+                foreach (int x in new[] { 0, button.Width - 1 }) {
+                    var top = button.PointToScreen(new Point(x, 0));
+                    check(form.HitTest(form.PointToClient(top)) == item.Code);
+                    long topPacked = ((long)(ushort)top.Y << 16) | (ushort)top.X;
+                    check(SendMessage(handle, 0x84, IntPtr.Zero, new IntPtr(topPacked)).ToInt32() == item.Code);
+                }
             }
             form.MaximizeBox = false; form.MinimizeBox = false;
             form.Size = new Size(500, 360); form.PerformLayout();

@@ -704,22 +704,38 @@ consent host supplies the selected process creation time alongside the immutable
 executable, PID and HWND. Each capture rechecks that identity and the interactive
 session, refuses minimized or closed targets, and uses only Windows Graphics
 Capture `CreateForWindow`. It has no desktop, screen-region or GDI fallback.
-The SDK supplies the selected window's accessibility tree with screenshots disabled.
+Control mode uses the SDK's accessibility tree with screenshots disabled.
+View-only mode reads only the WGC image, so a game's slow or unavailable accessibility
+provider cannot block a screenshot.
 
 The helper crops invisible resize margins from known whole-window WGC surfaces
 to physical DWM frame bounds with a one-pixel inset, matching the existing window
 coordinate convention. Unknown origins are refused. Raw PNGs are capped at 1792
 KiB so Base64 plus the worst-case escaped accessibility tree fits both private
-transport envelopes. Changed bounds, unsupported capture, timeouts,
-excessive frames and invalid or incomplete PNGs fail without exporting pixels. A
+transport envelopes. Dense images are resampled from the already cropped target
+with bounded 1600, 1024 and 640 pixel attempts, preserving aspect ratio. This does
+not expand capture scope or enable coordinate input. Changed bounds, unsupported
+capture, timeouts, excessive frames and invalid or incomplete PNGs fail without exporting pixels. A
 missing helper fails package validation before pairing. The helper inherits the
 worker's Windows process job; Stop aborts a pending capture and cleanup waits for
 its exit. View-only policy and the adapter both refuse input.
+
+A failed observation retires the current grant. After confirmed native cleanup,
+the paired companion reconnects before accepting a new request and local selection.
+The new connection invalidates the old grant even if its best-effort stop message
+was lost; it never resumes old consent or replays the failed read.
+Unconfirmed cleanup and interrupted input remain terminal. A later manual Chat
+request can wait for fresh consent after an older retained grant stopped; an
+explicit Stop during the current run still stops that run's computer access.
+For applications that launch a separate game window, select the new window or
+explicitly share the primary desktop. Continuous coaching also requires **Live
+computer assistance** in Chat settings; retaining a grant alone does not enable it.
 
 The hosted qualification covers the independent cyan target behind a magenta cover,
 including the extracted package's complete view-only worker path. Fixed and
 resizable windows use independently measured frame bounds and colored markers
 to check the exact crop origin. It independently
+checks that a dense 1600-by-900 synthetic target fits the image transport budget, then
 decodes the PNG and verifies that a closed target is refused while its owner stays
 alive. Existing Windows input, installer, package inventory and process-ownership
 tests remain required. No screenshots are logged, uploaded or retained.

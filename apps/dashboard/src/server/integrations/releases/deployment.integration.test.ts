@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 
 import { capabilities } from "@homelab/contracts/operations";
+import type { UpdateReport } from "@homelab/contracts/updates";
 
 import { runWorker } from "../../../worker/runtime";
 import { appRouter } from "../../api/router";
@@ -16,6 +17,7 @@ import {
     deploymentTestTarget,
     deploymentTestPlan,
 } from "./deploymentFixtures";
+import { recordDeploymentInventory } from "./deploymentInventory";
 import { deploymentPreparationJobs } from "./deploymentPlans";
 import {
     deploymentDigest,
@@ -157,6 +159,7 @@ async function fixture(includeAuth = false) {
               {
                   ...deploymentTestConnections[0]!,
                   id: "edge",
+                  source: "edge",
                   host: "auth.example.test",
               },
           ]
@@ -340,6 +343,236 @@ async function fixture(includeAuth = false) {
         },
     };
 }
+
+test("verified host completion updates both inventories immediately and preserves newer candidates", async () => {
+    const state = await fixture(true);
+    try {
+        const capturedAt = new Date(Date.now() - 60_000).toISOString();
+        for (const [source, expected] of [
+            ["demo", state.plan.expected],
+            ["edge", state.plan.authExpected!],
+        ] as const) {
+            const items = Object.entries(expected.containers).map(
+                ([name, container], index) => {
+                    container.id = (index + 1).toString().repeat(64);
+                    const newer = name === "worker";
+                    return {
+                        id: `docker:${container.id}`,
+                        name,
+                        kind: "container" as const,
+                        installed: container.imageId,
+                        image: container.image,
+                        installedVersion: "1.2.2",
+                        available: `sha256:${"c".repeat(64)}`,
+                        availableVersion: newer ? "1.2.4" : "1.2.3",
+                        availableImage: newer
+                            ? `ghcr.io/demo/homelab/dashboard:1.2.4@sha256:${"d".repeat(64)}`
+                            : state.plan.release.images.find(
+                                  (image) =>
+                                      image.app ===
+                                      (name === "worker" ? "dashboard" : name)
+                              )!.reference,
+                        candidateVerified: true,
+                        status: "available" as const,
+                        security: false,
+                        held: false,
+                    };
+                }
+            );
+            const report: UpdateReport = {
+                capturedAt,
+                repositoryMetadataAt: null,
+                complete: true,
+                coveredKinds: ["container"],
+                items,
+            };
+            for (const prefix of ["updates", "updates.resolved"])
+                await state.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES(${`${prefix}:${source}`},${JSON.stringify(report)}::text::jsonb,${capturedAt}::timestamptz)`;
+        }
+        const read = async (source: string) => {
+            const rows = await state.client<
+                { value: UpdateReport }[]
+            >`SELECT value FROM operation_snapshots WHERE key IN (${`updates:${source}`},${`updates.resolved:${source}`}) ORDER BY key`;
+            expect(rows).toHaveLength(2);
+            expect(rows[0]!.value).toEqual(rows[1]!.value);
+            return rows[0]!.value;
+        };
+        const { id } = await state.request();
+        await state.drained(id);
+        await state.coordinate();
+        const beforeAuth = await read("edge");
+        expect(beforeAuth.items[0]!.installedVersion).toBe("1.2.2");
+        completeHost(state, true);
+        await state.coordinate();
+        const afterAuth = await read("edge");
+        expect(afterAuth.items[0]).toMatchObject({
+            status: "current",
+            installedVersion: "1.2.3",
+        });
+        const beforeMain = await read("demo");
+        expect(beforeMain.items.every((item) => item.installedVersion === "1.2.2")).toBe(
+            true
+        );
+        await state.coordinate();
+        completeHost(state);
+        const containers = Object.fromEntries(
+            Object.entries(state.plan.expected.containers).map(
+                ([name, before], index) => [
+                    name,
+                    {
+                        ...before,
+                        id: (index + 4).toString().repeat(64),
+                        imageId: `sha256:${"e".repeat(64)}`,
+                        image: state.plan.release.images.find(
+                            (image) =>
+                                image.app === (name === "worker" ? "dashboard" : name)
+                        )!.reference,
+                    },
+                ]
+            )
+        );
+        state.setReceipt({ containers });
+        await state.coordinate();
+        expect(await state.record()).toMatchObject({ state: "succeeded" });
+        const report = await read("demo");
+        expect(report.capturedAt).toBe(capturedAt);
+        for (const item of report.items) {
+            expect(item.installedVersion).toBe("1.2.3");
+            expect(item.id).toBe(`docker:${containers[item.name]!.id}`);
+            expect(item.installed).toBe(containers[item.name]!.imageId);
+            expect(item.status).toBe(item.name === "worker" ? "available" : "current");
+            expect(item.availableVersion).toBe(
+                item.name === "worker" ? "1.2.4" : "1.2.3"
+            );
+        }
+    } finally {
+        await state.close();
+    }
+});
+
+test("deployment inventory ignores newer observations, foreign identities and unsuccessful receipts", async () => {
+    const state = await operationFixture();
+    try {
+        const plan = deploymentTestPlan();
+        const before = plan.expected.containers.dashboard!;
+        const receipt: DeploymentReceipt = {
+            state: "succeeded",
+            id: Bun.randomUUIDv7(),
+            requestHash: "f".repeat(64),
+            phase: "complete",
+            updatedAt: Date.now() / 1000,
+            changesStarted: true,
+            migrationStarted: true,
+            version: "1.2.3",
+            containers: {
+                dashboard: {
+                    ...before,
+                    id: "b".repeat(64),
+                    imageId: `sha256:${"c".repeat(64)}`,
+                    image: plan.release.images[1]!.reference,
+                },
+            },
+        };
+        const report: UpdateReport = {
+            capturedAt: new Date(receipt.updatedAt * 1000 - 60_000).toISOString(),
+            repositoryMetadataAt: null,
+            complete: true,
+            coveredKinds: ["container"],
+            items: [
+                {
+                    id: `docker:${before.id}`,
+                    name: "dashboard",
+                    kind: "container",
+                    installed: "different image",
+                    available: null,
+                    status: "unknown",
+                    security: false,
+                    held: false,
+                },
+                {
+                    id: `docker:${"d".repeat(64)}`,
+                    name: "dashboard",
+                    kind: "container",
+                    installed: before.imageId,
+                    available: null,
+                    status: "unknown",
+                    security: false,
+                    held: false,
+                },
+            ],
+        };
+        await state.client`INSERT INTO operation_snapshots(key,value,captured_at) VALUES('updates:demo',${JSON.stringify(report)}::text::jsonb,now())`;
+        await state.client.begin((transaction) =>
+            recordDeploymentInventory(transaction, "demo", plan.expected, receipt)
+        );
+        const [unchanged] = await state.client<
+            { value: UpdateReport }[]
+        >`SELECT value FROM operation_snapshots WHERE key='updates:demo'`;
+        expect(unchanged!.value).toEqual(report);
+        report.items[0]!.installed = before.imageId;
+        for (const newer of [false, true]) {
+            if (newer) {
+                report.capturedAt = new Date(
+                    receipt.updatedAt * 1000 + 60_000
+                ).toISOString();
+                report.items[0]!.id = `docker:${"e".repeat(64)}`;
+            }
+            await state.client`UPDATE operation_snapshots SET value=${JSON.stringify(report)}::text::jsonb WHERE key='updates:demo'`;
+            await state.client.begin((transaction) =>
+                recordDeploymentInventory(transaction, "demo", plan.expected, {
+                    ...receipt,
+                    state: newer ? "succeeded" : "failed",
+                })
+            );
+            const [row] = await state.client<
+                { value: UpdateReport }[]
+            >`SELECT value FROM operation_snapshots WHERE key='updates:demo'`;
+            expect(row!.value).toEqual(report);
+        }
+        // Publisher timestamps up to 60 seconds ahead are valid; they must not hide a completed installation.
+        report.capturedAt = new Date(receipt.updatedAt * 1000 + 30_000).toISOString();
+        Object.assign(report.items[0]!, {
+            id: `docker:${before.id}`,
+            candidateVerified: true,
+            availableVersion: "main",
+            availableImage: `ghcr.io/demo/homelab/dashboard:latest@sha256:${"e".repeat(64)}`,
+            available: `sha256:${"e".repeat(64)}`,
+        });
+        await state.client`UPDATE operation_snapshots SET value=${JSON.stringify(report)}::text::jsonb WHERE key='updates:demo'`;
+        await state.client.begin((transaction) =>
+            recordDeploymentInventory(transaction, "demo", plan.expected, receipt)
+        );
+        const [branch] = await state.client<
+            { value: UpdateReport }[]
+        >`SELECT value FROM operation_snapshots WHERE key='updates:demo'`;
+        expect(branch!.value.items[0]).toMatchObject({
+            installedVersion: "1.2.3",
+            availableVersion: "main",
+            status: "available",
+        });
+        for (const skew of [-86_400, 86_400]) {
+            await state.client`UPDATE operation_snapshots SET value=${JSON.stringify(report)}::text::jsonb WHERE key='updates:demo'`;
+            await state.client.begin((transaction) =>
+                recordDeploymentInventory(transaction, "demo", plan.expected, {
+                    ...receipt,
+                    updatedAt: receipt.updatedAt + skew,
+                })
+            );
+            const [watermark] = await state.client<
+                { current: boolean; value: UpdateReport }[]
+            >`SELECT captured_at<=clock_timestamp() AS current,value FROM operation_snapshots WHERE key='updates:demo'`;
+            expect(watermark!.value.items[0]!.installedVersion).toBe("1.2.3");
+            expect(watermark!.current).toBe(true);
+            const refreshed = await state.client<
+                { key: string }[]
+            >`UPDATE operation_snapshots SET value=${JSON.stringify(report)}::text::jsonb,captured_at=clock_timestamp()
+                WHERE key='updates:demo' AND captured_at<clock_timestamp() RETURNING key`;
+            expect(refreshed).toHaveLength(1);
+        }
+    } finally {
+        await state.close();
+    }
+});
 
 test.each([false, true])(
     "unified deployment verifies Auth before replacing Main and survives lost SSH: %s",
