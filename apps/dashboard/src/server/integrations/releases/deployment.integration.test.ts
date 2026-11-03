@@ -527,6 +527,25 @@ test("deployment inventory ignores newer observations, foreign identities and un
             >`SELECT value FROM operation_snapshots WHERE key='updates:demo'`;
             expect(row!.value).toEqual(report);
         }
+        report.capturedAt = new Date(receipt.updatedAt * 1000 - 60_000).toISOString();
+        Object.assign(report.items[0]!, {
+            candidateVerified: true,
+            availableVersion: "main",
+            availableImage: `ghcr.io/demo/homelab/dashboard:latest@sha256:${"e".repeat(64)}`,
+            available: `sha256:${"e".repeat(64)}`,
+        });
+        await state.client`UPDATE operation_snapshots SET value=${JSON.stringify(report)}::text::jsonb WHERE key='updates:demo'`;
+        await state.client.begin((transaction) =>
+            recordDeploymentInventory(transaction, "demo", plan.expected, receipt)
+        );
+        const [branch] = await state.client<
+            { value: UpdateReport }[]
+        >`SELECT value FROM operation_snapshots WHERE key='updates:demo'`;
+        expect(branch!.value.items[0]).toMatchObject({
+            installedVersion: "1.2.3",
+            availableVersion: "main",
+            status: "available",
+        });
     } finally {
         await state.close();
     }

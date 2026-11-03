@@ -1,4 +1,4 @@
-import type { UpdateReport } from "@homelab/contracts/updates";
+import type { UpdateItem, UpdateReport } from "@homelab/contracts/updates";
 import type { TransactionSQL } from "bun";
 
 import type { DeploymentObservation, DeploymentReceipt } from "./deploymentProtocol";
@@ -39,13 +39,12 @@ export async function recordDeploymentInventory(
             if (!match) return item;
             const after = receipt.containers![match[0]]!;
             // A newer registry result may have arrived while this release was installing.
-            const newer =
-                item.candidateVerified &&
-                item.availableVersion &&
-                item.availableImage &&
-                (Bun.semver.order(item.availableVersion, receipt.version!) > 0 ||
-                    (item.availableVersion === receipt.version &&
-                        item.availableImage !== after.image));
+            const newer = preserveCandidate(
+                item,
+                after.image,
+                after.imageId,
+                receipt.version!
+            );
             return {
                 ...item,
                 id: `docker:${after.id}`,
@@ -70,5 +69,27 @@ export async function recordDeploymentInventory(
             SET value=${JSON.stringify({ ...row.value, items })}::text::jsonb,
                 captured_at=GREATEST(captured_at,to_timestamp(${receipt.updatedAt}))
             WHERE key=${key}`;
+    }
+}
+
+function preserveCandidate(
+    item: UpdateItem,
+    image: string,
+    imageId: string,
+    version: string
+): boolean {
+    if (
+        !item.candidateVerified ||
+        !item.availableImage ||
+        item.availableImage === image ||
+        item.available === imageId
+    )
+        return false;
+    if (!item.availableVersion) return true;
+    try {
+        return Bun.semver.order(item.availableVersion, version) >= 0;
+    } catch {
+        // OCI labels may contain branch names. Do not let one block completion or hide a distinct candidate.
+        return true;
     }
 }
