@@ -6,7 +6,7 @@ import {
     ComputerConnectionError,
     isComputerCancellation,
 } from "./companion";
-import { ComputerPollingOutage } from "./companionCommands";
+import { ComputerObservationEnded, ComputerPollingOutage } from "./companionCommands";
 import { ComputerConsentController, type ComputerConsentHost } from "./companionConsent";
 
 /**
@@ -62,6 +62,7 @@ export async function runComputerConsentLoop(options: {
                 }
             } catch (error) {
                 if (
+                    !(error instanceof ComputerObservationEnded) &&
                     !isComputerCancellation(error, controller.signal) &&
                     !isComputerCancellation(error, host.signal) &&
                     !isComputerCancellation(error, options.signal)

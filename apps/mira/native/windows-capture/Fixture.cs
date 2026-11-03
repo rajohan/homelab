@@ -94,6 +94,24 @@ internal static class CaptureFixture
                                         cover.Hide(); target.WindowState = FormWindowState.Minimized;
                                         result = new { minimized = true };
                                     }
+                                    else if (method == "dense")
+                                    {
+                                        ConsentProtocol.Keys(parameters);
+                                        var image = new Bitmap(1600, 900, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                                        byte[] pixels = new byte[1600 * 900 * 4];
+                                        new Random(42).NextBytes(pixels);
+                                        for (int offset = 3; offset < pixels.Length; offset += 4) pixels[offset] = 255;
+                                        var data = image.LockBits(new Rectangle(0, 0, 1600, 900), System.Drawing.Imaging.ImageLockMode.WriteOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                                        try { Marshal.Copy(pixels, 0, data.Scan0, pixels.Length); }
+                                        finally { image.UnlockBits(data); }
+                                        target.BackgroundImage = image;
+                                        target.FormClosed += delegate { image.Dispose(); };
+                                        target.ClientSize = image.Size;
+                                        cover.Bounds = target.Bounds;
+                                        target.Refresh(); cover.Refresh();
+                                        if (DwmFlush() != 0) throw new InvalidOperationException();
+                                        result = new { dense = true };
+                                    }
                                     else if (method == "close")
                                     {
                                         ConsentProtocol.Keys(parameters);

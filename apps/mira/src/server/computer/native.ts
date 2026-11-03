@@ -141,6 +141,41 @@ export async function openNativeComputer(
                     }
                     throw new Error("Computer desktop frame exceeds its image budget.");
                 }
+                // Viewing a game needs pixels, not UI Automation. Some games do
+                // not answer accessibility queries; keep that dependency out of
+                // view-only capture. The helper still verifies the fixed HWND,
+                // process creation identity and visible window before/after capture.
+                if (capture && grant.mode === "view") {
+                    const image = await capture.read(signal);
+                    signal.throwIfAborted();
+                    ensureOpen();
+                    const content: Exclude<RuntimeToolResult, string> = {
+                        content: [
+                            {
+                                type: "image",
+                                mediaType: "image/png",
+                                data: image.dataBase64,
+                            },
+                        ],
+                    };
+                    runtimeContentItems(content);
+                    const dimensions = imageSize(Buffer.from(image.dataBase64, "base64"));
+                    if (
+                        dimensions.width !== image.width ||
+                        dimensions.height !== image.height
+                    )
+                        throw new Error(
+                            "Computer frame dimensions do not match the image."
+                        );
+                    return {
+                        snapshot: crypto.randomUUID(),
+                        width: image.width,
+                        height: image.height,
+                        elements: [],
+                        coordinateInput: false,
+                        content,
+                    };
+                }
                 const frame = await native.getWindowState(
                     {
                         pid: grant.pid,

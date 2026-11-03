@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { realpath } from "node:fs/promises";
 import path from "node:path";
 
+import { imageSize } from "image-size";
 import * as v from "valibot";
 
 import { openWindowsComputerProcess } from "../computer/process";
@@ -141,6 +142,31 @@ export async function qualifyWindowsCapture(
         denied([...args, "unexpected"]);
         denied(["invalid", state.windowId, state.started]);
         v.parse(
+            v.strictObject({ dense: v.literal(true) }),
+            await fixture.request("dense", {})
+        );
+        await Bun.sleep(250);
+        const denseFrame = await worker?.observe(signal);
+        const denseItem = denseFrame?.content.content.find(
+            (value) => value.type === "image"
+        );
+        const denseImage = worker
+            ? Buffer.from(denseItem?.type === "image" ? denseItem.data : "", "base64")
+            : take();
+        const size = imageSize(denseImage);
+        if (
+            denseImage.length > 1792 * 1024 ||
+            size.width > 1600 ||
+            size.height > 920 ||
+            size.width < 600 ||
+            size.height < 300
+        )
+            throw new Error(
+                "Dense target capture was not resized to the transport budget."
+            );
+        if (denseFrame && (denseFrame.coordinateInput || denseFrame.elements?.length))
+            throw new Error("View-only capture unexpectedly exposed input targets.");
+        v.parse(
             v.strictObject({ minimized: v.literal(true) }),
             await fixture.request("minimize", {})
         );
@@ -161,6 +187,7 @@ export async function qualifyWindowsCapture(
             minimizedDenied: true,
             closedDenied: true,
             packaged: Boolean(worker),
+            dense: true,
             resizable,
         };
     } finally {

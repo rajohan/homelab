@@ -34,6 +34,7 @@ internal static class MiraWindowTests
             foreach (var item in new[] { new { Name = "Minimize", Code = 8 }, new { Name = "Maximize", Code = 9 }, new { Name = "Close", Code = 20 } }) {
                 var button = Find(form, item.Name);
                 check(button != null && button is Button && !button.TabStop);
+                check(button.Top == 0 && button.Parent.Top == 0);
                 var center = button.PointToScreen(new Point(button.Width / 2, button.Height / 2));
                 if (form.HitTest(form.PointToClient(center)) != item.Code)
                     throw new Exception(item.Name + " hit=" + form.HitTest(form.PointToClient(center)) + " point=" + form.PointToClient(center) + " caption=" + button.Parent.Bounds + " button=" + button.Bounds);

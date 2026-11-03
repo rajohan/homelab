@@ -72,7 +72,7 @@ void checkSize(int width, int height) {
         throw std::runtime_error("Unsupported frame size");
 }
 
-std::vector<BYTE> png(const std::vector<BYTE>& pixels, UINT width, UINT height) {
+std::vector<BYTE> encodePng(const std::vector<BYTE>& pixels, UINT width, UINT height) {
     com_ptr<IWICImagingFactory> factory;
     check_hresult(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
         __uuidof(IWICImagingFactory), factory.put_void()));
@@ -94,8 +94,8 @@ std::vector<BYTE> png(const std::vector<BYTE>& pixels, UINT width, UINT height) 
     check_hresult(encoder->Commit());
     STATSTG stat{};
     check_hresult(stream->Stat(&stat, STATFLAG_NONAME));
-    if (stat.cbSize.QuadPart == 0 || stat.cbSize.QuadPart > maximumPng)
-        throw std::runtime_error("PNG exceeds capture budget");
+    if (stat.cbSize.QuadPart == 0) throw std::runtime_error("Empty PNG");
+    if (stat.cbSize.QuadPart > maximumPng) return {};
     std::vector<BYTE> result(static_cast<size_t>(stat.cbSize.QuadPart));
     LARGE_INTEGER start{};
     check_hresult(stream->Seek(start, STREAM_SEEK_SET, nullptr));
@@ -103,6 +103,33 @@ std::vector<BYTE> png(const std::vector<BYTE>& pixels, UINT width, UINT height) 
     check_hresult(stream->Read(result.data(), static_cast<ULONG>(result.size()), &read));
     if (read != result.size()) throw std::runtime_error("Incomplete PNG");
     return result;
+}
+
+std::vector<BYTE> png(const std::vector<BYTE>& pixels, UINT width, UINT height) {
+    auto result = encodePng(pixels, width, height);
+    if (!result.empty()) return result;
+    com_ptr<IWICImagingFactory> factory;
+    check_hresult(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
+        __uuidof(IWICImagingFactory), factory.put_void()));
+    com_ptr<IWICBitmap> source;
+    check_hresult(factory->CreateBitmapFromMemory(width, height, GUID_WICPixelFormat32bppBGRA,
+        width * 4, static_cast<UINT>(pixels.size()), const_cast<BYTE*>(pixels.data()), source.put()));
+    // Resample only the already cropped target. Element-based input does not use these pixels as coordinates.
+    for (UINT maximum : {1600U, 1024U, 640U}) {
+        const UINT longest = width > height ? width : height;
+        if (longest <= maximum) continue;
+        const UINT scaledWidth = static_cast<UINT>(uint64_t(width) * maximum / longest);
+        const UINT scaledHeight = static_cast<UINT>(uint64_t(height) * maximum / longest);
+        if (!scaledWidth || !scaledHeight) continue;
+        com_ptr<IWICBitmapScaler> scaler;
+        check_hresult(factory->CreateBitmapScaler(scaler.put()));
+        check_hresult(scaler->Initialize(source.get(), scaledWidth, scaledHeight, WICBitmapInterpolationModeFant));
+        std::vector<BYTE> scaled(static_cast<size_t>(scaledWidth) * scaledHeight * 4);
+        check_hresult(scaler->CopyPixels(nullptr, scaledWidth * 4, static_cast<UINT>(scaled.size()), scaled.data()));
+        result = encodePng(scaled, scaledWidth, scaledHeight);
+        if (!result.empty()) return result;
+    }
+    throw std::runtime_error("PNG exceeds capture budget");
 }
 
 std::vector<BYTE> capture(HWND window, DWORD pid, uint64_t started, HANDLE process) {

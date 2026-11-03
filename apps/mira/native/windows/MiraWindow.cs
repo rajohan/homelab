@@ -46,7 +46,7 @@ internal class MiraWindow : Form
         Font = new Font("Segoe UI", 10);
         BackColor = Canvas; ForeColor = TextColor;
         SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
-        caption = new CaptionPanel(this) { Dock = DockStyle.Top, Height = 40, BackColor = Canvas };
+        caption = new CaptionPanel(this) { Dock = DockStyle.Top, Height = 34, BackColor = Canvas };
         minimize = new CaptionButton(this, 8, "Minimize");
         maximize = new CaptionButton(this, 9, "Maximize");
         close = new CaptionButton(this, 20, "Close");
@@ -77,8 +77,8 @@ internal class MiraWindow : Form
     {
         if (caption == null) return;
         int edge = WindowState == FormWindowState.Maximized ? 0 : ScalePixels(6);
-        Padding = new Padding(edge);
-        caption.Height = ScalePixels(40);
+        Padding = new Padding(edge, 0, edge, edge);
+        caption.Height = ScalePixels(34);
         int width = ScalePixels(44), right = caption.ClientSize.Width;
         close.SetBounds(right - width, 0, width, caption.Height);
         right -= width;

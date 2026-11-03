@@ -8,6 +8,7 @@ import {
     releaseDeploymentRevision,
     type ReleaseDeploymentTarget,
 } from "./deploymentConfiguration";
+import { recordDeploymentInventory } from "./deploymentInventory";
 import { authDeploymentCurrent, deploymentRelease } from "./deploymentPlans";
 import { automaticDeploymentAllowed } from "./deploymentPolicies";
 import {
@@ -18,6 +19,7 @@ import {
     deploymentProgressSchema,
     deploymentReceiptSchema,
     type DeploymentHost,
+    type DeploymentObservation,
     type DeploymentReceipt,
     type DeploymentProgress,
 } from "./deploymentProtocol";
@@ -69,7 +71,12 @@ export async function coordinateDeployment(options: {
         phase: string,
         message: string,
         finished: boolean,
-        receipt?: DeploymentReceipt | DeploymentProgress
+        receipt?: DeploymentReceipt | DeploymentProgress,
+        inventory?: {
+            source: string;
+            expected: DeploymentObservation;
+            receipt: DeploymentReceipt;
+        }
     ) =>
         client.begin(async (transaction) => {
             await lockQueue(transaction);
@@ -108,6 +115,13 @@ export async function coordinateDeployment(options: {
                     nextMessage
                 );
             if (rows.length > 0 && receipt) claim.receipt = receipt;
+            if (rows.length > 0 && allowed && inventory)
+                await recordDeploymentInventory(
+                    transaction,
+                    inventory.source,
+                    inventory.expected,
+                    inventory.receipt
+                );
             return rows.length === 1 && allowed;
         });
     try {
@@ -404,7 +418,8 @@ export async function coordinateDeployment(options: {
                     "auth_complete",
                     "Auth is updated and verified. Preparing the dashboard, worker and Mira deployment.",
                     false,
-                    { ...progress, stage: "main", submitted: false }
+                    { ...progress, stage: "main", submitted: false },
+                    { source: connection.source, expected, receipt }
                 );
                 return;
             }
@@ -413,7 +428,8 @@ export async function coordinateDeployment(options: {
                 "complete",
                 "Release deployed and all configured services verified.",
                 true,
-                evidence
+                evidence,
+                { source: connection.source, expected, receipt }
             );
         } else if (receipt.state === "failed") {
             const recovered =

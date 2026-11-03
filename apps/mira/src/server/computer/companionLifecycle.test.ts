@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { RuntimeCleanupError } from "../runtime/rpcProcess";
 import { ComputerCompanion, ComputerConnectionError } from "./companion";
+import { ComputerObservationEnded } from "./companionCommands";
 import type { ComputerConsentHost } from "./companionConsent";
 import { runComputerConsentLoop } from "./companionLifecycle";
 import { runComputerPresence } from "./companionPresence";
@@ -243,6 +244,32 @@ test("declined request IDs never prompt twice even if stop delivery fails, while
     expect(polls).toBe(4);
     expect(f.events.filter((e) => e === "stop")).toHaveLength(2);
     expect(f.events).not.toContain("accept");
+});
+
+test("a cleanly retired screen read keeps the companion online for a new local selection", async () => {
+    const f = fixture();
+    let sessions = 0;
+    await runComputerConsentLoop({
+        companion: f.client,
+        credential: f.credential,
+        connectionId: crypto.randomUUID(),
+        signal: f.stop.signal,
+        createHost: () => f.host().value,
+        runSession: async (controller) => {
+            sessions++;
+            await controller.close();
+            if (sessions === 1) throw new ComputerObservationEnded();
+            f.stop.abort();
+        },
+        wait: () => {
+            expect(f.events).toContain("driver-closed");
+            f.request.id = crypto.randomUUID();
+            return Promise.resolve();
+        },
+    });
+    expect(sessions).toBe(2);
+    expect(f.events.filter((event) => event === "prompt")).toHaveLength(2);
+    expect(f.events.filter((event) => event === "driver-closed")).toHaveLength(2);
 });
 
 test("local retirement waits for accepted work and cleanup before creating another consent host", async () => {

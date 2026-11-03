@@ -18,6 +18,14 @@ export class ComputerPollingOutage extends ComputerConnectionError {
     }
 }
 
+/** A failed read whose controller and native resources have been confirmed closed. */
+export class ComputerObservationEnded extends Error {
+    /** Report a retired viewing attempt without treating it as unconfirmed cleanup. */
+    constructor() {
+        super("Computer observation ended. New local consent is required.");
+    }
+}
+
 /**
  * Deliver sequential one-time commands only inside an already accepted local controller.
  * @param options - Fixed private transport, credential and consented controller; no host factory or retry hook.
@@ -68,7 +76,7 @@ export async function runComputerCommandLoop(options: {
             try {
                 const result =
                     command.operation.action === "observe"
-                        ? await options.controller.observe(operationSignal)
+                        ? await observe(options.controller, operationSignal)
                         : await options.controller.act(
                               command.operation,
                               operationSignal
@@ -91,6 +99,20 @@ export async function runComputerCommandLoop(options: {
         if (!isComputerCancellation(error, signal)) throw error;
     } finally {
         await closeController(options.controller);
+    }
+}
+
+async function observe(controller: ComputerConsentController, signal: AbortSignal) {
+    try {
+        return await controller.observe(signal);
+    } catch (error) {
+        // Capture errors cannot have sent input. Retire this grant, but keep the
+        // paired companion available for a new explicitly approved selection.
+        // A failed reap is still terminal and must never permit replacement.
+        await closeController(controller);
+        if (error instanceof RuntimeCleanupError) throw error;
+        if (isComputerCancellation(error, controller.signal)) throw error;
+        throw new ComputerObservationEnded();
     }
 }
 
