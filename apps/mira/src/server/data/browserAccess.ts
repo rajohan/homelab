@@ -107,7 +107,7 @@ export async function readBrowserAccess(
     const [row] = await query<AccessRow[]>`
         SELECT g.id,g.run_id AS "runId",g.run_lease AS "runLease",g.mode,g.state,g.host_token AS "hostToken",(g.policy - 'delegatedMode') AS policy,g.expires_at AS "expiresAt",coalesce(console.controller,'mira') AS controller,
             (g.state IN ('pending','active') AND g.expires_at>clock_timestamp() AND r.manual
-                AND (NOT (g.policy ? 'connected') OR (r.automation_id IS NULL AND ${browserNetworkForOwner(owner)}))
+                AND (NOT (g.policy ? 'connected') OR (r.automation_id IS NULL AND NOT (g.policy ? 'delegatedMode') AND ${browserNetworkForOwner(owner)}))
                 AND r.state='running' AND NOT r.cancel_requested AND r.lease_token=g.run_lease
                 AND r.lease_expires_at>clock_timestamp() AND r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp()
                 AND c.deleted_at IS NULL AND coalesce(u.enabled,true) AND b.enabled
@@ -244,6 +244,11 @@ async function reserveBrowserAccess(
                     "Browser access ended for this run. The operator can grant a new session."
                 );
             }
+            if (policy.connected)
+                throw new MiraFailure(
+                    "FORBIDDEN",
+                    "Ask the operator to grant Home network access in Chat for this run."
+                );
             if (delegatedMode === "ask")
                 throw new MiraFailure(
                     "FORBIDDEN",
