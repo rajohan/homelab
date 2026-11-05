@@ -82,7 +82,7 @@ export function browserEgressFixture() {
         proxy,
         slot,
         browser,
-        check: (joined = false) =>
+        check: (joined = false, connected = false) =>
             verifyBrowserEgress(
                 (_method, route) =>
                     Promise.resolve({
@@ -90,7 +90,8 @@ export function browserEgressFixture() {
                         body: replies[route],
                     }),
                 config,
-                joined ? browserId : undefined
+                joined ? browserId : undefined,
+                connected
             ),
     };
 }

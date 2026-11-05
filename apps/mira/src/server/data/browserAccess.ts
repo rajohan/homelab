@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 
 import {
     publicBrowserScope,
+    connectedBrowserScope,
+    unrestrictedBrowserSites,
     miraBrowserAccessRequestSchema,
     miraBrowserAccessStopSchema,
     type MiraBrowserAccessSummary,
@@ -10,6 +12,7 @@ import type { TransactionSQL } from "bun";
 import * as v from "valibot";
 
 import { browserWorkerGrant } from "../browsing/wire";
+import { browserNetworkForOwner } from "../config/environment";
 import { miraRunPermission } from "./approvalPolicy";
 import { retireBrowserCommands } from "./browserRetirement";
 import {
@@ -43,7 +46,7 @@ async function requireBrowserProfile(
 type Policy = Pick<
     ReturnType<typeof browserWorkerGrant>,
     "origins" | "initialUrl" | "mode"
->;
+> & { connected?: true };
 interface AccessRow {
     id: string;
     runId: string;
@@ -102,6 +105,7 @@ export async function readBrowserAccess(
     const [row] = await query<AccessRow[]>`
         SELECT g.id,g.run_id AS "runId",g.run_lease AS "runLease",g.mode,g.state,g.host_token AS "hostToken",(g.policy - 'delegatedMode') AS policy,g.expires_at AS "expiresAt",coalesce(console.controller,'mira') AS controller,
             (g.state IN ('pending','active') AND g.expires_at>clock_timestamp() AND r.manual
+                AND (NOT (g.policy ? 'connected') OR (r.automation_id IS NULL AND ${browserNetworkForOwner(owner)}))
                 AND r.state='running' AND NOT r.cancel_requested AND r.lease_token=g.run_lease
                 AND r.lease_expires_at>clock_timestamp() AND r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp()
                 AND c.deleted_at IS NULL AND coalesce(u.enabled,true) AND b.enabled
@@ -159,6 +163,7 @@ export async function requestPublicBrowser(context: MiraContext, initialUrl: str
             runId: context.run.id,
             initialUrl,
             origins: [publicBrowserScope],
+            useConfiguredNetwork: true,
             mode: "view",
         },
         true
@@ -172,8 +177,15 @@ async function reserveBrowserAccess(
 ): Promise<MiraBrowserAccessSummary> {
     let policy: Policy;
     try {
+        const connected =
+            request.useConfiguredNetwork && browserNetworkForOwner(context.owner);
+        if (request.origins.includes(connectedBrowserScope))
+            throw new Error("The network is selected by the server.");
         const parsed = browserWorkerGrant({
-            origins: request.origins,
+            origins:
+                connected && unrestrictedBrowserSites(request.origins)
+                    ? [connectedBrowserScope]
+                    : request.origins,
             initialUrl: request.initialUrl,
             mode: request.mode,
         });
@@ -181,6 +193,7 @@ async function reserveBrowserAccess(
             origins: parsed.origins,
             initialUrl: parsed.initialUrl,
             mode: parsed.mode,
+            ...(connected ? { connected: true as const } : {}),
         };
     } catch {
         throw new MiraFailure(
@@ -216,7 +229,7 @@ async function reserveBrowserAccess(
                 );
             policy.mode = delegatedMode === "full_access" ? "control" : "view";
         }
-        if (request.profileId && policy.origins.includes(publicBrowserScope))
+        if (request.profileId && unrestrictedBrowserSites(policy.origins))
             throw new MiraFailure(
                 "BAD_REQUEST",
                 "Saved profiles require specific websites."
@@ -257,6 +270,7 @@ async function reserveBrowserAccess(
             LEFT JOIN mira_switches i ON i.owner=r.owner AND i.key='integration:agentmail'
             WHERE r.id=${request.runId} AND r.owner=${context.owner} AND r.manual AND r.state='running' AND NOT r.cancel_requested
                 AND r.lease_expires_at>clock_timestamp() AND r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp()
+                AND (NOT ${Boolean(policy.connected)} OR r.automation_id IS NULL)
                 AND (NOT ${delegated} OR (r.lease_token=${context.run?.leaseToken ?? null} AND r.automation_id IS NULL AND r.task_id IS NULL AND r.approval_revoked_at IS NULL AND r.settings->>'permissionMode'=${delegatedMode ?? null} AND c.settings->>'permissionMode'=${delegatedMode ?? null} AND c.archived_at IS NULL))
                 AND c.deleted_at IS NULL AND coalesce(u.enabled,true) AND b.enabled
                 AND (r.automation_id IS NULL OR (a.deleted_at IS NULL AND s.enabled AND

@@ -1,6 +1,18 @@
 import * as v from "valibot";
 
 export const publicBrowserScope = "public-web";
+export const connectedBrowserScope = "connected-web";
+
+/** Identify a temporary session that can navigate between unrelated websites.
+ * @param origins - Immutable site scope selected for the grant.
+ * @returns Whether the session uses a broad website scope.
+ */
+export function unrestrictedBrowserSites(origins: readonly string[]) {
+    return (
+        origins.length === 1 &&
+        (origins[0] === publicBrowserScope || origins[0] === connectedBrowserScope)
+    );
+}
 
 const id = v.pipe(v.string(), v.uuid());
 const address = v.pipe(v.string(), v.minLength(1), v.maxLength(2048));
@@ -31,6 +43,7 @@ export const miraBrowserAccessRequestSchema = v.strictObject({
     initialUrl: address,
     mode: v.picklist(["view", "control"]),
     profileId: v.optional(id),
+    useConfiguredNetwork: v.optional(v.boolean()),
 });
 export const miraBrowserProfileCreateSchema = v.strictObject({
     name: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(80)),

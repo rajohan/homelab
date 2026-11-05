@@ -16,6 +16,37 @@ async function qualify(file: string) {
     const origin = "http://public.mira.test";
     const grant = { origins: [origin], initialUrl: origin + "/", mode: "control" };
     const owner = new AbortController();
+    if (config.egress.connected) {
+        const session = await openBrowserWorker(
+            config,
+            {
+                origins: ["connected-web"],
+                initialUrl: "http://private.mira.test:8080/",
+                mode: "view",
+            },
+            owner.signal
+        );
+        try {
+            let page = await session.observe(owner.signal);
+            assert.equal(page.title, "Mira isolated fixture");
+            assert.ok(page.content.content[0]?.data);
+            await session.tabs(
+                { action: "open", url: "http://second.mira.test/" },
+                owner.signal
+            );
+            page = await session.observe(owner.signal);
+            assert.equal(page.title, "Mira isolated fixture");
+            assert.ok(!page.refs.some((ref) => ref.actions.includes("type")));
+        } finally {
+            await session.close();
+        }
+        return {
+            connectedChromium: true,
+            privateDns: true,
+            customWebPort: true,
+            tabs: true,
+        };
+    }
     const publicWeb = await openBrowserWorker(
         config,
         { ...grant, origins: ["public-web"] },

@@ -1,5 +1,5 @@
 import {
-    publicBrowserScope,
+    unrestrictedBrowserSites,
     type miraBrowserHumanOperationSchema,
 } from "@homelab/contracts/miraBrowser";
 import type { TransactionSQL } from "bun";
@@ -33,7 +33,7 @@ export async function requireBrowserDownload(
         access.controller !== "human" ||
         access.mode !== "control" ||
         access.policy?.origins.length !== 1 ||
-        access.policy.origins[0] === publicBrowserScope ||
+        unrestrictedBrowserSites(access.policy.origins) ||
         access.policy.origins[0] !== operation.origin
     )
         throw new MiraFailure(

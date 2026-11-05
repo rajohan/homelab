@@ -21,12 +21,14 @@ def main():
             if result.returncode:
                 raise RuntimeError("Disposable Docker operation failed: " + result.stderr[-3000:])
             return result.stdout.strip()
-        def network(suffix, subnet=None):
+        def network(suffix, subnet=None, ula=None):
             name = prefix + "-" + suffix
             args = ["network", "create", "--internal", "--label", "mira.qualification=" + prefix,
                     "--opt", "com.docker.network.bridge.gateway_mode_ipv4=isolated"]
             if subnet:
                 args += ["--subnet", subnet]
+            if ula:
+                args += ["--ipv6", "--subnet", ula, "--opt", "com.docker.network.bridge.gateway_mode_ipv6=isolated"]
             value = docker(*args, name)
             networks.append(value)
             return value
@@ -176,6 +178,40 @@ print(json.dumps({'localProxyAlias':True,'externalBrowserDnsBlocked':True}))
                 print(json.dumps({"proxy": {key: info[key] for key in ["Id", "Image", "Config", "HostConfig", "Mounts", "NetworkSettings", "State"]}}), flush=True)
                 raise
 
+            # Reuse the clean client slot; the new proxy is the only peer with a LAN interface.
+            docker("rm", "-f", proxy)
+            connected = prefix + "-connected"
+            home = prefix + "-home"
+            containers.extend([connected, home])
+            ula = ipaddress.ip_network("fd09:bb5a:" + uuid.uuid4().hex[:4] + "::/64")
+            lan4 = ipaddress.ip_network("10.242." + str(int(prefix[-2:], 16)) + ".0/28")
+            lan = network("lan", str(lan4), str(ula))
+            resolver, private6 = str(lan4[3]), str(ula[3])
+            docker("run", "-d", "--name", home, "--network", lan, "--ip", resolver, "--ip6", private6,
+                "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true", "--read-only", "--tmpfs", "/tmp:rw,size=8m",
+                "--env", "PUBLIC_IP=" + resolver, "--env", "PRIVATE_IP=" + resolver, "--env", "PRIVATE6=" + private6,
+                "homelab-browser-egress-fixture:local", "serve")
+            docker("create", "--name", connected,
+                "--network", f"name={client},ip={proxy_ip},alias=mira-egress,driver-opt=com.docker.network.endpoint.ifname=browser",
+                "--cap-drop", "ALL", "--cap-add", "NET_ADMIN", "--cap-add", "SETUID", "--cap-add", "SETGID", "--cap-add", "SETPCAP",
+                "--security-opt", "no-new-privileges:true", "--read-only", "--tmpfs", "/tmp:rw,nosuid,nodev,size=16m,mode=1777",
+                "--sysctl", "net.ipv4.ip_forward=0", "homelab-browser-proxy-test:local", "connected", resolver, str(lan4), str(ula))
+            docker("network", "connect", "--driver-opt", "com.docker.network.endpoint.ifname=external", lan, connected)
+            docker("start", connected)
+            for _ in range(40):
+                if docker("inspect", "--format", "{{.State.Health.Status}}", connected) == "healthy":
+                    break
+                time.sleep(.2)
+            else:
+                raise RuntimeError(docker("logs", connected))
+            assert probe(client, endpoint, "https://private.mira.test/")["status"] == 200
+            assert probe(client, endpoint, "http://[" + private6 + "]:8080/")["status"] == 200
+            for target in ["169.254.169.254", "127.0.0.1", "[::1]", resolver + ":2375"]:
+                assert probe(client, endpoint, "http://" + target + "/")["status"] == 403
+            assert probe(client, "direct", "http://" + resolver + "/")["status"] == "blocked"
+            config["egress"].update(connected=True, proxyId=docker("inspect", "--format", "{{.Id}}", connected))
+            config_path.write_text(json.dumps(config))
+            subprocess.run(["bun", "--no-env-file", "apps/mira/src/server/testing/browserEgressSmoke.ts", str(config_path)], cwd=root, env=environment, check=True, timeout=100)
         finally:
             if native_image and client:
                 # A killed host test may not reach its async close. Reap only this fixture's

@@ -1,6 +1,7 @@
 import type { MiraRun } from "@homelab/contracts/mira";
 import {
     publicBrowserScope,
+    connectedBrowserScope,
     type miraBrowserAccessRequestSchema,
 } from "@homelab/contracts/miraBrowser";
 import {
@@ -27,6 +28,11 @@ import { useOperation } from "../operations/useOperation";
 import { BrowserProfileControls } from "./BrowserProfileControls";
 import { accessStatusTone } from "./statusTone";
 import { browserAccessLabel, useBrowserAccess } from "./useBrowserAccess";
+
+function siteLabel(origin: string) {
+    if (origin === connectedBrowserScope) return "Web and home network";
+    return origin === publicBrowserScope ? "Public web" : origin;
+}
 
 /**
  * Grant exact website origins to the isolated server browser for this live manual run.
@@ -116,11 +122,7 @@ export function BrowserAccessDialog({
                         {access.origins.length > 0 && (
                             <ul className="space-y-1 text-sm break-all text-primary-300">
                                 {access.origins.map((origin) => (
-                                    <li key={origin}>
-                                        {origin === publicBrowserScope
-                                            ? "Public web"
-                                            : origin}
-                                    </li>
+                                    <li key={origin}>{siteLabel(origin)}</li>
                                 ))}
                             </ul>
                         )}
@@ -156,7 +158,7 @@ export function BrowserAccessDialog({
                     </p>
                 )}
                 {(controls.isPending || (run && accessQuery.isPending)) && (
-                    <LoadingState label="Loading browser access…" />
+                    <LoadingState label="Loading browser accessâ€¦" />
                 )}
                 {controls.error && <ErrorNotice error={controls.error} />}
                 {accessQuery.error && <ErrorNotice error={accessQuery.error} />}
@@ -212,6 +214,7 @@ export function BrowserAccessDialog({
                             request.mutate({
                                 runId: run.id,
                                 initialUrl: initialUrl.trim(),
+                                useConfiguredNetwork: true,
                                 origins:
                                     sites === "public" && !profileId
                                         ? [publicBrowserScope]
@@ -230,14 +233,20 @@ export function BrowserAccessDialog({
                         }}
                     >
                         {!profileId && (
-                            <FormField label="Websites">
+                            <FormField
+                                label="Websites"
+                                description="On a connected host this includes sites on your home network."
+                            >
                                 <Select
                                     label="Website access"
                                     value={sites}
                                     onChange={setSites}
                                     disabled={request.isPending}
                                     options={[
-                                        { value: "public", label: "Public web" },
+                                        {
+                                            value: "public",
+                                            label: "All available websites",
+                                        },
                                         { value: "specific", label: "Specific websites" },
                                     ]}
                                 />
@@ -283,7 +292,7 @@ export function BrowserAccessDialog({
                                     { value: "view", label: "View only" },
                                     {
                                         value: "control",
-                                        label: "Control — view, click and type",
+                                        label: "Control â€” view, click and type",
                                     },
                                 ]}
                                 onChange={setMode}

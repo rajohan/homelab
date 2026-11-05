@@ -542,3 +542,41 @@ test.each(["approve_for_me", "full_access"] as const)(
         }
     }
 );
+
+test("home network access needs the installed operator, a fresh request and a matching live binding", async () => {
+    const f = await fixture();
+    const key = "HOMELAB_MIRA_BROWSER_NETWORK_OWNER";
+    const previous = process.env[key];
+    try {
+        const request = {
+            ...f.request,
+            initialUrl: "http://home.lan:8080/",
+            origins: ["public-web"],
+        };
+        process.env[key] = "someone-else";
+        await rejects(f.api.browser.request({ ...request, useConfiguredNetwork: true }));
+        process.env[key] = f.context.owner;
+        await rejects(f.api.browser.request(request));
+        await rejects(f.api.browser.request({ ...request, origins: ["connected-web"] }));
+        await rejects(requestPublicBrowser(f.worker, request.initialUrl), /operator/);
+        const created = await f.api.browser.request({
+            ...request,
+            useConfiguredNetwork: true,
+        });
+        expect(created.origins).toEqual(["connected-web"]);
+        const claim = await claimMiraBrowserAccess(f.worker, created.id);
+        expect(claim.policy.connected).toBe(true);
+        process.env[key] = "someone-else";
+        await rejects(
+            requireMiraBrowserAccess(f.worker, {
+                id: claim.id,
+                hostToken: claim.hostToken,
+                mode: "view",
+            })
+        );
+    } finally {
+        if (previous === undefined) delete process.env[key];
+        else process.env[key] = previous;
+        await f.close();
+    }
+});

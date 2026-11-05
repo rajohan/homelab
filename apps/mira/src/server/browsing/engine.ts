@@ -4,14 +4,14 @@ import path from "node:path";
 import * as v from "valibot";
 
 import { browserDockerRequest, type BrowserDockerRequest } from "./docker";
-import { browserEgressSchema } from "./egress";
+import { browserSlotSchema } from "./egress";
 import { browserProfileSchema } from "./profile";
 
 const imageId = v.pipe(v.string(), v.regex(/^sha256:[a-f0-9]{64}$/));
 export const browserEngineConfigurationSchema = v.strictObject({
     socketPath: v.pipe(v.string(), v.minLength(1), v.maxLength(4096)),
     imageId,
-    egress: v.optional(browserEgressSchema),
+    egress: v.optional(browserSlotSchema),
     profile: v.optional(browserProfileSchema),
 });
 const inspection = v.object({

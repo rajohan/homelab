@@ -1,6 +1,10 @@
 import path from "node:path";
 
-import { publicBrowserScope } from "@homelab/contracts/miraBrowser";
+import {
+    publicBrowserScope,
+    connectedBrowserScope,
+    unrestrictedBrowserSites,
+} from "@homelab/contracts/miraBrowser";
 import * as v from "valibot";
 
 const address = v.pipe(v.string(), v.minLength(1), v.maxLength(2048));
@@ -24,7 +28,7 @@ export function browserGrant(input: unknown): BrowserGrant {
     const grant = v.parse(grantSchema, input);
     if (!path.isAbsolute(grant.executable))
         throw new Error("Browser executable must be an absolute local path.");
-    if (grant.origins.length === 1 && grant.origins[0] === publicBrowserScope) {
+    if (unrestrictedBrowserSites(grant.origins)) {
         if (grant.savedProfile || grant.uploads || grant.downloads)
             throw new Error(
                 "Public browsing requires a temporary profile without file transfers."
@@ -82,6 +86,7 @@ export function browserUrl(input: unknown, origins: readonly string[]): string {
             throw new Error("Choose a public website on a standard web port.");
         return url.href;
     }
+    if (origins.length === 1 && origins[0] === connectedBrowserScope) return url.href;
     if (!origins.includes(url.origin)) throw new Error("Browser origin is not allowed.");
     return url.href;
 }
@@ -99,7 +104,7 @@ export function browserManifest(
     downloadRoot?: string
 ) {
     const grant = browserGrant(input);
-    if (grant.origins.includes(publicBrowserScope))
+    if (unrestrictedBrowserSites(grant.origins))
         throw new Error("The native driver requires exact website origins.");
     if (
         Boolean(grant.uploads) !== Boolean(uploadRoot) ||

@@ -1,0 +1,28 @@
+# Add to the installed Compose files only for an account with operator browser access.
+x-owner: &owner
+  HOMELAB_MIRA_BROWSER_NETWORK_OWNER: ${HOMELAB_MIRA_BROWSER_NETWORK_OWNER:?Set the Homelab operator account}
+
+services:
+  dashboard:
+    environment: *owner
+  mira:
+    environment: *owner
+  mira-browser-host:
+    environment: *owner
+  mira-browser-proxy-b:
+    command:
+      - connected
+      - ${HOMELAB_MIRA_BROWSER_DNS:?Set the private IPv4 resolver}
+      - ${HOMELAB_MIRA_BROWSER_LAN_V4:?Set the routed LAN IPv4 subnet}
+      - ${HOMELAB_MIRA_BROWSER_LAN_V6:?Set the routed LAN IPv6 subnet}
+    networks: !override
+      mira-browser-b:
+        aliases: [mira-egress]
+        interface_name: browser
+      mira-browser-connected-outbound:
+        interface_name: external
+        gw_priority: 1
+
+networks:
+  mira-browser-connected-outbound:
+    enable_ipv6: true

@@ -76,6 +76,11 @@ def serve():
     threading.Thread(target=dns.serve_forever, daemon=True).start()
     http_server = http.server.ThreadingHTTPServer(("0.0.0.0", 80), Site)
     threading.Thread(target=http_server.serve_forever, daemon=True).start()
+    if "PRIVATE6" in os.environ:
+        class Site6(http.server.ThreadingHTTPServer):
+            address_family = socket.AF_INET6
+        for extra in (Site6((os.environ["PRIVATE6"], 8080), Site), http.server.ThreadingHTTPServer(("0.0.0.0", 8080), Site)):
+            threading.Thread(target=extra.serve_forever, daemon=True).start()
     https = http.server.ThreadingHTTPServer(("0.0.0.0", 443), Site)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain("/tmp/cert.pem", "/tmp/key.pem")

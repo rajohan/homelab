@@ -9,6 +9,11 @@ export const browserEgressSchema = v.strictObject({
     proxyId: id,
     proxyImageId: imageId,
 });
+export const browserSlotSchema = v.strictObject({
+    ...browserEgressSchema.entries,
+    connected: v.optional(v.literal(true)),
+});
+export type BrowserSlot = v.InferOutput<typeof browserSlotSchema>;
 export type BrowserEgress = v.InferOutput<typeof browserEgressSchema>;
 const endpoint = v.object({
     NetworkID: id,
@@ -66,14 +71,16 @@ function fail(): never {
  * @param call - Fixed local Engine transport owned by the host; never a model endpoint.
  * @param input - Installed network, proxy container and proxy image identities.
  * @param browserId - This reservation's sole permitted browser, if already created.
+ * @param connected - Whether this reservation explicitly expects the operator network. Code jobs always use the default.
  * @returns Completion only when the slot has no other peers and the proxy uses its baked policy.
  */
 export async function verifyBrowserEgress(
     call: BrowserDockerRequest,
     input: BrowserEgress,
-    browserId?: string
+    browserId?: string,
+    connected = false
 ): Promise<void> {
-    const config = v.parse(browserEgressSchema, input);
+    const config = v.parse(connected ? browserSlotSchema : browserEgressSchema, input);
     if (browserId) v.parse(id, browserId);
     const [networkReply, proxyReply, imageReply] = await Promise.all([
         call("GET", `/networks/${config.networkId}`),
@@ -117,7 +124,9 @@ export async function verifyBrowserEgress(
         !slot?.Aliases?.includes("mira-egress") ||
         slot.DriverOpts?.["com.docker.network.endpoint.ifname"] !== "browser" ||
         !equal(proxy.Config.Entrypoint, ["/usr/local/bin/mira-egress"]) ||
-        (proxy.Config.Cmd?.length ?? 0) > 0 ||
+        (connected
+            ? proxy.Config.Cmd?.[0] !== "connected" || proxy.Config.Cmd.length !== 4
+            : (proxy.Config.Cmd?.length ?? 0) > 0) ||
         !equal(proxy.Config.Env, image.Config.Env) ||
         !equal(proxy.Config.Healthcheck.Test, [
             "CMD",

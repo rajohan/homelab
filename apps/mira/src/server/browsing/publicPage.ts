@@ -1,16 +1,15 @@
-import { publicBrowserScope } from "@homelab/contracts/miraBrowser";
 import type { CDPSession } from "puppeteer-core";
 
 import { browserUrl } from "./policy";
 
-const origins = [publicBrowserScope];
 const textInputTypes = ["text", "url", "search", "tel", "email"];
 
 /** Read the current top document identity before observing or applying input.
  * @param cdp - Private connection to one page in the isolated container.
  * @returns The current frame, loader and validated public URL.
+ * @param origins - Site scope bound to the session.
  */
-export async function publicDocument(cdp: CDPSession) {
+export async function publicDocument(cdp: CDPSession, origins: readonly string[]) {
     const {
         frameTree: { frame },
     } = await cdp.send("Page.getFrameTree");

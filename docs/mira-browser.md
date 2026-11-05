@@ -1,6 +1,14 @@
 # Mira server browser
 
-In manual Chat, Mira can open public websites within the conversation’s permission mode. Public web uses an isolated temporary Chromium profile behind the private egress proxy. Choose Specific websites to limit the session to exact origins or use saved sign-ins and file transfers. The separate trusted browser host consumes their durable commands and owns Docker cleanup. Chat includes human origin/mode selection and a direct stop control using the shared responsive components.
+In manual Chat, Mira can open public websites and, on a connected host, websites reachable on the operator’s home network within the conversation’s permission mode. Public web uses an isolated temporary Chromium profile behind the private egress proxy. Choose Specific websites to limit the session to exact origins or use saved sign-ins and file transfers. The separate trusted browser host consumes their durable commands and owns Docker cleanup. Chat includes human origin/mode selection and a direct stop control using the shared responsive components.
+
+## Home network access
+
+For your account, **All available websites** covers public sites and the configured LAN and Meshnet. You can use a name, IP address or a custom web port without registering each site. Ask requires a grant in Chat; Approve for me allows viewing; Full access also allows clicking and typing. Website sign-in and permissions still apply. A private site must be reachable from the server, not just from your PC. This does not make any service reachable from the internet.
+
+Install the optional `deploy/compose.browser-network.yaml` after the other Compose files. Set `HOMELAB_MIRA_BROWSER_NETWORK_OWNER` to the Homelab operator account, `HOMELAB_MIRA_BROWSER_DNS` to its LAN resolver, and `HOMELAB_MIRA_BROWSER_LAN_V4` and `HOMELAB_MIRA_BROWSER_LAN_V6` to the routed IPv4 and ULA prefixes. Mark only browser slot B with `"connected": true` in the private host configuration, with that proxy's verified identities. Recreate the affected services to apply these settings. Older grants retain their original network. An absent or mismatched connected proxy cannot fall back to another slot. Remove the overlay, account binding and slot marker together to return to public-only operation.
+
+Both public and internal tabs share the connected browser's network while access is active. Use exact websites for saved sign-ins and approved file transfers. Other accounts, unconfigured installations and the code runner do not acquire this route. Loopback, link-local metadata and Docker management are outside browsing scope.
 
 ## Browser tabs
 

@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import * as v from "valibot";
 
 import type { BrowserDockerRequest } from "./docker";
-import { browserEgressSchema, verifyBrowserEgress, type BrowserEgress } from "./egress";
+import { browserSlotSchema, verifyBrowserEgress, type BrowserSlot } from "./egress";
 import { browserEngine } from "./engine";
 import { browserProfileDirectory, type BrowserProfile } from "./profile";
 
@@ -60,10 +60,10 @@ export class BrowserContainerCleanupError extends Error {
 export function browserContainerSpec(
     image: string,
     owner: string,
-    egress?: BrowserEgress,
+    egress?: BrowserSlot,
     profile?: BrowserProfile
 ) {
-    if (egress) v.parse(browserEgressSchema, egress);
+    if (egress) v.parse(browserSlotSchema, egress);
     v.parse(imageId, image);
     v.parse(v.pipe(v.string(), v.uuid()), owner);
     return {
@@ -82,7 +82,13 @@ export function browserContainerSpec(
         ...(egress || profile
             ? {
                   Env: [
-                      ...(egress ? ["MIRA_BROWSER_NETWORK=public"] : []),
+                      ...(egress
+                          ? [
+                                egress.connected
+                                    ? "MIRA_BROWSER_NETWORK=connected"
+                                    : "MIRA_BROWSER_NETWORK=public",
+                            ]
+                          : []),
                       ...(profile
                           ? [
                                 "MIRA_BROWSER_PROFILE=saved",
@@ -174,7 +180,8 @@ export async function prepareBrowserContainer(
             await verifyBrowserEgress(
                 call,
                 config.egress,
-                networkJoined ? id : undefined
+                networkJoined ? id : undefined,
+                config.egress.connected ?? false
             );
     };
     const controller = new AbortController();

@@ -1,6 +1,6 @@
 import {
     miraBrowserConsoleSchema,
-    publicBrowserScope,
+    unrestrictedBrowserSites,
     type miraBrowserHumanOperationSchema,
     type MiraBrowserUploadFile,
 } from "@homelab/contracts/miraBrowser";
@@ -53,7 +53,7 @@ export async function listMiraBrowserUploads(
             access.controller !== "human" ||
             access.mode !== "control" ||
             access.policy?.origins.length !== 1 ||
-            access.policy.origins[0] === publicBrowserScope
+            unrestrictedBrowserSites(access.policy.origins)
         )
             throw new MiraFailure(
                 "PRECONDITION_FAILED",
@@ -85,7 +85,7 @@ export async function requireBrowserUpload(
         access.controller !== "human" ||
         access.mode !== "control" ||
         access.policy?.origins.length !== 1 ||
-        access.policy.origins[0] === publicBrowserScope ||
+        unrestrictedBrowserSites(access.policy.origins) ||
         access.policy.origins[0] !== operation.origin
     )
         throw new MiraFailure(
