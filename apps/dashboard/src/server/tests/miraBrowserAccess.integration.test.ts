@@ -371,6 +371,10 @@ test("saved browser profiles require fresh humans, remain owner-only and cannot 
             f.caller("operator", "operator", "human", false).browser.createProfile(input),
             /verified operator/
         );
+        await rejects(
+            f.caller().browser.createProfile({ ...input, origins: ["public-web"] }),
+            /exact HTTP/
+        );
         await rejects(createMiraBrowserProfile(f.worker, input), /signed-in operator/);
         for (const origins of [
             ["https://example.test/"],

@@ -50,6 +50,8 @@ async function qualify(file: string) {
         );
         frame = await publicWeb.observe(owner.signal);
         assert.ok(frame.outline.includes("Public input"));
+        assert.ok(!frame.refs.some((ref) => ref.label === "Secret"));
+        assert.ok(!frame.outline.includes("do-not-expose-fixture"));
         assert.ok(
             !frame.refs.some(
                 (ref) => ref.label === "Read only" && ref.actions.includes("type")

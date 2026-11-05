@@ -32,14 +32,7 @@ export function browserGrant(input: unknown): BrowserGrant {
         browserUrl(grant.initialUrl, grant.origins);
         return grant;
     }
-    const origins = grant.origins.map((origin) => {
-        const url = webUrl(origin);
-        if (url.origin !== origin)
-            throw new Error("Browser origins must be exact canonical origins.");
-        return origin;
-    });
-    if (new Set(origins).size !== origins.length)
-        throw new Error("Browser origins must be unique.");
+    const origins = exactBrowserOrigins(grant.origins);
     if (
         (grant.uploads || grant.downloads) &&
         (grant.mode !== "control" || origins.length !== 1)
@@ -49,6 +42,22 @@ export function browserGrant(input: unknown): BrowserGrant {
         );
     browserUrl(grant.initialUrl, origins);
     return { ...grant, origins };
+}
+
+/** Validate the immutable site list for an exact-site session or saved sign-in.
+ * @param sites - Parsed list of requested website origins.
+ * @returns A copy containing only unique canonical HTTP(S) origins.
+ */
+export function exactBrowserOrigins(sites: readonly string[]): string[] {
+    const origins = sites.map((origin) => {
+        const url = webUrl(origin);
+        if (url.origin !== origin)
+            throw new Error("Browser origins must be exact canonical origins.");
+        return origin;
+    });
+    if (new Set(origins).size !== origins.length)
+        throw new Error("Browser origins must be unique.");
+    return origins;
 }
 
 /**

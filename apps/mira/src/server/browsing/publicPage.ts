@@ -4,6 +4,7 @@ import type { CDPSession } from "puppeteer-core";
 import { browserUrl } from "./policy";
 
 const origins = [publicBrowserScope];
+const textInputTypes = ["text", "url", "search", "tel", "email"];
 
 /** Read the current top document identity before observing or applying input.
  * @param cdp - Private connection to one page in the isolated container.
@@ -27,6 +28,47 @@ export async function publicOutline(cdp: CDPSession, frameId: string, control: b
         frameId,
         depth: 18,
     });
+    // AX uses the same role for ordinary text and passwords. Check the actual element
+    // before exposing a field value or an input handle; cap work on large forms.
+    const fields = nodes
+        .filter(
+            (node) =>
+                !node.ignored &&
+                (!node.frameId || node.frameId === frameId) &&
+                node.backendDOMNodeId &&
+                ["textbox", "searchbox"].includes(String(node.role?.value))
+        )
+        .slice(0, 200);
+    const editable = new Set<number>();
+    await Promise.all(
+        fields.map(async (field) => {
+            const id = field.backendDOMNodeId!;
+            const described = await cdp
+                .send("DOM.describeNode", { backendNodeId: id, depth: 0 })
+                .catch(() => null);
+            if (!described) return;
+            const { node } = described;
+            if (node.localName === "input") {
+                const attributes = node.attributes ?? [];
+                const index = attributes.findIndex(
+                    (name, i) => i % 2 === 0 && name === "type"
+                );
+                const type =
+                    index === -1
+                        ? "text"
+                        : attributes[index + 1]?.toLowerCase() || "text";
+                if (!textInputTypes.includes(type)) return;
+            }
+            if (
+                field.properties?.some((p) => p.name === "editable" && p.value.value) &&
+                !field.properties.some(
+                    (p) =>
+                        (p.name === "readonly" || p.name === "disabled") && p.value.value
+                )
+            )
+                editable.add(id);
+        })
+    );
     const refs: {
         ref: string;
         role: string;
@@ -45,7 +87,9 @@ export async function publicOutline(cdp: CDPSession, frameId: string, control: b
         const line = [
             role,
             label,
-            (role === "textbox" || role === "searchbox") && typeof fieldValue === "string"
+            node.backendDOMNodeId &&
+            editable.has(node.backendDOMNodeId) &&
+            typeof fieldValue === "string"
                 ? fieldValue.slice(0, 256)
                 : "",
             typeof href === "string" ? href.slice(0, 2048) : "",
@@ -65,13 +109,8 @@ export async function publicOutline(cdp: CDPSession, frameId: string, control: b
         )
             continue;
         const actions: ("click" | "type")[] = [];
-        if (role === "textbox" || role === "searchbox") {
-            if (
-                node.properties?.some((p) => p.name === "editable" && p.value.value) &&
-                !node.properties.some((p) => p.name === "readonly" && p.value.value)
-            )
-                actions.push("type");
-        } else if (
+        if (editable.has(node.backendDOMNodeId)) actions.push("type");
+        else if (
             ["button", "link", "checkbox", "radio", "tab", "menuitem", "switch"].includes(
                 role
             )
@@ -116,7 +155,7 @@ export async function publicInput(
             functionDeclaration: `function(action) {
                 if (!(this instanceof HTMLElement) || !this.isConnected || !this.checkVisibility() || this.matches(":disabled,input[type=password],input[type=file]")) return false;
                 if (action.action === "click") { this.click(); return true; }
-                const nativeField = this instanceof HTMLTextAreaElement || this instanceof HTMLInputElement && ["text","url","search","tel","email"].includes(this.type);
+                const nativeField = this instanceof HTMLTextAreaElement || this instanceof HTMLInputElement && ${JSON.stringify(textInputTypes)}.includes(this.type);
                 if (!(nativeField || this.isContentEditable) || this.readOnly || this.matches("[aria-readonly=true],[aria-disabled=true]")) return false;
                 this.focus();
                 if (document.activeElement !== this) return false;
