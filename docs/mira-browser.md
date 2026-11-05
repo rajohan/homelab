@@ -8,6 +8,8 @@ For your account, **All available websites** covers public sites and the configu
 
 Install the optional `deploy/compose.browser-network.yaml` after the other Compose files. Set `HOMELAB_MIRA_BROWSER_NETWORK_OWNER` to the Homelab operator account, `HOMELAB_MIRA_BROWSER_DNS` to its LAN resolver, and `HOMELAB_MIRA_BROWSER_LAN_V4` and `HOMELAB_MIRA_BROWSER_LAN_V6` to the routed IPv4 and ULA prefixes. Mark only browser slot B with `"connected": true` in the private host configuration, with that proxy's verified identities. Recreate the affected services to apply these settings. Older grants retain their original network. An absent or mismatched connected proxy cannot fall back to another slot. Remove the overlay, account binding and slot marker together to return to public-only operation.
 
+The proxy resolves IPv4 and IPv6 together and binds each hostname to its first network class for at least 30 minutes after use (a grant lasts at most five). Mixed public/LAN answers and changes of class are refused, including after the upstream DNS TTL expires.
+
 Both public and internal tabs share the connected browser's network while access is active. Use exact websites for saved sign-ins and approved file transfers. Other accounts, unconfigured installations and the code runner do not acquire this route. Loopback, link-local metadata and Docker management are outside browsing scope.
 
 ## Browser tabs

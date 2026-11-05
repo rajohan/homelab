@@ -12,13 +12,15 @@ import threading
 import urllib.error
 import urllib.request
 
-state = {"privateHits": 0, "flipped": False, "dns": 0}
+state = {"reboundHits": 0,"privateHits": 0, "flipped": False, "dns": 0}
 
 class Site(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         """Serve bounded synthetic responses and count access to the private interface."""
-        if self.connection.getsockname()[0] == os.environ.get("PRIVATE_IP"):
+        if self.connection.getsockname()[0] in (os.environ.get("PRIVATE_IP"), os.environ.get("PRIVATE6")):
             state["privateHits"] += 1
+            if self.path == "/rebind-probe":
+                state["reboundHits"] += 1
         if self.path == "/_flip":
             state["flipped"] = True
         if self.path == "/redirect-private":
@@ -63,9 +65,15 @@ class DNS(socketserver.BaseRequestHandler):
                 addresses = [private]
             elif name == "mixed.mira.test":
                 addresses = [public, private]
+            elif name == "flip6.mira.test" and not state["flipped"]:
+                addresses = [public]
+            elif name == "mixed6.mira.test":
+                addresses = [public]
             elif name == "flip.mira.test":
                 addresses = [private if state["flipped"] else public]
-        answers = b"".join(b"\xc0\x0c" + struct.pack("!HHIH", 1, 1, 0, 4) + socket.inet_aton(address) for address in addresses)
+        if kind == 28 and os.environ.get("PRIVATE6") and (name in ("private6.mira.test", "mixed6.mira.test") or (name == "flip6.mira.test" and state["flipped"])):
+            addresses = [os.environ["PRIVATE6"]]
+        answers = b"".join(b"\xc0\x0c" + struct.pack("!HHIH", kind, 1, 0, 16 if kind == 28 else 4) + socket.inet_pton(socket.AF_INET6 if kind == 28 else socket.AF_INET, address) for address in addresses)
         response = data[:2] + struct.pack("!HHHHH", 0x8180, 1, len(addresses), 0, 0) + data[12:offset + 4] + answers
         transport.sendto(response, self.client_address)
 
@@ -79,7 +87,7 @@ def serve():
     if "PRIVATE6" in os.environ:
         class Site6(http.server.ThreadingHTTPServer):
             address_family = socket.AF_INET6
-        for extra in (Site6((os.environ["PRIVATE6"], 8080), Site), http.server.ThreadingHTTPServer(("0.0.0.0", 8080), Site)):
+        for extra in (Site6((os.environ["PRIVATE6"], 80), Site), Site6((os.environ["PRIVATE6"], 8080), Site), http.server.ThreadingHTTPServer(("0.0.0.0", 8080), Site)):
             threading.Thread(target=extra.serve_forever, daemon=True).start()
     https = http.server.ThreadingHTTPServer(("0.0.0.0", 443), Site)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)

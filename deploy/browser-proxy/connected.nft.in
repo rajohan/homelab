@@ -4,6 +4,7 @@ table inet mira_egress {
     chain input {
         type filter hook input priority 0; policy drop;
         ct state established,related accept
+        iifname "lo" ip daddr 127.0.0.1 udp dport 53 accept
         iifname "external" ip6 hoplimit 255 icmpv6 type { nd-neighbor-solicit, nd-neighbor-advert, nd-router-advert } accept
         iifname "browser" tcp dport 3128 accept
     }
@@ -14,6 +15,7 @@ table inet mira_egress {
         # Inspect Docker DNS before its local destination-port translation.
         type filter hook output priority -150; policy drop;
         ct state established,related accept
+        oifname "lo" ip daddr 127.0.0.1 udp dport 53 accept
         oifname != "external" drop
         ip daddr @dns@ udp dport 53 accept
         ip daddr @dns@ tcp dport 53 accept
