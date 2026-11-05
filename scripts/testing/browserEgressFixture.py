@@ -26,7 +26,7 @@ class Site(http.server.BaseHTTPRequestHandler):
             self.send_header("Location", "http://" + os.environ["PRIVATE_IP"] + "/forbidden")
             self.end_headers()
             return
-        body = json.dumps(state).encode() if self.path.startswith("/_") else b"<html><title>Mira isolated fixture</title><h1>Public synthetic website</h1><a href='http://second.mira.test/next'>Second website</a><a href='/popup' target='_blank' rel='noopener'>Open popup</a><input aria-label='Fixture text'><button onclick=\"this.textContent='Clicked 1'\">Count</button></html>"
+        body = json.dumps(state).encode() if self.path.startswith("/_") else b"<html><title>Mira isolated fixture</title><h1>Public synthetic website</h1><a href='http://second.mira.test/next'>Second website</a><a href='/popup' target='_blank' rel='noopener'>Open popup</a><input aria-label='Fixture text'><div contenteditable='true' role='textbox' aria-label='Editor'>Old value</div><input readonly aria-label='Read only'><button onclick=\"this.textContent='Clicked 1'\">Count</button></html>"
         self.send_response(200)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()

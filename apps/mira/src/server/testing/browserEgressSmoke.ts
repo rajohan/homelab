@@ -50,6 +50,32 @@ async function qualify(file: string) {
         );
         frame = await publicWeb.observe(owner.signal);
         assert.ok(frame.outline.includes("Public input"));
+        assert.ok(
+            !frame.refs.some(
+                (ref) => ref.label === "Read only" && ref.actions.includes("type")
+            )
+        );
+        for (const [text, replace] of [
+            ["Updated", true],
+            [" editor", false],
+        ] as const) {
+            const editor = frame.refs.find(
+                (ref) => ref.label === "Editor" && ref.actions.includes("type")
+            );
+            assert.ok(editor);
+            await publicWeb.act(
+                {
+                    action: "type",
+                    observationId: frame.observationId,
+                    ref: editor.ref,
+                    text,
+                    replace,
+                },
+                owner.signal
+            );
+            frame = await publicWeb.observe(owner.signal);
+        }
+        assert.ok(frame.outline.includes("Updated editor"));
         await publicWeb.tabs({ action: "open", url: origin }, owner.signal);
         const denied = await publicWeb
             .navigate("http://private.mira.test/", owner.signal)

@@ -65,8 +65,13 @@ export async function publicOutline(cdp: CDPSession, frameId: string, control: b
         )
             continue;
         const actions: ("click" | "type")[] = [];
-        if (role === "textbox" || role === "searchbox") actions.push("type");
-        else if (
+        if (role === "textbox" || role === "searchbox") {
+            if (
+                node.properties?.some((p) => p.name === "editable" && p.value.value) &&
+                !node.properties.some((p) => p.name === "readonly" && p.value.value)
+            )
+                actions.push("type");
+        } else if (
             ["button", "link", "checkbox", "radio", "tab", "menuitem", "switch"].includes(
                 role
             )
@@ -111,10 +116,22 @@ export async function publicInput(
             functionDeclaration: `function(action) {
                 if (!(this instanceof HTMLElement) || !this.isConnected || !this.checkVisibility() || this.matches(":disabled,input[type=password],input[type=file]")) return false;
                 if (action.action === "click") { this.click(); return true; }
-                if (!(this instanceof HTMLTextAreaElement || this instanceof HTMLInputElement && ["text","url","search","tel","email"].includes(this.type)) || this.readOnly) return false;
+                const nativeField = this instanceof HTMLTextAreaElement || this instanceof HTMLInputElement && ["text","url","search","tel","email"].includes(this.type);
+                if (!(nativeField || this.isContentEditable) || this.readOnly || this.matches("[aria-readonly=true],[aria-disabled=true]")) return false;
                 this.focus();
                 if (document.activeElement !== this) return false;
-                if (action.replace) this.select();
+                if (nativeField) {
+                    if (action.replace) this.select();
+                    else if (this.selectionEnd !== null) this.setSelectionRange(this.value.length,this.value.length);
+                } else {
+                    const selection = document.getSelection();
+                    if (!selection) return false;
+                    const range = document.createRange();
+                    range.selectNodeContents(this);
+                    if (!action.replace) range.collapse(false);
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                }
                 return document.execCommand("insertText",false,action.text);
             }`,
         });
