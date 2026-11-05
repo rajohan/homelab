@@ -111,7 +111,7 @@ export function BrowserConsoleDialog({
                             description={
                                 human
                                     ? "Mira waits until you return control. Closing this window keeps Mira paused."
-                                    : "Shows MiraÃ¢â‚¬â„¢s latest view without interrupting its actions."
+                                    : "Shows Mira’s latest view without interrupting its actions."
                             }
                         />
                         <div className="flex flex-col gap-2 @min-[42rem]/browser-console:flex-row">
@@ -196,7 +196,7 @@ export function BrowserConsoleDialog({
                         </ActionGroup>
                         <FormField
                             label="Website address"
-                            description="Use a website included in this browserÃ¢â‚¬â„¢s approved access."
+                            description="Use a website included in this browser’s approved access."
                         >
                             <Input
                                 value={url}

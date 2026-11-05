@@ -158,7 +158,7 @@ export function BrowserAccessDialog({
                     </p>
                 )}
                 {(controls.isPending || (run && accessQuery.isPending)) && (
-                    <LoadingState label="Loading browser accessâ€¦" />
+                    <LoadingState label="Loading browser access…" />
                 )}
                 {controls.error && <ErrorNotice error={controls.error} />}
                 {accessQuery.error && <ErrorNotice error={accessQuery.error} />}
@@ -292,7 +292,7 @@ export function BrowserAccessDialog({
                                     { value: "view", label: "View only" },
                                     {
                                         value: "control",
-                                        label: "Control â€” view, click and type",
+                                        label: "Control — view, click and type",
                                     },
                                 ]}
                                 onChange={setMode}
