@@ -125,6 +125,8 @@ test("browser access defaults to view and submits only the explicitly approved o
             screen.getByRole("textbox", { name: "Starting URL" }),
             "https://example.test/page"
         );
+        await user.click(screen.getByRole("button", { name: /Website access/ }));
+        await user.click(screen.getByRole("option", { name: "Specific websites" }));
         await user.type(
             screen.getByRole("textbox", { name: /Other allowed origins/ }),
             "https://extra.test\nhttps://extra.test"

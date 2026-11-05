@@ -8,6 +8,7 @@ import {
     closeMiraBrowserAccess,
     requireMiraBrowserAccess,
     requestMiraBrowserAccess,
+    requestPublicBrowser,
 } from "@homelab/mira/data/browserAccess";
 import { reserveMiraBrowserProcess } from "@homelab/mira/data/browserProcesses";
 import { createMiraBrowserProfile } from "@homelab/mira/data/browserProfiles";
@@ -504,3 +505,36 @@ test("global profile reservations and database byte limits bound persistent snap
         await f.close();
     }
 });
+
+test.each(["approve_for_me", "full_access"] as const)(
+    "public browser follows %s and loses its grant on permission revocation",
+    async (mode) => {
+        const f = await fixture();
+        try {
+            await rejects(
+                requestPublicBrowser(f.worker, "https://example.org"),
+                /operator/
+            );
+            await f.client`UPDATE mira_runs SET settings=jsonb_set(settings,'{permissionMode}',to_jsonb(${mode}::text)) WHERE id=${f.run.id}`;
+            await f.client`UPDATE mira_conversations SET settings=jsonb_set(settings,'{permissionMode}',to_jsonb(${mode}::text)) WHERE id=${f.chat.id}`;
+            const grant = await requestPublicBrowser(f.worker, "https://example.org");
+            expect(grant.mode).toBe(mode === "full_access" ? "control" : "view");
+            const again = await requestPublicBrowser(f.worker, "https://example.com");
+            expect(again.id).toBe(grant.id);
+            const { id, hostToken } = await claimMiraBrowserAccess(f.worker, grant.id);
+            await requireMiraBrowserAccess(f.worker, { id, hostToken, mode: grant.mode });
+            if (mode === "approve_for_me")
+                await rejects(
+                    requireMiraBrowserAccess(f.worker, { id, hostToken, mode: "control" })
+                );
+            await f.client`UPDATE mira_runs SET approval_revoked_at=now() WHERE id=${f.run.id}`;
+            await rejects(
+                requireMiraBrowserAccess(f.worker, { id, hostToken, mode: "view" })
+            );
+            await f.api.browser.stop({ id });
+            await rejects(requestPublicBrowser(f.worker, "https://example.com"));
+        } finally {
+            await f.close();
+        }
+    }
+);

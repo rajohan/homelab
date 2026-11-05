@@ -504,36 +504,43 @@ test("stable tool declarations discover the current registry and preserve underl
     expect(() => current[0]!.execute({}, cancelled, call)).toThrow();
 });
 
-test("resuming an existing conversation applies the current trusted server instructions", async () => {
-    const runtime = await CodexRuntime.connect(options());
-    const requests = spyOn(RpcProcess.prototype, "request");
-    try {
-        const thread = await runtime.startThread(
-            "synthetic",
-            process.cwd(),
-            [],
-            "Original server policy."
-        );
-        await runtime.resumeThread(
-            thread,
-            [],
-            "Current server policy and tool discovery."
-        );
-        expect(
-            requests.mock.calls.find(([method]) => method === "thread/resume")?.[1]
-        ).toMatchObject({
-            threadId: thread,
-            developerInstructions: "Current server policy and tool discovery.",
-            sandbox: "read-only",
-            approvalPolicy: "untrusted",
-        });
-        const result = await runtime.turn(thread, "Continue");
-        expect(result.status).toBe("completed");
-    } finally {
-        requests.mockRestore();
-        await runtime.close();
+test.each([false, true])(
+    "start and resume use server instructions and the selected Chat search setting (%s)",
+    async (search) => {
+        const runtime = await CodexRuntime.connect(options(), search);
+        const requests = spyOn(RpcProcess.prototype, "request");
+        try {
+            const thread = await runtime.startThread(
+                "synthetic",
+                process.cwd(),
+                [],
+                "Original server policy."
+            );
+            expect(
+                requests.mock.calls.find(([method]) => method === "thread/start")?.[1]
+            ).toMatchObject({ config: { web_search: search ? "live" : "disabled" } });
+            await runtime.resumeThread(
+                thread,
+                [],
+                "Current server policy and tool discovery."
+            );
+            expect(
+                requests.mock.calls.find(([method]) => method === "thread/resume")?.[1]
+            ).toMatchObject({
+                threadId: thread,
+                config: { web_search: search ? "live" : "disabled" },
+                developerInstructions: "Current server policy and tool discovery.",
+                sandbox: "read-only",
+                approvalPolicy: "untrusted",
+            });
+            const result = await runtime.turn(thread, "Continue");
+            expect(result.status).toBe("completed");
+        } finally {
+            requests.mockRestore();
+            await runtime.close();
+        }
     }
-});
+);
 
 test("pre-router conversations retain current direct handlers when their provider catalog cannot change", async () => {
     const runtime = await CodexRuntime.connect(options("tool-ok"));

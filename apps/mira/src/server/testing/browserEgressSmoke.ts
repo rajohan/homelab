@@ -16,6 +16,51 @@ async function qualify(file: string) {
     const origin = "http://public.mira.test";
     const grant = { origins: [origin], initialUrl: origin + "/", mode: "control" };
     const owner = new AbortController();
+    const publicWeb = await openBrowserWorker(
+        config,
+        { ...grant, origins: ["public-web"] },
+        owner.signal
+    );
+    try {
+        let frame = await publicWeb.observe(owner.signal);
+        assert.equal(frame.title, "Mira isolated fixture");
+        const link = frame.refs.find(
+            (ref) => ref.role === "link" && ref.label === "Second website"
+        );
+        assert.ok(link);
+        await publicWeb.act(
+            { action: "click", observationId: frame.observationId, ref: link.ref },
+            owner.signal
+        );
+        frame = await publicWeb.observe(owner.signal);
+        assert.equal(frame.url, "http://second.mira.test/next");
+        const field = frame.refs.find(
+            (ref) => ref.actions.includes("type") && ref.label === "Fixture text"
+        );
+        assert.ok(field);
+        await publicWeb.act(
+            {
+                action: "type",
+                observationId: frame.observationId,
+                ref: field.ref,
+                text: "Public input",
+                replace: true,
+            },
+            owner.signal
+        );
+        frame = await publicWeb.observe(owner.signal);
+        assert.ok(frame.outline.includes("Public input"));
+        await publicWeb.tabs({ action: "open", url: origin }, owner.signal);
+        const denied = await publicWeb
+            .navigate("http://private.mira.test/", owner.signal)
+            .catch(() => null);
+        if (denied) {
+            const blocked = await publicWeb.observe(owner.signal);
+            assert.notEqual(blocked.title, "Mira isolated fixture");
+        }
+    } finally {
+        await publicWeb.close();
+    }
     const browser = await openBrowserWorker(config, grant, owner.signal);
     try {
         let frame = await browser.observe(owner.signal);

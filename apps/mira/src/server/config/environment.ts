@@ -169,3 +169,10 @@ export function browserDriverEnvironment(): Record<string, string> {
         environment.CUA_DRIVER_BROWSER_PROFILE_ROOT = "/var/lib/mira-browser-profile";
     return environment;
 }
+
+/** Check whether the browser host attached its verified private proxy slot.
+ * @returns Whether a transient public browser may start in this container.
+ */
+export function publicBrowserNetwork(): boolean {
+    return process.env.MIRA_BROWSER_NETWORK === "public";
+}

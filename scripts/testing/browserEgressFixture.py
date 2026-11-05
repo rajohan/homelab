@@ -26,7 +26,7 @@ class Site(http.server.BaseHTTPRequestHandler):
             self.send_header("Location", "http://" + os.environ["PRIVATE_IP"] + "/forbidden")
             self.end_headers()
             return
-        body = json.dumps(state).encode() if self.path.startswith("/_") else b"<html><title>Mira isolated fixture</title><h1>Public synthetic website</h1><input aria-label='Fixture text'><button onclick=\"this.textContent='Clicked 1'\">Count</button></html>"
+        body = json.dumps(state).encode() if self.path.startswith("/_") else b"<html><title>Mira isolated fixture</title><h1>Public synthetic website</h1><a href='http://second.mira.test/next'>Second website</a><input aria-label='Fixture text'><button onclick=\"this.textContent='Clicked 1'\">Count</button></html>"
         self.send_response(200)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
@@ -57,7 +57,7 @@ class DNS(socketserver.BaseRequestHandler):
         public, private = os.environ["PUBLIC_IP"], os.environ["PRIVATE_IP"]
         addresses = []
         if kind == 1:
-            if name == "public.mira.test":
+            if name in ("public.mira.test", "second.mira.test"):
                 addresses = [public]
             elif name == "private.mira.test":
                 addresses = [private]

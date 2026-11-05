@@ -57,6 +57,7 @@ import { createHereNowTools } from "../integrations/herenow/tools";
 import type { MoltbookReadConfiguration } from "../integrations/moltbook/configuration";
 import { createMoltbookTools } from "../integrations/moltbook/tools";
 import type { RuntimeTool } from "../runtime/protocol";
+import type { SyntheticConfiguration } from "../runtime/syntheticConfiguration";
 import { runtimeContentItems, type RuntimeToolResult } from "../runtime/toolResult";
 import type { LocalCodeBinding } from "../sandbox/localBinding";
 import { createMiraSkillTools } from "../skills/tools";
@@ -66,6 +67,7 @@ import { createMiraComputerTools } from "./computerTools";
 import { saveGeneratedMiraFile } from "./generatedFiles";
 import { createMiraRecallTools } from "./recallTools";
 import type { MiraToolContext, MiraToolDefinition } from "./toolDefinition";
+import { syntheticSearchTool } from "./webSearch";
 
 const taskAssessmentTools = new Set([
     "mira_tasks_list",
@@ -127,6 +129,7 @@ const object = (properties: Record<string, unknown>, required: string[] = []) =>
  * @param hereNow - Optional scoped website metadata settings; credentials stay in the executor.
  * @param moltbook - Optional social read settings, retained only by the service.
  * @param github - Optional GitHub mapping and dedicated read credential, retained only in the service closure.
+ * @param search - Owner-bound search for manual Synthetic chat turns.
  * @param localCode - Optional Main mapping; the run freezes its target before inference.
  * @param daytona - Nonsecret cloud job mapping; model tools cannot execute or approve.
  * @returns The fixed tool declarations for this conversation and their checked handlers.
@@ -140,7 +143,8 @@ export function createMiraTools(
     hereNow?: HereNowReadConfiguration,
     daytona?: DaytonaBinding,
     github?: GitHubBinding | GitHubConfiguration,
-    localCode?: LocalCodeBinding
+    localCode?: LocalCodeBinding,
+    search?: SyntheticConfiguration
 ): RuntimeTool<RuntimeToolResult>[] {
     const context: MiraContext = {
         client,
@@ -153,6 +157,9 @@ export function createMiraTools(
         ...createMiraRecallTools(client, run),
         ...createMiraComputerTools(),
         ...createMiraBrowserTools(),
+        ...(search?.owner === run.owner && run.manual && !run.automationId && !run.taskId
+            ? [syntheticSearchTool(search)]
+            : []),
         {
             name: "mira_file_create",
             description:
@@ -720,6 +727,8 @@ export function createMiraTools(
                     let message =
                         "The action outcome is uncertain. Do not retry; review this run before continuing.";
                     if (known && error instanceof MiraFailure) message = error.message;
+                    else if (readOnly && definition.name === "mira_web_search")
+                        message = "Web search failed. Check the query and try again.";
                     else if (readOnly)
                         message =
                             "The screen could not be captured. No clicks or keystrokes were sent. Check Computer access before requesting another observation.";
