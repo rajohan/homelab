@@ -82,7 +82,7 @@ export function browserEgressFixture() {
         proxy,
         slot,
         browser,
-        check: (joined = false, connected = false) =>
+        check: (joined = false, network?: "connected" | "internet") =>
             verifyBrowserEgress(
                 (_method, route) =>
                     Promise.resolve({
@@ -91,7 +91,7 @@ export function browserEgressFixture() {
                     }),
                 config,
                 joined ? browserId : undefined,
-                connected
+                network
             ),
     };
 }

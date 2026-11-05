@@ -12,15 +12,21 @@ import threading
 import urllib.error
 import urllib.request
 
-state = {"reboundHits": 0,"privateHits": 0, "flipped": False, "dns": 0}
+state = {"imageFormRan":False,"navigationRan":False,"homeFlipped":False,"reboundHits": 0,"privateHits": 0, "flipped": False, "dns": 0}
 
 class Site(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         """Serve bounded synthetic responses and count access to the private interface."""
-        if self.connection.getsockname()[0] in (os.environ.get("PRIVATE_IP"), os.environ.get("PRIVATE6")):
+        if self.connection.getsockname()[0] in (os.environ.get("PRIVATE_IP"), os.environ.get("PRIVATE6"), os.environ.get("SECOND_IP")):
             state["privateHits"] += 1
             if self.path == "/rebind-probe":
                 state["reboundHits"] += 1
+        if self.path == "/_image-form-ran":
+            state["imageFormRan"] = True
+        if self.path == "/_navigation-ran":
+            state["navigationRan"] = True
+        if self.path == "/_home-flip":
+            state["homeFlipped"] = True
         if self.path == "/_flip":
             state["flipped"] = True
         if self.path == "/redirect-private":
@@ -29,10 +35,17 @@ class Site(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             return
         body = json.dumps(state).encode() if self.path.startswith("/_") else b"<html><title>Mira isolated fixture</title><h1>Public synthetic website</h1><a href='http://second.mira.test/next'>Second website</a><a href='/popup' target='_blank' rel='noopener'>Open popup</a><input aria-label='Fixture text'><div contenteditable='true' role='textbox' aria-label='Editor'>Old value</div><input readonly aria-label='Read only'><input type='password' aria-label='Secret' value='do-not-expose-fixture'><button onclick=\"this.textContent='Clicked 1'\">Count</button></html>"
+        if self.path=="/attack":
+            host=os.environ["PRIVATE_IP"]
+            body=f"""<title>Public request fixture</title><img src="http://{host}/rebind-probe"><iframe name="sink"></iframe><form method="post" target="sink" action="http://private.mira.test/rebind-probe"></form><script>document.forms[0].submit();fetch('/_image-form-ran')</script>""".encode()
+        if self.path=="/attack-navigation":
+            body=b"<script>fetch('/_navigation-ran').then(()=>location.replace('http://private6.mira.test/rebind-probe'))</script>"
         self.send_response(200)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    do_POST = do_GET
 
     def log_message(self, *_args):
         """Keep request content out of qualification logs."""
@@ -61,6 +74,8 @@ class DNS(socketserver.BaseRequestHandler):
         if kind == 1:
             if name in ("public.mira.test", "second.mira.test"):
                 addresses = [public]
+            elif name == "flip-home.mira.test" and os.environ.get("SECOND_IP"):
+                addresses = [os.environ["SECOND_IP"] if state["homeFlipped"] else private]
             elif name == "private.mira.test":
                 addresses = [private]
             elif name == "mixed.mira.test":

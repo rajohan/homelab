@@ -1,6 +1,7 @@
 import * as v from "valibot";
 
 export const publicBrowserScope = "public-web";
+export const internetBrowserScope = "internet-web";
 export const connectedBrowserScope = "connected-web";
 
 /** Identify a temporary session that can navigate between unrelated websites.
@@ -10,7 +11,9 @@ export const connectedBrowserScope = "connected-web";
 export function unrestrictedBrowserSites(origins: readonly string[]) {
     return (
         origins.length === 1 &&
-        (origins[0] === publicBrowserScope || origins[0] === connectedBrowserScope)
+        (origins[0] === internetBrowserScope ||
+            origins[0] === publicBrowserScope ||
+            origins[0] === connectedBrowserScope)
     );
 }
 
@@ -43,14 +46,16 @@ export const miraBrowserAccessRequestSchema = v.strictObject({
     initialUrl: address,
     mode: v.picklist(["view", "control"]),
     profileId: v.optional(id),
-    useConfiguredNetwork: v.optional(v.boolean()),
+    network: v.optional(v.picklist(["public", "home"])),
 });
 export const miraBrowserProfileCreateSchema = v.strictObject({
+    homeNetwork: v.optional(v.boolean()),
     name: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(80)),
     origins: v.pipe(v.array(address), v.minLength(1), v.maxLength(16)),
 });
 export const miraBrowserProfileDeleteSchema = v.strictObject({ id });
 export interface MiraBrowserProfile {
+    homeNetwork?: boolean;
     id: string;
     name: string;
     origins: string[];

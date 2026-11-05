@@ -2,7 +2,7 @@
 set -eu
 # The long-lived service must have relinquished every startup capability.
 test "$(cat /proc/1/comm)" = squid
-if [ -f /tmp/connected-egress.nft ]; then
+if [ -f /tmp/home-dns-required ]; then
     dns_pid=$(cat /tmp/mira-dns.pid)
     [ "$(cat "/proc/$dns_pid/comm")" = python3 ]
     grep -q '^State:[[:space:]]*[RS]' "/proc/$dns_pid/status"

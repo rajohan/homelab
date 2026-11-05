@@ -1,4 +1,4 @@
-"""Loopback-only Squid resolver. A hostname cannot cross the LAN boundary mid-session."""
+"""Loopback-only Squid resolver. Home origins can reach only addresses in their first validated DNS answer."""
 import asyncio
 from collections import OrderedDict
 from ipaddress import ip_address, ip_network
@@ -38,26 +38,17 @@ class PinnedResolver(asyncio.DatagramProtocol):
         task.add_done_callback(self.tasks.discard)
 
     def pin(self, name, addresses):
-        classes = set()
-        for value in addresses:
-            ip = ip_address(value)
-            if any(ip in net for net in self.networks):
-                classes.add("lan")
-            elif ip.is_global and not ip.is_multicast and not getattr(ip, "ipv4_mapped", None):
-                classes.add("public")
-            else:
-                return False
-        if len(classes) != 1:
+        destination = frozenset(map(ip_address, addresses))
+        if not destination or not all(any(ip in net for net in self.networks) for ip in destination):
             return False
-        destination = classes.pop()
         now = time.monotonic()
         # Exceeds both the five-minute maximum grant and Squid's address cache TTL.
         while self.pins and next(iter(self.pins.values()))[1] <= now:
             self.pins.popitem(last=False)
         prior = self.pins.get(name)
-        if (prior and prior[0] != destination) or (not prior and len(self.pins) >= 8192):
+        if (prior and not destination.issubset(prior[0])) or (not prior and len(self.pins) >= 8192):
             return False
-        self.pins[name] = destination, now + 1800
+        self.pins[name] = (prior[0] if prior else destination), now + 1800
         self.pins.move_to_end(name)
         return True
 

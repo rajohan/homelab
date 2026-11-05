@@ -3,6 +3,7 @@ import { writeFile } from "node:fs/promises";
 import {
     miraBrowserTabCommandSchema,
     connectedBrowserScope,
+    internetBrowserScope,
     unrestrictedBrowserSites,
 } from "@homelab/contracts/miraBrowser";
 import {
@@ -23,6 +24,11 @@ import { browserActionSchema } from "./wire";
 const width = 800,
     height = 500;
 
+function browserNetworkMode(scope?: string) {
+    if (scope === connectedBrowserScope) return "connected";
+    return scope === internetBrowserScope ? "internet" : "public";
+}
+
 /** Open a fresh public-web session in the host's isolated Chromium container.
  * @param grant - Validated temporary public grant, including its input ceiling.
  * @param signal - Container lifetime; abort closes Chromium and discards all handles.
@@ -34,7 +40,7 @@ export async function openPublicBrowser(
 ): Promise<Awaited<ReturnType<typeof openNativeBrowser>>> {
     signal.throwIfAborted();
     if (
-        !publicBrowserNetwork(grant.origins[0] === connectedBrowserScope) ||
+        !publicBrowserNetwork(browserNetworkMode(grant.origins[0])) ||
         !unrestrictedBrowserSites(grant.origins) ||
         grant.savedProfile ||
         grant.uploads ||

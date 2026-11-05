@@ -1,0 +1,1 @@
+ALTER TABLE "mira_browser_profiles" ADD COLUMN "home_network" boolean DEFAULT false NOT NULL;

@@ -1,6 +1,6 @@
 #!/bin/sh
 set -eu
-if [ "${MIRA_BROWSER_NETWORK:-offline}" = public ] || [ "${MIRA_BROWSER_NETWORK:-offline}" = connected ]; then
+if [ "${MIRA_BROWSER_NETWORK:-offline}" = public ] || [ "${MIRA_BROWSER_NETWORK:-offline}" = connected ] || [ "${MIRA_BROWSER_NETWORK:-offline}" = internet ]; then
     # Only the host-created online container has this ephemeral policy directory.
     cp /opt/mira-browser/proxy-policy.json /etc/chromium/policies/managed/mira.json
 fi

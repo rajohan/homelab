@@ -189,46 +189,59 @@ print(json.dumps({'localProxyAlias':True,'externalBrowserDnsBlocked':True}))
             resolver, private6 = str(lan4[3]), str(ula[3])
             docker("run", "-d", "--name", home, "--network", lan, "--ip", resolver, "--ip6", private6,
                 "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true", "--read-only", "--tmpfs", "/tmp:rw,size=8m",
-                "--env", "PUBLIC_IP=" + public_ip, "--env", "PRIVATE_IP=" + resolver, "--env", "PRIVATE6=" + private6,
+                "--env", "SECOND_IP=" + str(lan4[4]), "--env", "PUBLIC_IP=" + public_ip, "--env", "PRIVATE_IP=" + resolver, "--env", "PRIVATE6=" + private6,
                 "homelab-browser-egress-fixture:local", "serve")
-            docker("create", "--name", connected,
-                "--network", f"name={client},ip={proxy_ip},alias=mira-egress,driver-opt=com.docker.network.endpoint.ifname=browser",
-                "--cap-drop", "ALL", "--cap-add", "NET_ADMIN", "--cap-add", "SETUID", "--cap-add", "SETGID", "--cap-add", "SETPCAP",
-                "--security-opt", "no-new-privileges:true", "--read-only", "--tmpfs", "/tmp:rw,nosuid,nodev,size=16m,mode=1777",
-                "--sysctl", "net.ipv4.ip_forward=0", "homelab-browser-proxy-test:local", "connected", resolver, str(lan4), str(ula))
-            docker("network", "connect", "--driver-opt", "com.docker.network.endpoint.ifname=external", lan, connected)
-            docker("start", connected)
-            for _ in range(40):
-                if docker("inspect", "--format", "{{.State.Health.Status}}", connected) == "healthy":
-                    break
-                time.sleep(.2)
-            else:
-                raise RuntimeError(docker("logs", connected))
-            # A synthetic public IP lives on the fixture's loopback. Its /32 route
-            # is confined to this offline proxy namespace, not installed on the host.
-            for peer, args in [(home, ["address", "add", public_ip + "/32", "dev", "lo"]),
-                               (connected, ["route", "add", public_ip + "/32", "via", resolver, "dev", "external"])]:
-                docker("run", "--rm", "--network", "container:" + peer, "--cap-drop", "ALL", "--cap-add", "NET_ADMIN",
-                       "--entrypoint", "ip", "homelab-browser-egress-fixture:local", *args)
-            assert probe(client, endpoint, "http://private6.mira.test/")["status"] == 200
-            for name in ("flip.mira.test", "flip6.mira.test"):
-                assert probe(client, endpoint, "http://" + name + "/")["status"] == 200
-            assert probe(client, endpoint, "http://private.mira.test/_flip")["status"] == 200
-            time.sleep(6)
-            for name in ("flip.mira.test", "flip6.mira.test", "mixed.mira.test","mixed6.mira.test"):
-                answer = probe(client, endpoint, "http://" + name + "/rebind-probe")
-                assert answer["status"] in (403, 503, "blocked"), (name, answer)
-            evidence = probe(client, endpoint, "http://private.mira.test/_state")
-            assert json.loads(evidence["body"])["reboundHits"] == 0
-            print("Connected DNS rebinding: public origins initially served; LAN IPv4/IPv6 flips and mixed answers denied; zero private probe hits", flush=True)
-            assert probe(client, endpoint, "https://private.mira.test/")["status"] == 200
-            assert probe(client, endpoint, "http://[" + private6 + "]:8080/")["status"] == 200
-            for target in ["169.254.169.254", "127.0.0.1", "[::1]", resolver + ":2375"]:
-                assert probe(client, endpoint, "http://" + target + "/")["status"] == 403
-            assert probe(client, "direct", "http://" + resolver + "/")["status"] == "blocked"
-            config["egress"].update(connected=True, proxyId=docker("inspect", "--format", "{{.Id}}", connected))
-            config_path.write_text(json.dumps(config))
-            subprocess.run(["bun", "--no-env-file", "apps/mira/src/server/testing/browserEgressSmoke.ts", str(config_path)], cwd=root, env=environment, check=True, timeout=100)
+            for mode in ("internet","connected"):
+                docker("create", "--name", connected,
+                    "--network", f"name={client},ip={proxy_ip},alias=mira-egress,driver-opt=com.docker.network.endpoint.ifname=browser",
+                    "--cap-drop", "ALL", "--cap-add", "NET_ADMIN", "--cap-add", "SETUID", "--cap-add", "SETGID", "--cap-add", "SETPCAP",
+                    "--security-opt", "no-new-privileges:true", "--read-only", "--tmpfs", "/tmp:rw,nosuid,nodev,size=16m,mode=1777",
+                    "--sysctl", "net.ipv4.ip_forward=0", "homelab-browser-proxy-test:local", mode, resolver, str(lan4), str(ula))
+                docker("network", "connect", "--driver-opt", "com.docker.network.endpoint.ifname=external", lan, connected)
+                docker("start", connected)
+                for _ in range(40):
+                    if docker("inspect", "--format", "{{.State.Health.Status}}", connected) == "healthy":
+                        break
+                    time.sleep(.2)
+                else:
+                    raise RuntimeError(docker("logs", connected))
+                # A synthetic public IP lives on the fixture's loopback. Its /32 route
+                # is confined to this offline proxy namespace, not installed on the host.
+                changes = [(connected, ["route", "add", public_ip + "/32", "via", resolver, "dev", "external"])]
+                if mode=="internet": changes.extend((home, ["address", "add", addr + "/32", "dev", "lo"]) for addr in (public_ip, str(lan4[4])))
+                for peer,args in changes:
+                    docker("run", "--rm", "--network", "container:" + peer, "--cap-drop", "ALL", "--cap-add", "NET_ADMIN",
+                           "--entrypoint", "ip", "homelab-browser-egress-fixture:local", *args)
+                config["egress"].update(network=mode, proxyId=docker("inspect", "--format", "{{.Id}}", connected))
+                config_path.write_text(json.dumps(config))
+                subprocess.run(["bun", "--no-env-file", "apps/mira/src/server/testing/browserEgressSmoke.ts", str(config_path)], cwd=root, env=environment, check=True, timeout=100)
+                if mode=="internet":
+                    for name in ("flip.mira.test", "flip6.mira.test"):
+                        assert probe(client, endpoint, "http://" + name + "/")["status"] == 200
+                    assert probe(client, endpoint, "http://public.mira.test/_flip")["status"] == 200
+                    time.sleep(6)
+                    for target in ("flip.mira.test","flip6.mira.test","mixed.mira.test","mixed6.mira.test",resolver,"["+private6+"]","private.mira.test"):
+                        answer=probe(client,endpoint,"http://"+target+"/rebind-probe")
+                        assert answer["status"] in (403,503,"blocked"), (target,answer)
+                    assert probe("container:"+connected, "direct", "http://"+resolver+"/rebind-probe")["status"]=="blocked"
+                    state=json.loads(probe(client,endpoint,"http://public.mira.test/_state")["body"])
+                    assert state["imageFormRan"] and state["navigationRan"] and state["reboundHits"]==0,state
+                    print("Public Chromium: cross-network images, POSTs, navigation, new names, IPs and DNS flips delivered zero private requests",flush=True)
+                else:
+                    assert probe(client,endpoint,"https://private.mira.test/")["status"]==200
+                    assert probe(client,endpoint,"http://["+private6+"]:8080/")["status"]==200
+                    assert probe(client,endpoint,"http://public.mira.test/")["status"]==403
+                    assert probe("container:"+connected,"direct","http://"+public_ip+"/")["status"]=="blocked"
+                    assert probe(client,endpoint,"http://"+str(lan4[4])+"/")["status"]==200
+                    assert probe(client,endpoint,"http://flip-home.mira.test/")["status"]==200
+                    assert probe(client,endpoint,"http://private.mira.test/_home-flip")["status"]==200
+                    time.sleep(6)
+                    assert probe(client,endpoint,"http://flip-home.mira.test/rebind-probe")["status"] in (403,503,"blocked")
+                    assert json.loads(probe(client,endpoint,"http://private.mira.test/_state")["body"])["reboundHits"]==0
+                    print("Home origin cannot rebind to a second reachable LAN address",flush=True)
+                    for target in ["169.254.169.254","127.0.0.1","[::1]",resolver+":53",resolver+":2375"]:
+                        assert probe(client,endpoint,"http://"+target+"/")["status"]==403
+                docker("rm","-f",connected)
         finally:
             if native_image and client:
                 # A killed host test may not reach its async close. Reap only this fixture's

@@ -140,7 +140,7 @@ export async function openMiraBrowserSession(
         const access = await claimMiraBrowserAccess({ ...host, transaction: query }, id);
         const connected = access.policy.connected === true;
         const slots = config.networks?.filter(
-            (slot) => Boolean(slot.connected) === connected
+            (slot) => (slot.network === "connected") === connected
         );
         if (
             (connected && (!browserNetworkForOwner(host.owner) || !slots?.length)) ||

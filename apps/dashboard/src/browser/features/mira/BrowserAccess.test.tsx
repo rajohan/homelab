@@ -140,7 +140,7 @@ test("browser access defaults to view and submits only the explicitly approved o
                 json: {
                     runId: current.id,
                     origins: ["https://example.test", "https://extra.test"],
-                    useConfiguredNetwork: true,
+                    network: "public",
                     initialUrl: "https://example.test/page",
                     mode: "view",
                 },

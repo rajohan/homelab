@@ -16,7 +16,28 @@ async function qualify(file: string) {
     const origin = "http://public.mira.test";
     const grant = { origins: [origin], initialUrl: origin + "/", mode: "control" };
     const owner = new AbortController();
-    if (config.egress.connected) {
+    if (config.egress.network === "internet") {
+        const session = await openBrowserWorker(
+            config,
+            {
+                origins: ["internet-web"],
+                initialUrl: "http://public.mira.test/attack",
+                mode: "view",
+            },
+            owner.signal
+        );
+        try {
+            const page = await session.observe(owner.signal);
+            assert.equal(page.title, "Public request fixture");
+            await session
+                .navigate("http://public.mira.test/attack-navigation", owner.signal)
+                .catch(() => null);
+        } finally {
+            await session.close();
+        }
+        return { internetChromium: true };
+    }
+    if (config.egress.network === "connected") {
         const session = await openBrowserWorker(
             config,
             {
@@ -31,7 +52,7 @@ async function qualify(file: string) {
             assert.equal(page.title, "Mira isolated fixture");
             assert.ok(page.content.content[0]?.data);
             await session.tabs(
-                { action: "open", url: "http://second.mira.test/" },
+                { action: "open", url: "http://private6.mira.test/" },
                 owner.signal
             );
             page = await session.observe(owner.signal);

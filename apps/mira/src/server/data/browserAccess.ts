@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import {
     publicBrowserScope,
     connectedBrowserScope,
+    internetBrowserScope,
     unrestrictedBrowserSites,
     miraBrowserAccessRequestSchema,
     miraBrowserAccessStopSchema,
@@ -31,11 +32,12 @@ async function requireBrowserProfile(
     query: TransactionSQL,
     owner: string,
     id: string,
-    origins: string[]
+    origins: string[],
+    homeNetwork: boolean
 ) {
     const [profile] = await query<
         { origins: string[] }[]
-    >`SELECT origins FROM mira_browser_profiles WHERE id=${id} AND owner=${owner} AND state='active'`;
+    >`SELECT origins FROM mira_browser_profiles WHERE id=${id} AND owner=${owner} AND home_network=${homeNetwork} AND state='active'`;
     if (!profile || origins.some((origin) => !profile.origins.includes(origin)))
         throw new MiraFailure(
             "FORBIDDEN",
@@ -151,10 +153,15 @@ export async function requestMiraBrowserAccess(
 
 /** Start a temporary public browser within the current Chat permission and executor lease.
  * @param context - Fenced tool actor. The database supplies all permission and ownership decisions.
- * @param initialUrl - Requested public document.
+ * @param initialUrl - Requested document.
+ * @param network - Separate browsing session requested for this task.
  * @returns Browser status, or a request for manual approval in Ask mode.
  */
-export async function requestPublicBrowser(context: MiraContext, initialUrl: string) {
+export async function requestPublicBrowser(
+    context: MiraContext,
+    initialUrl: string,
+    network: "public" | "home" = "public"
+) {
     if (!context.run || context.actor !== `mira:${context.run.id}`)
         throw new MiraFailure("FORBIDDEN", "A running chat is required.");
     return reserveBrowserAccess(
@@ -163,7 +170,7 @@ export async function requestPublicBrowser(context: MiraContext, initialUrl: str
             runId: context.run.id,
             initialUrl,
             origins: [publicBrowserScope],
-            useConfiguredNetwork: true,
+            network,
             mode: "view",
         },
         true
@@ -177,14 +184,20 @@ async function reserveBrowserAccess(
 ): Promise<MiraBrowserAccessSummary> {
     let policy: Policy;
     try {
-        const connected =
-            request.useConfiguredNetwork && browserNetworkForOwner(context.owner);
-        if (request.origins.includes(connectedBrowserScope))
+        const installed = browserNetworkForOwner(context.owner);
+        const connected = request.network === "home";
+        if (connected && !installed)
+            throw new Error("Home browsing is not configured for this account.");
+        if (
+            request.origins.some(
+                (x) => x === connectedBrowserScope || x === internetBrowserScope
+            )
+        )
             throw new Error("The network is selected by the server.");
         const parsed = browserWorkerGrant({
             origins:
-                connected && unrestrictedBrowserSites(request.origins)
-                    ? [connectedBrowserScope]
+                installed && request.network && unrestrictedBrowserSites(request.origins)
+                    ? [connected ? connectedBrowserScope : internetBrowserScope]
                     : request.origins,
             initialUrl: request.initialUrl,
             mode: request.mode,
@@ -215,8 +228,17 @@ async function reserveBrowserAccess(
                     context.owner,
                     previousGrant.id
                 );
-                if (existing?.available && existing.runLease === context.run?.leaseToken)
+                if (
+                    existing?.available &&
+                    existing.runLease === context.run?.leaseToken
+                ) {
+                    if (Boolean(existing.policy?.connected) !== Boolean(policy.connected))
+                        throw new MiraFailure(
+                            "PRECONDITION_FAILED",
+                            "This browser is on the other network. Start a separate session in Chat."
+                        );
                     return summary(existing);
+                }
                 throw new MiraFailure(
                     "FORBIDDEN",
                     "Browser access ended for this run. The operator can grant a new session."
@@ -239,7 +261,8 @@ async function reserveBrowserAccess(
                 query,
                 context.owner,
                 request.profileId,
-                policy.origins
+                policy.origins,
+                Boolean(policy.connected)
             );
         const previous = await query<
             { id: string }[]

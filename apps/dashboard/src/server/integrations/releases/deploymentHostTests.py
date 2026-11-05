@@ -273,7 +273,7 @@ class HostTests(unittest.TestCase):
                          [{"service": "proxy", "networkId": "e"*64}, {"service": "code-proxy", "networkId": "2"*64}])
         for changed in [None, {**code, "hostId": str(uuid.uuid4())}, {**code, "kind": "daytona"},
                         {**code, "egress": browser["networks"][0]},
-                        {**code, "egress": {**code["egress"], "connected":True}},
+                        {**code, "egress": {**code["egress"], "network":"connected"}},
                         {**code, "egress": {**code["egress"], "networkId": "e"*64}},
                         {**code, "imageId": "latest"}, {**code, "token": "unexpected"}]:
             with self.subTest(code=changed), self.assertRaises(host.Refusal):

@@ -554,16 +554,49 @@ test("home network access needs the installed operator, a fresh request and a ma
             origins: ["public-web"],
         };
         process.env[key] = "someone-else";
-        await rejects(f.api.browser.request({ ...request, useConfiguredNetwork: true }));
+        await rejects(f.api.browser.request({ ...request, network: "home" }));
         process.env[key] = f.context.owner;
         await rejects(f.api.browser.request(request));
         await rejects(f.api.browser.request({ ...request, origins: ["connected-web"] }));
-        await rejects(requestPublicBrowser(f.worker, request.initialUrl), /operator/);
+        await rejects(
+            requestPublicBrowser(f.worker, request.initialUrl, "home"),
+            /operator/
+        );
+        const origin = new URL(request.initialUrl).origin;
+        const publicProfile = await f.api.browser.createProfile({
+            name: "Internet login",
+            origins: [origin],
+        });
+        const homeProfile = await f.api.browser.createProfile({
+            name: "Home login",
+            origins: [origin],
+            homeNetwork: true,
+        });
+        await rejects(
+            f.api.browser.request({
+                ...request,
+                origins: [origin],
+                profileId: publicProfile.id,
+                network: "home",
+            })
+        );
+        await rejects(
+            f.api.browser.request({
+                ...request,
+                origins: [origin],
+                profileId: homeProfile.id,
+                network: "public",
+            })
+        );
         const created = await f.api.browser.request({
             ...request,
-            useConfiguredNetwork: true,
+            network: "home",
         });
         expect(created.origins).toEqual(["connected-web"]);
+        await rejects(
+            requestPublicBrowser(f.worker, "https://example.org"),
+            /other network/
+        );
         const claim = await claimMiraBrowserAccess(f.worker, created.id);
         expect(claim.policy.connected).toBe(true);
         process.env[key] = "someone-else";

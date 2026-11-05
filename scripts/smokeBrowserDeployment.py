@@ -103,7 +103,7 @@ def main():
             for suffix in ["a", "b"]:
                 network = json.loads(command(["docker", "network", "inspect", owner + "_mira-browser-" + suffix]))[0]["Id"]
                 proxy = before["mira-browser-proxy-" + suffix]
-                slots.append({"networkId": network, "proxyId": proxy["id"], "proxyImageId": proxy["imageId"], **({"connected":True} if suffix=="b" else {})})
+                slots.append({"networkId": network, "proxyId": proxy["id"], "proxyImageId": proxy["imageId"], "network":"connected" if suffix=="b" else "internet"})
             browser = {"hostId": str(uuid.uuid4()), "imageId": "sha256:" + "a"*64, "networks": list(slots)}
             network = json.loads(command(["docker", "network", "inspect", owner + "_mira-code"]))[0]["Id"]
             proxy = before["mira-code-proxy"]
@@ -131,7 +131,7 @@ def main():
             else:
                 raise AssertionError("Stale proxy identities were accepted")
             # The production TypeScript guard independently checks the complete baked-policy boundary.
-            probe = "import {browserDockerRequest} from './apps/mira/src/server/browsing/docker'; import {verifyBrowserEgress} from './apps/mira/src/server/browsing/egress'; const call=browserDockerRequest('/run/docker.sock'); for(const slot of JSON.parse(process.argv[1]!)) await verifyBrowserEgress(call,slot,undefined,slot.connected===true);"
+            probe = "import {browserDockerRequest} from './apps/mira/src/server/browsing/docker'; import {verifyBrowserEgress} from './apps/mira/src/server/browsing/egress'; const call=browserDockerRequest('/run/docker.sock'); for(const slot of JSON.parse(process.argv[1]!)) await verifyBrowserEgress(call,slot,undefined,slot.network);"
             command(["bun", "--no-env-file", "-e", probe, json.dumps(refreshed)])
             print("PASS: three real browser/code proxy replacements retained distinct isolated networks; refreshed IDs pass the runtime guard")
         finally:

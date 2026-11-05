@@ -3,6 +3,7 @@ import path from "node:path";
 import {
     publicBrowserScope,
     connectedBrowserScope,
+    internetBrowserScope,
     unrestrictedBrowserSites,
 } from "@homelab/contracts/miraBrowser";
 import * as v from "valibot";
@@ -86,7 +87,11 @@ export function browserUrl(input: unknown, origins: readonly string[]): string {
             throw new Error("Choose a public website on a standard web port.");
         return url.href;
     }
-    if (origins.length === 1 && origins[0] === connectedBrowserScope) return url.href;
+    if (
+        origins.length === 1 &&
+        (origins[0] === connectedBrowserScope || origins[0] === internetBrowserScope)
+    )
+        return url.href;
     if (!origins.includes(url.origin)) throw new Error("Browser origin is not allowed.");
     return url.href;
 }

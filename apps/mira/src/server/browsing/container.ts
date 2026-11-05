@@ -83,11 +83,7 @@ export function browserContainerSpec(
             ? {
                   Env: [
                       ...(egress
-                          ? [
-                                egress.connected
-                                    ? "MIRA_BROWSER_NETWORK=connected"
-                                    : "MIRA_BROWSER_NETWORK=public",
-                            ]
+                          ? ["MIRA_BROWSER_NETWORK=" + (egress.network ?? "public")]
                           : []),
                       ...(profile
                           ? [
@@ -181,7 +177,7 @@ export async function prepareBrowserContainer(
                 call,
                 config.egress,
                 networkJoined ? id : undefined,
-                config.egress.connected ?? false
+                config.egress.network
             );
     };
     const controller = new AbortController();

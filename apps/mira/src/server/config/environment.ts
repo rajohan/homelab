@@ -171,11 +171,14 @@ export function browserDriverEnvironment(): Record<string, string> {
 }
 
 /** Check whether the browser host attached its verified private proxy slot.
- * @param connected - Whether the grant requires the operator network.
+ * @param mode - Whether the grant requires the operator network.
  * @returns Whether a transient browser may start in this container.
  */
-export function publicBrowserNetwork(connected = false): boolean {
-    return process.env.MIRA_BROWSER_NETWORK === (connected ? "connected" : "public");
+export function publicBrowserNetwork(
+    mode: "connected" | "internet" | "public" = "public"
+): boolean {
+    const network = process.env.MIRA_BROWSER_NETWORK;
+    return network === mode || (mode === "public" && network === "internet");
 }
 
 /** Check the operator binding for the browser's installed home network.

@@ -1070,6 +1070,7 @@ export const miraBrowserProfiles = pgTable(
         owner: text().notNull(),
         name: text().notNull(),
         origins: jsonb().notNull(),
+        homeNetwork: boolean("home_network").notNull().default(false),
         hostId: uuid("host_id"),
         state: text().notNull().default("active"),
         quotaSlot: integer("quota_slot"),

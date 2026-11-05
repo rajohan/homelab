@@ -19,13 +19,13 @@ table inet mira_egress {
         oifname != "external" drop
         ip daddr @dns@ udp dport 53 accept
         ip daddr @dns@ tcp dport 53 accept
-        tcp dport { 2375, 2376 } drop
-        ip daddr { @lan4@, 100.64.0.0/10 } meta l4proto tcp accept
-        ip6 daddr @lan6@ meta l4proto tcp accept
+        tcp dport { 53, 2375, 2376 } drop
+        ip daddr { @lan4@, 100.64.0.0/10 } meta l4proto tcp @home@
+        ip6 daddr @lan6@ meta l4proto tcp @home@
         ip daddr @restricted_v4 drop
-        meta nfproto ipv4 meta l4proto tcp accept
+        meta nfproto ipv4 meta l4proto tcp @internet@
         ip6 daddr { 2001::/23, 2001:db8::/32, 2002::/16, 3fff::/20 } drop
-        ip6 daddr 2000::/3 meta l4proto tcp accept
+        ip6 daddr 2000::/3 meta l4proto tcp @internet@
         ip6 hoplimit 255 icmpv6 type { nd-neighbor-solicit, nd-neighbor-advert } accept
     }
 }

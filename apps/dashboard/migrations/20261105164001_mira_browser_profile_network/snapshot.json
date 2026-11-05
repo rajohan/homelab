@@ -1,0 +1,42 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "2cc6a1e9-0070-49ea-81ae-567eba3a4ce1",
+    "prevIds": ["470ddf59-509b-4d10-ad0c-e596cc98a926"],
+    "footprints": [
+        {
+            "statementType": "add_column",
+            "statementTarget": [
+                "column",
+                "public",
+                "mira_browser_profiles",
+                "home_network"
+            ],
+            "writes": [
+                "s|col|public.mira_browser_profiles.home_network",
+                "n|col|public.mira_browser_profiles.home_network",
+                "e|col|public.mira_browser_profiles.home_network"
+            ],
+            "reads": ["n|tbl|public.mira_browser_profiles", "n|sch|public"]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_browser_profiles",
+                "name": "home_network",
+                "type": "boolean",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "false",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        }
+    ]
+}
