@@ -5,7 +5,7 @@ import { browserUrl } from "../browsing/policy";
 import { MiraFailure } from "../data/context";
 import { integrationJson } from "../integrations/http";
 import type { SyntheticConfiguration } from "../runtime/syntheticConfiguration";
-import { syntheticSubscriptionAvailable } from "../runtime/syntheticRuntime";
+import { acquireSyntheticRequest } from "../runtime/syntheticRuntime";
 import type { MiraToolDefinition } from "./toolDefinition";
 
 const resultSchema = v.object({
@@ -51,9 +51,9 @@ export function syntheticSearchTool(
                 }),
                 input
             );
+            let release: (() => void) | undefined;
             try {
-                if (!(await syntheticSubscriptionAvailable(config, signal, request)))
-                    throw new Error("Quota unavailable.");
+                release = await acquireSyntheticRequest(config, signal, request);
                 const response = await request("https://api.synthetic.new/v2/search", {
                     method: "POST",
                     redirect: "error",
@@ -89,6 +89,8 @@ export function syntheticSearchTool(
                     "PRECONDITION_FAILED",
                     "Synthetic web search is unavailable. Check the subscription or try later."
                 );
+            } finally {
+                release?.();
             }
         },
     };
