@@ -16,6 +16,102 @@ async function qualify(file: string) {
     const origin = "http://public.mira.test";
     const grant = { origins: [origin], initialUrl: origin + "/", mode: "control" };
     const owner = new AbortController();
+    const publicWeb = await openBrowserWorker(
+        config,
+        { ...grant, origins: ["public-web"] },
+        owner.signal
+    );
+    try {
+        let frame = await publicWeb.observe(owner.signal);
+        assert.equal(frame.title, "Mira isolated fixture");
+        const link = frame.refs.find(
+            (ref) => ref.role === "link" && ref.label === "Second website"
+        );
+        assert.ok(link);
+        await publicWeb.act(
+            { action: "click", observationId: frame.observationId, ref: link.ref },
+            owner.signal
+        );
+        frame = await publicWeb.observe(owner.signal);
+        assert.equal(frame.url, "http://second.mira.test/next");
+        const field = frame.refs.find(
+            (ref) => ref.actions.includes("type") && ref.label === "Fixture text"
+        );
+        assert.ok(field);
+        await publicWeb.act(
+            {
+                action: "type",
+                observationId: frame.observationId,
+                ref: field.ref,
+                text: "Public input",
+                replace: true,
+            },
+            owner.signal
+        );
+        frame = await publicWeb.observe(owner.signal);
+        assert.ok(frame.outline.includes("Public input"));
+        assert.ok(!frame.refs.some((ref) => ref.label === "Secret"));
+        assert.ok(!frame.outline.includes("do-not-expose-fixture"));
+        assert.ok(
+            !frame.refs.some(
+                (ref) => ref.label === "Read only" && ref.actions.includes("type")
+            )
+        );
+        for (const [text, replace] of [
+            ["Updated", true],
+            [" editor", false],
+        ] as const) {
+            const editor = frame.refs.find(
+                (ref) => ref.label === "Editor" && ref.actions.includes("type")
+            );
+            assert.ok(editor);
+            await publicWeb.act(
+                {
+                    action: "type",
+                    observationId: frame.observationId,
+                    ref: editor.ref,
+                    text,
+                    replace,
+                },
+                owner.signal
+            );
+            frame = await publicWeb.observe(owner.signal);
+        }
+        assert.ok(frame.outline.includes("Updated editor"));
+        await publicWeb.tabs({ action: "open", url: origin }, owner.signal);
+        const denied = await publicWeb
+            .navigate("http://private.mira.test/", owner.signal)
+            .catch(() => null);
+        if (denied) {
+            const blocked = await publicWeb.observe(owner.signal);
+            assert.notEqual(blocked.title, "Mira isolated fixture");
+        }
+    } finally {
+        await publicWeb.close();
+    }
+    const popupSession = await openBrowserWorker(
+        config,
+        { ...grant, origins: ["public-web"] },
+        owner.signal
+    );
+    try {
+        const observed = await popupSession.observe(owner.signal);
+        const popup = observed.refs.find((ref) => ref.label === "Open popup");
+        assert.ok(popup);
+        await popupSession
+            .act(
+                {
+                    action: "click",
+                    ref: popup.ref,
+                    observationId: observed.observationId,
+                },
+                owner.signal
+            )
+            .catch(() => null);
+        await assert.rejects(popupSession.observe(owner.signal));
+    } finally {
+        await popupSession.close();
+    }
     const browser = await openBrowserWorker(config, grant, owner.signal);
     try {
         let frame = await browser.observe(owner.signal);

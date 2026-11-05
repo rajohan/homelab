@@ -1,5 +1,6 @@
 import path from "node:path";
 
+import { publicBrowserScope } from "@homelab/contracts/miraBrowser";
 import * as v from "valibot";
 
 const address = v.pipe(v.string(), v.minLength(1), v.maxLength(2048));
@@ -23,14 +24,15 @@ export function browserGrant(input: unknown): BrowserGrant {
     const grant = v.parse(grantSchema, input);
     if (!path.isAbsolute(grant.executable))
         throw new Error("Browser executable must be an absolute local path.");
-    const origins = grant.origins.map((origin) => {
-        const url = webUrl(origin);
-        if (url.origin !== origin)
-            throw new Error("Browser origins must be exact canonical origins.");
-        return origin;
-    });
-    if (new Set(origins).size !== origins.length)
-        throw new Error("Browser origins must be unique.");
+    if (grant.origins.length === 1 && grant.origins[0] === publicBrowserScope) {
+        if (grant.savedProfile || grant.uploads || grant.downloads)
+            throw new Error(
+                "Public browsing requires a temporary profile without file transfers."
+            );
+        browserUrl(grant.initialUrl, grant.origins);
+        return grant;
+    }
+    const origins = exactBrowserOrigins(grant.origins);
     if (
         (grant.uploads || grant.downloads) &&
         (grant.mode !== "control" || origins.length !== 1)
@@ -42,6 +44,22 @@ export function browserGrant(input: unknown): BrowserGrant {
     return { ...grant, origins };
 }
 
+/** Validate the immutable site list for an exact-site session or saved sign-in.
+ * @param sites - Parsed list of requested website origins.
+ * @returns A copy containing only unique canonical HTTP(S) origins.
+ */
+export function exactBrowserOrigins(sites: readonly string[]): string[] {
+    const origins = sites.map((origin) => {
+        const url = webUrl(origin);
+        if (url.origin !== origin)
+            throw new Error("Browser origins must be exact canonical origins.");
+        return origin;
+    });
+    if (new Set(origins).size !== origins.length)
+        throw new Error("Browser origins must be unique.");
+    return origins;
+}
+
 /**
  * Admit one HTTP(S) document only inside the trusted origin ceiling.
  * @param input - Navigation destination or independently observed live URL.
@@ -50,6 +68,20 @@ export function browserGrant(input: unknown): BrowserGrant {
  */
 export function browserUrl(input: unknown, origins: readonly string[]): string {
     const url = webUrl(v.parse(address, input));
+    if (origins.length === 1 && origins[0] === publicBrowserScope) {
+        const host = url.hostname.toLowerCase().replace(/\.$/u, "");
+        if (
+            url.port ||
+            !host.includes(".") ||
+            /^[0-9.]+$/u.test(host) ||
+            host.includes(":") ||
+            /(?:^|\.)(?:localhost|local|internal|lan|home|onion|home\.arpa|home\.rajohan\.no)$/u.test(
+                host
+            )
+        )
+            throw new Error("Choose a public website on a standard web port.");
+        return url.href;
+    }
     if (!origins.includes(url.origin)) throw new Error("Browser origin is not allowed.");
     return url.href;
 }
@@ -67,6 +99,8 @@ export function browserManifest(
     downloadRoot?: string
 ) {
     const grant = browserGrant(input);
+    if (grant.origins.includes(publicBrowserScope))
+        throw new Error("The native driver requires exact website origins.");
     if (
         Boolean(grant.uploads) !== Boolean(uploadRoot) ||
         (uploadRoot && !path.isAbsolute(uploadRoot))

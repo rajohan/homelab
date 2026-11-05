@@ -205,15 +205,19 @@ export async function executeMiraTurn(
                 "PRECONDITION_FAILED",
                 "Synthetic is not connected for this account."
             );
+        const chatSearch = run.manual && !run.automationId && !run.taskId;
         runtime = useSynthetic
             ? new SyntheticRuntime(synthetic!, run.owner)
-            : await CodexRuntime.connect({
-                  command: config.command,
-                  args: pilotArguments(),
-                  cwd: config.workspace,
-                  env: runtimeEnvironment(config),
-                  signal: transport.signal,
-              });
+            : await CodexRuntime.connect(
+                  {
+                      command: config.command,
+                      args: pilotArguments(),
+                      cwd: config.workspace,
+                      env: runtimeEnvironment(config),
+                      signal: transport.signal,
+                  },
+                  chatSearch
+              );
         if (runtime instanceof CodexRuntime) {
             const account = await runtime.account();
             if (!account.authenticated)
@@ -305,7 +309,8 @@ export async function executeMiraTurn(
                     hereNow,
                     daytona,
                     github,
-                    localCode
+                    localCode,
+                    chatSearch && useSynthetic ? synthetic : undefined
                 ),
                 ...(assistance
                     ? [

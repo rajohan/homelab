@@ -45,7 +45,11 @@ test("Chat permissions default to asking and preserve provider, memory and execu
         fireEvent.click(await screen.findByRole("option", { name: "Full access" }));
         expect(latest.permissionMode).toBe("full_access");
         expect(screen.getByText(/merging and deployment remain separate/)).toBeVisible();
-        expect(screen.getByText(/browser and PC access still apply/)).toBeVisible();
+        expect(
+            screen.getByText(
+                /Saved browser profiles and PC access have separate controls/
+            )
+        ).toBeVisible();
         view.rerender(
             <PermissionSettings
                 settings={latest}

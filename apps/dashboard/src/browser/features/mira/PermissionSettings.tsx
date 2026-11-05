@@ -3,11 +3,11 @@ import { FormField, Select } from "@homelab/ui";
 import * as v from "valibot";
 
 const descriptions = {
-    ask: "Review task changes and approve code jobs, emails and publications before they run.",
+    ask: "Approve browser sessions, task changes, code jobs, emails and publications.",
     approve_for_me:
-        "Mira can update tasks and run fixed Homelab source, edit and test jobs on your selected code target. Emails and publications still need your approval.",
+        "Mira can read public websites, update tasks and run fixed Homelab source, edit and test jobs on your selected code target. Emails and publications still need your approval.",
     full_access:
-        "Mira can update tasks, run code jobs, send email and publish through your enabled integrations. GitHub publication creates a draft PR; merging and deployment remain separate.",
+        "Mira can navigate, click and type on public websites, update tasks, run code jobs, send email and publish through your enabled integrations. GitHub publication creates a draft PR; merging and deployment remain separate.",
 };
 
 /**
@@ -45,9 +45,9 @@ export function PermissionSettings({
                 />
             </FormField>
             <p className="text-sm text-primary-400">
-                Applies to this Chat and task work in it. Pauses, browser and PC access
-                still apply. Code jobs use the selected target and its resource limits;
-                Daytona consumes cloud credits.
+                Applies to this Chat and task work in it. Saved browser profiles and PC
+                access have separate controls. Code jobs use the selected target and its
+                resource limits; Daytona consumes cloud credits.
             </p>
         </div>
     );

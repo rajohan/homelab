@@ -1,3 +1,4 @@
+import { publicBrowserScope } from "@homelab/contracts/miraBrowser";
 import type { SQL } from "bun";
 import * as v from "valibot";
 
@@ -202,7 +203,8 @@ export async function openMiraBrowserSession(
                 {
                     ...access.policy,
                     ...(access.policy.mode === "control" &&
-                    access.policy.origins.length === 1
+                    access.policy.origins.length === 1 &&
+                    access.policy.origins[0] !== publicBrowserScope
                         ? { uploads: true, downloads: true }
                         : {}),
                 },

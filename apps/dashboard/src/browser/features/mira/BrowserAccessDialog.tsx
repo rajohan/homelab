@@ -1,5 +1,8 @@
 import type { MiraRun } from "@homelab/contracts/mira";
-import type { miraBrowserAccessRequestSchema } from "@homelab/contracts/miraBrowser";
+import {
+    publicBrowserScope,
+    type miraBrowserAccessRequestSchema,
+} from "@homelab/contracts/miraBrowser";
 import {
     ActionGroup,
     Badge,
@@ -39,6 +42,7 @@ export function BrowserAccessDialog({
     readonly onClose: () => void;
 }) {
     const [initialUrl, setInitialUrl] = useState("");
+    const [sites, setSites] = useState<"public" | "specific">("public");
     const [additional, setAdditional] = useState("");
     const [mode, setMode] = useState<"view" | "control">("view");
     const [profileId, setProfileId] = useState("");
@@ -112,7 +116,11 @@ export function BrowserAccessDialog({
                         {access.origins.length > 0 && (
                             <ul className="space-y-1 text-sm break-all text-primary-300">
                                 {access.origins.map((origin) => (
-                                    <li key={origin}>{origin}</li>
+                                    <li key={origin}>
+                                        {origin === publicBrowserScope
+                                            ? "Public web"
+                                            : origin}
+                                    </li>
                                 ))}
                             </ul>
                         )}
@@ -180,6 +188,7 @@ export function BrowserAccessDialog({
                                     (item) => item.id === id
                                 );
                                 if (chosen) {
+                                    setSites("specific");
                                     setInitialUrl(chosen.origins[0] ?? "");
                                     setAdditional(chosen.origins.slice(1).join("\n"));
                                 }
@@ -203,20 +212,37 @@ export function BrowserAccessDialog({
                             request.mutate({
                                 runId: run.id,
                                 initialUrl: initialUrl.trim(),
-                                origins: [
-                                    ...new Set([
-                                        firstOrigin,
-                                        ...additional
-                                            .split(/\r?\n/)
-                                            .map((line) => line.trim())
-                                            .filter(Boolean),
-                                    ]),
-                                ],
+                                origins:
+                                    sites === "public" && !profileId
+                                        ? [publicBrowserScope]
+                                        : [
+                                              ...new Set([
+                                                  firstOrigin,
+                                                  ...additional
+                                                      .split(/\r?\n/)
+                                                      .map((line) => line.trim())
+                                                      .filter(Boolean),
+                                              ]),
+                                          ],
                                 mode,
                                 ...(profileId ? { profileId } : {}),
                             });
                         }}
                     >
+                        {!profileId && (
+                            <FormField label="Websites">
+                                <Select
+                                    label="Website access"
+                                    value={sites}
+                                    onChange={setSites}
+                                    disabled={request.isPending}
+                                    options={[
+                                        { value: "public", label: "Public web" },
+                                        { value: "specific", label: "Specific websites" },
+                                    ]}
+                                />
+                            </FormField>
+                        )}
                         <FormField label="Starting URL">
                             <Input
                                 aria-label="Starting URL"
@@ -228,26 +254,26 @@ export function BrowserAccessDialog({
                                 onChange={(event) => setInitialUrl(event.target.value)}
                                 placeholder="https://example.com/page"
                             />
-                            <p className="text-xs text-primary-400">
-                                Allows this website’s exact origin, including scheme and
-                                port.
-                            </p>
                         </FormField>
-                        <FormField label="Other allowed origins (optional)">
-                            <Textarea
-                                aria-label="Other allowed origins"
-                                rows={3}
-                                maxLength={32_768}
-                                value={additional}
-                                disabled={request.isPending}
-                                onChange={(event) => setAdditional(event.target.value)}
-                                placeholder="https://another.example.com"
-                            />
-                            <p className="text-xs text-primary-400">
-                                One exact origin per line, without paths or wildcards. Up
-                                to 16 websites in total.
-                            </p>
-                        </FormField>
+                        {(sites === "specific" || profileId) && (
+                            <FormField label="Other allowed origins (optional)">
+                                <Textarea
+                                    aria-label="Other allowed origins"
+                                    rows={3}
+                                    maxLength={32_768}
+                                    value={additional}
+                                    disabled={request.isPending}
+                                    onChange={(event) =>
+                                        setAdditional(event.target.value)
+                                    }
+                                    placeholder="https://another.example.com"
+                                />
+                                <p className="text-xs text-primary-400">
+                                    One exact origin per line, without paths or wildcards.
+                                    Up to 16 websites in total.
+                                </p>
+                            </FormField>
+                        )}
                         <FormField label="Permission">
                             <Select
                                 label="Browser permission"

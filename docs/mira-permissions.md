@@ -10,7 +10,7 @@ Chat settings stores a permission mode per conversation on the server. Web and W
 
 Main accepts fixed Homelab profiles only. Daytona also accepts arbitrary sandbox commands under Full access. Code jobs retain the selected target's admission limits, idle cleanup and existing resource limits. Daytona consumes subscription credits. GitHub publication creates a tested draft PR using the configured Mira identity; these modes do not merge or deploy.
 
-Permissions cover requested work, not unrelated activity. Integration enablement, pauses, owner bindings, input-file checks and provider qualification still apply. Browser access, PC pairing/local consent, authentication and provider verification retain their separate controls. Automatic runs use their existing explicit grants; Chat modes do not broaden automations or unpause dashboard improvement. Automatic memory maintenance remains governed by the separate memory/history controls.
+Permissions cover requested work, not unrelated activity. Integration enablement, pauses, owner bindings, input-file checks and provider qualification still apply. For public websites in manual Chat, Ask requires a session grant, Approve for me allows reading and navigation, and Full access also allows clicking and typing. The browser switch, stop control, and five-minute limit apply in every mode. Saved sign-ins, file transfers and PC access require separate operator choices. Automatic runs use their existing explicit grants; Chat modes do not broaden automations or unpause dashboard improvement. Automatic memory maintenance remains governed by the separate memory/history controls.
 
 ## Execution and revocation
 

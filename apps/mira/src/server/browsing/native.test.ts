@@ -834,3 +834,32 @@ test("tab operations refuse unknown IDs, foreign origins, ambiguous binding and 
         if (scenario === "origin") expect(f.pages.size).toBe(1);
     }
 });
+
+test("public browser scopes only permit fresh web profiles and standard public addresses", async () => {
+    const f = await fixture();
+    const origins = ["public-web"];
+    const grant = { ...f.grant, origins, initialUrl: "https://example.org" };
+    expect(browserGrant(grant).origins).toEqual(origins);
+    expect(browserUrl("https://other.example/path", origins)).toBe(
+        "https://other.example/path"
+    );
+    for (const url of [
+        "file:///tmp/test",
+        "http://127.0.0.1",
+        "https://[::1]",
+        "http://localhost",
+        "http://node.local",
+        "https://dashboard.home.rajohan.no",
+        "https://other.example:8443",
+        "https://u:p@other.example",
+    ])
+        expect(() => browserUrl(url, origins)).toThrow();
+    for (const extra of [
+        { savedProfile: true },
+        { uploads: true },
+        { downloads: true },
+        { origins: [...origins, "https://example.org"] },
+    ])
+        expect(() => browserGrant({ ...grant, ...extra })).toThrow();
+    expect(() => browserManifest(grant)).toThrow();
+});

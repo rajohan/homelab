@@ -1,3 +1,4 @@
+import { publicBrowserScope } from "@homelab/contracts/miraBrowser";
 import { Effect } from "effect";
 
 import { browserWorkerEnvironment } from "../config/environment";
@@ -5,6 +6,7 @@ import { serveBrowserWorker } from "./child";
 import { openNativeBrowser } from "./native";
 import { browserGrant } from "./policy";
 import { captureBrowserProfile, restoreBrowserProfile } from "./profileSnapshot";
+import { openPublicBrowser } from "./publicBrowser";
 import { prepareSavedBrowserProfile } from "./savedProfile";
 
 if (import.meta.main) {
@@ -16,14 +18,15 @@ if (import.meta.main) {
                 return serveBrowserWorker(
                     process.stdin,
                     process.stdout,
-                    (input, signal) =>
-                        openNativeBrowser(
-                            {
-                                ...browserGrant(input),
-                                ...(saved ? { savedProfile: true } : {}),
-                            },
-                            signal
-                        ),
+                    (input, signal) => {
+                        const grant = browserGrant({
+                            ...browserGrant(input),
+                            ...(saved ? { savedProfile: true } : {}),
+                        });
+                        return grant.origins[0] === publicBrowserScope
+                            ? openPublicBrowser(grant, signal)
+                            : openNativeBrowser(grant, signal);
+                    },
                     undefined,
                     saved
                         ? {

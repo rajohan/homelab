@@ -1,3 +1,4 @@
+import { publicBrowserScope } from "@homelab/contracts/miraBrowser";
 import type {
     MiraBrowserAccessSummary,
     miraBrowserHumanCommandSchema,
@@ -110,7 +111,7 @@ export function BrowserConsoleDialog({
                             description={
                                 human
                                     ? "Mira waits until you return control. Closing this window keeps Mira paused."
-                                    : "Shows Mira’s latest view without interrupting its actions."
+                                    : "Shows Miraâ€™s latest view without interrupting its actions."
                             }
                         />
                         <div className="flex flex-col gap-2 @min-[42rem]/browser-console:flex-row">
@@ -195,7 +196,7 @@ export function BrowserConsoleDialog({
                         </ActionGroup>
                         <FormField
                             label="Website address"
-                            description="Use a website included in this browser’s approved access."
+                            description="Use a website included in this browserâ€™s approved access."
                         >
                             <Input
                                 value={url}
@@ -237,7 +238,8 @@ export function BrowserConsoleDialog({
                             />
                         )}
                         {access.mode === "control" &&
-                            (access.origins.length === 1 ? (
+                            (access.origins.length === 1 &&
+                            access.origins[0] !== publicBrowserScope ? (
                                 <>
                                     <BrowserUploadControls
                                         now={now}

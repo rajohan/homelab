@@ -35,11 +35,16 @@ interface ActiveTurn {
 /** A single-turn Codex adapter with explicit tools and no implicit approval grants. */
 export class CodexRuntime {
     private readonly workspace: string;
+    private readonly webSearch: boolean;
     private readonly connection: RpcProcess;
     private readonly threads = new Map<string, RuntimeTool<RuntimeToolResult>[]>();
     private active: ActiveTurn | null = null;
 
-    private constructor(options: Omit<RpcProcessOptions, "onRequest">) {
+    private constructor(
+        options: Omit<RpcProcessOptions, "onRequest">,
+        webSearch: boolean
+    ) {
+        this.webSearch = webSearch;
         this.workspace = options.cwd;
         this.connection = new RpcProcess({
             ...options,
@@ -50,15 +55,17 @@ export class CodexRuntime {
     /**
      * Initialize the private runtime handshake before accepting any operations.
      * @param options - Isolated child executable, environment and workspace.
+     * @param webSearch - Enable provider web search for a direct manual Chat turn.
      * @returns An initialized adapter; initialization failure always reaps the child.
      */
     static async connect(
-        options: Omit<RpcProcessOptions, "onRequest">
+        options: Omit<RpcProcessOptions, "onRequest">,
+        webSearch = false
     ): Promise<CodexRuntime> {
         if (!options.env.CODEX_HOME)
             throw new Error("Mira requires an explicit Codex home.");
         await assertSystemSkills(options.env.CODEX_HOME);
-        const runtime = new CodexRuntime(options);
+        const runtime = new CodexRuntime(options, webSearch);
         try {
             const initialized = v.parse(
                 initializeSchema,
@@ -160,6 +167,7 @@ export class CodexRuntime {
                 allowProviderModelFallback: false,
                 cwd: workspace,
                 sandbox: "read-only",
+                config: { web_search: this.webSearch ? "live" : "disabled" },
                 approvalPolicy: "untrusted",
                 developerInstructions: instructions,
                 dynamicTools: tools.map(({ name, description, inputSchema }) => ({
@@ -198,6 +206,7 @@ export class CodexRuntime {
                 excludeTurns: true,
                 cwd: this.workspace,
                 sandbox: "read-only",
+                config: { web_search: this.webSearch ? "live" : "disabled" },
                 approvalPolicy: "untrusted",
             })
         );
@@ -265,10 +274,13 @@ export class CodexRuntime {
                 if (
                     item.success &&
                     item.output.threadId === threadId &&
-                    (!active.id || item.output.turnId === active.id) &&
-                    item.output.item.type === "reasoning"
-                )
-                    options.onActivity?.({ phase: "thinking", tool: null });
+                    (!active.id || item.output.turnId === active.id)
+                ) {
+                    if (item.output.item.type === "reasoning")
+                        options.onActivity?.({ phase: "thinking", tool: null });
+                    if (item.output.item.type === "webSearch")
+                        options.onActivity?.({ phase: "tool", tool: "web_search" });
+                }
             } else if (event.method === "item/agentMessage/delta") {
                 const delta = v.parse(deltaSchema, event.params);
                 if (

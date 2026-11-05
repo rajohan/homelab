@@ -23,7 +23,7 @@ Provision `HOMELAB_MIRA_SYNTHETIC_OWNER` (the existing Homelab account ID) and
 `HOMELAB_MIRA_SYNTHETIC_API_KEY` through the deployment's secret manager. Both are
 required together, and Compose passes the credential only to the Mira service.
 Other accounts cannot discover or use this subscription. Catalog, quota and inference
-requests authenticate only at the fixed Synthetic origin and reject redirects.
+and manual Chat search requests authenticate only at the fixed Synthetic origin and reject redirects.
 Subscription requests across both executor lanes are serialized per credential until
 the streamed response ends. Each request checks `/v2/quotas` for at least one remaining
 request and, when supplied, positive weekly credits. Missing, invalid or exhausted
@@ -173,7 +173,7 @@ sessions or network calls.
 
 ## Effective runtime isolation
 
-Initialization must return the canonical dedicated `codexHome` before account inspection. Effective configuration must retain every disabled capability, disabled web search, file-only credentials, the OpenAI provider and no custom provider definitions or MCP servers. Thread start and resume must also report `modelProvider: openai`.
+Initialization must return the canonical dedicated `codexHome` before account inspection. Effective configuration must retain every disabled capability, web search disabled by default, file-only credentials, the OpenAI provider and no custom provider definitions or MCP servers. Direct manual Chat enables live provider web search at thread start and resume. Synthetic Chat uses the subscription search endpoint and returns source URLs. Tasks and automations keep their existing tool sets. Thread start and resume must also report `modelProvider: openai`.
 
 The cached system skills are verified against the complete SHA-256 manifest from the pinned upstream `rust-v0.166.0` bundle. Extra, missing, altered or linked entries fail closed, regardless of the Codex marker. A Codex dependency update must update the manifest from the corresponding official source and rerun live qualification; a test checks the versions stay aligned.
 

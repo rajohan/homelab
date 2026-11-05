@@ -5,7 +5,7 @@ import {
 } from "@homelab/contracts/miraBrowser";
 import * as v from "valibot";
 
-import { browserWorkerGrant } from "../browsing/wire";
+import { exactBrowserOrigins } from "../browsing/policy";
 import { lockBrowserOwner } from "./browserAccess";
 import { auditMira, MiraFailure, type MiraContext } from "./context";
 
@@ -44,11 +44,7 @@ export async function createMiraBrowserProfile(context: MiraContext, input: unkn
     const request = v.parse(miraBrowserProfileCreateSchema, input);
     let origins: string[];
     try {
-        origins = browserWorkerGrant({
-            origins: request.origins,
-            initialUrl: request.origins[0],
-            mode: "view",
-        }).origins;
+        origins = exactBrowserOrigins(request.origins);
     } catch {
         throw new MiraFailure(
             "BAD_REQUEST",

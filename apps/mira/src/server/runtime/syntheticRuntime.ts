@@ -83,12 +83,17 @@ export async function syntheticSubscriptionAvailable(
 // tool execution and the native provider retain their independent capacity.
 const subscriptionRequests = new Map<string, Promise<void>>();
 
-async function* subscriptionCompletion(
+/** Acquire one credential's next subscription request after checking its allowance.
+ * @param configuration - Account-bound credential shared by search and inference.
+ * @param signal - Cancels waiting or quota inspection without overtaking earlier requests.
+ * @param request - Fixed provider transport.
+ * @returns A release function to call after consuming or cancelling the provider response.
+ */
+export async function acquireSyntheticRequest(
     configuration: SyntheticConfiguration,
     signal: AbortSignal,
-    request: typeof fetch,
-    body: object
-): AsyncGenerator<unknown> {
+    request: typeof fetch
+): Promise<() => void> {
     const preceding = subscriptionRequests.get(configuration.apiKey) ?? Promise.resolve();
     let release!: () => void;
     const held = new Promise<void>((resolve) => {
@@ -96,6 +101,15 @@ async function* subscriptionCompletion(
     });
     const queued = preceding.then(() => held);
     subscriptionRequests.set(configuration.apiKey, queued);
+    const finish = () => {
+        release();
+        // An aborted waiter cannot let a later request overtake an active predecessor.
+        void queued.then(() => {
+            if (subscriptionRequests.get(configuration.apiKey) === queued)
+                subscriptionRequests.delete(configuration.apiKey);
+            return;
+        });
+    };
     try {
         await new Promise<void>((resolve, reject) => {
             const aborted = () => reject(new Error("Synthetic request interrupted."));
@@ -109,6 +123,21 @@ async function* subscriptionCompletion(
         signal.throwIfAborted();
         if (!(await syntheticSubscriptionAvailable(configuration, signal, request)))
             throw new Error("Synthetic subscription allowance is unavailable.");
+        return finish;
+    } catch (error) {
+        finish();
+        throw error;
+    }
+}
+
+async function* subscriptionCompletion(
+    configuration: SyntheticConfiguration,
+    signal: AbortSignal,
+    request: typeof fetch,
+    body: object
+): AsyncGenerator<unknown> {
+    const finish = await acquireSyntheticRequest(configuration, signal, request);
+    try {
         const response = await request(`${syntheticBaseUrl}/chat/completions`, {
             method: "POST",
             redirect: "error",
@@ -127,13 +156,7 @@ async function* subscriptionCompletion(
         }
         yield* syntheticEvents(response, signal);
     } finally {
-        release();
-        // An aborted waiter cannot let a later request overtake an active predecessor.
-        void queued.then(() => {
-            if (subscriptionRequests.get(configuration.apiKey) === queued)
-                subscriptionRequests.delete(configuration.apiKey);
-            return;
-        });
+        finish();
     }
 }
 

@@ -4,8 +4,10 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { SQL } from "bun";
 import * as v from "valibot";
 
+import { syntheticSearchTool } from "../executor/webSearch";
 import { createVisualChallenge } from "../testing/visualChallenge";
 import { syntheticModels } from "./syntheticCatalog";
 import { syntheticConfiguration } from "./syntheticConfiguration";
@@ -99,7 +101,7 @@ test("Synthetic catalog authenticates its owner-bound credential only at the fix
 
 test("Synthetic stream reconstructs split UTF-8 and rejects an unterminated response", async () => {
     const bytes = new TextEncoder().encode(
-        ': comment\r\ndata: {"text":"æøå"}\r\n\r\ndata: [DONE]\r\n\r\n'
+        ': comment\r\ndata: {"text":"Ã¦Ã¸Ã¥"}\r\n\r\ndata: [DONE]\r\n\r\n'
     );
     const response = new Response(
         new ReadableStream({
@@ -112,7 +114,7 @@ test("Synthetic stream reconstructs split UTF-8 and rejects an unterminated resp
     );
     const events = [];
     for await (const event of syntheticEvents(response, signal)) events.push(event);
-    expect(events).toEqual([{ text: "æøå" }]);
+    expect(events).toEqual([{ text: "Ã¦Ã¸Ã¥" }]);
     const incompleteResponse = stream([{}], false);
     const incomplete = async () => {
         for await (const _event of syntheticEvents(incompleteResponse, signal)) {
@@ -558,14 +560,29 @@ test("Synthetic serializes quota and stream consumption across runs and releases
             runtimes[2]!.turn(threads[2]!, "Fixture", { settings }),
             /allowance/
         );
+        const context = {
+            owner: "operator",
+            actor: "mira:fixture",
+            receiptId: "fixture",
+            client: new SQL("postgres://fixture@localhost/unused"),
+        };
+        const search = rejects(
+            syntheticSearchTool(configuration, request).action(
+                { query: "public fixture" },
+                new AbortController().signal,
+                context
+            ),
+            /unavailable/
+        );
         await Bun.sleep(10);
         expect(quotaReads).toBe(1);
         expect(posts).toBe(1);
         finished.resolve();
         const firstResult = await first;
         expect(firstResult.status).toBe("completed");
-        await last;
-        expect(quotaReads).toBe(2);
+        await Promise.all([last, search]);
+        await context.client.close();
+        expect(quotaReads).toBe(3);
         expect(posts).toBe(1);
     } finally {
         finished.resolve();
