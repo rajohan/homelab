@@ -61,6 +61,29 @@ async function qualify(file: string) {
     } finally {
         await publicWeb.close();
     }
+    const popupSession = await openBrowserWorker(
+        config,
+        { ...grant, origins: ["public-web"] },
+        owner.signal
+    );
+    try {
+        const observed = await popupSession.observe(owner.signal);
+        const popup = observed.refs.find((ref) => ref.label === "Open popup");
+        assert.ok(popup);
+        await popupSession
+            .act(
+                {
+                    action: "click",
+                    ref: popup.ref,
+                    observationId: observed.observationId,
+                },
+                owner.signal
+            )
+            .catch(() => null);
+        await assert.rejects(popupSession.observe(owner.signal));
+    } finally {
+        await popupSession.close();
+    }
     const browser = await openBrowserWorker(config, grant, owner.signal);
     try {
         let frame = await browser.observe(owner.signal);

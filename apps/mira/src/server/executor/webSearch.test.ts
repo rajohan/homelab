@@ -35,6 +35,12 @@ test("Synthetic Chat searches with the bound subscription and returns bounded so
             return Promise.resolve(
                 Response.json({
                     results: [
+                        ...[
+                            "http://localhost/test",
+                            "http://10.77.20.2/",
+                            "http://[::1]/",
+                            "https://dashboard.home.rajohan.no/",
+                        ].map((url) => ({ url, title: "private", text: "untrusted" })),
                         { url: "javascript:alert(1)", title: "invalid", text: "invalid" },
                         {
                             url: "https://unsafe:credential@example.org/",

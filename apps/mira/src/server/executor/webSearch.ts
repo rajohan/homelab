@@ -1,5 +1,7 @@
+import { publicBrowserScope } from "@homelab/contracts/miraBrowser";
 import * as v from "valibot";
 
+import { browserUrl } from "../browsing/policy";
 import { MiraFailure } from "../data/context";
 import { integrationJson } from "../integrations/http";
 import type { SyntheticConfiguration } from "../runtime/syntheticConfiguration";
@@ -68,14 +70,12 @@ export function syntheticSearchTool(
                 );
                 return results
                     .filter((item) => {
-                        const url = URL.parse(item.url);
-                        return (
-                            url &&
-                            ["http:", "https:"].includes(url.protocol) &&
-                            !url.username &&
-                            !url.password &&
-                            item.url.length <= 2048
-                        );
+                        try {
+                            browserUrl(item.url, [publicBrowserScope]);
+                            return true;
+                        } catch {
+                            return false;
+                        }
                     })
                     .slice(0, 8)
                     .map((item) => ({

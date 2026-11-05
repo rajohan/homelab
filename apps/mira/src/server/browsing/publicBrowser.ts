@@ -4,7 +4,13 @@ import {
     miraBrowserTabCommandSchema,
     publicBrowserScope,
 } from "@homelab/contracts/miraBrowser";
-import { launch, type Page, type CDPSession } from "puppeteer-core";
+import {
+    launch,
+    TargetType,
+    type Page,
+    type CDPSession,
+    type Target,
+} from "puppeteer-core";
 import * as v from "valibot";
 
 import { publicBrowserNetwork } from "../config/environment";
@@ -64,8 +70,10 @@ export async function openPublicBrowser(
         defaultViewport: { width, height },
         signal,
     });
-    const close = async () => {
-        await browser.close();
+    let closing: Promise<void> | undefined;
+    const close = () => (closing ??= browser.close());
+    const retire = () => {
+        void close().catch(() => {});
     };
     const tabs = new Map<string, { page: Page; cdp: CDPSession }>();
     let selected = "";
@@ -83,6 +91,13 @@ export async function openPublicBrowser(
         const context = await browser.createBrowserContext({
             downloadBehavior: { policy: "deny" },
         });
+        let opening: Set<Target> | undefined;
+        context.on("targetcreated", (target) => {
+            if (target.type() !== TargetType.PAGE) return;
+            if (opening) opening.add(target);
+            else if (![...tabs.values()].some((tab) => tab.page.target() === target))
+                retire();
+        });
         const current = () => {
             const tab = tabs.get(selected);
             if (!tab) throw new Error("No selected browser tab.");
@@ -91,16 +106,21 @@ export async function openPublicBrowser(
         const add = async (value: unknown) => {
             const url = browserUrl(value, sites);
             if (tabs.size >= 8) throw new Error("Close a browser tab first.");
+            opening = new Set<Target>();
             const page = await context.newPage();
-            page.on("popup", (popup) => {
-                void popup?.close().catch(() => {});
-            });
             page.on("dialog", (dialog) => {
                 void dialog.dismiss().catch(() => {});
             });
-            const cdp = await page.createCDPSession();
             const id = crypto.randomUUID();
+            const cdp = await page.createCDPSession();
             tabs.set(id, { page, cdp });
+            const unexpected = [...opening].some((target) => target !== page.target());
+            opening = undefined;
+            if (unexpected || closing)
+                throw new Error("An unexpected window invalidated the browser session.");
+            page.once("close", () => {
+                if (tabs.has(id)) retire();
+            });
             selected = id;
             await page.goto(url, { waitUntil: "domcontentloaded", timeout: 12_000 });
             await publicDocument(cdp);
@@ -172,8 +192,8 @@ export async function openPublicBrowser(
                     else {
                         if (tabs.size === 1)
                             throw new Error("Keep one browser tab open.");
-                        await tab.page.close();
                         tabs.delete(cmd.tabId);
+                        await tab.page.close();
                         if (selected === cmd.tabId) selected = tabs.keys().next().value!;
                     }
                 }
