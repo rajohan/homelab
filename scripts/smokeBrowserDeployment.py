@@ -71,12 +71,21 @@ def main():
                 "HOMELAB_MIRA_IMAGE": "unused:synthetic", "HOMELAB_DOCKER_GID": "998",
                 "HOMELAB_MIRA_FILES_DIR": str(directory / "unused-files"),
                 "HOMELAB_MIRA_BROWSER_CONFIG": str(directory / "unused-host.json")}
+            # The overlay also adds the owner binding to the real app services.
+            app_stub = directory / "apps.json"
+            app_stub.write_text(json.dumps({"services": {name: {"image":"unused:synthetic"} for name in ("dashboard","mira")}}))
+            environment.update(HOMELAB_MIRA_BROWSER_NETWORK_OWNER="fixture", HOMELAB_MIRA_BROWSER_DNS="10.7.0.2",
+                               HOMELAB_MIRA_BROWSER_LAN_V4="10.7.0.0/16", HOMELAB_MIRA_BROWSER_LAN_V6="fd98::/48")
             rendered = json.loads(command(["docker", "compose", "--env-file", "/dev/null", "--project-name", owner,
-                "--profile", "local-code", "--file", "deploy/compose.browser.yaml", "config", "--format", "json"], environment))
-            rendered["services"].pop("mira-browser-host")
+                "--profile", "local-code", "--file", str(app_stub), "--file", "deploy/compose.browser.yaml", "--file", "deploy/compose.browser-network.yaml", "config", "--format", "json"], environment))
+            for app in ("dashboard","mira","mira-browser-host"):
+                assert rendered["services"].pop(app)["environment"]["HOMELAB_MIRA_BROWSER_NETWORK_OWNER"] == "fixture"
+            assert set(rendered["services"]["mira-browser-proxy-b"]["networks"]) == {"mira-browser-b","mira-browser-connected-outbound"}
+            assert not rendered["services"]["mira-code-proxy"].get("command")
             rendered["networks"].pop("default", None)
             # No public connectivity is needed to verify identity and health. Keep every network offline.
             rendered["networks"]["mira-browser-outbound"].update(internal=True, driver_opts={"com.docker.network.bridge.gateway_mode_ipv4": "isolated"})
+            rendered["networks"]["mira-browser-connected-outbound"].update(internal=True, driver_opts={"com.docker.network.bridge.gateway_mode_ipv4":"isolated", "com.docker.network.bridge.gateway_mode_ipv6":"isolated"})
             for service in rendered["services"].values():
                 service["pull_policy"] = "never"
                 service["restart"] = "no"
@@ -94,7 +103,7 @@ def main():
             for suffix in ["a", "b"]:
                 network = json.loads(command(["docker", "network", "inspect", owner + "_mira-browser-" + suffix]))[0]["Id"]
                 proxy = before["mira-browser-proxy-" + suffix]
-                slots.append({"networkId": network, "proxyId": proxy["id"], "proxyImageId": proxy["imageId"]})
+                slots.append({"networkId": network, "proxyId": proxy["id"], "proxyImageId": proxy["imageId"], "network":"connected" if suffix=="b" else "internet"})
             browser = {"hostId": str(uuid.uuid4()), "imageId": "sha256:" + "a"*64, "networks": list(slots)}
             network = json.loads(command(["docker", "network", "inspect", owner + "_mira-code"]))[0]["Id"]
             proxy = before["mira-code-proxy"]
@@ -122,7 +131,7 @@ def main():
             else:
                 raise AssertionError("Stale proxy identities were accepted")
             # The production TypeScript guard independently checks the complete baked-policy boundary.
-            probe = "import {browserDockerRequest} from './apps/mira/src/server/browsing/docker'; import {verifyBrowserEgress} from './apps/mira/src/server/browsing/egress'; const call=browserDockerRequest('/run/docker.sock'); for(const slot of JSON.parse(process.argv[1]!)) await verifyBrowserEgress(call,slot);"
+            probe = "import {browserDockerRequest} from './apps/mira/src/server/browsing/docker'; import {verifyBrowserEgress} from './apps/mira/src/server/browsing/egress'; const call=browserDockerRequest('/run/docker.sock'); for(const slot of JSON.parse(process.argv[1]!)) await verifyBrowserEgress(call,slot,undefined,slot.network);"
             command(["bun", "--no-env-file", "-e", probe, json.dumps(refreshed)])
             print("PASS: three real browser/code proxy replacements retained distinct isolated networks; refreshed IDs pass the runtime guard")
         finally:

@@ -171,8 +171,20 @@ export function browserDriverEnvironment(): Record<string, string> {
 }
 
 /** Check whether the browser host attached its verified private proxy slot.
- * @returns Whether a transient public browser may start in this container.
+ * @param mode - Whether the grant requires the operator network.
+ * @returns Whether a transient browser may start in this container.
  */
-export function publicBrowserNetwork(): boolean {
-    return process.env.MIRA_BROWSER_NETWORK === "public";
+export function publicBrowserNetwork(
+    mode: "connected" | "internet" | "public" = "public"
+): boolean {
+    const network = process.env.MIRA_BROWSER_NETWORK;
+    return network === mode || (mode === "public" && network === "internet");
+}
+
+/** Check the operator binding for the browser's installed home network.
+ * @param owner - Authenticated Homelab account.
+ * @returns Whether this account may request the connected browser.
+ */
+export function browserNetworkForOwner(owner: string): boolean {
+    return Boolean(owner) && process.env.HOMELAB_MIRA_BROWSER_NETWORK_OWNER === owner;
 }

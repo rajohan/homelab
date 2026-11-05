@@ -1,4 +1,4 @@
-import { publicBrowserScope } from "@homelab/contracts/miraBrowser";
+import { unrestrictedBrowserSites } from "@homelab/contracts/miraBrowser";
 import type { SQL } from "bun";
 import * as v from "valibot";
 
@@ -7,11 +7,12 @@ import {
     prepareBrowserContainer,
     type BrowserContainerJournal,
 } from "../browsing/container";
-import { browserEgressSchema } from "../browsing/egress";
+import { browserSlotSchema } from "../browsing/egress";
 import { browserEngine } from "../browsing/engine";
 import { openBrowserWorker } from "../browsing/process";
 import { reconcileBrowserContainer } from "../browsing/reconciliation";
 import { openBrowserSession } from "../browsing/session";
+import { browserNetworkForOwner } from "../config/environment";
 import { claimMiraBrowserAccess, requireMiraBrowserAccess } from "./browserAccess";
 import {
     advanceMiraBrowserProcess,
@@ -31,7 +32,7 @@ export const browserHostConfigurationSchema = v.strictObject({
     imageId: v.pipe(v.string(), v.regex(/^sha256:[a-f0-9]{64}$/)),
     networks: v.optional(
         v.pipe(
-            v.array(browserEgressSchema),
+            v.array(browserSlotSchema),
             v.minLength(1),
             v.maxLength(2),
             v.check(
@@ -137,6 +138,17 @@ export async function openMiraBrowserSession(
     const { access, record } = await host.client.begin(async (query) => {
         await query`SELECT pg_advisory_xact_lock(hashtextextended('mira:browser:capacity',0))`;
         const access = await claimMiraBrowserAccess({ ...host, transaction: query }, id);
+        const connected = access.policy.connected === true;
+        const slots = config.networks?.filter(
+            (slot) => (slot.network === "connected") === connected
+        );
+        if (
+            (connected && (!browserNetworkForOwner(host.owner) || !slots?.length)) ||
+            (slots && slots.length === 0)
+        )
+            throw new Error(
+                "A matching browser network is unavailable for this account."
+            );
         const record = await reserveMiraBrowserProcess(
             host.client,
             {
@@ -144,8 +156,8 @@ export async function openMiraBrowserSession(
                 hostToken: access.hostToken,
                 hostId: config.hostId,
                 imageId: config.imageId,
-                ...(config.networks
-                    ? { networkIds: config.networks.map((network) => network.networkId) }
+                ...(slots
+                    ? { networkIds: slots.map((network) => network.networkId) }
                     : {}),
             },
             query
@@ -201,10 +213,12 @@ export async function openMiraBrowserSession(
             return (dependencies.open ?? openBrowserWorker)(
                 { ...fixed, ...(profile ? { profile: { id: profile.id } } : {}) },
                 {
-                    ...access.policy,
+                    origins: access.policy.origins,
+                    initialUrl: access.policy.initialUrl,
+                    mode: access.policy.mode,
                     ...(access.policy.mode === "control" &&
                     access.policy.origins.length === 1 &&
-                    access.policy.origins[0] !== publicBrowserScope
+                    !unrestrictedBrowserSites(access.policy.origins)
                         ? { uploads: true, downloads: true }
                         : {}),
                 },

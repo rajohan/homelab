@@ -542,3 +542,82 @@ test.each(["approve_for_me", "full_access"] as const)(
         }
     }
 );
+
+test("home network access needs the installed operator, a fresh request and a matching live binding", async () => {
+    const f = await fixture();
+    const key = "HOMELAB_MIRA_BROWSER_NETWORK_OWNER";
+    const previous = process.env[key];
+    try {
+        const request = {
+            ...f.request,
+            initialUrl: "http://home.lan:8080/",
+            origins: ["public-web"],
+        };
+        process.env[key] = "someone-else";
+        await rejects(f.api.browser.request({ ...request, network: "home" }));
+        process.env[key] = f.context.owner;
+        await rejects(f.api.browser.request(request));
+        await rejects(f.api.browser.request({ ...request, origins: ["connected-web"] }));
+        for (const mode of ["ask", "approve_for_me", "full_access"] as const) {
+            await f.client`UPDATE mira_runs SET settings=jsonb_set(settings,'{permissionMode}',to_jsonb(${mode}::text)) WHERE id=${f.run.id}`;
+            await f.client`UPDATE mira_conversations SET settings=jsonb_set(settings,'{permissionMode}',to_jsonb(${mode}::text)) WHERE id=${f.chat.id}`;
+            await rejects(
+                requestPublicBrowser(f.worker, request.initialUrl, "home"),
+                /operator to grant Home network/
+            );
+        }
+        expect(await f.api.browser.list({ runId: f.run.id })).toHaveLength(0);
+        const origin = new URL(request.initialUrl).origin;
+        const publicProfile = await f.api.browser.createProfile({
+            name: "Internet login",
+            origins: [origin],
+        });
+        const homeProfile = await f.api.browser.createProfile({
+            name: "Home login",
+            origins: [origin],
+            homeNetwork: true,
+        });
+        await rejects(
+            f.api.browser.request({
+                ...request,
+                origins: [origin],
+                profileId: publicProfile.id,
+                network: "home",
+            })
+        );
+        await rejects(
+            f.api.browser.request({
+                ...request,
+                origins: [origin],
+                profileId: homeProfile.id,
+                network: "public",
+            })
+        );
+        const created = await f.api.browser.request({
+            ...request,
+            network: "home",
+        });
+        expect(created.origins).toEqual(["connected-web"]);
+        const reused = await requestPublicBrowser(f.worker, request.initialUrl, "home");
+        expect(reused.id).toBe(created.id);
+        expect(reused.mode).toBe(created.mode);
+        await rejects(
+            requestPublicBrowser(f.worker, "https://example.org"),
+            /other network/
+        );
+        const claim = await claimMiraBrowserAccess(f.worker, created.id);
+        expect(claim.policy.connected).toBe(true);
+        process.env[key] = "someone-else";
+        await rejects(
+            requireMiraBrowserAccess(f.worker, {
+                id: claim.id,
+                hostToken: claim.hostToken,
+                mode: "view",
+            })
+        );
+    } finally {
+        if (previous === undefined) delete process.env[key];
+        else process.env[key] = previous;
+        await f.close();
+    }
+});

@@ -1,6 +1,14 @@
 # Mira server browser
 
-In manual Chat, Mira can open public websites within the conversation’s permission mode. Public web uses an isolated temporary Chromium profile behind the private egress proxy. Choose Specific websites to limit the session to exact origins or use saved sign-ins and file transfers. The separate trusted browser host consumes their durable commands and owns Docker cleanup. Chat includes human origin/mode selection and a direct stop control using the shared responsive components.
+In manual Chat, Mira can open public websites and, on a connected host, websites reachable on the operator’s home network within the conversation’s permission mode. Public web uses an isolated temporary Chromium profile behind the private egress proxy. Choose Specific websites to limit the session to exact origins or use saved sign-ins and file transfers. The separate trusted browser host consumes their durable commands and owns Docker cleanup. Chat includes human origin/mode selection and a direct stop control using the shared responsive components.
+
+## Home network access
+
+Choose **Internet** or **Home network** when starting a browser. Only the operator can grant Home network access, once for the current run, in any permission mode. Mira can reuse that grant; search results and website instructions cannot create one. Neither network needs a per-site list. Both support HTTP(S) names, IP addresses and custom web ports on a configured host. Ask requires a grant in Chat; Approve for me allows viewing; Full access also allows clicking and typing. Opening another network requires a separate browser session. A home hostname can use only addresses from its initial DNS answer during the session. Saved sign-ins are bound to one network; existing profiles stay public. Authentication on each website still applies.
+
+Install the optional `deploy/compose.browser-network.yaml` after the other Compose files. Set `HOMELAB_MIRA_BROWSER_NETWORK_OWNER` to the operator account, `HOMELAB_MIRA_BROWSER_DNS` to the private IPv4 resolver, and `HOMELAB_MIRA_BROWSER_LAN_V4` and `HOMELAB_MIRA_BROWSER_LAN_V6` to the routed IPv4 and ULA prefixes. In the private host JSON mark browser slot A with `"network": "internet"` and B with `"network": "connected"`, each bound to its own verified proxy. Recreate the affected services. The code runner retains its original public-only proxy. No new inbound ports are published.
+
+Each browser has exactly one route. Public content cannot reach LAN or Meshnet, including by redirect, embedding a private IP or changing its DNS answer. The home-network browser cannot load internet content, including external sign-in providers or CDNs. Its sites must be reachable from the server. Remove the overlay, account binding and network markers together to return to the original public-only setup.
 
 ## Browser tabs
 

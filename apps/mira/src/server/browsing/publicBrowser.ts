@@ -2,7 +2,9 @@ import { writeFile } from "node:fs/promises";
 
 import {
     miraBrowserTabCommandSchema,
-    publicBrowserScope,
+    connectedBrowserScope,
+    internetBrowserScope,
+    unrestrictedBrowserSites,
 } from "@homelab/contracts/miraBrowser";
 import {
     launch,
@@ -21,7 +23,11 @@ import { browserActionSchema } from "./wire";
 
 const width = 800,
     height = 500;
-const sites = [publicBrowserScope];
+
+function browserNetworkMode(scope?: string) {
+    if (scope === connectedBrowserScope) return "connected";
+    return scope === internetBrowserScope ? "internet" : "public";
+}
 
 /** Open a fresh public-web session in the host's isolated Chromium container.
  * @param grant - Validated temporary public grant, including its input ceiling.
@@ -34,9 +40,8 @@ export async function openPublicBrowser(
 ): Promise<Awaited<ReturnType<typeof openNativeBrowser>>> {
     signal.throwIfAborted();
     if (
-        !publicBrowserNetwork() ||
-        grant.origins.length !== 1 ||
-        grant.origins[0] !== publicBrowserScope ||
+        !publicBrowserNetwork(browserNetworkMode(grant.origins[0])) ||
+        !unrestrictedBrowserSites(grant.origins) ||
         grant.savedProfile ||
         grant.uploads ||
         grant.downloads
@@ -44,6 +49,7 @@ export async function openPublicBrowser(
         throw new Error(
             "Public browsing requires the isolated online container and a fresh profile."
         );
+    const sites = grant.origins;
     const policyFile = "/etc/chromium/policies/managed/mira-public.json";
     await writeFile(
         policyFile,
@@ -123,13 +129,13 @@ export async function openPublicBrowser(
             });
             selected = id;
             await page.goto(url, { waitUntil: "domcontentloaded", timeout: 12_000 });
-            await publicDocument(cdp);
+            await publicDocument(cdp, sites);
         };
         const observe = async (operation: AbortSignal, operator = false) => {
             operation.throwIfAborted();
             observation = undefined;
             const { page, cdp } = current();
-            const doc = await publicDocument(cdp);
+            const doc = await publicDocument(cdp, sites);
             const { outline, refs, handles } = await publicOutline(
                 cdp,
                 doc.id,
@@ -146,7 +152,7 @@ export async function openPublicBrowser(
                     };
                 })
             );
-            const end = await publicDocument(cdp);
+            const end = await publicDocument(cdp, sites);
             operation.throwIfAborted();
             if (end.loader !== doc.loader || end.url !== doc.url)
                 throw new Error("The browser document changed during observation.");
@@ -208,7 +214,7 @@ export async function openPublicBrowser(
                     timeout: 12_000,
                 });
                 operation.throwIfAborted();
-                const document = await publicDocument(cdp);
+                const document = await publicDocument(cdp, sites);
                 return { url: document.url };
             },
             act: async (input, operation) => {
@@ -217,7 +223,7 @@ export async function openPublicBrowser(
                 const seen = observation;
                 observation = undefined;
                 const { cdp } = current();
-                const doc = await publicDocument(cdp);
+                const doc = await publicDocument(cdp, sites);
                 const node = seen?.nodes.get(action.ref);
                 if (
                     grant.mode !== "control" ||

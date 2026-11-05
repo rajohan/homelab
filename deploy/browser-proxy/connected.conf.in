@@ -1,0 +1,15 @@
+include /etc/mira-net/common.conf
+include /etc/mira-net/restricted.conf
+dns_nameservers @squid_dns@
+acl connected dst @lan4@ @lan6@ 100.64.0.0/10
+acl web_protocol proto HTTP HTTPS
+acl CONNECT method CONNECT
+acl infrastructure_ports port 53 2375 2376
+http_access deny manager
+http_access deny infrastructure_ports
+http_access deny !CONNECT !web_protocol
+@allow_home@
+http_access deny restricted
+acl internet dst 0.0.0.0/1 128.0.0.0/1 2000::/3
+@allow_internet@
+http_access deny all

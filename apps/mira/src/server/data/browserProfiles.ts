@@ -6,6 +6,7 @@ import {
 import * as v from "valibot";
 
 import { exactBrowserOrigins } from "../browsing/policy";
+import { browserNetworkForOwner } from "../config/environment";
 import { lockBrowserOwner } from "./browserAccess";
 import { auditMira, MiraFailure, type MiraContext } from "./context";
 
@@ -28,7 +29,7 @@ export async function listMiraBrowserProfiles(
     const rows = await context.client<
         (Omit<MiraBrowserProfile, "createdAt"> & { createdAt: Date })[]
     >`
-        SELECT p.id,p.name,p.origins,p.state,p.created_at AS "createdAt",
+        SELECT p.id,p.name,p.origins,p.home_network AS "homeNetwork",p.state,p.created_at AS "createdAt",
             EXISTS(SELECT 1 FROM mira_browser_access g WHERE g.profile_id=p.id AND g.state<>'closed') AS busy
         FROM mira_browser_profiles p WHERE p.owner=${context.owner} AND p.state<>'deleted'
         ORDER BY p.created_at,p.id LIMIT 4`;
@@ -42,6 +43,11 @@ export async function listMiraBrowserProfiles(
 export async function createMiraBrowserProfile(context: MiraContext, input: unknown) {
     human(context);
     const request = v.parse(miraBrowserProfileCreateSchema, input);
+    if (request.homeNetwork && !browserNetworkForOwner(context.owner))
+        throw new MiraFailure(
+            "FORBIDDEN",
+            "Home network profiles require an installed operator network."
+        );
     let origins: string[];
     try {
         origins = exactBrowserOrigins(request.origins);
@@ -71,7 +77,7 @@ export async function createMiraBrowserProfile(context: MiraContext, input: unkn
                 "Saved browser profile storage is fully reserved. Delete an unused profile before creating another."
             );
         const id = Bun.randomUUIDv7();
-        await query`INSERT INTO mira_browser_profiles(id,owner,name,origins,quota_slot) VALUES(${id},${context.owner},${request.name},${JSON.stringify(origins)}::text::jsonb,${slot.slot})`;
+        await query`INSERT INTO mira_browser_profiles(id,owner,name,origins,home_network,quota_slot) VALUES(${id},${context.owner},${request.name},${JSON.stringify(origins)}::text::jsonb,${Boolean(request.homeNetwork)},${slot.slot})`;
         await auditMira(query, context, "browser.profile_created", id);
         return { id };
     });

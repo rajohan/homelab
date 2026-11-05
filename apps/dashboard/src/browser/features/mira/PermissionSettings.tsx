@@ -5,9 +5,9 @@ import * as v from "valibot";
 const descriptions = {
     ask: "Approve browser sessions, task changes, code jobs, emails and publications.",
     approve_for_me:
-        "Mira can read public websites, update tasks and run fixed Homelab source, edit and test jobs on your selected code target. Emails and publications still need your approval.",
+        "Mira can read websites available to your account, update tasks and run fixed Homelab source, edit and test jobs on your selected code target. Emails and publications still need your approval.",
     full_access:
-        "Mira can navigate, click and type on public websites, update tasks, run code jobs, send email and publish through your enabled integrations. GitHub publication creates a draft PR; merging and deployment remain separate.",
+        "Mira can navigate, click and type on websites available to your account, update tasks, run code jobs, send email and publish through your enabled integrations. GitHub publication creates a draft PR; merging and deployment remain separate.",
 };
 
 /**

@@ -31,10 +31,11 @@ export function BrowserProfileControls({
 }) {
     const [editing, setEditing] = useState(false);
     const [name, setName] = useState("");
+    const [network, setNetwork] = useState<"public" | "home">("public");
     const [sites, setSites] = useState("");
     const [deleting, setDeleting] = useState(false);
     const create = useOperation(
-        (input: { name: string; origins: string[] }, signal) =>
+        (input: { name: string; origins: string[]; homeNetwork?: boolean }, signal) =>
             api.mira.browser.createProfile.mutate(input, { signal }),
         () => {
             setEditing(false);
@@ -111,6 +112,7 @@ export function BrowserProfileControls({
                         if (!busy)
                             create.mutate({
                                 name,
+                                ...(network === "home" ? { homeNetwork: true } : {}),
                                 origins: sites
                                     .split(/\r?\n/)
                                     .map((line) => line.trim())
@@ -126,6 +128,17 @@ export function BrowserProfileControls({
                             maxLength={80}
                             disabled={busy}
                             onChange={(event) => setName(event.target.value)}
+                        />
+                    </FormField>
+                    <FormField label="Profile network">
+                        <Select
+                            label="Profile network"
+                            value={network}
+                            onChange={setNetwork}
+                            options={[
+                                { value: "public", label: "Internet" },
+                                { value: "home", label: "Home network" },
+                            ]}
                         />
                     </FormField>
                     <FormField label="Profile websites">

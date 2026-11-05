@@ -114,3 +114,11 @@ test("a live browser cannot acquire another route or an external DNS resolver", 
         await rejects(f.check(true));
     }
 });
+
+test("public and code proxies cannot be substituted for the operator network in either direction", async () => {
+    const f = fixture();
+    await rejects(f.check(false, "connected"));
+    f.proxy.Config.Cmd = ["connected", "10.7.0.2", "10.7.0.0/16", "fd00:7::/48"];
+    await rejects(f.check());
+    await f.check(false, "connected");
+});

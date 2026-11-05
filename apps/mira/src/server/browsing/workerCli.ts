@@ -1,4 +1,4 @@
-import { publicBrowserScope } from "@homelab/contracts/miraBrowser";
+import { unrestrictedBrowserSites } from "@homelab/contracts/miraBrowser";
 import { Effect } from "effect";
 
 import { browserWorkerEnvironment } from "../config/environment";
@@ -23,7 +23,7 @@ if (import.meta.main) {
                             ...browserGrant(input),
                             ...(saved ? { savedProfile: true } : {}),
                         });
-                        return grant.origins[0] === publicBrowserScope
+                        return unrestrictedBrowserSites(grant.origins)
                             ? openPublicBrowser(grant, signal)
                             : openNativeBrowser(grant, signal);
                     },

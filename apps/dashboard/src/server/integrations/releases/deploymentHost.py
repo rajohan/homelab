@@ -244,6 +244,8 @@ def browser_bindings(target, configuration, observed, code=None):
                 not isinstance(code["hostId"], str) or not re.fullmatch(r"[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}", code["hostId"]) or
                 not isinstance(code["imageId"], str) or not re.fullmatch("sha256:[a-f0-9]{64}", code["imageId"])):
             raise Refusal("code_configuration")
+        if not isinstance(code["egress"], dict) or "network" in code["egress"]:
+            raise Refusal("code_configuration")
         slots.append(code["egress"])
     if not slots:
         if target.get("browserProxyUnits"):
@@ -257,7 +259,7 @@ def browser_bindings(target, configuration, observed, code=None):
         raise Refusal("browser_proxy_mapping")
     result = []
     for slot in slots:
-        if not isinstance(slot, dict) or set(slot) != {"networkId", "proxyId", "proxyImageId"} or not all(
+        if not isinstance(slot, dict) or (set(slot) - {"network"}) != {"networkId", "proxyId", "proxyImageId"} or ("network" in slot and slot["network"] not in ("connected","internet")) or not all(
                 isinstance(slot[key], str) and re.fullmatch(pattern, slot[key]) for key, pattern in
                 [("networkId", "[a-f0-9]{64}"), ("proxyId", "[a-f0-9]{64}"), ("proxyImageId", "sha256:[a-f0-9]{64}")]):
             raise Refusal("browser_configuration")
@@ -265,7 +267,7 @@ def browser_bindings(target, configuration, observed, code=None):
                    observed[service["name"]]["imageId"] == slot["proxyImageId"]]
         if len(matches) != 1:
             raise Refusal("browser_proxy_mapping")
-        result.append({"service": matches[0], "networkId": slot["networkId"]})
+        result.append({"service": matches[0], "networkId": slot["networkId"], **({"network": slot["network"]} if "network" in slot else {})})
     if len({item["service"] for item in result}) != len(result) or len({item["networkId"] for item in result}) != len(result):
         raise Refusal("browser_proxy_mapping")
     return result
@@ -289,7 +291,11 @@ def browser_slots(target, bindings, observed):
                 "mira-egress" not in (slot.get("Aliases") or []) or
                 (slot.get("DriverOpts") or {}).get("com.docker.network.endpoint.ifname") != "browser"):
             raise Refusal("browser_proxy_verification")
-        slots.append({"networkId": binding["networkId"], "proxyId": proxy["id"], "proxyImageId": proxy["imageId"]})
+        cmd = data.get("Config", {}).get("Cmd") or []
+        mode = binding.get("network")
+        if (mode and (len(cmd) != 4 or cmd[0] != mode)) or (not mode and cmd):
+            raise Refusal("browser_proxy_verification")
+        slots.append({"networkId": binding["networkId"], "proxyId": proxy["id"], "proxyImageId": proxy["imageId"], **({"network":mode} if mode else {})})
     return slots
 
 

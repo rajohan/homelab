@@ -1,6 +1,8 @@
 import type { MiraRun } from "@homelab/contracts/mira";
 import {
     publicBrowserScope,
+    connectedBrowserScope,
+    internetBrowserScope,
     type miraBrowserAccessRequestSchema,
 } from "@homelab/contracts/miraBrowser";
 import {
@@ -28,6 +30,13 @@ import { BrowserProfileControls } from "./BrowserProfileControls";
 import { accessStatusTone } from "./statusTone";
 import { browserAccessLabel, useBrowserAccess } from "./useBrowserAccess";
 
+function siteLabel(origin: string) {
+    if (origin === connectedBrowserScope) return "Home network";
+    return origin === publicBrowserScope || origin === internetBrowserScope
+        ? "Public web"
+        : origin;
+}
+
 /**
  * Grant exact website origins to the isolated server browser for this live manual run.
  * @returns A shared bounded form with explicit scope, effective status and immediate stop.
@@ -43,6 +52,7 @@ export function BrowserAccessDialog({
 }) {
     const [initialUrl, setInitialUrl] = useState("");
     const [sites, setSites] = useState<"public" | "specific">("public");
+    const [network, setNetwork] = useState<"public" | "home">("public");
     const [additional, setAdditional] = useState("");
     const [mode, setMode] = useState<"view" | "control">("view");
     const [profileId, setProfileId] = useState("");
@@ -116,11 +126,7 @@ export function BrowserAccessDialog({
                         {access.origins.length > 0 && (
                             <ul className="space-y-1 text-sm break-all text-primary-300">
                                 {access.origins.map((origin) => (
-                                    <li key={origin}>
-                                        {origin === publicBrowserScope
-                                            ? "Public web"
-                                            : origin}
-                                    </li>
+                                    <li key={origin}>{siteLabel(origin)}</li>
                                 ))}
                             </ul>
                         )}
@@ -189,6 +195,7 @@ export function BrowserAccessDialog({
                                 );
                                 if (chosen) {
                                     setSites("specific");
+                                    setNetwork(chosen.homeNetwork ? "home" : "public");
                                     setInitialUrl(chosen.origins[0] ?? "");
                                     setAdditional(chosen.origins.slice(1).join("\n"));
                                 }
@@ -212,6 +219,7 @@ export function BrowserAccessDialog({
                             request.mutate({
                                 runId: run.id,
                                 initialUrl: initialUrl.trim(),
+                                network,
                                 origins:
                                     sites === "public" && !profileId
                                         ? [publicBrowserScope]
@@ -230,14 +238,37 @@ export function BrowserAccessDialog({
                         }}
                     >
                         {!profileId && (
-                            <FormField label="Websites">
+                            <FormField
+                                label="Network"
+                                description="Public sites and home services open in separate sessions."
+                            >
+                                <Select
+                                    label="Browser network"
+                                    value={network}
+                                    onChange={setNetwork}
+                                    disabled={request.isPending}
+                                    options={[
+                                        { value: "public", label: "Internet" },
+                                        { value: "home", label: "Home network" },
+                                    ]}
+                                />
+                            </FormField>
+                        )}
+                        {!profileId && (
+                            <FormField
+                                label="Websites"
+                                description="Choose the sites Mira can visit on this network."
+                            >
                                 <Select
                                     label="Website access"
                                     value={sites}
                                     onChange={setSites}
                                     disabled={request.isPending}
                                     options={[
-                                        { value: "public", label: "Public web" },
+                                        {
+                                            value: "public",
+                                            label: "All available websites",
+                                        },
                                         { value: "specific", label: "Specific websites" },
                                     ]}
                                 />

@@ -1,0 +1,31 @@
+# Rules live only in this proxy container's network namespace.
+table inet mira_egress {
+    include "/etc/mira-net/restricted-v4.nft"
+    chain input {
+        type filter hook input priority 0; policy drop;
+        ct state established,related accept
+        iifname "lo" ip daddr 127.0.0.1 udp dport 53 accept
+        iifname "external" ip6 hoplimit 255 icmpv6 type { nd-neighbor-solicit, nd-neighbor-advert, nd-router-advert } accept
+        iifname "browser" tcp dport 3128 accept
+    }
+    chain forward {
+        type filter hook forward priority 0; policy drop;
+    }
+    chain output {
+        # Inspect Docker DNS before its local destination-port translation.
+        type filter hook output priority -150; policy drop;
+        ct state established,related accept
+        oifname "lo" ip daddr 127.0.0.1 udp dport 53 accept
+        oifname != "external" drop
+        ip daddr @dns@ udp dport 53 accept
+        ip daddr @dns@ tcp dport 53 accept
+        tcp dport { 53, 2375, 2376 } drop
+        ip daddr { @lan4@, 100.64.0.0/10 } meta l4proto tcp @home@
+        ip6 daddr @lan6@ meta l4proto tcp @home@
+        ip daddr @restricted_v4 drop
+        meta nfproto ipv4 meta l4proto tcp @internet@
+        ip6 daddr { 2001::/23, 2001:db8::/32, 2002::/16, 3fff::/20 } drop
+        ip6 daddr 2000::/3 meta l4proto tcp @internet@
+        ip6 hoplimit 255 icmpv6 type { nd-neighbor-solicit, nd-neighbor-advert } accept
+    }
+}
