@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.16.0](https://github.com/rajohan/homelab/compare/v0.15.1...v0.16.0) (2026-11-05)
+
+
+### Features
+
+* **mira:** browse home network sites with chat permissions ([#187](https://github.com/rajohan/homelab/issues/187)) ([fcae202](https://github.com/rajohan/homelab/commit/fcae2028432fb59e6d36f6e1bcc31928184938a5))
+* **mira:** search and browse the public web with Chat permissions ([#185](https://github.com/rajohan/homelab/issues/185)) ([a7f7c2a](https://github.com/rajohan/homelab/commit/a7f7c2a7be5fde4a5eb06f31136d8527e6878c65))
+
 ## [0.15.1](https://github.com/rajohan/homelab/compare/v0.15.0...v0.15.1) (2026-11-03)
 
 
