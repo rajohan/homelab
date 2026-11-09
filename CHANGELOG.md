@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.16.1](https://github.com/rajohan/homelab/compare/v0.16.0...v0.16.1) (2026-11-09)
+
+
+### Dependencies
+
+* **deps:** bump the application-minor-and-patch group with 20 updates ([#188](https://github.com/rajohan/homelab/issues/188)) ([d144d44](https://github.com/rajohan/homelab/commit/d144d440bc8f824fd3dca97e54bdee36fd784434))
+* **deps:** use pinned Bun Canary lint and formatting ([#191](https://github.com/rajohan/homelab/issues/191)) ([97cb0d6](https://github.com/rajohan/homelab/commit/97cb0d6df83d8f38a7006abdb65e51f9688da6b7))
+
 ## [0.16.0](https://github.com/rajohan/homelab/compare/v0.15.1...v0.16.0) (2026-11-05)
 
 
