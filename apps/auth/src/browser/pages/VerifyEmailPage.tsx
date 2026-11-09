@@ -19,7 +19,7 @@ export function VerifyEmailPage({ client, token }: AuthPageProps) {
     >(undefined);
     useEffect(() => {
         if (!token) return;
-        let active = true;
+        const lifecycle = { active: true };
         // Strict Mode repeats effect setup. The one-use proof must not be submitted twice.
         if (pending.current?.client !== client || pending.current.token !== token)
             pending.current = {
@@ -29,7 +29,7 @@ export function VerifyEmailPage({ client, token }: AuthPageProps) {
             };
         void pending.current.promise.then(
             () => {
-                if (!active) return;
+                if (!lifecycle.active) return;
                 try {
                     sessionStorage.setItem("homelab.email-verified", "true");
                 } catch {
@@ -39,11 +39,11 @@ export function VerifyEmailPage({ client, token }: AuthPageProps) {
                 return;
             },
             (error: unknown) => {
-                if (active) setError(error);
+                if (lifecycle.active) setError(error);
             }
         );
         return () => {
-            active = false;
+            lifecycle.active = false;
         };
     }, [client, token]);
     return (

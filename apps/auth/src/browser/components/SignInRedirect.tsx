@@ -31,21 +31,21 @@ export function SignInRedirect({
     useEffect(() => {
         // React may replay effects; one mounted handoff must only submit once.
         pending.current ??= signInDestination(client, address);
-        let active = true;
+        const lifecycle = { active: true };
         void pending.current.then(
             (target) => {
-                if (active) {
+                if (lifecycle.active) {
                     if (typeof target === "string") setDestination(target);
                     else setConsent(target);
                 }
                 return target;
             },
             (error: unknown) => {
-                if (active) setFailure(error);
+                if (lifecycle.active) setFailure(error);
             }
         );
         return () => {
-            active = false;
+            lifecycle.active = false;
         };
     }, [client, address, attempt]);
 
