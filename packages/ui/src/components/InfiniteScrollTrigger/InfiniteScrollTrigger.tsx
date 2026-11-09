@@ -36,11 +36,11 @@ export function InfiniteScrollTrigger({
         const Observer =
             sentinel.current?.ownerDocument.defaultView?.IntersectionObserver;
         if (!sentinel.current || !hasMore || loading || error || !Observer) return;
-        let requested = false;
+        const request = { sent: false };
         const observer = new Observer(
             (entries) => {
-                if (!requested && entries.some((entry) => entry.isIntersecting)) {
-                    requested = true;
+                if (!request.sent && entries.some((entry) => entry.isIntersecting)) {
+                    request.sent = true;
                     load();
                 }
             },
