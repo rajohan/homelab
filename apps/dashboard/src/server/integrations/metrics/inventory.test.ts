@@ -17,10 +17,10 @@ import {
 } from "./resources";
 import {
     measurement,
-    resourceKey,
-    resourceState,
     type MetricSample,
     type MetricSamples,
+    resourceKey,
+    resourceState,
 } from "./samples";
 
 function sample(value: number | null, labels: Record<string, string>): MetricSample {

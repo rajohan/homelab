@@ -8,8 +8,8 @@ import { fileURLToPath } from "node:url";
 import { capabilities } from "@homelab/contracts/operations";
 import { setMiraEnabled } from "@homelab/mira/data/automations";
 import {
-    claimChatSteering,
     acknowledgeChatSteering,
+    claimChatSteering,
     scheduleChatFollowups,
 } from "@homelab/mira/data/chatSteering";
 import { enqueueTurn } from "@homelab/mira/data/conversations";

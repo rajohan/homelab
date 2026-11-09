@@ -1,4 +1,4 @@
-import { expect, test, spyOn } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 
 import { IdentityClient } from "@homelab/ui/identity/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";

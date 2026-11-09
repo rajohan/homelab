@@ -7,9 +7,9 @@ import path from "node:path";
 
 import {
     BrowserContainerCleanupError,
+    type BrowserContainerJournal,
     browserContainerSpec,
     prepareBrowserContainer,
-    type BrowserContainerJournal,
 } from "./container";
 import type { BrowserDockerRequest, BrowserDockerResponse } from "./docker";
 import { reconcileBrowserContainer } from "./reconciliation";

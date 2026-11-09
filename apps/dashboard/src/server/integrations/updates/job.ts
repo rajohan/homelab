@@ -7,7 +7,7 @@ import type { JobDefinition, JobHandler } from "../../jobs/types";
 import { publishNotification } from "../../notifications/publish";
 import { readAptObservation } from "./apt";
 import type { UpdateTarget } from "./configuration";
-import { resolveImageUpdate, type ImageUpdate } from "./registry";
+import { type ImageUpdate, resolveImageUpdate } from "./registry";
 import { compareRelease, latestRelease } from "./releases";
 
 async function cachedLookup<T>(

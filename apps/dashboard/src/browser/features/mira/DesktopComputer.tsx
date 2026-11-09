@@ -6,7 +6,7 @@ import {
     SectionHeader,
 } from "@homelab/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Monitor, Plug, Square, Download, Unplug } from "lucide-react";
+import { Download, Monitor, Plug, Square, Unplug } from "lucide-react";
 import { useState } from "react";
 
 import { hasDesktopBridge, requestDesktop } from "./desktopClient";

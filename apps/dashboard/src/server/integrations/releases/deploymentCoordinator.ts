@@ -13,15 +13,15 @@ import { authDeploymentCurrent, deploymentRelease } from "./deploymentPlans";
 import { automaticDeploymentAllowed } from "./deploymentPolicies";
 import {
     deploymentDigest,
+    type DeploymentHost,
     deploymentHost,
+    type DeploymentObservation,
     deploymentObservationSchema,
     deploymentPlanSchema,
-    deploymentProgressSchema,
-    deploymentReceiptSchema,
-    type DeploymentHost,
-    type DeploymentObservation,
-    type DeploymentReceipt,
     type DeploymentProgress,
+    deploymentProgressSchema,
+    type DeploymentReceipt,
+    deploymentReceiptSchema,
 } from "./deploymentProtocol";
 import { readHomelabRelease } from "./read";
 

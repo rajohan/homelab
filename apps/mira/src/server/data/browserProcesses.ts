@@ -5,7 +5,7 @@ import * as v from "valibot";
 
 import { browserProfileSnapshot } from "../browsing/profileSnapshot";
 import { closeMiraBrowserAccess, requireMiraBrowserAccess } from "./browserAccess";
-import { MiraFailure, type MiraContext } from "./context";
+import { type MiraContext, MiraFailure } from "./context";
 
 const uuid = v.pipe(v.string(), v.uuid());
 const containerId = v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/));

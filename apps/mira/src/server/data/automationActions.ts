@@ -1,7 +1,7 @@
 import type { MiraSchedule } from "@homelab/contracts/mira";
 
 import { miraDependenciesAllowed, nextMiraOccurrence } from "./automations";
-import { auditMira, MiraFailure, type MiraContext } from "./context";
+import { auditMira, type MiraContext, MiraFailure } from "./context";
 import { enqueueTurn } from "./conversations";
 
 const presets: {

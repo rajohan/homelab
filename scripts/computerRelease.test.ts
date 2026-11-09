@@ -5,13 +5,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import {
+    type ComputerRelease,
+    type ComputerReleaseFile,
     computerReleaseNames,
     hashComputerFile,
     inventoryComputerPackage,
     readComputerRelease,
     verifyComputerPackage,
-    type ComputerReleaseFile,
-    type ComputerRelease,
 } from "./computerRelease";
 
 const entrypoints = [

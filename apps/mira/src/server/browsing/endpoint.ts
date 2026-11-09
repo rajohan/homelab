@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { open, readFile, realpath, lstat } from "node:fs/promises";
+import { lstat, open, readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 
 async function processIdentity(pid: number, proc: string) {

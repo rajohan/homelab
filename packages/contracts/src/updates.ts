@@ -1,6 +1,6 @@
 import * as v from "valibot";
 
-import { tableSortSchema, tableCursorSchema } from "./tableSort";
+import { tableCursorSchema, tableSortSchema } from "./tableSort";
 
 const text = (maximum: number) =>
     v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(maximum));

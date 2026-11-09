@@ -5,15 +5,15 @@ import { capabilities } from "@homelab/contracts/operations";
 import { appRouter } from "../../api/router";
 import { claimJob, commitClaim, settleClaim } from "../../jobs/claims";
 import { createJobRegistry } from "../../jobs/registry";
-import { operationFixture, expectOperationFailure } from "../../testing/operations";
+import { expectOperationFailure, operationFixture } from "../../testing/operations";
 import { automaticDeploymentJobs } from "./deploymentAutomatic";
 import { coordinateDeployment } from "./deploymentCoordinator";
 import {
     deploymentTestConnections as connections,
-    deploymentTestTarget as target,
     deploymentTestPlan,
+    deploymentTestTarget as target,
 } from "./deploymentFixtures";
-import { type DeploymentHostRequest, deploymentDigest } from "./deploymentProtocol";
+import { deploymentDigest, type DeploymentHostRequest } from "./deploymentProtocol";
 import type { readHomelabRelease } from "./read";
 
 async function fixture(selectedTarget = target, selectedConnections = connections) {

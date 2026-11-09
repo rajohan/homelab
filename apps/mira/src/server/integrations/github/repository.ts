@@ -3,19 +3,19 @@ import * as v from "valibot";
 import { decodeSandboxText, type SandboxEditPlan } from "../../sandbox/edits";
 import { integrationJson } from "../http";
 import {
+    type GitHubConfiguration,
     githubConfiguration,
     githubPublicationBranch,
     githubTarget,
-    type GitHubConfiguration,
 } from "./configuration";
 import {
+    type GitHubPullRequest,
+    type GitHubTreeEntry,
     gitShaSchema,
     pullSchema,
     referenceSchema,
     sourceCommitSchema,
     treeSchema,
-    type GitHubPullRequest,
-    type GitHubTreeEntry,
 } from "./protocol";
 
 export const githubRepositoryPath = `/repos/${githubTarget.repository}`;

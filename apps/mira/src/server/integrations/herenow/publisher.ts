@@ -2,7 +2,7 @@ import type { MiraPublicationContent } from "@homelab/contracts/miraPublication"
 import * as v from "valibot";
 
 import { integrationJson } from "../http";
-import { hereNowSlugSchema, type HereNowReadConfiguration } from "./configuration";
+import { type HereNowReadConfiguration, hereNowSlugSchema } from "./configuration";
 import { HereNowReader } from "./reader";
 
 const version = v.pipe(v.string(), v.minLength(1), v.maxLength(128));

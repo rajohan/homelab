@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 
 import * as v from "valibot";
 
-import { launchBrowserDriver, type BrowserDriverHost } from "./driverProcess";
+import { type BrowserDriverHost, launchBrowserDriver } from "./driverProcess";
 import pin from "./driverRelease.json";
 import type { BrowserNativeResult } from "./protocol";
 

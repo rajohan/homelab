@@ -6,9 +6,9 @@ import { setMiraEnabled } from "@homelab/mira/data/automations";
 import {
     claimMiraBrowserAccess,
     closeMiraBrowserAccess,
-    requireMiraBrowserAccess,
     requestMiraBrowserAccess,
     requestPublicBrowser,
+    requireMiraBrowserAccess,
 } from "@homelab/mira/data/browserAccess";
 import { reserveMiraBrowserProcess } from "@homelab/mira/data/browserProcesses";
 import { createMiraBrowserProfile } from "@homelab/mira/data/browserProfiles";

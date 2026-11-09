@@ -1,4 +1,4 @@
-import { request, type IncomingMessage } from "node:http";
+import { type IncomingMessage, request } from "node:http";
 
 export interface BrowserDockerResponse {
     status: number;

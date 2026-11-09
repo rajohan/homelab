@@ -14,12 +14,12 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
-    GitPullRequest,
-    Globe,
-    Cloud,
     Archive,
     Brain,
+    Cloud,
     Files,
+    GitPullRequest,
+    Globe,
     Mail,
     MessageSquare,
     Monitor,

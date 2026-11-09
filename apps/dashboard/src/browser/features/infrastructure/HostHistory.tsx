@@ -1,10 +1,10 @@
 import {
-    historyRanges,
     type HistoryRange,
+    historyRanges,
     type InfrastructureHost,
     type InfrastructureInventory,
 } from "@homelab/contracts/infrastructure";
-import { ErrorNotice, LoadingState, Select, queryRefresh } from "@homelab/ui";
+import { ErrorNotice, LoadingState, queryRefresh, Select } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 

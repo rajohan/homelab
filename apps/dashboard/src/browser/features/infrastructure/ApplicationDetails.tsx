@@ -1,5 +1,5 @@
 import type { ApplicationMetric } from "@homelab/contracts/infrastructure";
-import { Modal, formatDateTime, formatMetric } from "@homelab/ui";
+import { formatDateTime, formatMetric, Modal } from "@homelab/ui";
 
 import { ApplicationHistory } from "./ApplicationHistory";
 import { MetricStat } from "./MetricStat";

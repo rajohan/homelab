@@ -4,9 +4,9 @@ import { miraComputerCommandLimit } from "@homelab/contracts/miraComputerCommand
 
 import { RuntimeCleanupError } from "../runtime/rpcProcess";
 import {
+    type ComputerCompanion,
     ComputerConnectionError,
     isComputerCancellation,
-    type ComputerCompanion,
 } from "./companion";
 import type { ComputerConsentController } from "./companionConsent";
 

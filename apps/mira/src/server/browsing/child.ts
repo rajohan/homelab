@@ -6,7 +6,7 @@ import { BrowserDownloadTransfer } from "./downloadTransfer";
 import { browserDriverVersion } from "./driver";
 import { openNativeBrowser } from "./native";
 import { browserUrl } from "./policy";
-import { BrowserProfileTransfer, browserProfileParts } from "./profileTransfer";
+import { browserProfileParts, BrowserProfileTransfer } from "./profileTransfer";
 import { BrowserUploadTransfer } from "./uploadTransfer";
 
 /** Fixed tmpfs callbacks available only to the host-marked saved-profile worker. */

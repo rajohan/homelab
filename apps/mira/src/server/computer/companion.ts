@@ -1,21 +1,21 @@
 import {
+    type MiraComputerCommand,
+    type MiraComputerCommandBinding,
     miraComputerCommandBindingSchema,
     miraComputerCommandSchema,
-    type MiraComputerCommandBinding,
-    type MiraComputerCommand,
 } from "@homelab/contracts/miraComputerCommands";
 import {
-    miraComputerEnrollmentSchema,
     miraComputerAccessAcceptSchema,
     miraComputerAccessPermitSchema,
     type MiraComputerAccessSummary,
     type MiraComputerConsentRequest,
+    miraComputerEnrollmentSchema,
 } from "@homelab/contracts/miraComputers";
 import { miraComputerUpdateReceiptSchema } from "@homelab/contracts/miraComputerUpdates";
 import * as v from "valibot";
 
 import { version } from "../../../../../package.json";
-import { computerCommandResult, type ComputerCommandResult } from "./commandResult";
+import { type ComputerCommandResult, computerCommandResult } from "./commandResult";
 import { readComputerCredential } from "./credentials";
 
 const uuid = v.pipe(v.string(), v.uuid());

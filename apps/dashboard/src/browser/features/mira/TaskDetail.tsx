@@ -1,6 +1,5 @@
 import type { MiraTask } from "@homelab/contracts/mira";
 import {
-    FormField,
     ActionGroup,
     Badge,
     Button,
@@ -8,23 +7,24 @@ import {
     ConfirmDialog,
     ErrorNotice,
     formatDateTime,
+    FormField,
     Markdown,
     Modal,
-    Textarea,
     SectionHeader,
+    Textarea,
 } from "@homelab/ui";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
+    CalendarDays,
+    FileText,
+    Flag,
+    History,
+    ListChecks,
+    MessageSquare,
     Pencil,
     Trash2,
-    FileText,
-    ListChecks,
-    History,
-    MessageSquare,
-    CalendarDays,
     UserRound,
-    Flag,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -32,7 +32,7 @@ import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
 import { miraStatusTone } from "./statusTone";
 import { TaskExecution } from "./TaskExecution";
-import { taskStates, taskPriorityTone } from "./taskPresentation";
+import { taskPriorityTone, taskStates } from "./taskPresentation";
 import { TaskRunDialog } from "./TaskRunDialog";
 
 /**

@@ -1,7 +1,7 @@
 import type { SQL } from "bun";
 
 import { agentMailReceiverCurrent } from "../../data/integrations";
-import { agentMailBindingHash, type AgentMailBinding } from "./configuration";
+import { type AgentMailBinding, agentMailBindingHash } from "./configuration";
 import type { AgentMailReader, PendingMailScan } from "./reader";
 import { ordinaryReceivedMail } from "./schema";
 import { recordAgentMailMessage } from "./webhook";

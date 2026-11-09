@@ -7,11 +7,11 @@ import { MiraFailure } from "../../data/context";
 import type { MiraClaim } from "../../data/queue";
 import type { GitHubConfiguration } from "./configuration";
 import {
-    GitHubReader,
-    githubWorkSchema,
     githubPullReadSchema,
-    githubSourceTreeSchema,
+    GitHubReader,
     githubSourceFileSchema,
+    githubSourceTreeSchema,
+    githubWorkSchema,
 } from "./reader";
 import type { createGitHubTools } from "./tools";
 

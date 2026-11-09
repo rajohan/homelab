@@ -10,10 +10,10 @@ import {
 } from "../updates/restartObservation";
 import { maintenanceRevision, type MaintenanceTarget } from "./configuration";
 import {
-    observationSchema,
-    probeMaintenance,
     type MaintenanceObservation,
     type MaintenanceProbe,
+    observationSchema,
+    probeMaintenance,
 } from "./execution";
 
 const payloadSchema = v.strictObject({

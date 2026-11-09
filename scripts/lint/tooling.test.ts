@@ -22,6 +22,9 @@ test("built-in lint retains Tailwind, boundary, accessibility and type-aware dia
                 "Promise.resolve(1);",
                 "const invalid: string = 42;",
                 "void invalid;",
+                "void window;",
+                "void process;",
+                "void homelabMissingGlobal;",
             ].join("\n")
         );
         const child = Bun.spawn(
@@ -58,9 +61,37 @@ test("built-in lint retains Tailwind, boundary, accessibility and type-aware dia
             "tailwindcss(no-duplicate-classes)",
             "typescript(no-floating-promises)",
             "typescript(TS2322)",
+            "eslint(no-restricted-globals)",
+            "eslint(no-undef)",
         ])
             expect(codes).toContain(code);
     } finally {
         await rm(directory, { recursive: true, force: true });
     }
 }, 30_000);
+
+test("bunfig formatting merges named imports and retains project indentation", async () => {
+    for (const [filename, source, expected] of [
+        [
+            "fixture.ts",
+            'import { z } from "example";\nimport { a } from "example";\nexport const value={a:1};\n',
+            'import { a, z } from "example";\nexport const value = { a: 1 };\n',
+        ],
+        ["fixture.yml", "outer:\n    value: true\n", "outer:\n  value: true\n"],
+    ] as const) {
+        const child = Bun.spawn([process.execPath, "fmt", "--stdin-filepath", filename], {
+            stdin: new Blob([source]),
+            stdout: "pipe",
+            stderr: "pipe",
+            windowsHide: true,
+        });
+        const [output, errors, result] = await Promise.all([
+            new Response(child.stdout).text(),
+            new Response(child.stderr).text(),
+            child.exited,
+        ]);
+        expect(errors).toBe("");
+        expect(result).toBe(0);
+        expect(output).toBe(expected);
+    }
+});

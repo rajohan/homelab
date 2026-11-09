@@ -22,7 +22,6 @@
         "happy-dom": "21.0.4",
         "lcov-result-merger": "6.0.0",
         "lefthook": "2.2.2",
-        "oxlint-config-presets": "0.1.21",
         "oxlint-tailwindcss": "1.17.1",
         "tailwindcss": "4.3.4",
         "typescript": "7.0.2",
@@ -1128,8 +1127,6 @@
     "optionator": ["optionator@0.9.4", "", { "dependencies": { "deep-is": "^0.1.3", "fast-levenshtein": "^2.0.6", "levn": "^0.4.1", "prelude-ls": "^1.2.1", "type-check": "^0.4.0", "word-wrap": "^1.2.5" } }, "sha512-6IpQ7mKUxRcZNLIObR0hz7lxsapSSIYNZJwXPGeF0mTVqGKFIXj1DQcMoT22S3ROcLyY/rz0PWaWZ9ayWmad9g=="],
 
     "otpauth": ["otpauth@9.6.0", "", { "dependencies": { "@noble/hashes": "2.4.0" } }, "sha512-qQXHTxcXohDhQjF1ZEbUVEpTIssFL2rd+2kHfw/McIVCbTLD6qAsbTCQxpXRLyeyUw6Ipjpykw4dWZL/zfIVqA=="],
-
-    "oxlint-config-presets": ["oxlint-config-presets@0.1.21", "", { "peerDependencies": { "oxlint": ">=0.15.0" }, "optionalPeers": ["oxlint"] }, "sha512-NF1rZca5M06SNa0SEkxb2RX9atQU9d/T//skyZJrZF0xLuBjfQESuiRHjRqOYNZY3l+IIGuqbzG1Ky2xvP2HUg=="],
 
     "oxlint-tailwindcss": ["oxlint-tailwindcss@1.17.1", "", { "dependencies": { "@tailwindcss/node": "^4.3.3", "tailwindcss": "^4.3.3" } }, "sha512-fIsTVO97ruLU7GK8mNfQiE0TsjcnOccVz/w+C/lvbo54Hb/0ZZvT4cw3a0TCxM/buREd09enI+h7zfm6cG8OzA=="],
 

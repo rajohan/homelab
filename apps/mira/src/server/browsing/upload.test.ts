@@ -1,13 +1,13 @@
 import { expect, test } from "bun:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, readdir, realpath, rm, symlink } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, realpath, rm, symlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
 import {
+    type BrowserUploadFile,
     browserUploadLimit,
     createBrowserUploads,
-    type BrowserUploadFile,
 } from "./upload";
 
 function file(

@@ -3,9 +3,9 @@ import { randomUUID } from "node:crypto";
 import * as v from "valibot";
 
 import type { BrowserDockerRequest } from "./docker";
-import { browserSlotSchema, verifyBrowserEgress, type BrowserSlot } from "./egress";
+import { type BrowserSlot, browserSlotSchema, verifyBrowserEgress } from "./egress";
 import { browserEngine } from "./engine";
-import { browserProfileDirectory, type BrowserProfile } from "./profile";
+import { type BrowserProfile, browserProfileDirectory } from "./profile";
 
 const imageId = v.pipe(v.string(), v.regex(/^sha256:[a-f0-9]{64}$/));
 const containerId = v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/));

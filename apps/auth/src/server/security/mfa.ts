@@ -1,14 +1,14 @@
 import {
-    generateAuthenticationOptions,
-    generateRegistrationOptions,
-    verifyAuthenticationResponse,
-    verifyRegistrationResponse,
     type AuthenticationResponseJSON,
     type AuthenticatorTransport,
+    generateAuthenticationOptions,
+    generateRegistrationOptions,
     type RegistrationResponseJSON,
+    verifyAuthenticationResponse,
+    verifyRegistrationResponse,
 } from "@simplewebauthn/server";
 import { and, eq } from "drizzle-orm";
-import { TOTP, Secret } from "otpauth";
+import { Secret, TOTP } from "otpauth";
 import * as v from "valibot";
 
 import type { AuthStore, AuthTransaction } from "../database/connection";

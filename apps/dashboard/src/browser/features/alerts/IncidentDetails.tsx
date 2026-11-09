@@ -1,5 +1,5 @@
 import type { Incident } from "@homelab/contracts/alerts";
-import { Modal, formatDateTime } from "@homelab/ui";
+import { formatDateTime, Modal } from "@homelab/ui";
 
 import { IncidentStatus } from "./IncidentStatus";
 

@@ -7,7 +7,7 @@ import {
     applicationFixtureDetail,
     createApplicationFixture,
 } from "../../testing/applications";
-import { operationFixture, expectOperationFailure } from "../../testing/operations";
+import { expectOperationFailure, operationFixture } from "../../testing/operations";
 import { mapDockerApplication } from "../applications/inventory";
 import { readApplicationLogs } from "./transport";
 

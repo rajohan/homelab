@@ -5,16 +5,16 @@ import { migrate } from "drizzle-orm/bun-sql/migrator";
 
 import { parseAuthConfiguration } from "../apps/auth/src/server/config/configuration";
 import { connectAuthDatabase } from "../apps/auth/src/server/database/connection";
-import { users, factors } from "../apps/auth/src/server/database/schema";
+import { factors, users } from "../apps/auth/src/server/database/schema";
 import { startAuthServer } from "../apps/auth/src/server/index";
 import {
+    encryptValue,
     hashPassword,
     randomToken,
-    encryptValue,
 } from "../apps/auth/src/server/security/crypto";
 import {
-    developmentTotpSecret,
     developmentTotpCode,
+    developmentTotpSecret,
 } from "../apps/auth/src/server/testing/developmentTotp";
 import { parseDashboardAuthConfiguration } from "../apps/dashboard/src/server/config/auth";
 import { parseOperationsConfiguration } from "../apps/dashboard/src/server/config/operations";
@@ -27,8 +27,8 @@ import { createOperationsRuntime } from "../apps/dashboard/src/server/operations
 import { createApplicationFixture } from "../apps/dashboard/src/server/testing/applications";
 import {
     createMonitoringFixture,
-    seedMonitoringPreview,
     previewUpdateSources,
+    seedMonitoringPreview,
 } from "../apps/dashboard/src/server/testing/monitoring";
 import {
     previewUpdateJobs,

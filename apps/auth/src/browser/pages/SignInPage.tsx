@@ -1,5 +1,5 @@
 import { Button, ErrorNotice, LoadingState, SuccessNotice } from "@homelab/ui";
-import { VerificationMethods, useIdentitySession } from "@homelab/ui/identity";
+import { useIdentitySession, VerificationMethods } from "@homelab/ui/identity";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 

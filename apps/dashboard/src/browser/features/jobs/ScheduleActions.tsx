@@ -1,6 +1,6 @@
 import type { ScheduleSummary } from "@homelab/contracts/operations";
 import { DropdownMenu, ErrorNotice } from "@homelab/ui";
-import { CalendarClock, Pause, Play, Pencil } from "lucide-react";
+import { CalendarClock, Pause, Pencil, Play } from "lucide-react";
 import { useState } from "react";
 
 import { api } from "../../api/client";

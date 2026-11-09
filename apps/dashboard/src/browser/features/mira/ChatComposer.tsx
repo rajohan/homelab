@@ -1,6 +1,6 @@
 import type { MiraAttachment } from "@homelab/contracts/mira";
-import { Button, Textarea, IconButton } from "@homelab/ui";
-import { Send, Square, Settings2, Monitor, Globe } from "lucide-react";
+import { Button, IconButton, Textarea } from "@homelab/ui";
+import { Globe, Monitor, Send, Settings2, Square } from "lucide-react";
 
 import { AttachmentPicker } from "./AttachmentPicker";
 

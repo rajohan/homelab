@@ -2,12 +2,12 @@ import {
     Card,
     DataTable,
     ErrorNotice,
-    LoadingState,
-    SearchInput,
-    SectionHeader,
     formatDateTime,
     formatMetric,
+    LoadingState,
     queryRefresh,
+    SearchInput,
+    SectionHeader,
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 import { Layers } from "lucide-react";

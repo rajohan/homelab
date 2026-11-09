@@ -8,8 +8,8 @@ import type { createGitHubTools } from "../integrations/github/tools";
 import { parseImprovement } from "./plan";
 import {
     improvementBinding,
-    readImprovementGrant,
     type ImprovementBindings,
+    readImprovementGrant,
 } from "./policy";
 
 /**

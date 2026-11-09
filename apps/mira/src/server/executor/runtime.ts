@@ -27,8 +27,8 @@ import {
 } from "../integrations/github/configuration";
 import {
     dispatchMiraCode,
-    reconcileMiraCode,
     inspectMiraCodeAttempt,
+    reconcileMiraCode,
 } from "../integrations/github/outbox";
 import {
     hereNowBindingHash,

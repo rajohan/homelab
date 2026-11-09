@@ -1,8 +1,8 @@
 import {
     miraComputerAccessAcceptSchema,
     miraComputerAccessConnectionSchema,
-    miraComputerAccessRequestSchema,
     miraComputerAccessPermitSchema,
+    miraComputerAccessRequestSchema,
     miraComputerAccessStopSchema,
     type MiraComputerAccessSummary,
 } from "@homelab/contracts/miraComputers";
@@ -11,13 +11,13 @@ import * as v from "valibot";
 
 import { version } from "../../../../../package.json";
 import {
+    type AccessRow,
     lockComputerOwner as lockOwner,
     readComputerAccess as readAccess,
     requireComputerDevice as device,
-    type AccessRow,
 } from "./computerAuthority";
 import { retireComputerCommands } from "./computerCommands";
-import { auditMira, MiraFailure, type MiraContext } from "./context";
+import { auditMira, type MiraContext, MiraFailure } from "./context";
 
 function human(context: MiraContext) {
     if (context.run || context.actor !== `human:${context.owner}`)

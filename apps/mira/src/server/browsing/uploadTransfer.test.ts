@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { BrowserUploadTransfer, browserUploadParts } from "./uploadTransfer";
+import { browserUploadParts, BrowserUploadTransfer } from "./uploadTransfer";
 
 function file(size = 100_003) {
     const bytes = new Uint8Array(size).fill(97);

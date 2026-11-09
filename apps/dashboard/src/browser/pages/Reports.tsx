@@ -3,7 +3,6 @@ import {
     Badge,
     Button,
     buttonStyles,
-    SectionHeader,
     Card,
     DatePicker,
     ErrorNotice,
@@ -11,12 +10,13 @@ import {
     LoadingState,
     PageHeader,
     SearchInput,
+    SectionHeader,
     Select,
     Switch,
 } from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
-import { FileText, ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, FileText } from "lucide-react";
 import { useState } from "react";
 import * as v from "valibot";
 

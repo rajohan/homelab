@@ -7,7 +7,7 @@ import { Effect } from "effect";
 
 import information from "../../../../package.json";
 import { miraServiceConfiguration } from "./config/service";
-import { runMiraExecutor, type MiraHealth } from "./executor/runtime";
+import { type MiraHealth, runMiraExecutor } from "./executor/runtime";
 
 /**
  * Own Mira's independent server lifecycle, migration check and bounded shutdown.

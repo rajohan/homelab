@@ -14,7 +14,7 @@ import {
     type GitHubTreeEntry,
 } from "./protocol";
 import { GitHubMutationUncertain, GitHubPublisher } from "./publisher";
-import { GitHubClient, githubBlobHash } from "./repository";
+import { githubBlobHash, GitHubClient } from "./repository";
 
 const signal = new AbortController().signal;
 const configuration = { owner: "operator", token: "synthetic-dedicated-mira-token" };

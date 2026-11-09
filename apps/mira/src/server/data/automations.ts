@@ -1,11 +1,11 @@
 import {
-    miraScheduleSchema,
-    miraDefaultChatSettings,
     type MiraAutomation,
-    type MiraSchedule,
-    type MiraSwitch,
     type miraAutomationInputSchema,
+    miraDefaultChatSettings,
     type miraEnableSchema,
+    type MiraSchedule,
+    miraScheduleSchema,
+    type MiraSwitch,
 } from "@homelab/contracts/mira";
 import { miraSkillIds } from "@homelab/contracts/miraSkills";
 import { nextScheduleOccurrence } from "@homelab/scheduling";
@@ -14,7 +14,7 @@ import * as v from "valibot";
 
 import { miraSkillsCompatibility } from "../skills/status";
 import { validateMiraAutomationSettings } from "./chatSettings";
-import { auditMira, MiraFailure, type MiraContext, type MiraQuery } from "./context";
+import { auditMira, type MiraContext, MiraFailure, type MiraQuery } from "./context";
 
 export const miraControlKeys = [
     ...miraSkillIds.map((id) => `skill:${id}` as const),

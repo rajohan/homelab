@@ -1,5 +1,5 @@
 import type { NotificationRecord } from "@homelab/contracts/notifications";
-import { Badge, IconButton, buttonStyles, formatDateTime } from "@homelab/ui";
+import { Badge, buttonStyles, formatDateTime, IconButton } from "@homelab/ui";
 import { CheckCheck, Mail, Trash2 } from "lucide-react";
 
 const tones = {

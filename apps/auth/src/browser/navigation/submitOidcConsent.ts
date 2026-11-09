@@ -1,7 +1,7 @@
 import {
-    oidcInteractionSchema,
     type OidcConsent,
     type OidcConsentDecision,
+    oidcInteractionSchema,
 } from "@homelab/contracts";
 import type { IdentityClient } from "@homelab/ui/identity/client";
 import * as v from "valibot";

@@ -1,9 +1,9 @@
 import {
-    miraDefaultChatSettings,
     type MiraActivity,
     type MiraChatSettings,
-    type MiraModel,
+    miraDefaultChatSettings,
     type MiraMessagePart,
+    type MiraModel,
     type MiraSchedule,
 } from "@homelab/contracts/mira";
 import type { MiraCodeContent, MiraCodePublication } from "@homelab/contracts/miraCode";

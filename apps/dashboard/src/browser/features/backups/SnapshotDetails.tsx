@@ -3,9 +3,9 @@ import type { TableSort } from "@homelab/contracts/tableSort";
 import {
     Badge,
     ErrorNotice,
+    formatMetric,
     LoadingState,
     Modal,
-    formatMetric,
     queryRefresh,
 } from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";

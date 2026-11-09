@@ -12,13 +12,13 @@ import { claimJob, commitClaim, settleClaim } from "../../jobs/claims";
 import { enqueueJob, lockQueue } from "../../jobs/queue";
 import { createJobRegistry } from "../../jobs/registry";
 import type { JobHandler } from "../../jobs/types";
-import { operationFixture, expectOperationFailure } from "../../testing/operations";
+import { expectOperationFailure, operationFixture } from "../../testing/operations";
 import { updateActionJobs } from "./actions";
 import { updateBatchKey } from "./batch";
 import {
     parseUpdateTargets,
-    updateTargetRevision,
     type UpdateTarget,
+    updateTargetRevision,
 } from "./configuration";
 import { executeUpdate, updateSshArguments } from "./execution";
 import { readUpdateReport } from "./inventory";

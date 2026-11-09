@@ -1,19 +1,19 @@
 import {
     ApiKeysApiAxiosParamCreator,
+    type CreateSandbox,
     OrganizationsApiAxiosParamCreator,
     SandboxApiAxiosParamCreator,
     SnapshotsApiAxiosParamCreator,
-    type CreateSandbox,
 } from "@daytona/api-client";
 import * as v from "valibot";
 
 import { integrationJson } from "../http";
 import {
     daytonaBindingHash,
+    type DaytonaConfiguration,
     daytonaOriginalBindingHash,
     daytonaPolicy,
     daytonaSandboxName,
-    type DaytonaConfiguration,
 } from "./configuration";
 
 const id = v.pipe(v.string(), v.uuid());

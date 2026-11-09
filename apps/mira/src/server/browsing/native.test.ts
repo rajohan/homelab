@@ -5,7 +5,7 @@ import { realpath } from "node:fs/promises";
 import { createVisualChallenge } from "../testing/visualChallenge";
 import { openNativeBrowser } from "./native";
 import { browserGrant, browserManifest, browserUrl } from "./policy";
-import { browserMetadata, browserSnapshot, type BrowserNativeResult } from "./protocol";
+import { browserMetadata, type BrowserNativeResult, browserSnapshot } from "./protocol";
 
 const signal = () => new AbortController().signal;
 const origin = "https://fixture.invalid";

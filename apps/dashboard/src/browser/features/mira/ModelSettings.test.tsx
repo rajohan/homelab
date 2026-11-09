@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 
 import {
+    type MiraChatSettings,
     miraDefaultChatSettings,
     miraModelSchema,
-    type MiraChatSettings,
 } from "@homelab/contracts/mira";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";

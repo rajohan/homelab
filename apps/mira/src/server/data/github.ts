@@ -1,6 +1,6 @@
 import {
-    githubBindingHash,
     type GitHubBinding,
+    githubBindingHash,
 } from "../integrations/github/configuration";
 import type { MiraContext, MiraQuery } from "./context";
 

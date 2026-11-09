@@ -1,10 +1,10 @@
 import type { JobSummary } from "@homelab/contracts/operations";
 import type { TableSort } from "@homelab/contracts/tableSort";
 import {
-    IconButton,
-    DataTable,
     ConfirmDialog,
+    DataTable,
     formatDateTime,
+    IconButton,
     type InfiniteScrollContinuation,
 } from "@homelab/ui";
 import { Square } from "lucide-react";

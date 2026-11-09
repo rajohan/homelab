@@ -8,7 +8,7 @@ import {
 import * as v from "valibot";
 
 import { automaticReleaseEligible } from "./deploymentAutomatic";
-import { deploymentTestTarget as target, deploymentTestPlan } from "./deploymentFixtures";
+import { deploymentTestPlan, deploymentTestTarget as target } from "./deploymentFixtures";
 import { deploymentWindowEnd } from "./deploymentWindow";
 
 const policy: DeploymentPolicySummary = {

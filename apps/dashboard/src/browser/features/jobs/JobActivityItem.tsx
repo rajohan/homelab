@@ -1,6 +1,6 @@
 import type { JobSummary } from "@homelab/contracts/operations";
 import { Badge, IconButton } from "@homelab/ui";
-import { CheckCircle2, Clock3, CircleAlert, LoaderCircle, X } from "lucide-react";
+import { CheckCircle2, CircleAlert, Clock3, LoaderCircle, X } from "lucide-react";
 
 import { JobStatus } from "./JobStatus";
 

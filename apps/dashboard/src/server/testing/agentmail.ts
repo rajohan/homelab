@@ -1,7 +1,7 @@
 import { publishAgentMailReceiver } from "@homelab/mira/data/integrations";
 import {
-    agentMailBindingHash,
     type AgentMailBinding,
+    agentMailBindingHash,
 } from "@homelab/mira/integrations/agentmail/configuration";
 import type { SQL } from "bun";
 

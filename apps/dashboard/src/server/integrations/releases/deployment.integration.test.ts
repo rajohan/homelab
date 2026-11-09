@@ -9,13 +9,13 @@ import { claimJob, commitClaim, settleClaim } from "../../jobs/claims";
 import { setWorkerControl } from "../../jobs/control";
 import { enqueueJob, lockQueue } from "../../jobs/queue";
 import { createJobRegistry } from "../../jobs/registry";
-import { operationFixture, expectOperationFailure } from "../../testing/operations";
+import { expectOperationFailure, operationFixture } from "../../testing/operations";
 import { authReleaseObservations } from "./authObservations";
 import { coordinateDeployment } from "./deploymentCoordinator";
 import {
     deploymentTestConnections,
-    deploymentTestTarget,
     deploymentTestPlan,
+    deploymentTestTarget,
 } from "./deploymentFixtures";
 import { recordDeploymentInventory } from "./deploymentInventory";
 import { deploymentPreparationJobs } from "./deploymentPlans";

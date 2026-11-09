@@ -1,5 +1,5 @@
 import type { JobSummary } from "@homelab/contracts/operations";
-import { useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 
 type ObservedRuns = readonly Pick<JobSummary, "id" | "action" | "finishedAt">[];

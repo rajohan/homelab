@@ -3,8 +3,8 @@ import os from "node:os";
 import path from "node:path";
 
 import {
-    miraComputerElementsSchema,
     type MiraComputerElement,
+    miraComputerElementsSchema,
 } from "@homelab/contracts/miraComputerCommands";
 import type * as NativeSdk from "@trycua/cua-driver";
 import { imageSize } from "image-size";

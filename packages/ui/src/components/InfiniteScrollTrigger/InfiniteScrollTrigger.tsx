@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, type RefObject } from "react";
+import { type RefObject, useEffect, useEffectEvent, useRef } from "react";
 
 import { ErrorNotice } from "../Alert/ErrorNotice";
 import { Button } from "../Button/Button";

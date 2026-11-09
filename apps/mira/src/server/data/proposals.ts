@@ -1,14 +1,14 @@
 import {
     miraMemoryInputSchema,
     miraProgressInputSchema,
-    miraTaskInputSchema,
-    miraTaskUpdateSchema,
     type MiraProposal,
     type miraProposalDecisionSchema,
+    miraTaskInputSchema,
+    miraTaskUpdateSchema,
 } from "@homelab/contracts/mira";
 import * as v from "valibot";
 
-import { auditMira, lockMiraProposals, MiraFailure, type MiraContext } from "./context";
+import { auditMira, lockMiraProposals, type MiraContext, MiraFailure } from "./context";
 import { saveMemory } from "./documents";
 import { addTaskProgress, saveTask } from "./tasks";
 

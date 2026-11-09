@@ -1,6 +1,6 @@
 import {
-    miraComputerAccessRequestSchema,
     miraComputerAccessListSchema,
+    miraComputerAccessRequestSchema,
     miraComputerAccessStopSchema,
     miraComputerPairSchema,
 } from "@homelab/contracts/miraComputers";
@@ -15,7 +15,7 @@ import {
     listMiraComputers,
     revokeMiraComputer,
 } from "@homelab/mira/data/computers";
-import { MiraFailure, type MiraContext } from "@homelab/mira/data/context";
+import { type MiraContext, MiraFailure } from "@homelab/mira/data/context";
 
 import { runOperation, trpc } from "../api/trpc";
 import { releaseSnapshot } from "../integrations/releases/snapshot";

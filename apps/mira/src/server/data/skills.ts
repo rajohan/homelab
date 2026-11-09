@@ -1,13 +1,13 @@
 import type {
-    MiraSkillSummary,
     miraSkillReadSchema,
+    MiraSkillSummary,
 } from "@homelab/contracts/miraSkills";
 import type * as v from "valibot";
 
 import { describeMiraSkillPackages, readBundledMiraSkill } from "../skills/catalog";
 import { miraSkillsCompatibility } from "../skills/status";
 import { listMiraSwitches } from "./automations";
-import { MiraFailure, type MiraContext } from "./context";
+import { type MiraContext, MiraFailure } from "./context";
 
 /**
  * List installed guidance with only the current owner's independent pause controls.

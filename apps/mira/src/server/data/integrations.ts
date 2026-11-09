@@ -1,12 +1,12 @@
 import {
-    agentMailBindingHash,
     type AgentMailBinding,
+    agentMailBindingHash,
 } from "../integrations/agentmail/configuration";
 import type { DaytonaBinding } from "../integrations/daytona/configuration";
 import type { GitHubBinding } from "../integrations/github/configuration";
 import type { HereNowBinding } from "../integrations/herenow/configuration";
 import type { MoltbookBinding } from "../integrations/moltbook/configuration";
-import { localCodeStatus, type LocalCodeBinding } from "../sandbox/localBinding";
+import { type LocalCodeBinding, localCodeStatus } from "../sandbox/localBinding";
 import type { MiraContext, MiraQuery } from "./context";
 import { daytonaIntegrationStatus } from "./daytona";
 import { githubIntegrationStatus } from "./github";

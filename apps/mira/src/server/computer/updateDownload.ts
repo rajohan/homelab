@@ -1,16 +1,16 @@
 import { createHash } from "node:crypto";
-import { lstat, mkdtemp, open, rm, type FileHandle } from "node:fs/promises";
+import { type FileHandle, lstat, mkdtemp, open, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import {
+    type MiraComputerUpdate,
     miraComputerUpdateSchema,
     miraComputerUpdateUrl,
-    type MiraComputerUpdate,
 } from "@homelab/contracts/miraComputerUpdates";
 import * as v from "valibot";
 
-import { fetchComputer, type ComputerFetch } from "./companion";
+import { type ComputerFetch, fetchComputer } from "./companion";
 
 function newerVersion(installed: string, available: string): boolean {
     if (!/^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(installed))

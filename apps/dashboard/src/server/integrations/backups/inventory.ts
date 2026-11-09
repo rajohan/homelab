@@ -1,7 +1,7 @@
 import type { BackupInventory, BackupRecord } from "@homelab/contracts/backups";
 
-import { measurement, exporterAvailable, type MetricSamples } from "../metrics/samples";
-import { queryMetrics, type MetricsConfiguration } from "../metrics/transport";
+import { exporterAvailable, measurement, type MetricSamples } from "../metrics/samples";
+import { type MetricsConfiguration, queryMetrics } from "../metrics/transport";
 
 function date(value: number | null): string | null {
     return value !== null && value > 0 && value < 8_640_000_000_000

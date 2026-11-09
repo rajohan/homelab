@@ -1,6 +1,6 @@
 import type {
-    MiraBrowserPreview,
     miraBrowserHumanCommandSchema,
+    MiraBrowserPreview,
 } from "@homelab/contracts/miraBrowser";
 import { ActionGroup, Button, FormField, Input, Select } from "@homelab/ui";
 import { useState } from "react";

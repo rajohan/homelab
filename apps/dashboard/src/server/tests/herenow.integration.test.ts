@@ -1,13 +1,13 @@
-import { expect, test, spyOn } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { rejects } from "node:assert/strict";
 
 import { capabilities } from "@homelab/contracts/operations";
 import { reconcileMiraControls } from "@homelab/mira/data/automations";
-import { publishHereNowBinding, hereNowBindingCurrent } from "@homelab/mira/data/herenow";
+import { hereNowBindingCurrent, publishHereNowBinding } from "@homelab/mira/data/herenow";
 import { claimMiraRun } from "@homelab/mira/data/queue";
 import {
-    hereNowBindingHash,
     type HereNowBinding,
+    hereNowBindingHash,
 } from "@homelab/mira/integrations/herenow/configuration";
 import { HereNowReader } from "@homelab/mira/integrations/herenow/reader";
 import type { SQL } from "bun";

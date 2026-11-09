@@ -8,13 +8,13 @@ import { promisify } from "node:util";
 import { setMiraEnabled } from "@homelab/mira/data/automations";
 import { requestMiraBrowserAccess } from "@homelab/mira/data/browserAccess";
 import {
+    enqueueMiraBrowserHumanCommand,
     readMiraBrowserConsole,
     transferMiraBrowserControl,
-    enqueueMiraBrowserHumanCommand,
 } from "@homelab/mira/data/browserConsole";
 import { listMiraBrowserUploads } from "@homelab/mira/data/browserUploads";
 import { createConversation, enqueueTurn } from "@homelab/mira/data/conversations";
-import { saveMiraFile, readMiraFile } from "@homelab/mira/data/files";
+import { readMiraFile, saveMiraFile } from "@homelab/mira/data/files";
 import { claimMiraRun } from "@homelab/mira/data/queue";
 
 import { createTestDatabase } from "../../../../../tests/database";

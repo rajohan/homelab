@@ -1,4 +1,4 @@
-import { miraMailContentSchema, type MiraMailContent } from "@homelab/contracts/miraMail";
+import { type MiraMailContent, miraMailContentSchema } from "@homelab/contracts/miraMail";
 import { publishNotification } from "@homelab/notifications";
 import type { SQL } from "bun";
 import * as v from "valibot";

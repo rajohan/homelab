@@ -9,8 +9,8 @@ import { createSandboxDirectory, readSandboxPatch, writeSandboxArtifact } from "
 import { runSandboxProcess, type SandboxProcessResult } from "./process";
 import {
     daytonaCheckProfile,
-    daytonaSandboxSchema,
     type DaytonaSandboxRequest,
+    daytonaSandboxSchema,
 } from "./profile";
 const git = (...args: string[]) => [
     "git",

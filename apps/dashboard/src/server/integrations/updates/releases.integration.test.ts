@@ -4,7 +4,7 @@ import { updateChange, type UpdateItem } from "@homelab/contracts/updates";
 
 import { dockerHubVersionTag } from "./dockerHubTags";
 import { githubReleaseRequest } from "./github";
-import { publicImageReference, imageVersionTag } from "./imageReference";
+import { imageVersionTag, publicImageReference } from "./imageReference";
 import { resolveUpdates } from "./job";
 import { latestImage, resolveImageUpdate } from "./registry";
 import { registryRequest } from "./registryRequest";

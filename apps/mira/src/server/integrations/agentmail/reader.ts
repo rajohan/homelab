@@ -4,13 +4,13 @@ import { miraFileLimit, miraFileType } from "../../data/files";
 import { integrationBytes, integrationJson } from "../http";
 import type { AgentMailReadConfiguration } from "./configuration";
 import {
-    agentMailContentSchema,
     agentMailAttachmentDownloadSchema,
-    agentMailIdSchema,
+    agentMailContentSchema,
     agentMailEventPageSchema,
-    agentMailMessageSchema,
+    agentMailIdSchema,
     type AgentMailMessage,
     agentMailMessagePageSchema,
+    agentMailMessageSchema,
     ordinaryReceivedMail,
 } from "./schema";
 

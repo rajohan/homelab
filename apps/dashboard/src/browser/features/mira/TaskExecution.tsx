@@ -1,6 +1,6 @@
 import { Button, ErrorNotice, LoadingState, SectionHeader } from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { Play, Activity, ClipboardCheck } from "lucide-react";
+import { Activity, ClipboardCheck, Play } from "lucide-react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";

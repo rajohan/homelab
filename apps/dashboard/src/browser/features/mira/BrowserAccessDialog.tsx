@@ -1,15 +1,16 @@
 import type { MiraRun } from "@homelab/contracts/mira";
 import {
-    publicBrowserScope,
     connectedBrowserScope,
     internetBrowserScope,
     type miraBrowserAccessRequestSchema,
+    publicBrowserScope,
 } from "@homelab/contracts/miraBrowser";
 import {
     ActionGroup,
     Badge,
     Button,
     ErrorNotice,
+    formatDateTime,
     FormField,
     Input,
     LoadingState,
@@ -17,7 +18,6 @@ import {
     SectionHeader,
     Select,
     Textarea,
-    formatDateTime,
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 import { Globe, Square } from "lucide-react";

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 import * as v from "valibot";
 
-import { computerOrigin, type ComputerEnrollment } from "./companion";
+import { type ComputerEnrollment, computerOrigin } from "./companion";
 import { readComputerCredential } from "./credentials";
 
 const recordSchema = v.strictObject({

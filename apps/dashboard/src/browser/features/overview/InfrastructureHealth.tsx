@@ -1,11 +1,11 @@
 import {
+    buttonStyles,
     Card,
     DataTable,
     ErrorNotice,
+    formatMetric,
     LoadingState,
     SectionHeader,
-    buttonStyles,
-    formatMetric,
 } from "@homelab/ui";
 import { Link } from "@tanstack/react-router";
 import { Server } from "lucide-react";

@@ -1,6 +1,6 @@
 import type { MiraMailAttachment, MiraMailContent } from "@homelab/contracts/miraMail";
 
-import { MiraFailure, type MiraContext, type MiraQuery } from "./context";
+import { type MiraContext, MiraFailure, type MiraQuery } from "./context";
 import { readMiraFile } from "./files";
 
 /**

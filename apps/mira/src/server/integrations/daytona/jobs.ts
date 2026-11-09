@@ -4,9 +4,9 @@ import type { SQL } from "bun";
 import { miraActionApproval } from "../../data/approvalPolicy";
 import {
     MiraFailure,
+    type MiraQuery,
     requireConversation,
     requireTask,
-    type MiraQuery,
 } from "../../data/context";
 import {
     daytonaPermission,
@@ -16,10 +16,10 @@ import {
 import { readMiraFile, saveMiraFile } from "../../data/files";
 import { improvementJobAllowed } from "../../improvement/policy";
 import {
-    daytonaBindingHash,
-    daytonaPolicy,
     type DaytonaBinding,
+    daytonaBindingHash,
     type DaytonaExecutionConfiguration,
+    daytonaPolicy,
 } from "./configuration";
 import { DaytonaClient } from "./controlPlane";
 import {

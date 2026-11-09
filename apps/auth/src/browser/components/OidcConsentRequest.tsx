@@ -1,7 +1,7 @@
 import {
-    oidcScopeDescriptions,
     type OidcConsent,
     type OidcConsentDecision,
+    oidcScopeDescriptions,
 } from "@homelab/contracts";
 import { ActionGroup, Button, ErrorNotice } from "@homelab/ui";
 import { useState } from "react";

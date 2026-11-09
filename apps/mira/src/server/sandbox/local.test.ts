@@ -19,9 +19,9 @@ import {
 } from "./localContainer";
 import { runLocalCheck } from "./localHarness";
 import {
+    type LocalCheckResult,
     parseLocalCheckInput,
     parseLocalCheckResult,
-    type LocalCheckResult,
 } from "./localProtocol";
 
 const owner = "11111111-1111-4111-8111-111111111111";

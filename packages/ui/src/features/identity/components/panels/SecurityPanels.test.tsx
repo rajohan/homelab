@@ -1,6 +1,6 @@
 import { expect, mock, test } from "bun:test";
 
-import { render, screen, fireEvent, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 
 import type { AccountSnapshot } from "../../api/schemas";
 import { AccountIdentityPanel } from "./AccountIdentityPanel";

@@ -1,7 +1,7 @@
 import * as v from "valibot";
 
 import { integrationJson } from "../http";
-import { hereNowSlugSchema, type HereNowReadConfiguration } from "./configuration";
+import { type HereNowReadConfiguration, hereNowSlugSchema } from "./configuration";
 
 const text = (maximum: number) => v.pipe(v.string(), v.maxLength(maximum));
 const id = v.pipe(v.string(), v.uuid());

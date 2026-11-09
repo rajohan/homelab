@@ -2,13 +2,13 @@ import {
     ErrorNotice,
     LoadingState,
     Popover,
-    VirtualList,
-    queryRefresh,
     type PopoverControl,
+    queryRefresh,
+    VirtualList,
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 import { Cog } from "lucide-react";
-import { useState, type Ref } from "react";
+import { type Ref, useState } from "react";
 
 import { api } from "../../api/client";
 import { JobActivityItem } from "./JobActivityItem";

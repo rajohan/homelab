@@ -1,7 +1,7 @@
 import { expect, spyOn, test } from "bun:test";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, within, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, waitFor, within } from "@testing-library/react";
 
 import { intersectionFixture } from "../../../../../../../tests/intersectionFixture";
 import { IdentityClient } from "../../api/IdentityClient";

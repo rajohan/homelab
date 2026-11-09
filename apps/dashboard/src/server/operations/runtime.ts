@@ -14,8 +14,8 @@ import type { AlertsConfiguration } from "../integrations/alerts/transport";
 import type { ApplicationTarget } from "../integrations/applications/configuration";
 import { applicationJobs } from "../integrations/applications/jobs";
 import {
-    readBackupCatalog,
     type BackupCatalogConfiguration,
+    readBackupCatalog,
 } from "../integrations/backups/catalog";
 import { backupsJob } from "../integrations/backups/job";
 import { readBackupInventory } from "../integrations/backups/routes";

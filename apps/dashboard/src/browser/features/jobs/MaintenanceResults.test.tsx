@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { render, screen, cleanup } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 
 import { MaintenanceResults } from "./MaintenanceResults";
 import { RunProgress } from "./RunProgress";

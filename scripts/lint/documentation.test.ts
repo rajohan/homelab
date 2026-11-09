@@ -63,8 +63,6 @@ test("documentation lint requires public contracts without requiring private hel
                 "lint",
                 "--no-script",
                 "--deny-warnings",
-                "--config",
-                "oxlint.config.ts",
                 "--format",
                 "json",
                 fixturePath,

@@ -1,5 +1,5 @@
 import { Fieldset as HeadlessFieldset, Legend } from "@headlessui/react";
-import { useId, type ReactNode } from "react";
+import { type ReactNode, useId } from "react";
 
 import { cn } from "../../lib/classNames";
 import { FormFieldInvalidContext } from "../../lib/formFieldContext";

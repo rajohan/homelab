@@ -3,9 +3,9 @@ import type { SQL, TransactionSQL } from "bun";
 import * as v from "valibot";
 
 import type { BrowserDownloadFile } from "../browsing/downloadTransfer";
-import { browserHostContext, type BrowserCommandClaim } from "./browserCommands";
+import { type BrowserCommandClaim, browserHostContext } from "./browserCommands";
 import { requireBrowserDownload } from "./browserDownloadAccess";
-import { auditMira, MiraFailure, type MiraContext } from "./context";
+import { auditMira, type MiraContext, MiraFailure } from "./context";
 import { saveMiraFile } from "./files";
 
 function requireSignal(signal: AbortSignal): void {

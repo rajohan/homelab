@@ -6,7 +6,7 @@ import type { MiraContext } from "../../data/context";
 import { MiraFailure } from "../../data/context";
 import { moltbookBindingCurrent } from "../../data/moltbook";
 import type { MiraClaim } from "../../data/queue";
-import { saveMiraSocial, listMiraSocial } from "../../data/social";
+import { listMiraSocial, saveMiraSocial } from "../../data/social";
 import type { RuntimeTool } from "../../runtime/protocol";
 import { moltbookCommentsInputSchema } from "./comments";
 import {

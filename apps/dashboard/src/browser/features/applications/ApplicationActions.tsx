@@ -4,7 +4,7 @@ import type {
 } from "@homelab/contracts/applications";
 import { availableApplicationOperations } from "@homelab/contracts/applications";
 import { ConfirmDialog, DropdownMenu } from "@homelab/ui";
-import { Play, Square, RotateCw } from "lucide-react";
+import { Play, RotateCw, Square } from "lucide-react";
 import { useState } from "react";
 
 import { api } from "../../api/client";

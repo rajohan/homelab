@@ -1,8 +1,8 @@
 import {
-    miraSkillIdSchema,
-    miraSkillIds,
     type MiraSkillDocument,
     type MiraSkillId,
+    miraSkillIds,
+    miraSkillIdSchema,
     type MiraSkillSummary,
 } from "@homelab/contracts/miraSkills";
 import * as v from "valibot";

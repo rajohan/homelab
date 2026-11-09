@@ -1,5 +1,5 @@
-import { and, eq, gt, isNull, isNotNull } from "drizzle-orm";
-import { errors, type Adapter, type AdapterPayload } from "oidc-provider";
+import { and, eq, gt, isNotNull, isNull } from "drizzle-orm";
+import { type Adapter, type AdapterPayload, errors } from "oidc-provider";
 import * as v from "valibot";
 
 import type { AuthConfiguration } from "../config/configuration";

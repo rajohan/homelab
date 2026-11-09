@@ -81,12 +81,19 @@ The Happy DOM preload registers Jest DOM matchers with Bun's native `expect`. Co
 
 ## Editor runtime
 
-`bun run lint` uses Bun's built-in type-aware linter with `oxlint.config.ts`; it does
-not run the removed Oxlint wrapper or require Node in PATH. `bun run format` and
-`bun run format:check` use the built-in formatter with `.oxfmtrc.json`.
+`bun run lint`, `bun run format` and `bun run format:check` use Bun's built-in
+engines and the shared `bunfig.toml`. No separate lint/formatter config or Oxlint
+wrapper is required. Lint keeps Bun's Oxlint compatibility mode, type checking,
+unused-disable errors and the explicit project rules. `inferGlobals` resolves
+runtime globals from each file's TypeScript environment; unknown names and the
+browser/server/shared-package boundary rules remain checked.
+The previously pinned preset rules are now explicit in `bunfig.toml`, so lint
+policy changes are reviewed in that file instead of inherited from a preset package.
+Formatting retains the previous style while using Bun's import sorting, which also
+sorts named imports and merges compatible imports from the same module.
 `scripts/format.css` exposes the existing Tailwind configuration and shared utilities
-to the formatter without changing application styles. The existing preset package,
-Tailwind plugin and ESLint JSDoc/React plugins remain pinned.
+to the formatter without changing application styles. The Tailwind plugin and
+ESLint JSDoc/React plugins remain pinned.
 
 Bun's formatter does not provide an editor language server. Do not configure an editor
 to run the removed `node_modules/oxfmt` or `node_modules/oxlint` binaries. Use these

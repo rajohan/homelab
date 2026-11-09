@@ -1,6 +1,6 @@
 import {
-    miraLiveAssistanceMinutesSchema,
     type MiraChatSettings,
+    miraLiveAssistanceMinutesSchema,
 } from "@homelab/contracts/mira";
 import type { SQL } from "bun";
 import * as v from "valibot";

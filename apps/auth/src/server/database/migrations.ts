@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 
 import { sql } from "drizzle-orm";
-import { readMigrationFiles, type MigrationMeta } from "drizzle-orm/migrator";
+import { type MigrationMeta, readMigrationFiles } from "drizzle-orm/migrator";
 import * as v from "valibot";
 
 import type { AuthDatabase } from "./connection";

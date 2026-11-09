@@ -7,7 +7,7 @@ import type { UpdateReport } from "@homelab/contracts/updates";
 import { appRouter } from "../api/router";
 import { updateActionJobs } from "../integrations/updates/actions";
 import { applyUpdate } from "../integrations/updates/apply";
-import { readUpdateReport, freshAptObservation } from "../integrations/updates/inventory";
+import { freshAptObservation, readUpdateReport } from "../integrations/updates/inventory";
 import { updatesJob } from "../integrations/updates/job";
 import { writeUpdatePolicy } from "../integrations/updates/policies";
 import { claimJob, commitClaim, settleClaim } from "../jobs/claims";
@@ -16,8 +16,8 @@ import { createJobRegistry } from "../jobs/registry";
 import { operationFixture } from "../testing/operations";
 import {
     previewUpdateItems,
-    previewUpdateTargets,
     previewUpdateJobs,
+    previewUpdateTargets,
 } from "../testing/updates";
 
 test("software and toolchains have separate complete sorted pages, policies and batch admission", async () => {

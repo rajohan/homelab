@@ -6,10 +6,10 @@ import { version } from "../../../../../package.json";
 import {
     ComputerCompanion,
     ComputerConnectionError,
-    ComputerRequestCancelledError,
-    isComputerCancellation,
     computerOrigin,
+    ComputerRequestCancelledError,
     fetchComputer,
+    isComputerCancellation,
 } from "./companion";
 import { main } from "./companionCli";
 import { readComputerTicket } from "./companionInput";

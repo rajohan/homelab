@@ -1,8 +1,8 @@
 import {
-    updateBatchRequestSchema,
-    updateRequestSchema,
     type UpdateBatchEntry,
     type UpdateBatchPlan,
+    updateBatchRequestSchema,
+    updateRequestSchema,
     type UpdateSource,
 } from "@homelab/contracts/updates";
 import type { SQL, TransactionSQL } from "bun";
@@ -16,10 +16,10 @@ import type { ApplicationTarget } from "../applications/configuration";
 import { applyUpdate, updateTimeoutMs } from "./apply";
 import type { UpdateTarget } from "./configuration";
 import type { UpdateExecutor } from "./execution";
-import { readUpdateReport, freshAptObservation } from "./inventory";
+import { freshAptObservation, readUpdateReport } from "./inventory";
 import {
-    updateReceiptScope,
     updateReceiptResourceKeys,
+    updateReceiptScope,
     verifyUpdateReceiptLeases,
 } from "./receipts";
 import { matchesUpdateTarget, updateControl } from "./selection";

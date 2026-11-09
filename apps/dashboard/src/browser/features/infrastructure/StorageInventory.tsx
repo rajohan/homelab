@@ -2,7 +2,7 @@ import type {
     DiskHealthMetric,
     StoragePoolMetric,
 } from "@homelab/contracts/infrastructure";
-import { Card, DataTable, SectionHeader, formatMetric } from "@homelab/ui";
+import { Card, DataTable, formatMetric, SectionHeader } from "@homelab/ui";
 import { HardDrive } from "lucide-react";
 
 import { ResourceStatus } from "./ResourceStatus";

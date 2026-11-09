@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { rejects } from "node:assert/strict";
 
-import type { MiraSocialDraft, MiraSocialContent } from "@homelab/contracts/miraSocial";
+import type { MiraSocialContent, MiraSocialDraft } from "@homelab/contracts/miraSocial";
 import { capabilities } from "@homelab/contracts/operations";
 import { miraActionApproval } from "@homelab/mira/data/approvalPolicy";
 import { publishMoltbookBinding } from "@homelab/mira/data/moltbook";
@@ -14,7 +14,7 @@ import {
 } from "@homelab/mira/integrations/moltbook/outbox";
 
 import { appRouter } from "../api/router";
-import { permissionRun, permissionAction } from "../testing/miraPermissions";
+import { permissionAction, permissionRun } from "../testing/miraPermissions";
 import { createMiraTextTestTools as createMiraTools } from "../testing/miraTools";
 import { operationFixture } from "../testing/operations";
 

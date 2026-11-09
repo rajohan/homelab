@@ -6,8 +6,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import {
-    miraComputerUpdateUrl,
     type MiraComputerUpdate,
+    miraComputerUpdateUrl,
 } from "@homelab/contracts/miraComputerUpdates";
 
 import { withComputerUpdate } from "./updateDownload";

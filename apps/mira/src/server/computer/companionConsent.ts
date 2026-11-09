@@ -1,8 +1,8 @@
 import type { MiraComputerConsentRequest } from "@homelab/contracts/miraComputers";
 
 import type { ComputerCompanion } from "./companion";
-import { computerGrant, type ComputerGrant } from "./policy";
-import { ComputerWindowSession, type ComputerWindowPort } from "./session";
+import { type ComputerGrant, computerGrant } from "./policy";
+import { type ComputerWindowPort, ComputerWindowSession } from "./session";
 
 export interface ComputerConsentHost {
     /** Permanent local stop, including closure or loss of the consent surface. */

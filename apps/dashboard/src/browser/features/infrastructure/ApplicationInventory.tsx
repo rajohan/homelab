@@ -1,5 +1,5 @@
 import type { ApplicationMetric } from "@homelab/contracts/infrastructure";
-import { Card, DataTable, SearchInput, SectionHeader, formatMetric } from "@homelab/ui";
+import { Card, DataTable, formatMetric, SearchInput, SectionHeader } from "@homelab/ui";
 import { Boxes } from "lucide-react";
 import { useState } from "react";
 

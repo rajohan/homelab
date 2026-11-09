@@ -4,10 +4,10 @@ import {
     Card,
     ErrorNotice,
     LoadingState,
+    queryRefresh,
     SearchInput,
     SectionHeader,
     Switch,
-    queryRefresh,
 } from "@homelab/ui";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";

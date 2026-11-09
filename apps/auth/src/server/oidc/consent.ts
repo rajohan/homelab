@@ -1,6 +1,6 @@
 import type { IncomingMessage } from "node:http";
 
-import { oidcConsentDecisionSchema, type OidcConsentDecision } from "@homelab/contracts";
+import { type OidcConsentDecision, oidcConsentDecisionSchema } from "@homelab/contracts";
 import * as v from "valibot";
 
 const inputSchema = v.union([v.strictObject({}), oidcConsentDecisionSchema]);

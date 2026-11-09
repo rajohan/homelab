@@ -1,7 +1,7 @@
 import {
-    miraImprovementPolicy,
     type MiraImprovementGrant,
     type miraImprovementGrantSchema,
+    miraImprovementPolicy,
     type miraImprovementResolveSchema,
 } from "@homelab/contracts/miraImprovement";
 import type * as v from "valibot";
@@ -9,23 +9,23 @@ import type * as v from "valibot";
 import { codePermission } from "../data/code";
 import {
     auditMira,
-    MiraFailure,
     type MiraContext,
+    MiraFailure,
     type MiraQuery,
 } from "../data/context";
 import { codeJobPermission } from "../data/daytona";
 import {
-    daytonaBindingHash,
     type DaytonaBinding,
+    daytonaBindingHash,
 } from "../integrations/daytona/configuration";
 import {
-    githubBindingHash,
     type GitHubBinding,
+    githubBindingHash,
 } from "../integrations/github/configuration";
 import {
     isLocalCodeBinding,
-    localCodeBindingHash,
     type LocalCodeBinding,
+    localCodeBindingHash,
 } from "../sandbox/localBinding";
 
 export interface ImprovementBindings {

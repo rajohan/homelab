@@ -1,14 +1,14 @@
 import {
-    miraChatSettingsSchema,
-    miraModelSchema,
     type MiraChatSettings,
-    type MiraModel,
+    miraChatSettingsSchema,
     type miraChatSettingsUpdateSchema,
+    type MiraModel,
+    miraModelSchema,
 } from "@homelab/contracts/mira";
 import * as v from "valibot";
 
 import { isSyntheticModel } from "../runtime/syntheticCatalog";
-import { auditMira, MiraFailure, type MiraContext, type MiraQuery } from "./context";
+import { auditMira, type MiraContext, MiraFailure, type MiraQuery } from "./context";
 
 /**
  * Resolve the automatic model for accounts without the owner-bound subscription.

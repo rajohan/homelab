@@ -6,7 +6,7 @@ import { daytonaExecutionConfiguration } from "../integrations/daytona/configura
 import { githubConfiguration } from "../integrations/github/configuration";
 import { hereNowReadConfiguration } from "../integrations/herenow/configuration";
 import { moltbookReadConfiguration } from "../integrations/moltbook/configuration";
-import { pilotEnvironment, type PilotConfig } from "../runtime/configuration";
+import { type PilotConfig, pilotEnvironment } from "../runtime/configuration";
 import { syntheticConfiguration } from "../runtime/syntheticConfiguration";
 import { localCodeEnvironment } from "../sandbox/localBinding";
 

@@ -1,4 +1,4 @@
-import { capabilitySchema, type Capability } from "@homelab/contracts/operations";
+import { type Capability, capabilitySchema } from "@homelab/contracts/operations";
 import type { SQL } from "bun";
 import * as v from "valibot";
 

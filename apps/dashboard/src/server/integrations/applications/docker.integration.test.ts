@@ -1,23 +1,23 @@
 import { expect, test } from "bun:test";
 
 import {
-    createApplicationFixture,
     applicationFixtureDetail,
+    createApplicationFixture,
 } from "../../testing/applications";
 import { expectOperationFailure, operationFixture } from "../../testing/operations";
 import { performApplicationAction } from "./actions";
 import { waitForApplicationReady } from "./dependencies";
 import { createDockerPort, type DockerPort } from "./docker";
 import {
+    applicationInventoryByteLimit,
     collectApplications,
     filterApplicationInventory,
     mapDockerApplication,
-    applicationInventoryByteLimit,
 } from "./inventory";
 import {
     readApplicationInventory,
-    selectionRevision,
     selectApplications,
+    selectionRevision,
 } from "./selection";
 
 test.each(["NetworkMode", "PidMode", "IpcMode"] as const)(

@@ -7,10 +7,10 @@ import { RuntimeCleanupError } from "../runtime/rpcProcess";
 import { computerConsentRequestSchema, computerOrigin } from "./companion";
 import type { ComputerConsentHost } from "./companionConsent";
 import {
-    openComputerConsentSurface,
     type ComputerConsentSurface,
+    openComputerConsentSurface,
 } from "./consentProcess";
-import { computerGrant, type ComputerGrant } from "./policy";
+import { type ComputerGrant, computerGrant } from "./policy";
 import type { ComputerWindowPort } from "./session";
 
 type SurfaceOptions = Parameters<typeof openComputerConsentSurface>[0];

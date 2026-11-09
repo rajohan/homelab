@@ -8,10 +8,10 @@ import { miraDaytonaHash, validateDaytonaInputs } from "../data/daytona";
 import { readMiraFile, saveMiraFile } from "../data/files";
 import { improvementJobAllowed } from "../improvement/policy";
 import {
+    type LocalCodeBinding,
     localCodeBindingHash,
     localCodeBindingSchema,
     localCodePermission,
-    type LocalCodeBinding,
 } from "./localBinding";
 import {
     cleanupLocalCodeContainer,

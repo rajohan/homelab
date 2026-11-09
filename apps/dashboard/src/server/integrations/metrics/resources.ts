@@ -13,9 +13,9 @@ import {
     applicationInventoryAvailable,
     exporterAvailable,
     measurement,
+    type MetricSamples,
     resourceKey,
     resourceState,
-    type MetricSamples,
 } from "./samples";
 
 function deviceIdentities(samples: MetricSamples, names: readonly string[]) {

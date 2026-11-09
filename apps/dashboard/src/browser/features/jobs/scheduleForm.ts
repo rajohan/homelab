@@ -1,6 +1,6 @@
 import {
-    scheduleConfigurationSchema,
     type ScheduleConfiguration,
+    scheduleConfigurationSchema,
 } from "@homelab/contracts/operations";
 import type { FieldDefinition, FormValues } from "@homelab/ui";
 import * as v from "valibot";

@@ -18,7 +18,7 @@ import { enqueueJob, lockQueue } from "../jobs/queue";
 import { createJobRegistry } from "../jobs/registry";
 import { hostResourceKey } from "../jobs/resources";
 import { createApplicationFixture } from "../testing/applications";
-import { operationFixture, expectOperationFailure } from "../testing/operations";
+import { expectOperationFailure, operationFixture } from "../testing/operations";
 
 test.each([false, true, "explicit", "transitive-apt", "transitive-native"] as const)(
     "lifecycle admission leases its physical host across different endpoint aliases=%s",

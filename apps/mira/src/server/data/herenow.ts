@@ -1,6 +1,6 @@
 import {
-    hereNowBindingHash,
     type HereNowBinding,
+    hereNowBindingHash,
 } from "../integrations/herenow/configuration";
 import type { MiraContext, MiraQuery } from "./context";
 

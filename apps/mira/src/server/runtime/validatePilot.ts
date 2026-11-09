@@ -1,4 +1,4 @@
-import { lstat, open, readFile, readdir, realpath } from "node:fs/promises";
+import { lstat, open, readdir, readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 
 import { runtimeEnvironment } from "../config/environment";

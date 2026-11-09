@@ -12,8 +12,8 @@ import { claimMiraRun } from "@homelab/mira/data/queue";
 
 import { BrowserDownloadTransfer } from "../../../../mira/src/server/browsing/downloadTransfer";
 import {
-    BrowserProfileTransfer,
     browserProfileParts,
+    BrowserProfileTransfer,
 } from "../../../../mira/src/server/browsing/profileTransfer";
 import type { BrowserUploadFile } from "../../../../mira/src/server/browsing/upload";
 import { BrowserUploadTransfer } from "../../../../mira/src/server/browsing/uploadTransfer";

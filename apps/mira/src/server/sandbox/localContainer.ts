@@ -5,12 +5,12 @@ import type { Duplex } from "node:stream";
 import * as v from "valibot";
 
 import { attachBrowserContainer, browserDockerFrames } from "../browsing/attach";
-import { browserDockerRequest, type BrowserDockerRequest } from "../browsing/docker";
+import { type BrowserDockerRequest, browserDockerRequest } from "../browsing/docker";
 import { browserEgressSchema, verifyBrowserEgress } from "../browsing/egress";
 import {
+    type LocalCheckResult,
     parseLocalCheckInput,
     parseLocalCheckResult,
-    type LocalCheckResult,
 } from "./localProtocol";
 
 const image = v.pipe(v.string(), v.regex(/^sha256:[a-f0-9]{64}$/));

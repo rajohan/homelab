@@ -3,9 +3,9 @@ import { setTimeout as delay } from "node:timers/promises";
 import type { SQL } from "bun";
 
 import {
+    type LocalCodeBinding,
     localCodeBindingHash,
     publishLocalCodeBinding,
-    type LocalCodeBinding,
 } from "./localBinding";
 import { dispatchMiraLocalCode } from "./localJobs";
 

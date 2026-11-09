@@ -1,6 +1,6 @@
 import { passwordPolicy } from "@homelab/contracts";
 import { useQuery } from "@tanstack/react-query";
-import { useState, type ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 
 import { Button, ErrorNotice, FieldsForm, LoadingState } from "../../../../index";
 import type { IdentityClient } from "../../api/IdentityClient";

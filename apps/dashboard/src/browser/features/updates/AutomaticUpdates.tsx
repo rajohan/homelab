@@ -1,4 +1,4 @@
-import { ErrorNotice, LoadingState, VirtualList, queryRefresh } from "@homelab/ui";
+import { ErrorNotice, LoadingState, queryRefresh, VirtualList } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 
 import { api } from "../../api/client";

@@ -8,9 +8,9 @@ import * as v from "valibot";
 
 import { createBrowserDownloads } from "./download";
 import {
-    openBrowserDriver,
     type BrowserDriver,
     type BrowserDriverFactory,
+    openBrowserDriver,
 } from "./driver";
 import { browserGrant, browserManifest, browserUrl } from "./policy";
 import { prepareBrowserProfileShutdown } from "./profileShutdown";
@@ -19,14 +19,14 @@ import {
     browserMetadata,
     browserSnapshot,
     preparedSchema,
-    windowsSchema,
     tabBindingSchema,
+    windowsSchema,
 } from "./protocol";
 import { openBrowserTabLifecycle } from "./tabLifecycle";
 import {
     browserUploadActionSchema,
-    createBrowserUploads,
     type BrowserUploadFile,
+    createBrowserUploads,
 } from "./upload";
 import { browserActionSchema } from "./wire";
 

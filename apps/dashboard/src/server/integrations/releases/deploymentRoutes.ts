@@ -1,6 +1,6 @@
 import {
-    deploymentPolicySchema,
     deploymentPauseSchema,
+    deploymentPolicySchema,
 } from "@homelab/contracts/deployment";
 import * as v from "valibot";
 
@@ -14,9 +14,9 @@ import { OperationFailure } from "../../operations/errors";
 import { admitDeployment } from "./deploymentAdmission";
 import { preparedDeployment } from "./deploymentPlans";
 import {
+    pauseDeploymentPolicy,
     readDeploymentPolicy,
     writeDeploymentPolicy,
-    pauseDeploymentPolicy,
 } from "./deploymentPolicies";
 
 const requestSchema = v.strictObject({

@@ -6,9 +6,9 @@ import * as v from "valibot";
 import { sandboxProfileEnvironment } from "../config/environment";
 import {
     daytonaCheckProfile,
+    type DaytonaSandboxRequest,
     daytonaSandboxSchema,
     parseDaytonaArguments,
-    type DaytonaSandboxRequest,
 } from "./profile";
 import { executeDaytonaChecks } from "./workflow";
 

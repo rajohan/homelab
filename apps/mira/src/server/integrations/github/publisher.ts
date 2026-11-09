@@ -4,13 +4,13 @@ import { parseSandboxEditPlan } from "../../sandbox/edits";
 import { githubPublicationBranch, githubTarget } from "./configuration";
 import {
     createdCommitSchema,
-    gitShaSchema,
-    githubPublicationSchema,
-    pullSchema,
-    referenceSchema,
     type GitHubPublication,
     type GitHubPublicationPhase,
     type GitHubPublicationProgress,
+    githubPublicationSchema,
+    gitShaSchema,
+    pullSchema,
+    referenceSchema,
 } from "./protocol";
 import {
     GitHubClient,
