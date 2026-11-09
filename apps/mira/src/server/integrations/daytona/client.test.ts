@@ -5,6 +5,7 @@ import {
     daytonaBinding,
     daytonaBindingHash,
     daytonaConfiguration,
+    daytonaOriginalBindingHash,
     daytonaPolicy,
     daytonaSandboxName,
 } from "./configuration";
@@ -23,6 +24,22 @@ const runId = "33333333-3333-4333-8333-333333333333";
 const sandboxId = "44444444-4444-4444-8444-444444444444";
 const otherId = "55555555-5555-4555-8555-555555555555";
 const signal = new AbortController().signal;
+
+test("Canary requires new qualification while retaining cleanup ownership for older runtimes", () => {
+    for (const hash of [
+        "b035a198edc59c253f453bbb9ad659fa3d815af1b9aa10febd94f70054ba5cd9",
+        "0ceb1fbff1c879bfd753cf87aea1e9c50795a352328c8db5260df476908571de",
+    ]) {
+        expect(daytonaBindingHash(configuration)).not.toBe(hash);
+        expect(daytonaOriginalBindingHash(configuration, hash)).toBe(hash);
+    }
+    expect(
+        daytonaOriginalBindingHash(configuration, daytonaBindingHash(configuration))
+    ).toBe(daytonaBindingHash(configuration));
+    expect(() => daytonaOriginalBindingHash(configuration, "0".repeat(64))).toThrow(
+        "Unknown"
+    );
+});
 const key = {
     userId: "daytona-operator",
     organizationId: configuration.organizationId,

@@ -161,7 +161,9 @@ export default {
             {
                 checkDestructured: false,
                 checkDestructuredRoots: false,
-                // Match Oxlint's interface exemption without exempting primitive parameters.
+                // Preserve Oxlint 1.91's implementation: a named first-parameter type
+                // or a typed variable declaration exempts the entire function.
+                // Primitive first parameters remain checked (unlike the JS option).
                 contexts: [
                     ":matches(FunctionDeclaration, ArrowFunctionExpression, FunctionExpression):not([params.0.typeAnnotation.typeAnnotation.type='TSTypeReference']):not(VariableDeclarator[id.typeAnnotation] > *)",
                 ],

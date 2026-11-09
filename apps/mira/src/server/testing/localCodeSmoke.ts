@@ -9,6 +9,7 @@ import {
     type LocalCodeJournal,
 } from "../sandbox/localContainer";
 import type { LocalCheckInput } from "../sandbox/localProtocol";
+import { daytonaCheckProfile } from "../sandbox/profile";
 
 /**
  * Qualify actual local Docker input, output, cancellation and restart cleanup using the shared image.
@@ -103,7 +104,7 @@ export async function main(): Promise<void> {
     assert.equal(delayed.size, 2);
     assert.equal(inspected.exitCode, 0);
     const files = inspected.files.find((item) => item.name === "source-files.json");
-    assert.ok(files?.text.includes("1.4.4"));
+    assert.ok(files?.text.includes(daytonaCheckProfile.bunVersion));
     await source.absent();
 
     const text =

@@ -1,5 +1,7 @@
 import * as v from "valibot";
 
+import { daytonaCheckProfile } from "../../sandbox/profile";
+
 const id = v.pipe(v.string(), v.uuid());
 const bindingSchema = v.strictObject({
     trustBoundary: v.literal("dedicated-organization"),
@@ -23,13 +25,20 @@ export interface DaytonaExecutionConfiguration extends DaytonaConfiguration {
     executionQualified: boolean;
 }
 
-export const daytonaPolicy = Object.freeze({
+const stableBunPolicy = Object.freeze({
     version: 2,
     cpu: 4,
     memory: 8,
     disk: 10,
     idleMinutes: 5,
     bunVersion: "1.4.4",
+});
+
+export const daytonaPolicy = Object.freeze({
+    ...stableBunPolicy,
+    version: 3,
+    bunVersion: daytonaCheckProfile.bunVersion,
+    bunRevision: daytonaCheckProfile.bunRevision,
 });
 
 /**
@@ -133,7 +142,11 @@ export function daytonaOriginalBindingHash(
         queueTimeout: 2,
         bunVersion: "1.4.4",
     });
-    if (recordedHash !== daytonaBindingHash(binding) && recordedHash !== legacy)
+    if (
+        recordedHash !== daytonaBindingHash(binding) &&
+        recordedHash !== legacy &&
+        recordedHash !== bindingHash(binding, stableBunPolicy)
+    )
         throw new Error("Unknown Daytona attempt ownership policy.");
     return recordedHash;
 }

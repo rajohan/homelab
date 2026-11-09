@@ -19,7 +19,7 @@ export PATH="$PWD/.cache/bun/bin:$PATH"
 
 In PowerShell, use `"$PWD/.cache/bun"` for the same install command, then
 `$env:PATH = "$PWD/.cache/bun/bin;$env:PATH"`. The installer supports Linux and Windows
-x64, refuses an existing destination, and does not change the global Bun installation.
+x64, refuses to overwrite an existing executable, and does not change the global Bun installation.
 For a pin update, choose a fresh destination. Continue with:
 
 ```sh
