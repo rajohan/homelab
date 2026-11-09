@@ -1,5 +1,4 @@
 import reactEffectPlugin from "eslint-plugin-react-you-might-not-need-an-effect";
-import { defineConfig, type OxlintOverride } from "oxlint";
 import eslintRecommended from "oxlint-config-presets/@eslint/recommended.json" with { type: "json" };
 import typescriptRecommended from "oxlint-config-presets/@typescript-eslint/recommended-type-checked.json" with { type: "json" };
 import importRecommended from "oxlint-config-presets/import/recommended.json" with { type: "json" };
@@ -16,12 +15,16 @@ import unicornRecommended from "oxlint-config-presets/unicorn/recommended.json" 
 
 interface ReactEffectPlugin {
     readonly configs: {
-        readonly strict: { readonly rules: OxlintOverride["rules"] };
+        readonly strict: { readonly rules: Readonly<Record<string, unknown>> };
     };
 }
 
 const reactEffectStrictRules = (reactEffectPlugin as unknown as ReactEffectPlugin).configs
     .strict.rules;
+const jsdocRules = (
+    jsdocRecommended as unknown as { readonly rules: Readonly<Record<string, unknown>> }
+).rules;
+if (!jsdocRules) throw new Error("The required JSDoc preset is missing its rules.");
 const testFiles = ["**/*.test.{ts,tsx}", "tests/**/*.ts"];
 const browserFiles = [
     "apps/dashboard/src/browser/main.tsx",
@@ -60,7 +63,7 @@ const serverImports = [
     "drizzle-orm/*",
 ];
 
-export default defineConfig({
+export default {
     categories: { correctness: "error" },
     env: { builtin: true, es2026: true },
     extends: [
@@ -74,7 +77,14 @@ export default defineConfig({
         reactRefreshRecommended,
         jsxA11yRecommended,
         jestRecommended,
-        jsdocRecommended,
+        {
+            rules: Object.fromEntries(
+                Object.entries(jsdocRules).map(([name, setting]) => [
+                    name.replace("jsdoc/", "jsdoc-js/"),
+                    setting,
+                ])
+            ),
+        },
         nodeRecommended,
         promiseRecommended,
     ],
@@ -97,7 +107,6 @@ export default defineConfig({
         "eslint",
         "import",
         "jest",
-        "jsdoc",
         "jsx-a11y",
         "node",
         "oxc",
@@ -107,7 +116,10 @@ export default defineConfig({
         "typescript",
         "unicorn",
     ],
-    jsPlugins: [{ name: "documentation", specifier: "./scripts/lint/documentation.ts" }],
+    jsPlugins: [
+        { name: "documentation", specifier: "./scripts/lint/documentation.ts" },
+        { name: "jsdoc-js", specifier: "eslint-plugin-jsdoc" },
+    ],
     rules: {
         "documentation/exported": [
             "error",
@@ -139,17 +151,20 @@ export default defineConfig({
             },
         ],
         "documentation/description": "error",
-        "jsdoc/no-blank-blocks": "error",
+        "jsdoc-js/no-blank-blocks": "error",
         eqeqeq: "error",
         "typescript/no-explicit-any": "error",
         "typescript/consistent-type-imports": "error",
         "import/no-cycle": "error",
-        "jsdoc/require-param": [
+        "jsdoc-js/require-param": [
             "error",
             {
                 checkDestructured: false,
                 checkDestructuredRoots: false,
-                interfaceExemptsParamsCheck: true,
+                // Match Oxlint's interface exemption without exempting primitive parameters.
+                contexts: [
+                    ":matches(FunctionDeclaration, ArrowFunctionExpression, FunctionExpression):not([params.0.typeAnnotation.typeAnnotation.type='TSTypeReference']):not(VariableDeclarator[id.typeAnnotation] > *)",
+                ],
             },
         ],
         "jsx-a11y/no-noninteractive-tabindex": [
@@ -159,14 +174,14 @@ export default defineConfig({
                 tags: ["section"],
             },
         ],
-        "jsdoc/require-throws-description": "error",
-        "jsdoc/require-yields-description": "error",
+        "jsdoc-js/require-throws-description": "error",
+        "jsdoc-js/require-yields-description": "error",
         "react/unsupported-syntax": "error",
         "react/no-multi-comp": "error",
         "require-await": "off",
         "typescript/require-await": "error",
         "unicorn/no-null": "off",
-        // Oxfmt owns hexadecimal casing, matching the previous project.
+        // The formatter owns hexadecimal casing, matching the previous project.
         "unicorn/number-literal-case": "off",
         "unicorn/no-useless-undefined": ["error", { checkArguments: false }],
         "unicorn/filename-case": [
@@ -470,4 +485,4 @@ export default defineConfig({
             },
         },
     ],
-});
+};

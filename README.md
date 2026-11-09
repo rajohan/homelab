@@ -9,7 +9,18 @@ approval to change live services, identities or routes.
 
 ## Start developing
 
-Use the pinned Bun version in `.bun-version`:
+Use the immutable Bun Canary package in `.bun-version` and the exact source revision in
+`.bun-revision`. With stable Bun installed, bootstrap it into this checkout first:
+
+```sh
+bun --no-env-file scripts/installBun.ts "$PWD/.cache/bun"
+export PATH="$PWD/.cache/bun/bin:$PATH"
+```
+
+In PowerShell, use `"$PWD/.cache/bun"` for the same install command, then
+`$env:PATH = "$PWD/.cache/bun/bin;$env:PATH"`. The installer supports Linux and Windows
+x64, refuses an existing destination, and does not change the global Bun installation.
+For a pin update, choose a fresh destination. Continue with:
 
 ```sh
 bun install --frozen-lockfile
@@ -87,7 +98,7 @@ Bun/Happy DOM tests are intentionally used without Playwright, Storybook or Vite
 authenticators and real browser security behavior still have a manual acceptance checklist.
 
 `oidc-provider` officially targets Node LTS and emits an unsupported-runtime warning on Bun.
-The pinned library is tested here on Bun 1.4.4, including actual code exchange, refresh and logout;
+The pinned library is tested here on the pinned Bun runtime, including actual code exchange, refresh and logout;
 this is compatibility evidence, not an upstream support guarantee. Do not suppress the warning.
 Re-run the protocol and device gates after runtime/library upgrades.
 

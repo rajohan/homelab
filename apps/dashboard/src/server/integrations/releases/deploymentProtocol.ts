@@ -124,27 +124,28 @@ export type DeploymentHost = (
     signal: AbortSignal
 ) => Promise<unknown>;
 
+function sortDeploymentValue(item: unknown): unknown {
+    if (Array.isArray(item)) return item.map((child) => sortDeploymentValue(child));
+    if (item !== null && typeof item === "object")
+        return Object.fromEntries(
+            Object.entries(item)
+                .toSorted(([a], [b]) => {
+                    if (a < b) return -1;
+                    return a > b ? 1 : 0;
+                })
+                .map(([key, child]) => [key, sortDeploymentValue(child)])
+        );
+    return item;
+}
+
 /**
  * Hash JSON identically to the host journal, independent of object insertion order.
  * @param value - Serializable nonsecret operation evidence.
  * @returns SHA-256 over sorted, compact JSON.
  */
 export function deploymentDigest(value: unknown): string {
-    const sort = (item: unknown): unknown => {
-        if (Array.isArray(item)) return item.map((child) => sort(child));
-        if (item !== null && typeof item === "object")
-            return Object.fromEntries(
-                Object.entries(item)
-                    .toSorted(([a], [b]) => {
-                        if (a < b) return -1;
-                        return a > b ? 1 : 0;
-                    })
-                    .map(([key, child]) => [key, sort(child)])
-            );
-        return item;
-    };
     return new Bun.CryptoHasher("sha256")
-        .update(JSON.stringify(sort(value)))
+        .update(JSON.stringify(sortDeploymentValue(value)))
         .digest("hex");
 }
 

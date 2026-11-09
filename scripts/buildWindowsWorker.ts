@@ -45,6 +45,7 @@ export async function buildWindowsWorker(outputRoot: string) {
             process.execPath,
             "build",
             "--compile",
+            `--compile-executable-path=${process.execPath}`,
             "--target=bun-windows-x64",
             "--windows-icon=" + path.join(root, "packages/ui/src/assets/rajohan.ico"),
             "--no-compile-autoload-dotenv",

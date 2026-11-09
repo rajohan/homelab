@@ -1,5 +1,9 @@
 FROM oven/bun:1.4.4 AS build
 WORKDIR /source
+COPY .bun-version .bun-revision ./
+COPY scripts/installBun.ts ./scripts/installBun.ts
+RUN bun --no-env-file scripts/installBun.ts /opt/bun
+ENV PATH=/opt/bun/bin:$PATH
 COPY package.json bun.lock bunfig.toml ./
 COPY apps/auth/package.json ./apps/auth/package.json
 COPY apps/dashboard/package.json ./apps/dashboard/package.json
@@ -16,7 +20,7 @@ RUN bun --no-env-file -e 'import {daytonaCheckProfile} from "./apps/mira/src/ser
 
 FROM postgres:18-bookworm
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates python3 && rm -rf /var/lib/apt/lists/*
-COPY --from=build /usr/local/bin/bun /usr/local/bin/bun
+COPY --from=build /opt/bun/bin/bun /usr/local/bin/bun
 COPY --from=build /output/ /opt/homelab/
 RUN mkdir -p /tmp/homelab-mira && chown postgres:postgres /tmp/homelab-mira
 ENV HOMELAB_MIRA_SANDBOX_PROFILE=homelab-check-v2

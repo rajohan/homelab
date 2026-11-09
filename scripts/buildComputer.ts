@@ -28,6 +28,10 @@ export async function buildComputer(
             "build",
             "--compile",
             `--target=bun-${platform}`,
+            ...(platform ===
+            `${process.platform === "win32" ? "windows" : process.platform}-${process.arch}`
+                ? [`--compile-executable-path=${process.execPath}`]
+                : []),
             ...(platform === "windows-x64"
                 ? [
                       "--windows-icon=" +

@@ -11,6 +11,7 @@ import {
     readComputerRelease,
     verifyComputerPackage,
 } from "./computerRelease";
+import { verifyBun } from "./verifyBun";
 
 /**
  * Build a complete Windows ZIP and verify its own round-trip extraction before native qualification.
@@ -27,13 +28,7 @@ export async function buildComputerDistribution(root: string, revision: string) 
         throw new Error(
             "Windows distribution requires an absolute build root and exact source revision."
         );
-    const bunVersionFile = await readFile(
-        new URL("../.bun-version", import.meta.url),
-        "utf8"
-    );
-    const pinnedBun = bunVersionFile.trim();
-    if (Bun.version !== pinnedBun)
-        throw new Error("Build the computer package with the pinned Bun version.");
+    await verifyBun();
     const { directory } = await buildWindowsComputer(path.join(root, "payload"));
     const files = await inventoryComputerPackage(directory);
     const output = path.join(root, "release");

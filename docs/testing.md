@@ -81,9 +81,17 @@ The Happy DOM preload registers Jest DOM matchers with Bun's native `expect`. Co
 
 ## Editor runtime
 
-Oxc discovers this repository's `oxlint.config.ts` and `oxfmt.config.ts`. The portable VS Code setting `oxc.useExecPath: true` lets Oxc use the editor's existing JavaScript runtime, including code-server's bundled Node. This is separate from the application runtime and package manager: installation, scripts, tests, and builds still use the pinned Bun version. The CLI lint command resolves Oxc's native type checker directly through `scripts/lint.ts` and does not require Node in the shell PATH.
+`bun run lint` uses Bun's built-in type-aware linter with `oxlint.config.ts`; it does
+not run the removed Oxlint wrapper or require Node in PATH. `bun run format` and
+`bun run format:check` use the built-in formatter with `.oxfmtrc.json`.
+`scripts/format.css` exposes the existing Tailwind configuration and shared utilities
+to the formatter without changing application styles. The existing preset package,
+Tailwind plugin and ESLint JSDoc/React plugins remain pinned.
 
-When this repository is opened as a subdirectory of a larger workspace, VS Code does not apply its nested `.vscode/settings.json`. Enable `oxc.useExecPath` in that outer workspace as well. No machine-specific runtime path belongs in this repository. Keep nested Oxc configuration discovery enabled so project rules override broader workspace defaults.
+Bun's formatter does not provide an editor language server. Do not configure an editor
+to run the removed `node_modules/oxfmt` or `node_modules/oxlint` binaries. Use these
+repository commands (or an editor task that invokes them) for formatting and linting;
+Git hooks and CI run the same commands. No machine-specific path belongs in source control.
 
 ## Codecov setup
 
