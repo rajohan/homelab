@@ -2,7 +2,7 @@ import type {
     InfrastructureHost,
     InfrastructureInventory,
 } from "@homelab/contracts/infrastructure";
-import { Modal, Select, formatMetric } from "@homelab/ui";
+import { formatMetric, Modal, Select } from "@homelab/ui";
 import { useState } from "react";
 
 import { HostHistory } from "./HostHistory";

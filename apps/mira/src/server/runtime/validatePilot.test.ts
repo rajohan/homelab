@@ -1,4 +1,4 @@
-import { test, expect, spyOn } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { rejects } from "node:assert/strict";
 import {
     mkdir,

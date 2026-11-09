@@ -3,7 +3,7 @@ import { LoaderCircle } from "lucide-react";
 import type { ComponentProps } from "react";
 
 import { LoadingDots } from "../Loading/LoadingDots";
-import { buttonStyles, type ButtonSize, type ButtonVariant } from "./buttonStyles";
+import { type ButtonSize, buttonStyles, type ButtonVariant } from "./buttonStyles";
 
 /**
  * Render a shared action button that disables interaction while work is pending.

@@ -81,9 +81,24 @@ The Happy DOM preload registers Jest DOM matchers with Bun's native `expect`. Co
 
 ## Editor runtime
 
-Oxc discovers this repository's `oxlint.config.ts` and `oxfmt.config.ts`. The portable VS Code setting `oxc.useExecPath: true` lets Oxc use the editor's existing JavaScript runtime, including code-server's bundled Node. This is separate from the application runtime and package manager: installation, scripts, tests, and builds still use the pinned Bun version. The CLI lint command resolves Oxc's native type checker directly through `scripts/lint.ts` and does not require Node in the shell PATH.
+`bun run lint`, `bun run format` and `bun run format:check` use Bun's built-in
+engines and the shared `bunfig.toml`. No separate lint/formatter config or Oxlint
+wrapper is required. Lint keeps Bun's Oxlint compatibility mode, type checking,
+unused-disable errors and the explicit project rules. `inferGlobals` resolves
+runtime globals from each file's TypeScript environment; unknown names and the
+browser/server/shared-package boundary rules remain checked.
+The previously pinned preset rules are now explicit in `bunfig.toml`, so lint
+policy changes are reviewed in that file instead of inherited from a preset package.
+Formatting retains the previous style while using Bun's import sorting, which also
+sorts named imports and merges compatible imports from the same module.
+`scripts/format.css` exposes the existing Tailwind configuration and shared utilities
+to the formatter without changing application styles. The Tailwind plugin and
+ESLint JSDoc/React plugins remain pinned.
 
-When this repository is opened as a subdirectory of a larger workspace, VS Code does not apply its nested `.vscode/settings.json`. Enable `oxc.useExecPath` in that outer workspace as well. No machine-specific runtime path belongs in this repository. Keep nested Oxc configuration discovery enabled so project rules override broader workspace defaults.
+Bun's formatter does not provide an editor language server. Do not configure an editor
+to run the removed `node_modules/oxfmt` or `node_modules/oxlint` binaries. Use these
+repository commands (or an editor task that invokes them) for formatting and linting;
+Git hooks and CI run the same commands. No machine-specific path belongs in source control.
 
 ## Codecov setup
 

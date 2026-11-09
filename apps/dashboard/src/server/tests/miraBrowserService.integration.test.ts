@@ -23,15 +23,15 @@ import { saveBrowserDownload } from "@homelab/mira/data/browserDownloads";
 import { openMiraBrowserSession } from "@homelab/mira/data/browserHost";
 import { readMiraBrowserReadiness } from "@homelab/mira/data/browserReadiness";
 import {
-    runMiraBrowserHost,
     type MiraBrowserHealth,
+    runMiraBrowserHost,
 } from "@homelab/mira/data/browserService";
-import { saveMiraFile, readMiraFile } from "@homelab/mira/data/files";
+import { readMiraFile, saveMiraFile } from "@homelab/mira/data/files";
 
 import { createMiraTools } from "../../../../mira/src/server/executor/tools";
 import {
-    runtimeContentItems,
     maximumToolTextBytes,
+    runtimeContentItems,
     type RuntimeToolResult,
 } from "../../../../mira/src/server/runtime/toolResult";
 import { browserHostFixture } from "../testing/miraBrowserHost";

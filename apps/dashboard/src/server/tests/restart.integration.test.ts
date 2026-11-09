@@ -5,7 +5,7 @@ import { readUpdateSources } from "../integrations/updates/inventory";
 import { restartStatusJob } from "../integrations/updates/restart";
 import { recordRestartObservation } from "../integrations/updates/restartObservation";
 import type { JobExecution } from "../jobs/types";
-import { operationFixture, expectOperationFailure } from "../testing/operations";
+import { expectOperationFailure, operationFixture } from "../testing/operations";
 import { previewUpdateTargets } from "../testing/updates";
 
 test.each([true, false])(

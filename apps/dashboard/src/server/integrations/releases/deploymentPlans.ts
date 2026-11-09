@@ -11,11 +11,11 @@ import {
 } from "./deploymentConfiguration";
 import {
     deploymentDigest,
+    type DeploymentHost,
     deploymentHost,
+    type DeploymentObservation,
     deploymentObservationSchema,
     deploymentPlanSchema,
-    type DeploymentHost,
-    type DeploymentObservation,
     type DeploymentRelease,
 } from "./deploymentProtocol";
 import { readHomelabRelease } from "./read";

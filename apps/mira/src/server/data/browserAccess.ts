@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
 
 import {
-    publicBrowserScope,
     connectedBrowserScope,
     internetBrowserScope,
-    unrestrictedBrowserSites,
     miraBrowserAccessRequestSchema,
     miraBrowserAccessStopSchema,
     type MiraBrowserAccessSummary,
+    publicBrowserScope,
+    unrestrictedBrowserSites,
 } from "@homelab/contracts/miraBrowser";
 import type { TransactionSQL } from "bun";
 import * as v from "valibot";
@@ -18,10 +18,10 @@ import { miraRunPermission } from "./approvalPolicy";
 import { retireBrowserCommands } from "./browserRetirement";
 import {
     auditMira,
-    MiraFailure,
-    miraTransaction,
     type MiraContext,
+    MiraFailure,
     type MiraQuery,
+    miraTransaction,
 } from "./context";
 
 /**

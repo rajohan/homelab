@@ -4,7 +4,7 @@ import * as v from "valibot";
 
 import { browserCommandResult } from "../browsing/command";
 import { readBrowserAccess } from "./browserAccess";
-import { browserHostContext, type BrowserCommandClaim } from "./browserCommands";
+import { type BrowserCommandClaim, browserHostContext } from "./browserCommands";
 import { saveBrowserPreview } from "./browserConsole";
 import { requireBrowserDownload } from "./browserDownloadAccess";
 import { requireBrowserUpload } from "./browserUploads";

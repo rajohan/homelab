@@ -6,7 +6,7 @@ import { PassThrough } from "node:stream";
 import * as v from "valibot";
 
 import { createVisualChallenge } from "../testing/visualChallenge";
-import { serveBrowserWorker, type BrowserWorkerProfile } from "./child";
+import { type BrowserWorkerProfile, serveBrowserWorker } from "./child";
 import type { BrowserDownloadFile } from "./downloadTransfer";
 import { openBrowserWorker } from "./process";
 import type { BrowserUploadFile } from "./upload";

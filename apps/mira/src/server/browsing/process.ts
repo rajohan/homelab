@@ -3,17 +3,17 @@ import * as v from "valibot";
 
 import { openBrowserConnection } from "./connection";
 import {
-    BrowserDownloadReceiver,
-    browserDownloadHeaderSchema,
     browserDownloadCount,
+    browserDownloadHeaderSchema,
+    BrowserDownloadReceiver,
     browserDownloadTotal,
 } from "./downloadTransfer";
 import { browserDriverVersion } from "./driver";
 import { browserUrl } from "./policy";
 import {
     browserUploadActionSchema,
-    browserUploadFileSchema,
     type BrowserUploadFile,
+    browserUploadFileSchema,
 } from "./upload";
 import { browserUploadParts } from "./uploadTransfer";
 import { browserActionSchema, browserWorkerFrame, browserWorkerGrant } from "./wire";

@@ -1,6 +1,6 @@
 import { Listbox, ListboxButton, ListboxOption, ListboxOptions } from "@headlessui/react";
 import { Check, ChevronsUpDown } from "lucide-react";
-import { useContext, type ReactNode } from "react";
+import { type ReactNode, useContext } from "react";
 
 import { cn } from "../../lib/classNames";
 import { FormFieldInvalidContext } from "../../lib/formFieldContext";

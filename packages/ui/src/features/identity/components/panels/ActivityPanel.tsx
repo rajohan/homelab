@@ -3,7 +3,7 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import { ScrollText } from "lucide-react";
 import { useState } from "react";
 
-import { DataTable, type DataColumn } from "../../../../components/DataTable/DataTable";
+import { type DataColumn, DataTable } from "../../../../components/DataTable/DataTable";
 import { Button, ErrorNotice, LoadingState } from "../../../../index";
 import { formatDateTimeParts } from "../../../../lib/formatDateTime";
 import { queryRefresh } from "../../../../lib/queryRefresh";

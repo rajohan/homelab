@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { generateKeyPairSync } from "node:crypto";
 
-import { oidcInteractionSchema, type OidcConsent } from "@homelab/contracts";
+import { type OidcConsent, oidcInteractionSchema } from "@homelab/contracts";
 import { eq, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/bun-sql/migrator";
 import { createLocalJWKSet, decodeJwt, jwtVerify } from "jose";
@@ -14,18 +14,18 @@ import type { AuthConfiguration } from "../config/configuration";
 import { defaultSessionPolicy } from "../config/sessionPolicy";
 import { requiredAuthMigrations } from "../database/migrations";
 import {
-    oidcApprovals,
     auditEvents,
+    challenges,
     factors,
     grantSessions,
     logoutOutbox,
+    mailOutbox,
+    oidcApprovals,
+    oidcRecords,
+    rateBuckets,
+    recoveryCodes,
     sessions,
     users,
-    mailOutbox,
-    rateBuckets,
-    oidcRecords,
-    challenges,
-    recoveryCodes,
 } from "../database/schema";
 import { hasClientApproval } from "../oidc/approvals";
 import { deliverLogouts } from "../oidc/logout";

@@ -8,13 +8,13 @@ import { OperationFailure } from "../../operations/errors";
 import type { ApplicationTarget } from "../applications/configuration";
 import { applyUpdate, updateTimeoutMs } from "./apply";
 import { updateBatchJobs } from "./batch";
-import { updateTargetRevision, type UpdateTarget } from "./configuration";
+import { type UpdateTarget, updateTargetRevision } from "./configuration";
 import { executeUpdate, type UpdateExecutor } from "./execution";
-import { readUpdateReport, staleUpdateReport, freshAptObservation } from "./inventory";
+import { freshAptObservation, readUpdateReport, staleUpdateReport } from "./inventory";
 import { readUpdatePolicies } from "./policies";
 import {
-    updateReceiptScope,
     updateReceiptResourceKeys,
+    updateReceiptScope,
     verifyUpdateReceiptLeases,
 } from "./receipts";
 import { matchesUpdateTarget, updateControl } from "./selection";

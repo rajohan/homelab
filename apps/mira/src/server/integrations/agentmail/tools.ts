@@ -2,7 +2,7 @@ import { miraMailReplyDraftSchema } from "@homelab/contracts/miraMail";
 import type { SQL } from "bun";
 import * as v from "valibot";
 
-import { auditMira, MiraFailure, type MiraContext } from "../../data/context";
+import { auditMira, type MiraContext, MiraFailure } from "../../data/context";
 import { saveMiraFile } from "../../data/files";
 import { agentMailReceiverCurrent } from "../../data/integrations";
 import { saveMiraMail } from "../../data/mail";

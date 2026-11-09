@@ -3,7 +3,7 @@ import path from "node:path";
 
 import * as v from "valibot";
 
-import { browserDockerRequest, type BrowserDockerRequest } from "./docker";
+import { type BrowserDockerRequest, browserDockerRequest } from "./docker";
 import { browserSlotSchema } from "./egress";
 import { browserProfileSchema } from "./profile";
 

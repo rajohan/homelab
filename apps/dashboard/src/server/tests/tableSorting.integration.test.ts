@@ -8,7 +8,7 @@ import { appRouter } from "../api/router";
 import { maintenanceJob } from "../jobs/maintenance";
 import { enqueueJob, lockQueue } from "../jobs/queue";
 import { sortedPage } from "../operations/sortedPage";
-import { operationFixture, expectOperationFailure } from "../testing/operations";
+import { expectOperationFailure, operationFixture } from "../testing/operations";
 
 test("job actor sorting matches displayed labels across ascending and descending pages", async () => {
     const fixture = await operationFixture();

@@ -3,11 +3,11 @@ import type { LogCursor } from "@homelab/contracts/logs";
 import {
     ErrorNotice,
     LoadingState,
+    queryRefresh,
     SearchInput,
     Select,
     Switch,
     VirtualList,
-    queryRefresh,
 } from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useDeferredValue, useState } from "react";

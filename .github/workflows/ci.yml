@@ -27,9 +27,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: .bun-version
+      - uses: ./.github/actions/setup-bun
       - run: bun install --frozen-lockfile
       - name: Cache the disposable database image for Docker fixtures
         run: docker pull postgres:18
@@ -58,9 +56,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: .bun-version
+        uses: ./.github/actions/setup-bun
       - name: Install locked dependencies
         run: bun install --frozen-lockfile
       - name: Qualify window-only capture behind an independent overlay
@@ -102,9 +98,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: .bun-version
+        uses: ./.github/actions/setup-bun
       - name: Install locked dependencies
         run: bun install --frozen-lockfile
       - name: Qualify native consent interruption and locked-session refusal
@@ -125,9 +119,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - name: Set up Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: .bun-version
+        uses: ./.github/actions/setup-bun
       - name: Install locked host qualification dependencies
         run: bun install --frozen-lockfile
       - name: Qualify isolated browser images, input and origin boundaries

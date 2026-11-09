@@ -1,6 +1,6 @@
 import { expect, spyOn, test } from "bun:test";
 
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import { CopyTextButton } from "./CopyTextButton";
 

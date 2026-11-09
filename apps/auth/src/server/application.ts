@@ -7,11 +7,11 @@ import { connectAuthDatabase } from "./database/connection";
 import { assertAuthSchemaReady, requiredAuthMigrations } from "./database/migrations";
 import {
     auditEvents,
-    sessions,
     challenges,
     mailOutbox,
     oidcRecords,
     rateBuckets,
+    sessions,
 } from "./database/schema";
 import { liveSessionCondition } from "./database/sessionValidity";
 import { accountApi } from "./http/accountApi";

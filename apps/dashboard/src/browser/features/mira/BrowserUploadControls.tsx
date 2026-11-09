@@ -1,6 +1,6 @@
 import type {
-    MiraBrowserPreview,
     miraBrowserHumanCommandSchema,
+    MiraBrowserPreview,
 } from "@homelab/contracts/miraBrowser";
 import {
     ActionGroup,

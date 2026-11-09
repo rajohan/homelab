@@ -1,20 +1,20 @@
 import type { TableSort } from "@homelab/contracts/tableSort";
 import {
+    type PublicKeyCredentialCreationOptionsJSON,
+    type PublicKeyCredentialRequestOptionsJSON,
     startAuthentication,
     startRegistration,
     WebAuthnAbortService,
-    type PublicKeyCredentialCreationOptionsJSON,
-    type PublicKeyCredentialRequestOptionsJSON,
 } from "@simplewebauthn/browser";
 import * as v from "valibot";
 
 import { IdentityError } from "./IdentityError";
 import {
     accountSchema,
-    activityPageSchema,
-    sessionSchema,
     type AccountSnapshot,
     type ActivityPage,
+    activityPageSchema,
+    sessionSchema,
 } from "./schemas";
 import { VerificationCoordinator } from "./verificationCoordinator";
 

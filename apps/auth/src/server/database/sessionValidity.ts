@@ -1,4 +1,4 @@
-import { and, eq, gt, sql, type SQL } from "drizzle-orm";
+import { and, eq, gt, type SQL, sql } from "drizzle-orm";
 
 import type { AuthSessionPolicy } from "../config/sessionPolicy";
 import { sessions } from "./schema";

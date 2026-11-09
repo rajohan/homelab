@@ -3,7 +3,7 @@ import {
     PopoverButton,
     PopoverPanel,
 } from "@headlessui/react";
-import { useImperativeHandle, useRef, type ReactNode, type Ref } from "react";
+import { type ReactNode, type Ref, useImperativeHandle, useRef } from "react";
 
 import { buttonStyles } from "../Button/buttonStyles";
 

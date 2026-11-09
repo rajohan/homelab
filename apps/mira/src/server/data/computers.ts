@@ -1,6 +1,6 @@
 import {
-    miraComputerEnrollmentSchema,
     miraComputerConnectionSchema,
+    miraComputerEnrollmentSchema,
     miraComputerHeartbeatSchema,
     miraComputerPairSchema,
     type MiraComputerSummary,
@@ -11,7 +11,7 @@ import * as v from "valibot";
 import { issueComputerCredential, readComputerCredential } from "../computer/credentials";
 import { lockComputerOwner, requireComputerDevice } from "./computerAuthority";
 import { retireComputerDeviceCommands } from "./computerCommands";
-import { auditMira, MiraFailure, miraTransaction, type MiraContext } from "./context";
+import { auditMira, type MiraContext, MiraFailure, miraTransaction } from "./context";
 
 /**
  * Create a short-lived enrollment ticket for one computer owned by a verified human.

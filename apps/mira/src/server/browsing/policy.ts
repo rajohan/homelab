@@ -1,9 +1,9 @@
 import path from "node:path";
 
 import {
-    publicBrowserScope,
     connectedBrowserScope,
     internetBrowserScope,
+    publicBrowserScope,
     unrestrictedBrowserSites,
 } from "@homelab/contracts/miraBrowser";
 import * as v from "valibot";

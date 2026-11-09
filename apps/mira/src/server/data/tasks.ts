@@ -1,17 +1,17 @@
 import type {
     MiraTask,
-    MiraTaskInput,
     miraTaskFilterSchema,
+    MiraTaskInput,
 } from "@homelab/contracts/mira";
 import type * as v from "valibot";
 
 import {
-    miraTransaction,
-    lockMiraProposals,
     auditMira,
-    MiraFailure,
-    requireTask,
+    lockMiraProposals,
     type MiraContext,
+    MiraFailure,
+    miraTransaction,
+    requireTask,
 } from "./context";
 
 /**

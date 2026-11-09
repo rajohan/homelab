@@ -1,7 +1,7 @@
 import { AuthFrame, Button, LoadingState, Redirect } from "@homelab/ui";
 import { SecurityPrompt, useIdentitySession } from "@homelab/ui/identity";
 import { IdentityClient } from "@homelab/ui/identity/client";
-import { useState, type ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 
 import { AuthorizationDeclined } from "./AuthorizationDeclined";
 import { IdentityClientContext } from "./IdentityClientContext";

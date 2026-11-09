@@ -1,7 +1,7 @@
 import {
+    type MiraTask,
     miraTaskStates,
     miraTaskUpdateSchema,
-    type MiraTask,
 } from "@homelab/contracts/mira";
 import { Circle, CircleAlert, CircleCheck, CircleDot } from "lucide-react";
 import * as v from "valibot";

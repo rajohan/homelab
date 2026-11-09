@@ -5,7 +5,7 @@ import type {
     MetricSeries,
 } from "@homelab/contracts/infrastructure";
 
-import { queryMetrics, type MetricsConfiguration } from "./transport";
+import { type MetricsConfiguration, queryMetrics } from "./transport";
 
 const ranges: Readonly<Record<HistoryRange, { duration: string; step: number }>> = {
     "1h": { duration: "1h", step: 15 },

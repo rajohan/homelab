@@ -4,7 +4,7 @@ import { createWorkerState, startWorkerHealth } from "../../worker/health";
 import { createAutomation } from "../automation/service";
 import { startDashboardServer } from "../index";
 import { collectMetrics } from "../integrations/metrics/collector";
-import { operationFixture, expectOperationFailure } from "../testing/operations";
+import { expectOperationFailure, operationFixture } from "../testing/operations";
 
 test("worker health distinguishes startup, live coordination, stale heartbeat and drain", async () => {
     const state = createWorkerState();

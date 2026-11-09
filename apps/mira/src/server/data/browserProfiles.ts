@@ -1,14 +1,14 @@
 import {
+    type MiraBrowserProfile,
     miraBrowserProfileCreateSchema,
     miraBrowserProfileDeleteSchema,
-    type MiraBrowserProfile,
 } from "@homelab/contracts/miraBrowser";
 import * as v from "valibot";
 
 import { exactBrowserOrigins } from "../browsing/policy";
 import { browserNetworkForOwner } from "../config/environment";
 import { lockBrowserOwner } from "./browserAccess";
-import { auditMira, MiraFailure, type MiraContext } from "./context";
+import { auditMira, type MiraContext, MiraFailure } from "./context";
 
 function human(context: MiraContext) {
     if (context.run || context.actor !== `human:${context.owner}`)

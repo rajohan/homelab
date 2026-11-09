@@ -8,7 +8,7 @@ import * as v from "valibot";
 
 import { browserHostEnvironment } from "../config/environment";
 import { browserHostConfigurationSchema } from "../data/browserHost";
-import { runMiraBrowserHost, type MiraBrowserHealth } from "../data/browserService";
+import { type MiraBrowserHealth, runMiraBrowserHost } from "../data/browserService";
 import { runMiraLocalCodeHost } from "../sandbox/localService";
 
 /**

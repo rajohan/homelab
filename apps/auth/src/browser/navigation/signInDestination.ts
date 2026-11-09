@@ -1,5 +1,5 @@
-import { oidcInteractionSchema, type OidcConsent } from "@homelab/contracts";
-import { IdentityError, type IdentityClient } from "@homelab/ui/identity/client";
+import { type OidcConsent, oidcInteractionSchema } from "@homelab/contracts";
+import { type IdentityClient, IdentityError } from "@homelab/ui/identity/client";
 import * as v from "valibot";
 
 import { claimSignInRestart, restartSignIn } from "./restartSignIn";

@@ -1,6 +1,6 @@
 import { expect, mock, spyOn, test } from "bun:test";
 
-import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import { IdentityClient } from "../../api/IdentityClient";
 import { downloadRecoveryCodes } from "../../lib/downloadRecoveryCodes";

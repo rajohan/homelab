@@ -2,7 +2,7 @@ import * as v from "valibot";
 
 import type { JobHandler } from "../../jobs/types";
 import { synchronizeAlerts } from "./synchronize";
-import { readAlerts, type AlertsConfiguration } from "./transport";
+import { type AlertsConfiguration, readAlerts } from "./transport";
 
 /**
  * Register independent read-only incident collection with fenced state transitions.

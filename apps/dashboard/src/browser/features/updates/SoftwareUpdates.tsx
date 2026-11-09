@@ -3,9 +3,9 @@ import {
     DataTable,
     ErrorNotice,
     LoadingState,
+    queryRefresh,
     SearchInput,
     Select,
-    queryRefresh,
 } from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useState } from "react";

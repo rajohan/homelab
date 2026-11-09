@@ -1,4 +1,4 @@
-import { updateItemSchema, type UpdateItem } from "@homelab/contracts/updates";
+import { type UpdateItem, updateItemSchema } from "@homelab/contracts/updates";
 import * as v from "valibot";
 
 import type { UpdateTarget } from "./configuration";

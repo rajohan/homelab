@@ -2,7 +2,7 @@ import type {
     InfrastructureHost,
     InfrastructureInventory,
 } from "@homelab/contracts/infrastructure";
-import { DataTable, Switch, formatMetric } from "@homelab/ui";
+import { DataTable, formatMetric, Switch } from "@homelab/ui";
 import { useState } from "react";
 
 import { ApplicationInventory } from "./ApplicationInventory";

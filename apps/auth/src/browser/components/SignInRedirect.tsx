@@ -1,6 +1,6 @@
 import type { OidcConsent } from "@homelab/contracts";
 import { Button, ErrorNotice, LoadingState, Redirect } from "@homelab/ui";
-import { IdentityError, type IdentityClient } from "@homelab/ui/identity/client";
+import { type IdentityClient, IdentityError } from "@homelab/ui/identity/client";
 import { useEffect, useRef, useState } from "react";
 
 import { AuthLayout } from "../layout/AuthLayout";

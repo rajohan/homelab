@@ -7,7 +7,7 @@ keyframes and typography. Both apps load it through Tailwind 4's `@config` direc
 source discovery includes shared UI and identity UI, excluding test files. The shared `cn`
 helper combines clsx and tailwind-merge. There is no second CSS reset framework.
 
-Oxc configuration remains in `oxlint.config.ts` / `oxfmt.config.ts`. Browser, server and
+Bun reads the lint and formatting policy from `bunfig.toml`. Browser, server and
 Happy DOM test types are checked separately. Boundary rules prevent server internals leaking
 into browser/shared packages. Only the disposable integration-style development harness may
 compose both app entrypoints; production apps remain independent.

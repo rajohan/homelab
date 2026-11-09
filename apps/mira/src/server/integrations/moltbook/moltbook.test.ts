@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { rejects } from "node:assert/strict";
 
-import { moltbookReadConfiguration, moltbookBindingHash } from "./configuration";
+import { moltbookBindingHash, moltbookReadConfiguration } from "./configuration";
 import { MoltbookReader } from "./reader";
 
 const configuration = {

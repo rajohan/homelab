@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import assert from "node:assert/strict";
 
 import { createVisualChallenge } from "../testing/visualChallenge";
-import { ComputerWindowSession, type ComputerWindowPort } from "./session";
+import { type ComputerWindowPort, ComputerWindowSession } from "./session";
 
 function fixture() {
     let clock = 100;

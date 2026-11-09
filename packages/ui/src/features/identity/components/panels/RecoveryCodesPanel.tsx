@@ -1,4 +1,4 @@
-import { ShieldCheck, RefreshCw } from "lucide-react";
+import { RefreshCw, ShieldCheck } from "lucide-react";
 
 import { Badge, Button, SuccessNotice } from "../../../../index";
 import type { AccountPanelProps } from "../../types";

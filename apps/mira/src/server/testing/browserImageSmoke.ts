@@ -56,7 +56,7 @@ export async function qualifyBrowserImage(image: string) {
         assert.equal(inspection.Config.ExposedPorts, undefined);
         assert.equal(inspection.Config.Volumes, undefined);
         const probe = `import assert from 'node:assert/strict';import {existsSync,readdirSync} from 'node:fs';
-            assert.equal(Bun.version,'1.4.4');assert.equal(process.getuid(),1000);
+            assert.equal(Bun.revision,${JSON.stringify(Bun.revision)});assert.equal(process.getuid(),1000);
             assert.equal(existsSync('/source'),false);assert.equal(existsSync('/opt/mira-browser/apps'),false);
             assert.deepEqual(readdirSync('/opt/mira-browser').sort(),['cua-driver','package.json','proxy-policy.json','start.sh','worker.js']);
             const version=Bun.spawnSync(['/opt/mira-browser/cua-driver','--version']);

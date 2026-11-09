@@ -11,8 +11,8 @@ import { claimJob, settleClaim } from "../jobs/claims";
 import { maintenanceJob } from "../jobs/maintenance";
 import { enqueueJob, lockQueue } from "../jobs/queue";
 import { publishNotification } from "../notifications/publish";
-import { listNotifications, acknowledgeNotification } from "../notifications/repository";
-import { operationFixture, expectOperationFailure } from "../testing/operations";
+import { acknowledgeNotification, listNotifications } from "../notifications/repository";
+import { expectOperationFailure, operationFixture } from "../testing/operations";
 
 const content = {
     key: "event-1",

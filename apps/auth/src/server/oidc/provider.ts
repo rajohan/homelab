@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 
 import { oidcConsentSchema, type OidcInteraction } from "@homelab/contracts";
 import { and, eq } from "drizzle-orm";
-import { Provider, errors, interactionPolicy } from "oidc-provider";
+import { errors, interactionPolicy, Provider } from "oidc-provider";
 import * as v from "valibot";
 
 import { connectAuthDatabase } from "../database/connection";

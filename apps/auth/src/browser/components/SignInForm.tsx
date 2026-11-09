@@ -1,5 +1,5 @@
 import { passwordPolicy } from "@homelab/contracts";
-import { Switch, FieldsForm } from "@homelab/ui";
+import { FieldsForm, Switch } from "@homelab/ui";
 import type { IdentityClient } from "@homelab/ui/identity/client";
 import { useState } from "react";
 /**

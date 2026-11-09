@@ -1,4 +1,4 @@
-import type { MiraModel, MiraActivity } from "@homelab/contracts/mira";
+import type { MiraActivity, MiraModel } from "@homelab/contracts/mira";
 import * as v from "valibot";
 
 import { assertRuntimeIsolation } from "./configuration";
@@ -8,13 +8,13 @@ import {
     deltaSchema,
     initializeSchema,
     modelsSchema,
-    threadSchema,
-    toolCallSchema,
-    turnSchema,
     type RuntimeEvent,
     type RuntimeInput,
     type RuntimeTool,
+    threadSchema,
+    toolCallSchema,
     type TurnResult,
+    turnSchema,
 } from "./protocol";
 import { RuntimeResponseError } from "./responseError";
 import { RpcProcess, type RpcProcessOptions } from "./rpcProcess";

@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, isNotNull, ne, not } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, ne, not } from "drizzle-orm";
 
 import type { AuthConfiguration } from "../config/configuration";
 import type { AuthDatabase, AuthStore, AuthTransaction } from "../database/connection";

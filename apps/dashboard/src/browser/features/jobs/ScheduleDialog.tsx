@@ -2,7 +2,7 @@ import type {
     ScheduleConfiguration,
     ScheduleSummary,
 } from "@homelab/contracts/operations";
-import { FormField, Select, FieldsForm, Modal } from "@homelab/ui";
+import { FieldsForm, FormField, Modal, Select } from "@homelab/ui";
 import { useState } from "react";
 
 import { api } from "../../api/client";

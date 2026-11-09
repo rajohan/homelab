@@ -6,7 +6,7 @@ import { appRouter } from "../api/router";
 import { alertsJob } from "../integrations/alerts/job";
 import { readRules } from "../integrations/alerts/rules";
 import { synchronizeAlerts } from "../integrations/alerts/synchronize";
-import { readAlerts, type ObservedAlert } from "../integrations/alerts/transport";
+import { type ObservedAlert, readAlerts } from "../integrations/alerts/transport";
 import { readBackupCatalog } from "../integrations/backups/catalog";
 import { collectBackups } from "../integrations/backups/inventory";
 import { snapshotJob } from "../integrations/snapshots/job";
@@ -14,7 +14,7 @@ import { claimJob, commitClaim } from "../jobs/claims";
 import { reportJobProgress } from "../jobs/progress";
 import { enqueueJob, lockQueue } from "../jobs/queue";
 import { createMonitoringFixture } from "../testing/monitoring";
-import { operationFixture, expectOperationFailure } from "../testing/operations";
+import { expectOperationFailure, operationFixture } from "../testing/operations";
 
 const alert: ObservedAlert = {
     key: "a".repeat(64),

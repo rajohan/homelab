@@ -1,6 +1,6 @@
 import {
-    miraLiveAssistanceMinutesSchema,
     type MiraChatSettings,
+    miraLiveAssistanceMinutesSchema,
 } from "@homelab/contracts/mira";
 import { FormField, Select } from "@homelab/ui";
 import * as v from "valibot";

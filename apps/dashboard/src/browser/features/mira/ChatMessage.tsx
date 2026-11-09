@@ -1,5 +1,5 @@
 import type { MiraMessage } from "@homelab/contracts/mira";
-import { Badge, Markdown, formatDateTime } from "@homelab/ui";
+import { Badge, formatDateTime, Markdown } from "@homelab/ui";
 
 import { MessageAttachments } from "./MessageAttachments";
 import { miraStatusTone } from "./statusTone";

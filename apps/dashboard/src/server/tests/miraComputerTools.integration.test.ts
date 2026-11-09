@@ -6,8 +6,8 @@ import { acceptMiraComputerAccess } from "@homelab/mira/data/computerAccess";
 import {
     abandonMiraComputerCommand,
     claimMiraComputerCommand,
-    finishMiraComputerCommand,
     finalizeMiraComputerCommand,
+    finishMiraComputerCommand,
     takeMiraComputerCommand,
 } from "@homelab/mira/data/computerCommands";
 import { connectMiraComputer, enrollMiraComputer } from "@homelab/mira/data/computers";

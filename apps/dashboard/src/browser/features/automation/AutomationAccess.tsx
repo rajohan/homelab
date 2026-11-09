@@ -4,9 +4,9 @@ import {
     Card,
     ConfirmDialog,
     LoadingState,
+    queryRefresh,
     SectionHeader,
     VirtualList,
-    queryRefresh,
 } from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { Bot, Plus } from "lucide-react";

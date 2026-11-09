@@ -4,7 +4,7 @@ import {
     KeyboardSensor,
     PointerSensor,
 } from "@dnd-kit/react";
-import { miraTaskStates, type MiraTask } from "@homelab/contracts/mira";
+import { type MiraTask, miraTaskStates } from "@homelab/contracts/mira";
 import { ErrorNotice } from "@homelab/ui";
 import { useState } from "react";
 import * as v from "valibot";

@@ -13,9 +13,9 @@
         "dev:identity": "bun --no-env-file scripts/devIdentity.ts",
         "build": "bun scripts/build.ts",
         "check": "bun scripts/check.ts",
-        "format": "bun node_modules/oxfmt/bin/oxfmt --write .",
-        "format:check": "bun node_modules/oxfmt/bin/oxfmt --check .",
-        "lint": "bun scripts/lint.ts",
+        "format": "bun fmt",
+        "format:check": "bun fmt --check",
+        "lint": "bun lint --no-script --deny-warnings",
         "typecheck": "bun node_modules/typescript/bin/tsc -p tsconfig.browser.json --noEmit && bun node_modules/typescript/bin/tsc -p tsconfig.bun.json --noEmit && bun node_modules/typescript/bin/tsc -p tsconfig.test.json --noEmit",
         "test": "bun scripts/test.ts",
         "test:integration": "bun scripts/test.ts integration",
@@ -42,21 +42,18 @@
         "happy-dom": "21.0.4",
         "lcov-result-merger": "6.0.0",
         "lefthook": "2.2.2",
-        "oxfmt": "0.76.0",
-        "oxlint": "1.91.0",
-        "oxlint-config-presets": "0.1.21",
         "oxlint-tailwindcss": "1.17.1",
-        "oxlint-tsgolint": "7.0.2006",
         "tailwindcss": "4.3.4",
         "typescript": "7.0.2",
         "valibot": "1.5.0"
     },
     "overrides": {
+        "bun": "1.4.4-canary.20261108.1",
         "postcss-selector-parser": "7.1.7"
     },
     "engines": {
         "bun": "1.4.4"
     },
-    "packageManager": "bun@1.4.4",
+    "packageManager": "bun@1.4.4-canary.20261108.1",
     "trustedDependencies": []
 }

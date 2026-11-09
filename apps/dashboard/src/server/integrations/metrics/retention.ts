@@ -2,8 +2,8 @@ import type { InfrastructureInventory } from "@homelab/contracts/infrastructure"
 
 import {
     applicationInventoryAvailable,
-    resourceKey,
     type MetricSamples,
+    resourceKey,
 } from "./samples";
 
 function retainRows<T extends { readonly id: string }>(

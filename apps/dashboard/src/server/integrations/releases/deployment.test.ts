@@ -6,8 +6,8 @@ import {
 } from "./deploymentConfiguration";
 import {
     deploymentTestConnections as connections,
-    deploymentTestTarget as target,
     deploymentTestPlan,
+    deploymentTestTarget as target,
 } from "./deploymentFixtures";
 import { deploymentRelease } from "./deploymentPlans";
 import { deploymentDigest, deploymentHost } from "./deploymentProtocol";

@@ -1,6 +1,6 @@
 import type { MiraMessage } from "@homelab/contracts/mira";
 import { Button } from "@homelab/ui";
-import { useEffect, useRef, type ReactNode } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 
 import { ChatMessage } from "./ChatMessage";
 

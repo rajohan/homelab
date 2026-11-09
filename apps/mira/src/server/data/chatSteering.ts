@@ -2,7 +2,7 @@ import type { miraMessageInputSchema } from "@homelab/contracts/mira";
 import type { SQL, TransactionSQL } from "bun";
 import type * as v from "valibot";
 
-import { MiraFailure, auditMira, type MiraContext } from "./context";
+import { auditMira, type MiraContext, MiraFailure } from "./context";
 import { enqueueTurn } from "./conversations";
 import type { MiraClaim } from "./queue";
 

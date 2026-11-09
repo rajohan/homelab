@@ -2,10 +2,10 @@ import index from "../index.html";
 import { authenticateAutomation } from "./automation/authentication";
 import { privateComputerAddress } from "./config/computer";
 import {
+    dashboardAuthConfiguration,
     dashboardBindOptions,
     dashboardComputerBinding,
     dashboardDevelopment,
-    dashboardAuthConfiguration,
     dashboardOperationsConfiguration,
 } from "./config/environment";
 import { assertDashboardSchema } from "./database/migrations";

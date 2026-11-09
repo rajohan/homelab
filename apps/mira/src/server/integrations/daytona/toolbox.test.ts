@@ -4,7 +4,7 @@ import { rejects } from "node:assert/strict";
 import { version as toolboxVersion } from "@daytona/toolbox-api-client/package.json";
 
 import { daytonaBindingHash, daytonaSandboxName } from "./configuration";
-import { DaytonaToolbox, DaytonaToolboxUncertain, daytonaCommandHash } from "./toolbox";
+import { daytonaCommandHash, DaytonaToolbox, DaytonaToolboxUncertain } from "./toolbox";
 
 const configuration = {
     trustBoundary: "dedicated-organization" as const,

@@ -3,8 +3,8 @@ import type { FilesystemMetric } from "@homelab/contracts/infrastructure";
 import {
     exporterAvailable,
     measurement,
-    resourceKey,
     type MetricSamples,
+    resourceKey,
 } from "./samples";
 
 /**

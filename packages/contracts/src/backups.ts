@@ -20,7 +20,7 @@ export interface BackupInventory {
 }
 import * as v from "valibot";
 
-import { tableSortSchema, tableCursorSchema } from "./tableSort";
+import { tableCursorSchema, tableSortSchema } from "./tableSort";
 
 export interface BackupSnapshot {
     readonly id: string;

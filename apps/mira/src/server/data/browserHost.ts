@@ -4,8 +4,8 @@ import * as v from "valibot";
 
 import { openBrowserConnection } from "../browsing/connection";
 import {
-    prepareBrowserContainer,
     type BrowserContainerJournal,
+    prepareBrowserContainer,
 } from "../browsing/container";
 import { browserSlotSchema } from "../browsing/egress";
 import { browserEngine } from "../browsing/engine";
@@ -19,8 +19,8 @@ import {
     beginMiraBrowserProcessCleanup,
     claimMiraBrowserProcessRecovery,
     confirmMiraBrowserProcessCleanup,
-    renewMiraBrowserProcess,
     recordMiraBrowserProcessCleanup,
+    renewMiraBrowserProcess,
     reserveMiraBrowserProcess,
 } from "./browserProcesses";
 import { prepareMiraBrowserProfile } from "./browserProfileHost";

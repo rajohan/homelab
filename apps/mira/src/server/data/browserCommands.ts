@@ -2,19 +2,19 @@ import type { SQL, TransactionSQL } from "bun";
 import * as v from "valibot";
 
 import {
+    type BrowserCommand,
     browserCommandResult,
     browserCommandSchema,
-    type BrowserCommand,
 } from "../browsing/command";
 import { browserUrl } from "../browsing/policy";
 import { lockBrowserOwner, readBrowserAccess } from "./browserAccess";
 import {
-    saveBrowserPreview,
-    requireBrowserObservation,
     cleanupBrowserConsoles,
+    requireBrowserObservation,
+    saveBrowserPreview,
 } from "./browserConsole";
 import { retireBrowserCommands } from "./browserRetirement";
-import { MiraFailure, type MiraContext } from "./context";
+import { type MiraContext, MiraFailure } from "./context";
 
 const uuid = v.pipe(v.string(), v.uuid());
 const claimSchema = v.strictObject({ id: uuid, hostId: uuid, leaseToken: uuid });

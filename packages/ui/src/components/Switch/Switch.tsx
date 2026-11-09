@@ -1,5 +1,5 @@
 import { Description, Field, Label, Switch as HeadlessSwitch } from "@headlessui/react";
-import { useContext, type ReactNode } from "react";
+import { type ReactNode, useContext } from "react";
 
 import { cn } from "../../lib/classNames";
 import { FormFieldInvalidContext } from "../../lib/formFieldContext";

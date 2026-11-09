@@ -3,9 +3,9 @@ import { expect, test } from "bun:test";
 import { hostResourceKey } from "../../jobs/resources";
 import { parseUpdateTargets } from "../updates/configuration";
 import {
-    parseApplicationTargets,
-    bindApplicationHosts,
     applicationHostResourceKeys,
+    bindApplicationHosts,
+    parseApplicationTargets,
 } from "./configuration";
 
 const target = {

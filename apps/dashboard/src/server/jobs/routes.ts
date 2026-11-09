@@ -1,10 +1,10 @@
 import { maintenanceResultsSchema } from "@homelab/contracts/maintenance";
 import {
     idSchema,
+    type JobSummary,
     pageSchema,
     runFilterSchema,
     runJobSchema,
-    type JobSummary,
 } from "@homelab/contracts/operations";
 import * as v from "valibot";
 
@@ -15,7 +15,7 @@ import { auditOperation } from "../operations/audit";
 import { authorizedOperations } from "../operations/authorization";
 import { OperationFailure } from "../operations/errors";
 import { sortedPage } from "../operations/sortedPage";
-import { enqueueJob, listJobs, lockQueue, jobSummaryQuery } from "./queue";
+import { enqueueJob, jobSummaryQuery, listJobs, lockQueue } from "./queue";
 
 export const jobsRouter = trpc.router({
     activity: trpc.procedure.query(({ ctx }) =>

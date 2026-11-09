@@ -1,6 +1,6 @@
 import * as v from "valibot";
 
-import { tableSortSchema, tableCursorSchema } from "./tableSort";
+import { tableCursorSchema, tableSortSchema } from "./tableSort";
 
 export const incidentStates = ["active", "suppressed", "resolved"] as const;
 export const incidentStateSchema = v.picklist(incidentStates);

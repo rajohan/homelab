@@ -5,7 +5,7 @@ import * as v from "valibot";
 
 import { RpcProcess, type RpcProcessOptions } from "../runtime/rpcProcess";
 import { computerConsentRequestSchema, computerOrigin } from "./companion";
-import { computerGrant, type ComputerGrant } from "./policy";
+import { type ComputerGrant, computerGrant } from "./policy";
 import { computerChildEnvironment } from "./process";
 
 /** A local consent surface; its pipe never receives credentials, pixels or input commands. */

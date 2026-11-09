@@ -1,7 +1,7 @@
 import {
     capabilities,
-    capabilityDetails,
     type Capability,
+    capabilityDetails,
 } from "@homelab/contracts/operations";
 import { Button, Fieldset, Switch } from "@homelab/ui";
 

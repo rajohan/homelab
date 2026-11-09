@@ -1,23 +1,23 @@
 import { writeFile } from "node:fs/promises";
 
 import {
-    miraBrowserTabCommandSchema,
     connectedBrowserScope,
     internetBrowserScope,
+    miraBrowserTabCommandSchema,
     unrestrictedBrowserSites,
 } from "@homelab/contracts/miraBrowser";
 import {
-    launch,
-    TargetType,
-    type Page,
     type CDPSession,
+    launch,
+    type Page,
     type Target,
+    TargetType,
 } from "puppeteer-core";
 import * as v from "valibot";
 
 import { publicBrowserNetwork } from "../config/environment";
 import type { openNativeBrowser } from "./native";
-import { browserUrl, type BrowserGrant } from "./policy";
+import { type BrowserGrant, browserUrl } from "./policy";
 import { publicDocument, publicInput, publicOutline } from "./publicPage";
 import { browserActionSchema } from "./wire";
 

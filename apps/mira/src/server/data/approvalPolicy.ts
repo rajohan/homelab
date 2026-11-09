@@ -1,12 +1,12 @@
 import {
-    miraPermissionModeSchema,
     type MiraPermissionMode,
+    miraPermissionModeSchema,
 } from "@homelab/contracts/mira";
 import type { MiraDaytonaContent } from "@homelab/contracts/miraDaytona";
 import * as v from "valibot";
 
 import { localCodeRequest } from "../sandbox/localProtocol";
-import { MiraFailure, type MiraContext, type MiraQuery } from "./context";
+import { type MiraContext, MiraFailure, type MiraQuery } from "./context";
 
 export type MiraApprovalScope = "task" | "check" | "external";
 export type MiraActionKind = "mail" | "publication" | "social" | "code" | "job";

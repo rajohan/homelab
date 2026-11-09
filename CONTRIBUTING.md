@@ -4,7 +4,8 @@ Read [AGENTS.md](AGENTS.md), the [architecture](docs/architecture.md), the [Code
 
 ## Local setup
 
-Use the exact Bun version in `.bun-version` and work inside this repository:
+Use the exact Bun package and revision in `.bun-version` / `.bun-revision`. Follow the
+[repository-scoped bootstrap](README.md#start-developing), then work inside this repository:
 
 ```sh
 bun install --frozen-lockfile
@@ -33,7 +34,7 @@ the operation and its contract; preserve the existing parameter, return, throw a
 description checks. TypeScript already owns parameter and return types, so do not repeat
 them in JSDoc. Private and protected implementation methods do not require a block.
 
-Oxlint runs the upstream `eslint-plugin-jsdoc` presence rule in two configurations:
+Bun lint runs the upstream `eslint-plugin-jsdoc` presence rule in two configurations:
 exported functions and public methods. The small registration module in
 `scripts/lint/documentation.ts` reuses the upstream rules without implementing a custom
 parser or validator. Empty blocks and ordinary `//` comments cannot satisfy the policy,

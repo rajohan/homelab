@@ -4,8 +4,8 @@ import { Readable, type Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
 import {
-    miraComputerUpdateSchema,
     type MiraComputerUpdate,
+    miraComputerUpdateSchema,
 } from "@homelab/contracts/miraComputerUpdates";
 import * as v from "valibot";
 

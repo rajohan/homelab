@@ -1,6 +1,6 @@
 import { passwordPolicy } from "@homelab/contracts";
 
-import { FieldsForm, type FieldDefinition, type FormValues } from "../../../../index";
+import { type FieldDefinition, FieldsForm, type FormValues } from "../../../../index";
 import { validatePasswordConfirmation } from "../../validation/password";
 const current: FieldDefinition = {
     name: "currentPassword",

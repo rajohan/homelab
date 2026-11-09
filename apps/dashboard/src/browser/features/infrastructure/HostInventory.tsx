@@ -1,14 +1,14 @@
 import type {
-    InfrastructureHost,
     FilesystemMetric,
+    InfrastructureHost,
 } from "@homelab/contracts/infrastructure";
 import {
     Card,
     DataTable,
+    formatMetric,
     SearchInput,
     SectionHeader,
     Select,
-    formatMetric,
 } from "@homelab/ui";
 import { Server } from "lucide-react";
 import { useState } from "react";

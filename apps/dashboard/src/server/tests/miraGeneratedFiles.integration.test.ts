@@ -1,4 +1,4 @@
-import { expect, test, spyOn } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { rejects } from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -6,7 +6,7 @@ import path from "node:path";
 
 import type { MiraAttachment } from "@homelab/contracts/mira";
 import { capabilities } from "@homelab/contracts/operations";
-import { readMiraFile, deleteMiraFile } from "@homelab/mira/data/files";
+import { deleteMiraFile, readMiraFile } from "@homelab/mira/data/files";
 import { publishHereNowBinding } from "@homelab/mira/data/herenow";
 import { claimMiraRun, finishMiraRun } from "@homelab/mira/data/queue";
 import { hereNowBindingHash } from "@homelab/mira/integrations/herenow/configuration";

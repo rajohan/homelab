@@ -4,9 +4,9 @@ import path from "node:path";
 
 import { requireSandboxImage, runDaytonaChecks } from "./harness";
 import {
+    type LocalCheckResult,
     parseLocalCheckInput,
     parseLocalCheckResult,
-    type LocalCheckResult,
 } from "./localProtocol";
 import { daytonaCheckProfile } from "./profile";
 

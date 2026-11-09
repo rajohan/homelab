@@ -1,16 +1,16 @@
-import { expect, test, spyOn } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { rejects } from "node:assert/strict";
 
 import { capabilities } from "@homelab/contracts/operations";
 import { reconcileMiraControls } from "@homelab/mira/data/automations";
 import {
-    publishMoltbookBinding,
     moltbookBindingCurrent,
+    publishMoltbookBinding,
 } from "@homelab/mira/data/moltbook";
 import { claimMiraRun } from "@homelab/mira/data/queue";
 import {
-    moltbookBindingHash,
     type MoltbookBinding,
+    moltbookBindingHash,
 } from "@homelab/mira/integrations/moltbook/configuration";
 import { MoltbookReader } from "@homelab/mira/integrations/moltbook/reader";
 import { createMoltbookTools } from "@homelab/mira/integrations/moltbook/tools";

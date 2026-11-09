@@ -1,9 +1,9 @@
 import {
+    type MiraBrowserConsole,
     miraBrowserConsoleSchema,
     miraBrowserHumanCommandSchema,
     miraBrowserHumanOperationSchema,
     miraBrowserTransferSchema,
-    type MiraBrowserConsole,
 } from "@homelab/contracts/miraBrowser";
 import type { SQL, TransactionSQL } from "bun";
 import * as v from "valibot";
@@ -14,7 +14,7 @@ import { lockBrowserOwner, readBrowserAccess } from "./browserAccess";
 import { requireBrowserDownload } from "./browserDownloadAccess";
 import { retireBrowserCommands } from "./browserRetirement";
 import { requireBrowserUpload } from "./browserUploads";
-import { auditMira, MiraFailure, type MiraContext } from "./context";
+import { auditMira, type MiraContext, MiraFailure } from "./context";
 
 type Frame = ReturnType<typeof browserWorkerFrame>;
 interface ConsoleRow {

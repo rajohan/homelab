@@ -2,15 +2,15 @@ import { expect, test } from "bun:test";
 import assert from "node:assert/strict";
 import {
     chmod,
-    lstat,
     link,
+    lstat,
     mkdir,
     mkdtemp,
     readFile,
     rm,
     symlink,
-    writeFile,
     truncate,
+    writeFile,
 } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -20,11 +20,11 @@ import { browserProfileMemoryBytes, browserProfileSnapshotBytes } from "./profil
 import { BrowserProfileCheckpoint } from "./profileCheckpoint";
 import { prepareBrowserProfileShutdown } from "./profileShutdown";
 import {
+    browserProfileSnapshot,
     captureBrowserProfile,
     restoreBrowserProfile,
-    browserProfileSnapshot,
 } from "./profileSnapshot";
-import { BrowserProfileTransfer, browserProfileParts } from "./profileTransfer";
+import { browserProfileParts, BrowserProfileTransfer } from "./profileTransfer";
 import { prepareSavedBrowserProfile } from "./savedProfile";
 
 test("profile preparation removes only stale runtime entries and refuses links to stored data", async () => {

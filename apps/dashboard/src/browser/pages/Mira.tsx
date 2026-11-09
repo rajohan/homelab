@@ -2,12 +2,12 @@ import { Button, Modal, PageHeader } from "@homelab/ui";
 import { useParams } from "@tanstack/react-router";
 import {
     Brain,
-    Files,
-    Mail,
-    Globe,
-    MessageSquare,
     Cloud,
+    Files,
     GitPullRequest,
+    Globe,
+    Mail,
+    MessageSquare,
 } from "lucide-react";
 import { useState } from "react";
 import * as v from "valibot";

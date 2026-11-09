@@ -1,6 +1,6 @@
 import type {
-    MiraBrowserTabs,
     miraBrowserTabCommandSchema,
+    MiraBrowserTabs,
 } from "@homelab/contracts/miraBrowser";
 import { Button } from "@homelab/ui";
 import { X } from "lucide-react";

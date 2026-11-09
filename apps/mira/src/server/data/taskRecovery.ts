@@ -1,4 +1,4 @@
-import { auditMira, MiraFailure, type MiraQuery, type MiraContext } from "./context";
+import { auditMira, type MiraContext, MiraFailure, type MiraQuery } from "./context";
 
 /**
  * Find the latest task outcome that still requires explicit operator review.

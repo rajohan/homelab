@@ -1,13 +1,13 @@
 import { expect, spyOn, test } from "bun:test";
 
 import {
+    type AccountSnapshot,
     IdentityClient,
     IdentityError,
-    type AccountSnapshot,
 } from "@homelab/ui/identity/client";
 import * as webauthn from "@simplewebauthn/browser";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within, waitFor, act } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { Settings } from "../pages/Settings";

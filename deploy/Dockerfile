@@ -1,5 +1,9 @@
 FROM oven/bun:1.4.4 AS build
 WORKDIR /app
+COPY .bun-version .bun-revision ./
+COPY scripts/installBun.ts ./scripts/installBun.ts
+RUN bun --no-env-file scripts/installBun.ts /opt/bun
+ENV PATH=/opt/bun/bin:$PATH
 COPY package.json bun.lock bunfig.toml ./
 COPY apps/auth/package.json ./apps/auth/package.json
 COPY apps/dashboard/package.json ./apps/dashboard/package.json
@@ -16,6 +20,7 @@ RUN bun run build "$APP"
 RUN mkdir /output && cp -a "apps/$APP/dist/." /output/
 
 FROM oven/bun:1.4.4-slim AS runtime
+COPY --from=build /opt/bun/bin/bun /usr/local/bin/bun
 ARG APP
 RUN if [ "$APP" = dashboard ]; then apt-get update && apt-get install -y --no-install-recommends openssh-client && rm -rf /var/lib/apt/lists/*; fi
 WORKDIR /app

@@ -17,7 +17,7 @@ import { claimJob, commitClaim, settleClaim } from "../jobs/claims";
 import { enqueueJob, lockQueue } from "../jobs/queue";
 import { createJobRegistry } from "../jobs/registry";
 import type { ClaimedJob } from "../jobs/types";
-import { operationFixture, expectOperationFailure } from "../testing/operations";
+import { expectOperationFailure, operationFixture } from "../testing/operations";
 
 function report(): UpdateReport {
     return {

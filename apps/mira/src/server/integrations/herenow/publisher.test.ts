@@ -2,9 +2,9 @@ import { expect, test } from "bun:test";
 import { rejects } from "node:assert/strict";
 
 import {
-    miraPublicationInputSchema,
-    miraPublicationContentSchema,
     type MiraPublicationContent,
+    miraPublicationContentSchema,
+    miraPublicationInputSchema,
 } from "@homelab/contracts/miraPublication";
 import * as v from "valibot";
 

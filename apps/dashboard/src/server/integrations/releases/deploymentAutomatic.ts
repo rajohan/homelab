@@ -12,12 +12,12 @@ import {
     type ReleaseDeploymentTarget,
 } from "./deploymentConfiguration";
 import { deploymentRelease } from "./deploymentPlans";
-import { readDeploymentPolicy, automaticDeploymentAllowed } from "./deploymentPolicies";
+import { automaticDeploymentAllowed, readDeploymentPolicy } from "./deploymentPolicies";
 import {
     deploymentDigest,
+    type DeploymentHost,
     deploymentHost,
     deploymentObservationSchema,
-    type DeploymentHost,
     type DeploymentPlan,
 } from "./deploymentProtocol";
 import { deploymentWindowEnd } from "./deploymentWindow";

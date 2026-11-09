@@ -1,8 +1,8 @@
 import {
-    tableSortSchema,
+    type TableCursor,
     tableCursorSchema,
     type TableSort,
-    type TableCursor,
+    tableSortSchema,
 } from "@homelab/contracts/tableSort";
 import { and, asc, desc, eq, gt, lt, or, sql } from "drizzle-orm";
 import * as v from "valibot";

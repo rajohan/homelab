@@ -1,5 +1,9 @@
 FROM oven/bun:1.4.4 AS build
 WORKDIR /source
+COPY .bun-version .bun-revision ./
+COPY scripts/installBun.ts ./scripts/installBun.ts
+RUN bun --no-env-file scripts/installBun.ts /opt/bun
+ENV PATH=/opt/bun/bin:$PATH
 COPY package.json bun.lock bunfig.toml ./
 COPY apps/auth/package.json ./apps/auth/package.json
 COPY apps/dashboard/package.json ./apps/dashboard/package.json
@@ -13,6 +17,7 @@ COPY . .
 RUN bun --no-env-file scripts/buildBrowser.ts /output
 
 FROM oven/bun:1.4.4-slim
+COPY --from=build /opt/bun/bin/bun /usr/local/bin/bun
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends chromium xvfb openbox xauth x11-utils libxkbcommon0 libwayland-client0 libdbus-1-3 libatspi2.0-0 && rm -rf /var/lib/apt/lists/*
 WORKDIR /opt/mira-browser

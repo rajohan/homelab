@@ -17,9 +17,9 @@ import { miraModeAllows, miraRunPermission } from "../data/approvalPolicy";
 import { readMiraControlPage } from "../data/automations";
 import {
     lockMiraProposals,
-    requireTask,
-    MiraFailure,
     type MiraContext,
+    MiraFailure,
+    requireTask,
 } from "../data/context";
 import {
     createReport,

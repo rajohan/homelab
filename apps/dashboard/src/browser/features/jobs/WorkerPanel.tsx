@@ -6,10 +6,10 @@ import {
     ConfirmDialog,
     DataTable,
     ErrorNotice,
-    LoadingState,
-    SectionHeader,
-    queryRefresh,
     formatDateTime,
+    LoadingState,
+    queryRefresh,
+    SectionHeader,
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 import { Cpu, Pause, Play } from "lucide-react";

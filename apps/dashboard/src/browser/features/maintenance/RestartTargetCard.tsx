@@ -1,6 +1,6 @@
 import { Badge, Button } from "@homelab/ui";
 
-import { restartRequirement, type RestartPlan } from "./restartNavigation";
+import { type RestartPlan, restartRequirement } from "./restartNavigation";
 
 /**
  * Show one restart target with the shared responsive actions and confirmation entry point.

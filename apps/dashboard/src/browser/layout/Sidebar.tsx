@@ -1,19 +1,19 @@
 import { Brand, IconButton } from "@homelab/ui";
 import { Link } from "@tanstack/react-router";
 import {
+    Archive,
+    BellRing,
+    Boxes,
+    Clock,
+    FileText,
     LayoutDashboard,
+    ListChecks,
+    ListTodo,
+    MessageSquare,
+    PackageCheck,
     Server,
     Settings,
     X,
-    ListChecks,
-    Boxes,
-    BellRing,
-    Archive,
-    PackageCheck,
-    MessageSquare,
-    ListTodo,
-    FileText,
-    Clock,
 } from "lucide-react";
 
 import { NavigationLink } from "./NavigationLink";

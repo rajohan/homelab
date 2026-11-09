@@ -1,4 +1,4 @@
-import { expect, test, spyOn } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { rejects } from "node:assert/strict";
 import {
     chmod,
@@ -17,8 +17,8 @@ import { fileURLToPath } from "node:url";
 
 import { capabilities } from "@homelab/contracts/operations";
 import {
-    installMiraPresets,
     deleteMiraAutomation,
+    installMiraPresets,
 } from "@homelab/mira/data/automationActions";
 import { miraControlKeys, readMiraControlPage } from "@homelab/mira/data/automations";
 import { miraQueueAvailable } from "@homelab/mira/data/capacity";
@@ -35,8 +35,8 @@ import {
 } from "../../../../mira/src/server/executor/cleanup";
 import { readMiraTurnInput } from "../../../../mira/src/server/executor/context";
 import {
-    runMiraExecutor,
     type MiraHealth,
+    runMiraExecutor,
 } from "../../../../mira/src/server/executor/runtime";
 import {
     executeMiraTurn,

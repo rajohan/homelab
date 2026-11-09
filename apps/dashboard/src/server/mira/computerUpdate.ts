@@ -1,6 +1,6 @@
 import {
-    miraComputerUpdateSchema,
     type MiraComputerUpdate,
+    miraComputerUpdateSchema,
 } from "@homelab/contracts/miraComputerUpdates";
 import { requireComputerDevice } from "@homelab/mira/data/computerAuthority";
 import type { SQL } from "bun";

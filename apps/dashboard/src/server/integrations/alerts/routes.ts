@@ -1,6 +1,6 @@
 import {
-    incidentPageSchema,
     type Incident,
+    incidentPageSchema,
     type RuleInventory,
 } from "@homelab/contracts/alerts";
 

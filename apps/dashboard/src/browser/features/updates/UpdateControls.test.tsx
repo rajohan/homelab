@@ -1,9 +1,9 @@
 import { expect, spyOn, test } from "bun:test";
 
 import type {
+    UpdateBatchPlan,
     UpdateItem,
     UpdatePolicy,
-    UpdateBatchPlan,
 } from "@homelab/contracts/updates";
 import { IdentityClient } from "@homelab/ui/identity/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";

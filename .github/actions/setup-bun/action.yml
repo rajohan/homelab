@@ -1,0 +1,16 @@
+name: Set up pinned Bun
+description: Install the immutable Canary package and verify its exact source revision
+runs:
+  using: composite
+  steps:
+    - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      with:
+        bun-version: 1.4.4
+    - name: Install the pinned runtime
+      shell: bash
+      run: |
+        bun --no-env-file scripts/installBun.ts "$RUNNER_TEMP/homelab-bun"
+        echo "$RUNNER_TEMP/homelab-bun/bin" >> "$GITHUB_PATH"
+    - name: Verify the selected runtime
+      shell: bash
+      run: bun --no-env-file scripts/verifyBun.ts

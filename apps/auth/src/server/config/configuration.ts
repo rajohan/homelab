@@ -5,7 +5,7 @@ import { getDomain } from "tldts";
 import * as v from "valibot";
 
 import { routeSchema, validateResourceRules } from "./accessPolicy";
-import { parseSessionPolicy, type AuthSessionPolicy } from "./sessionPolicy";
+import { type AuthSessionPolicy, parseSessionPolicy } from "./sessionPolicy";
 
 const emptyAccessPolicy = { routes: [] };
 const originSchema = v.pipe(v.string(), v.url(), v.maxLength(512));

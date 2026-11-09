@@ -5,9 +5,9 @@ import { capabilities, type Capability } from "@homelab/contracts/operations";
 import {
     connectMiraComputer,
     createMiraComputerPairing,
-    revokeMiraComputer,
     enrollMiraComputer,
     heartbeatMiraComputer,
+    revokeMiraComputer,
 } from "@homelab/mira/data/computers";
 
 import { appRouter } from "../api/router";

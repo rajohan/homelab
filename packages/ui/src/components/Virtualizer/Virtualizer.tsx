@@ -1,9 +1,9 @@
 import {
+    type ReactNode,
+    type RefObject,
     useEffect,
     useState,
     useSyncExternalStore,
-    type ReactNode,
-    type RefObject,
 } from "react";
 
 import { VirtualListStore, type VirtualSnapshot } from "./VirtualListStore";

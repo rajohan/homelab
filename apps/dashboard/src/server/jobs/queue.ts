@@ -1,7 +1,7 @@
 import type {
     JobSummary,
-    ScheduleSummary,
     ScheduleConfiguration,
+    ScheduleSummary,
 } from "@homelab/contracts/operations";
 import type { SQL } from "bun";
 import * as v from "valibot";

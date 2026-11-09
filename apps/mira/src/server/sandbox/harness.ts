@@ -6,9 +6,9 @@ import * as v from "valibot";
 import { sandboxProfileEnvironment } from "../config/environment";
 import {
     daytonaCheckProfile,
+    type DaytonaSandboxRequest,
     daytonaSandboxSchema,
     parseDaytonaArguments,
-    type DaytonaSandboxRequest,
 } from "./profile";
 import { executeDaytonaChecks } from "./workflow";
 
@@ -18,7 +18,7 @@ export async function requireSandboxImage(): Promise<void> {
         process.platform !== "linux" ||
         process.getuid?.() === 0 ||
         sandboxProfileEnvironment() !== "homelab-check-v2" ||
-        Bun.version !== daytonaCheckProfile.bunVersion
+        Bun.revision !== daytonaCheckProfile.bunRevision
     )
         throw new Error(
             "This command requires the qualified non-root Homelab Daytona snapshot."

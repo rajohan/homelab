@@ -1,6 +1,6 @@
 import type { MiraRunSummary, MiraToolReceipt } from "@homelab/contracts/mira";
 
-import { MiraFailure, type MiraContext } from "./context";
+import { type MiraContext, MiraFailure } from "./context";
 
 /**
  * Inspect an owned historical run independently of the latest chat turn or chat deletion.

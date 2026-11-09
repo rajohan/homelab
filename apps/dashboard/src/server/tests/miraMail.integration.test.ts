@@ -1,11 +1,11 @@
-import { expect, test, spyOn } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { rejects } from "node:assert/strict";
 import { cp, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { capabilities } from "@homelab/contracts/operations";
-import { saveMiraFile, deleteMiraFile } from "@homelab/mira/data/files";
+import { deleteMiraFile, saveMiraFile } from "@homelab/mira/data/files";
 import { publishAgentMailReceiver } from "@homelab/mira/data/integrations";
 import { approveMiraMail, saveMiraMail } from "@homelab/mira/data/mail";
 import { claimMiraRun } from "@homelab/mira/data/queue";
@@ -22,9 +22,9 @@ import { createTestDatabase } from "../../../../../tests/database";
 import { appRouter } from "../api/router";
 import { connectDashboardDatabase } from "../database/connection";
 import {
+    assertDashboardSchema,
     dashboardMigrationsFolder,
     migrateDashboard,
-    assertDashboardSchema,
 } from "../database/migrations";
 import { provisionTestAgentMail } from "../testing/agentmail";
 import { createMiraTextTestTools as createMiraTools } from "../testing/miraTools";

@@ -6,10 +6,10 @@ import type {
 import {
     exporterAvailable,
     measurement,
-    resourceKey,
-    resourceState,
     type MetricSample,
     type MetricSamples,
+    resourceKey,
+    resourceState,
 } from "./samples";
 
 function hostInventory(

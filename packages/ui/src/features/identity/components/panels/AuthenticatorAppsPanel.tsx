@@ -1,4 +1,4 @@
-import { Smartphone, Plus } from "lucide-react";
+import { Plus, Smartphone } from "lucide-react";
 
 import { Button, SuccessNotice } from "../../../../index";
 import type { AccountPanelProps } from "../../types";

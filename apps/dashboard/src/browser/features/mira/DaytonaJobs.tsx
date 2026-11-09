@@ -15,7 +15,7 @@ import { useState } from "react";
 import { api } from "../../api/client";
 import { DaytonaDetails } from "./DaytonaDetails";
 import { DaytonaEditor } from "./DaytonaEditor";
-import { daytonaTones, daytonaCleanupDescriptions } from "./daytonaPresentation";
+import { daytonaCleanupDescriptions, daytonaTones } from "./daytonaPresentation";
 
 /**
  * Show durable code work in Jobs or an owned conversation.

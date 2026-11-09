@@ -54,7 +54,7 @@ Live sign-in, security-key handling and installation remain deployment qualifica
 References: [Microsoft WebView2 distribution](https://learn.microsoft.com/microsoft-edge/webview2/concepts/distribution),
 [Microsoft WebView2 security guidance](https://learn.microsoft.com/microsoft-edge/webview2/concepts/security).
 
-The computer foundation uses the unmodified, pinned `@trycua/cua-driver` 0.38.0 SDK with Bun 1.4.4. It provides a single-window adapter, a supervised private child process and a reproducible native X11 qualification. Chat tools, per-run access controls and the installed Windows composition are implemented. Production PC activation still requires interactive qualification, private routing and release delivery.
+The computer foundation uses the unmodified, pinned `@trycua/cua-driver` 0.38.0 SDK with the pinned Bun Canary revision. It provides a single-window adapter, a supervised private child process and a reproducible native X11 qualification. Chat tools, per-run access controls and the installed Windows composition are implemented. Production PC activation still requires interactive qualification, private routing and release delivery.
 
 ## Authority and observations
 
@@ -112,7 +112,7 @@ For this homelab, computer traffic must use the existing NordVPN Meshnet route. 
 
 Settings > Computers creates a ten-minute, single-use pairing code, lists presence and revokes pairings after recent human verification. Connected means that the server received a fresh heartbeat; it does not claim screen readiness. Revoked/expired pairings remain identifiable. Closing the code dialog clears its transient UI state.
 
-Build the entrypoint with Bun 1.4.4: `bun --no-env-file scripts/buildComputer.ts linux-x64` or `bun --no-env-file scripts/buildComputer.ts windows-x64`. Artifacts are under `apps/mira/dist/computer/<platform>/`. The executable contains its Bun runtime and disables automatic dotenv, bunfig, package.json and tsconfig loading. Windows `run` requires the complete package built with `scripts/buildWindowsComputer.ts`, described below. Release publication and updater qualification remain separate work.
+Build the entrypoint with the pinned Bun Canary revision on its native runner: `bun --no-env-file scripts/buildComputer.ts linux-x64` on Linux or `bun --no-env-file scripts/buildComputer.ts windows-x64` on Windows. Cross-compilation is refused because this Canary's default cross-target downloader selects a stable version; release CI already uses native runners for both platforms. Artifacts are under `apps/mira/dist/computer/<platform>/`. The executable contains its verified Bun runtime and disables automatic dotenv, bunfig, package.json and tsconfig loading. Windows `run` requires the complete package built with `scripts/buildWindowsComputer.ts`, described below. Release publication and updater qualification remain separate work.
 
 On the PC, run `mira-computer pair https://computer.home.example.test`. Paste the ticket into the hidden prompt, never into command arguments, environment variables or a file. Enrollment is sent once; an uncertain response requires revoking the ticket and creating another. The credential is stored in the current user's OS vault using [Bun's credential API](https://bun.sh/docs/runtime/secrets), with Windows `persist: local`, no unrestricted keychain access and no plaintext fallback. A failed save requires revocation in Settings. The vault key is bound to the canonical origin, so another server cannot receive that credential.
 

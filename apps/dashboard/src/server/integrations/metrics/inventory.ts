@@ -12,7 +12,7 @@ import {
 } from "./resources";
 import { retainUnavailableInventory } from "./retention";
 import type { MetricSample } from "./samples";
-import { queryMetrics, type MetricsConfiguration } from "./transport";
+import { type MetricsConfiguration, queryMetrics } from "./transport";
 
 /**
  * Collect a bounded resource inventory using only the reviewed metric catalog.

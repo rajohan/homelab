@@ -5,17 +5,17 @@ import type {
 
 import type { ApplicationTarget } from "./configuration";
 import {
-    orderApplicationDependencies,
-    waitForApplicationDependencies,
-    isCompletionDependency,
     isApplicationReady,
-    waitForApplicationReady,
-    verifyNamespaceProviders,
+    isCompletionDependency,
     namespaceProviders,
+    orderApplicationDependencies,
+    verifyNamespaceProviders,
+    waitForApplicationDependencies,
+    waitForApplicationReady,
 } from "./dependencies";
 import type { DockerDetail, DockerPort } from "./docker";
 import { mapDockerApplication } from "./inventory";
-import { selectionRevision, selectApplications } from "./selection";
+import { selectApplications, selectionRevision } from "./selection";
 
 /**
  * Revalidate exact current identities immediately before existing-container lifecycle calls.

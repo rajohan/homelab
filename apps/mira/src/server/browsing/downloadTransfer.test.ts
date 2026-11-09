@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 
 import {
+    browserDownloadLimit,
     BrowserDownloadReceiver,
     BrowserDownloadTransfer,
-    browserDownloadLimit,
 } from "./downloadTransfer";
 
 const file = (length = 100_003) => {

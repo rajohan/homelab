@@ -1,6 +1,6 @@
 import {
-    publishNotificationSchema,
     type PublishNotification,
+    publishNotificationSchema,
 } from "@homelab/contracts/notifications";
 import type { TransactionSQL } from "bun";
 import * as v from "valibot";

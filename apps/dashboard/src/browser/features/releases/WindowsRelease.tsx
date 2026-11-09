@@ -1,4 +1,4 @@
-import { Badge, SectionHeader, buttonStyles } from "@homelab/ui";
+import { Badge, buttonStyles, SectionHeader } from "@homelab/ui";
 import { Download, Monitor } from "lucide-react";
 
 import type { api } from "../../api/client";

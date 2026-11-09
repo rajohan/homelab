@@ -1,11 +1,11 @@
 import type { Capability } from "@homelab/contracts/operations";
 import {
-    updateReportSchema,
-    updateListSchema,
-    updateRequestSchema,
-    updatePolicySchema,
-    updateBatchScopeSchema,
     updateBatchRequestSchema,
+    updateBatchScopeSchema,
+    updateListSchema,
+    updatePolicySchema,
+    updateReportSchema,
+    updateRequestSchema,
 } from "@homelab/contracts/updates";
 import * as v from "valibot";
 
@@ -18,7 +18,7 @@ import { OperationFailure } from "../../operations/errors";
 import { sortedInventory } from "../../operations/sortedInventory";
 import { requestUpdate } from "./actions";
 import { readUpdateBatchPlan, requestUpdateBatch } from "./batch";
-import { readUpdateSources, readUpdateReport, staleUpdateReport } from "./inventory";
+import { readUpdateReport, readUpdateSources, staleUpdateReport } from "./inventory";
 import { queueUpdateCheck } from "./job";
 import { readUpdatePolicies, writeUpdatePolicy } from "./policies";
 import { recordRestartObservation } from "./restartObservation";

@@ -9,8 +9,8 @@ import { fileURLToPath } from "node:url";
 import { miraDefaultChatSettings, miraModelSchema } from "@homelab/contracts/mira";
 import { capabilities } from "@homelab/contracts/operations";
 import {
-    claimChatSteering,
     acknowledgeChatSteering,
+    claimChatSteering,
 } from "@homelab/mira/data/chatSteering";
 import {
     acceptMiraComputerAccess,

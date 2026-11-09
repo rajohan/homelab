@@ -1,5 +1,5 @@
 import { readComputerAccess } from "./computerAuthority";
-import { MiraFailure, type MiraContext } from "./context";
+import { type MiraContext, MiraFailure } from "./context";
 
 export interface MiraComputerReadiness {
     state: "waiting" | "pending" | "ready" | "stopped" | "offline" | "unavailable";

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { dateTimePickerValue, dateTimePickerTimestamp } from "./dateTimeValue";
+import { dateTimePickerTimestamp, dateTimePickerValue } from "./dateTimeValue";
 
 test("date/time values round-trip at minute precision and reject invalid selections", () => {
     const original = new Date(2026, 8, 17, 23, 45, 50);

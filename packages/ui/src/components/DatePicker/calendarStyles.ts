@@ -1,4 +1,4 @@
-import { DayFlag, SelectionState, UI, getDefaultClassNames } from "@daypicker/react";
+import { DayFlag, getDefaultClassNames, SelectionState, UI } from "@daypicker/react";
 import type { CSSProperties } from "react";
 
 import { cn } from "../../lib/classNames";

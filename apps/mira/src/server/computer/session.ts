@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 
 import {
-    miraComputerInputSchema,
     miraComputerEffectSchema,
-    miraComputerObservationTargetsSchema,
     type MiraComputerElement,
+    miraComputerInputSchema,
+    miraComputerObservationTargetsSchema,
 } from "@homelab/contracts/miraComputerCommands";
 import * as v from "valibot";
 

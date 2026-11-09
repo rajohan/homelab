@@ -1,6 +1,6 @@
 import {
-    unrestrictedBrowserSites,
     type miraBrowserHumanOperationSchema,
+    unrestrictedBrowserSites,
 } from "@homelab/contracts/miraBrowser";
 import type { TransactionSQL } from "bun";
 import type * as v from "valibot";

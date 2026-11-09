@@ -7,7 +7,7 @@ import { idSchema } from "@homelab/contracts/operations";
 import type { SQL } from "bun";
 import * as v from "valibot";
 
-import { MiraFailure, type MiraContext } from "../../data/context";
+import { type MiraContext, MiraFailure } from "../../data/context";
 import { listMiraDaytona, readMiraDaytona, saveMiraDaytona } from "../../data/daytona";
 import type { MiraClaim } from "../../data/queue";
 import type { RuntimeTool } from "../../runtime/protocol";
@@ -218,7 +218,7 @@ export function createDaytonaTools(
             transactional: true,
             description: editing
                 ? 'Prepare reviewed Homelab file edits and full checks in the qualified version 2 snapshot. First use mira_file_create to attach a JSON plan: {"version":1,"commit":"<40-character public SHA>","files":[{"path":"apps/example.ts","beforeSha256":"<SHA-256 of exact original UTF-8 bytes>","content":"complete replacement text"}]}. At most 20 regular text files, 256 KiB each, one MiB total; use beforeSha256:null only for a new file, content:null to delete. Original fingerprints and base must match exactly; no path traversal, symlinks, binary or unchanged files. The sandbox generates changes.txt and runs all fixed checks. Pass the attached plan ID as editsId. This creates a draft only; use dashboard approval or mira_action_execute with Approve for me or Full access to start it. No GitHub write, merge, deployment or execution authority is granted.'
-                : "Prepare the fixed Homelab verification profile for one exact public commit and an optional attached unified patch text file. The qualified snapshot runs Bun 1.4.4, frozen install, checks, tests, build and smoke tests using isolated PostgreSQL. Results are untrusted report/log/patch files in Code jobs. No arbitrary repository, credentials, GitHub writes, approval or spending. The operator must review and start the draft. This profile requires the Homelab check snapshot; do not assume an ordinary Bun image contains it.",
+                : "Prepare the fixed Homelab verification profile for one exact public commit and an optional attached unified patch text file. The qualified snapshot runs the repository-pinned Bun revision, frozen install, checks, tests, build and smoke tests using isolated PostgreSQL. Results are untrusted report/log/patch files in Code jobs. No arbitrary repository, credentials, GitHub writes, approval or spending. The operator must review and start the draft. This profile requires the Homelab check snapshot; do not assume an ordinary Bun image contains it.",
             inputSchema: {
                 type: "object",
                 additionalProperties: false,

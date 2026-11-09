@@ -1,7 +1,7 @@
 import { constants } from "node:fs";
-import { mkdir, open, readdir, type FileHandle } from "node:fs/promises";
+import { type FileHandle, mkdir, open, readdir } from "node:fs/promises";
 import path from "node:path";
-import { gzipSync, gunzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 
 import * as v from "valibot";
 

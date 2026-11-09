@@ -2,8 +2,8 @@ import { execFileSync } from "node:child_process";
 import {
     cp,
     mkdtemp,
-    readFile,
     readdir,
+    readFile,
     realpath,
     rm,
     writeFile,

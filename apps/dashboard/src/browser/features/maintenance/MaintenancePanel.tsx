@@ -2,11 +2,11 @@ import {
     Card,
     ErrorNotice,
     LoadingState,
+    queryRefresh,
     SearchInput,
     SectionHeader,
     Select,
     VirtualList,
-    queryRefresh,
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 import { RotateCw } from "lucide-react";
@@ -17,8 +17,8 @@ import { useJobOperation } from "../jobs/useJobOperation";
 import { RestartDialog } from "./RestartDialog";
 import { RestartHostGroup } from "./RestartHostGroup";
 import {
-    restartGroups,
     type RequirementFilter,
+    restartGroups,
     type RestartLocationFilter,
     type RestartPlan,
 } from "./restartNavigation";

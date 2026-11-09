@@ -1,9 +1,9 @@
-import { useRef, useState, type ReactNode } from "react";
+import { type ReactNode, useRef, useState } from "react";
 
 import { cn } from "../../lib/classNames";
 import {
-    InfiniteScrollTrigger,
     type InfiniteScrollContinuation,
+    InfiniteScrollTrigger,
 } from "../InfiniteScrollTrigger/InfiniteScrollTrigger";
 import { Virtualizer } from "../Virtualizer/Virtualizer";
 import { DataTableRow } from "./DataTableRow";

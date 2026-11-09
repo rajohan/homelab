@@ -1,34 +1,34 @@
 import {
-    miraMailAttachmentSchema,
-    miraMailContentSchema,
     type MiraMailApprove,
-    miraMailInputSchema,
-    miraMailReplySchema,
-    type MiraMailReply,
+    miraMailAttachmentSchema,
     type MiraMailContent,
+    miraMailContentSchema,
     type MiraMailDraft,
+    miraMailInputSchema,
+    type MiraMailReply,
+    miraMailReplySchema,
     type MiraMailSave,
 } from "@homelab/contracts/miraMail";
 import * as v from "valibot";
 
 import {
-    agentMailBindingHash,
     type AgentMailBinding,
+    agentMailBindingHash,
 } from "../integrations/agentmail/configuration";
 import { requireMiraApproval } from "./approvalPolicy";
 import {
     auditMira,
+    type MiraContext,
     MiraFailure,
+    type MiraQuery,
     miraTransaction,
     requireConversation,
-    type MiraContext,
-    type MiraQuery,
 } from "./context";
 import { agentMailBindingStatus, agentMailReceiverCurrent } from "./integrations";
 import {
     captureMailAttachments,
-    verifyMailAttachments,
     miraMailRequestBody,
+    verifyMailAttachments,
 } from "./mailAttachments";
 
 /**

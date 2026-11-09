@@ -3,8 +3,8 @@ import type {
     DeploymentPolicySummary,
 } from "@homelab/contracts/deployment";
 import {
-    deploymentPolicySchema,
     deploymentPauseSchema,
+    deploymentPolicySchema,
 } from "@homelab/contracts/deployment";
 import type { SQL, TransactionSQL } from "bun";
 import * as v from "valibot";

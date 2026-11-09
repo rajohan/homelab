@@ -1,6 +1,6 @@
 import {
-    moltbookBindingHash,
     type MoltbookBinding,
+    moltbookBindingHash,
 } from "../integrations/moltbook/configuration";
 import type { MiraContext, MiraQuery } from "./context";
 

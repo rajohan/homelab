@@ -91,6 +91,7 @@ export async function main(): Promise<void> {
                 "--source",
                 "AGENTS.md",
                 ".bun-version",
+                ".bun-revision",
             ],
             60_000
         );
@@ -111,7 +112,11 @@ export async function main(): Promise<void> {
         assert.equal(context.commit, commit);
         const selectedBun = context.files.find((file) => file.path === ".bun-version");
         assert.ok(selectedBun);
-        assert.equal(selectedBun.content.trim(), "1.4.4");
+        assert.equal(selectedBun.content.trim(), daytonaCheckProfile.bunVersion);
+        assert.equal(
+            context.files.find((file) => file.path === ".bun-revision")?.content.trim(),
+            daytonaCheckProfile.bunRevision
+        );
         assert.equal(
             selectedBun.sha256,
             new Bun.CryptoHasher("sha256").update(selectedBun.content).digest("hex")

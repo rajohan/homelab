@@ -96,6 +96,7 @@ if (
         embedded: true,
         nativeAddons: true,
         bun: Bun.version,
+        bunRevision: Bun.revision,
     })
 )
     throw new Error("Packaged native runtime qualification failed.");

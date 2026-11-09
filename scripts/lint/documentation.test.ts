@@ -48,15 +48,21 @@ test("documentation lint requires public contracts without requiring private hel
         "export function parameterMissing(value: string) {}",
         "/** */",
         "export function emptyComment() {}",
+        "/** Describe an interface-based operation. */",
+        "export function interfaceExempt(value: Request, label: string) { return label + value.url; }",
+        "/** Describe the typed callback. */",
+        "export const typedExempt: (value: string) => string = (value) => value;",
+        "/** Describe the primitive-based operation. */",
+        "export const primitiveMissing = (value: number) => value;",
     ].join("\n");
     try {
         await Bun.write(fixturePath, source);
         const child = Bun.spawn(
             [
                 process.execPath,
-                "scripts/lint.ts",
-                "--config",
-                "oxlint.config.ts",
+                "lint",
+                "--no-script",
+                "--deny-warnings",
                 "--format",
                 "json",
                 fixturePath,
@@ -81,8 +87,8 @@ test("documentation lint requires public contracts without requiring private hel
         expect(lines("documentation(exported)")).toEqual([2, 3, 5]);
         expect(lines("documentation(methods)")).toEqual([8, 12, 13, 14, 16]);
         expect(lines("documentation(description)")).toContain(24);
-        expect(lines("jsdoc(require-param)")).toContain(27);
-        expect(lines("jsdoc(no-blank-blocks)")).toContain(28);
+        expect(lines("jsdoc-js(require-param)")).toEqual([26, 34]);
+        expect(lines("jsdoc-js(no-blank-blocks)")).toContain(28);
     } finally {
         await rm(directory, { recursive: true, force: true });
     }

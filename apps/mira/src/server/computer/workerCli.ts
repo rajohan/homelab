@@ -92,6 +92,7 @@ export async function runComputerWorker(args: readonly string[]): Promise<void> 
                     embedded: true,
                     nativeAddons: true,
                     bun: Bun.version,
+                    bunRevision: Bun.revision,
                 }) + "\n"
             );
         } finally {

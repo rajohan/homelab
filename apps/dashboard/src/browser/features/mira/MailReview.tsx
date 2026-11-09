@@ -2,14 +2,14 @@ import type { MiraMailDraft } from "@homelab/contracts/miraMail";
 import {
     ActionGroup,
     Badge,
-    buttonStyles,
     Button,
+    buttonStyles,
     Card,
     ErrorNotice,
     Modal,
     SectionHeader,
 } from "@homelab/ui";
-import { Mail, Send, Paperclip, Download } from "lucide-react";
+import { Download, Mail, Paperclip, Send } from "lucide-react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";

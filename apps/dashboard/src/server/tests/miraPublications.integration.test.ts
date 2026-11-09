@@ -10,7 +10,7 @@ import type {
 } from "@homelab/contracts/miraPublication";
 import { capabilities } from "@homelab/contracts/operations";
 import { miraActionApproval } from "@homelab/mira/data/approvalPolicy";
-import { saveMiraFile, deleteMiraFile } from "@homelab/mira/data/files";
+import { deleteMiraFile, saveMiraFile } from "@homelab/mira/data/files";
 import { publishHereNowBinding } from "@homelab/mira/data/herenow";
 import { approveMiraPublication } from "@homelab/mira/data/publications";
 import { claimMiraRun } from "@homelab/mira/data/queue";
@@ -22,7 +22,7 @@ import {
 
 import { publicationProvider } from "../../../../mira/src/server/testing/herenow";
 import { appRouter } from "../api/router";
-import { permissionRun, permissionAction } from "../testing/miraPermissions";
+import { permissionAction, permissionRun } from "../testing/miraPermissions";
 import { createMiraTextTestTools as createMiraTools } from "../testing/miraTools";
 import { operationFixture } from "../testing/operations";
 

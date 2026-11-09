@@ -9,12 +9,12 @@ import { createAuthApplication } from "../apps/auth/src/server/application";
 import type { AuthConfiguration } from "../apps/auth/src/server/config/configuration";
 import { defaultSessionPolicy } from "../apps/auth/src/server/config/sessionPolicy";
 import {
-    oidcApprovals,
-    users,
-    sessions,
     mailOutbox,
-    rateBuckets,
+    oidcApprovals,
     oidcRecords,
+    rateBuckets,
+    sessions,
+    users,
 } from "../apps/auth/src/server/database/schema";
 import { hashPassword } from "../apps/auth/src/server/security/crypto";
 import { startDashboardServer } from "../apps/dashboard/src/server/index";

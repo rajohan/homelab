@@ -1,8 +1,8 @@
 import type { MiraComputerSummary } from "@homelab/contracts/miraComputers";
 import {
     Badge,
-    buttonStyles,
     Button,
+    buttonStyles,
     Card,
     ConfirmDialog,
     ErrorNotice,

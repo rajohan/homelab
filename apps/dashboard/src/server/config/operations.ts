@@ -2,43 +2,43 @@ import { readFileSync } from "node:fs";
 
 import type { UpdateSource } from "@homelab/contracts/updates";
 import {
-    agentMailHookConfiguration,
     type AgentMailHookConfiguration,
+    agentMailHookConfiguration,
 } from "@homelab/mira/integrations/agentmail/configuration";
 import {
-    daytonaBinding,
     type DaytonaBinding,
+    daytonaBinding,
 } from "@homelab/mira/integrations/daytona/configuration";
 import {
-    githubBinding,
     type GitHubBinding,
+    githubBinding,
 } from "@homelab/mira/integrations/github/configuration";
 import {
-    hereNowBinding,
     type HereNowBinding,
+    hereNowBinding,
 } from "@homelab/mira/integrations/herenow/configuration";
 import {
-    moltbookBinding,
     type MoltbookBinding,
+    moltbookBinding,
 } from "@homelab/mira/integrations/moltbook/configuration";
 import {
-    localCodeEnvironment,
     type LocalCodeBinding,
+    localCodeEnvironment,
 } from "@homelab/mira/sandbox/localBinding";
 import * as v from "valibot";
 
 import type { RulesConfiguration } from "../integrations/alerts/rules";
 import type { AlertsConfiguration } from "../integrations/alerts/transport";
 import {
-    parseApplicationTargets,
-    bindApplicationHosts,
     type ApplicationTarget,
+    bindApplicationHosts,
+    parseApplicationTargets,
 } from "../integrations/applications/configuration";
 import type { BackupCatalogConfiguration } from "../integrations/backups/catalog";
 import type { LogsConfiguration } from "../integrations/logs/transport";
 import {
-    parseMaintenanceTargets,
     type MaintenanceTarget,
+    parseMaintenanceTargets,
 } from "../integrations/maintenance/configuration";
 import {
     parseReleaseDeploymentTargets,

@@ -9,8 +9,8 @@ import { createSandboxDirectory, readSandboxPatch, writeSandboxArtifact } from "
 import { runSandboxProcess, type SandboxProcessResult } from "./process";
 import {
     daytonaCheckProfile,
-    daytonaSandboxSchema,
     type DaytonaSandboxRequest,
+    daytonaSandboxSchema,
 } from "./profile";
 const git = (...args: string[]) => [
     "git",
@@ -218,7 +218,14 @@ export async function executeDaytonaChecks(
                 throw new Error("The normalized patch exceeded the recovery limit.");
             patch = diff.stdout;
             const selectedBun = await readFile(path.join(repo, ".bun-version"), "utf8");
-            if (selectedBun.trim() !== daytonaCheckProfile.bunVersion)
+            const selectedRevision = await readFile(
+                path.join(repo, ".bun-revision"),
+                "utf8"
+            );
+            if (
+                selectedBun.trim() !== daytonaCheckProfile.bunVersion ||
+                selectedRevision.trim() !== daytonaCheckProfile.bunRevision
+            )
                 throw new Error("The selected source requires a different Bun snapshot.");
             await command("Install frozen dependencies", [
                 "bun",

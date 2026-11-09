@@ -1,4 +1,4 @@
-import { Card, PageHeader, SectionHeader, buttonStyles } from "@homelab/ui";
+import { buttonStyles, Card, PageHeader, SectionHeader } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { ShieldCheck } from "lucide-react";

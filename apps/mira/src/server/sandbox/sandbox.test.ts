@@ -269,9 +269,16 @@ async function workflowFixture(
         if (args.includes("checkout")) {
             await writeFile(
                 path.join(directory, "work/repo/.bun-version"),
-                mode === "wrong-bun" ? "0.0.0" : "1.4.4"
+                mode === "wrong-bun" ? "0.0.0" : daytonaCheckProfile.bunVersion
             );
         }
+        if (args.includes("checkout"))
+            await writeFile(
+                path.join(directory, "work/repo/.bun-revision"),
+                mode === "wrong-revision"
+                    ? "0".repeat(40)
+                    : daytonaCheckProfile.bunRevision
+            );
         if (args.includes("rev-parse"))
             result.stdout = mode === "wrong-commit" ? "b".repeat(40) : commit;
         if (args.includes("--cached")) {
@@ -327,6 +334,7 @@ test.each([
     "cancel",
     "wrong-commit",
     "wrong-bun",
+    "wrong-revision",
     "large-diff",
     "database-spawn",
     "database-exit",
@@ -379,7 +387,11 @@ test.each([
                 );
                 expect(log.length).toBeLessThanOrEqual(750_003);
             }
-            if (mode === "wrong-commit" || mode === "wrong-bun" || mode === "large-diff")
+            if (
+                ["wrong-commit", "wrong-bun", "wrong-revision", "large-diff"].includes(
+                    mode
+                )
+            )
                 expect(f.calls.some((args) => args[0] === "initdb")).toBe(false);
             expect(
                 await readFile(path.join(f.directory, "outputs/changes.txt"), "utf8")
@@ -433,8 +445,10 @@ test.each([true, false])(
             files: [
                 {
                     path: ".bun-version",
-                    beforeSha256: hash(matching ? "1.4.4" : "wrong"),
-                    content: "1.4.4\n",
+                    beforeSha256: hash(
+                        matching ? daytonaCheckProfile.bunVersion : "wrong"
+                    ),
+                    content: `${daytonaCheckProfile.bunVersion}\n`,
                 },
             ],
         });
@@ -509,7 +523,11 @@ test("source-only workflow returns files and tree without installing or executin
         expect(source).toMatchObject({
             commit,
             files: [
-                { path: ".bun-version", content: "1.4.4", sha256: hash("1.4.4") },
+                {
+                    path: ".bun-version",
+                    content: daytonaCheckProfile.bunVersion,
+                    sha256: hash(daytonaCheckProfile.bunVersion),
+                },
                 { path: "missing.txt", content: null, sha256: null },
             ],
         });

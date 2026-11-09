@@ -3,7 +3,7 @@ import type { SQL } from "bun";
 
 import { auditOperation } from "../../operations/audit";
 import { OperationFailure } from "../../operations/errors";
-import { updateTargetRevision, type UpdateTarget } from "./configuration";
+import { type UpdateTarget, updateTargetRevision } from "./configuration";
 
 /**
  * Read policy only for currently configured update targets; new or changed recipes stay off.

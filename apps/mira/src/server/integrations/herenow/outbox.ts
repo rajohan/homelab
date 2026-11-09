@@ -1,6 +1,6 @@
 import {
-    miraPublicationContentSchema,
     type MiraPublicationContent,
+    miraPublicationContentSchema,
 } from "@homelab/contracts/miraPublication";
 import { publishNotification } from "@homelab/notifications";
 import type { SQL } from "bun";

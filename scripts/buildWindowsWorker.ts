@@ -1,10 +1,11 @@
-import { cp, mkdir, mkdtemp, readFile, readdir, realpath, rm } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { buildWindowsCapture } from "./buildWindowsCapture";
 import { buildWindowsWorkerHost } from "./buildWindowsWorkerHost";
+import { verifyBun } from "./verifyBun";
 
 /**
  * Package the compiled Bun worker with the locked SDK JavaScript, native DLL and N-API module.
@@ -18,6 +19,7 @@ export async function buildWindowsWorker(outputRoot: string) {
         !path.isAbsolute(outputRoot)
     )
         throw new Error("The Windows worker requires Windows x64 and absolute output.");
+    await verifyBun();
     const root = await realpath(fileURLToPath(new URL("..", import.meta.url)));
     const app = (await Bun.file(path.join(root, "apps/mira/package.json")).json()) as {
         dependencies: Record<string, string>;
@@ -45,6 +47,7 @@ export async function buildWindowsWorker(outputRoot: string) {
             process.execPath,
             "build",
             "--compile",
+            `--compile-executable-path=${process.execPath}`,
             "--target=bun-windows-x64",
             "--windows-icon=" + path.join(root, "packages/ui/src/assets/rajohan.ico"),
             "--no-compile-autoload-dotenv",

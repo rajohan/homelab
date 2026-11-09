@@ -7,9 +7,9 @@ import { installMiraPresets } from "@homelab/mira/data/automationActions";
 import { setMiraEnabled } from "@homelab/mira/data/automations";
 import { saveMiraCode } from "@homelab/mira/data/code";
 import {
+    connectMiraComputer,
     createMiraComputerPairing,
     enrollMiraComputer,
-    connectMiraComputer,
 } from "@homelab/mira/data/computers";
 import { createConversation, enqueueTurn } from "@homelab/mira/data/conversations";
 import { saveMiraDaytona } from "@homelab/mira/data/daytona";

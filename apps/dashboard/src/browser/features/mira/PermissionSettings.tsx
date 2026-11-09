@@ -1,4 +1,4 @@
-import { miraPermissionModeSchema, type MiraChatSettings } from "@homelab/contracts/mira";
+import { type MiraChatSettings, miraPermissionModeSchema } from "@homelab/contracts/mira";
 import { FormField, Select } from "@homelab/ui";
 import * as v from "valibot";
 

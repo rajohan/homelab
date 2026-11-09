@@ -7,7 +7,7 @@ import { idSchema } from "@homelab/contracts/operations";
 import type { SQL, TransactionSQL } from "bun";
 import * as v from "valibot";
 
-import { auditMira, MiraFailure, type MiraContext } from "./context";
+import { auditMira, type MiraContext, MiraFailure } from "./context";
 
 export const miraFileLimit = 25 * 1024 * 1024;
 

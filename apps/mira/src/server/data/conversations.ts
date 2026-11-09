@@ -1,10 +1,10 @@
 import type {
-    MiraConversation,
     MiraChatSettings,
-    MiraMessage,
-    MiraRun,
-    miraMessageInputSchema,
+    MiraConversation,
     miraConversationPageSchema,
+    MiraMessage,
+    miraMessageInputSchema,
+    MiraRun,
 } from "@homelab/contracts/mira";
 import type * as v from "valibot";
 
@@ -14,10 +14,10 @@ import { retireComputerCommands } from "./computerCommands";
 import {
     auditMira,
     lockMiraProposals,
-    requireTask,
-    MiraFailure,
     type MiraContext,
+    MiraFailure,
     type MiraQuery,
+    requireTask,
 } from "./context";
 import { readMessageParts } from "./historyMessages";
 import { liveAssistanceMinutes } from "./liveAssistance";

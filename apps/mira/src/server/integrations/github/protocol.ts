@@ -1,4 +1,4 @@
-import { miraCodeTitleSchema, miraCodeBodySchema } from "@homelab/contracts/miraCode";
+import { miraCodeBodySchema, miraCodeTitleSchema } from "@homelab/contracts/miraCode";
 import * as v from "valibot";
 
 export const gitShaSchema = v.pipe(v.string(), v.regex(/^[a-f0-9]{40}$/));

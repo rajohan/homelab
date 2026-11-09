@@ -5,7 +5,7 @@ import * as v from "valibot";
 import { runtimeEnvironment } from "../config/environment";
 import { miraRunPermission } from "../data/approvalPolicy";
 import { resolveMiraChatSettings } from "../data/chatSettings";
-import { claimChatSteering, acknowledgeChatSteering } from "../data/chatSteering";
+import { acknowledgeChatSteering, claimChatSteering } from "../data/chatSteering";
 import { readMiraComputerReadiness } from "../data/computerWait";
 import { MiraFailure } from "../data/context";
 import {
@@ -14,13 +14,13 @@ import {
 } from "../data/liveAssistance";
 import {
     finishMiraRun,
-    renewMiraRun,
-    saveMiraDelta,
-    saveMiraActivity,
     type MiraClaim,
+    renewMiraRun,
+    saveMiraActivity,
+    saveMiraDelta,
 } from "../data/queue";
 import { readMiraRecallContext, readMiraRecallPolicy } from "../data/recall";
-import { readTaskSteering, acknowledgeTaskSteering } from "../data/taskSteering";
+import { acknowledgeTaskSteering, readTaskSteering } from "../data/taskSteering";
 import type { AgentMailReadConfiguration } from "../integrations/agentmail/configuration";
 import type { DaytonaBinding } from "../integrations/daytona/configuration";
 import type {
@@ -38,7 +38,7 @@ import { pilotArguments, type PilotConfig } from "../runtime/configuration";
 import { RuntimeResponseError } from "../runtime/responseError";
 import { isSyntheticModel } from "../runtime/syntheticCatalog";
 import type { SyntheticConfiguration } from "../runtime/syntheticConfiguration";
-import { SyntheticRuntime, loadSyntheticModels } from "../runtime/syntheticRuntime";
+import { loadSyntheticModels, SyntheticRuntime } from "../runtime/syntheticRuntime";
 import { createMiraToolRouter } from "../runtime/toolRouter";
 import type { LocalCodeBinding } from "../sandbox/localBinding";
 import { prepareMiraAttachments } from "./attachments";

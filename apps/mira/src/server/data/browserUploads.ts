@@ -1,15 +1,15 @@
 import {
     miraBrowserConsoleSchema,
-    unrestrictedBrowserSites,
     type miraBrowserHumanOperationSchema,
     type MiraBrowserUploadFile,
+    unrestrictedBrowserSites,
 } from "@homelab/contracts/miraBrowser";
 import type { TransactionSQL } from "bun";
 import * as v from "valibot";
 
 import { browserUploadFileSchema } from "../browsing/upload";
 import { lockBrowserOwner, readBrowserAccess } from "./browserAccess";
-import { MiraFailure, type MiraContext } from "./context";
+import { type MiraContext, MiraFailure } from "./context";
 
 async function choices(query: TransactionSQL, owner: string, runId: string) {
     const rows = await query<MiraBrowserUploadFile[]>`

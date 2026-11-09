@@ -1,4 +1,4 @@
-import { expect, test, spyOn } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { rejects } from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { cp, mkdtemp, readdir, rm } from "node:fs/promises";
@@ -11,8 +11,8 @@ import { reconcileMiraControls } from "@homelab/mira/data/automations";
 import { readMiraFile } from "@homelab/mira/data/files";
 import * as fileData from "@homelab/mira/data/files";
 import {
-    publishAgentMailReceiver,
     agentMailReceiverCurrent,
+    publishAgentMailReceiver,
 } from "@homelab/mira/data/integrations";
 import { cleanupMiraMailEvents } from "@homelab/mira/data/mailLimits";
 import { claimMiraRun, scheduleMiraRuns } from "@homelab/mira/data/queue";
@@ -30,9 +30,9 @@ import { createTestDatabase } from "../../../../../tests/database";
 import { appRouter } from "../api/router";
 import { connectDashboardDatabase } from "../database/connection";
 import {
+    assertDashboardSchema,
     dashboardMigrationsFolder,
     migrateDashboard,
-    assertDashboardSchema,
 } from "../database/migrations";
 import { startDashboardServer } from "../index";
 import { provisionTestAgentMail } from "../testing/agentmail";
