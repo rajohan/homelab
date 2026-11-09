@@ -1,6 +1,6 @@
 {
-    "version": "0.166.0",
-    "source": "https://github.com/openai/codex/tree/rust-v0.166.0/codex-rs/skills/src/assets/samples",
+    "version": "0.167.0",
+    "source": "https://github.com/openai/codex/tree/rust-v0.167.0/codex-rs/skills/src/assets/samples",
     "entries": {
         "imagegen/": null,
         "imagegen/LICENSE.txt": "4dd13869245e356246a5b770723247bbb80a8f07a181d1d3d873a1734297cdb9",
@@ -31,7 +31,7 @@
         "openai-docs/references/codex-self-knowledge.md": "8c8fb00e6e5cb1977924f5164684a6095427fa828bbc765225f17d9aeb79a912",
         "openai-docs/references/latest-model.md": "7e5b9437c6ad98a73da46ba3f7f5c86f88aea2a15242318f32c487eb28a90852",
         "openai-docs/references/mcp-diagnostics.md": "49bbd2f73df7bbd7f86c80425dea4da2d301c22046080399a36bfc0ca49509e9",
-        "openai-docs/references/model-migration.md": "138c05dd06047b069a7aab09e657b6a6a0d25b6959cbe2473baae95f47e72883",
+        "openai-docs/references/model-migration.md": "b0c21d509bd03f3fbc90b64a206437923a0c6b8433059274b45384513c01676c",
         "openai-docs/references/model-selection.md": "ba2d164abbca30435a460a0bc3a7d82398dce2bdf092705c98ba55b3f3af38a8",
         "openai-docs/references/official-docs.md": "7962f2dce55089b93bde4115bb89fd42f20993c1597a2b13edd4956f463875b9",
         "openai-docs/references/prompting-guide.md": "5c791edd5bfc9363cb4251ac3ccd3b1dbac3bb2a6654f78606a9d2357c97c172",

@@ -87,7 +87,7 @@ Example nonsecret external configuration (replace paths for the selected host):
 
 ```json
 {
-    "command": "/opt/homelab/node_modules/.bun/@openai+codex@0.166.0-linux-x64/node_modules/@openai/codex/vendor/x86_64-unknown-linux-musl/bin/codex",
+    "command": "/opt/homelab/node_modules/.bun/@openai+codex@0.167.0-linux-x64/node_modules/@openai/codex/vendor/x86_64-unknown-linux-musl/bin/codex",
     "codexHome": "/var/lib/homelab-mira-pilot/codex",
     "workspace": "/var/lib/homelab-mira-pilot/workspace"
 }
@@ -175,7 +175,7 @@ sessions or network calls.
 
 Initialization must return the canonical dedicated `codexHome` before account inspection. Effective configuration must retain every disabled capability, web search disabled by default, file-only credentials, the OpenAI provider and no custom provider definitions or MCP servers. Direct manual Chat enables live provider web search at thread start and resume. Synthetic Chat uses the subscription search endpoint and returns source URLs. Tasks and automations keep their existing tool sets. Thread start and resume must also report `modelProvider: openai`.
 
-The cached system skills are verified against the complete SHA-256 manifest from the pinned upstream `rust-v0.166.0` bundle. Extra, missing, altered or linked entries fail closed, regardless of the Codex marker. A Codex dependency update must update the manifest from the corresponding official source and rerun live qualification; a test checks the versions stay aligned.
+The cached system skills are verified against the complete SHA-256 manifest from the pinned upstream `rust-v0.167.0` bundle. Extra, missing, altered or linked entries fail closed, regardless of the Codex marker. A Codex dependency update must update the manifest from the corresponding official source and rerun live qualification; a test checks the versions stay aligned.
 
 The follow-up qualification passed with the stricter checks on 2026-10-24: streamed response, registered tool call, resume after process replacement, interruption and recovery using the isolated Mira login.
 
