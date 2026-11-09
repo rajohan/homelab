@@ -5,6 +5,26 @@ import path from "node:path";
 
 import { verifyBun } from "./verifyBun";
 
+test("the bootstrap rejects musl before downloading a glibc executable", () => {
+    const child = Bun.spawnSync(
+        [
+            process.execPath,
+            "--no-env-file",
+            "-e",
+            `import { installBun } from "./scripts/installBun.ts";
+            Object.defineProperty(process, "platform", { value: "linux" });
+            process.report.getReport = () => ({ header: {} });
+            Bun.spawnSync = () => { throw new Error("Unexpected download"); };
+            await installBun(process.cwd());`,
+        ],
+        { stdout: "pipe", stderr: "pipe", timeout: 10_000, windowsHide: true }
+    );
+    expect(child.exitCode).not.toBe(0);
+    expect(new TextDecoder().decode(child.stderr)).toContain(
+        "requires glibc; musl is not supported"
+    );
+});
+
 test("the pinned runtime and its compiled native executable use the same revision", async () => {
     await verifyBun();
     const directory = await mkdtemp(path.join(tmpdir(), "homelab-bun-runtime-"));

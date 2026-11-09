@@ -25,6 +25,22 @@ export async function installBun(destination: string): Promise<void> {
         throw new Error(
             "Bun installation requires an absolute directory and Linux/Windows x64."
         );
+    if (process.platform === "linux") {
+        const report = process.report.getReport();
+        const header =
+            typeof report === "object" && report !== null && "header" in report
+                ? report.header
+                : undefined;
+        if (
+            typeof header !== "object" ||
+            header === null ||
+            !("glibcVersionRuntime" in header) ||
+            typeof header.glibcVersionRuntime !== "string"
+        )
+            throw new Error(
+                "The pinned Linux Bun bootstrap requires glibc; musl is not supported."
+            );
+    }
     const versionFile = await readFile(
         new URL("../.bun-version", import.meta.url),
         "utf8"
