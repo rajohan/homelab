@@ -6,6 +6,12 @@ import path from "node:path";
 import { version } from "../package.json";
 import { buildComputer } from "./buildComputer";
 
+test("Canary cross-compilation cannot silently download a stable target runtime", async () => {
+    await expect(
+        buildComputer(process.platform === "win32" ? "linux-x64" : "windows-x64")
+    ).rejects.toThrow("native runner");
+});
+
 test("compiled companion runs independently and ignores ambient bunfig preload and dotenv", async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "mira-companion-build-"));
     try {

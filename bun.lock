@@ -151,6 +151,7 @@
   },
   "trustedDependencies": [],
   "overrides": {
+    "bun": "1.4.4-canary.20261108.1",
     "postcss-selector-parser": "7.1.7",
   },
   "packages": {
@@ -292,29 +293,29 @@
 
     "@openai/codex-win32-x64": ["@openai/codex@0.167.0-win32-x64", "", { "os": "win32", "cpu": "x64" }, "sha512-duPCBwflc8qhQdLekbL8fDYF646tW4gj0/l9BDnsVhEzoqm6OwxMAJXDFwSOLUUJPCmjBeM+eHYAx4fP/hwfjg=="],
 
-    "@oven/bun-darwin-aarch64": ["@oven/bun-darwin-aarch64@1.4.4", "", { "os": "darwin", "cpu": "arm64" }, "sha512-zW/hxwc8sJAILGwB5eTC4i48ouGXf0V4lrxmEOk3JIE6JkYVW1TZh1E2pIempqsezgW1sckTIIDudFON8bJ2Mw=="],
+    "@oven/bun-darwin-aarch64": ["@oven/bun-darwin-aarch64@1.4.4-canary.20261108.1", "", { "os": "darwin", "cpu": "arm64" }, "sha512-S67SahKGIzP4HIvAr+ALww1RSK//3/ac2zs9BKxxKyWHhKm0fpRr5dxHHhd7DvDF8QDCZ1hKIBuu88hHo0cSPA=="],
 
-    "@oven/bun-darwin-x64": ["@oven/bun-darwin-x64@1.4.4", "", { "os": "darwin", "cpu": "x64" }, "sha512-oKGcxLsvh4oHjAo28nPm8c/xN0o/OmGyj1IHYc94vprkWsW2hNg2keEZt5f40cI5Hvu4jDlSRTR0UNpv1UIAxw=="],
+    "@oven/bun-darwin-x64": ["@oven/bun-darwin-x64@1.4.4-canary.20261108.1", "", { "os": "darwin", "cpu": "x64" }, "sha512-uI5DV850gP1LNBrwDK5/HcE5PRZW6GE8iFoOvSr20MrkHn2tdvAvFdDYVFSDX5II0x5xvJB3iRpjDiCsUprHYg=="],
 
-    "@oven/bun-freebsd-aarch64": ["@oven/bun-freebsd-aarch64@1.4.4", "", { "os": "freebsd", "cpu": "arm64" }, "sha512-klvA9FlwLxZj3JYIOPQA4bbnHIC3uas8kBE4GaGGkeVgAQP/k8hAzYkOqkSaqHBDbxLrTyFEQArEAevJq6NJzg=="],
+    "@oven/bun-freebsd-aarch64": ["@oven/bun-freebsd-aarch64@1.4.4-canary.20261108.1", "", { "os": "freebsd", "cpu": "arm64" }, "sha512-06LsxI8+IJ76EpfoO4pXueYn5oUrMwdOesMo3nXypy6WjqFPE4rpnaApI13D/v+s4vfdPnLQ5HWSfDtLwQE7xQ=="],
 
-    "@oven/bun-freebsd-x64": ["@oven/bun-freebsd-x64@1.4.4", "", { "os": "freebsd", "cpu": "x64" }, "sha512-sF1xS/scbyN94P2d0eTiarO6JHxrIvhZNT9hnWjQXW5nwKRtfuP+UYnIMNyvW1BQPcZFP/cvfLBNUIe1ea4zPA=="],
+    "@oven/bun-freebsd-x64": ["@oven/bun-freebsd-x64@1.4.4-canary.20261108.1", "", { "os": "freebsd", "cpu": "x64" }, "sha512-iAX6iPVk//o2VMK5GJRAnqI0DXSANvgDmLSMB84b8Dhv6lsg4U1BnSN/9GUynzWQTLWWb6+1ZDtDa+Vo0EUA5A=="],
 
-    "@oven/bun-linux-aarch64": ["@oven/bun-linux-aarch64@1.4.4", "", { "os": "linux", "cpu": "arm64" }, "sha512-ZTVtpf9zmHSBVPX1sBwe5agGb/rN34yPGg/Hby8e2Ax2uCUA2URZKlZH7qLntK7qaFJCMXh9v0GWNYN2zINz1w=="],
+    "@oven/bun-linux-aarch64": ["@oven/bun-linux-aarch64@1.4.4-canary.20261108.1", "", { "os": "linux", "cpu": "arm64", "libc": "glibc" }, "sha512-SmwDc2QmtG4/5qiPG4vDzwGFXlrA39g8s6TiuJApxazt2LO/NBXOZzGzccM5SEW2m6rxyILVKR8+eCM8AH4PNQ=="],
 
-    "@oven/bun-linux-aarch64-android": ["@oven/bun-linux-aarch64-android@1.4.4", "", { "os": "android", "cpu": "arm64" }, "sha512-5lvn3at5vRC0GxvmiqEiV2/e23tnRi0q5pzR40yfDvDA3OW7PSkt4chF1nA9vnAJhro4/l+ol1FmNP6D3cf/oA=="],
+    "@oven/bun-linux-aarch64-android": ["@oven/bun-linux-aarch64-android@1.4.4-canary.20261108.1", "", { "os": "android", "cpu": "arm64" }, "sha512-YrMJ2Cgpp8QcXTFrCVFh0MCdXweOfUYKqhu7ZPZXpLoPrr+YNvAnHxkkQ6mz3hAix7WKIE6LhsIySuM2zVIUug=="],
 
-    "@oven/bun-linux-aarch64-musl": ["@oven/bun-linux-aarch64-musl@1.4.4", "", { "os": "linux", "cpu": "arm64" }, "sha512-QFd0P+mHJxbZFbUla4MgiE5OwxysHaUIYxL2pPNkpWtaI7v4ShOpr8OhBmsuyB0xn5rv/ZJnPsj2y8+bB9+g/A=="],
+    "@oven/bun-linux-aarch64-musl": ["@oven/bun-linux-aarch64-musl@1.4.4-canary.20261108.1", "", { "os": "linux", "cpu": "arm64", "libc": "musl" }, "sha512-Gfuk5mUS10knZnwT4EqAtOglYyKz0KujwGw3bRp5pnBxVo9QIyHVpyMWU9DL3+/J3XPAfYayv+Q/kL0dZs4zzw=="],
 
-    "@oven/bun-linux-x64": ["@oven/bun-linux-x64@1.4.4", "", { "os": "linux", "cpu": "x64" }, "sha512-CHbbkmHVM28T1GFq+6GL4Ao4ujwwYwj1CxFFwEFzLanPfNsId9AhbIP0Q4reWuWBkGimUkoQygrK7Rgjtj3vog=="],
+    "@oven/bun-linux-x64": ["@oven/bun-linux-x64@1.4.4-canary.20261108.1", "", { "os": "linux", "cpu": "x64", "libc": "glibc" }, "sha512-HVu1zy94Q7TUx1BXiVk5dWh5ip/juNkKGsjEJOUPPCMjGFDuJPMC6OkvHW+U5f5wdSDHa3DRkuxQ16IUs1zthA=="],
 
-    "@oven/bun-linux-x64-android": ["@oven/bun-linux-x64-android@1.4.4", "", { "os": "android", "cpu": "x64" }, "sha512-3dMicj9C1DhaIfDkwt/9GtpU0W+q+GazbG9OIlEyL3Q1BBEz2e6ZRz/JiO8D/ECC0caXAqvnpFudehcLlgIwWQ=="],
+    "@oven/bun-linux-x64-android": ["@oven/bun-linux-x64-android@1.4.4-canary.20261108.1", "", { "os": "android", "cpu": "x64" }, "sha512-/az94XN6ozhDB4mFzZtsgEcQKDDcohlIYxtmAplJOAodYyLBtmgj2GOjxJgBcjqh3HVkLaDSCOhqDPYIHc+54g=="],
 
-    "@oven/bun-linux-x64-musl": ["@oven/bun-linux-x64-musl@1.4.4", "", { "os": "linux", "cpu": "x64" }, "sha512-lEEjNOJJrbGZu2NVcPI4uXdILcpspezWkA8R/Jr0RCGhM6zQd0Y7JBIIKNAmbX59EeWpeEz7Q78iLbpcAUypUA=="],
+    "@oven/bun-linux-x64-musl": ["@oven/bun-linux-x64-musl@1.4.4-canary.20261108.1", "", { "os": "linux", "cpu": "x64", "libc": "musl" }, "sha512-jMdt0TWB/iNwF5+3+rFziDJm2M7Oj0tvcJ9mKIXoXBScCDkWEKIf5teT+oJWzKjtBj8DBikKjvnS9vzRb1e9mg=="],
 
-    "@oven/bun-windows-aarch64": ["@oven/bun-windows-aarch64@1.4.4", "", { "os": "win32", "cpu": "arm64" }, "sha512-n0ep5ZRPCZY1+dqFJpnnRUZB1wy4GYU6At8RF+pyzySCLjkN9R4rFh2PtBHAgF/lg1vOl3/CeER3pDM+p40ATA=="],
+    "@oven/bun-windows-aarch64": ["@oven/bun-windows-aarch64@1.4.4-canary.20261108.1", "", { "os": "win32", "cpu": "arm64" }, "sha512-DtjXmpsxwVgCiAgiIdx3YDm68NraTKuzLPsfEcBrizwZ9vZ3dKquLpDa1HuweVsoEB9+qOmOhy1sNkyqDlTVFQ=="],
 
-    "@oven/bun-windows-x64": ["@oven/bun-windows-x64@1.4.4", "", { "os": "win32", "cpu": "x64" }, "sha512-a3LNctBVO8PjePsFZfwDleF2JXYf2BfQ1u/PLRnBDLnC2Riml+4+LgJpKj4xRGhB92KweGyQI5PXaTkP9qypMQ=="],
+    "@oven/bun-windows-x64": ["@oven/bun-windows-x64@1.4.4-canary.20261108.1", "", { "os": "win32", "cpu": "x64" }, "sha512-fuuvaieKK94lqcIkb9u/DluUm8yhtroq+mQrmEmqWySdaXIclnfolti1ZMFIum2S38u2rDG0DxoZxDikgcoM6w=="],
 
     "@peculiar/asn1-android": ["@peculiar/asn1-android@2.11.0", "", { "dependencies": { "@peculiar/asn1-schema": "^2.11.0", "asn1js": "^3.0.10", "tslib": "^2.8.1" } }, "sha512-llW/qjavL+tOxt5i9whUv4wsbsLpUwI6k/DrvKsdA/H7A/TB/6CosMFgvei28fcJ8ncD0c5lig1oBBlo4KGMCw=="],
 
@@ -630,7 +631,7 @@
 
     "buffer-image-size": ["buffer-image-size@0.6.4", "", { "dependencies": { "@types/node": "*" } }, "sha512-nEh+kZOPY1w+gcCMobZ6ETUp9WfibndnosbpwB1iJk/8Gt5ZF2bhS6+B6bPYz424KtwsR6Rflc3tCz1/ghX2dQ=="],
 
-    "bun": ["bun@1.4.4", "", { "optionalDependencies": { "@oven/bun-darwin-aarch64": "1.4.4", "@oven/bun-darwin-x64": "1.4.4", "@oven/bun-freebsd-aarch64": "1.4.4", "@oven/bun-freebsd-x64": "1.4.4", "@oven/bun-linux-aarch64": "1.4.4", "@oven/bun-linux-aarch64-android": "1.4.4", "@oven/bun-linux-aarch64-musl": "1.4.4", "@oven/bun-linux-x64": "1.4.4", "@oven/bun-linux-x64-android": "1.4.4", "@oven/bun-linux-x64-musl": "1.4.4", "@oven/bun-windows-aarch64": "1.4.4", "@oven/bun-windows-x64": "1.4.4" }, "os": [ "!aix", "!sunos", "!openbsd", ], "cpu": [ "x64", "arm64", ], "bin": { "bun": "bin/bun.exe", "bunx": "bin/bunx.exe" } }, "sha512-hj0ASdG6PNjLZGFAXktWb3Uaj/dcv/1wCsIttoEXADNIQBsGjTr+5uLKYbrDkuc7NT0Tkj4yPIqJI2jDxXdvVg=="],
+    "bun": ["bun@1.4.4-canary.20261108.1", "", { "optionalDependencies": { "@oven/bun-darwin-aarch64": "1.4.4-canary.20261108.1+2596ac5", "@oven/bun-darwin-x64": "1.4.4-canary.20261108.1+2596ac5", "@oven/bun-freebsd-aarch64": "1.4.4-canary.20261108.1+2596ac5", "@oven/bun-freebsd-x64": "1.4.4-canary.20261108.1+2596ac5", "@oven/bun-linux-aarch64": "1.4.4-canary.20261108.1+2596ac5", "@oven/bun-linux-aarch64-android": "1.4.4-canary.20261108.1+2596ac5", "@oven/bun-linux-aarch64-musl": "1.4.4-canary.20261108.1+2596ac5", "@oven/bun-linux-x64": "1.4.4-canary.20261108.1+2596ac5", "@oven/bun-linux-x64-android": "1.4.4-canary.20261108.1+2596ac5", "@oven/bun-linux-x64-musl": "1.4.4-canary.20261108.1+2596ac5", "@oven/bun-windows-aarch64": "1.4.4-canary.20261108.1+2596ac5", "@oven/bun-windows-x64": "1.4.4-canary.20261108.1+2596ac5" }, "os": [ "!aix", "!sunos", "!openbsd", ], "cpu": [ "x64", "arm64", ], "hasInstallScript": true, "bin": { "bun": "bin/bun.exe", "bunx": "bin/bunx.exe" } }, "sha512-3gSyfM/N+7dewm9gxh38oJyVkXBD80PFNFeBowO0o7f5bpQRV3Y//lwuxWNSiIo35qIPFRrNQ9WM46h73gMcLA=="],
 
     "bun-plugin-tailwind": ["bun-plugin-tailwind@0.1.2", "", { "peerDependencies": { "bun": ">=1.0.0" } }, "sha512-41jNC1tZRSK3s1o7pTNrLuQG8kL/0vR/JgiTmZAJ1eHwe0w5j6HFPKeqEk0WAD13jfrUC7+ULuewFBBCoADPpg=="],
 

@@ -49,6 +49,7 @@
         "valibot": "1.5.0"
     },
     "overrides": {
+        "bun": "1.4.4-canary.20261108.1",
         "postcss-selector-parser": "7.1.7"
     },
     "engines": {
