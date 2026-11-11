@@ -35,16 +35,21 @@ export function ChatSettings({
     readonly display: ChatDisplaySettings;
     readonly onDisplayChange: (display: ChatDisplaySettings) => void;
 }) {
+    const [original] = useState({ settings, version });
     const [draft, setDraft] = useState(settings);
     const modelChanged =
-        draft.model !== settings.model ||
-        draft.effort !== settings.effort ||
-        draft.serviceTier !== settings.serviceTier;
+        draft.model !== original.settings.model ||
+        draft.effort !== original.settings.effort ||
+        draft.serviceTier !== original.settings.serviceTier;
     const selected =
         models.find((model) => model.model === (draft.model ?? defaultModel)) ??
         (draft.model ? undefined : models.find((model) => model.isDefault));
     const save = useOperation(() =>
-        api.mira.conversations.settings.mutate({ id, version, settings: draft })
+        api.mira.conversations.settings.mutate({
+            id,
+            version: original.version,
+            settings: draft,
+        })
     );
     return (
         <Modal title="Chat settings" onClose={onClose} dismissible={!save.isPending}>
@@ -58,6 +63,12 @@ export function ChatSettings({
                         .catch(() => {});
                 }}
             >
+                <p className="text-sm text-primary-300">
+                    Model, thinking, code target and assistance choices apply to the next
+                    run. Display changes apply immediately. Changing permissions returns
+                    current work to asking for approval; the new mode applies to the next
+                    run.
+                </p>
                 {!fresh && (
                     <p className="text-sm text-primary-300">
                         Reconnect Mira to change model choices. Other settings remain

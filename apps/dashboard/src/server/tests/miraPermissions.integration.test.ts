@@ -208,7 +208,13 @@ test("delegated authority cannot cross conversations, owners, actor identities o
     }
 });
 
-for (const revoke of ["settings", "archive", "failed", "cancel"] as const)
+for (const revoke of [
+    "active-settings",
+    "settings",
+    "archive",
+    "failed",
+    "cancel",
+] as const)
     test(`queued delegated mail is not dispatched after ${revoke}`, async () => {
         const f = await fixture("full_access");
         try {
@@ -221,16 +227,18 @@ for (const revoke of ["settings", "archive", "failed", "cancel"] as const)
                     contentHash: draft.contentHash,
                 })
             ).toMatchObject({ ok: true });
-            await (revoke === "cancel"
-                ? f.client`UPDATE mira_runs SET cancel_requested=true WHERE id=${f.run.id}`
-                : finishMiraRun(f.client, f.run, {
-                      state: revoke === "failed" ? "failed" : "completed",
-                      text: "Synthetic",
-                      message: null,
-                  }));
-            if (revoke === "settings") {
+            if (revoke !== "active-settings")
+                await (revoke === "cancel"
+                    ? f.client`UPDATE mira_runs SET cancel_requested=true WHERE id=${f.run.id}`
+                    : finishMiraRun(f.client, f.run, {
+                          state: revoke === "failed" ? "failed" : "completed",
+                          text: "Synthetic",
+                          message: null,
+                      }));
+            if (revoke === "settings" || revoke === "active-settings") {
                 await f.permission("ask");
                 await f.permission("full_access");
+                expect(await miraRunPermission(f.client, f.context)).toBe("ask");
             }
             if (revoke === "archive") {
                 let read = await f.api.conversations.read({ id: f.run.conversationId });

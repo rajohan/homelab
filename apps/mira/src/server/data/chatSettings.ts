@@ -125,14 +125,6 @@ export async function saveMiraChatSettings(
                 "CONFLICT",
                 "The conversation changed. Refresh before saving settings."
             );
-        const [active] = await query<
-            { id: string }[]
-        >`SELECT id FROM mira_runs WHERE conversation_id = ${input.id} AND state IN ('queued','running') LIMIT 1`;
-        if (active)
-            throw new MiraFailure(
-                "CONFLICT",
-                "Wait for the reply or stop it before changing chat settings."
-            );
         if (
             conversation.settings.model !== input.settings.model ||
             conversation.settings.effort !== input.settings.effort ||

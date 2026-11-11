@@ -141,8 +141,8 @@ export async function readConversation(
         })
     );
     const [run] = await context.client<
-        MiraRun[]
-    >`SELECT id, manual, conversation_id AS "conversationId", automation_id AS "automationId", task_id AS "taskId", activity, state, cancel_requested AS "cancelRequested", message, created_at::text AS "createdAt", started_at::text AS "startedAt", finished_at::text AS "finishedAt" FROM mira_runs WHERE conversation_id = ${id} ORDER BY id DESC LIMIT 1`;
+        (MiraRun & { model: string | null })[]
+    >`SELECT id, manual, coalesce(effective_settings->>'model',settings->>'model') AS model, conversation_id AS "conversationId", automation_id AS "automationId", task_id AS "taskId", activity, state, cancel_requested AS "cancelRequested", message, created_at::text AS "createdAt", started_at::text AS "startedAt", finished_at::text AS "finishedAt" FROM mira_runs WHERE conversation_id = ${id} ORDER BY id DESC LIMIT 1`;
     const tools = run
         ? await context.client<
               {

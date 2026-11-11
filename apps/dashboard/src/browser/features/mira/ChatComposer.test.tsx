@@ -26,6 +26,7 @@ test.each([
             dispatchEvent: () => true,
         }));
         let sent = 0;
+        let opened = 0;
         const query = new QueryClient();
         const view = render(
             <QueryClientProvider client={query}>
@@ -47,6 +48,9 @@ test.each([
                             sent++;
                         }}
                         onBrowse={() => {}}
+                        onSettings={() => {
+                            opened++;
+                        }}
                     />
                 </IdentityClientContext>
             </QueryClientProvider>
@@ -59,6 +63,8 @@ test.each([
             expect(fireEvent.keyDown(input, { key: "Enter" })).toBe(!desktop);
             expect(sent).toBe(desktop ? 1 : 0);
             expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
+            fireEvent.click(screen.getByRole("button", { name: "Chat settings" }));
+            expect(opened).toBe(1);
             if (active)
                 expect(screen.getByRole("button", { name: "Stop" })).toBeEnabled();
         } finally {

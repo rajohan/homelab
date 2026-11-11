@@ -84,7 +84,6 @@ export function ChatComposer({
                                 <IconButton
                                     icon={Settings2}
                                     label="Chat settings"
-                                    disabled={sending || active}
                                     onClick={onSettings}
                                 />
                             )}

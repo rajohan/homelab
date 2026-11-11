@@ -402,7 +402,7 @@ test("Mira refuses foreign attachments atomically and requires stopped runs befo
     }
 });
 
-test("conversation settings validate model capabilities, isolate owners and remain fixed for queued turns", async () => {
+test("chat settings remain editable during queued and running work without changing its frozen settings", async () => {
     const database = await fixture();
     try {
         const api = database.caller().mira;
@@ -463,10 +463,16 @@ test("conversation settings validate model capabilities, isolate owners and rema
             requestId: crypto.randomUUID(),
             text: "Synthetic settings check",
         });
-        await rejects(
-            api.conversations.settings({ id: chat.id, version: 3, settings }),
-            /Wait for the reply/
-        );
+        const nextSettings = {
+            ...settings,
+            effort: "low",
+            executionTarget: "daytona" as const,
+        };
+        await api.conversations.settings({
+            id: chat.id,
+            version: 3,
+            settings: nextSettings,
+        });
         const [stored] = await database.client<
             { settings: unknown }[]
         >`SELECT settings FROM mira_runs WHERE id = ${queued.id}`;
@@ -478,6 +484,30 @@ test("conversation settings validate model capabilities, isolate owners and rema
         );
         expect(claimed?.id).toBe(queued.id);
         expect(claimed?.executionTarget).toBe("main");
+        await api.conversations.settings({
+            id: chat.id,
+            version: 4,
+            settings: {
+                ...nextSettings,
+                model: null,
+                serviceTier: null,
+            },
+        });
+        const [running] = await database.client<
+            { settings: unknown; state: string; budget: number; revoked: boolean }[]
+        >`
+            SELECT settings,state,budget_seconds AS budget,approval_revoked_at IS NOT NULL AS revoked
+            FROM mira_runs WHERE id=${queued.id}`;
+        expect(running).toEqual({
+            settings,
+            state: "running",
+            budget: 0,
+            revoked: false,
+        });
+        await rejects(
+            api.conversations.settings({ id: chat.id, version: 4, settings }),
+            /changed/
+        );
         expect(
             await saveMiraActivity(database.client, claimed!, {
                 phase: "thinking",
@@ -486,6 +516,10 @@ test("conversation settings validate model capabilities, isolate owners and rema
         ).toBe(true);
         const thinking = await api.conversations.read({ id: chat.id });
         expect(thinking.run?.activity).toEqual({ phase: "thinking", tool: null });
+        expect(thinking.run?.model).toBe(settings.model);
+        await database.client`UPDATE mira_runs SET effective_settings='{"model":"resolved-model"}'::jsonb WHERE id=${queued.id}`;
+        const resolved = await api.conversations.read({ id: chat.id });
+        expect(resolved.run?.model).toBe("resolved-model");
         await api.runs.cancel({ id: queued.id });
         expect(
             await saveMiraActivity(database.client, claimed!, {
@@ -498,11 +532,25 @@ test("conversation settings validate model capabilities, isolate owners and rema
             text: "",
             message: null,
         });
+        const next = await api.conversations.send({
+            conversationId: chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Use the new settings",
+        });
+        const [nextStored] = await database.client<
+            { settings: unknown }[]
+        >`SELECT settings FROM mira_runs WHERE id=${next.id}`;
+        expect(nextStored?.settings).toEqual({
+            ...nextSettings,
+            model: null,
+            serviceTier: null,
+        });
+        await api.runs.cancel(next);
         await database.client`UPDATE mira_runtime_status SET heartbeat_at = now() - interval '1 minute'`;
         await rejects(
             api.conversations.settings({
                 id: chat.id,
-                version: 3,
+                version: 6,
                 settings: { ...settings, effort: "low" },
             }),
             /Reconnect/
