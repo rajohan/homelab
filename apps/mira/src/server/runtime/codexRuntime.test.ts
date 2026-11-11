@@ -31,7 +31,7 @@ const options = (mode = "ok") => ({
 });
 
 describe("Mira runtime transport", () => {
-    test.each([80, runtimeToolCallLimit + 1])(
+    test.each([1100, runtimeToolCallLimit + 1])(
         "allows extended sequential work with a bounded non-replaying call history: %s",
         async (count) => {
             const runtime = await CodexRuntime.connect(options(`tool-sequence-${count}`));
