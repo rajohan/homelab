@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.3](https://github.com/rajohan/homelab/compare/v0.16.2...v0.16.3) (2026-11-11)
+
+
+### Bug Fixes
+
+* **mira:** let chat work continue until finished or stopped ([#194](https://github.com/rajohan/homelab/issues/194)) ([db1aab4](https://github.com/rajohan/homelab/commit/db1aab4f77bbd1eae2b117baee1be09c9a6b958e))
+
 ## [0.16.2](https://github.com/rajohan/homelab/compare/v0.16.1...v0.16.2) (2026-11-11)
 
 
