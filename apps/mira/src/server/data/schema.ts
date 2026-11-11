@@ -40,6 +40,10 @@ export const miraConversations = pgTable(
         providerThread: text("provider_thread"),
         providerPolicyHash: text("provider_policy_hash"),
         providerPurgeRetryAt: time("provider_purge_retry_at"),
+        providerRetiredThreads: jsonb("provider_retired_threads")
+            .$type<string[]>()
+            .notNull()
+            .default([]),
         providerContextReady: boolean("provider_context_ready").notNull().default(false),
         model: text(),
         settings: jsonb()
