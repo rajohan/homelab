@@ -44,9 +44,11 @@ export async function maintainMiraContext(options: {
     // The normal path summarizes pixels before expiry. Already broken, oversized legacy
     // requests retain their previous native checkpoint and all subsequent textual context.
     if (source.imageBytes <= 2 * visualContextBytes) {
+        const checkpoint = source.checkpointOffset;
         await runtime.compactThread(threadId, signal);
         source = await runtime.readContext(threadId);
-        if (!source) throw new Error("Compacted provider context is unavailable.");
+        if (!source || source.checkpointOffset <= checkpoint)
+            throw new Error("Compacted provider context was not durably recorded.");
     }
     const replacement = await runtime.startThread(
         options.model,
@@ -56,25 +58,39 @@ export async function maintainMiraContext(options: {
     );
     const tracked = await client<
         { id: string }[]
-    >`UPDATE mira_conversations c SET provider_retired_threads=provider_retired_threads || ${JSON.stringify([replacement])}::text::jsonb WHERE id=${run.conversationId} AND owner=${run.owner} AND provider_thread=${threadId} AND deleted_at IS NULL AND EXISTS(SELECT 1 FROM mira_runs WHERE id=${run.id} AND state='running' AND NOT cancel_requested AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp()) RETURNING id`;
+    >`UPDATE mira_conversations SET provider_retired_threads=provider_retired_threads || ${JSON.stringify([replacement])}::text::jsonb WHERE id=${run.conversationId} AND owner=${run.owner} RETURNING id`;
     if (tracked.length !== 1) {
         await runtime.retireThread(replacement);
         throw new Error("Context maintenance lost its conversation lease.");
     }
+    const [permitted] = await client<
+        { id: string }[]
+    >`SELECT c.id FROM mira_conversations c WHERE id=${run.conversationId} AND owner=${run.owner} AND provider_thread=${threadId} AND deleted_at IS NULL AND EXISTS(SELECT 1 FROM mira_runs WHERE id=${run.id} AND state='running' AND NOT cancel_requested AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp())`;
+    if (!permitted) throw new Error("Context maintenance lost its conversation lease.");
+    let replacementCheckpoint = 0;
     for await (const batch of rolloutContextBatches(source, true)) {
         signal.throwIfAborted();
         await runtime.importContext(replacement, batch);
         await runtime.compactThread(replacement, signal);
+        const checkpoint = await runtime.readContext(replacement);
+        if (
+            !checkpoint ||
+            checkpoint.checkpointOffset <= replacementCheckpoint ||
+            checkpoint.images !== 0
+        )
+            throw new Error(
+                "Replacement context was not durably compacted without historical images."
+            );
+        replacementCheckpoint = checkpoint.checkpointOffset;
     }
     signal.throwIfAborted();
-    const compacted = await runtime.readContext(replacement);
-    if (!compacted || compacted.checkpointOffset === 0 || compacted.images !== 0)
+    if (replacementCheckpoint === 0)
         throw new Error(
             "Replacement context was not compacted without historical images."
         );
     const promoted = await client<
         { id: string }[]
-    >`UPDATE mira_conversations c SET provider_thread=${replacement},provider_context_ready=true,provider_retired_threads=(provider_retired_threads - ${replacement}) || ${JSON.stringify([threadId])}::text::jsonb,provider_purge_retry_at=NULL WHERE id=${run.conversationId} AND owner=${run.owner} AND provider_thread=${threadId} AND deleted_at IS NULL AND EXISTS(SELECT 1 FROM mira_runs WHERE id=${run.id} AND state='running' AND NOT cancel_requested AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp()) RETURNING id`;
+    >`UPDATE mira_conversations c SET provider_thread=${replacement},provider_retired_threads=(provider_retired_threads - ${replacement}) || ${JSON.stringify([threadId])}::text::jsonb WHERE id=${run.conversationId} AND owner=${run.owner} AND provider_thread=${threadId} AND deleted_at IS NULL AND EXISTS(SELECT 1 FROM mira_runs WHERE id=${run.id} AND state='running' AND NOT cancel_requested AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp()) RETURNING id`;
     if (promoted.length !== 1)
         throw new Error("Context replacement lost its conversation lease.");
     try {

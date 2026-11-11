@@ -33,7 +33,7 @@ export async function cleanupMiraConversations(
     for (const row of retired) {
         try {
             await runtime.deleteThread(row.threadId);
-            await client`UPDATE mira_conversations SET provider_retired_threads=provider_retired_threads - ${row.threadId},provider_purge_retry_at=NULL WHERE id=${row.id} AND (provider_thread IS NULL OR provider_thread<>${row.threadId})`;
+            await client`UPDATE mira_conversations SET provider_retired_threads=provider_retired_threads - ${row.threadId},provider_purge_retry_at=CASE WHEN provider_retired_threads - ${row.threadId}='[]'::jsonb AND (deleted_at IS NULL OR provider_thread IS NULL) THEN NULL ELSE provider_purge_retry_at END WHERE id=${row.id} AND (provider_thread IS NULL OR provider_thread<>${row.threadId})`;
             deleted++;
         } catch {
             await client`UPDATE mira_conversations SET provider_purge_retry_at=now()+interval '5 minutes' WHERE id=${row.id}`;
@@ -46,7 +46,7 @@ export async function cleanupMiraConversations(
             await client.begin(async (query) => {
                 const updated = await query<
                     { id: string }[]
-                >`UPDATE mira_conversations SET provider_thread = NULL, provider_policy_hash = NULL, provider_context_ready = false, provider_purge_retry_at = NULL WHERE id = ${row.id} AND deleted_at IS NOT NULL AND provider_thread = ${row.providerThread} RETURNING id`;
+                >`UPDATE mira_conversations SET provider_thread = NULL, provider_policy_hash = NULL, provider_context_ready = false, provider_purge_retry_at = CASE WHEN provider_retired_threads='[]'::jsonb THEN NULL ELSE provider_purge_retry_at END WHERE id = ${row.id} AND deleted_at IS NOT NULL AND provider_thread = ${row.providerThread} RETURNING id`;
                 if (updated.length > 0)
                     await auditMira(
                         query,
