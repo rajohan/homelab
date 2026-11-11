@@ -255,6 +255,41 @@ for await (const line of reader) {
                         : "openai",
             },
         });
+    } else if (message.method === "thread/read") {
+        write({
+            id: message.id,
+            result: { thread: { id: message.params.threadId, path: null } },
+        });
+    } else if (message.method === "thread/inject_items") {
+        write({ id: message.id, result: {} });
+    } else if (message.method === "thread/compact/start") {
+        write({ id: message.id, result: {} });
+        if (mode === "compact-wait") continue;
+        const params = {
+            threadId: message.params.threadId,
+            turnId: "compact-1",
+            item: { type: "contextCompaction", id: "compact-item" },
+        };
+        write({ method: "item/started", params });
+        if (mode !== "compact-incomplete") write({ method: "item/completed", params });
+        write({
+            method: "turn/completed",
+            params: {
+                threadId: "unrelated-thread",
+                turn: { id: "unrelated", status: "failed" },
+            },
+        });
+        write({
+            method: "turn/completed",
+            params: {
+                threadId: message.params.threadId,
+                turn: {
+                    id: "compact-1",
+                    status: mode === "compact-failed" ? "failed" : "completed",
+                    error: { codexErrorInfo: "contextWindowExceeded" },
+                },
+            },
+        });
     } else if (message.method === "thread/delete") {
         policyThreadDeleted = true;
         if (mode === "delete-missing")
@@ -386,6 +421,14 @@ for await (const line of reader) {
                     threadId: "thread-test",
                     turn: {
                         id: turnId,
+                        ...(mode === "failed"
+                            ? {
+                                  error: {
+                                      codexErrorInfo: "other",
+                                      message: '{"detail":"Bad Request"}',
+                                  },
+                              }
+                            : {}),
                         status:
                             mode === "failed" ||
                             (mode === "live-partial-failure" && activeTurn === 2)

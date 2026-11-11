@@ -1,0 +1,42 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "fcdc9026-4dd3-466b-a7bf-0dfa14ef6664",
+    "prevIds": ["2cc6a1e9-0070-49ea-81ae-567eba3a4ce1"],
+    "footprints": [
+        {
+            "statementType": "add_column",
+            "statementTarget": [
+                "column",
+                "public",
+                "mira_conversations",
+                "provider_retired_threads"
+            ],
+            "writes": [
+                "s|col|public.mira_conversations.provider_retired_threads",
+                "n|col|public.mira_conversations.provider_retired_threads",
+                "e|col|public.mira_conversations.provider_retired_threads"
+            ],
+            "reads": ["n|tbl|public.mira_conversations", "n|sch|public"]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_conversations",
+                "name": "provider_retired_threads",
+                "type": "jsonb",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "'[]'",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        }
+    ]
+}
