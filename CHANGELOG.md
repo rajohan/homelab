@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.2](https://github.com/rajohan/homelab/compare/v0.16.1...v0.16.2) (2026-11-11)
+
+
+### Bug Fixes
+
+* **mira:** keep computer work running and improve chat navigation ([#192](https://github.com/rajohan/homelab/issues/192)) ([3742050](https://github.com/rajohan/homelab/commit/3742050cf68f44de79e1b3203efb7bb45e56f949))
+
 ## [0.16.1](https://github.com/rajohan/homelab/compare/v0.16.0...v0.16.1) (2026-11-09)
 
 
