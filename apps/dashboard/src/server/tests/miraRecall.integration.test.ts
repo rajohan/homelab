@@ -377,8 +377,12 @@ test("context preferences stay editable offline, freeze per run and fence disabl
             }),
             /changed|Wait/
         );
-        // The queued snapshot, not a later preference edit, controls the running turn.
-        await f.client`UPDATE mira_conversations SET settings=${JSON.stringify(miraDefaultChatSettings)}::text::jsonb WHERE id=${f.chat.id}`;
+        // Enabling recall later cannot broaden the active turn's frozen scope.
+        await f.api.conversations.settings({
+            id: f.chat.id,
+            version: 3,
+            settings: miraDefaultChatSettings,
+        });
         expect(await readMiraRecallPolicy(f.client, run)).toEqual({
             conversation: true,
             memory: false,
@@ -422,6 +426,54 @@ test("context preferences stay editable offline, freeze per run and fence disabl
         expect(receipts?.count).toBe(0);
         await f.client`UPDATE mira_runs SET lease_expires_at=now()-interval '1 second' WHERE id=${run.id}`;
         await rejects(readMiraRecallContext(f.client, run), /no longer available/);
+    } finally {
+        await f.close();
+    }
+});
+
+test("turning context off during work stops subsequent recall without stopping the run", async () => {
+    const f = await fixture();
+    try {
+        const source = await f.source();
+        const run = await f.start();
+        expect(await readMiraRecallPolicy(f.client, run)).toEqual({
+            conversation: true,
+            memory: true,
+            history: true,
+        });
+        await f.api.conversations.settings({
+            id: f.chat.id,
+            version: 2,
+            settings: {
+                ...miraDefaultChatSettings,
+                useMemory: false,
+                useHistory: false,
+            },
+        });
+        expect(await readMiraRecallPolicy(f.client, run)).toEqual({
+            conversation: true,
+            memory: false,
+            history: false,
+        });
+        await rejects(
+            searchMiraHistory(f.client, run, { query: "fjordplan" }),
+            /disabled/
+        );
+        await rejects(
+            readMiraHistory(f.client, run, { messageId: source.messageId, offset: 0 }),
+            /not found/
+        );
+        const tool = createMiraTextTestTools(f.client, run).find(
+            (entry) => entry.name === "mira_memory_list"
+        )!;
+        const response = JSON.parse(
+            await tool.execute({}, new AbortController().signal, {
+                callId: crypto.randomUUID(),
+                threadId: "fixture",
+                turnId: "fixture",
+            })
+        ) as { ok: boolean };
+        expect(response.ok).toBe(false);
     } finally {
         await f.close();
     }

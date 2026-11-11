@@ -2,7 +2,10 @@ import { expect, test } from "bun:test";
 import { rejects } from "node:assert/strict";
 import path from "node:path";
 
-import { miraComputerCommandSchema } from "@homelab/contracts/miraComputerCommands";
+import {
+    miraComputerCommandLimit,
+    miraComputerCommandSchema,
+} from "@homelab/contracts/miraComputerCommands";
 import * as v from "valibot";
 
 import { RuntimeCleanupError } from "../runtime/rpcProcess";
@@ -634,8 +637,10 @@ test("the per-session command budget never evicts earlier replay protection", as
         });
     f.handlers.claim = () => ({ command: { ...command(), ...scope } });
     await rejects(f.run(), ComputerConnectionError);
-    expect(f.received).toHaveLength(1024);
-    expect(f.events.filter((x) => x === "claim")).toHaveLength(1025);
+    expect(f.received).toHaveLength(miraComputerCommandLimit);
+    expect(f.events.filter((x) => x === "claim")).toHaveLength(
+        miraComputerCommandLimit + 1
+    );
     expect(f.events).toContain("port-close");
 });
 

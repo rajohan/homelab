@@ -153,15 +153,12 @@ export function ChatPanel({
             </Card>
         );
     const { conversation, messages, run } = query.data;
+    const modelId = active ? run?.model : conversation.settings?.model;
     const selectedModel =
         catalog.data?.models.find(
-            (model) =>
-                model.model ===
-                (conversation.settings?.model ?? catalog.data?.defaultModel)
+            (model) => model.model === (modelId ?? catalog.data?.defaultModel)
         ) ??
-        (conversation.settings?.model
-            ? undefined
-            : catalog.data?.models.find((model) => model.isDefault));
+        (modelId ? undefined : catalog.data?.models.find((model) => model.isDefault));
     const supportsImages = Boolean(
         catalog.data?.fresh && selectedModel?.inputModalities.includes("image")
     );

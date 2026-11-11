@@ -9,7 +9,7 @@ import {
     createRouter,
     RouterProvider,
 } from "@tanstack/react-router";
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 
 import { IdentityClientContext } from "../../identity/IdentityClientContext";
 import { ChatPanel as SourceChatPanel } from "./ChatPanel";
@@ -99,10 +99,74 @@ test.each([
             expect(await screen.findByRole("alert")).toHaveTextContent(
                 "Synthetic conversation failure"
             );
-        else
+        else {
             expect(
                 await screen.findByRole("heading", { name: "Compiled conversation" })
             ).toBeVisible();
+            const data = {
+                conversation: {
+                    id,
+                    title: "Active conversation",
+                    version: 4,
+                    archivedAt: null,
+                    settings: { model: "text-only", effort: null, serviceTier: null },
+                },
+                messages: [],
+                tools: [],
+                nextCursor: null,
+                run: {
+                    id: crypto.randomUUID(),
+                    conversationId: id,
+                    model: "vision",
+                    manual: true,
+                    state: "running",
+                    automationId: null,
+                    taskId: null,
+                    cancelRequested: false,
+                    message: null,
+                    createdAt: new Date().toISOString(),
+                    startedAt: new Date().toISOString(),
+                    finishedAt: null,
+                },
+            };
+            act(() => {
+                query.setQueryData(["operations", "mira", "models"], {
+                    fresh: true,
+                    defaultModel: "text-only",
+                    models: [
+                        {
+                            model: "text-only",
+                            inputModalities: ["text"],
+                            isDefault: true,
+                        },
+                        {
+                            model: "vision",
+                            inputModalities: ["text", "image"],
+                            isDefault: false,
+                        },
+                    ],
+                });
+                query.setQueryData(key, data);
+            });
+            await screen.findByRole("heading", { name: "Active conversation" });
+            expect(screen.getByRole("button", { name: "Chat settings" })).toBeEnabled();
+            fireEvent.click(screen.getByRole("button", { name: "Computer access" }));
+            await screen.findByRole("dialog", { name: "Computer access" });
+            expect(
+                screen.queryByText(/Computer tools need a model/)
+            ).not.toBeInTheDocument();
+            act(() => {
+                query.setQueryData(key, {
+                    ...data,
+                    conversation: {
+                        ...data.conversation,
+                        settings: { ...data.conversation.settings, model: "vision" },
+                    },
+                    run: { ...data.run, model: "text-only" },
+                });
+            });
+            expect(await screen.findByText(/Computer tools need a model/)).toBeVisible();
+        }
         expect(screen.queryByText("This view couldn't load")).not.toBeInTheDocument();
     } finally {
         view.unmount();

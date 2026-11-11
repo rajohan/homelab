@@ -123,15 +123,13 @@ The compiled presence executable was run on Windows x64 with `--version` and `--
 ## Computer access protocol
 
 Chat settings include optional **Live computer assistance**, off by default.
-Choose up to 30 minutes, one hour or two hours before sending a request. The
+Choose **Until finished or stopped**, or an explicit duration of 30 minutes, one hour or two hours before sending a request. The
 executor continues after completed replies, waiting at least fifteen seconds
 between observation turns. Each new reply has its own timestamped bubble, and
 messages sent during the session steer the active turn or its next continuation.
 Confirmed replies retain their completed status if a later continuation stops or fails.
 Both native and Synthetic models must support images; accepted operator guidance
-is preserved when Synthetic starts a fresh provider turn. Each provider turn keeps
-a five-minute maximum within the overall session deadline, so a stalled reply
-cannot occupy the executor for the entire session.
+is preserved when Synthetic starts a fresh provider turn. Provider turns have no separate five-minute cutoff. Explicit session durations still apply.
 
 This is periodic assistance, not a continuous video stream. It uses the selected
 model throughout and ends when its duration expires, the model finishes the task,
@@ -417,7 +415,7 @@ The installed Windows CLI connects this command client to local consent and the 
 
 An accepted controller exposes only its access ID, connection generation and opaque target ID. The outbound client claims one command, validates every binding and admits only observation, click or literal text. A command has at most ten seconds, measured conservatively from the start of its claim request. Local consent, OS readiness, one-use observations and the short server permits continue to gate every native operation.
 
-Commands run sequentially. The client retains every seen command ID for the session, with a hard ceiling of 1,024 and no eviction. Duplicate IDs, stale claims, malformed responses and uncertain acknowledgements retire the session. No claim, input or result request is automatically retried. The server also claims each durable command once; this local replay fence supplements the database guarantee.
+Commands run sequentially. The client retains every seen command ID for the session, with a hard ceiling of 16,384 and no eviction. Duplicate IDs, stale claims, malformed responses and uncertain acknowledgements retire the session. No claim, input or result request is automatically retried. The server also claims each durable command once; this local replay fence supplements the database guarantee.
 
 Only command claims admit up to 32 KiB of response JSON for escaped literal text; other response limits stay at 4 KiB. Result uploads admit up to 3 MiB, while ordinary request bodies stay at 2 KiB. An observation must contain one inline PNG/JPEG, pass the shared runtime image limits and match its declared dimensions. Completion uploads omit the original input text. No screenshot, input text or native target is logged by this transport.
 
@@ -431,7 +429,7 @@ The producer requires a live executor lease and a committed `running` receipt fo
 
 Commands expire after at most fifteen seconds from admission and at most ten seconds from claim. Expired queued work is refused; expired or revoked dispatched work becomes unknown. Both clear content and retire that access. Human/local stop, reconnect, device revocation and conversation deletion erase outstanding content immediately. Periodic resource cleanup handles expiry, worker loss and pauses even while the model provider is unavailable. Expiry also denies fresh PC permits before cleanup runs; the existing local permit and operation deadlines remain mandatory.
 
-Storage is bounded to one outstanding command per access, eight per account and thirty-two globally, with at most 1,024 commands per run and per access. Both model runtimes allow up to 1,024 tool calls per turn; the run deadline and explicit stop controls still bound active work. The server refuses excess work before dispatch, so the companion's non-evicting replay history cannot unexpectedly terminate a retained grant. If cleanup stops, admission fails at capacity. Replay tombstones contain no input or image payload. A consumed observation retains only its opaque observation ID, bound to the originating run and lease; retained grants reject input using another reply's observation before it reaches the PC. Observation results reuse the runtime image validation and dimension checks. Only completion uploads admit up to 3 MiB; other private request bodies keep the 2 KiB limit and all requests retain the concurrency/deadline bounds. No command data is copied to audit logs.
+Storage is bounded to one outstanding command per access, eight per account and thirty-two globally, with at most 16,384 commands per run and per access. Both model runtimes allow up to 16,384 tool calls per turn; explicitly selected run deadlines and stop controls still apply. Ordinary direct Chat has no elapsed-time limit. The server refuses excess work before dispatch, so the companion's non-evicting replay history cannot unexpectedly terminate a retained grant. If cleanup stops, admission fails at capacity. Replay tombstones contain no input or image payload. A consumed observation retains only its opaque observation ID, bound to the originating run and lease; retained grants reject input using another reply's observation before it reaches the PC. Observation results reuse the runtime image validation and dimension checks. Only completion uploads admit up to 3 MiB; other private request bodies keep the 2 KiB limit and all requests retain the concurrency/deadline bounds. No command data is copied to audit logs.
 
 ## Executor visual tools
 

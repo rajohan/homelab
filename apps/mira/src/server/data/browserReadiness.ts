@@ -16,7 +16,7 @@ export async function readMiraBrowserReadiness(context: MiraContext) {
         LEFT JOIN mira_switches a ON a.owner=r.owner AND a.key='autonomy'
         WHERE r.id=${context.run.id} AND r.owner=${context.owner} AND r.manual AND r.automation_id IS NULL
         AND r.state='running' AND NOT r.cancel_requested AND r.lease_token=${context.run.leaseToken}
-        AND r.lease_expires_at>clock_timestamp() AND r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp() AND c.deleted_at IS NULL`;
+        AND r.lease_expires_at>clock_timestamp() AND (r.budget_seconds=0 OR r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp()) AND c.deleted_at IS NULL`;
     if (!run) return { state: "unavailable" as const };
     if (!run.enabled) return { state: "disabled" as const };
     const [last] = await context.client<

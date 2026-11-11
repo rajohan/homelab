@@ -43,7 +43,7 @@ async function liveRun(query: TransactionSQL, context: MiraContext) {
         JOIN mira_conversations c ON c.id=r.conversation_id AND c.owner=r.owner
         WHERE r.id=${context.run.id} AND r.owner=${context.owner} AND r.manual
         AND r.state='running' AND NOT r.cancel_requested AND r.lease_token=${context.run.leaseToken}
-        AND r.lease_expires_at>clock_timestamp() AND r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp()
+        AND r.lease_expires_at>clock_timestamp() AND (r.budget_seconds=0 OR r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp())
         AND c.deleted_at IS NULL FOR SHARE OF r`;
     if (!row) throw failure();
 }
@@ -345,7 +345,7 @@ export async function finishMiraBrowserCommand(
         >`UPDATE mira_browser_commands SET state='completed',result=${JSON.stringify(parsed)}::text::jsonb,finished_at=clock_timestamp() WHERE id=${id} AND state='claimed' AND expires_at>clock_timestamp() AND EXISTS(SELECT 1 FROM mira_browser_access g JOIN mira_runs r ON r.id=g.run_id JOIN mira_browser_processes p ON p.access_id=g.id
                 WHERE g.id=mira_browser_commands.access_id AND g.state='active' AND g.expires_at>clock_timestamp()
                 AND r.state='running' AND NOT r.cancel_requested AND r.lease_token=g.run_lease AND r.lease_expires_at>clock_timestamp()
-                AND r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp()
+                AND (r.budget_seconds=0 OR r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp())
                 AND p.id=mira_browser_commands.process_id AND p.lease_token=mira_browser_commands.process_token AND p.state='active' AND p.lease_expires_at>clock_timestamp()) RETURNING id`;
         if (updated.length === 0)
             await retireBrowserCommands(query, context.owner, accessId);
@@ -401,7 +401,7 @@ export async function takeMiraBrowserCommand(
         >`UPDATE mira_browser_commands SET state='consumed',result=NULL,finished_at=clock_timestamp() WHERE id=${id} AND state='completed' AND expires_at>clock_timestamp() AND EXISTS(SELECT 1 FROM mira_browser_access g JOIN mira_runs r ON r.id=g.run_id JOIN mira_browser_processes p ON p.access_id=g.id
                 WHERE g.id=mira_browser_commands.access_id AND g.state='active' AND g.expires_at>clock_timestamp()
                 AND r.state='running' AND NOT r.cancel_requested AND r.lease_token=g.run_lease AND r.lease_expires_at>clock_timestamp()
-                AND r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp()
+                AND (r.budget_seconds=0 OR r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp())
                 AND p.id=mira_browser_commands.process_id AND p.lease_token=mira_browser_commands.process_token AND p.state='active' AND p.lease_expires_at>clock_timestamp()) RETURNING id`;
         if (updated.length === 0) {
             await retireBrowserCommands(query, context.owner, row.accessId);
@@ -468,7 +468,7 @@ export async function finalizeMiraBrowserCommand(
         >`UPDATE mira_tool_receipts SET state='succeeded',finished_at=clock_timestamp() WHERE id=${id} AND run_id=${context.run!.id} AND state='running' AND EXISTS(SELECT 1 FROM mira_browser_commands WHERE id=${id} AND state='consumed' AND expires_at>clock_timestamp() AND EXISTS(SELECT 1 FROM mira_browser_access g JOIN mira_runs r ON r.id=g.run_id JOIN mira_browser_processes p ON p.access_id=g.id
                 WHERE g.id=mira_browser_commands.access_id AND g.state='active' AND g.expires_at>clock_timestamp()
                 AND r.state='running' AND NOT r.cancel_requested AND r.lease_token=g.run_lease AND r.lease_expires_at>clock_timestamp()
-                AND r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp()
+                AND (r.budget_seconds=0 OR r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp())
                 AND p.id=mira_browser_commands.process_id AND p.lease_token=mira_browser_commands.process_token AND p.state='active' AND p.lease_expires_at>clock_timestamp())) RETURNING id`;
         if (updated.length !== 1) throw failure();
         signal.throwIfAborted();

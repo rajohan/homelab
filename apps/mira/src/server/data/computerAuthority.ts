@@ -56,7 +56,7 @@ export async function readComputerAccess(
              AND c.expires_at>clock_timestamp() AND c.connection_expires_at>clock_timestamp()
              AND ((g.keep_open AND r.manual AND r.automation_id IS NULL) OR
                 (NOT g.keep_open AND r.state='running' AND NOT r.cancel_requested AND r.lease_token=g.run_lease
-                 AND r.lease_expires_at>clock_timestamp() AND r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp()))
+                 AND r.lease_expires_at>clock_timestamp() AND (r.budget_seconds=0 OR r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp())))
              AND v.deleted_at IS NULL AND v.archived_at IS NULL AND coalesce(u.enabled,true)
              AND (r.automation_id IS NULL OR (a.deleted_at IS NULL AND s.enabled AND
                  (a.schedule->>'event' IS DISTINCT FROM 'agentmail' OR i.enabled)))
@@ -65,12 +65,12 @@ export async function readComputerAccess(
                  WHERE cmd.access_id=g.id AND cmd.state IN ('queued','claimed','completed')
                  AND (cmd.expires_at<=clock_timestamp() OR receipt.state<>'running'
                     OR command_run.state<>'running' OR command_run.cancel_requested OR command_run.lease_token IS DISTINCT FROM cmd.run_lease
-                    OR command_run.lease_expires_at<=clock_timestamp() OR command_run.started_at+command_run.budget_seconds*interval '1 second'<=clock_timestamp()))
+                    OR command_run.lease_expires_at<=clock_timestamp() OR (command_run.budget_seconds<>0 AND command_run.started_at+command_run.budget_seconds*interval '1 second'<=clock_timestamp())))
              AND g.controls=jsonb_build_array(coalesce(u.version,1),a.version,s.version,
                  CASE WHEN a.schedule->>'event'='agentmail' THEN i.version END)
             ) IS TRUE AS available,
             greatest(0,least(5000,floor(extract(epoch FROM (least(g.expires_at,c.expires_at,c.connection_expires_at,
-                CASE WHEN g.keep_open THEN g.expires_at ELSE least(r.lease_expires_at,r.started_at+r.budget_seconds*interval '1 second') END)-clock_timestamp()))*1000)))::int AS "validForMs"
+                CASE WHEN g.keep_open THEN g.expires_at ELSE least(r.lease_expires_at,r.started_at+nullif(r.budget_seconds,0)*interval '1 second') END)-clock_timestamp()))*1000)))::int AS "validForMs"
         FROM mira_computer_access g JOIN mira_computers c ON c.id=g.computer_id AND c.owner=g.owner
         JOIN mira_runs r ON r.id=g.run_id AND r.owner=g.owner
         JOIN mira_conversations v ON v.id=r.conversation_id AND v.owner=g.owner

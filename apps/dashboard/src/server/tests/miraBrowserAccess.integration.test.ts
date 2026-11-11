@@ -90,7 +90,7 @@ test("browser grants require fresh human identity and never reveal private execu
         await rejects(f.caller("other").browser.request(f.request));
         const grant = await f.api.browser.request(f.request);
         expect(grant.state).toBe("pending");
-        expect(Date.parse(grant.expiresAt)).toBeLessThanOrEqual(f.run.deadlineAt! + 1000);
+        expect(Date.parse(grant.expiresAt)).toBeLessThanOrEqual(Date.now() + 300_000);
         await rejects(claimMiraBrowserAccess(f.context, grant.id));
         await rejects(claimMiraBrowserAccess({ ...f.worker, owner: "other" }, grant.id));
         await rejects(
@@ -294,7 +294,7 @@ test.each(["cancel", "finished", "lease", "heartbeat", "budget", "expired", "del
             if (change === "heartbeat")
                 await f.client`UPDATE mira_runs SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE id=${f.run.id}`;
             if (change === "budget")
-                await f.client`UPDATE mira_runs SET started_at=clock_timestamp()-interval '1 day' WHERE id=${f.run.id}`;
+                await f.client`UPDATE mira_runs SET budget_seconds=300,started_at=clock_timestamp()-interval '1 day' WHERE id=${f.run.id}`;
             if (change === "expired")
                 await f.client`UPDATE mira_browser_access SET created_at=clock_timestamp()-interval '6 minutes',expires_at=clock_timestamp()-interval '1 minute' WHERE id=${grant.id}`;
             if (change === "deleted")
@@ -618,6 +618,34 @@ test("home network access needs the installed operator, a fresh request and a ma
     } finally {
         if (previous === undefined) delete process.env[key];
         else process.env[key] = previous;
+        await f.close();
+    }
+});
+
+test("untimed chat keeps browser authority beyond five minutes without extending its separate grant", async () => {
+    const f = await fixture();
+    try {
+        expect(f.run.budgetSeconds).toBe(0);
+        expect(f.run.deadlineAt).toBeNull();
+        await f.client`UPDATE mira_runs SET started_at=clock_timestamp()-interval '1 hour' WHERE id=${f.run.id}`;
+        const grant = await f.api.browser.request(f.request);
+        const claim = await claimMiraBrowserAccess(f.worker, grant.id);
+        const permit = () =>
+            requireMiraBrowserAccess(f.worker, {
+                id: claim.id,
+                hostToken: claim.hostToken,
+                mode: "control",
+            });
+        const firstPermit = await permit();
+        expect(firstPermit.validForMs).toBeGreaterThan(0);
+        await f.client`UPDATE mira_runs SET budget_seconds=300 WHERE id=${f.run.id}`;
+        await rejects(permit());
+        await f.client`UPDATE mira_runs SET budget_seconds=0 WHERE id=${f.run.id}`;
+        const renewedPermit = await permit();
+        expect(renewedPermit.validForMs).toBeGreaterThan(0);
+        await f.client`UPDATE mira_browser_access SET created_at=clock_timestamp()-interval '2 minutes',expires_at=clock_timestamp()-interval '1 second' WHERE id=${grant.id}`;
+        await rejects(permit());
+    } finally {
         await f.close();
     }
 });

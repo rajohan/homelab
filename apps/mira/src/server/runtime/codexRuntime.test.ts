@@ -31,7 +31,7 @@ const options = (mode = "ok") => ({
 });
 
 describe("Mira runtime transport", () => {
-    test.each([80, runtimeToolCallLimit + 1])(
+    test.each([1100, runtimeToolCallLimit + 1])(
         "allows extended sequential work with a bounded non-replaying call history: %s",
         async (count) => {
             const runtime = await CodexRuntime.connect(options(`tool-sequence-${count}`));
@@ -329,7 +329,10 @@ describe("Mira runtime transport", () => {
         try {
             const thread = await runtime.startThread("synthetic", process.cwd(), []);
             const abort = new AbortController();
-            const pending = runtime.turn(thread, "test", { signal: abort.signal });
+            const pending = runtime.turn(thread, "test", {
+                signal: abort.signal,
+                timeoutMs: null,
+            });
             await rejects(runtime.turn(thread, "competing"), /active turn/);
             abort.abort();
             const cancelled = await pending;

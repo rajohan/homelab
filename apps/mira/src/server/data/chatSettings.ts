@@ -125,19 +125,11 @@ export async function saveMiraChatSettings(
                 "CONFLICT",
                 "The conversation changed. Refresh before saving settings."
             );
-        const [active] = await query<
-            { id: string }[]
-        >`SELECT id FROM mira_runs WHERE conversation_id = ${input.id} AND state IN ('queued','running') LIMIT 1`;
-        if (active)
-            throw new MiraFailure(
-                "CONFLICT",
-                "Wait for the reply or stop it before changing chat settings."
-            );
         if (
             conversation.settings.model !== input.settings.model ||
             conversation.settings.effort !== input.settings.effort ||
             conversation.settings.serviceTier !== input.settings.serviceTier ||
-            ((input.settings.liveAssistanceMinutes ?? 0) > 0 &&
+            ((input.settings.liveAssistanceMinutes ?? 0) !== 0 &&
                 input.settings.liveAssistanceMinutes !==
                     conversation.settings.liveAssistanceMinutes)
         ) {
@@ -153,7 +145,7 @@ export async function saveMiraChatSettings(
                 catalog.defaultModel
             );
             if (
-                (input.settings.liveAssistanceMinutes ?? 0) > 0 &&
+                (input.settings.liveAssistanceMinutes ?? 0) !== 0 &&
                 !catalog.models
                     .find((model) => model.model === resolved.model)!
                     .inputModalities.includes("image")

@@ -42,10 +42,11 @@ export interface MiraClaim {
     automationId: string | null;
     taskId: string | null;
     leaseToken: string;
+    /** Zero means direct Chat runs until completion or explicit cancellation. */
     budgetSeconds: number;
     manual: boolean;
     executionTarget?: "main" | "daytona";
-    deadlineAt?: number;
+    deadlineAt?: number | null;
     taskAssessment?: boolean;
     taskResumed?: boolean;
 }
@@ -106,7 +107,7 @@ export async function claimMiraRun(
         for (let skipped = 0; skipped < 20; skipped++) {
             const [run] = await query<
                 Omit<MiraClaim, "leaseToken">[]
-            >`SELECT id, owner, conversation_id AS "conversationId", user_message_id AS "userMessageId", assistant_message_id AS "assistantMessageId", automation_id AS "automationId", task_id AS "taskId", budget_seconds AS "budgetSeconds", manual, coalesce(settings->>'executionTarget','daytona') AS "executionTarget", task_resumed AS "taskResumed" FROM mira_runs WHERE state = 'queued' AND NOT cancel_requested AND (${lane === "general"} OR (manual AND NOT task_resumed AND (task_id IS NOT NULL OR automation_id IS NOT NULL OR coalesce(settings->>'liveAssistanceMinutes','0') NOT IN ('30','60','120')))) AND (NOT task_resumed OR NOT EXISTS (SELECT 1 FROM mira_switches WHERE owner=mira_runs.owner AND key='autonomy' AND NOT enabled)) AND (${catalog === undefined} OR (COALESCE(settings->>'model',CASE WHEN ${!isSyntheticModel(catalog?.defaultModel)} OR owner=${catalog?.syntheticOwner ?? null} THEN ${catalog?.defaultModel ?? null} ELSE ${catalog?.nativeDefaultModel ?? null} END) IN (SELECT jsonb_array_elements_text(${JSON.stringify(catalog?.models ?? [])}::text::jsonb)) AND (COALESCE(settings->>'model',CASE WHEN ${!isSyntheticModel(catalog?.defaultModel)} OR owner=${catalog?.syntheticOwner ?? null} THEN ${catalog?.defaultModel ?? null} ELSE ${catalog?.nativeDefaultModel ?? null} END) NOT LIKE 'syn:%' OR owner=${catalog?.syntheticOwner ?? null}))) ORDER BY priority DESC, id LIMIT 1 FOR UPDATE SKIP LOCKED`;
+            >`SELECT id, owner, conversation_id AS "conversationId", user_message_id AS "userMessageId", assistant_message_id AS "assistantMessageId", automation_id AS "automationId", task_id AS "taskId", budget_seconds AS "budgetSeconds", manual, coalesce(settings->>'executionTarget','daytona') AS "executionTarget", task_resumed AS "taskResumed" FROM mira_runs WHERE state = 'queued' AND NOT cancel_requested AND (${lane === "general"} OR (manual AND NOT task_resumed AND (task_id IS NOT NULL OR automation_id IS NOT NULL OR coalesce(settings->>'liveAssistanceMinutes','0') NOT IN ('-1','30','60','120')))) AND (NOT task_resumed OR NOT EXISTS (SELECT 1 FROM mira_switches WHERE owner=mira_runs.owner AND key='autonomy' AND NOT enabled)) AND (${catalog === undefined} OR (COALESCE(settings->>'model',CASE WHEN ${!isSyntheticModel(catalog?.defaultModel)} OR owner=${catalog?.syntheticOwner ?? null} THEN ${catalog?.defaultModel ?? null} ELSE ${catalog?.nativeDefaultModel ?? null} END) IN (SELECT jsonb_array_elements_text(${JSON.stringify(catalog?.models ?? [])}::text::jsonb)) AND (COALESCE(settings->>'model',CASE WHEN ${!isSyntheticModel(catalog?.defaultModel)} OR owner=${catalog?.syntheticOwner ?? null} THEN ${catalog?.defaultModel ?? null} ELSE ${catalog?.nativeDefaultModel ?? null} END) NOT LIKE 'syn:%' OR owner=${catalog?.syntheticOwner ?? null}))) ORDER BY priority DESC, id LIMIT 1 FOR UPDATE SKIP LOCKED`;
             if (!run) return null;
             // A pause/delete may hold controls while waiting for this row. Never wait in reverse order.
             const [controls] = await query<
@@ -166,7 +167,8 @@ export async function claimMiraRun(
             const observationHash = run.automationId
                 ? await miraObservationFingerprint(query, run.owner, run.id)
                 : null;
-            const deadlineAt = Date.now() + run.budgetSeconds * 1000;
+            const deadlineAt =
+                run.budgetSeconds === 0 ? null : Date.now() + run.budgetSeconds * 1000;
             const leaseToken = crypto.randomUUID();
             // Freeze the owner-specific automatic model in the same transaction as the claim.
             // The executor must not reinterpret null using a different global default.

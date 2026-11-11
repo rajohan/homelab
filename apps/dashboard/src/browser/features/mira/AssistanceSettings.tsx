@@ -29,6 +29,7 @@ export function AssistanceSettings({
                 disabled={disabled}
                 options={[
                     { value: "0", label: "Off · finish after the reply" },
+                    { value: "-1", label: "Until finished or stopped" },
                     { value: "30", label: "Continue for up to 30 minutes" },
                     { value: "60", label: "Continue for up to 1 hour" },
                     { value: "120", label: "Continue for up to 2 hours" },

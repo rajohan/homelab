@@ -23,7 +23,7 @@ export interface MiraRecallPolicy {
 }
 
 /**
- * Resolve frozen turn preferences while preserving restricted automation and assessment scopes.
+ * Resolve frozen turn preferences, current opt-outs and restricted automation/assessment scopes.
  * @param client - Executor database connection.
  * @param run - Owner-bound, currently leased turn.
  * @returns Effective permissions; expired or deleted work is rejected.
@@ -33,8 +33,13 @@ export async function readMiraRecallPolicy(
     run: MiraClaim
 ): Promise<MiraRecallPolicy> {
     const [row] = await client<
-        { settings: MiraChatSettings; automationId: string | null; kind: string | null }[]
-    >`SELECT r.settings,r.automation_id AS "automationId",r.automation_kind AS kind FROM mira_runs r JOIN mira_conversations c ON c.id=r.conversation_id AND c.owner=r.owner WHERE r.id=${run.id} AND r.owner=${run.owner} AND r.conversation_id=${run.conversationId} AND r.state='running' AND NOT r.cancel_requested AND r.lease_token=${run.leaseToken} AND r.lease_expires_at>clock_timestamp() AND c.deleted_at IS NULL`;
+        {
+            settings: MiraChatSettings;
+            current: MiraChatSettings;
+            automationId: string | null;
+            kind: string | null;
+        }[]
+    >`SELECT r.settings,c.settings AS current,r.automation_id AS "automationId",r.automation_kind AS kind FROM mira_runs r JOIN mira_conversations c ON c.id=r.conversation_id AND c.owner=r.owner WHERE r.id=${run.id} AND r.owner=${run.owner} AND r.conversation_id=${run.conversationId} AND r.state='running' AND NOT r.cancel_requested AND r.lease_token=${run.leaseToken} AND r.lease_expires_at>clock_timestamp() AND c.deleted_at IS NULL`;
     if (!row)
         throw new MiraFailure(
             "PRECONDITION_FAILED",
@@ -45,8 +50,14 @@ export async function readMiraRecallPolicy(
         (!row.automationId || (row.kind !== null && row.kind !== "improvement"));
     return {
         conversation: allowed,
-        memory: allowed && row.settings.useMemory !== false,
-        history: allowed && row.settings.useHistory !== false,
+        memory:
+            allowed &&
+            row.settings.useMemory !== false &&
+            row.current.useMemory !== false,
+        history:
+            allowed &&
+            row.settings.useHistory !== false &&
+            row.current.useHistory !== false,
     };
 }
 

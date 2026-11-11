@@ -10,6 +10,12 @@ procedure; see the provider extension below for the current shared executor beha
 ## Synthetic subscription provider
 
 Chat and Automations share the same server-backed model settings and UI controls.
+Chat settings stay editable during queued and running work. Model, thinking, code
+target and assistance choices apply to the next run; existing runs keep their frozen
+settings. Display preferences apply immediately. A permission-mode change revokes
+existing delegated approvals without stopping the response or granting the active
+run broader access. Turning memory or history off prevents further retrieval in
+the active run; context already sent to a provider cannot be withdrawn.
 The optional Synthetic adapter uses the documented OpenAI-compatible Chat Completions
 API at `https://api.synthetic.new/openai/v1`. It does not modify the Codex runtime or
 reuse ChatGPT credentials. The four supported subscription aliases are
@@ -305,3 +311,12 @@ text/PDF/image input, recorded product tool, queued-while-stopped continuation,
 same provider thread under a new worker, provider-history deletion and graceful
 shutdown. The credential-free smoke also rejected an image missing the code-mode
 host. This does not qualify production cutover or Windows computer control.
+
+### Chat run duration
+
+Ordinary direct Chat has no elapsed-time deadline: it runs until provider completion,
+operator Stop, or an actual execution/connection failure. A zero `mira_runs.budget_seconds`
+records this policy; the executor and browser/computer authority checks share it.
+Codex and Synthetic receive `timeoutMs: null` for these runs. Transport requests,
+individual commands, leases and local access grants retain their own deadlines.
+Explicit automation/task budgets and timed live-assistance choices still apply.

@@ -32,10 +32,10 @@ test("live assistance is opt-in and preserves model and permission choices", asy
         );
         fireEvent.click(screen.getByLabelText("Live computer assistance"));
         fireEvent.click(
-            await screen.findByRole("option", { name: "Continue for up to 1 hour" })
+            await screen.findByRole("option", { name: "Until finished or stopped" })
         );
         expect(latest).toMatchObject({
-            liveAssistanceMinutes: 60,
+            liveAssistanceMinutes: -1,
             model: "syn:large:vision",
             permissionMode: "ask",
             useHistory: false,

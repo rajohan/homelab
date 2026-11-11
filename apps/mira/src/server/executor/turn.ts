@@ -80,11 +80,14 @@ export async function executeMiraTurn(
 ): Promise<void> {
     const controller = new AbortController();
     const deadline = new AbortController();
-    const deadlineAt = run.deadlineAt ?? Date.now() + run.budgetSeconds * 1000;
-    const timer = setTimeout(
-        () => deadline.abort(),
-        Math.max(0, deadlineAt - Date.now())
-    );
+    const deadlineAt =
+        run.budgetSeconds === 0
+            ? null
+            : (run.deadlineAt ?? Date.now() + run.budgetSeconds * 1000);
+    const timer =
+        deadlineAt === null
+            ? undefined
+            : setTimeout(() => deadline.abort(), Math.max(0, deadlineAt - Date.now()));
     const signal = AbortSignal.any([stopping, controller.signal, deadline.signal]);
     let runtime: CodexRuntime | SyntheticRuntime | undefined;
     let providerThread: string | undefined;
@@ -229,7 +232,7 @@ export async function executeMiraTurn(
                 : await loadSyntheticModels(synthetic!, signal);
         const settings = resolveMiraChatSettings(models, record.settings, automaticModel);
         const selectedModel = models.find((entry) => entry.model === settings.model)!;
-        assistance = liveAssistanceMinutes(record.settings, run) > 0;
+        assistance = liveAssistanceMinutes(record.settings, run) !== 0;
         if (assistance && !selectedModel.inputModalities.includes("image"))
             throw new MiraFailure(
                 "BAD_REQUEST",
@@ -438,13 +441,8 @@ export async function executeMiraTurn(
                     signal,
                     settings,
                     attachments: !continuation || useSynthetic ? attachments.inputs : [],
-                    timeoutMs: Math.max(
-                        1,
-                        Math.min(
-                            assistance ? 300_000 : Number.POSITIVE_INFINITY,
-                            deadlineAt - Date.now()
-                        )
-                    ),
+                    timeoutMs:
+                        deadlineAt === null ? null : Math.max(1, deadlineAt - Date.now()),
                     onStarted: async (turnId) => {
                         await client.begin(async (query) => {
                             const accepted = await query<

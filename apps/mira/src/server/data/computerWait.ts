@@ -24,7 +24,7 @@ export async function readMiraComputerReadiness(
         LEFT JOIN mira_switches s ON s.owner=r.owner AND s.key='autonomy'
         WHERE r.id=${context.run.id} AND r.owner=${context.owner} AND r.lease_token=${context.run.leaseToken}
         AND r.manual AND r.automation_id IS NULL AND r.state='running' AND NOT r.cancel_requested AND r.lease_expires_at>clock_timestamp()
-        AND r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp() AND c.deleted_at IS NULL AND c.archived_at IS NULL AND coalesce(s.enabled,true)`;
+        AND (r.budget_seconds=0 OR r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp()) AND c.deleted_at IS NULL AND c.archived_at IS NULL AND coalesce(s.enabled,true)`;
     if (!run) return { state: "unavailable" };
     const [last] = await context.client<
         { id: string; stoppedBeforeRun: boolean }[]
