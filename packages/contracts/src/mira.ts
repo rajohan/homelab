@@ -146,7 +146,7 @@ export const miraPermissionModeSchema = v.picklist([
     "full_access",
 ]);
 export type MiraPermissionMode = v.InferOutput<typeof miraPermissionModeSchema>;
-export const miraLiveAssistanceMinutesSchema = v.picklist([0, 30, 60, 120]);
+export const miraLiveAssistanceMinutesSchema = v.picklist([-1, 0, 30, 60, 120]);
 export const miraChatSettingsSchema = v.strictObject({
     model: v.nullable(modelIdentifier),
     effort: v.nullable(modelIdentifier),

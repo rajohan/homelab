@@ -305,3 +305,12 @@ text/PDF/image input, recorded product tool, queued-while-stopped continuation,
 same provider thread under a new worker, provider-history deletion and graceful
 shutdown. The credential-free smoke also rejected an image missing the code-mode
 host. This does not qualify production cutover or Windows computer control.
+
+### Chat run duration
+
+Ordinary direct Chat has no elapsed-time deadline: it runs until provider completion,
+operator Stop, or an actual execution/connection failure. A zero `mira_runs.budget_seconds`
+records this policy; the executor and browser/computer authority checks share it.
+Codex and Synthetic receive `timeoutMs: null` for these runs. Transport requests,
+individual commands, leases and local access grants retain their own deadlines.
+Explicit automation/task budgets and timed live-assistance choices still apply.

@@ -101,7 +101,7 @@ export async function requestMiraComputerAccess(
         const [run] = await query<
             { lease: string; expiresAt: Date; controls: unknown }[]
         >`
-            SELECT r.lease_token AS lease,CASE WHEN ${request.keepOpen} THEN ${computer.expiresAt}::timestamptz ELSE least(clock_timestamp()+interval '5 minutes',r.started_at+r.budget_seconds*interval '1 second',${computer.expiresAt}) END AS "expiresAt",
+            SELECT r.lease_token AS lease,CASE WHEN ${request.keepOpen} THEN ${computer.expiresAt}::timestamptz ELSE least(clock_timestamp()+interval '5 minutes',r.started_at+nullif(r.budget_seconds,0)*interval '1 second',${computer.expiresAt}) END AS "expiresAt",
                 jsonb_build_array(coalesce(u.version,1),a.version,s.version,CASE WHEN a.schedule->>'event'='agentmail' THEN i.version END) AS controls
             FROM mira_runs r JOIN mira_conversations c ON c.id=r.conversation_id AND c.owner=r.owner
             LEFT JOIN mira_switches u ON u.owner=r.owner AND u.key='autonomy'
@@ -109,7 +109,7 @@ export async function requestMiraComputerAccess(
             LEFT JOIN mira_switches s ON s.owner=r.owner AND s.key='automation:'||a.id::text
             LEFT JOIN mira_switches i ON i.owner=r.owner AND i.key='integration:agentmail'
             WHERE r.id=${request.runId} AND r.owner=${context.owner} AND r.state='running' AND NOT r.cancel_requested
-                AND r.lease_expires_at>clock_timestamp() AND r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp()
+                AND r.lease_expires_at>clock_timestamp() AND (r.budget_seconds=0 OR r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp())
                 AND c.deleted_at IS NULL AND coalesce(u.enabled,true)
                 AND c.archived_at IS NULL AND (NOT ${request.keepOpen} OR (r.manual AND r.automation_id IS NULL))
                 AND (r.automation_id IS NULL OR (a.deleted_at IS NULL AND s.enabled AND
@@ -311,7 +311,7 @@ export async function requireMiraComputerAccess(
             SELECT conversation_id AS "conversationId",manual,automation_id AS "automationId" FROM mira_runs
             WHERE id=${context.run!.id} AND owner=${context.owner} AND state='running' AND NOT cancel_requested
                 AND lease_token=${context.run!.leaseToken} AND lease_expires_at>clock_timestamp()
-                AND started_at+budget_seconds*interval '1 second'>clock_timestamp() FOR SHARE`;
+                AND (budget_seconds=0 OR started_at+budget_seconds*interval '1 second'>clock_timestamp()) FOR SHARE`;
         if (
             !row?.available ||
             !run ||

@@ -156,7 +156,7 @@ test("live assistance leaves the reserved worker available and freezes its expli
         });
         const short = await claimMiraRun(f.client, crypto.randomUUID(), "foreground");
         expect(short?.conversationId).toBe(quick.id);
-        expect(short?.budgetSeconds).toBe(300);
+        expect(short?.budgetSeconds).toBe(0);
         const live = await claimMiraRun(f.client, crypto.randomUUID(), "general");
         expect(live?.conversationId).toBe(f.chat.id);
         expect(live?.budgetSeconds).toBe(3600);
@@ -329,7 +329,7 @@ async function executorFixture(mode = "resume-missing") {
 
 test("the executor continues after a reply, delivers idle guidance in a new bubble and honors Stop", async () => {
     const f = await executorFixture();
-    const timeouts: (number | undefined)[] = [];
+    const timeouts: (number | null | undefined)[] = [];
     // oxlint-disable-next-line typescript/unbound-method -- The spy calls the original with the real runtime receiver.
     const turn = CodexRuntime.prototype.turn;
     const observed = spyOn(CodexRuntime.prototype, "turn").mockImplementation(function (
@@ -367,7 +367,11 @@ test("the executor continues after a reply, delivers idle guidance in a new bubb
             "completed",
             "completed",
         ]);
-        expect(timeouts).toEqual([300_000, 300_000]);
+        expect(timeouts).toHaveLength(2);
+        for (const timeout of timeouts) {
+            expect(timeout).toBeGreaterThan(300_000);
+            expect(timeout).toBeLessThanOrEqual(3_600_000);
+        }
     } finally {
         await f.close();
         observed.mockRestore();
@@ -607,3 +611,34 @@ test("Synthetic continuations preserve accepted guidance and can finish without 
         await provider.stop(true);
     }
 }, 45_000);
+
+test("assistance until stopped has no run deadline and does not occupy the reserved foreground worker", async () => {
+    const f = await fixture();
+    try {
+        const timed = (await claimMiraRun(f.client, crypto.randomUUID(), "general"))!;
+        await finishMiraRun(f.client, timed, {
+            state: "completed",
+            text: "Done",
+            message: null,
+        });
+        const chat = await f.api.conversations.read({ id: f.chat.id });
+        await f.api.conversations.settings({
+            id: f.chat.id,
+            version: chat.conversation.version,
+            settings: { ...miraDefaultChatSettings, liveAssistanceMinutes: -1 },
+        });
+        await f.api.conversations.send({
+            conversationId: f.chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Keep helping until I stop.",
+        });
+        expect(
+            await claimMiraRun(f.client, crypto.randomUUID(), "foreground")
+        ).toBeNull();
+        const run = (await claimMiraRun(f.client, crypto.randomUUID(), "general"))!;
+        expect(run.budgetSeconds).toBe(0);
+        expect(run.deadlineAt).toBeNull();
+    } finally {
+        await f.close();
+    }
+});

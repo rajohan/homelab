@@ -12,7 +12,7 @@ import type { MiraClaim } from "./queue";
  * Resolve the explicit assistance duration for direct Chat work only.
  * @param settings - Conversation preferences frozen at queue admission.
  * @param source - Trusted origin; task and automation runs retain their own completion rules.
- * @returns Selected minutes, or zero for ordinary replies and scheduled/task work.
+ * @returns Selected minutes, -1 for assistance until stopped, or zero for ordinary replies and scheduled/task work.
  */
 export function liveAssistanceMinutes(
     settings: MiraChatSettings,

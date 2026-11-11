@@ -498,7 +498,11 @@ test("Synthetic cancellation stops a stalled response without invoking a tool", 
         })
     );
     const thread = await runtime.startThread(settings.model, "/unused", [], "Fixture");
-    const pending = runtime.turn(thread, "Fixture", { settings, signal: abort.signal });
+    const pending = runtime.turn(thread, "Fixture", {
+        settings,
+        signal: abort.signal,
+        timeoutMs: null,
+    });
     while (!requested) await Bun.sleep(1);
     abort.abort();
     const result = await pending;

@@ -332,7 +332,9 @@ export class SyntheticRuntime {
             controller.signal,
             this.shutdown.signal,
             ...(options.signal ? [options.signal] : []),
-            AbortSignal.timeout(options.timeoutMs ?? 120_000),
+            ...(options.timeoutMs === null
+                ? []
+                : [AbortSignal.timeout(options.timeoutMs ?? 120_000)]),
         ]);
         const active = {
             id: `synthetic:${crypto.randomUUID()}`,

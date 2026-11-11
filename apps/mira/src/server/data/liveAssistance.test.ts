@@ -14,3 +14,12 @@ test("only explicitly configured direct Chat receives the longer assistance budg
     ).toBe(0);
     expect(liveAssistanceMinutes(settings, { manual: true, taskId: "task" })).toBe(0);
 });
+
+test("assistance until stopped is explicit and limited to direct chat", () => {
+    const settings = { ...miraDefaultChatSettings, liveAssistanceMinutes: -1 as const };
+    expect(liveAssistanceMinutes(settings, { manual: true })).toBe(-1);
+    expect(
+        liveAssistanceMinutes(settings, { manual: true, automationId: "automation" })
+    ).toBe(0);
+    expect(liveAssistanceMinutes(settings, { manual: true, taskId: "task" })).toBe(0);
+});

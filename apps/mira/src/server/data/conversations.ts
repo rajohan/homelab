@@ -264,8 +264,10 @@ export async function enqueueTurn(
         automationId: source.automationId,
         taskId,
     });
+    const defaultBudget = manual && !taskId && !source.automationId ? 0 : 300;
     const budgetSeconds =
-        source.budgetSeconds ?? (assistanceMinutes ? assistanceMinutes * 60 : 300);
+        source.budgetSeconds ??
+        (assistanceMinutes > 0 ? assistanceMinutes * 60 : defaultBudget);
     if (!(await miraQueueAvailable(query, context.owner, manual)))
         throw new MiraFailure(
             "PRECONDITION_FAILED",

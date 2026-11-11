@@ -51,7 +51,7 @@ async function liveRun(query: TransactionSQL, context: MiraContext) {
         }[]
     >`SELECT id,conversation_id AS "conversationId",manual,automation_id AS "automationId",task_id AS "taskId",settings FROM mira_runs WHERE id=${context.run.id} AND owner=${context.owner}
         AND state='running' AND NOT cancel_requested AND lease_token=${context.run.leaseToken}
-        AND lease_expires_at>clock_timestamp() AND started_at+budget_seconds*interval '1 second'>clock_timestamp() FOR SHARE`;
+        AND lease_expires_at>clock_timestamp() AND (budget_seconds=0 OR started_at+budget_seconds*interval '1 second'>clock_timestamp()) FOR SHARE`;
     if (!run)
         throw new MiraFailure(
             "FORBIDDEN",
@@ -243,7 +243,7 @@ export async function enqueueMiraComputerCommand(
             (SELECT count(*)::int FROM mira_computer_commands WHERE access_id=${access.id} AND run_id=${context.run!.id}) AS recent,
             (SELECT count(*)::int FROM mira_computer_commands WHERE access_id=${access.id} AND created_at>clock_timestamp()-interval '1 minute') AS "lastMinute",
             (SELECT count(*)::int FROM mira_computer_commands WHERE access_id=${access.id}) AS "accessTotal"`;
-        const continuedAssistance = liveAssistanceMinutes(run.settings, run) > 0;
+        const continuedAssistance = liveAssistanceMinutes(run.settings, run) !== 0;
         if (
             !limits ||
             limits.total >= 32 ||

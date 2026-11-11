@@ -46,7 +46,7 @@ function fixture(mode: "view" | "control" = "control", keepOpen = false) {
         runId: crypto.randomUUID(),
         mode,
         state: "pending" as const,
-        expiresAt: new Date(Date.now() + (keepOpen ? 3_600_000 : 120_000)).toISOString(),
+        expiresAt: new Date(Date.now() + (keepOpen ? 86_400_000 : 120_000)).toISOString(),
         ...(keepOpen ? { keepOpen: true } : {}),
     };
     const request = {
@@ -187,7 +187,7 @@ function fixture(mode: "view" | "control" = "control", keepOpen = false) {
     };
 }
 
-test.each([90_000, 360_000])(
+test.each([90_000, 360_000, 10_800_000])(
     "persistent consent resumes after %s ms idle without another prompt and keeps stop authoritative",
     async (idle) => {
         const f = fixture("control", true);

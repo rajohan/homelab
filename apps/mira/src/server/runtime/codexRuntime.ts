@@ -222,7 +222,7 @@ export class CodexRuntime {
      * Stream one bounded turn and distinguish completion from interruption or failure.
      * @param threadId - Thread established by this adapter.
      * @param text - User input for this turn.
-     * @param options - Optional deadline, cancellation and synchronous text observer.
+     * @param options - Optional deadline (null disables the elapsed-time limit), cancellation and synchronous text observer.
      * @returns The final provider outcome and collected text. Interruption retires this connection; resume through a new adapter.
      */
     async turn(
@@ -230,7 +230,7 @@ export class CodexRuntime {
         text: string,
         options: {
             signal?: AbortSignal;
-            timeoutMs?: number;
+            timeoutMs?: number | null;
             onDelta?: (delta: string, messageId?: string) => void;
             onStarted?: (turnId: string) => Promise<void>;
             attachments?: RuntimeInput[];
@@ -337,12 +337,17 @@ export class CodexRuntime {
         };
         options.signal?.addEventListener("abort", abort, { once: true });
         if (options.signal?.aborted) abort();
-        const deadline = setTimeout(() => {
-            completion.reject(
-                new Error("Mira turn exceeded its deadline; reconcile before retrying.")
-            );
-            void this.close();
-        }, options.timeoutMs ?? 120_000);
+        const deadline =
+            options.timeoutMs === null
+                ? undefined
+                : setTimeout(() => {
+                      completion.reject(
+                          new Error(
+                              "Mira turn exceeded its deadline; reconcile before retrying."
+                          )
+                      );
+                      void this.close();
+                  }, options.timeoutMs ?? 120_000);
         try {
             const started = v.parse(
                 turnSchema,

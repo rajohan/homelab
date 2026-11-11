@@ -25,7 +25,7 @@ test("live assistance waits between observations and waits for actual local appr
             });
         },
         new AbortController().signal,
-        5000,
+        null,
         time.timing
     );
     expect(ready).toBe(true);

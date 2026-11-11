@@ -340,7 +340,7 @@ test("maximum run time cancels a stalled runtime setup before the inference time
         await executeMiraTurn(
             fixture.client,
             { command, codexHome: home, workspace },
-            { ...claimed, deadlineAt: started + 300 },
+            { ...claimed, budgetSeconds: 30, deadlineAt: started + 300 },
             new AbortController().signal
         );
         expect(Date.now() - started).toBeLessThan(2000);
@@ -1727,5 +1727,71 @@ test("task deletion scrubs pending proposals atomically and fences late proposal
         release.resolve();
         await deletion;
         await fixture.close();
+    }
+});
+
+test("ordinary chat completes through the runtime without an implicit elapsed-time deadline", async () => {
+    const fixture = await operationFixture();
+    const directory = await mkdtemp(path.join(tmpdir(), "mira-untimed-"));
+    const api = appRouter.createCaller({
+        operations: fixture,
+        principal: { kind: "human", id: "operator", capabilities },
+    }).mira;
+    // oxlint-disable-next-line typescript/unbound-method -- Invoked with its original receiver through call().
+    const turn = CodexRuntime.prototype.turn;
+    const timeouts: (number | null | undefined)[] = [];
+    const spy = spyOn(CodexRuntime.prototype, "turn").mockImplementation(function (
+        this: CodexRuntime,
+        thread,
+        prompt,
+        options
+    ) {
+        timeouts.push(options?.timeoutMs);
+        return turn.call(this, thread, prompt, options);
+    });
+    try {
+        const command = path.join(directory, "synthetic-codex");
+        const home = path.join(directory, "home"),
+            workspace = path.join(directory, "workspace");
+        await mkdir(home);
+        await mkdir(workspace);
+        const runtimeChild = fileURLToPath(
+            new URL(
+                "../../../../mira/src/server/testing/runtimeChild.ts",
+                import.meta.url
+            )
+        );
+        await writeFile(
+            command,
+            `#!/usr/bin/env bun\nprocess.argv=[process.argv[0],${JSON.stringify(runtimeChild)},'ok',${JSON.stringify(home)}];\nawait import(${JSON.stringify(runtimeChild)});\n`
+        );
+        await chmod(command, 0o700);
+        const chat = await api.conversations.create({ title: "Untimed chat" });
+        await api.conversations.send({
+            conversationId: chat.id,
+            requestId: crypto.randomUUID(),
+            text: "Complete this synthetic work.",
+        });
+        const run = (await claimMiraRun(
+            fixture.client,
+            crypto.randomUUID(),
+            "foreground"
+        ))!;
+        expect(run.budgetSeconds).toBe(0);
+        expect(run.deadlineAt).toBeNull();
+        await fixture.client`UPDATE mira_runs SET started_at=clock_timestamp()-interval '1 hour' WHERE id=${run.id}`;
+        await executeMiraTurn(
+            fixture.client,
+            { command, codexHome: home, workspace, model: "synthetic" },
+            run,
+            new AbortController().signal
+        );
+        expect(timeouts).toEqual([null]);
+        const result = await api.conversations.read({ id: chat.id });
+        expect(result.run?.state).toBe("completed");
+    } finally {
+        spy.mockRestore();
+        await fixture.close();
+        await rm(directory, { recursive: true, force: true });
     }
 });

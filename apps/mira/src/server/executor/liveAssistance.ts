@@ -13,18 +13,21 @@ const defaultTiming = {
  * Pace a continuation while checking that the operator still shares the computer.
  * @param readiness - Fenced access reader; this function never creates or extends access.
  * @param signal - Current run cancellation and shutdown signal.
- * @param deadlineAt - Existing run deadline, with time reserved for clean completion.
+ * @param deadlineAt - Explicit run deadline, or null for assistance until stopped; finite deadlines reserve time for clean completion.
  * @param timing - Short clocks are injectable by isolated tests only.
  * @returns True when another observation is due; false after access loss or the duration ends.
  */
 export async function waitForLiveAssistance(
     readiness: () => Promise<MiraComputerReadiness>,
     signal: AbortSignal,
-    deadlineAt: number,
+    deadlineAt: number | null,
     timing = defaultTiming
 ): Promise<boolean> {
     const next = timing.now() + timing.intervalMs;
-    const until = Math.min(deadlineAt - 1000, timing.now() + timing.consentMs);
+    const until = Math.min(
+        deadlineAt === null ? Infinity : deadlineAt - 1000,
+        timing.now() + timing.consentMs
+    );
     if (next >= until) return false;
     for (;;) {
         signal.throwIfAborted();

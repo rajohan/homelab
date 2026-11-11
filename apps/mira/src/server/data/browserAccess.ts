@@ -109,7 +109,7 @@ export async function readBrowserAccess(
             (g.state IN ('pending','active') AND g.expires_at>clock_timestamp() AND r.manual
                 AND (NOT (g.policy ? 'connected') OR (r.automation_id IS NULL AND NOT (g.policy ? 'delegatedMode') AND ${browserNetworkForOwner(owner)}))
                 AND r.state='running' AND NOT r.cancel_requested AND r.lease_token=g.run_lease
-                AND r.lease_expires_at>clock_timestamp() AND r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp()
+                AND r.lease_expires_at>clock_timestamp() AND (r.budget_seconds=0 OR r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp())
                 AND c.deleted_at IS NULL AND coalesce(u.enabled,true) AND b.enabled
                 AND (r.automation_id IS NULL OR (a.deleted_at IS NULL AND s.enabled AND
                     (a.schedule->>'event' IS DISTINCT FROM 'agentmail' OR i.enabled)))
@@ -120,7 +120,7 @@ export async function readBrowserAccess(
                 AND g.controls=jsonb_build_array(coalesce(u.version,1),b.version,a.version,s.version,
                     CASE WHEN a.schedule->>'event'='agentmail' THEN i.version END)) IS TRUE AS available,
             greatest(0,least(5000,floor(extract(epoch FROM (least(g.expires_at,r.lease_expires_at,
-                r.started_at+r.budget_seconds*interval '1 second')-clock_timestamp()))*1000)))::int AS "validForMs"
+                r.started_at+nullif(r.budget_seconds,0)*interval '1 second')-clock_timestamp()))*1000)))::int AS "validForMs"
         FROM mira_browser_access g JOIN mira_runs r ON r.id=g.run_id AND r.owner=g.owner
         JOIN mira_conversations c ON c.id=r.conversation_id AND c.owner=g.owner
         LEFT JOIN mira_browser_consoles console ON console.access_id=g.id
@@ -288,7 +288,7 @@ async function reserveBrowserAccess(
         const [run] = await query<
             { lease: string; expiresAt: Date; controls: unknown }[]
         >`
-            SELECT r.lease_token AS lease,least(clock_timestamp()+interval '5 minutes',r.started_at+r.budget_seconds*interval '1 second') AS "expiresAt",
+            SELECT r.lease_token AS lease,least(clock_timestamp()+interval '5 minutes',r.started_at+nullif(r.budget_seconds,0)*interval '1 second') AS "expiresAt",
                 jsonb_build_array(coalesce(u.version,1),b.version,a.version,s.version,CASE WHEN a.schedule->>'event'='agentmail' THEN i.version END) AS controls
             FROM mira_runs r JOIN mira_conversations c ON c.id=r.conversation_id AND c.owner=r.owner
             LEFT JOIN mira_switches u ON u.owner=r.owner AND u.key='autonomy'
@@ -297,7 +297,7 @@ async function reserveBrowserAccess(
             LEFT JOIN mira_switches s ON s.owner=r.owner AND s.key='automation:'||a.id::text
             LEFT JOIN mira_switches i ON i.owner=r.owner AND i.key='integration:agentmail'
             WHERE r.id=${request.runId} AND r.owner=${context.owner} AND r.manual AND r.state='running' AND NOT r.cancel_requested
-                AND r.lease_expires_at>clock_timestamp() AND r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp()
+                AND r.lease_expires_at>clock_timestamp() AND (r.budget_seconds=0 OR r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp())
                 AND (NOT ${Boolean(policy.connected)} OR r.automation_id IS NULL)
                 AND (NOT ${delegated} OR (r.lease_token=${context.run?.leaseToken ?? null} AND r.automation_id IS NULL AND r.task_id IS NULL AND r.approval_revoked_at IS NULL AND r.settings->>'permissionMode'=${delegatedMode ?? null} AND c.settings->>'permissionMode'=${delegatedMode ?? null} AND c.archived_at IS NULL))
                 AND c.deleted_at IS NULL AND coalesce(u.enabled,true) AND b.enabled

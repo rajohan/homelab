@@ -137,7 +137,7 @@ export async function saveMiraChatSettings(
             conversation.settings.model !== input.settings.model ||
             conversation.settings.effort !== input.settings.effort ||
             conversation.settings.serviceTier !== input.settings.serviceTier ||
-            ((input.settings.liveAssistanceMinutes ?? 0) > 0 &&
+            ((input.settings.liveAssistanceMinutes ?? 0) !== 0 &&
                 input.settings.liveAssistanceMinutes !==
                     conversation.settings.liveAssistanceMinutes)
         ) {
@@ -153,7 +153,7 @@ export async function saveMiraChatSettings(
                 catalog.defaultModel
             );
             if (
-                (input.settings.liveAssistanceMinutes ?? 0) > 0 &&
+                (input.settings.liveAssistanceMinutes ?? 0) !== 0 &&
                 !catalog.models
                     .find((model) => model.model === resolved.model)!
                     .inputModalities.includes("image")

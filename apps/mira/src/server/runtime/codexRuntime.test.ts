@@ -329,7 +329,10 @@ describe("Mira runtime transport", () => {
         try {
             const thread = await runtime.startThread("synthetic", process.cwd(), []);
             const abort = new AbortController();
-            const pending = runtime.turn(thread, "test", { signal: abort.signal });
+            const pending = runtime.turn(thread, "test", {
+                signal: abort.signal,
+                timeoutMs: null,
+            });
             await rejects(runtime.turn(thread, "competing"), /active turn/);
             abort.abort();
             const cancelled = await pending;

@@ -223,7 +223,7 @@ test("computer requests require fresh human verification and remain unusable bef
         );
         const grant = await f.api.computers.access.request(f.request);
         expect(grant.state).toBe("pending");
-        expect(Date.parse(grant.expiresAt)).toBeLessThanOrEqual(f.run.deadlineAt! + 1000);
+        expect(Date.parse(grant.expiresAt)).toBeLessThanOrEqual(Date.now() + 300_000);
         await rejects(f.allow(grant.id), /no longer available/);
         const pending = await pendingMiraComputerAccess(f.client, f.device.credential, {
             connectionId: f.connection.connectionId,
@@ -445,7 +445,7 @@ test.each(["cancel", "lease", "replacement", "complete", "budget", "delete"])(
             if (mode === "complete")
                 await f.client`UPDATE mira_runs SET state='completed',finished_at=clock_timestamp() WHERE id=${f.run.id}`;
             if (mode === "budget")
-                await f.client`UPDATE mira_runs SET started_at=clock_timestamp()-interval '1 hour' WHERE id=${f.run.id}`;
+                await f.client`UPDATE mira_runs SET budget_seconds=300,started_at=clock_timestamp()-interval '1 hour' WHERE id=${f.run.id}`;
             if (mode === "delete")
                 await f.client`UPDATE mira_conversations SET deleted_at=clock_timestamp() WHERE id=${f.chat.id}`;
             await rejects(f.allow(grant.id));
@@ -681,7 +681,7 @@ test("a deadline elapsed between validation and insertion returns a public preco
             await f.client`CREATE FUNCTION synthetic_access_insert_delay() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM nextval('synthetic_access_insert_attempt'); PERFORM pg_sleep(1.25); RETURN NULL; END; $$`;
             await f.client`CREATE TRIGGER synthetic_access_insert_delay BEFORE INSERT ON mira_computer_access FOR EACH STATEMENT EXECUTE FUNCTION synthetic_access_insert_delay()`;
             await (expires === "run"
-                ? f.client`UPDATE mira_runs SET started_at=clock_timestamp()-budget_seconds*interval '1 second'+interval '1 second' WHERE id=${f.run.id}`
+                ? f.client`UPDATE mira_runs SET budget_seconds=300,started_at=clock_timestamp()-interval '299 seconds' WHERE id=${f.run.id}`
                 : f.client`UPDATE mira_computers SET expires_at=clock_timestamp()+interval '1 second' WHERE id=${f.pair.id}`);
             await rejects(f.api.computers.access.request(f.request), {
                 code: "PRECONDITION_FAILED",
@@ -853,6 +853,31 @@ test("desktop scope is durable, version gated and visible in local consent and r
         });
         await f.api.computers.access.stop({ id: access.id });
         await rejects(f.allow(access.id));
+    } finally {
+        await f.close();
+    }
+});
+
+test("untimed chat keeps computer authority beyond five minutes but still obeys Stop and explicit budgets", async () => {
+    const f = await fixture();
+    try {
+        expect(f.run.budgetSeconds).toBe(0);
+        expect(f.run.deadlineAt).toBeNull();
+        await f.client`UPDATE mira_runs SET started_at=clock_timestamp()-interval '4 hours' WHERE id=${f.run.id}`;
+        const grant = await f.api.computers.access.request(f.request);
+        await f.accept(grant.id);
+        const firstPermit = await f.allow(grant.id);
+        expect(firstPermit.validForMs).toBeGreaterThan(0);
+        expect(await readMiraComputerReadiness(f.worker)).toMatchObject({
+            state: "ready",
+        });
+        await f.client`UPDATE mira_runs SET budget_seconds=300 WHERE id=${f.run.id}`;
+        await rejects(f.allow(grant.id), /no longer available/);
+        await f.client`UPDATE mira_runs SET budget_seconds=0 WHERE id=${f.run.id}`;
+        const renewedPermit = await f.allow(grant.id);
+        expect(renewedPermit.validForMs).toBeGreaterThan(0);
+        await cancelRun(f.context, f.run.id);
+        await rejects(f.allow(grant.id), /no longer available/);
     } finally {
         await f.close();
     }
