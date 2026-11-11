@@ -431,7 +431,7 @@ The producer requires a live executor lease and a committed `running` receipt fo
 
 Commands expire after at most fifteen seconds from admission and at most ten seconds from claim. Expired queued work is refused; expired or revoked dispatched work becomes unknown. Both clear content and retire that access. Human/local stop, reconnect, device revocation and conversation deletion erase outstanding content immediately. Periodic resource cleanup handles expiry, worker loss and pauses even while the model provider is unavailable. Expiry also denies fresh PC permits before cleanup runs; the existing local permit and operation deadlines remain mandatory.
 
-Storage is bounded to one outstanding command per access, eight per account and thirty-two globally, with at most thirty-two commands per run and 1,024 per access. The server refuses excess work before dispatch, so the companion's non-evicting replay history cannot unexpectedly terminate a retained grant. If cleanup stops, admission fails at capacity. Replay tombstones contain no input or image payload. A consumed observation retains only its opaque observation ID, bound to the originating run and lease; retained grants reject input using another reply's observation before it reaches the PC. Observation results reuse the runtime image validation and dimension checks. Only completion uploads admit up to 3 MiB; other private request bodies keep the 2 KiB limit and all requests retain the concurrency/deadline bounds. No command data is copied to audit logs.
+Storage is bounded to one outstanding command per access, eight per account and thirty-two globally, with at most 1,024 commands per run and per access. Both model runtimes allow up to 1,024 tool calls per turn; the run deadline and explicit stop controls still bound active work. The server refuses excess work before dispatch, so the companion's non-evicting replay history cannot unexpectedly terminate a retained grant. If cleanup stops, admission fails at capacity. Replay tombstones contain no input or image payload. A consumed observation retains only its opaque observation ID, bound to the originating run and lease; retained grants reject input using another reply's observation before it reaches the PC. Observation results reuse the runtime image validation and dimension checks. Only completion uploads admit up to 3 MiB; other private request bodies keep the 2 KiB limit and all requests retain the concurrency/deadline bounds. No command data is copied to audit logs.
 
 ## Executor visual tools
 
@@ -743,7 +743,7 @@ tests remain required. No screenshots are logged, uploaded or retained.
 Control mode uses the same WGC-only image path and the unmodified SDK's public
 `ClickPosition.Element` interface. The private worker accepts only tokens from its
 last observed, non-degraded tree; the outer session also checks exact membership,
-the ten-second deadline and one-use observation identity. Any input consumes the
+a one-minute observation deadline and one-use observation identity. Expired or invalid observation targets are refused before native dispatch without closing the grant; Mira must observe again before deciding on another action. Unknown outcomes after dispatch still stop access and are never replayed. Any input consumes the
 native token set. Windows coordinate clicks are refused before SDK dispatch, with
 no fallback to the SDK's screen-region screenshot path. Custom canvas controls
 without accessibility elements are therefore not clickable yet. Literal typing

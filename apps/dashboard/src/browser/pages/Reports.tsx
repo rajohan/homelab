@@ -131,13 +131,19 @@ export function Reports() {
                         ]}
                     />
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:gap-x-8">
                     <Switch
+                        className="items-center sm:w-auto"
                         label="Archived reports"
                         checked={archived}
                         onChange={setArchived}
                     />
-                    <Switch label="Filter by date" checked={dated} onChange={setDated} />
+                    <Switch
+                        className="items-center sm:w-auto"
+                        label="Filter by date"
+                        checked={dated}
+                        onChange={setDated}
+                    />
                 </div>
                 {dated && (
                     <div className="grid gap-3 sm:grid-cols-2">

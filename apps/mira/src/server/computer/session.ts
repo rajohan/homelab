@@ -53,7 +53,7 @@ export class ComputerWindowSession {
      * Bind one driver to a trusted host gate, never to model-selected application names.
      * @param port - Exclusive driver for an already selected native window.
      * @param assertAvailable - Recheck the owner lease, pause state and OS desktop readiness.
-     * @param now - Monotonic clock used to expire observations after ten seconds.
+     * @param now - Monotonic clock used to expire observations after one minute.
      */
     constructor(
         port: ComputerWindowPort,
@@ -133,27 +133,27 @@ export class ComputerWindowSession {
         try {
             await this.check(combined);
             const age = observed ? this.now() - observed.time : -1;
+            // Leave time for model reasoning and transit. A stale target is a
+            // known non-dispatch, not an uncertain OS action or a revoked grant.
             if (
                 !observed ||
                 observed.id !== command.observationId ||
                 age < 0 ||
-                age > 10_000
+                age > 60_000
             )
-                throw new Error(
-                    "Read a fresh computer observation before sending input."
-                );
+                return { effect: "refused" };
             if (
                 command.action === "click" &&
                 (command.x >= observed.width || command.y >= observed.height)
             )
-                throw new Error("Computer input is outside the observed window.");
+                return { effect: "refused" };
             if (command.action === "click" && !observed.coordinateInput)
-                throw new Error("Use an observed element token for this window.");
+                return { effect: "refused" };
             if (
                 command.action === "click_element" &&
                 !observed.elements.has(command.elementToken)
             )
-                throw new Error("Computer element was not in the current observation.");
+                return { effect: "refused" };
             dispatched = true;
             let delivery: Promise<ComputerActionResult>;
             if (command.action === "click")

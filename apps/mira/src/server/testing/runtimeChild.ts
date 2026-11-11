@@ -13,6 +13,8 @@ let initialized = false;
 let notified = false;
 let activeTurn = 0;
 let policyThreadDeleted = false;
+let sequenceCalls = 0;
+const sequenceLength = Number(/^tool-sequence-(\d+)$/.exec(mode)?.[1] ?? 0);
 const write = (value: unknown) => process.stdout.write(JSON.stringify(value) + "\n");
 const reader = createInterface({ input: process.stdin });
 for await (const line of reader) {
@@ -24,6 +26,20 @@ for await (const line of reader) {
         error?: unknown;
     };
     if (!message.method) {
+        if (sequenceLength && ++sequenceCalls < sequenceLength) {
+            write({
+                id: `host-call-${sequenceCalls + 1}`,
+                method: "item/tool/call",
+                params: {
+                    threadId: "thread-test",
+                    turnId: `turn-${activeTurn}`,
+                    callId: `call-${sequenceCalls + 1}`,
+                    tool: "echo",
+                    arguments: {},
+                },
+            });
+            continue;
+        }
         if (
             mode.startsWith("tool-") ||
             mode === "approval" ||

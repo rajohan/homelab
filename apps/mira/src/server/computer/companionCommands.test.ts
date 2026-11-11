@@ -135,6 +135,7 @@ function fixture(mode: "control" | "view" = "control") {
         connectionId,
         signal: stopped.signal,
         host,
+        now: () => clock,
     });
     const run = () =>
         runComputerCommandLoop({
@@ -366,6 +367,56 @@ test("accepted command loop delivers one observation and input serially then wai
     ).toEqual(["observe", "finish", "type", "finish", "port-close", "host-close"]);
     expect(f.received[1]!.result).toEqual({ effect: "confirmed" });
     expect(f.controller.signal.aborted).toBe(true);
+});
+
+test("a stale input completes as refused and the same command loop continues with a fresh observation", async () => {
+    const f = fixture();
+    await f.controller.review();
+    const scope = f.controller.commandBinding();
+    let count = 0;
+    f.handlers.finish = (body) => {
+        if (f.received.length === 1) f.advance(61_000);
+        return { commandId: body.commandId, accepted: true };
+    };
+    f.handlers.claim = () => {
+        count++;
+        if (count === 1 || count === 3) return { command: { ...command(), ...scope } };
+        if (count === 2 || count === 4) {
+            const observation = f.received[count === 2 ? 0 : 2]!.result as {
+                observationId: string;
+            };
+            return {
+                command: {
+                    ...command(),
+                    ...scope,
+                    operation: {
+                        action: "click",
+                        observationId: observation.observationId,
+                        x: 1,
+                        y: 1,
+                    },
+                },
+            };
+        }
+        return { command: null };
+    };
+    await f.run();
+    expect(f.received[1]!.result).toEqual({ effect: "refused" });
+    expect(f.received[3]!.result).toEqual({ effect: "confirmed" });
+    expect(
+        f.events.filter((event) =>
+            ["observe", "click", "finish", "port-close"].includes(event)
+        )
+    ).toEqual([
+        "observe",
+        "finish",
+        "finish",
+        "observe",
+        "finish",
+        "click",
+        "finish",
+        "port-close",
+    ]);
 });
 
 test("a replayed command retires the controller instead of invoking the native port twice", async () => {

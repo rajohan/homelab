@@ -550,7 +550,9 @@ test("composed consent controller forwards observed element input and preserves 
                     effect: "confirmed",
                 });
                 expect(f.events.filter((event) => event === "element")).toHaveLength(1);
-                await rejects(controller.act(input, signal()), /fresh/);
+                expect(await controller.act(input, signal())).toEqual({
+                    effect: "refused",
+                });
             }
         } finally {
             await controller.close();

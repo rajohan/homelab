@@ -12,6 +12,7 @@ import {
     pilotArguments,
     pilotEnvironment,
 } from "./configuration";
+import { runtimeToolCallLimit } from "./protocol";
 import { RuntimeResponseError } from "./responseError";
 import { RpcProcess } from "./rpcProcess";
 import { createMiraToolRouter } from "./toolRouter";
@@ -30,6 +31,33 @@ const options = (mode = "ok") => ({
 });
 
 describe("Mira runtime transport", () => {
+    test.each([80, runtimeToolCallLimit + 1])(
+        "allows extended sequential work with a bounded non-replaying call history: %s",
+        async (count) => {
+            const runtime = await CodexRuntime.connect(options(`tool-sequence-${count}`));
+            let calls = 0;
+            try {
+                const thread = await runtime.startThread("synthetic", process.cwd(), [
+                    {
+                        name: "echo",
+                        description: "Synthetic sequential operation",
+                        inputSchema: {},
+                        execute: () => {
+                            calls++;
+                            return Promise.resolve("confirmed");
+                        },
+                    },
+                ]);
+                const result = await runtime.turn(thread, "Complete the sequential work");
+                expect(calls).toBe(Math.min(count, runtimeToolCallLimit));
+                expect(result.text).toContain(
+                    count > runtimeToolCallLimit ? "No new action was sent" : "confirmed"
+                );
+            } finally {
+                await runtime.close();
+            }
+        }
+    );
     test.each(["steer-ok", "steer-error", "steer-wrong-receipt"])(
         "steering binds guidance and acknowledgements to the active turn: %s",
         async (mode) => {

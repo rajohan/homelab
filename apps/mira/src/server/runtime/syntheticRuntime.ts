@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import * as v from "valibot";
 
 import type { CodexRuntime } from "./codexRuntime";
-import type { RuntimeTool, TurnResult } from "./protocol";
+import { type RuntimeTool, runtimeToolCallLimit, type TurnResult } from "./protocol";
 import { isSyntheticModel, syntheticModels } from "./syntheticCatalog";
 import { syntheticBaseUrl, type SyntheticConfiguration } from "./syntheticConfiguration";
 import { syntheticEvents } from "./syntheticStream";
@@ -387,7 +387,7 @@ export class SyntheticRuntime {
                 { role: "user", content },
             ];
             await options.onStarted?.(active.id);
-            for (let step = 0; step < 40; step++) {
+            for (let step = 0; step < runtimeToolCallLimit + 8; step++) {
                 signal.throwIfAborted();
                 for (const guidance of active.guidance.splice(0))
                     messages.push({ role: "user", content: guidance });
@@ -493,9 +493,13 @@ export class SyntheticRuntime {
                     const tool = thread.tools.find(
                         (candidate) => candidate.name === call.function.name
                     );
-                    if (!call.id || identifiers.has(call.id) || !tool || ++calls > 32)
+                    if (!call.id || identifiers.has(call.id) || !tool)
                         throw new Error(
                             "Synthetic returned an invalid or repeated tool call."
+                        );
+                    if (++calls > runtimeToolCallLimit)
+                        throw new Error(
+                            "Synthetic reached the turn tool-call limit; no further action was sent."
                         );
                     identifiers.add(call.id);
                     return {
