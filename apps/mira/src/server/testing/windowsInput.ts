@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { realpath } from "node:fs/promises";
 import path from "node:path";
@@ -197,26 +198,28 @@ export async function qualifyWindowsInput(directory: string, root: string) {
                 return candidates[0]!.token;
             };
             const firstToken = token("Fixture entry");
-            await denied(() =>
-                session.act(
+            assert.deepEqual(
+                await session.act(
                     {
                         action: "click",
                         observationId: frame.observationId,
                         ...state.entry,
                     },
                     signal
-                )
+                ),
+                { effect: "refused" }
             );
             frame = await session.observe(signal);
-            await denied(() =>
-                session.act(
+            assert.deepEqual(
+                await session.act(
                     {
                         action: "click_element",
                         observationId: frame.observationId,
                         elementToken: firstToken,
                     },
                     signal
-                )
+                ),
+                { effect: "refused" }
             );
             frame = await session.observe(signal);
             const original = frame.content.find((item) => item.type === "image")!.data;
@@ -233,7 +236,7 @@ export async function qualifyWindowsInput(directory: string, root: string) {
             const input = { action: "type", observationId: frame.observationId, text };
             await session.act(input, signal);
             await eventually((current) => current.text === text);
-            await denied(() => session.act(input, signal));
+            assert.deepEqual(await session.act(input, signal), { effect: "refused" });
             frame = await session.observe(signal);
             await session.act(
                 {
@@ -333,7 +336,9 @@ export async function qualifyWindowsInput(directory: string, root: string) {
                 };
                 await desktop.act(click, signal);
                 await eventually((current) => current.count === 2);
-                await denied(() => desktop.act(click, signal));
+                assert.deepEqual(await desktop.act(click, signal), { effect: "refused" });
+                const afterReplay = await readState();
+                assert.equal(afterReplay.count, 2);
                 desktopFrame = await desktop.observe(signal);
                 if (
                     desktopFrame.content.find((item) => item.type === "image")!.data ===

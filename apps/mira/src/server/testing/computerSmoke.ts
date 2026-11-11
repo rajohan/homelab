@@ -171,13 +171,9 @@ export async function qualifyComputerFixture() {
         };
         await session.act(type, signal);
         await assertEventually((state) => state.text === literal);
-        let replayDenied = false;
-        try {
-            await session.act(type, signal);
-        } catch {
-            replayDenied = true;
-        }
-        if (!replayDenied) throw new Error("An input observation was reused.");
+        const replay = await session.act(type, signal);
+        if (replay.effect !== "refused")
+            throw new Error("An input observation was reused.");
         frame = await session.observe(signal);
         await session.act(
             { action: "click", observationId: frame.observationId, ...fixture.button },
