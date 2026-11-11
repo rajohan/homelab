@@ -6,6 +6,8 @@ using System.Windows.Forms;
 
 internal static class MiraWindowTests
 {
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MinMaxInfo { internal Point Reserved, MaxSize, MaxPosition, MinTrackSize, MaxTrackSize; }
     [DllImport("user32.dll")]
     private static extern IntPtr SendMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam);
 
@@ -19,6 +21,15 @@ internal static class MiraWindowTests
             var create = typeof(Control).GetMethod("CreateControl", BindingFlags.Instance | BindingFlags.NonPublic, null, new[] { typeof(bool) }, null);
             create.Invoke(form, new object[] { true });
             check(form.ClientSize == form.Size);
+            var limitsPointer = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(MinMaxInfo)));
+            try {
+                Marshal.StructureToPtr(new MinMaxInfo(), limitsPointer, false);
+                SendMessage(handle, 0x24, IntPtr.Zero, limitsPointer);
+                var limits = (MinMaxInfo)Marshal.PtrToStructure(limitsPointer, typeof(MinMaxInfo));
+                var screen = Screen.FromHandle(handle);
+                check(limits.MaxPosition == new Point(screen.WorkingArea.Left - screen.Bounds.Left, screen.WorkingArea.Top - screen.Bounds.Top));
+                check(limits.MaxSize == new Point(screen.WorkingArea.Width, screen.WorkingArea.Height));
+            } finally { Marshal.FreeHGlobal(limitsPointer); }
             form.PerformLayout();
             int width = form.ClientSize.Width, height = form.ClientSize.Height;
             check(form.HitTest(new Point(0, 0)) == 13);

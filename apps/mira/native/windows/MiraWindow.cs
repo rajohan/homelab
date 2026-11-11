@@ -28,6 +28,8 @@ internal class MiraWindow : Form
     private struct Rect { internal int Left, Top, Right, Bottom; }
     [StructLayout(LayoutKind.Sequential)]
     private struct Margins { internal int Left, Right, Top, Bottom; }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MinMaxInfo { internal Point Reserved, MaxSize, MaxPosition, MinTrackSize, MaxTrackSize; }
     [DllImport("user32.dll")]
     private static extern IntPtr SendMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll")]
@@ -149,6 +151,17 @@ internal class MiraWindow : Form
 
     protected override void WndProc(ref Message message)
     {
+        if (message.Msg == 0x24) { // WM_GETMINMAXINFO
+            base.WndProc(ref message);
+            // Constrain the outer window, not just its client area. An outer
+            // window covering the monitor is treated as fullscreen by Explorer.
+            var screen = Screen.FromHandle(Handle);
+            var limits = (MinMaxInfo)Marshal.PtrToStructure(message.LParam, typeof(MinMaxInfo));
+            limits.MaxPosition = new Point(screen.WorkingArea.Left - screen.Bounds.Left, screen.WorkingArea.Top - screen.Bounds.Top);
+            limits.MaxSize = new Point(screen.WorkingArea.Width, screen.WorkingArea.Height);
+            Marshal.StructureToPtr(limits, message.LParam, false);
+            message.Result = IntPtr.Zero; return;
+        }
         if (message.Msg == 0x47 && !updatingWindowBounds) { // WM_WINDOWPOSCHANGED
             // .NET Framework restores the saved client size plus a native frame,
             // although our frame is already inside that client area. Keep the

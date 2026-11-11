@@ -250,7 +250,7 @@ export async function enqueueMiraComputerCommand(
             limits.owned >= 8 ||
             limits.busy ||
             limits.attempted ||
-            limits.recent >= (continuedAssistance ? miraComputerCommandLimit : 32) ||
+            limits.recent >= miraComputerCommandLimit ||
             (continuedAssistance && limits.lastMinute >= 32) ||
             limits.accessTotal >= miraComputerCommandLimit
         )

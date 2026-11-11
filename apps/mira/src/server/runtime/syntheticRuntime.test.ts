@@ -53,6 +53,60 @@ const transport = (
         { preconnect: fetch.preconnect }
     );
 
+test("Synthetic completes more than forty sequential tool steps without losing the task", async () => {
+    let requests = 0,
+        executed = 0;
+    const runtime = new SyntheticRuntime(
+        configuration,
+        "operator",
+        transport(() => {
+            requests++;
+            return requests > 80
+                ? stream([chunk({ content: "Finished" }, "stop")])
+                : stream([
+                      chunk(
+                          {
+                              tool_calls: [
+                                  {
+                                      index: 0,
+                                      id: `call-${requests}`,
+                                      type: "function",
+                                      function: { name: "observe", arguments: "{}" },
+                                  },
+                              ],
+                          },
+                          "tool_calls"
+                      ),
+                  ]);
+        })
+    );
+    try {
+        const thread = await runtime.startThread(
+            settings.model,
+            "/unused",
+            [
+                {
+                    name: "observe",
+                    description: "Synthetic sequential observation",
+                    inputSchema: {},
+                    execute: () => {
+                        executed++;
+                        return Promise.resolve("observed");
+                    },
+                },
+            ],
+            "Fixture"
+        );
+        const result = await runtime.turn(thread, "Complete all observations", {
+            settings,
+        });
+        expect(result.text).toBe("Finished");
+        expect(executed).toBe(80);
+    } finally {
+        await runtime.close();
+    }
+});
+
 test("Synthetic keeps aliases while their current target and capabilities change", () => {
     const original = syntheticModels({ data: [model] });
     const changed = syntheticModels({

@@ -11,6 +11,7 @@ import {
     type RuntimeEvent,
     type RuntimeInput,
     type RuntimeTool,
+    runtimeToolCallLimit,
     threadSchema,
     toolCallSchema,
     type TurnResult,
@@ -462,10 +463,19 @@ export class CodexRuntime {
             !active ||
             active.threadId !== call.threadId ||
             acknowledgedId !== call.turnId ||
-            active.calls.has(call.callId) ||
-            active.calls.size >= 32
+            active.calls.has(call.callId)
         )
             throw new Error("Tool call does not belong to the active run.");
+        if (active.calls.size >= runtimeToolCallLimit)
+            return {
+                success: false,
+                contentItems: [
+                    {
+                        type: "inputText",
+                        text: "This turn reached its tool-call limit. No new action was sent. Summarize completed work and explain what remains.",
+                    },
+                ],
+            };
         const tool = this.threads
             .get(call.threadId)
             ?.find((entry) => entry.name === call.tool);

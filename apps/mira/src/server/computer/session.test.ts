@@ -67,7 +67,7 @@ test("one fresh observation permits one input and preserves an unverified outcom
     const frame = await f.session.observe(signal());
     const command = { action: "click", observationId: frame.observationId, x: 20, y: 20 };
     expect(await f.session.act(command, signal())).toEqual({ effect: "unverified" });
-    await assert.rejects(f.session.act(command, signal()), /fresh/);
+    expect(await f.session.act(command, signal())).toEqual({ effect: "refused" });
     const next = await f.session.observe(signal());
     expect(
         await f.session.act(
@@ -84,12 +84,12 @@ test("stale, superseded, cross-session and out-of-frame inputs never reach the d
         const f = fixture();
         const frame = await f.session.observe(signal());
         let id = frame.observationId;
-        if (mode === "old") f.advance(10_001);
+        if (mode === "old") f.advance(60_001);
         if (mode === "clock") f.advance(-1);
         if (mode === "superseded") await f.session.observe(signal());
         if (mode === "foreign") id = crypto.randomUUID();
-        await assert.rejects(
-            f.session.act(
+        expect(
+            await f.session.act(
                 {
                     action: "click",
                     observationId: id,
@@ -98,7 +98,7 @@ test("stale, superseded, cross-session and out-of-frame inputs never reach the d
                 },
                 signal()
             )
-        );
+        ).toEqual({ effect: "refused" });
         expect(f.actions).toEqual([]);
         await f.session.close();
     }
@@ -259,7 +259,7 @@ test("element input requires current membership and is consumed once", async () 
         elementToken: "s00000001:1",
     };
     expect(await f.session.act(command, signal())).toEqual({ effect: "confirmed" });
-    await assert.rejects(f.session.act(command, signal()), /fresh/);
+    expect(await f.session.act(command, signal())).toEqual({ effect: "refused" });
     expect(f.actions).toEqual(["s00000001:1"]);
     await f.session.close();
 });
@@ -271,14 +271,12 @@ test("expired, foreign and missing elements never dispatch", async () => {
         "missing",
 
         "coordinates",
-        "revoked",
     ]) {
         const f = elementFixture();
         const frame = await f.session.observe(signal());
-        if (mode === "expired") f.advance(10_001);
-        if (mode === "revoked") f.revoke();
-        await assert.rejects(
-            f.session.act(
+        if (mode === "expired") f.advance(60_001);
+        expect(
+            await f.session.act(
                 mode === "coordinates"
                     ? { action: "click", observationId: frame.observationId, x: 1, y: 1 }
                     : {
@@ -291,7 +289,7 @@ test("expired, foreign and missing elements never dispatch", async () => {
                       },
                 signal()
             )
-        );
+        ).toEqual({ effect: "refused" });
         expect(f.actions).toEqual([]);
         await f.session.close();
     }
@@ -312,5 +310,23 @@ test("session exports pixels and bounded targets without raw driver tree text", 
     expect(frame.content).toHaveLength(1);
     expect(frame.content[0]?.type).toBe("image");
     expect(frame.elements).toHaveLength(1);
+    await f.session.close();
+});
+
+test("revoked element access still rejects input before native dispatch", async () => {
+    const f = elementFixture();
+    const frame = await f.session.observe(signal());
+    f.revoke();
+    await assert.rejects(
+        f.session.act(
+            {
+                action: "click_element",
+                observationId: frame.observationId,
+                elementToken: "s00000001:1",
+            },
+            signal()
+        )
+    );
+    expect(f.actions).toEqual([]);
     await f.session.close();
 });

@@ -3,6 +3,9 @@ import * as v from "valibot";
 
 import type { RuntimeToolResult } from "./toolResult";
 
+/** Bound retained call identities without cutting normal interactive work off after a few clicks. */
+export const runtimeToolCallLimit = 1024;
+
 const id = v.union([v.string(), v.pipe(v.number(), v.integer())]);
 export const envelopeSchema = v.union([
     v.object({ id, method: v.string(), params: v.optional(v.unknown()) }),

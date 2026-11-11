@@ -232,26 +232,62 @@ test("persistent rotation invalidates old observation tokens and requires confir
             if (failure === "offline") f.unavailable();
             if (failure === "token") {
                 await f.controller.observe(signal());
-                await rejects(
-                    f.controller.act(
+                expect(
+                    await f.controller.act(
                         {
                             action: "type",
                             observationId: first.observationId,
                             text: "Stale",
                         },
                         signal()
-                    ),
-                    /fresh computer observation/
-                );
+                    )
+                ).toEqual({ effect: "refused" });
             } else {
                 await rejects(f.controller.observe(signal()));
                 expect(f.events.filter((event) => event === "open")).toHaveLength(1);
             }
             expect(f.events).not.toContain("type");
-            expect(f.controller.signal.aborted).toBe(true);
+            expect(f.controller.signal.aborted).toBe(failure !== "token");
         } finally {
             await f.controller.close().catch(() => {});
         }
+    }
+});
+
+test("model latency does not revoke consent and stale input can be reconsidered after observation", async () => {
+    const f = fixture("control", true);
+    try {
+        await f.controller.review();
+        const first = await f.controller.observe(signal());
+        f.advance(43_000);
+        expect(
+            await f.controller.act(
+                { action: "click", observationId: first.observationId, x: 1, y: 1 },
+                signal()
+            )
+        ).toEqual({ effect: "confirmed" });
+        const stale = await f.controller.observe(signal());
+        f.advance(60_001);
+        expect(
+            await f.controller.act(
+                { action: "click", observationId: stale.observationId, x: 1, y: 1 },
+                signal()
+            )
+        ).toEqual({ effect: "refused" });
+        expect(f.events.filter((event) => event === "click")).toHaveLength(1);
+        expect(f.events).not.toContain("stop");
+        expect(f.controller.signal.aborted).toBe(false);
+        const fresh = await f.controller.observe(signal());
+        expect(
+            await f.controller.act(
+                { action: "click", observationId: fresh.observationId, x: 2, y: 2 },
+                signal()
+            )
+        ).toEqual({ effect: "confirmed" });
+        expect(f.events.filter((event) => event === "click")).toHaveLength(2);
+        expect(f.events.filter((event) => event === "prompt")).toHaveLength(1);
+    } finally {
+        await f.controller.close();
     }
 });
 

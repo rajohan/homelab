@@ -657,13 +657,11 @@ test("per-access, account and global admission limits bound durable payload stor
     const base = await operationFixture();
     try {
         const f = await session(base);
-        for (let index = 0; index < 32; index++) {
-            const queued = await f.enqueue(input());
-            await f.claim();
-            await f.finish(queued.id, { effect: "confirmed" });
-            await takeMiraComputerCommand(f.worker, queued.id);
-        }
+        const queued = await f.enqueue(input());
         await rejects(f.enqueue(), /limit/);
+        await f.claim();
+        await f.finish(queued.id, { effect: "confirmed" });
+        await takeMiraComputerCommand(f.worker, queued.id);
         const owned = [];
         for (let index = 0; index < 8; index++) {
             const next = await session(base);
@@ -690,7 +688,7 @@ test("per-access, account and global admission limits bound durable payload stor
     }
 }, 30_000);
 
-test("live assistance can observe beyond 32 commands while keeping its per-minute limit", async () => {
+test("manual work and live assistance continue beyond 32 commands while live assistance keeps its per-minute limit", async () => {
     const f = await session(await operationFixture());
     try {
         await f.client`UPDATE mira_runs SET settings=jsonb_set(settings,'{liveAssistanceMinutes}','60') WHERE id=${f.run.id}`;
@@ -707,7 +705,11 @@ test("live assistance can observe beyond 32 commands while keeping its per-minut
         await f.finish(continued.id, image());
         await takeMiraComputerCommand(f.worker, continued.id);
         await f.client`UPDATE mira_runs SET settings=jsonb_set(settings,'{liveAssistanceMinutes}','0') WHERE id=${f.run.id}`;
-        await rejects(f.enqueue(), /limit/);
+        const manual = await f.enqueue();
+        await f.claim();
+        expect(await f.finish(manual.id, image())).toMatchObject({ accepted: true });
+        const outcome = await takeMiraComputerCommand(f.worker, manual.id);
+        expect(outcome.state).toBe("completed");
     } finally {
         await f.close();
     }
