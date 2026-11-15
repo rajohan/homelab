@@ -12,12 +12,18 @@ interface HostCommandResult {
 
 /** An observed command failure with private output kept separate from its operational message. */
 export class MiraHostCommandFailure extends Error {
+    readonly result: HostCommandResult;
+
     /**
+     * Preserve observed diagnostics without copying them into operational error text.
      * @param result - Observed exit and bounded output; failure does not imply partial changes were undone.
      */
-    constructor(readonly result: HostCommandResult) {
-        super(`Host command exited with status ${result.exitCode}. Inspect the output and any partial effects before retrying.`);
+    constructor(result: HostCommandResult) {
+        super(
+            `Host command exited with status ${result.exitCode}. Inspect the output and any partial effects before retrying.`
+        );
         this.name = "MiraHostCommandFailure";
+        this.result = result;
     }
 }
 

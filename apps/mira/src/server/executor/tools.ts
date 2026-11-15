@@ -743,7 +743,12 @@ export function createMiraTools(
                     uncertain = !known;
                     let message =
                         "The action outcome is uncertain. Do not retry; review this run before continuing.";
-                    if (known && (error instanceof MiraFailure || error instanceof MiraHostCommandFailure)) message = error.message;
+                    if (
+                        known &&
+                        (error instanceof MiraFailure ||
+                            error instanceof MiraHostCommandFailure)
+                    )
+                        message = error.message;
                     else if (readOnly && definition.name === "mira_web_search")
                         message = "Web search failed. Check the query and try again.";
                     else if (readOnly && definition.name.startsWith("mira_homelab_"))
@@ -761,8 +766,11 @@ export function createMiraTools(
                     }
                     return JSON.stringify({
                         ok: false,
-                        retryable: !uncertain && !(error instanceof MiraHostCommandFailure),
-                        ...(!uncertain && error instanceof MiraHostCommandFailure ? { result: error.result } : {}),
+                        retryable:
+                            !uncertain && !(error instanceof MiraHostCommandFailure),
+                        ...(!uncertain && error instanceof MiraHostCommandFailure
+                            ? { result: error.result }
+                            : {}),
                         message: uncertain
                             ? "The action outcome is uncertain. Do not retry; review this run before continuing."
                             : message,

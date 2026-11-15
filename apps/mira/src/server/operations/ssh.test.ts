@@ -51,13 +51,29 @@ test("host transport sends literal stdin, retains observed exit codes and drains
 });
 
 test("an observed nonzero command is a known failure with bounded private diagnostics", async () => {
-    await rejects(executeMiraHostCommand(target, command, new AbortController().signal, (_args, stdin) => child("process.stdout.write('partial'); process.stderr.write('failure detail'); process.exitCode=7;", stdin)), (error: unknown) => {
-        expect(error).toBeInstanceOf(MiraHostCommandFailure);
-        const failure = error as MiraHostCommandFailure;
-        expect(failure.result).toMatchObject({ exitCode: 7, stdout: "partial", stderr: "failure detail" });
-        expect(failure.message).not.toContain("failure detail");
-        return true;
-    });
+    await rejects(
+        executeMiraHostCommand(
+            target,
+            command,
+            new AbortController().signal,
+            (_args, stdin) =>
+                child(
+                    "process.stdout.write('partial'); process.stderr.write('failure detail'); process.exitCode=7;",
+                    stdin
+                )
+        ),
+        (error: unknown) => {
+            expect(error).toBeInstanceOf(MiraHostCommandFailure);
+            const failure = error as MiraHostCommandFailure;
+            expect(failure.result).toMatchObject({
+                exitCode: 7,
+                stdout: "partial",
+                stderr: "failure detail",
+            });
+            expect(failure.message).not.toContain("failure detail");
+            return true;
+        }
+    );
 });
 
 test("SSH disconnect is uncertain and is never retried", async () => {
