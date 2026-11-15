@@ -23,6 +23,7 @@ function fixture(
     options: {
         tag?: string;
         missingManifest?: boolean;
+        missingBuild?: boolean;
         status?: string;
         manifest?: unknown;
         conclusion?: string;
@@ -90,17 +91,19 @@ function fixture(
             });
         if (url.includes("/actions/runs?"))
             return Response.json({
-                workflow_runs: [
-                    {
-                        id: 100,
-                        run_attempt: options.attempt ?? 1,
-                        head_sha: revision,
-                        event: "release",
-                        path: ".github/workflows/container-images.yml",
-                        status: options.status ?? "completed",
-                        conclusion: options.conclusion ?? "success",
-                    },
-                ],
+                workflow_runs: options.missingBuild
+                    ? []
+                    : [
+                          {
+                              id: 100,
+                              run_attempt: options.attempt ?? 1,
+                              head_sha: revision,
+                              event: "release",
+                              path: ".github/workflows/container-images.yml",
+                              status: options.status ?? "completed",
+                              conclusion: options.conclusion ?? "success",
+                          },
+                      ],
             });
         if (url.includes("/actions/runs/100/artifacts?"))
             return Response.json({ artifacts: options.artifacts ?? [evidence] });
@@ -647,3 +650,17 @@ test.each(["failure", "cancelled", "success"])(
         expect(result.images).toEqual([]);
     }
 );
+
+test("a release without a workflow run never claims to be queued or publishing", async () => {
+    const client = fixture({ missingManifest: true, missingBuild: true });
+    const result = await readHomelabRelease(
+        "demo/homelab",
+        undefined,
+        AbortSignal.timeout(1000),
+        client.request
+    );
+    expect(result.tests).toBe("not_started");
+    expect(result.verified).toBe(false);
+    expect(result.buildUrl).toBeNull();
+    expect(result.images).toEqual([]);
+});

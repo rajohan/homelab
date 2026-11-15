@@ -2,7 +2,7 @@ import type { MiraDaytonaJob } from "@homelab/contracts/miraDaytona";
 import {
     Button,
     Card,
-    ErrorNotice,
+    InfiniteScrollTrigger,
     LoadingState,
     Modal,
     SectionHeader,
@@ -51,7 +51,6 @@ export function CodeCheckPicker({
         <Modal title="Choose a successful edit check" size="wide" onClose={onClose}>
             <div className="space-y-4">
                 {query.isPending && <LoadingState label="Loading checks…" />}
-                {query.error && <ErrorNotice error={query.error} />}
                 {rows.map(({ job, commit }) => (
                     <Card key={job.id} className="bg-primary-900/40">
                         <SectionHeader
@@ -72,16 +71,18 @@ export function CodeCheckPicker({
                         edit check in Cloud jobs first.
                     </p>
                 )}
-                {query.hasNextPage && (
-                    <Button
-                        variant="secondary"
-                        fullWidth
-                        busy={query.isFetchingNextPage}
-                        onClick={() => void query.fetchNextPage()}
-                    >
-                        Load more
-                    </Button>
-                )}
+                <InfiniteScrollTrigger
+                    itemCount={query.data?.pages.length ?? 0}
+                    hasMore={query.hasNextPage}
+                    loading={query.isFetchingNextPage}
+                    refreshing={query.isRefetching}
+                    error={query.isError ? query.error : undefined}
+                    onLoadMore={() =>
+                        void (query.isRefetchError
+                            ? query.refetch()
+                            : query.fetchNextPage())
+                    }
+                />
             </div>
         </Modal>
     );

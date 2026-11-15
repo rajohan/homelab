@@ -4,7 +4,7 @@ import {
     Card,
     ConfirmDialog,
     DropdownMenu,
-    ErrorNotice,
+    InfiniteScrollTrigger,
     LoadingState,
     Markdown,
     Modal,
@@ -77,7 +77,6 @@ export function MemoryLibrary({ onClose }: { readonly onClose: () => void }) {
                 />
                 <SearchInput label="Search memory" value={search} onChange={setSearch} />
                 {query.isPending && <LoadingState label="Loading memory…" />}
-                {query.error && <ErrorNotice error={query.error} />}
                 {query.data?.pages
                     .flatMap((page) => page.rows)
                     .map((memory) => (
@@ -116,16 +115,18 @@ export function MemoryLibrary({ onClose }: { readonly onClose: () => void }) {
                         memory is enabled. You can also add it here.
                     </p>
                 )}
-                {query.hasNextPage && (
-                    <Button
-                        variant="secondary"
-                        fullWidth
-                        busy={query.isFetchingNextPage}
-                        onClick={() => void query.fetchNextPage()}
-                    >
-                        Load more
-                    </Button>
-                )}
+                <InfiniteScrollTrigger
+                    itemCount={query.data?.pages.length ?? 0}
+                    hasMore={query.hasNextPage}
+                    loading={query.isFetchingNextPage}
+                    refreshing={query.isRefetching}
+                    error={query.isError ? query.error : undefined}
+                    onLoadMore={() =>
+                        void (query.isRefetchError
+                            ? query.refetch()
+                            : query.fetchNextPage())
+                    }
+                />
             </div>
         </Modal>
     );

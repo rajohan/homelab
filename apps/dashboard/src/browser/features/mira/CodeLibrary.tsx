@@ -5,8 +5,8 @@ import {
     Card,
     ConfirmDialog,
     DropdownMenu,
-    ErrorNotice,
     formatDateTime,
+    InfiniteScrollTrigger,
     LoadingState,
     Modal,
     SectionHeader,
@@ -86,7 +86,6 @@ export function CodeLibrary({
                 }
             />
             {query.isPending && <LoadingState label="Loading code proposals…" />}
-            {query.error && <ErrorNotice error={query.error} />}
             {!query.isPending && !query.error && rows.length === 0 && (
                 <p className="text-sm text-primary-400">
                     No code proposals yet. Complete a structured-edit check, then create a
@@ -159,16 +158,16 @@ export function CodeLibrary({
                     </Card>
                 ))}
             </div>
-            {query.hasNextPage && (
-                <Button
-                    variant="secondary"
-                    fullWidth
-                    busy={query.isFetchingNextPage}
-                    onClick={() => void query.fetchNextPage()}
-                >
-                    Load more
-                </Button>
-            )}
+            <InfiniteScrollTrigger
+                itemCount={query.data?.pages.length ?? 0}
+                hasMore={query.hasNextPage}
+                loading={query.isFetchingNextPage}
+                refreshing={query.isRefetching}
+                error={query.isError ? query.error : undefined}
+                onLoadMore={() =>
+                    void (query.isRefetchError ? query.refetch() : query.fetchNextPage())
+                }
+            />
         </div>
     );
     return onClose ? (

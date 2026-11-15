@@ -9,7 +9,6 @@ test("continuation loads automatically once per page and exposes only failure re
     const fixture = intersectionFixture();
     const load = mock(() => {});
     const props = {
-        rootRef: { current: null },
         itemCount: 20,
         hasMore: true,
         loading: false,

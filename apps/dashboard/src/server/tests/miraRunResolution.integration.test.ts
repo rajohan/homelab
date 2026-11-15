@@ -49,6 +49,7 @@ async function fixture() {
                 recentlyClosed: v.array(
                     v.object({
                         id: v.string(),
+                        title: v.string(),
                         resolution: v.object({
                             reason: v.string(),
                             outcome: v.string(),
@@ -115,7 +116,11 @@ test.each(["reviewed", "dismissed"] as const)(
             const current = await f.readTool();
             expect(current.rows).toEqual([]);
             expect(current.recentlyClosed).toEqual([
-                { id, resolution: { outcome, reason: input.reason } },
+                {
+                    id,
+                    title: "Follow-up fixture",
+                    resolution: { outcome, reason: input.reason },
+                },
             ]);
             const history = await f.readTool({ includeResolved: true });
             expect(history.rows).toMatchObject([
@@ -181,6 +186,35 @@ test("closing older history changes the heartbeat fingerprint beyond the recent 
             reason: "Historical task is no longer relevant.",
         });
         expect(await fingerprint()).not.toBe(before);
+    } finally {
+        await f.close();
+    }
+});
+
+test("deleted conversations retain owned follow-up decisions without disclosing their old title", async () => {
+    const f = await fixture();
+    try {
+        const id = await f.historical("failed");
+        await f.client`UPDATE mira_conversations SET deleted_at=now() WHERE id=${f.chat.id}`;
+        await f.api.runs.resolve({
+            id,
+            outcome: "dismissed",
+            reason: "Historical task is no longer relevant.",
+        });
+        const history = await f.readTool();
+        expect(history.recentlyClosed).toEqual([
+            {
+                id,
+                title: "Deleted conversation",
+                resolution: {
+                    outcome: "dismissed",
+                    reason: "Historical task is no longer relevant.",
+                },
+            },
+        ]);
+        expect(history.rows).toEqual([]);
+        const detail = await f.api.runs.read({ id });
+        expect(detail.run.followupResolution?.outcome).toBe("dismissed");
     } finally {
         await f.close();
     }

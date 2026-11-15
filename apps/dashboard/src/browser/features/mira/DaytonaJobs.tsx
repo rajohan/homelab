@@ -3,7 +3,7 @@ import {
     Badge,
     Button,
     Card,
-    ErrorNotice,
+    InfiniteScrollTrigger,
     LoadingState,
     Modal,
     SectionHeader,
@@ -56,7 +56,6 @@ export function DaytonaJobs({
                 }
             />
             {query.isPending && <LoadingState label="Loading code jobs…" />}
-            {query.error && <ErrorNotice error={query.error} />}
             {!query.isPending && !query.error && rows.length === 0 && (
                 <p className="text-sm text-primary-400">
                     No code jobs yet. Save a draft, then review the command and selected
@@ -100,16 +99,16 @@ export function DaytonaJobs({
                     </Card>
                 ))}
             </div>
-            {query.hasNextPage && (
-                <Button
-                    variant="secondary"
-                    fullWidth
-                    busy={query.isFetchingNextPage}
-                    onClick={() => void query.fetchNextPage()}
-                >
-                    Load more
-                </Button>
-            )}
+            <InfiniteScrollTrigger
+                itemCount={query.data?.pages.length ?? 0}
+                hasMore={query.hasNextPage}
+                loading={query.isFetchingNextPage}
+                refreshing={query.isRefetching}
+                error={query.isError ? query.error : undefined}
+                onLoadMore={() =>
+                    void (query.isRefetchError ? query.refetch() : query.fetchNextPage())
+                }
+            />
         </div>
     );
     if (editing)

@@ -1,8 +1,7 @@
 import type { MiraConversationCursor } from "@homelab/contracts/mira";
 import {
-    Button,
     Card,
-    ErrorNotice,
+    InfiniteScrollTrigger,
     LoadingState,
     queryRefresh,
     SearchInput,
@@ -88,9 +87,6 @@ export function ConversationList({
                 onChange={setArchived}
             />
             {latest.isPending && <LoadingState label="Loading conversations…" />}
-            {(latest.error || history.error) && (
-                <ErrorNotice error={latest.error ?? history.error} />
-            )}
             <nav
                 aria-label="Conversations"
                 className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain p-0.5"
@@ -116,22 +112,24 @@ export function ConversationList({
                         </time>
                     </Link>
                 ))}
+                <InfiniteScrollTrigger
+                    itemCount={conversations.length}
+                    hasMore={hasMore}
+                    loading={history.isFetching}
+                    refreshing={latest.isFetching}
+                    error={latest.error ?? history.error ?? undefined}
+                    onLoadMore={() => {
+                        if (latest.isError) void latest.refetch();
+                        else if (history.isError) void history.refetch();
+                        else {
+                            setExpanded(filter);
+                            if (history.data) void history.fetchNextPage();
+                        }
+                    }}
+                />
             </nav>
             {latest.data && conversations.length === 0 && (
                 <p className="text-sm text-primary-400">No matching conversations.</p>
-            )}
-            {hasMore && (
-                <Button
-                    fullWidth
-                    variant="secondary"
-                    busy={history.isFetching}
-                    onClick={() => {
-                        setExpanded(filter);
-                        if (history.data) void history.fetchNextPage();
-                    }}
-                >
-                    Load more
-                </Button>
             )}
         </Card>
     );

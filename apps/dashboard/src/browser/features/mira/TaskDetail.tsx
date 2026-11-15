@@ -8,6 +8,7 @@ import {
     ErrorNotice,
     formatDateTime,
     FormField,
+    InfiniteScrollTrigger,
     Markdown,
     Modal,
     SectionHeader,
@@ -226,17 +227,18 @@ export function TaskDetail({
                                 <Markdown>{entry.content}</Markdown>
                             </article>
                         ))}
-                    {query.hasNextPage && (
-                        <Button
-                            variant="secondary"
-                            fullWidth
-                            busy={query.isFetchingNextPage}
-                            onClick={() => void query.fetchNextPage()}
-                        >
-                            Older progress
-                        </Button>
-                    )}
-                    {query.error && <ErrorNotice error={query.error} />}
+                    <InfiniteScrollTrigger
+                        itemCount={query.data?.pages.length ?? 0}
+                        hasMore={query.hasNextPage}
+                        loading={query.isFetchingNextPage}
+                        refreshing={query.isRefetching}
+                        error={query.isError ? query.error : undefined}
+                        onLoadMore={() =>
+                            void (query.isRefetchError
+                                ? query.refetch()
+                                : query.fetchNextPage())
+                        }
+                    />
                     <FormField label="Add progress">
                         <Textarea
                             value={progress}

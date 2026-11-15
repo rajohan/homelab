@@ -373,3 +373,10 @@ Open **Run details** from Chat or Jobs and choose **Close follow-up** after insp
 Closing follow-up leaves the execution state, tool receipts and uncertain effects unchanged. It does not restart work, confirm that an action succeeded, approve a retry or release task-specific safety gates. Active jobs cannot be closed. Old reports remain historical snapshots.
 
 Mira's run-history tool excludes closed follow-up by default and includes recent closure decisions. `includeResolved` permits inspection of closed history. Briefs and summaries check current run status before treating historical failures as outstanding work; the recorded operator decision takes precedence over older reports or memories. This also changes the heartbeat observation fingerprint when the closed run is older than the recent history window.
+
+Conversation history, conversation lists, reports, automations, task columns/progress
+and the file, memory, mail, publication, social and code libraries load additional
+pages automatically when their scroll boundary becomes visible. Failed page requests
+retain the loaded content and offer retry. Chat prepends history without moving the
+reader, keeps live replies below it, and catches up missed live pages after reconnecting.
+Only the live conversation page polls; loaded historical pages are not repolled.

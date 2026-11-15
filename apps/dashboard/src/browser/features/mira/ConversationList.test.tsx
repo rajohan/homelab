@@ -8,14 +8,16 @@ import {
     createRouter,
     RouterProvider,
 } from "@tanstack/react-router";
-import { render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { act, render, waitFor, within } from "@testing-library/react";
 import { deserialize, serialize } from "superjson";
 
+import { intersectionFixture } from "../../../../../../tests/intersectionFixture";
 import { IdentityClientContext } from "../../identity/IdentityClientContext";
 import { ConversationList } from "./ConversationList";
 
 test("live conversation refresh does not repoll loaded history pages", async () => {
+    const intersection = intersectionFixture();
+    const screen = within(intersection.container);
     const now = new Date().toISOString();
     const first = { id: crypto.randomUUID(), title: "First chat", updatedAt: now };
     const second = { id: crypto.randomUUID(), title: "Second chat", updatedAt: now };
@@ -76,14 +78,14 @@ test("live conversation refresh does not repoll loaded history pages", async () 
             <IdentityClientContext value={identity}>
                 <RouterProvider router={router} />
             </IdentityClientContext>
-        </QueryClientProvider>
+        </QueryClientProvider>,
+        { container: intersection.container }
     );
     try {
         expect(await screen.findByRole("link", { name: /First chat/ })).toBeVisible();
-        const user = userEvent.setup();
-        await user.click(screen.getByRole("button", { name: "Load more" }));
+        act(() => intersection.intersect());
         expect(await screen.findByRole("link", { name: /Second chat/ })).toBeVisible();
-        await user.click(screen.getByRole("button", { name: "Load more" }));
+        act(() => intersection.intersect());
         expect(await screen.findByRole("link", { name: /Third chat/ })).toBeVisible();
         newer = true;
         await waitFor(
@@ -102,5 +104,6 @@ test("live conversation refresh does not repoll loaded history pages", async () 
         query.clear();
         identity.cancelActions();
         wire.mockRestore();
+        intersection.close();
     }
 }, 10_000);

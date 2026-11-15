@@ -1,12 +1,11 @@
 import type { MiraReport } from "@homelab/contracts/mira";
 import {
     Badge,
-    Button,
     buttonStyles,
     Card,
     DatePicker,
-    ErrorNotice,
     formatDateTime,
+    InfiniteScrollTrigger,
     LoadingState,
     PageHeader,
     SearchInput,
@@ -157,11 +156,6 @@ export function Reports() {
                     <LoadingState label="Loading reports…" />
                 </Card>
             )}
-            {query.error && (
-                <Card>
-                    <ErrorNotice error={query.error} />
-                </Card>
-            )}
             <div className="grid gap-4 lg:grid-cols-2">
                 {rows.map((report) => (
                     <Card key={report.id} className="space-y-3">
@@ -201,16 +195,16 @@ export function Reports() {
                     </p>
                 </Card>
             )}
-            {query.hasNextPage && (
-                <Button
-                    fullWidth
-                    variant="secondary"
-                    busy={query.isFetchingNextPage}
-                    onClick={() => void query.fetchNextPage()}
-                >
-                    Load more reports
-                </Button>
-            )}
+            <InfiniteScrollTrigger
+                itemCount={query.data?.pages.length ?? 0}
+                hasMore={query.hasNextPage}
+                loading={query.isFetchingNextPage}
+                refreshing={query.isRefetching}
+                error={query.isError ? query.error : undefined}
+                onLoadMore={() =>
+                    void (query.isRefetchError ? query.refetch() : query.fetchNextPage())
+                }
+            />
             {reportId && (
                 <ReportDetail
                     id={reportId}

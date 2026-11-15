@@ -63,6 +63,7 @@ class HostTests(unittest.TestCase):
     def command(self, arguments, _directory, timeout=60, output_file=None):
         self.calls.append(arguments)
         if arguments[0] == "/fixture/backup":
+            self.assertEqual(timeout, 900)
             output_file.write(b"PGDMPsynthetic")
         if self.failure and self.failure in arguments:
             raise host.Refusal("command_failed")

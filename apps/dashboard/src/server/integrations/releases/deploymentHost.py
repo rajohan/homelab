@@ -618,7 +618,7 @@ def run(directory):
             backup = directory / "database.dump"
             descriptor = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
             with os.fdopen(descriptor, "wb") as output:
-                command(recipe(target["backupCommand"], directory, images), target["directory"], timeout=300, output_file=output)
+                command(recipe(target["backupCommand"], directory, images), target["directory"], timeout=900, output_file=output)
                 output.flush()
                 os.fsync(output.fileno())
             with backup.open("rb") as stream:

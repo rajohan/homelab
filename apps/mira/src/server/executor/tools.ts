@@ -364,7 +364,7 @@ export function createMiraTools(
                     ORDER BY r.id DESC LIMIT 30`;
                 const recentlyClosed = await client<
                     Record<string, unknown>[]
-                >`SELECT r.id,r.conversation_id AS "conversationId",c.title,r.followup_resolution AS resolution FROM mira_runs r JOIN mira_conversations c ON c.id=r.conversation_id AND c.owner=r.owner WHERE r.owner=${run.owner} AND c.deleted_at IS NULL AND r.followup_resolution IS NOT NULL ORDER BY r.followup_resolution->>'closedAt' DESC,r.id DESC LIMIT 30`;
+                >`SELECT r.id,r.conversation_id AS "conversationId",CASE WHEN c.deleted_at IS NULL THEN c.title ELSE 'Deleted conversation' END AS title,r.followup_resolution AS resolution FROM mira_runs r JOIN mira_conversations c ON c.id=r.conversation_id AND c.owner=r.owner WHERE r.owner=${run.owner} AND r.followup_resolution IS NOT NULL ORDER BY r.followup_resolution->>'closedAt' DESC,r.id DESC LIMIT 30`;
                 return {
                     rows,
                     recentlyClosed,

@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
 
 import type { MiraMessage } from "@homelab/contracts/mira";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 
+import { intersectionFixture } from "../../../../../../tests/intersectionFixture";
 import { ChatTranscript } from "./ChatTranscript";
 
 const message = (content: string): MiraMessage => ({
@@ -36,9 +37,7 @@ test("transcript follows replies and resized content only while the reader is at
     const view = render(
         <ChatTranscript
             messages={messages}
-            before={undefined}
-            nextCursor={null}
-            onPage={() => {}}
+            continuation={{ hasMore: false, loading: false, onLoadMore: () => {} }}
         />
     );
     try {
@@ -57,9 +56,7 @@ test("transcript follows replies and resized content only while the reader is at
         view.rerender(
             <ChatTranscript
                 messages={[...messages, message("Next answer")]}
-                before={undefined}
-                nextCursor={null}
-                onPage={() => {}}
+                continuation={{ hasMore: false, loading: false, onLoadMore: () => {} }}
             />
         );
         expect(log.scrollTop).toBe(1400);
@@ -71,9 +68,7 @@ test("transcript follows replies and resized content only while the reader is at
             <ChatTranscript
                 messages={[...messages, message("Streaming answer")]}
                 activity={<p>Thinking…</p>}
-                before={undefined}
-                nextCursor={null}
-                onPage={() => {}}
+                continuation={{ hasMore: false, loading: false, onLoadMore: () => {} }}
             />
         );
         act(() => resized());
@@ -98,18 +93,68 @@ test("transcript follows replies and resized content only while the reader is at
     expect(disconnected).toBe(true);
 });
 
-test("back to bottom loads the latest page when reading older messages", () => {
-    const pages: (string | undefined)[] = [];
-    render(
-        <ChatTranscript
-            messages={[message("Older reply")]}
-            before="older-page"
-            nextCursor={null}
-            onPage={(cursor) => pages.push(cursor)}
-        />
+test("older messages prepend automatically, preserving the reader while live replies remain available", () => {
+    const fixture = intersectionFixture();
+    const screen = within(fixture.container);
+    const current = message("Current answer");
+    let loads = 0;
+    const continuation = {
+        hasMore: true,
+        loading: false,
+        onLoadMore: () => {
+            loads += 1;
+        },
+    };
+    const view = render(
+        <ChatTranscript messages={[current]} continuation={continuation} />,
+        { container: fixture.container }
     );
-    const log = screen.getByRole("log");
-    expect(log.scrollTop).toBe(0);
-    fireEvent.click(screen.getByRole("button", { name: "Back to bottom" }));
-    expect(pages).toEqual([undefined]);
+    try {
+        const log = screen.getByRole("log");
+        Object.defineProperties(log, {
+            clientHeight: { value: 500 },
+            scrollHeight: { value: 1800 },
+        });
+        log.scrollTop = 20;
+        fireEvent.scroll(log);
+        const original =
+            fixture.container.querySelector<HTMLElement>("[data-message-id]")!;
+        let offset = 70;
+        original.getBoundingClientRect = () =>
+            ({ top: offset - log.scrollTop }) as DOMRect;
+        act(() => {
+            fixture.intersect();
+            fixture.intersect();
+        });
+        expect(loads).toBe(1);
+        view.rerender(
+            <ChatTranscript
+                messages={[current]}
+                continuation={{ ...continuation, loading: true }}
+            />
+        );
+        // A user scroll while fetching must not be undone by the prepend.
+        log.scrollTop = 40;
+        fireEvent.scroll(log);
+        offset = 670;
+        view.rerender(
+            <ChatTranscript
+                messages={[message("Older answer"), current, message("Live reply")]}
+                continuation={{ ...continuation, hasMore: false }}
+            />
+        );
+        expect(log.scrollTop).toBe(640);
+        expect(screen.getByText("Older answer")).toBeVisible();
+        expect(screen.getByText("Live reply")).toBeVisible();
+        expect(
+            screen.queryByRole("button", {
+                name: /Older messages|Latest messages|Load more/,
+            })
+        ).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "Back to bottom" }));
+        expect(log.scrollTop).toBe(1800);
+    } finally {
+        view.unmount();
+        fixture.close();
+    }
 });

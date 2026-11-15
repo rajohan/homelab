@@ -133,7 +133,7 @@ export async function readHomelabRelease(
         .toSorted((left, right) => right.id - left.id)[0];
     // Release Please publishes the tag before the workflow produces its assets.
     if (assets.length === 0) {
-        let tests = build?.status ?? "queued";
+        let tests = build?.status ?? "not_started";
         if (build?.status === "completed")
             tests =
                 build.conclusion === "success"
