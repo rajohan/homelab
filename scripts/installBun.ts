@@ -97,7 +97,13 @@ export async function installBun(destination: string): Promise<void> {
         await chmod(target, 0o755);
         console.info(`Installed Bun ${version} (${revision.slice(0, 9)}) in ${bin}.`);
     } finally {
-        await rm(temporary, { recursive: true, force: true });
+        // Windows can briefly retain the verified executable after process exit.
+        await rm(temporary, {
+            recursive: true,
+            force: true,
+            maxRetries: 5,
+            retryDelay: 200,
+        });
     }
 }
 

@@ -104,11 +104,18 @@ export function ChatTranscript({
                             Start a conversation with Mira.
                         </p>
                     )}
-                    {messages.map((message) => (
-                        <div key={message.id} data-message-id={message.id}>
-                            <ChatMessage message={message} />
-                        </div>
-                    ))}
+                    {messages
+                        .filter(
+                            (message) =>
+                                message.role === "user" ||
+                                message.content.trim() ||
+                                message.attachmentIds.length > 0
+                        )
+                        .map((message) => (
+                            <div key={message.id} data-message-id={message.id}>
+                                <ChatMessage message={message} />
+                            </div>
+                        ))}
                     {activity}
                 </div>
             </div>

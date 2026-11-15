@@ -41,8 +41,7 @@ test("an open settings draft retains its original version when background pollin
                     defaultModel={null}
                     fresh={false}
                     display={{
-                        showActivity: true,
-                        keepActivity: false,
+                        showThinking: true,
                         showTools: true,
                         expandTools: false,
                     }}

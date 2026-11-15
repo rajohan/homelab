@@ -94,6 +94,16 @@ def main():
                 assert "HOMELAB_MIRA_GITHUB_TOKEN" not in services[name]["environment"]
             assert "HOMELAB_MIRA_COMPUTER_HOST" not in services["dashboard"]["environment"]
             assert all(port["target"] != 3113 for port in services["dashboard"]["ports"])
+            host_settings = {**settings, "HOMELAB_MIRA_OPERATIONS_FILE": str(directory / "operations.json"),
+                             "HOMELAB_MIRA_OPERATIONS_KEYS": str(directory / "administration-keys")}
+            administration = json.loads(command(render + ["--file", str(ROOT / "deploy/compose.mira-operations.yaml"), "config", "--format", "json"], host_settings))["services"]
+            assert administration["mira"]["environment"]["HOMELAB_MIRA_OPERATIONS_FILE"] == "/etc/homelab-mira/operations.json"
+            for destination in ["/etc/homelab-mira/operations.json", "/run/secrets/mira-operations"]:
+                mount = next(volume for volume in administration["mira"]["volumes"] if volume["target"] == destination)
+                assert mount["read_only"] and not mount["bind"]["create_host_path"]
+                for name in ["dashboard", "worker", "auth"]:
+                    assert not any(volume["target"] == destination for volume in administration[name].get("volumes", []))
+                    assert "HOMELAB_MIRA_OPERATIONS_FILE" not in administration[name]["environment"]
             unconfigured = {key: value for key, value in settings.items() if not key.startswith("HOMELAB_MIRA_GITHUB_")}
             disabled = json.loads(command(render + ["config", "--format", "json"], unconfigured))
             for name in ["dashboard", "mira"]:

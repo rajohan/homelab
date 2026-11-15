@@ -4,6 +4,7 @@
     "type": "module",
     "exports": {
         "./data/*": "./src/server/data/*.ts",
+        "./operations/*": "./src/server/operations/*.ts",
         "./files/*": "./src/server/files/*.ts",
         "./runtime/*": "./src/server/runtime/*.ts",
         "./integrations/*": "./src/server/integrations/*.ts",

@@ -349,6 +349,8 @@ export class CodexRuntime {
         this.active = active;
         let output = "";
         let lastMessageId: string | null = null;
+        let thinking = "";
+        let thinkingItem: string | null = null;
         const completion = Promise.withResolvers<TurnResult>();
         // The notification can arrive before the turn/start response.
         const unsubscribe = this.connection.subscribe((event) => {
@@ -371,6 +373,29 @@ export class CodexRuntime {
                     if (item.output.item.type === "webSearch")
                         options.onActivity?.({ phase: "tool", tool: "web_search" });
                 }
+            } else if (event.method === "item/reasoning/summaryTextDelta") {
+                const delta = v.safeParse(
+                    v.object({
+                        ...deltaSchema.entries,
+                        summaryIndex: v.optional(
+                            v.pipe(v.number(), v.integer(), v.minValue(0)),
+                            0
+                        ),
+                    }),
+                    event.params
+                );
+                if (
+                    !delta.success ||
+                    delta.output.threadId !== threadId ||
+                    (active.id && delta.output.turnId !== active.id)
+                )
+                    return;
+                const part = delta.output;
+                const section = `${part.itemId}:${part.summaryIndex}`;
+                if (thinkingItem !== null && thinkingItem !== section) thinking += "\n\n";
+                thinkingItem = section;
+                thinking = (thinking + part.delta).slice(-32_000);
+                options.onActivity?.({ phase: "thinking", tool: null, thinking });
             } else if (event.method === "item/agentMessage/delta") {
                 const delta = v.parse(deltaSchema, event.params);
                 if (
@@ -447,6 +472,7 @@ export class CodexRuntime {
                 await this.connection.request("turn/start", {
                     threadId,
                     ...options.settings,
+                    summary: "auto",
                     input: [
                         { type: "text", text, text_elements: [] },
                         ...(options.attachments ?? []),

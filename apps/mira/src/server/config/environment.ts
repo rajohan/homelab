@@ -46,6 +46,7 @@ export function miraEnvironment() {
         github: githubConfiguration(process.env),
         synthetic: syntheticConfiguration(process.env),
         localCode: localCodeEnvironment(process.env),
+        operationsFile: process.env.HOMELAB_MIRA_OPERATIONS_FILE,
     };
 }
 

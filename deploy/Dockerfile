@@ -22,7 +22,7 @@ RUN mkdir /output && cp -a "apps/$APP/dist/." /output/
 FROM oven/bun:1.4.4-slim AS runtime
 COPY --from=build /opt/bun/bin/bun /usr/local/bin/bun
 ARG APP
-RUN if [ "$APP" = dashboard ]; then apt-get update && apt-get install -y --no-install-recommends openssh-client && rm -rf /var/lib/apt/lists/*; fi
+RUN if [ "$APP" = dashboard ] || [ "$APP" = mira ]; then apt-get update && apt-get install -y --no-install-recommends openssh-client && rm -rf /var/lib/apt/lists/*; fi
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build --chown=bun:bun /output/ ./

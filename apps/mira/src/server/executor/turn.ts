@@ -29,6 +29,7 @@ import type {
 } from "../integrations/github/configuration";
 import type { HereNowReadConfiguration } from "../integrations/herenow/configuration";
 import type { MoltbookReadConfiguration } from "../integrations/moltbook/configuration";
+import type { MiraOperationsConfiguration } from "../operations/configuration";
 import {
     miraInstructions as instructions,
     miraInstructionsHash,
@@ -63,6 +64,7 @@ export { miraInstructionsHash } from "../persona/instructions";
  * @param github - Optional GitHub mapping and dedicated read credential, retained only in the service closure.
  * @param synthetic - Optional owner-bound Synthetic subscription credential, retained only by the server.
  * @param localCode - Optional Main mapping; the run freezes its target before inference.
+ * @param operations - Explicit owner-bound host administration settings.
  * @param daytona - Nonsecret cloud mapping for local drafts and result reads.
  * @returns Completion after recording the observed terminal outcome and reaping the child.
  */
@@ -78,7 +80,8 @@ export async function executeMiraTurn(
     daytona?: DaytonaBinding,
     github?: GitHubBinding | GitHubConfiguration,
     synthetic?: SyntheticConfiguration,
-    localCode?: LocalCodeBinding
+    localCode?: LocalCodeBinding,
+    operations?: MiraOperationsConfiguration
 ): Promise<void> {
     const controller = new AbortController();
     const deadline = new AbortController();
@@ -315,7 +318,8 @@ export async function executeMiraTurn(
                     daytona,
                     github,
                     localCode,
-                    chatSearch && useSynthetic ? synthetic : undefined
+                    chatSearch && useSynthetic ? synthetic : undefined,
+                    operations
                 ),
                 ...(assistance
                     ? [
@@ -489,7 +493,8 @@ export async function executeMiraTurn(
                         providerTurn = turnId;
                     },
                     onActivity: (next) => {
-                        activity = next;
+                        const thinking = next.thinking ?? activity.thinking;
+                        activity = { ...next, ...(thinking ? { thinking } : {}) };
                     },
                     onDelta: (delta, itemId) => {
                         const separator =
@@ -550,7 +555,7 @@ export async function executeMiraTurn(
             }
             if (!assistance || assistanceFinished || result.status !== "completed") break;
             assistanceIdle = true;
-            activity = { phase: "working", tool: null };
+            activity = { ...activity, phase: "working", tool: null };
             const pending = await readLiveAssistanceGuidance(client, run);
             if (pending.yieldForAttachments || pending.uncertain) break;
             const access = () =>
@@ -575,7 +580,7 @@ export async function executeMiraTurn(
             runtime instanceof CodexRuntime &&
             !signal.aborted
         ) {
-            activity = { phase: "working", tool: null };
+            activity = { ...activity, phase: "working", tool: null };
             threadId = await maintainMiraContext({
                 client,
                 run,
@@ -595,6 +600,8 @@ export async function executeMiraTurn(
         if (steeringFailed) throw new Error("Message delivery could not be confirmed.");
         clearInterval(flush);
         await update;
+        // A short provider reply may finish between flush ticks; persist its last summary too.
+        await saveMiraActivity(client, run, activity);
         if (assistanceIdle) {
             const [current] = await client<
                 { cancelled: boolean }[]

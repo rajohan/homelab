@@ -43,6 +43,7 @@ import {
     type MoltbookReadConfiguration,
 } from "../integrations/moltbook/configuration";
 import { dispatchMiraSocial, reconcileMiraSocial } from "../integrations/moltbook/outbox";
+import type { MiraOperationsConfiguration } from "../operations/configuration";
 import { CodexRuntime } from "../runtime/codexRuntime";
 import { pilotArguments, type PilotConfig } from "../runtime/configuration";
 import type { SyntheticConfiguration } from "../runtime/syntheticConfiguration";
@@ -82,6 +83,7 @@ export async function runMiraExecutor(options: {
     github?: GitHubConfiguration | undefined;
     synthetic?: SyntheticConfiguration | undefined;
     localCode?: LocalCodeBinding | undefined;
+    operations?: MiraOperationsConfiguration | undefined;
 }): Promise<void> {
     const { client, config, health } = options;
     const failed = new AbortController();
@@ -407,7 +409,8 @@ export async function runMiraExecutor(options: {
                                 options.daytona,
                                 options.github,
                                 options.synthetic,
-                                options.localCode
+                                options.localCode,
+                                options.operations
                             );
                         } finally {
                             health.active--;

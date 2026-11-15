@@ -193,10 +193,17 @@ test("automatic models remain owner-specific across chat, saved preferences, sch
                     { owner: "operator", apiKey: "must-not-use" }
                 );
                 const [result] = await database.client<
-                    { state: string; settings: { model: string } }[]
-                >`SELECT state,effective_settings AS settings FROM mira_runs WHERE id=${run.id}`;
+                    {
+                        state: string;
+                        settings: { model: string };
+                        activity: { thinking?: string };
+                    }[]
+                >`SELECT state,effective_settings AS settings,activity FROM mira_runs WHERE id=${run.id}`;
                 expect(result?.state).toBe("completed");
                 expect(result?.settings.model).toBe("synthetic");
+                expect(result?.activity.thinking).toBe(
+                    "Readable summary\n\nNext section"
+                );
             }
         }
         const past = new Date(Date.now() - 1000);

@@ -1,5 +1,5 @@
 import type { MiraRun } from "@homelab/contracts/mira";
-import { Badge } from "@homelab/ui";
+import { Badge, Markdown } from "@homelab/ui";
 import { Brain, LoaderCircle, MessageSquare, Wrench } from "lucide-react";
 import { useState } from "react";
 
@@ -55,9 +55,10 @@ export function ChatActivity({
         running: "Running",
         failed: "Failed",
     };
-    const showStatus = display.showActivity && (active || display.keepActivity);
+    const showStatus = active;
+    const thinking = display.showThinking ? run.activity?.thinking : undefined;
     const showTools = display.showTools && tools.length > 0;
-    if (!showStatus && !showTools) return null;
+    if (!showStatus && !showTools && !thinking) return null;
     return (
         <div className="space-y-2 text-xs text-primary-400">
             {showStatus && (
@@ -73,6 +74,16 @@ export function ChatActivity({
                     />
                     <span>{label}</span>
                 </output>
+            )}
+            {thinking && (
+                <details className="rounded-lg border border-primary-700 bg-primary-900/40">
+                    <summary className="cursor-pointer px-3 py-2 text-primary-300">
+                        Thinking
+                    </summary>
+                    <div className="max-h-64 overflow-y-auto border-t border-primary-700 px-3 py-2">
+                        <Markdown>{thinking}</Markdown>
+                    </div>
+                </details>
             )}
             {showTools && (
                 <details
