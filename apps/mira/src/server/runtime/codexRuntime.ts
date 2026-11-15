@@ -374,9 +374,22 @@ export class CodexRuntime {
                         options.onActivity?.({ phase: "tool", tool: "web_search" });
                 }
             } else if (event.method === "item/reasoning/summaryTextDelta") {
-                const delta = v.safeParse(v.object({ ...deltaSchema.entries, summaryIndex: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0)), 0) }), event.params);
-                if (!delta.success || delta.output.threadId !== threadId ||
-                    (active.id && delta.output.turnId !== active.id)) return;
+                const delta = v.safeParse(
+                    v.object({
+                        ...deltaSchema.entries,
+                        summaryIndex: v.optional(
+                            v.pipe(v.number(), v.integer(), v.minValue(0)),
+                            0
+                        ),
+                    }),
+                    event.params
+                );
+                if (
+                    !delta.success ||
+                    delta.output.threadId !== threadId ||
+                    (active.id && delta.output.turnId !== active.id)
+                )
+                    return;
                 const part = delta.output;
                 const section = `${part.itemId}:${part.summaryIndex}`;
                 if (thinkingItem !== null && thinkingItem !== section) thinking += "\n\n";

@@ -6,8 +6,8 @@ import {
     miraTaskInputSchema,
     miraTaskUpdateSchema,
 } from "@homelab/contracts/mira";
-import * as v from "valibot";
 import { miraHostProposalSchema } from "@homelab/contracts/miraOperations";
+import * as v from "valibot";
 
 import { auditMira, lockMiraProposals, type MiraContext, MiraFailure } from "./context";
 import { saveMemory } from "./documents";
@@ -120,10 +120,20 @@ export async function decideMiraProposal(
             );
         const scoped: MiraContext = { ...context, transaction: query };
         if (proposal.tool === "mira_homelab_command") {
-            if (input.approve && !hostVerified) throw new MiraFailure("FORBIDDEN", "Host command approval requires a freshly verified operator.");
+            if (input.approve && !hostVerified)
+                throw new MiraFailure(
+                    "FORBIDDEN",
+                    "Host command approval requires a freshly verified operator."
+                );
             v.parse(miraHostProposalSchema, proposal.input);
-            const [live] = await query<{ id: string }[]>`SELECT r.id FROM mira_runs r JOIN mira_tool_receipts t ON t.run_id=r.id WHERE t.id=${input.id} AND r.owner=${context.owner} AND r.state='running' AND NOT r.cancel_requested AND r.lease_expires_at>clock_timestamp() AND r.approval_revoked_at IS NULL AND r.manual AND r.automation_id IS NULL FOR UPDATE OF r`;
-            if (!live) throw new MiraFailure("CONFLICT", "This command is no longer waiting in an active run. Request a new command.");
+            const [live] = await query<
+                { id: string }[]
+            >`SELECT r.id FROM mira_runs r JOIN mira_tool_receipts t ON t.run_id=r.id WHERE t.id=${input.id} AND r.owner=${context.owner} AND r.state='running' AND NOT r.cancel_requested AND r.lease_expires_at>clock_timestamp() AND r.approval_revoked_at IS NULL AND r.manual AND r.automation_id IS NULL FOR UPDATE OF r`;
+            if (!live)
+                throw new MiraFailure(
+                    "CONFLICT",
+                    "This command is no longer waiting in an active run. Request a new command."
+                );
             await query`UPDATE mira_tool_receipts SET state=${decision},message=${input.approve ? "The operator approved this exact host command." : "The operator rejected this host command."},finished_at=now() WHERE id=${input.id}`;
             await auditMira(query, context, `proposal.${decision}`, input.id);
             return { state: decision };

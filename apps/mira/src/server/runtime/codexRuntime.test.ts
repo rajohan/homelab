@@ -502,7 +502,11 @@ test("each resumed turn receives explicit model settings and only its own activi
         expect(activity).toEqual([
             { phase: "thinking", tool: null },
             { phase: "thinking", tool: null, thinking: "Readable summary" },
-            { phase: "thinking", tool: null, thinking: "Readable summary\n\nNext section" },
+            {
+                phase: "thinking",
+                tool: null,
+                thinking: "Readable summary\n\nNext section",
+            },
             { phase: "replying", tool: null },
         ]);
         await runtime.resumeThread(thread, []);
