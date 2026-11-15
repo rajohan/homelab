@@ -10,7 +10,7 @@ import {
 } from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { Cloud, Plus, Server, Terminal } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { api } from "../../api/client";
 import { DaytonaDetails } from "./DaytonaDetails";
@@ -28,6 +28,7 @@ export function DaytonaJobs({
     readonly onClose?: () => void;
     readonly conversationId?: string | undefined;
 }) {
+    const scrollRoot = useRef<HTMLDivElement>(null);
     const [editing, setEditing] = useState<MiraDaytonaJob | "new">();
     const [selected, setSelected] = useState<MiraDaytonaJob>();
     const query = useInfiniteQuery({
@@ -62,7 +63,7 @@ export function DaytonaJobs({
                     files before starting.
                 </p>
             )}
-            <div className="max-h-128 space-y-3 overflow-y-auto">
+            <div ref={scrollRoot} className="max-h-128 space-y-3 overflow-y-auto">
                 {rows.map((job) => (
                     <Card key={job.id} className="space-y-3 bg-primary-900/40">
                         <SectionHeader
@@ -98,17 +99,20 @@ export function DaytonaJobs({
                         )}
                     </Card>
                 ))}
+                <InfiniteScrollTrigger
+                    rootRef={scrollRoot}
+                    itemCount={query.data?.pages.length ?? 0}
+                    hasMore={query.hasNextPage}
+                    loading={query.isFetchingNextPage}
+                    refreshing={query.isRefetching}
+                    error={query.isError ? query.error : undefined}
+                    onLoadMore={() =>
+                        void (query.isRefetchError
+                            ? query.refetch()
+                            : query.fetchNextPage())
+                    }
+                />
             </div>
-            <InfiniteScrollTrigger
-                itemCount={query.data?.pages.length ?? 0}
-                hasMore={query.hasNextPage}
-                loading={query.isFetchingNextPage}
-                refreshing={query.isRefetching}
-                error={query.isError ? query.error : undefined}
-                onLoadMore={() =>
-                    void (query.isRefetchError ? query.refetch() : query.fetchNextPage())
-                }
-            />
         </div>
     );
     if (editing)

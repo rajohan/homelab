@@ -13,7 +13,7 @@ import {
 } from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { Eye, GitPullRequest, Pencil, Plus, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
@@ -32,6 +32,7 @@ export function CodeLibrary({
     readonly onClose?: (() => void) | undefined;
     readonly conversationId?: string | undefined;
 }) {
+    const scrollRoot = useRef<HTMLDivElement>(null);
     const [editing, setEditing] = useState<MiraCodePublication | "new">();
     const [reviewing, setReviewing] = useState<MiraCodePublication>();
     const [cancelling, setCancelling] = useState<MiraCodePublication>();
@@ -92,7 +93,7 @@ export function CodeLibrary({
                     proposal here or ask Mira to prepare one.
                 </p>
             )}
-            <div className="max-h-128 space-y-3 overflow-y-auto">
+            <div ref={scrollRoot} className="max-h-128 space-y-3 overflow-y-auto">
                 {rows.map((draft) => (
                     <Card key={draft.id} className="space-y-3 bg-primary-900/40">
                         <SectionHeader
@@ -157,17 +158,20 @@ export function CodeLibrary({
                         </time>
                     </Card>
                 ))}
+                <InfiniteScrollTrigger
+                    rootRef={scrollRoot}
+                    itemCount={query.data?.pages.length ?? 0}
+                    hasMore={query.hasNextPage}
+                    loading={query.isFetchingNextPage}
+                    refreshing={query.isRefetching}
+                    error={query.isError ? query.error : undefined}
+                    onLoadMore={() =>
+                        void (query.isRefetchError
+                            ? query.refetch()
+                            : query.fetchNextPage())
+                    }
+                />
             </div>
-            <InfiniteScrollTrigger
-                itemCount={query.data?.pages.length ?? 0}
-                hasMore={query.hasNextPage}
-                loading={query.isFetchingNextPage}
-                refreshing={query.isRefetching}
-                error={query.isError ? query.error : undefined}
-                onLoadMore={() =>
-                    void (query.isRefetchError ? query.refetch() : query.fetchNextPage())
-                }
-            />
         </div>
     );
     return onClose ? (
