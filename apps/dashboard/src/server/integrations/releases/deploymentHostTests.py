@@ -78,7 +78,8 @@ class HostTests(unittest.TestCase):
 
     def test_backup_streams_past_the_command_output_limit_without_buffering(self):
         size = 3 * 1024 * 1024
-        with tempfile.TemporaryFile(dir=self.root) as output:
+        with tempfile.TemporaryFile(dir=self.root) as output, \
+                patch.object(host.os, "fstatvfs", return_value=SimpleNamespace(f_bavail=16 * 1024**3, f_frsize=1)):
             result = host.command([sys.executable, "-c", f"import sys;sys.stdout.buffer.write(b'x'*{size})"],
                                   self.root, output_file=output)
             self.assertEqual(result, b"")
