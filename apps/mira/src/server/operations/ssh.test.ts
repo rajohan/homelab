@@ -83,7 +83,8 @@ test.each(["stop", "deadline"])(
         );
         if (kind === "stop") controller.abort();
         await rejects(pending);
-        expect(process?.exitCode).not.toBeNull();
+        expect(await process?.exited).not.toBe(0);
+        expect(process?.signalCode).toBe("SIGKILL");
     }
 );
 
