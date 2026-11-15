@@ -1068,7 +1068,15 @@ test("release feeds use semantic order and discard arbitrary remote URLs", async
         hostname: "127.0.0.1",
         port: 0,
         fetch: () => {
-            if (mode === "node") return Response.json([{ version: "v26.9.0" }]);
+            if (mode === "node")
+                return Response.json([
+                    { version: "v27.0.0-alpha.0.1.0" },
+                    { version: "v27.0.0-rc.1" },
+                    { version: "v26.9.0" },
+                    { version: "v24.12.0" },
+                ]);
+            if (mode === "node-prereleases")
+                return Response.json([{ version: "v27.0.0-rc.1" }]);
             if (mode === "openclaw") return Response.json({ version: "2026.9.20" });
             if (mode === "github-cli") return Response.json({ tag_name: "v2.85.0" });
             return Response.json({
@@ -1090,6 +1098,10 @@ test("release feeds use semantic order and discard arbitrary remote URLs", async
         expect(await latestRelease("node", AbortSignal.timeout(2000), request)).toBe(
             "26.9.0"
         );
+        mode = "node-prereleases";
+        await expect(
+            latestRelease("node", AbortSignal.timeout(2000), request)
+        ).rejects.toThrow();
         mode = "openclaw";
         expect(await latestRelease("openclaw", AbortSignal.timeout(2000), request)).toBe(
             "2026.9.20"

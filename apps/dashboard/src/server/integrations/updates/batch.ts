@@ -10,7 +10,7 @@ import * as v from "valibot";
 
 import { enqueueJob, lockQueue } from "../../jobs/queue";
 import { maximumIntegrationTimeoutMs } from "../../jobs/registry";
-import type { JobHandler } from "../../jobs/types";
+import type { JobDefinition, JobHandler } from "../../jobs/types";
 import { OperationFailure } from "../../operations/errors";
 import type { ApplicationTarget } from "../applications/configuration";
 import { applyUpdate, updateTimeoutMs } from "./apply";
@@ -172,13 +172,15 @@ export async function readUpdateBatchPlan(
  * @param client - Operational state used to revalidate each candidate immediately before execution.
  * @param execute - Worker-only installer, replaced by the isolated preview in development.
  * @param applications - Explicit source bindings for verified namespace recreation receipts.
+ * @param refresh - Registered read-only checker deferred until installation releases its host leases.
  * @returns Non-retryable host jobs sharing resource leases with individual installations.
  */
 export function updateBatchJobs(
     targets: readonly UpdateTarget[],
     client: SQL,
     execute: UpdateExecutor,
-    applications: readonly ApplicationTarget[] = []
+    applications: readonly ApplicationTarget[] = [],
+    refresh?: JobDefinition
 ): JobHandler[] {
     return [...new Set(targets.map((target) => target.source))].map((source) => {
         const owned = targets.filter((target) => target.source === source);
@@ -302,7 +304,8 @@ export function updateBatchJobs(
                                     context.reportProgress(`${prefix}: ${message}`),
                             },
                             execute,
-                            receiptScope
+                            receiptScope,
+                            refresh
                         );
                     } catch (error) {
                         if (!context.signal.aborted)

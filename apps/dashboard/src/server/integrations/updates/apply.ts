@@ -1,6 +1,7 @@
 import type { UpdateItem, UpdateReport } from "@homelab/contracts/updates";
 
-import type { JobExecution } from "../../jobs/types";
+import { enqueueJob } from "../../jobs/queue";
+import type { JobDefinition, JobExecution } from "../../jobs/types";
 import { publishNotification } from "../../notifications/publish";
 import type { UpdateTarget } from "./configuration";
 import type { UpdateExecutor, UpdateReceipt } from "./execution";
@@ -127,6 +128,7 @@ async function recordResult(
  * @param context - Current worker claim, cancellation signal and progress sink.
  * @param execute - Worker-only installation boundary or an isolated test replacement.
  * @param scope - Explicit host-bound sources whose verified dependent identities may be reconciled.
+ * @param refresh - Registered read-only checker to refresh package dependencies after the job releases its host.
  * @returns Completion after the installed version and durable receipt are verified.
  */
 export async function applyUpdate(
@@ -135,14 +137,39 @@ export async function applyUpdate(
     automatic: boolean,
     context: JobExecution,
     execute: UpdateExecutor,
-    scope?: UpdateReceiptScope
+    scope?: UpdateReceiptScope,
+    refresh?: JobDefinition
 ): Promise<void> {
     const signal = AbortSignal.any([
         context.signal,
         AbortSignal.timeout(updateTimeoutMs),
     ]);
     signal.throwIfAborted();
-    if (!(await context.commit(async () => {})))
+    if (
+        !(await context.commit(async (transaction) => {
+            if (target.driver.kind !== "apt" || !refresh) return;
+            const [run] = await transaction<{ resourceKeys: string[] }[]>`
+            SELECT resource_keys AS "resourceKeys" FROM job_runs WHERE id=${context.runId}`;
+            if (!run) throw new Error("Update job is unavailable");
+            // Queue before installation so partial failures and worker restarts also
+            // refresh dependencies. The same host leases defer the read until the
+            // entire batch finishes; idempotency keeps one check per job/source.
+            await enqueueJob(
+                transaction,
+                {
+                    ...refresh,
+                    resourceKeys: [
+                        ...new Set([...refresh.resourceKeys, ...run.resourceKeys]),
+                    ],
+                },
+                "system:updates",
+                `updates-installed:${context.runId}:${target.source}`,
+                {
+                    source: target.source,
+                }
+            );
+        }, true))
+    )
         throw new Error("Update claim expired before execution");
     const receipt = await execute(
         target,

@@ -1767,6 +1767,7 @@ test.each([
                 ["openclaw_stop_failed", "Its update was not started"],
                 ["openclaw_update_failed", "inspect OpenClaw's update report"],
                 ["apt_candidate_changed", "Refresh this host's software report"],
+                ["apt_removal_required", "requires removing or replacing"],
                 ["loki_readiness_failed", "readiness did not pass within 60 seconds"],
                 ["openclaw_readiness_failed", "OpenClaw version was installed"],
             ] as const) {

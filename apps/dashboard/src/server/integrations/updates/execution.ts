@@ -43,6 +43,8 @@ const refusals = {
         "The application executable exceeds this updater's supported size limit. Update the dashboard updater before retrying; no installation was started.",
     apt_candidate_changed:
         "The installed package, hold or repository candidate changed. Refresh this host's software report and approve the current version; no installation was started.",
+    apt_removal_required:
+        "This package update requires removing or replacing another installed package. Review the APT plan on the host before updating; no installation was started.",
     loki_readiness_failed:
         "The approved Loki version was installed, but readiness did not pass within 60 seconds. Inspect the service and refresh its software report before retrying.",
     openclaw_readiness_failed:
