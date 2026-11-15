@@ -8,6 +8,8 @@ import tempfile
 import time
 import unittest
 import subprocess
+import sys
+from types import SimpleNamespace
 from unittest.mock import patch
 import uuid
 
@@ -72,6 +74,27 @@ class HostTests(unittest.TestCase):
                 patch.object(host, "container", return_value={"running": False}), patch.object(host, "verify_services", return_value={"dashboard": {"healthy": True}}):
             host.run(self.operation)
         return json.loads((self.operation / "status.json").read_text())
+
+    def test_backup_streams_past_the_command_output_limit_without_buffering(self):
+        size = 3 * 1024 * 1024
+        with tempfile.TemporaryFile(dir=self.root) as output:
+            result = host.command([sys.executable, "-c", f"import sys;sys.stdout.buffer.write(b'x'*{size})"],
+                                  self.root, output_file=output)
+            self.assertEqual(result, b"")
+            self.assertEqual(output.tell(), size)
+        with self.assertRaisesRegex(host.Refusal, "command_output_limit"):
+            host.command([sys.executable, "-c", f"import sys;sys.stdout.buffer.write(b'x'*{size})"], self.root)
+
+    def test_backup_refuses_size_and_space_exhaustion_before_writing(self):
+        for mode in ["size", "space"]:
+            with self.subTest(mode=mode), tempfile.TemporaryFile(dir=self.root) as output:
+                with patch.object(host, "BACKUP_MAX_BYTES", 65536 if mode == "size" else 8 * 1024**3), \
+                        patch.object(host.os, "fstatvfs", return_value=SimpleNamespace(
+                            f_bavail=host.BACKUP_FREE_BYTES if mode == "space" else 16 * 1024**3, f_frsize=1)):
+                    with self.assertRaisesRegex(host.Refusal, "backup_size_limit" if mode == "size" else "backup_space"):
+                        host.command([sys.executable, "-c", "import sys;sys.stdout.buffer.write(b'x'*131072)"],
+                                     self.root, output_file=output)
+                self.assertLessEqual(output.tell(), 65536 if mode == "size" else 0)
 
     def test_success_and_replay(self):
         self.alter_config = False

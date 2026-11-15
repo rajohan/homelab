@@ -81,7 +81,7 @@ The initial release introducing this feature requires the ordinary qualified man
 
 ## Execution and recovery
 
-1. Preparation verifies official publication evidence and observes the complete rendered Compose configuration, image references, containers and systemd invocations. Confirmation expires after five minutes.
+1. **Deploy release** opens a single confirmation flow and automatically runs its read-only preparation job. The confirm button remains disabled until preparation succeeds. Closing the dialog never submits a deployment. Preparation verifies official publication evidence and observes the complete rendered Compose configuration, image references, containers and systemd invocations. Confirmation expires after five minutes.
 2. Admission atomically freezes new worker claims. Mira finishes admitted operations and acknowledges the exact deployment ID. Browser processes must finish cleanup. Existing queue pause settings are preserved. A waiting deployment can be cancelled; after submission it can only be inspected.
 3. The coordinator waits at most thirty minutes for active work and revalidates publication before submission. The host rechecks the frozen observations, acquires the deployment-directory lock, pulls exact digests and verifies version/revision/platform labels.
 4. A systemd transient service owns the replacement independently of SSH and the replaced worker. It stops the selected units, writes a private PostgreSQL custom-format backup and checks it with `pg_restore --list`, preserves the original files, changes only approved image pins, and checks the complete rendered configuration before migration.
@@ -99,7 +99,7 @@ Failures before migration restore the original pins and only resume after verify
 
 If restoring the original proxy images recreates their containers, restore the original browser configuration and refresh only its proxy container/image IDs from the verified original services. Start proxies first, then update the file, then start the browser host and remaining services. Recovery accepts these identity changes only when the network identities and every other browser setting match the original backup and the actual proxies match the original image IDs. A stale proxy ID or a different browser image, host UUID, socket or network keeps recovery blocked. The recovery verifier does not edit files or restore the database for the operator.
 
-The runner has a thirty-minute systemd lifetime, bounded command output and a 512 MiB backup ceiling. Admission requires 1 GiB free space and fewer than 100 retained operation directories. Backups are not automatically deleted. Review and archive completed history using the host's existing backup policy before these limits are reached. An interrupted or failed operation's files must remain available for recovery.
+The runner has a thirty-minute systemd lifetime and an 8 GiB backup ceiling. Backups stream directly to the private file; ordinary command output remains limited to 2 MB. Each backup write checks that at least 1 GiB remains free on its filesystem. A size or space refusal stops the backup before migration and verifies recovery of the previous services. Admission requires 1 GiB free space and fewer than 100 retained operation directories. Backups are not automatically deleted. Review and archive completed history using the host's existing backup policy before these limits are reached. An interrupted or failed operation's files must remain available for recovery.
 
 ## Qualification
 

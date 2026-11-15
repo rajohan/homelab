@@ -11,7 +11,6 @@ import { Rocket } from "lucide-react";
 import { useState } from "react";
 
 import { api } from "../../api/client";
-import { useJobOperation } from "../jobs/useJobOperation";
 import { useOperation } from "../operations/useOperation";
 import { DeploymentDialog } from "./DeploymentDialog";
 import { DeploymentPolicyControl } from "./DeploymentPolicyControl";
@@ -43,18 +42,12 @@ export function DeploymentPanel() {
         ...queryRefresh("fast"),
         retry: false,
     });
-    const prepare = useJobOperation(
-        (input: { action: string; requestId: string }, signal) =>
-            api.jobs.run.mutate(input, { signal })
-    );
     const cancel = useOperation((input: { id: string }, signal) =>
         api.releases.deployment.cancel.mutate(input, { signal })
     );
     const [selected, setSelected] = useState<{
         id: string;
         label: string;
-        version: string;
-        revision: string;
     }>();
     const active = query.data?.history.find((entry) => entry.active);
     const run = active ?? query.data?.history[0];
@@ -63,7 +56,6 @@ export function DeploymentPanel() {
         <div className="space-y-3">
             {query.isPending && <LoadingState label="Loading deployment status…" />}
             {query.isError && <ErrorNotice error={query.error} />}
-            {prepare.isError && <ErrorNotice error={prepare.error} />}
             {cancel.isError && <ErrorNotice error={cancel.error} />}
             {query.data?.targets.map((target) => (
                 <div
@@ -74,42 +66,14 @@ export function DeploymentPanel() {
                         <SectionHeader
                             icon={Rocket}
                             title={target.label}
-                            description={
-                                target.version
-                                    ? `Release ${target.version} is ready for confirmation.`
-                                    : "Prepare the current release before deployment."
-                            }
+                            description="Check the release and confirm deployment."
                         />
                         <div className="flex w-full flex-col gap-2 @min-[40rem]/deployment:w-auto @min-[40rem]/deployment:flex-row">
                             <Button
-                                variant="secondary"
-                                disabled={Boolean(active) || prepare.isPending}
+                                disabled={Boolean(active) || query.isError}
                                 onClick={() =>
-                                    void prepare
-                                        .mutateAsync({
-                                            action: `homelab.prepare.${target.id}`,
-                                            requestId: crypto.randomUUID(),
-                                        })
-                                        .catch(() => {})
+                                    setSelected({ id: target.id, label: target.label })
                                 }
-                            >
-                                Prepare release
-                            </Button>
-                            <Button
-                                disabled={
-                                    Boolean(active) ||
-                                    !target.revision ||
-                                    !target.version ||
-                                    query.isError
-                                }
-                                onClick={() => {
-                                    if (target.revision && target.version)
-                                        setSelected({
-                                            ...target,
-                                            revision: target.revision,
-                                            version: target.version,
-                                        });
-                                }}
                             >
                                 Deploy release
                             </Button>

@@ -439,12 +439,24 @@ export async function coordinateDeployment(options: {
                 progress?.stage === "main"
                     ? `${progress.authAlreadyCurrent ? "Auth already runs the release" : "Auth was updated"}, but deployment on the dashboard host failed. Its previous services are verified and queued work can continue.`
                     : "Deployment failed. The previous deployment is verified and queued work can continue.";
+            const reasons: Record<string, string> = {
+                backup_size_limit: "The database backup exceeded the 8 GiB limit.",
+                backup_space:
+                    "The database backup needs more free disk space; 1 GiB must remain available.",
+                command_output_limit: "A deployment command exceeded its output limit.",
+            };
+            const reason = reasons[receipt.code ?? ""];
             await write(
                 "failed",
                 "failed",
-                recovered
-                    ? recoveredMessage
-                    : "Deployment failed. Work remains paused; inspect the host journal and database backup before recovery.",
+                [
+                    reason,
+                    recovered
+                        ? recoveredMessage
+                        : "Deployment failed. Work remains paused; inspect the host journal and database backup before recovery.",
+                ]
+                    .filter(Boolean)
+                    .join(" "),
                 recovered,
                 evidence
             );

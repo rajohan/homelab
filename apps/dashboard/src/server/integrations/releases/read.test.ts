@@ -22,6 +22,8 @@ const evidence = {
 function fixture(
     options: {
         tag?: string;
+        missingManifest?: boolean;
+        status?: string;
         manifest?: unknown;
         conclusion?: string;
         redirect?: string;
@@ -54,7 +56,9 @@ function fixture(
                 draft: false,
                 prerelease: false,
                 assets: [
-                    { id: 42, name: "container-images.json" },
+                    ...(options.missingManifest
+                        ? []
+                        : [{ id: 42, name: "container-images.json" }]),
                     ...(options.windowsAssets ?? []),
                     ...(options.browserAssets ?? []),
                     ...(options.codeAssets ?? []),
@@ -93,7 +97,7 @@ function fixture(
                         head_sha: revision,
                         event: "release",
                         path: ".github/workflows/container-images.yml",
-                        status: "completed",
+                        status: options.status ?? "completed",
                         conclusion: options.conclusion ?? "success",
                     },
                 ],
@@ -600,3 +604,46 @@ test("schema compatibility metadata is accepted only with matching publication e
     ).catch((error_: unknown) => error_);
     expect(error).toBeInstanceOf(Error);
 });
+
+test.each(["queued", "in_progress", "waiting"])(
+    "a %s publication is observable but cannot authorize deployment",
+    async (status) => {
+        const client = fixture({ missingManifest: true, status });
+        const result = await readHomelabRelease(
+            "demo/homelab",
+            undefined,
+            AbortSignal.timeout(1000),
+            client.request
+        );
+        expect(result).toMatchObject({
+            version: "0.8.0",
+            revision,
+            verified: false,
+            images: [],
+            tests: status,
+            buildUrl: "https://github.com/demo/homelab/actions/runs/100",
+        });
+        expect(result.browser).toBeNull();
+        expect(result.computer).toBeNull();
+        expect(result.code).toBeNull();
+        expect(client.requests.some(({ url }) => url.includes("/releases/assets/"))).toBe(
+            false
+        );
+    }
+);
+
+test.each(["failure", "cancelled", "success"])(
+    "missing assets after %s remain unverified",
+    async (conclusion) => {
+        const client = fixture({ missingManifest: true, conclusion });
+        const result = await readHomelabRelease(
+            "demo/homelab",
+            undefined,
+            AbortSignal.timeout(1000),
+            client.request
+        );
+        expect(result.verified).toBe(false);
+        expect(result.tests).toBe(conclusion === "success" ? "incomplete" : conclusion);
+        expect(result.images).toEqual([]);
+    }
+);

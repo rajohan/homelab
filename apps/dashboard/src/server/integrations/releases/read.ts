@@ -105,8 +105,60 @@ export async function readHomelabRelease(
     const assets = release.assets.filter(
         (asset) => asset.name === "container-images.json"
     );
+    const referenceSchema = v.object({
+        object: v.object({ type: v.picklist(["commit", "tag"]), sha }),
+    });
+    let reference = v.parse(
+        referenceSchema,
+        await read(`/git/ref/tags/${release.tag_name}`)
+    ).object;
+    if (reference.type === "tag")
+        reference = v.parse(
+            referenceSchema,
+            await read(`/git/tags/${reference.sha}`)
+        ).object;
+    if (reference.type !== "commit")
+        throw new Error("Release tag does not identify a commit");
+    const runs = v.parse(
+        runsSchema,
+        await read(`/actions/runs?head_sha=${reference.sha}&event=release&per_page=100`)
+    );
+    const build = runs.workflow_runs
+        .filter(
+            (run) =>
+                run.head_sha === reference.sha &&
+                run.event === "release" &&
+                run.path === ".github/workflows/container-images.yml"
+        )
+        .toSorted((left, right) => right.id - left.id)[0];
+    // Release Please publishes the tag before the workflow produces its assets.
+    if (assets.length === 0) {
+        let tests = build?.status ?? "queued";
+        if (build?.status === "completed")
+            tests =
+                build.conclusion === "success"
+                    ? "incomplete"
+                    : (build.conclusion ?? "unknown");
+        return {
+            authSchema: undefined,
+            dashboardSchema: undefined,
+            browser: null,
+            code: null,
+            computer: null,
+            repository,
+            version: release.tag_name.slice(1),
+            revision: reference.sha,
+            images: [] as v.InferOutput<typeof manifestSchema>["images"],
+            tests,
+            verified: false,
+            url: `https://github.com/${repository}/releases/tag/${release.tag_name}`,
+            buildUrl: build
+                ? `https://github.com/${repository}/actions/runs/${build.id}`
+                : null,
+        };
+    }
     if (assets.length !== 1)
-        throw new Error("Published release has no complete image manifest yet");
+        throw new Error("Published release has conflicting image manifests");
     const bytes = await readReleaseAsset(
         base,
         assets[0]!.id,
@@ -140,35 +192,8 @@ export async function readHomelabRelease(
         )
     )
         throw new Error("Release image references do not match the published version");
-    const referenceSchema = v.object({
-        object: v.object({ type: v.picklist(["commit", "tag"]), sha }),
-    });
-    let reference = v.parse(
-        referenceSchema,
-        await read(`/git/ref/tags/${release.tag_name}`)
-    ).object;
-    if (reference.type === "tag")
-        reference = v.parse(
-            referenceSchema,
-            await read(`/git/tags/${reference.sha}`)
-        ).object;
-    if (reference.type !== "commit" || reference.sha !== manifest.revision)
+    if (reference.sha !== manifest.revision)
         throw new Error("Release tag and image commit differ");
-    const runs = v.parse(
-        runsSchema,
-        await read(
-            `/actions/runs?head_sha=${manifest.revision}&event=release&per_page=100`
-        )
-    );
-    const builds = runs.workflow_runs
-        .filter(
-            (run) =>
-                run.head_sha === manifest.revision &&
-                run.event === "release" &&
-                run.path === ".github/workflows/container-images.yml"
-        )
-        .toSorted((a, b) => b.id - a.id);
-    const build = builds[0];
     let verified = false;
     if (build?.status === "completed" && build.conclusion === "success") {
         const name = `release-manifest-${build.run_attempt}.json`;

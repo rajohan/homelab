@@ -23,6 +23,9 @@ import time
 import uuid
 from urllib.parse import parse_qsl, unquote, urlsplit
 
+BACKUP_MAX_BYTES = 8 * 1024 * 1024 * 1024
+BACKUP_FREE_BYTES = 1024 * 1024 * 1024
+
 
 class Refusal(RuntimeError):
     """Expose a fixed failure code instead of private subprocess output."""
@@ -136,11 +139,16 @@ def command(arguments, directory, timeout=60, output_file=None):
                             raise Refusal("command_output_limit")
                     else:
                         total += len(data)
-                        if total > (512 * 1024 * 1024 if output_file else 2_000_000):
-                            raise Refusal("command_output_limit")
                         if output_file:
+                            if total > BACKUP_MAX_BYTES:
+                                raise Refusal("backup_size_limit")
+                            space = os.fstatvfs(output_file.fileno())
+                            if space.f_bavail * space.f_frsize < BACKUP_FREE_BYTES + len(data):
+                                raise Refusal("backup_space")
                             output_file.write(data)
                         else:
+                            if total > 2_000_000:
+                                raise Refusal("command_output_limit")
                             output.extend(data)
         if child.wait(timeout=max(0.1, deadline - time.monotonic())) != 0:
             raise Refusal("command_failed")
