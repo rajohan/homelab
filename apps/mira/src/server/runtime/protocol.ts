@@ -1,6 +1,7 @@
 import { miraModelSchema } from "@homelab/contracts/mira";
 import * as v from "valibot";
 
+import type { ProviderFailure } from "./providerFailure";
 import type { RuntimeToolResult } from "./toolResult";
 
 /** Bound retained call identities without cutting normal interactive work off after a few clicks. */
@@ -43,6 +44,7 @@ export const completedSchema = v.object({
     turn: v.object({
         id: v.string(),
         status: v.picklist(["completed", "interrupted", "failed", "inProgress"]),
+        error: v.optional(v.unknown()),
     }),
 });
 export const deltaSchema = v.object({
@@ -72,6 +74,8 @@ export interface TurnResult {
     id: string;
     status: "completed" | "interrupted" | "failed";
     text: string;
+    failure?: ProviderFailure;
+    contextMaintenance?: boolean;
 }
 export type RuntimeInput =
     | { type: "text"; text: string; text_elements: [] }

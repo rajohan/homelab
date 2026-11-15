@@ -35,6 +35,7 @@ import {
 } from "../persona/instructions";
 import { CodexRuntime } from "../runtime/codexRuntime";
 import { pilotArguments, type PilotConfig } from "../runtime/configuration";
+import { providerFailureMessage, ProviderRequestError } from "../runtime/providerFailure";
 import { RuntimeResponseError } from "../runtime/responseError";
 import { isSyntheticModel } from "../runtime/syntheticCatalog";
 import type { SyntheticConfiguration } from "../runtime/syntheticConfiguration";
@@ -43,6 +44,7 @@ import { createMiraToolRouter } from "../runtime/toolRouter";
 import type { LocalCodeBinding } from "../sandbox/localBinding";
 import { prepareMiraAttachments } from "./attachments";
 import { readMiraTurnInput } from "./context";
+import { maintainMiraContext } from "./contextMaintenance";
 import { waitForLiveAssistance } from "./liveAssistance";
 import { createMiraTools } from "./tools";
 
@@ -419,6 +421,20 @@ export async function executeMiraTurn(
         let continuation = false;
         let result: Awaited<ReturnType<CodexRuntime["turn"]>>;
         for (;;) {
+            if (runtime instanceof CodexRuntime) {
+                threadId = await maintainMiraContext({
+                    client,
+                    run,
+                    runtime,
+                    threadId,
+                    model: settings.model,
+                    workspace: config.workspace,
+                    tools,
+                    instructions: turnInstructions,
+                    signal,
+                });
+                providerThread = threadId;
+            }
             if (continuation && runtime instanceof SyntheticRuntime) {
                 // Synthetic clears its ephemeral registry after every reply.
                 threadId = await runtime.startThread(
@@ -522,6 +538,16 @@ export async function executeMiraTurn(
             await renewal;
             if (steeringFailed)
                 throw new Error("Message delivery could not be confirmed.");
+            if (
+                result.contextMaintenance &&
+                result.status === "completed" &&
+                !assistanceFinished
+            ) {
+                nextPrompt =
+                    "Continue the same operator task after context maintenance. Preserve verified progress, decisions and remaining work. Do not repeat completed actions. Obtain a fresh observation before further screen input. All current permissions still apply.";
+                continuation = true;
+                continue;
+            }
             if (!assistance || assistanceFinished || result.status !== "completed") break;
             assistanceIdle = true;
             activity = { phase: "working", tool: null };
@@ -544,6 +570,26 @@ export async function executeMiraTurn(
                 : reminder;
             continuation = true;
         }
+        if (
+            result.status === "completed" &&
+            runtime instanceof CodexRuntime &&
+            !signal.aborted
+        ) {
+            activity = { phase: "working", tool: null };
+            threadId = await maintainMiraContext({
+                client,
+                run,
+                runtime,
+                threadId,
+                model: settings.model,
+                workspace: config.workspace,
+                tools,
+                instructions: turnInstructions,
+                signal,
+                expireImages: true,
+            });
+            providerThread = threadId;
+        }
         clearInterval(interval);
         await renewal;
         if (steeringFailed) throw new Error("Message delivery could not be confirmed.");
@@ -557,11 +603,14 @@ export async function executeMiraTurn(
         }
         await finishMiraRun(client, run, {
             state: result.status,
-            text: assistance ? text : result.text,
+            text,
             parts,
             message:
                 result.status === "failed"
-                    ? "Mira could not complete the reply. Review the run before continuing."
+                    ? providerFailureMessage(
+                          useSynthetic ? "Synthetic" : "OpenAI",
+                          result.failure ?? "unknown"
+                      )
                     : null,
             providerTurn: result.id,
         });
@@ -575,6 +624,7 @@ export async function executeMiraTurn(
                 "Maximum run time exceeded during preparation or execution. Review this run before continuing.";
         else if (replyLimitFailure) message = replyLimitFailure.message;
         else if (error instanceof MiraFailure) message = error.message;
+        else if (error instanceof ProviderRequestError) message = error.message;
         let state: "completed" | "interrupted" | "needs_attention" = "needs_attention";
         if (assistanceIdle) {
             const [current] = await client<

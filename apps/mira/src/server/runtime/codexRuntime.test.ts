@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import type { MiraActivity } from "@homelab/contracts/mira";
 
+import { createVisualChallenge } from "../testing/visualChallenge";
 import { CodexRuntime } from "./codexRuntime";
 import {
     disabledRuntimeFeatures,
@@ -612,6 +613,105 @@ test("pre-router conversations retain current direct handlers when their provide
             "mira_tools_list",
             "mira_tool_call",
         ]);
+    } finally {
+        await runtime.close();
+    }
+});
+
+test.each(["ok", "compact-failed", "compact-incomplete"])(
+    "native compaction verifies matching lifecycle before continuing: %s",
+    async (mode) => {
+        const runtime = await CodexRuntime.connect(options(mode));
+        try {
+            const id = await runtime.startThread("synthetic", process.cwd(), []);
+            const compact = runtime.compactThread(id, new AbortController().signal);
+            if (mode === "ok") {
+                await compact;
+                const result = await runtime.turn(id, "Continue");
+                expect(result.status).toBe("completed");
+            } else
+                await rejects(
+                    compact,
+                    mode === "compact-failed" ? /context limit/ : /confirming completion/
+                );
+        } finally {
+            await runtime.close();
+        }
+    }
+);
+
+test("compaction cannot interrupt a running turn and cancellation reaps the compacting connection", async () => {
+    const active = await CodexRuntime.connect(options("steer-ok"));
+    let pending: ReturnType<CodexRuntime["turn"]> | undefined;
+    try {
+        const id = await active.startThread("synthetic", process.cwd(), []);
+        const started = Promise.withResolvers<void>();
+        pending = active.turn(id, "Wait", {
+            onStarted: () => {
+                started.resolve();
+                return Promise.resolve();
+            },
+        });
+        await started.promise;
+        await rejects(active.compactThread(id, new AbortController().signal), /idle/);
+        await active.interrupt();
+        const result = await pending;
+        expect(result.status).toBe("interrupted");
+    } finally {
+        await active.close();
+        await Promise.allSettled([pending]);
+    }
+    const compacting = await CodexRuntime.connect(options("compact-wait"));
+    try {
+        const id = await compacting.startThread("synthetic", process.cwd(), []);
+        const cancellation = new AbortController();
+        const result = compacting.compactThread(id, cancellation.signal);
+        cancellation.abort();
+        await rejects(result, /interrupted/);
+    } finally {
+        await compacting.close();
+    }
+});
+
+test("bounds visual tool accumulation at a confirmed boundary without replaying later calls", async () => {
+    const runtime = await CodexRuntime.connect(options("tool-sequence-14"));
+    let calls = 0;
+    try {
+        const id = await runtime.startThread("synthetic", process.cwd(), [
+            {
+                name: "echo",
+                description: "Observe fixture",
+                inputSchema: {},
+                execute: () => {
+                    calls++;
+                    return Promise.resolve({
+                        content: [
+                            {
+                                type: "image" as const,
+                                mediaType: "image/png" as const,
+                                data: createVisualChallenge().data,
+                            },
+                        ],
+                    });
+                },
+            },
+        ]);
+        const result = await runtime.turn(id, "Observe until finished");
+        expect(calls).toBe(12);
+        expect(result.contextMaintenance).toBe(true);
+        expect(result.status).toBe("completed");
+        expect(result.text).toContain("No action was sent");
+    } finally {
+        await runtime.close();
+    }
+});
+
+test("retains an observed provider rejection as a safe failure category", async () => {
+    const runtime = await CodexRuntime.connect(options("failed"));
+    try {
+        const id = await runtime.startThread("synthetic", process.cwd(), []);
+        const result = await runtime.turn(id, "Test");
+        expect(result.failure).toBe("bad_request");
     } finally {
         await runtime.close();
     }

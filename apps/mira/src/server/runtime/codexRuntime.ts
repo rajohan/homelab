@@ -17,7 +17,15 @@ import {
     type TurnResult,
     turnSchema,
 } from "./protocol";
+import { classifyProviderFailure, ProviderRequestError } from "./providerFailure";
 import { RuntimeResponseError } from "./responseError";
+import {
+    inlineImages,
+    inspectRolloutContext,
+    type RolloutContext,
+    visualContextBytes,
+    visualContextImages,
+} from "./rolloutContext";
 import { RpcProcess, type RpcProcessOptions } from "./rpcProcess";
 import { assertSkillCatalog } from "./skillCatalog";
 import { assertSystemSkills } from "./systemSkills";
@@ -30,6 +38,9 @@ interface ActiveTurn {
     calls: Set<string>;
     acknowledged: PromiseWithResolvers<string>;
     completed: boolean;
+    imageBytes: number;
+    images: number;
+    contextMaintenance: boolean;
     onActivity?: ((activity: MiraActivity) => void) | undefined;
 }
 
@@ -40,6 +51,9 @@ export class CodexRuntime {
     private readonly connection: RpcProcess;
     private readonly threads = new Map<string, RuntimeTool<RuntimeToolResult>[]>();
     private active: ActiveTurn | null = null;
+    private compacting = false;
+    private readonly home: string;
+    private readonly contextSizes = new Map<string, { count: number; bytes: number }>();
 
     private constructor(
         options: Omit<RpcProcessOptions, "onRequest">,
@@ -47,6 +61,7 @@ export class CodexRuntime {
     ) {
         this.webSearch = webSearch;
         this.workspace = options.cwd;
+        this.home = options.env.CODEX_HOME ?? "";
         this.connection = new RpcProcess({
             ...options,
             onRequest: (event, signal) => this.handleRequest(event, signal),
@@ -219,6 +234,68 @@ export class CodexRuntime {
     }
 
     /**
+     * Inspect only the persisted context belonging to this established private thread.
+     * @param threadId - Registered provider reference from the owned conversation.
+     * @returns Read-only native checkpoint and visual-size metadata.
+     */
+    async readContext(threadId: string): Promise<RolloutContext | null> {
+        if (this.active || this.compacting || !this.threads.has(threadId))
+            throw new Error("Context inspection requires an idle registered thread.");
+        const { thread } = v.parse(
+            v.object({
+                thread: v.object({
+                    id: v.literal(threadId),
+                    path: v.nullish(v.string()),
+                }),
+            }),
+            await this.connection.request("thread/read", { threadId })
+        );
+        if (!thread.path) return null;
+        const context = await inspectRolloutContext(this.home, threadId, thread.path);
+        this.contextSizes.set(threadId, {
+            count: context.images,
+            bytes: context.imageBytes,
+        });
+        return context;
+    }
+
+    /**
+     * Import preserved native items into an idle replacement without executing historical tools.
+     * @param threadId - Newly registered replacement, not yet published as the conversation.
+     * @param items - Validated original context in chronological order.
+     * @returns Acknowledgement after each bounded protocol frame has been accepted.
+     */
+    async importContext(
+        threadId: string,
+        items: Record<string, unknown>[]
+    ): Promise<void> {
+        if (this.active || this.compacting || !this.threads.has(threadId))
+            throw new Error("Context import requires an idle registered thread.");
+        let batch: Record<string, unknown>[] = [],
+            bytes = 0;
+        for (const item of items) {
+            const length = Buffer.byteLength(JSON.stringify(item));
+            if (length > 3 * 1024 * 1024)
+                throw new Error("Provider context item exceeds its import limit.");
+            if (bytes + length > 3 * 1024 * 1024 && batch.length > 0) {
+                await this.connection.request("thread/inject_items", {
+                    threadId,
+                    items: batch,
+                });
+                batch = [];
+                bytes = 0;
+            }
+            batch.push(item);
+            bytes += length;
+        }
+        if (batch.length > 0)
+            await this.connection.request("thread/inject_items", {
+                threadId,
+                items: batch,
+            });
+    }
+
+    /**
      * Stream one bounded turn and distinguish completion from interruption or failure.
      * @param threadId - Thread established by this adapter.
      * @param text - User input for this turn.
@@ -242,7 +319,8 @@ export class CodexRuntime {
             };
         } = {}
     ): Promise<TurnResult> {
-        if (this.active) throw new Error("Mira already has an active turn.");
+        if (this.active || this.compacting)
+            throw new Error("Mira already has an active turn.");
         if (!this.threads.has(threadId))
             throw new Error("Mira thread has not been established.");
         options.signal?.throwIfAborted();
@@ -254,6 +332,9 @@ export class CodexRuntime {
             calls: new Set(),
             acknowledged: Promise.withResolvers<string>(),
             completed: false,
+            imageBytes: this.contextSizes.get(threadId)?.bytes ?? 0,
+            images: this.contextSizes.get(threadId)?.count ?? 0,
+            contextMaintenance: false,
             onActivity: options.onActivity,
         };
         void active.acknowledged.promise.catch(() => {});
@@ -316,6 +397,10 @@ export class CodexRuntime {
                     id: result.turn.id,
                     status: result.turn.status,
                     text: output,
+                    ...(active.contextMaintenance ? { contextMaintenance: true } : {}),
+                    ...(result.turn.status === "failed"
+                        ? { failure: classifyProviderFailure(result.turn.error) }
+                        : {}),
                 });
             }
         });
@@ -382,6 +467,79 @@ export class CodexRuntime {
     }
 
     /**
+     * Ask Codex to compact its own context between completed turns; never interrupt tools.
+     * @param threadId - Established, idle provider thread.
+     * @param signal - Run cancellation, also enforced while the provider compacts.
+     * @returns Completion only after the matching compaction item and successful terminal turn.
+     */
+    async compactThread(threadId: string, signal: AbortSignal): Promise<void> {
+        if (this.active || this.compacting || !this.threads.has(threadId))
+            throw new Error("Context maintenance requires an idle registered thread.");
+        signal.throwIfAborted();
+        this.compacting = true;
+        const completed = Promise.withResolvers<void>();
+        void completed.promise.catch(() => {});
+        let turnId: string | null = null;
+        let compacted = false;
+        const cancel = () =>
+            completed.reject(new Error("Context maintenance was interrupted."));
+        const unsubscribe = this.connection.subscribe((event) => {
+            const value = v.safeParse(
+                v.object({
+                    threadId: v.string(),
+                    turnId: v.optional(v.string()),
+                    item: v.optional(v.object({ type: v.string() })),
+                }),
+                event.params
+            );
+            if (!value.success || value.output.threadId !== threadId) return;
+            if (
+                event.method === "item/started" &&
+                value.output.item?.type === "contextCompaction"
+            )
+                turnId = value.output.turnId ?? null;
+            if (
+                event.method === "item/completed" &&
+                value.output.item?.type === "contextCompaction" &&
+                value.output.turnId === turnId
+            )
+                compacted = true;
+            if (event.method === "turn/completed") {
+                const result = v.parse(completedSchema, event.params);
+                if (result.turn.status === "failed") {
+                    completed.reject(
+                        new ProviderRequestError(
+                            "OpenAI",
+                            classifyProviderFailure(result.turn.error)
+                        )
+                    );
+                } else if (
+                    result.turn.status === "completed" &&
+                    compacted &&
+                    result.turn.id === turnId
+                ) {
+                    completed.resolve();
+                } else completed.reject(new ProviderRequestError("OpenAI", "incomplete"));
+            }
+        });
+        signal.addEventListener("abort", cancel, { once: true });
+        this.connection.signal.addEventListener("abort", cancel, { once: true });
+        try {
+            await this.connection.request("thread/compact/start", { threadId });
+            if (signal.aborted || this.connection.signal.aborted) cancel();
+            await completed.promise;
+        } catch (error) {
+            await this.close();
+            throw error;
+        } finally {
+            unsubscribe();
+            signal.removeEventListener("abort", cancel);
+            this.connection.signal.removeEventListener("abort", cancel);
+            this.compacting = false;
+        }
+    }
+
+    /**
      * Append operator guidance to exactly the current provider turn.
      * @param threadId - Previously acknowledged provider thread.
      * @param turnId - Expected active turn; never inferred from a late notification.
@@ -428,6 +586,19 @@ export class CodexRuntime {
             if (!(error instanceof RuntimeResponseError && error.threadMissing))
                 throw error;
         }
+    }
+
+    /**
+     * Permanently retire an idle predecessor only after the product reference was replaced.
+     * @param threadId - Registered predecessor, never the new current conversation reference.
+     * @returns Deletion acknowledgement; failures remain in the durable retirement queue.
+     */
+    async retireThread(threadId: string): Promise<void> {
+        if (this.active || this.compacting || !this.threads.has(threadId))
+            throw new Error("Only an idle registered predecessor may be retired.");
+        await this.connection.request("thread/delete", { threadId });
+        this.threads.delete(threadId);
+        this.contextSizes.delete(threadId);
     }
 
     /** Request interruption of the current turn; completion still comes from the runtime. */
@@ -481,6 +652,16 @@ export class CodexRuntime {
                     },
                 ],
             };
+        if (active.contextMaintenance)
+            return {
+                success: false,
+                contentItems: [
+                    {
+                        type: "inputText",
+                        text: "No action was sent: this model turn needs context maintenance. Finish this reply with the verified progress and remaining work. The host will compact the context and continue the same task automatically; do not ask the operator to restart.",
+                    },
+                ],
+            };
         const tool = this.threads
             .get(call.threadId)
             ?.find((entry) => entry.name === call.tool);
@@ -496,7 +677,21 @@ export class CodexRuntime {
                 turnId: call.turnId,
             });
             turnSignal.throwIfAborted();
-            return { success: true, contentItems: runtimeContentItems(result) };
+            const contentItems = runtimeContentItems(result);
+            const images = inlineImages(contentItems);
+            active.imageBytes += images.bytes;
+            active.images += images.count;
+            if (
+                active.imageBytes >= visualContextBytes ||
+                active.images >= visualContextImages
+            ) {
+                active.contextMaintenance = true;
+                contentItems.push({
+                    type: "inputText",
+                    text: "Context maintenance is due after this confirmed result. Finish this model turn with a concise account of verified progress, important observed facts, and remaining work. The host will compact and continue the same task automatically. Do not perform another action or ask the operator to restart.",
+                });
+            }
+            return { success: true, contentItems };
         } catch {
             return {
                 success: false,

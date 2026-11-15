@@ -23,13 +23,30 @@ export async function cleanupMiraConversations(
     >`SELECT id, owner, provider_thread AS "providerThread" FROM mira_conversations c WHERE deleted_at IS NOT NULL AND provider_thread IS NOT NULL AND (provider_purge_retry_at IS NULL OR provider_purge_retry_at <= now()) AND NOT EXISTS (SELECT 1 FROM mira_runs r WHERE r.conversation_id = c.id AND r.state IN ('queued','running')) ORDER BY deleted_at, id LIMIT 20`;
     let deleted = 0;
     let failed = false;
+    const retired = await client<{ id: string; threadId: string }[]>`
+        SELECT c.id, item.value AS "threadId" FROM mira_conversations c,
+        LATERAL jsonb_array_elements_text(c.provider_retired_threads) item(value)
+        WHERE (c.provider_thread IS NULL OR c.provider_thread<>item.value)
+        AND (c.provider_purge_retry_at IS NULL OR c.provider_purge_retry_at<=now())
+        AND NOT EXISTS(SELECT 1 FROM mira_runs r WHERE r.conversation_id=c.id AND r.state IN ('queued','running'))
+        ORDER BY c.id LIMIT 20`;
+    for (const row of retired) {
+        try {
+            await runtime.deleteThread(row.threadId);
+            await client`UPDATE mira_conversations SET provider_retired_threads=provider_retired_threads - ${row.threadId},provider_purge_retry_at=CASE WHEN provider_retired_threads - ${row.threadId}='[]'::jsonb AND (deleted_at IS NULL OR provider_thread IS NULL) THEN NULL ELSE provider_purge_retry_at END WHERE id=${row.id} AND (provider_thread IS NULL OR provider_thread<>${row.threadId})`;
+            deleted++;
+        } catch {
+            await client`UPDATE mira_conversations SET provider_purge_retry_at=now()+interval '5 minutes' WHERE id=${row.id}`;
+            failed = true;
+        }
+    }
     for (const row of rows) {
         try {
             await runtime.deleteThread(row.providerThread);
             await client.begin(async (query) => {
                 const updated = await query<
                     { id: string }[]
-                >`UPDATE mira_conversations SET provider_thread = NULL, provider_policy_hash = NULL, provider_context_ready = false, provider_purge_retry_at = NULL WHERE id = ${row.id} AND deleted_at IS NOT NULL AND provider_thread = ${row.providerThread} RETURNING id`;
+                >`UPDATE mira_conversations SET provider_thread = NULL, provider_policy_hash = NULL, provider_context_ready = false, provider_purge_retry_at = CASE WHEN provider_retired_threads='[]'::jsonb THEN NULL ELSE provider_purge_retry_at END WHERE id = ${row.id} AND deleted_at IS NOT NULL AND provider_thread = ${row.providerThread} RETURNING id`;
                 if (updated.length > 0)
                     await auditMira(
                         query,

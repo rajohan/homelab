@@ -747,3 +747,106 @@ test("Synthetic sends selected WebP attachments and keeps all tool replies befor
         await rm(directory, { recursive: true, force: true });
     }
 });
+
+test.each([false, true])(
+    "Synthetic summarizes visual facts between complete exchanges without repeating tools; failure=%s",
+    async (fail) => {
+        let actions = 0,
+            summaries = 0;
+        const screenshot = createVisualChallenge().data;
+        const requests: Record<string, unknown>[] = [];
+        const runtime = new SyntheticRuntime(
+            configuration,
+            "operator",
+            transport((_url, init) => {
+                if (typeof init.body !== "string")
+                    throw new Error("Expected JSON request.");
+                const body = JSON.parse(init.body) as Record<string, unknown>;
+                requests.push(body);
+                if (!body.tools) {
+                    summaries++;
+                    expect(JSON.stringify(body.messages)).toContain(
+                        "important facts observed in screenshots"
+                    );
+                    return fail
+                        ? new Response("private upstream error", { status: 503 })
+                        : stream([
+                              chunk(
+                                  {
+                                      content:
+                                          "Goal: inspect all screens. Verified score 2–1. Observations 1–12 completed. No writes were attempted. Next observation 13.",
+                                  },
+                                  "stop"
+                              ),
+                          ]);
+                }
+                if (summaries > 0) {
+                    expect(JSON.stringify(body.messages)).not.toContain(screenshot);
+                    expect(JSON.stringify(body.messages)).toContain("Verified score 2–1");
+                    expect(JSON.stringify(body.messages)).toContain("Original objective");
+                    return stream([
+                        chunk(
+                            { content: "Finished with the visual facts preserved." },
+                            "stop"
+                        ),
+                    ]);
+                }
+                return stream([
+                    chunk(
+                        {
+                            tool_calls: [
+                                {
+                                    index: 0,
+                                    id: `observation-${actions + 1}`,
+                                    type: "function",
+                                    function: { name: "observe", arguments: "{}" },
+                                },
+                            ],
+                        },
+                        "tool_calls"
+                    ),
+                ]);
+            })
+        );
+        try {
+            const id = await runtime.startThread(
+                settings.model,
+                "/unused",
+                [
+                    {
+                        name: "observe",
+                        description: "Observe synthetic screen",
+                        inputSchema: {},
+                        execute: () => {
+                            actions++;
+                            return Promise.resolve({
+                                content: [
+                                    {
+                                        type: "image" as const,
+                                        mediaType: "image/png" as const,
+                                        data: screenshot,
+                                    },
+                                ],
+                            });
+                        },
+                    },
+                ],
+                "Trusted policy stays unchanged."
+            );
+            const turn = runtime.turn(id, "Original objective", { settings, signal });
+            if (fail) await rejects(turn, /provider connection failed/);
+            else {
+                const result = await turn;
+                expect(result.text).toContain("visual facts preserved");
+            }
+            expect(actions).toBe(12);
+            expect(summaries).toBe(1);
+            expect(requests.length).toBe(fail ? 13 : 14);
+            expect(JSON.stringify(requests.at(-1))).not.toContain(
+                "private upstream error"
+            );
+        } finally {
+            await runtime.close();
+        }
+    }
+);

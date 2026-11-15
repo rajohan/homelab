@@ -1,0 +1,1 @@
+ALTER TABLE "mira_conversations" ADD COLUMN "provider_retired_threads" jsonb DEFAULT '[]' NOT NULL;

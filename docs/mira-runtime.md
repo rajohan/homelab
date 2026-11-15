@@ -320,3 +320,45 @@ records this policy; the executor and browser/computer authority checks share it
 Codex and Synthetic receive `timeoutMs: null` for these runs. Transport requests,
 individual commands, leases and local access grants retain their own deadlines.
 Explicit automation/task budgets and timed live-assistance choices still apply.
+
+### Long conversations and screenshot expiry
+
+Visual history has a separate transport budget from the model's token window.
+After twelve image results or eight MiB of encoded images, the Codex adapter asks
+for a completed model turn before accepting another tool action. The executor
+continues the same product run after context maintenance; no existing action is
+replayed. Maintenance never starts while a tool or provider turn is active.
+
+Codex owns summarization through `thread/compact/start`. Mira copies the latest
+native checkpoint and subsequent text into an independent provider thread using
+`thread/inject_items`, removes expired image copies, and verifies native compaction
+before switching the owned conversation reference under its existing run lease.
+Opaque compaction items remain unchanged during transfer. The pinned runtime's
+read-only rollout format is validated; unsupported, changed or incomplete history
+fails without replacing the original. Already oversized legacy history preserves
+its existing checkpoint and later text without resending the rejected image body.
+Facts visible only in an old, unrecorded screenshot cannot be recovered after expiry.
+
+Completed Codex replies also retire remaining image copies. The predecessor is
+permanently deleted through the native API after the replacement is committed.
+Failed replacements and unacknowledged deletions remain in the durable retirement
+queue; cleanup retries only while that conversation is idle. Failed or interrupted
+runs preserve the source for the next safe maintenance attempt. User-uploaded files,
+product messages, memories and tool receipts are not deleted by this mechanism.
+Backups retain their existing retention policy; this does not rewrite old backups.
+
+Synthetic Chat Completions is stateless and has no documented compact endpoint.
+At a completed tool boundary, Mira requests a bounded, tool-free continuation
+checkpoint from the selected model before discarding old in-memory visual history.
+The original request and trusted policy remain, and further input requires fresh
+screen observations. A failed checkpoint never retries a tool action. Provider
+failures are classified into safe messages rather than exposing raw upstream bodies
+or collapsing every rejection into an unexplained incomplete reply.
+
+Regression coverage includes native compaction lifecycle/cancellation, complete
+call/output boundaries, image withdrawal, database lease loss, failed compaction,
+deferred deletion, and Synthetic visual-context continuation. A live qualification
+with the pinned Codex runtime on 2026-11-11 preserved a visually read random value,
+the original task reference and completed-action context after image-free transfer;
+both generated test threads were deleted afterward. Production activation uses the
+normal reviewed release and additive `provider_retired_threads` migration.
