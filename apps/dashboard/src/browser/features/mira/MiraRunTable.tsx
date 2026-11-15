@@ -70,14 +70,19 @@ export function MiraRunTable({
                         label: "Status",
                         width: "w-36",
                         render: (run) => (
-                            <Badge tone={miraStatusTone(run.state)}>
-                                <span className="capitalize">
-                                    {run.cancelRequested &&
-                                    ["queued", "running"].includes(run.state)
-                                        ? "Stopping"
-                                        : run.state.replaceAll("_", " ")}
-                                </span>
-                            </Badge>
+                            <div className="flex flex-wrap gap-1.5">
+                                <Badge tone={miraStatusTone(run.state)}>
+                                    <span className="capitalize">
+                                        {run.cancelRequested &&
+                                        ["queued", "running"].includes(run.state)
+                                            ? "Stopping"
+                                            : run.state.replaceAll("_", " ")}
+                                    </span>
+                                </Badge>
+                                {run.followupResolution && (
+                                    <Badge tone="info">Follow-up closed</Badge>
+                                )}
+                            </div>
                         ),
                     },
                     {

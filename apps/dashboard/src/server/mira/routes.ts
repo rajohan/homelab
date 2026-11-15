@@ -15,6 +15,7 @@ import {
     miraReportFilterSchema,
     miraReportInputSchema,
     miraRunReadSchema,
+    miraRunResolveSchema,
     miraStateChangeSchema,
     miraTaskFilterSchema,
     miraTaskInputSchema,
@@ -124,6 +125,7 @@ import {
 } from "@homelab/mira/data/publications";
 import { listMiraRuns } from "@homelab/mira/data/queue";
 import { readMiraRun } from "@homelab/mira/data/runHistory";
+import { resolveMiraRun } from "@homelab/mira/data/runResolution";
 import { inspectMiraSkill, listMiraSkills } from "@homelab/mira/data/skills";
 import {
     approveMiraSocial,
@@ -482,6 +484,11 @@ export const miraRouter = trpc.router({
             ),
     }),
     runs: trpc.router({
+        resolve: trpc.procedure
+            .input(miraRunResolveSchema)
+            .mutation(({ ctx, input }) =>
+                execute(ctx, (mira) => resolveMiraRun(mira, input))
+            ),
         read: trpc.procedure
             .input(miraRunReadSchema)
             .query(({ ctx, input }) =>

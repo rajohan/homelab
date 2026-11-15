@@ -1,0 +1,1 @@
+ALTER TABLE "mira_runs" ADD COLUMN "followup_resolution" jsonb;

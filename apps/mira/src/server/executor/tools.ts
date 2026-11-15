@@ -318,9 +318,10 @@ export function createMiraTools(
         {
             name: "mira_runs_list",
             description:
-                "Read bounded owned Mira run history, including failures without reports. Defaults to failed, interrupted and needs-attention outcomes; use a state filter for other work.",
+                "Read owned run history and operator follow-up decisions. Defaults to unresolved failed/interrupted/needs-attention runs. recentlyClosed records operator decisions that supersede older reports or memories about those runs. Closed follow-up does not prove action success or authorize replay. Use includeResolved=true to inspect closed history.",
             inputSchema: object({
                 before: uuid,
+                includeResolved: { type: "boolean" },
                 state: {
                     enum: [
                         "queued",
@@ -337,6 +338,7 @@ export function createMiraTools(
                 const parsed = v.parse(
                     v.strictObject({
                         before: v.optional(idSchema),
+                        includeResolved: v.optional(v.boolean(), false),
                         state: v.optional(
                             v.picklist([
                                 "queued",
@@ -351,15 +353,23 @@ export function createMiraTools(
                     input
                 );
                 const rows = await client<Record<string, unknown>[]>`
-                    SELECT r.id,r.state,r.task_id AS "taskId",r.automation_id AS "automationId",r.conversation_id AS "conversationId",
+                    SELECT r.id,r.state,r.followup_resolution AS "followupResolution",r.task_id AS "taskId",r.automation_id AS "automationId",r.conversation_id AS "conversationId",
                         c.title,left(r.message,2000) AS message,r.created_at AS "createdAt",r.finished_at AS "finishedAt",
                         (SELECT count(*)::int FROM mira_tool_receipts t WHERE t.run_id=r.id AND t.state='unknown') AS "uncertainActions"
                     FROM mira_runs r JOIN mira_conversations c ON c.id=r.conversation_id
                     WHERE r.owner=${run.owner} AND c.owner=${run.owner} AND c.deleted_at IS NULL
                     AND (${parsed.before ?? null}::uuid IS NULL OR r.id<${parsed.before ?? null}::uuid)
+                    AND (${parsed.includeResolved} OR r.followup_resolution IS NULL)
                     AND (CASE WHEN ${parsed.state ?? null}::text IS NULL THEN r.state IN ('failed','interrupted','needs_attention') ELSE r.state=${parsed.state ?? null} END)
                     ORDER BY r.id DESC LIMIT 30`;
-                return { rows, nextCursor: rows.length === 30 ? rows.at(-1)!.id : null };
+                const recentlyClosed = await client<
+                    Record<string, unknown>[]
+                >`SELECT r.id,r.conversation_id AS "conversationId",c.title,r.followup_resolution AS resolution FROM mira_runs r JOIN mira_conversations c ON c.id=r.conversation_id AND c.owner=r.owner WHERE r.owner=${run.owner} AND c.deleted_at IS NULL AND r.followup_resolution IS NOT NULL ORDER BY r.followup_resolution->>'closedAt' DESC,r.id DESC LIMIT 30`;
+                return {
+                    rows,
+                    recentlyClosed,
+                    nextCursor: rows.length === 30 ? rows.at(-1)!.id : null,
+                };
             },
         },
         {

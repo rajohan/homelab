@@ -4,6 +4,7 @@ import {
     miraDefaultChatSettings,
     type MiraMessagePart,
     type MiraModel,
+    type MiraRunResolution,
     type MiraSchedule,
 } from "@homelab/contracts/mira";
 import type { MiraCodeContent, MiraCodePublication } from "@homelab/contracts/miraCode";
@@ -253,6 +254,7 @@ export const miraRuns = pgTable(
         requestHash: text("request_hash").notNull(),
         approvalRevokedAt: time("approval_revoked_at"),
         reviewedRunId: uuid("reviewed_run_id").references((): AnyPgColumn => miraRuns.id),
+        followupResolution: jsonb("followup_resolution").$type<MiraRunResolution>(),
         taskChangeId: uuid("task_change_id"),
         taskResumed: boolean("task_resumed").notNull().default(false),
         taskAutoStarted: boolean("task_auto_started").notNull().default(false),

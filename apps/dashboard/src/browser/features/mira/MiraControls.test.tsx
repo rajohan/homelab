@@ -37,6 +37,7 @@ import { DaytonaRecovery } from "./DaytonaRecovery";
 import { ImprovementPermission } from "./ImprovementPermission";
 import { MailEditor } from "./MailEditor";
 import { MailReview } from "./MailReview";
+import { MiraRunFollowup } from "./MiraRunFollowup";
 import { MiraRunTable } from "./MiraRunTable";
 import { MiraSkills } from "./MiraSkills";
 import { ModelSettings } from "./ModelSettings";
@@ -2621,5 +2622,87 @@ test("Main cleanup cannot be replaced by a cloud cleanup assertion", () => {
         ).not.toBeInTheDocument();
     } finally {
         cleanup();
+    }
+});
+
+test("follow-up closure records the selected reason without restarting or rewriting execution", async () => {
+    const id = crypto.randomUUID();
+    const requested: { url: string; body: unknown }[] = [];
+    const resolution = {
+        outcome: "dismissed",
+        reason: "The old game task is no longer relevant.",
+        closedAt: "2026-11-15T12:00:00Z",
+        closedBy: "human:operator",
+    };
+    const request = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+            (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+                requested.push({
+                    url: input instanceof Request ? input.url : input.toString(),
+                    body:
+                        typeof init?.body === "string"
+                            ? (JSON.parse(init.body) as unknown)
+                            : null,
+                });
+                return Promise.resolve(
+                    Response.json([{ result: { data: serialize(resolution) } }])
+                );
+            },
+            { preconnect: fetch.preconnect }
+        )
+    );
+    const close = fixture(
+        <MiraRunFollowup run={{ id, followupResolution: null }} eligible />
+    );
+    try {
+        await userEvent.click(screen.getByRole("button", { name: "Close follow-up" }));
+        expect(screen.getByRole("button", { name: "Save decision" })).toBeDisabled();
+        fireEvent.change(screen.getByRole("textbox", { name: "Reason" }), {
+            target: { value: resolution.reason },
+        });
+        await userEvent.click(screen.getByRole("button", { name: "Save decision" }));
+        expect(await screen.findByText("Follow-up closed")).toBeVisible();
+        expect(screen.getByText(resolution.reason)).toBeVisible();
+        expect(screen.getByText(/does not restart work/)).toBeVisible();
+        expect(requested).toHaveLength(1);
+        expect(requested[0]!.url).toContain("mira.runs.resolve");
+        expect(requested[0]!.body).toEqual({
+            "0": { json: { id, outcome: "dismissed", reason: resolution.reason } },
+        });
+    } finally {
+        close();
+        request.mockRestore();
+    }
+});
+
+test("ineligible work has no follow-up action while an existing resolution remains visible", () => {
+    const id = crypto.randomUUID();
+    let close = fixture(<MiraRunFollowup run={{ id }} eligible={false} />);
+    try {
+        expect(
+            screen.queryByRole("button", { name: "Close follow-up" })
+        ).not.toBeInTheDocument();
+    } finally {
+        close();
+    }
+    close = fixture(
+        <MiraRunFollowup
+            run={{
+                id,
+                followupResolution: {
+                    outcome: "reviewed",
+                    reason: "Checked by the operator.",
+                    closedAt: "2026-11-15T12:00:00Z",
+                    closedBy: "human:operator",
+                },
+            }}
+            eligible={false}
+        />
+    );
+    try {
+        expect(screen.getByText("Reviewed")).toBeVisible();
+        expect(screen.getByText("Checked by the operator.")).toBeVisible();
+    } finally {
+        close();
     }
 });

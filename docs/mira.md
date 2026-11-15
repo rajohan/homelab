@@ -365,3 +365,11 @@ Mira's release-owned persona lives in `apps/mira/src/server/persona/`:
 Static text imports embed these files in the server artifact. ChatGPT and Synthetic receive the same foundation. All four files contribute to the existing instructions hash, so a changed release renews provider instructions and reconstructs context from product history instead of resuming an obsolete policy. Updates use the normal Homelab build, review and deployment flow; there is no remote instruction fetch or mutable host-directory override.
 
 Saved memories and conversation history remain in the owner-scoped database with the existing recall controls. Old daily journals, private profiles and legacy VPS/OpenClaw paths are not imported. Changes to memory do not modify these reviewed instructions or grant additional permissions.
+
+## Closing historical follow-up
+
+Open **Run details** from Chat or Jobs and choose **Close follow-up** after inspecting the recorded outcomes. Select **Reviewed** or **No longer relevant** and provide a reason. The server records the operator, time and reason on that owned terminal run and writes an audit event. An identical retry returns the original decision; a different decision cannot silently overwrite it.
+
+Closing follow-up leaves the execution state, tool receipts and uncertain effects unchanged. It does not restart work, confirm that an action succeeded, approve a retry or release task-specific safety gates. Active jobs cannot be closed. Old reports remain historical snapshots.
+
+Mira's run-history tool excludes closed follow-up by default and includes recent closure decisions. `includeResolved` permits inspection of closed history. Briefs and summaries check current run status before treating historical failures as outstanding work; the recorded operator decision takes precedence over older reports or memories. This also changes the heartbeat observation fingerprint when the closed run is older than the recent history window.
