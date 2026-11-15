@@ -96,7 +96,12 @@ export function createMiraOperationsTools(
         }, 1000);
         try {
             const result = await execute(target, input, effective);
-            await access(effective);
+            try {
+                await access(effective);
+            } catch {
+                // An accepted host command cannot be rolled back by a later authority check.
+                throw new Error("Host command completed after authority was lost. Reconcile before retrying.");
+            }
             return result;
         } finally {
             clearInterval(timer);
@@ -164,6 +169,9 @@ export function createMiraOperationsTools(
                 },
                 ["target", "command", "reason"]
             ),
+            onFailure: async (scoped) => {
+                await client`UPDATE mira_tool_receipts SET state='expired',finished_at=clock_timestamp(),message='This command was not dispatched; request a new proposal.' WHERE id=${scoped.receiptId} AND run_id=${run.id} AND state IN ('awaiting_approval','approved')`;
+            },
             action: async (input, signal, scoped: MiraToolContext) => {
                 const parsed = v.parse(miraHostCommandSchema, input);
                 await access(signal);

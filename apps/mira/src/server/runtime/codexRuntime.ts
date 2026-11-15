@@ -459,6 +459,7 @@ export class CodexRuntime {
                 await this.connection.request("turn/start", {
                     threadId,
                     ...options.settings,
+                    summary: "auto",
                     input: [
                         { type: "text", text, text_elements: [] },
                         ...(options.attachments ?? []),

@@ -4,6 +4,8 @@ import { rejects } from "node:assert/strict";
 import { capabilities } from "@homelab/contracts/operations";
 import { decideMiraProposal, listMiraProposals } from "@homelab/mira/data/proposals";
 import { createMiraOperationsTools } from "@homelab/mira/operations/tools";
+import { createMiraTools } from "@homelab/mira/executor/tools";
+import { MiraFailure } from "@homelab/mira/data/context";
 
 import { appRouter } from "../api/router";
 import { permissionRun } from "../testing/miraPermissions";
@@ -219,4 +221,29 @@ test("permission revocation interrupts an already dispatched command", async () 
     } finally {
         await f.close();
     }
+});
+
+test("a command that finishes while authority changes is not reported as rolled back", async () => {
+    const f = await fixture("full_access");
+    try {
+        const tool = createMiraOperationsTools(f.client, f.run, f.configuration, async () => {
+            await f.client`UPDATE mira_runs SET approval_revoked_at=clock_timestamp() WHERE id=${f.run.id}`;
+            return { exitCode: 0, stdout: "done", stderr: "", truncated: false, trust: "untrusted_host_output" };
+        }).find((entry) => entry.name === "mira_homelab_command")!;
+        await rejects(tool.action({ target: "main", command: "synthetic", reason: "Receipt race" }, new AbortController().signal, { ...f.context, receiptId: f.receiptId }), (error: unknown) => error instanceof Error && !(error instanceof MiraFailure) && /Reconcile/.test(error.message));
+    } finally { await f.close(); }
+});
+
+test("the public tool wrapper expires pending approvals when the operator stops", async () => {
+    const f = await fixture("ask");
+    const tool = createMiraTools(f.client, f.run, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, f.configuration).find((entry) => entry.name === "mira_homelab_command")!;
+    const pending = tool.execute({ target: "main", command: "printf synthetic", reason: "Stop while reviewing" }, new AbortController().signal, { callId: crypto.randomUUID(), threadId: "fixture", turnId: "fixture" });
+    try {
+        const proposal = await waitForProposal(f);
+        await f.client`UPDATE mira_runs SET cancel_requested=true WHERE id=${f.run.id}`;
+        expect(JSON.parse(await pending as string)).toMatchObject({ ok: false });
+        const [row] = await f.client<{ state: string }[]>`SELECT state FROM mira_tool_receipts WHERE id=${proposal.id}`;
+        expect(row?.state).toBe("expired");
+        expect(await listMiraProposals({ client: f.client, owner: f.run.owner, actor: "human:operator" }, f.run.conversationId)).toEqual([]);
+    } finally { await f.close(); }
 });

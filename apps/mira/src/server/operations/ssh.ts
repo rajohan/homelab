@@ -63,28 +63,34 @@ async function boundedOutput(stream: ReadableStream<Uint8Array>) {
     }
 }
 
+function spawnCommand(args: string[], stdin: Uint8Array) {
+    return Bun.spawn(args, {
+        env: { PATH: "/usr/bin:/bin", HOME: "/nonexistent", LANG: "C.UTF-8" },
+        stdin,
+        stdout: "pipe",
+        stderr: "pipe",
+    });
+}
+
 /** Execute one authorized command without retrying a lost or interrupted SSH operation.
  * @param target - Provisioned host authority held only by the executor.
  * @param command - Exact approved shell program and bounded execution deadline.
  * @param signal - Run cancellation or loss of authority.
+ * @param spawn - Process transport; tests substitute a disposable child without changing global process functions.
  * @returns Bounded untrusted output and observed exit code; transport uncertainty throws.
  */
 export async function executeMiraHostCommand(
     target: MiraOperationsTarget,
     command: MiraHostCommand,
-    signal: AbortSignal
+    signal: AbortSignal,
+    spawn = spawnCommand
 ) {
     signal.throwIfAborted();
     const deadline = AbortSignal.any([
         signal,
         AbortSignal.timeout(command.timeoutSeconds * 1000),
     ]);
-    const child = Bun.spawn(miraOperationsSshArguments(target), {
-        env: { PATH: "/usr/bin:/bin", HOME: "/nonexistent", LANG: "C.UTF-8" },
-        stdin: new TextEncoder().encode(command.command + "\n"),
-        stdout: "pipe",
-        stderr: "pipe",
-    });
+    const child = spawn(miraOperationsSshArguments(target), new TextEncoder().encode(command.command + "\n"));
     const stop = () => child.kill("SIGKILL");
     deadline.addEventListener("abort", stop, { once: true });
     if (deadline.aborted) stop();

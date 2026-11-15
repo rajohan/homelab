@@ -555,7 +555,7 @@ export async function executeMiraTurn(
             }
             if (!assistance || assistanceFinished || result.status !== "completed") break;
             assistanceIdle = true;
-            activity = { phase: "working", tool: null };
+            activity = { ...activity, phase: "working", tool: null };
             const pending = await readLiveAssistanceGuidance(client, run);
             if (pending.yieldForAttachments || pending.uncertain) break;
             const access = () =>
@@ -580,7 +580,7 @@ export async function executeMiraTurn(
             runtime instanceof CodexRuntime &&
             !signal.aborted
         ) {
-            activity = { phase: "working", tool: null };
+            activity = { ...activity, phase: "working", tool: null };
             threadId = await maintainMiraContext({
                 client,
                 run,
