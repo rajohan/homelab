@@ -131,6 +131,9 @@ test("Full access commands use provisioned authority, independent of Daytona sel
     try {
         expect(await f.invoke()).toMatchObject({ stdout: "synthetic" });
         expect(f.calls).toEqual(["printf synthetic"]);
+        const [receipt] = await f.client<{ input: { command: string; binding: string } }[]>`SELECT proposal AS input FROM mira_tool_receipts WHERE id=${f.receiptId}`;
+        expect(receipt?.input.command).toBe("printf synthetic");
+        expect(receipt?.input.binding).toHaveLength(64);
         expect(
             createMiraOperationsTools(f.client, f.run, {
                 ...f.configuration,

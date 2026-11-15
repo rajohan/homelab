@@ -31,6 +31,8 @@ No Docker daemon, development package installation or source tree is needed insi
 
 ## Optional Mira and private computer receiver
 
+For manual SSH administration, include the optional `compose.mira-operations.yaml` overlay and qualify the operator-bound destinations described in [Mira host administration](../docs/mira-operations.md). Only the trusted executor receives the private key mounts; this is independent of the selected Main/Daytona code-test target.
+
 Add `compose.mira.yaml` to the dashboard/worker deployment to supply Mira's tested
 image, dedicated runtime profile and shared files. It forwards the nonsecret
 `HOMELAB_MIRA_GITHUB_OWNER` to dashboard and executor, and the dedicated
