@@ -90,7 +90,10 @@ export async function executeMiraHostCommand(
         signal,
         AbortSignal.timeout(command.timeoutSeconds * 1000),
     ]);
-    const child = spawn(miraOperationsSshArguments(target), new TextEncoder().encode(command.command + "\n"));
+    const child = spawn(
+        miraOperationsSshArguments(target),
+        new TextEncoder().encode(command.command + "\n")
+    );
     const stop = () => child.kill("SIGKILL");
     deadline.addEventListener("abort", stop, { once: true });
     if (deadline.aborted) stop();

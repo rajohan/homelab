@@ -100,7 +100,9 @@ export function createMiraOperationsTools(
                 await access(effective);
             } catch {
                 // An accepted host command cannot be rolled back by a later authority check.
-                throw new Error("Host command completed after authority was lost. Reconcile before retrying.");
+                throw new Error(
+                    "Host command completed after authority was lost. Reconcile before retrying."
+                );
             }
             return result;
         } finally {
