@@ -316,8 +316,10 @@ def apt_update(item, automatic):
         raise UpdateRefusal("apt_candidate_changed")
     package.mark_install(auto_fix=True, auto_inst=True, from_user=False)
     changes = cache.get_changes()
-    if cache.broken_count or any(change.marked_delete or change._pkg.selected_state == apt_pkg.SELSTATE_HOLD for change in changes):
-        raise RuntimeError("The update would remove packages or change held software")
+    if any(change.marked_delete for change in changes):
+        raise UpdateRefusal("apt_removal_required")
+    if cache.broken_count or any(change._pkg.selected_state == apt_pkg.SELSTATE_HOLD for change in changes):
+        raise RuntimeError("The update would change held software or leave broken dependencies")
     for change in changes:
         if not change.candidate or (change.installed and apt_pkg.version_compare(change.candidate.version, change.installed.version) < 0):
             raise RuntimeError("Package downgrades are not permitted")

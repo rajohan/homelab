@@ -347,6 +347,17 @@ class UpdateExecutionTests(unittest.TestCase):
             command.assert_not_called()
             progress.assert_called_once_with("verifying")
 
+    def test_library_replacement_reports_manual_review_without_removing_packages(self):
+        package = types.SimpleNamespace(installed=types.SimpleNamespace(version="1.0"), candidate=types.SimpleNamespace(version="1.1"), _pkg=types.SimpleNamespace(selected_state=0), mark_install=lambda **_options: None)
+        class Cache:
+            def __getitem__(self, _name): return package
+            def get_changes(self): return [types.SimpleNamespace(marked_delete=True)]
+        modules = {"apt": types.SimpleNamespace(Cache=Cache), "apt_pkg": types.SimpleNamespace(SELSTATE_HOLD=2)}
+        with patch.dict(sys.modules, modules), patch.object(remote, "command") as command:
+            with self.assertRaisesRegex(remote.UpdateRefusal, "^apt_removal_required$"):
+                remote.apt_update({"id": "apt:camera:arm64", "installed": "1.0", "available": "1.1"}, False)
+            command.assert_not_called()
+
     def test_changed_package_candidates_are_reported_without_installing(self):
         for name, installed, approved, current in (
             ('raspi-firmware:arm64', '1:1.20260521-3', '1:1.20260907-1', '1:1.20260915-1'),

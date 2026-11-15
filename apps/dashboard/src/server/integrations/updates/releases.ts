@@ -101,14 +101,16 @@ export async function latestRelease(
     const body = await readBoundedJson(response);
     const data =
         provider === "node"
-            ? v.parse(
-                  v.pipe(
-                      v.array(v.object({ version })),
-                      v.minLength(1),
-                      v.maxLength(5000)
-                  ),
-                  body
-              )[0]
+            ? v
+                  .parse(
+                      v.pipe(
+                          v.array(v.object({ version })),
+                          v.minLength(1),
+                          v.maxLength(5000)
+                      ),
+                      body
+                  )
+                  .find((release) => /^v?\d+\.\d+\.\d+$/.test(release.version))
             : body;
     const record = v.parse(v.record(v.string(), v.unknown()), data);
     const value = (

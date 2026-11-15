@@ -93,13 +93,14 @@ export function updateActionJobs(
                 input.automatic,
                 context,
                 execute,
-                receiptScope
+                receiptScope,
+                refresh?.definition
             );
         },
     }));
     return [
         ...installers,
-        ...updateBatchJobs(targets, client, execute, applications),
+        ...updateBatchJobs(targets, client, execute, applications, refresh?.definition),
         {
             definition: {
                 key: "updates.automatic",
