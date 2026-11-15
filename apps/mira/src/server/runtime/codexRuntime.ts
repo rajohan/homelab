@@ -50,6 +50,7 @@ export class CodexRuntime {
     private readonly webSearch: boolean;
     private readonly connection: RpcProcess;
     private readonly threads = new Map<string, RuntimeTool<RuntimeToolResult>[]>();
+    private readonly emptyThreads = new Set<string>();
     private active: ActiveTurn | null = null;
     private compacting = false;
     private readonly home: string;
@@ -197,6 +198,7 @@ export class CodexRuntime {
         if (result.cwd !== this.workspace)
             throw new Error("Mira runtime changed the thread workspace.");
         this.threads.set(result.thread.id, tools);
+        this.emptyThreads.add(result.thread.id);
         return result.thread.id;
     }
 
@@ -231,6 +233,7 @@ export class CodexRuntime {
         if (result.thread.id !== threadId)
             throw new Error("Mira restored an unexpected thread.");
         this.threads.set(threadId, tools);
+        this.emptyThreads.delete(threadId);
     }
 
     /**
@@ -241,6 +244,9 @@ export class CodexRuntime {
     async readContext(threadId: string): Promise<RolloutContext | null> {
         if (this.active || this.compacting || !this.threads.has(threadId))
             throw new Error("Context inspection requires an idle registered thread.");
+        // Codex can return a rollout path before creating its file. A thread started
+        // here has no historical input until we submit a turn or import context.
+        if (this.emptyThreads.has(threadId)) return null;
         const { thread } = v.parse(
             v.object({
                 thread: v.object({
@@ -271,6 +277,7 @@ export class CodexRuntime {
     ): Promise<void> {
         if (this.active || this.compacting || !this.threads.has(threadId))
             throw new Error("Context import requires an idle registered thread.");
+        if (items.length > 0) this.emptyThreads.delete(threadId);
         let batch: Record<string, unknown>[] = [],
             bytes = 0;
         for (const item of items) {
@@ -324,6 +331,7 @@ export class CodexRuntime {
         if (!this.threads.has(threadId))
             throw new Error("Mira thread has not been established.");
         options.signal?.throwIfAborted();
+        this.emptyThreads.delete(threadId);
         const controller = new AbortController();
         const active: ActiveTurn = {
             threadId,
@@ -476,6 +484,7 @@ export class CodexRuntime {
         if (this.active || this.compacting || !this.threads.has(threadId))
             throw new Error("Context maintenance requires an idle registered thread.");
         signal.throwIfAborted();
+        this.emptyThreads.delete(threadId);
         this.compacting = true;
         const completed = Promise.withResolvers<void>();
         void completed.promise.catch(() => {});
@@ -598,6 +607,7 @@ export class CodexRuntime {
             throw new Error("Only an idle registered predecessor may be retired.");
         await this.connection.request("thread/delete", { threadId });
         this.threads.delete(threadId);
+        this.emptyThreads.delete(threadId);
         this.contextSizes.delete(threadId);
     }
 
