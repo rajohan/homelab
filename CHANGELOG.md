@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.6](https://github.com/rajohan/homelab/compare/v0.16.5...v0.16.6) (2026-11-15)
+
+
+### Bug Fixes
+
+* **mira:** defer context inspection until a new thread has input ([#201](https://github.com/rajohan/homelab/issues/201)) ([4cbd5d8](https://github.com/rajohan/homelab/commit/4cbd5d8e676554d0a41bcb1165f643c8142b38d9))
+
 ## [0.16.5](https://github.com/rajohan/homelab/compare/v0.16.4...v0.16.5) (2026-11-15)
 
 
