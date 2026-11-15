@@ -7,7 +7,37 @@ import type { MiraOperationsTarget } from "./configuration";
  * @returns An argv array with strict host verification and no inherited SSH configuration.
  */
 export function miraOperationsSshArguments(target: MiraOperationsTarget): string[] {
-    return ["/usr/bin/ssh", "-F", "/dev/null", "-T", "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-o", "IdentityAgent=none", "-o", "StrictHostKeyChecking=yes", "-o", `UserKnownHostsFile=${target.knownHostsFile}`, "-o", "ConnectTimeout=15", "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=3", "-i", target.identityFile, "-p", String(target.port), "-l", target.user, "--", target.host, "sh -s"];
+    return [
+        "/usr/bin/ssh",
+        "-F",
+        "/dev/null",
+        "-T",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "IdentitiesOnly=yes",
+        "-o",
+        "IdentityAgent=none",
+        "-o",
+        "StrictHostKeyChecking=yes",
+        "-o",
+        `UserKnownHostsFile=${target.knownHostsFile}`,
+        "-o",
+        "ConnectTimeout=15",
+        "-o",
+        "ServerAliveInterval=15",
+        "-o",
+        "ServerAliveCountMax=3",
+        "-i",
+        target.identityFile,
+        "-p",
+        String(target.port),
+        "-l",
+        target.user,
+        "--",
+        target.host,
+        "sh -s",
+    ];
 }
 
 async function boundedOutput(stream: ReadableStream<Uint8Array>) {
@@ -39,9 +69,16 @@ async function boundedOutput(stream: ReadableStream<Uint8Array>) {
  * @param signal - Run cancellation or loss of authority.
  * @returns Bounded untrusted output and observed exit code; transport uncertainty throws.
  */
-export async function executeMiraHostCommand(target: MiraOperationsTarget, command: MiraHostCommand, signal: AbortSignal) {
+export async function executeMiraHostCommand(
+    target: MiraOperationsTarget,
+    command: MiraHostCommand,
+    signal: AbortSignal
+) {
     signal.throwIfAborted();
-    const deadline = AbortSignal.any([signal, AbortSignal.timeout(command.timeoutSeconds * 1000)]);
+    const deadline = AbortSignal.any([
+        signal,
+        AbortSignal.timeout(command.timeoutSeconds * 1000),
+    ]);
     const child = Bun.spawn(miraOperationsSshArguments(target), {
         env: { PATH: "/usr/bin:/bin", HOME: "/nonexistent", LANG: "C.UTF-8" },
         stdin: new TextEncoder().encode(command.command + "\n"),
@@ -52,10 +89,20 @@ export async function executeMiraHostCommand(target: MiraOperationsTarget, comma
     deadline.addEventListener("abort", stop, { once: true });
     if (deadline.aborted) stop();
     try {
-        const [exitCode, stdout, stderr] = await Promise.all([child.exited, boundedOutput(child.stdout), boundedOutput(child.stderr)]);
+        const [exitCode, stdout, stderr] = await Promise.all([
+            child.exited,
+            boundedOutput(child.stdout),
+            boundedOutput(child.stderr),
+        ]);
         deadline.throwIfAborted();
         if (exitCode === 255) throw new Error("SSH outcome was not confirmed.");
-        return { exitCode, stdout: stdout.text, stderr: stderr.text, truncated: stdout.truncated || stderr.truncated, trust: "untrusted_host_output" };
+        return {
+            exitCode,
+            stdout: stdout.text,
+            stderr: stderr.text,
+            truncated: stdout.truncated || stderr.truncated,
+            trust: "untrusted_host_output",
+        };
     } finally {
         deadline.removeEventListener("abort", stop);
         if (child.exitCode === null) child.kill("SIGKILL");

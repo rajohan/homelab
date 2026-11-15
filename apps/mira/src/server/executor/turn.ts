@@ -29,6 +29,7 @@ import type {
 } from "../integrations/github/configuration";
 import type { HereNowReadConfiguration } from "../integrations/herenow/configuration";
 import type { MoltbookReadConfiguration } from "../integrations/moltbook/configuration";
+import type { MiraOperationsConfiguration } from "../operations/configuration";
 import {
     miraInstructions as instructions,
     miraInstructionsHash,
@@ -42,7 +43,6 @@ import type { SyntheticConfiguration } from "../runtime/syntheticConfiguration";
 import { loadSyntheticModels, SyntheticRuntime } from "../runtime/syntheticRuntime";
 import { createMiraToolRouter } from "../runtime/toolRouter";
 import type { LocalCodeBinding } from "../sandbox/localBinding";
-import type { MiraOperationsConfiguration } from "../operations/configuration";
 import { prepareMiraAttachments } from "./attachments";
 import { readMiraTurnInput } from "./context";
 import { maintainMiraContext } from "./contextMaintenance";

@@ -77,7 +77,9 @@ export function ChatActivity({
             )}
             {thinking && (
                 <details className="rounded-lg border border-primary-700 bg-primary-900/40">
-                    <summary className="cursor-pointer px-3 py-2 text-primary-300">Thinking</summary>
+                    <summary className="cursor-pointer px-3 py-2 text-primary-300">
+                        Thinking
+                    </summary>
                     <div className="max-h-64 overflow-y-auto border-t border-primary-700 px-3 py-2">
                         <Markdown>{thinking}</Markdown>
                     </div>

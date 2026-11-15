@@ -406,13 +406,23 @@ export const miraRouter = trpc.router({
             .input(miraProposalDecisionSchema)
             .mutation(({ ctx, input }) =>
                 execute(ctx, async (mira) => {
-                    const [proposal] = await mira.client<{ tool: string }[]>`SELECT t.tool FROM mira_tool_receipts t JOIN mira_runs r ON r.id=t.run_id WHERE t.id=${input.id} AND r.owner=${mira.owner}`;
+                    const [proposal] = await mira.client<
+                        { tool: string }[]
+                    >`SELECT t.tool FROM mira_tool_receipts t JOIN mira_runs r ON r.id=t.run_id WHERE t.id=${input.id} AND r.owner=${mira.owner}`;
                     let hostVerified = false;
                     if (input.approve && proposal?.tool === "mira_homelab_command") {
                         authorizedOperations(ctx, "updates:apply");
-                        if (!ctx.verifyHuman) throw new OperationFailure("FORBIDDEN", "Host commands require a freshly verified operator.");
+                        if (!ctx.verifyHuman)
+                            throw new OperationFailure(
+                                "FORBIDDEN",
+                                "Host commands require a freshly verified operator."
+                            );
                         const current = await ctx.verifyHuman();
-                        if (current.kind !== "human" || current.id !== mira.owner) throw new OperationFailure("UNAUTHORIZED", "The signed-in account changed.");
+                        if (current.kind !== "human" || current.id !== mira.owner)
+                            throw new OperationFailure(
+                                "UNAUTHORIZED",
+                                "The signed-in account changed."
+                            );
                         requireCapability(current, "updates:apply");
                         requireCapability(current, "jobs:run");
                         hostVerified = true;

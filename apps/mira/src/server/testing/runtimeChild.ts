@@ -407,7 +407,17 @@ for await (const line of reader) {
                 ["thread-test", "item/reasoning/textDelta", 0, "Private raw content"],
                 ["thread-test", "item/reasoning/summaryTextDelta", 0, "Readable summary"],
                 ["thread-test", "item/reasoning/summaryTextDelta", 1, "Next section"],
-            ] as const) write({ method, params: { threadId, turnId, itemId: "reasoning-1", summaryIndex, delta } });
+            ] as const)
+                write({
+                    method,
+                    params: {
+                        threadId,
+                        turnId,
+                        itemId: "reasoning-1",
+                        summaryIndex,
+                        delta,
+                    },
+                });
         }
         let text = mode === "failed" ? "" : "Synthetic response";
         if (mode === "resume-missing" || mode === "policy-rotation")

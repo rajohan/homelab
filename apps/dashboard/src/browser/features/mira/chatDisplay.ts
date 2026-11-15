@@ -24,7 +24,12 @@ export function readChatDisplay(): ChatDisplaySettings {
             JSON.parse(globalThis.localStorage.getItem(key) ?? "null")
         );
         if (parsed.success) return parsed.output;
-        const legacy = v.safeParse(v.object({ showTools: v.boolean(), expandTools: v.boolean() }), JSON.parse(globalThis.localStorage.getItem("homelab:mira:chat-display:v1") ?? "null"));
+        const legacy = v.safeParse(
+            v.object({ showTools: v.boolean(), expandTools: v.boolean() }),
+            JSON.parse(
+                globalThis.localStorage.getItem("homelab:mira:chat-display:v1") ?? "null"
+            )
+        );
         return legacy.success ? { ...defaults, ...legacy.output } : defaults;
     } catch {
         return defaults;

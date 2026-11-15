@@ -1,5 +1,5 @@
-import { validatePilot } from "../runtime/validatePilot";
 import { readMiraOperations } from "../operations/configuration";
+import { validatePilot } from "../runtime/validatePilot";
 import { miraEnvironment } from "./environment";
 
 /**
@@ -9,5 +9,9 @@ import { miraEnvironment } from "./environment";
 export async function miraServiceConfiguration() {
     const { file, operationsFile, ...environment } = miraEnvironment();
     const config = await validatePilot(await Bun.file(file).json());
-    return { ...environment, config, operations: await readMiraOperations(operationsFile) };
+    return {
+        ...environment,
+        config,
+        operations: await readMiraOperations(operationsFile),
+    };
 }

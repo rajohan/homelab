@@ -13,89 +13,210 @@ async function fixture(mode: "ask" | "approve_for_me" | "full_access") {
     const database = await operationFixture();
     const principal = { kind: "human" as const, id: "operator", capabilities };
     const api = appRouter.createCaller({ operations: database, principal }).mira;
-    const approved = appRouter.createCaller({ operations: database, principal, verifyHuman: () => Promise.resolve(principal) }).mira;
+    const approved = appRouter.createCaller({
+        operations: database,
+        principal,
+        verifyHuman: () => Promise.resolve(principal),
+    }).mira;
     const current = await permissionRun(database.client, api, mode);
-    const configuration = { owner: "operator", targets: [{ id: "main", label: "Main", host: "127.0.0.1", user: "fixture", port: 22, identityFile: "/synthetic/key", knownHostsFile: "/synthetic/known_hosts" }] };
+    const configuration = {
+        owner: "operator",
+        targets: [
+            {
+                id: "main",
+                label: "Main",
+                host: "127.0.0.1",
+                user: "fixture",
+                port: 22,
+                identityFile: "/synthetic/key",
+                knownHostsFile: "/synthetic/known_hosts",
+            },
+        ],
+    };
     const calls: string[] = [];
-    const tools = createMiraOperationsTools(database.client, current.run, configuration, (_target, command) => {
-        calls.push(command.command);
-        return Promise.resolve({ exitCode: 0, stdout: "synthetic", stderr: "", truncated: false, trust: "untrusted_host_output" });
-    });
+    const tools = createMiraOperationsTools(
+        database.client,
+        current.run,
+        configuration,
+        (_target, command) => {
+            calls.push(command.command);
+            return Promise.resolve({
+                exitCode: 0,
+                stdout: "synthetic",
+                stderr: "",
+                truncated: false,
+                trust: "untrusted_host_output",
+            });
+        }
+    );
     const receiptId = crypto.randomUUID();
     await database.client`INSERT INTO mira_tool_receipts(id,run_id,call_id,tool,input_hash,state) VALUES(${receiptId},${current.run.id},${receiptId},'mira_homelab_command',${"0".repeat(64)},'running')`;
-    const invoke = (signal = new AbortController().signal) => tools.find((tool) => tool.name === "mira_homelab_command")!.action({ target: "main", command: "printf synthetic", reason: "Test exact approval" }, signal, { ...current.context, receiptId });
-    return { ...database, ...current, api, approved, calls, invoke, receiptId, configuration };
+    const invoke = (signal = new AbortController().signal) =>
+        tools
+            .find((tool) => tool.name === "mira_homelab_command")!
+            .action(
+                {
+                    target: "main",
+                    command: "printf synthetic",
+                    reason: "Test exact approval",
+                },
+                signal,
+                { ...current.context, receiptId }
+            );
+    return {
+        ...database,
+        ...current,
+        api,
+        approved,
+        calls,
+        invoke,
+        receiptId,
+        configuration,
+    };
 }
 
 async function waitForProposal(f: Awaited<ReturnType<typeof fixture>>) {
     for (let attempt = 0; attempt < 100; attempt++) {
-        const [proposal] = await listMiraProposals({ client: f.client, owner: "operator", actor: "human:operator" }, f.run.conversationId);
+        const [proposal] = await listMiraProposals(
+            { client: f.client, owner: "operator", actor: "human:operator" },
+            f.run.conversationId
+        );
         if (proposal) return proposal;
         await Bun.sleep(10);
     }
     throw new Error("Expected pending host command");
 }
 
-test.each(["ask", "approve_for_me"] as const)("%s waits for exact freshly verified human approval", async (mode) => {
-    const f = await fixture(mode);
-    const pending = f.invoke();
-    try {
-        const proposal = await waitForProposal(f);
-        expect(f.calls).toEqual([]);
-        await rejects(f.api.proposals.decide({ id: proposal.id, inputHash: proposal.inputHash, approve: true }), /verified operator/);
-        await rejects(f.approved.proposals.decide({ id: proposal.id, inputHash: "1".repeat(64), approve: true }), /reviewed content/);
-        await f.approved.proposals.decide({ id: proposal.id, inputHash: proposal.inputHash, approve: true });
-        expect(await pending).toMatchObject({ exitCode: 0 });
-        expect(f.calls).toEqual(["printf synthetic"]);
-    } finally {
-        await f.close();
+test.each(["ask", "approve_for_me"] as const)(
+    "%s waits for exact freshly verified human approval",
+    async (mode) => {
+        const f = await fixture(mode);
+        const pending = f.invoke();
+        try {
+            const proposal = await waitForProposal(f);
+            expect(f.calls).toEqual([]);
+            await rejects(
+                f.api.proposals.decide({
+                    id: proposal.id,
+                    inputHash: proposal.inputHash,
+                    approve: true,
+                }),
+                /verified operator/
+            );
+            await rejects(
+                f.approved.proposals.decide({
+                    id: proposal.id,
+                    inputHash: "1".repeat(64),
+                    approve: true,
+                }),
+                /reviewed content/
+            );
+            await f.approved.proposals.decide({
+                id: proposal.id,
+                inputHash: proposal.inputHash,
+                approve: true,
+            });
+            expect(await pending).toMatchObject({ exitCode: 0 });
+            expect(f.calls).toEqual(["printf synthetic"]);
+        } finally {
+            await f.close();
+        }
     }
-});
+);
 
 test("Full access commands use provisioned authority, independent of Daytona selection", async () => {
     const f = await fixture("full_access");
     try {
         expect(await f.invoke()).toMatchObject({ stdout: "synthetic" });
         expect(f.calls).toEqual(["printf synthetic"]);
-        expect(createMiraOperationsTools(f.client, f.run, { ...f.configuration, owner: "someone-else" })).toEqual([]);
-        expect(createMiraOperationsTools(f.client, { ...f.run, automationId: crypto.randomUUID() }, f.configuration)).toEqual([]);
+        expect(
+            createMiraOperationsTools(f.client, f.run, {
+                ...f.configuration,
+                owner: "someone-else",
+            })
+        ).toEqual([]);
+        expect(
+            createMiraOperationsTools(
+                f.client,
+                { ...f.run, automationId: crypto.randomUUID() },
+                f.configuration
+            )
+        ).toEqual([]);
         expect(createMiraOperationsTools(f.client, f.run)).toEqual([]);
     } finally {
         await f.close();
     }
 });
 
-test.each(["reject", "stop", "revoke"])("%s prevents a waiting host command from executing", async (operation) => {
-    const f = await fixture("ask");
-    const pending = f.invoke();
-    void pending.catch(() => {});
-    try {
-        const proposal = await waitForProposal(f);
-        if (operation === "reject") await f.api.proposals.decide({ id: proposal.id, inputHash: proposal.inputHash, approve: false });
-        else if (operation === "stop") await f.client`UPDATE mira_runs SET cancel_requested=true WHERE id=${f.run.id}`;
-        else await f.client`UPDATE mira_runs SET approval_revoked_at=clock_timestamp() WHERE id=${f.run.id}`;
-        await rejects(pending);
-        expect(f.calls).toEqual([]);
-        await rejects(decideMiraProposal(f.context, { id: proposal.id, inputHash: proposal.inputHash, approve: true }, true), /signed-in operator/);
-    } finally {
-        await f.close();
+test.each(["reject", "stop", "revoke"])(
+    "%s prevents a waiting host command from executing",
+    async (operation) => {
+        const f = await fixture("ask");
+        const pending = f.invoke();
+        void pending.catch(() => {});
+        try {
+            const proposal = await waitForProposal(f);
+            if (operation === "reject")
+                await f.api.proposals.decide({
+                    id: proposal.id,
+                    inputHash: proposal.inputHash,
+                    approve: false,
+                });
+            else if (operation === "stop")
+                await f.client`UPDATE mira_runs SET cancel_requested=true WHERE id=${f.run.id}`;
+            else
+                await f.client`UPDATE mira_runs SET approval_revoked_at=clock_timestamp() WHERE id=${f.run.id}`;
+            await rejects(pending);
+            expect(f.calls).toEqual([]);
+            await rejects(
+                decideMiraProposal(
+                    f.context,
+                    { id: proposal.id, inputHash: proposal.inputHash, approve: true },
+                    true
+                ),
+                /signed-in operator/
+            );
+        } finally {
+            await f.close();
+        }
     }
-});
+);
 
 test("permission revocation interrupts an already dispatched command", async () => {
     const f = await fixture("full_access");
     let started!: () => void;
-    const began = new Promise<void>((resolve) => { started = resolve; });
-    const tools = createMiraOperationsTools(f.client, f.run, f.configuration, async (_target, _command, signal) => {
-        started();
-        await new Promise<void>((_resolve, reject) => signal.addEventListener("abort", () => reject(new Error("Interrupted remote outcome")), { once: true }));
-        throw new Error("unreachable");
+    const began = new Promise<void>((resolve) => {
+        started = resolve;
     });
-    const pending = tools.find((tool) => tool.name === "mira_homelab_command")!.action({ target: "main", command: "synthetic", reason: "Revocation test" }, new AbortController().signal, { ...f.context, receiptId: f.receiptId });
+    const tools = createMiraOperationsTools(
+        f.client,
+        f.run,
+        f.configuration,
+        async (_target, _command, signal) => {
+            started();
+            await new Promise<void>((_resolve, reject) =>
+                signal.addEventListener(
+                    "abort",
+                    () => reject(new Error("Interrupted remote outcome")),
+                    { once: true }
+                )
+            );
+            throw new Error("unreachable");
+        }
+    );
+    const pending = tools
+        .find((tool) => tool.name === "mira_homelab_command")!
+        .action(
+            { target: "main", command: "synthetic", reason: "Revocation test" },
+            new AbortController().signal,
+            { ...f.context, receiptId: f.receiptId }
+        );
     void pending.catch(() => {});
     try {
         await began;
         await f.client`UPDATE mira_runs SET approval_revoked_at=clock_timestamp() WHERE id=${f.run.id}`;
         await rejects(pending, /Interrupted remote outcome/);
-    } finally { await f.close(); }
+    } finally {
+        await f.close();
+    }
 });

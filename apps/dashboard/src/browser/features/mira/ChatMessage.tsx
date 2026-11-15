@@ -10,7 +10,8 @@ import { miraStatusTone } from "./statusTone";
  */
 export function ChatMessage({ message }: { readonly message: MiraMessage }) {
     const user = message.role === "user";
-    if (!user && !message.content.trim() && message.attachmentIds.length === 0) return null;
+    if (!user && !message.content.trim() && message.attachmentIds.length === 0)
+        return null;
     return (
         <article
             aria-label={`${user ? "You" : "Mira"} message`}

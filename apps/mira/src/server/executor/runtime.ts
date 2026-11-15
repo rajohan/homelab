@@ -43,6 +43,7 @@ import {
     type MoltbookReadConfiguration,
 } from "../integrations/moltbook/configuration";
 import { dispatchMiraSocial, reconcileMiraSocial } from "../integrations/moltbook/outbox";
+import type { MiraOperationsConfiguration } from "../operations/configuration";
 import { CodexRuntime } from "../runtime/codexRuntime";
 import { pilotArguments, type PilotConfig } from "../runtime/configuration";
 import type { SyntheticConfiguration } from "../runtime/syntheticConfiguration";
@@ -55,7 +56,6 @@ import { miraSkillCatalogHash } from "../skills/catalog";
 import { cleanupMiraResources } from "./cleanup";
 import { MaintenanceGate } from "./maintenanceGate";
 import { executeMiraTurn } from "./turn";
-import type { MiraOperationsConfiguration } from "../operations/configuration";
 
 export interface MiraHealth {
     ready: boolean;

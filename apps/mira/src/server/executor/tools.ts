@@ -56,12 +56,12 @@ import type { HereNowReadConfiguration } from "../integrations/herenow/configura
 import { createHereNowTools } from "../integrations/herenow/tools";
 import type { MoltbookReadConfiguration } from "../integrations/moltbook/configuration";
 import { createMoltbookTools } from "../integrations/moltbook/tools";
+import type { MiraOperationsConfiguration } from "../operations/configuration";
+import { createMiraOperationsTools } from "../operations/tools";
 import type { RuntimeTool } from "../runtime/protocol";
 import type { SyntheticConfiguration } from "../runtime/syntheticConfiguration";
 import { runtimeContentItems, type RuntimeToolResult } from "../runtime/toolResult";
 import type { LocalCodeBinding } from "../sandbox/localBinding";
-import type { MiraOperationsConfiguration } from "../operations/configuration";
-import { createMiraOperationsTools } from "../operations/tools";
 import { createMiraSkillTools } from "../skills/tools";
 import { createMiraActionTools } from "./actionTools";
 import { createMiraBrowserTools } from "./browserTools";
@@ -745,7 +745,8 @@ export function createMiraTools(
                     else if (readOnly && definition.name === "mira_web_search")
                         message = "Web search failed. Check the query and try again.";
                     else if (readOnly && definition.name.startsWith("mira_homelab_"))
-                        message = "The host inspection failed. Check the connection before trying another read.";
+                        message =
+                            "The host inspection failed. Check the connection before trying another read.";
                     else if (readOnly)
                         message =
                             "The screen could not be captured. No clicks or keystrokes were sent. Check Computer access before requesting another observation.";
